@@ -32,29 +32,21 @@ npm run build
 ## Fondos y temas
 
 - Las imágenes rotatorias viven en `src/assets/backgrounds/`. Sustituye las existentes por archivos `.webp` optimizados (~1280px) para actualizar la galería.
-- El intervalo de rotación se controla desde `src/services/config.ts` mediante `BACKGROUND_ROTATION_MINUTES`.
-- El tema predeterminado se define en el mismo archivo con `DEFAULT_THEME`.
+- El intervalo de rotación y el tema activo se sincronizan con el backend (`/api/config`) y pueden ajustarse desde el panel de Ajustes.
+- El tema predeterminado se define en `src/services/config.ts` con `DEFAULT_THEME`; se sobrescribe al recibir configuración remota.
 
 ## Power Save
 
 Activa el modo de ahorro ajustando `powerSave` a `true` en `src/services/config.ts`. Esto reduce las animaciones, elimina filtros pesados y prioriza la estabilidad en Raspberry Pi 4.
 
-## Mock de clima
+## Integración con backend
 
-El servicio `src/services/weather.ts` entrega un contrato estable:
+La UI consume el backend local en `http://127.0.0.1:8787/api`:
 
-```ts
-{
-  temp: number;
-  condition: string;
-  icon: 'cloud' | 'rain' | 'sun';
-  precipProb: number;
-  humidity: number;
-  updatedAt: number;
-}
-```
-
-Los datos se cachean en `localStorage` para mantenerse disponibles sin conexión.
+- `src/services/weather.ts` realiza polling cada 12 minutos con backoff exponencial y cachea el último dato en `localStorage`.
+- `src/services/wifi.ts` y `src/components/SettingsPanel.tsx` ofrecen gestión completa de Wi-Fi vía `nmcli`.
+- `src/services/tts.ts` permite listar voces y lanzar pruebas de audio.
+- `src/context/DashboardConfigContext.tsx` centraliza la configuración compartida (tema, fondos, voz, etc.).
 
 ## Bundle objetivo
 

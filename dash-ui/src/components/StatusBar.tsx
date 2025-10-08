@@ -1,65 +1,48 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Wifi, WifiOff } from 'lucide-react';
+import { Wifi, WifiOff, Settings } from 'lucide-react';
 import type { ThemeKey } from '../styles/theme';
 import { THEMES } from '../styles/theme';
-import { ENABLE_NETWORK_PING } from '../services/config';
+import { fetchWifiStatus, type WifiStatus } from '../services/wifi';
 
 interface StatusBarProps {
   themeKey: ThemeKey;
+  onOpenSettings?: () => void;
 }
 
-const StatusBar = ({ themeKey }: StatusBarProps) => {
-  const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
-  const [latency, setLatency] = useState<number | null>(null);
+const StatusBar = ({ themeKey, onOpenSettings }: StatusBarProps) => {
+  const [wifiStatus, setWifiStatus] = useState<WifiStatus | null>(null);
   const [lastChecked, setLastChecked] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!ENABLE_NETWORK_PING || typeof window === 'undefined') return;
     let cancelled = false;
 
-    const ping = async () => {
-      if (!navigator.onLine) {
-        setLatency(null);
-        setIsOnline(false);
-        return;
-      }
-      const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 1000);
+    const loadStatus = async () => {
       try {
-        const start = performance.now();
-        await fetch('/', { method: 'HEAD', cache: 'no-store', signal: controller.signal });
-        const end = performance.now();
+        const status = await fetchWifiStatus();
         if (!cancelled) {
-          setLatency(Math.round(end - start));
-          setIsOnline(true);
+          setWifiStatus(status);
+          setError(null);
           setLastChecked(Date.now());
         }
-      } catch (error) {
+      } catch (err) {
         if (!cancelled) {
-          setLatency(null);
-          setIsOnline(false);
+          setError(err instanceof Error ? err.message : 'Sin respuesta');
+          setWifiStatus(null);
           setLastChecked(Date.now());
-          console.warn('Ping offline', error);
         }
-      } finally {
-        window.clearTimeout(timeoutId);
       }
     };
 
-    ping();
-    const interval = window.setInterval(ping, 30_000);
+    loadStatus().catch(() => {
+      // handled in error state
+    });
+    const interval = window.setInterval(() => {
+      loadStatus().catch(() => {
+        // handled in error state
+      });
+    }, 90_000);
+
     return () => {
       cancelled = true;
       window.clearInterval(interval);
@@ -77,18 +60,32 @@ const StatusBar = ({ themeKey }: StatusBarProps) => {
       </div>
       <div className="flex items-center gap-3 text-xs">
         <span className="flex items-center gap-2">
-          {isOnline ? (
+          {wifiStatus?.connected ? (
             <Wifi className="h-4 w-4 text-emerald-400" aria-hidden />
           ) : (
             <WifiOff className="h-4 w-4 text-rose-400" aria-hidden />
           )}
-          <span>{isOnline ? 'Online' : 'Offline'}</span>
+          <span>
+            {wifiStatus?.connected
+              ? wifiStatus.ssid ?? 'Conectado'
+              : error ?? 'Sin conexión'}
+          </span>
         </span>
-        {latency !== null && (
-          <span className="text-slate-200/70">{latency} ms</span>
-        )}
+        {wifiStatus?.ip && <span className="text-slate-200/70">IP {wifiStatus.ip}</span>}
         {lastChecked && (
-          <span className="text-slate-200/50">{new Date(lastChecked).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</span>
+          <span className="text-slate-200/50">
+            {new Date(lastChecked).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        )}
+        {onOpenSettings && (
+          <button
+            className="ml-2 flex items-center gap-1 rounded-full border border-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-slate-100 hover:border-white/20"
+            onClick={onOpenSettings}
+            type="button"
+          >
+            <Settings className="h-3 w-3" />
+            Ajustes
+          </button>
         )}
       </div>
     </div>

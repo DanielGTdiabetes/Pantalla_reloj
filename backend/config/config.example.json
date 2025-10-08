@@ -1,0 +1,22 @@
+{
+  "weather": {
+    "apiKey": "PON_AQUI_TU_API_KEY_DE_OPENWEATHERMAP",
+    "lat": 40.4168,
+    "lon": -3.7038,
+    "city": "Madrid",
+    "units": "metric"
+  },
+  "theme": {
+    "current": "cyberpunkNeon"
+  },
+  "background": {
+    "intervalMinutes": 5
+  },
+  "tts": {
+    "voice": "pico-es",
+    "volume": 0.8
+  },
+  "wifi": {
+    "preferredInterface": "wlan0"
+  }
+}

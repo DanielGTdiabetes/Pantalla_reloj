@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BACKGROUND_ROTATION_MINUTES, BACKGROUND_SOURCES } from '../services/config';
+import { BACKGROUND_SOURCES, DEFAULT_BACKGROUND_INTERVAL } from '../services/config';
 
 interface BackgroundRotatorProps {
   powerSave: boolean;
+  intervalMinutes?: number;
 }
 
 function preload(src: string): Promise<string> {
@@ -19,7 +20,7 @@ function preload(src: string): Promise<string> {
   });
 }
 
-const BackgroundRotator = ({ powerSave }: BackgroundRotatorProps) => {
+const BackgroundRotator = ({ powerSave, intervalMinutes }: BackgroundRotatorProps) => {
   const [currentUrl, setCurrentUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -27,7 +28,7 @@ const BackgroundRotator = ({ powerSave }: BackgroundRotatorProps) => {
     let isMounted = true;
     let timer: number | undefined;
 
-    const rotationMs = BACKGROUND_ROTATION_MINUTES * 60_000;
+    const rotationMs = (intervalMinutes ?? DEFAULT_BACKGROUND_INTERVAL) * 60_000;
 
     const cycle = async (index: number) => {
       const src = BACKGROUND_SOURCES[index];
@@ -54,7 +55,7 @@ const BackgroundRotator = ({ powerSave }: BackgroundRotatorProps) => {
         window.clearTimeout(timer);
       }
     };
-  }, []);
+  }, [intervalMinutes]);
 
   const transitionDuration = powerSave ? 0.8 : 1.4;
 

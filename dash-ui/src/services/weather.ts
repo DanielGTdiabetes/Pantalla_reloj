@@ -1,6 +1,6 @@
-import { WEATHER_CACHE_KEY } from './config';
+import { apiRequest, WEATHER_CACHE_KEY } from './config';
 
-type WeatherIcon = 'cloud' | 'rain' | 'sun';
+export type WeatherIcon = 'cloud' | 'rain' | 'sun' | 'snow' | 'storm' | 'fog';
 
 export interface WeatherSnapshot {
   temp: number;
@@ -9,101 +9,107 @@ export interface WeatherSnapshot {
   precipProb: number;
   humidity: number;
   updatedAt: number;
+  stale?: boolean;
+  message?: string;
 }
 
-const MOCK_SEQUENCE: WeatherSnapshot[] = [
-  {
-    temp: 22,
-    condition: 'Nublado parcial',
-    icon: 'cloud',
-    precipProb: 20,
-    humidity: 58,
-    updatedAt: Date.now()
-  },
-  {
-    temp: 21,
-    condition: 'Lluvia ligera',
-    icon: 'rain',
-    precipProb: 45,
-    humidity: 72,
-    updatedAt: Date.now()
-  },
-  {
-    temp: 24,
-    condition: 'Despejado',
-    icon: 'sun',
-    precipProb: 5,
-    humidity: 50,
-    updatedAt: Date.now()
-  }
-];
+interface ListenerState {
+  timer?: number;
+  backoffMs: number;
+  destroyed: boolean;
+}
 
-let pointer = 0;
-
-const listeners = new Set<(data: WeatherSnapshot) => void>();
-let intervalHandle: number | undefined;
+const listeners = new Map<(data: WeatherSnapshot | null) => void, ListenerState>();
+const DEFAULT_INTERVAL = 12 * 60_000;
+const MIN_BACKOFF = 60_000;
+const MAX_BACKOFF = 15 * 60_000;
 
 function persist(snapshot: WeatherSnapshot) {
   try {
     localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify(snapshot));
   } catch (error) {
-    console.warn('No se pudo persistir el clima mock', error);
+    console.warn('No se pudo persistir el clima', error);
   }
 }
 
-function loadCached(): WeatherSnapshot | undefined {
+export function loadCachedWeather(): WeatherSnapshot | null {
   try {
     const raw = localStorage.getItem(WEATHER_CACHE_KEY);
-    if (!raw) return undefined;
-    const parsed = JSON.parse(raw) as WeatherSnapshot;
-    return parsed;
+    if (!raw) return null;
+    return JSON.parse(raw) as WeatherSnapshot;
   } catch (error) {
-    console.warn('No se pudo leer cache de clima mock', error);
-    return undefined;
+    console.warn('No se pudo leer cache de clima', error);
+    return null;
   }
 }
 
-function nextSnapshot(): WeatherSnapshot {
-  const base = MOCK_SEQUENCE[pointer];
-  pointer = (pointer + 1) % MOCK_SEQUENCE.length;
-  const snapshot = { ...base, updatedAt: Date.now() };
-  persist(snapshot);
-  return snapshot;
+async function fetchWeather(): Promise<WeatherSnapshot> {
+  return await apiRequest<WeatherSnapshot>('/weather/current');
 }
 
-function dispatch(snapshot: WeatherSnapshot) {
-  listeners.forEach((listener) => listener(snapshot));
+function schedule(listener: (data: WeatherSnapshot | null) => void, delay: number) {
+  const state = listeners.get(listener);
+  if (!state) return;
+  if (state.timer) {
+    window.clearTimeout(state.timer);
+  }
+  state.timer = window.setTimeout(() => {
+    tick(listener);
+  }, delay);
 }
 
-export function subscribeWeather(listener: (data: WeatherSnapshot) => void, pollMinutes = 2) {
-  listeners.add(listener);
-  let initial = loadCached();
-  if (!initial) {
-    initial = nextSnapshot();
-  }
-  listener(initial);
-
-  if (intervalHandle === undefined) {
-    const pollInterval = Math.max(1, pollMinutes) * 60_000;
-    intervalHandle = window.setInterval(() => {
-      const snapshot = nextSnapshot();
-      dispatch(snapshot);
-    }, pollInterval);
-  }
-
-  return () => {
-    listeners.delete(listener);
-    if (listeners.size === 0 && intervalHandle !== undefined) {
-      window.clearInterval(intervalHandle);
-      intervalHandle = undefined;
+async function tick(listener: (data: WeatherSnapshot | null) => void) {
+  const state = listeners.get(listener);
+  if (!state || state.destroyed) return;
+  try {
+    const snapshot = await fetchWeather();
+    persist(snapshot);
+    state.backoffMs = MIN_BACKOFF;
+    listener({ ...snapshot, stale: false, message: undefined });
+    schedule(listener, DEFAULT_INTERVAL);
+  } catch (error) {
+    const cached = loadCachedWeather();
+    const message = error instanceof Error ? error.message : 'Error desconocido';
+    if (cached) {
+      listener({ ...cached, stale: true, message });
+    } else {
+      listener({
+        temp: 0,
+        condition: 'Sin datos',
+        icon: 'cloud',
+        precipProb: 0,
+        humidity: 0,
+        updatedAt: Date.now(),
+        stale: true,
+        message,
+      });
     }
+    schedule(listener, state.backoffMs);
+    state.backoffMs = Math.min(state.backoffMs * 2, MAX_BACKOFF);
+  }
+}
+
+export function subscribeWeather(listener: (data: WeatherSnapshot | null) => void): () => void {
+  const cached = loadCachedWeather();
+  if (cached) {
+    listener({ ...cached, stale: true });
+  } else {
+    listener(null);
+  }
+  listeners.set(listener, { backoffMs: MIN_BACKOFF, destroyed: false });
+  tick(listener);
+  return () => {
+    const state = listeners.get(listener);
+    if (state?.timer) {
+      window.clearTimeout(state.timer);
+    }
+    if (state) {
+      state.destroyed = true;
+    }
+    listeners.delete(listener);
   };
 }
 
-export function getWeatherSnapshot(): WeatherSnapshot {
-  const cached = loadCached();
-  if (cached) {
-    return cached;
-  }
-  return nextSnapshot();
+export function getWeatherSnapshot(): WeatherSnapshot | null {
+  return loadCachedWeather();
 }

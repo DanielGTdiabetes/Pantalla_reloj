@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "weather": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiKey": { "type": "string" },
+        "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+        "lon": { "type": "number", "minimum": -180, "maximum": 180 },
+        "city": { "type": "string" },
+        "units": { "type": "string", "enum": ["metric", "imperial"] }
+      },
+      "required": ["lat", "lon"],
+      "dependencies": {
+        "units": ["lat", "lon"]
+      }
+    },
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "current": { "type": "string" }
+      }
+    },
+    "background": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "intervalMinutes": { "type": "integer", "minimum": 1, "maximum": 120 }
+      }
+    },
+    "tts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "voice": { "type": "string" },
+        "volume": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "wifi": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preferredInterface": { "type": "string" }
+      }
+    }
+  }
+}
