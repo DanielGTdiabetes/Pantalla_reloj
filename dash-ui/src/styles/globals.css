@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-black text-white font-sans min-h-screen antialiased;
+}
+
+.theme-cyberpunkNeon {
+  --accent: rgba(0, 255, 255, 0.85);
+  --accent-strong: rgba(56, 249, 255, 1);
+  --surface: rgba(13, 17, 23, 0.75);
+  --text-primary: #f4faff;
+}
+
+.theme-crtRetro {
+  --accent: rgba(138, 255, 122, 0.9);
+  --accent-strong: rgba(255, 191, 0, 0.85);
+  --surface: rgba(6, 12, 6, 0.8);
+  --text-primary: #eaffea;
+}
+
+.theme-lightMinimal {
+  --accent: rgba(59, 130, 246, 0.85);
+  --accent-strong: rgba(29, 78, 216, 1);
+  --surface: rgba(255, 255, 255, 0.75);
+  --text-primary: #0f172a;
+  color-scheme: light;
+}
+
+.theme-crtRetro .crt-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+      to bottom,
+      rgba(138, 255, 122, 0.15) 0,
+      rgba(138, 255, 122, 0.15) 2px,
+      transparent 2px,
+      transparent 4px
+    ),
+    radial-gradient(circle at center, transparent 50%, rgba(0, 0, 0, 0.35) 100%);
+  mix-blend-mode: screen;
+}
+
+.theme-crtRetro .crt-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.2);
+  mix-blend-mode: multiply;
+}
+
+.theme-cyberpunkNeon .neon-glow {
+  box-shadow: 0 0 20px rgba(56, 249, 255, 0.4), 0 0 35px rgba(56, 249, 255, 0.25);
+}
+
+.power-save .reduced-motion {
+  transition-duration: 0.4s !important;
+  animation-duration: 0.4s !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  box-shadow: none !important;
+}
+
+.fade-layer {
+  will-change: opacity;
+}
+
+body.power-save {
+  @apply bg-neutral-950 text-neutral-100;
+}
