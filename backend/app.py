@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 from .services.calendar import CalendarService, CalendarServiceError
+from .services.backgrounds import BackgroundAsset, list_backgrounds, latest_background
 from .services.config import AppConfig, read_config, update_config
 from .services.tts import SpeechError, TTSService, TTSUnavailableError
 from .services.weather import MissingApiKeyError, WeatherService, WeatherServiceError
@@ -18,6 +21,15 @@ logger = logging.getLogger("pantalla.backend")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
 
 app = FastAPI(title="Pantalla Dash Backend", version="1.0.0")
+
+AUTO_BACKGROUND_DIR = Path("/opt/dash/assets/backgrounds/auto")
+AUTO_BACKGROUND_DIR.mkdir(parents=True, exist_ok=True)
+
+app.mount(
+    "/backgrounds/auto",
+    StaticFiles(directory=AUTO_BACKGROUND_DIR, html=False),
+    name="auto-backgrounds",
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -187,6 +199,20 @@ async def calendar_today(config: AppConfig = Depends(get_config)):
     return payload
 
 
+@app.get("/api/backgrounds/current", response_model=Optional[BackgroundAssetResponse])
+def current_background():
+    asset = latest_background()
+    if not asset:
+        return None
+    return _serialize_background(asset)
+
+
+@app.get("/api/backgrounds/auto", response_model=list[BackgroundAssetResponse])
+def auto_backgrounds(limit: int = Query(default=6, ge=1, le=30)):
+    assets = list_backgrounds(limit=limit)
+    return [_serialize_background(asset) for asset in assets]
+
+
 @app.get("/api/config")
 def get_config_endpoint(config: AppConfig = Depends(get_config)):
     return config.public_view()
@@ -206,3 +232,22 @@ def update_config_endpoint(payload: dict = Body(...)):
 async def shutdown_event():
     await weather_service.close()
     await calendar_service.close()
+class BackgroundAssetResponse(BaseModel):
+    filename: str
+    url: str
+    generatedAt: int
+    mode: Optional[str] = None
+    prompt: Optional[str] = None
+    weatherKey: Optional[str] = Field(default=None, alias="weatherKey")
+
+
+def _serialize_background(asset: BackgroundAsset) -> BackgroundAssetResponse:
+    return BackgroundAssetResponse(
+        filename=asset.filename,
+        url=asset.url,
+        generatedAt=asset.generated_at,
+        mode=asset.mode,
+        prompt=asset.prompt,
+        weatherKey=asset.weather_key,
+    )
+

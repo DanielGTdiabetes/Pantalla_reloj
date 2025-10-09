@@ -7,6 +7,7 @@ import bg5 from '../assets/backgrounds/5.webp';
 import bg6 from '../assets/backgrounds/6.webp';
 
 export const API_BASE_URL = 'http://127.0.0.1:8787/api';
+export const BACKEND_BASE_URL = API_BASE_URL.replace(/\/?api$/, '');
 export const WEATHER_CACHE_KEY = 'weatherCache';
 export const THEME_STORAGE_KEY = 'dashTheme';
 export const CONFIG_CACHE_KEY = 'dashConfig';
@@ -30,6 +31,8 @@ export interface ThemeConfig {
 
 export interface BackgroundConfig {
   intervalMinutes?: number;
+  mode?: 'daily' | 'weather';
+  retainDays?: number;
 }
 
 export interface TTSConfig {

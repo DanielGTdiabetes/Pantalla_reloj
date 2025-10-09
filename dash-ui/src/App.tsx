@@ -61,6 +61,7 @@ const AppContent = () => {
 
   const themeDefinition = useMemo(() => THEME_MAP[theme], [theme]);
   const backgroundInterval = config?.background?.intervalMinutes ?? DEFAULT_BACKGROUND_INTERVAL;
+  const glassTone = themeDefinition.glassTone;
 
   const handleThemeChange = useCallback(
     (nextTheme: ThemeKey) => {
@@ -76,16 +77,16 @@ const AppContent = () => {
     <Layout
       theme={themeDefinition}
       powerSave={powerSave}
-      header={<StatusBar themeKey={theme} onOpenSettings={() => setSettingsOpen(true)} />}
-      footer={<ThemeSelector theme={theme} onChange={handleThemeChange} />}
+      header={<StatusBar themeKey={theme} tone={glassTone} onOpenSettings={() => setSettingsOpen(true)} />}
+      footer={<ThemeSelector theme={theme} tone={glassTone} onChange={handleThemeChange} />}
     >
       <BackgroundRotator powerSave={powerSave} intervalMinutes={backgroundInterval} />
-      <div className="relative z-10 flex h-full flex-col items-center justify-center gap-8 px-8">
-        <Clock />
-        <Weather />
-        <CalendarPeek />
+      <div className="relative z-10 flex h-full flex-col items-center justify-center gap-8 px-4 md:px-8">
+        <Clock tone={glassTone} />
+        <Weather tone={glassTone} />
+        <CalendarPeek tone={glassTone} />
       </div>
-      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsPanel open={settingsOpen} tone={glassTone} onClose={() => setSettingsOpen(false)} />
     </Layout>
   );
 };

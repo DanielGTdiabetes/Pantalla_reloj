@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BACKGROUND_SOURCES, DEFAULT_BACKGROUND_INTERVAL } from '../services/config';
+import { BACKGROUND_SOURCES, BACKEND_BASE_URL, DEFAULT_BACKGROUND_INTERVAL } from '../services/config';
+import { fetchAutoBackgrounds, type BackgroundAsset } from '../services/backgrounds';
 
 interface BackgroundRotatorProps {
   powerSave: boolean;
   intervalMinutes?: number;
 }
+
+const POLLING_INTERVAL_MS = 60_000;
 
 function preload(src: string): Promise<string> {
   return new Promise((resolve) => {
@@ -22,32 +25,76 @@ function preload(src: string): Promise<string> {
 
 const BackgroundRotator = ({ powerSave, intervalMinutes }: BackgroundRotatorProps) => {
   const [currentUrl, setCurrentUrl] = useState<string | null>(null);
+  const [sources, setSources] = useState<string[]>(() => [...BACKGROUND_SOURCES]);
+
+  const backendBase = useMemo(() => BACKEND_BASE_URL.replace(/\/$/, ''), []);
+
+  const composeUrl = useCallback(
+    (asset: BackgroundAsset) => `${backendBase}${asset.url}?v=${asset.generatedAt}`,
+    [backendBase],
+  );
+
+  const refreshBackgrounds = useCallback(async () => {
+    try {
+      const assets = await fetchAutoBackgrounds(8);
+      if (!assets.length) {
+        setSources((prev) => (prev.length ? prev : [...BACKGROUND_SOURCES]));
+        return;
+      }
+      const urls = assets.map(composeUrl);
+      setSources((prev) => {
+        const currentKey = prev.join('|');
+        const nextKey = urls.join('|');
+        if (currentKey === nextKey) {
+          return prev;
+        }
+        return urls;
+      });
+    } catch (error) {
+      console.warn('No se pudieron cargar fondos automáticos', error);
+      setSources((prev) => (prev.length ? prev : [...BACKGROUND_SOURCES]));
+    }
+  }, [composeUrl]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    let timer: number | undefined;
+    void refreshBackgrounds();
+    timer = window.setInterval(() => {
+      void refreshBackgrounds();
+    }, POLLING_INTERVAL_MS);
+    return () => {
+      if (timer) {
+        window.clearInterval(timer);
+      }
+    };
+  }, [refreshBackgrounds]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!sources.length) {
+      setCurrentUrl(null);
+      return undefined;
+    }
     let isMounted = true;
     let timer: number | undefined;
 
     const rotationMs = (intervalMinutes ?? DEFAULT_BACKGROUND_INTERVAL) * 60_000;
 
-    const cycle = async (index: number) => {
-      const src = BACKGROUND_SOURCES[index];
+    let index = 0;
+
+    const cycle = async () => {
+      const src = sources[index % sources.length];
       await preload(src);
       if (!isMounted) return;
       setCurrentUrl(src);
-
-      const nextIndex = (index + 1) % BACKGROUND_SOURCES.length;
-      const nextSrc = BACKGROUND_SOURCES[nextIndex];
-      const preloadNext = preload(nextSrc);
-
-      timer = window.setTimeout(async () => {
-        await preloadNext;
-        if (!isMounted) return;
-        cycle(nextIndex);
+      index = (index + 1) % sources.length;
+      timer = window.setTimeout(() => {
+        void cycle();
       }, rotationMs);
     };
 
-    cycle(0);
+    void cycle();
 
     return () => {
       isMounted = false;
@@ -55,7 +102,7 @@ const BackgroundRotator = ({ powerSave, intervalMinutes }: BackgroundRotatorProp
         window.clearTimeout(timer);
       }
     };
-  }, [intervalMinutes]);
+  }, [intervalMinutes, sources]);
 
   const transitionDuration = powerSave ? 0.8 : 1.4;
 

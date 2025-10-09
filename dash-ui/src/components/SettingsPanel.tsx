@@ -8,6 +8,7 @@ import { fetchVoices, speakPreview, type VoiceDefinition } from '../services/tts
 interface SettingsPanelProps {
   open: boolean;
   onClose: () => void;
+  tone?: 'light' | 'dark';
 }
 
 type TabKey = 'weather' | 'wifi' | 'tts' | 'appearance' | 'calendar';
@@ -26,7 +27,7 @@ const TABS: TabDefinition[] = [
   { key: 'calendar', label: 'Calendario', icon: CalendarIcon },
 ];
 
-const SettingsPanel = ({ open, onClose }: SettingsPanelProps) => {
+const SettingsPanel = ({ open, onClose, tone = 'dark' }: SettingsPanelProps) => {
   const { config, update, refresh } = useDashboardConfig();
   const [activeTab, setActiveTab] = useState<TabKey>('weather');
   const [message, setMessage] = useState<string | null>(null);
@@ -237,18 +238,40 @@ const SettingsPanel = ({ open, onClose }: SettingsPanelProps) => {
   const handleAppearanceSave = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    const value = Number(formData.get('intervalMinutes'));
+    const intervalValue = Number(formData.get('intervalMinutes'));
+    const modeValue = (formData.get('backgroundMode') as string | null)?.toLowerCase();
+    const retainValue = Number(formData.get('retainDays'));
+    const payload: DashboardConfig = { background: {} };
+
+    if (Number.isFinite(intervalValue)) {
+      payload.background!.intervalMinutes = Math.min(Math.max(Math.round(intervalValue), 1), 120);
+    }
+
+    if (modeValue === 'daily' || modeValue === 'weather') {
+      payload.background!.mode = modeValue;
+    }
+
+    if (Number.isFinite(retainValue)) {
+      payload.background!.retainDays = Math.min(Math.max(Math.round(retainValue), 1), 90);
+    }
+
+    if (Object.keys(payload.background!).length === 0) {
+      delete payload.background;
+    }
+
     setMessage(null);
     setError(null);
     try {
-      await update({ background: { intervalMinutes: Number.isFinite(value) ? value : undefined } });
-      setMessage('Intervalo de fondos guardado');
+      await update(payload);
+      setMessage('Preferencias de fondos guardadas');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo actualizar apariencia');
     }
   };
 
   const currentBackgroundInterval = config?.background?.intervalMinutes ?? 5;
+  const currentBackgroundMode = config?.background?.mode ?? 'daily';
+  const currentRetainDays = config?.background?.retainDays ?? 30;
 
   const handleCalendarSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -286,53 +309,53 @@ const SettingsPanel = ({ open, onClose }: SettingsPanelProps) => {
           <form className="space-y-4" onSubmit={handleWeatherSubmit}>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <label className="flex flex-col text-sm">
-                <span className="text-slate-200/70">API key (nunca se mostrará)</span>
+                <span className={labelColor}>API key (nunca se mostrará)</span>
                 <input
                   type="password"
-                  className="mt-1 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-slate-100"
+                  className={inputClass()}
                   value={weatherForm.apiKey}
                   onChange={(event) => setWeatherForm((prev) => ({ ...prev, apiKey: event.target.value }))}
                   placeholder="••••••"
                 />
               </label>
               <label className="flex flex-col text-sm">
-                <span className="text-slate-200/70">Ciudad</span>
+                <span className={labelColor}>Ciudad</span>
                 <input
                   type="text"
-                  className="mt-1 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-slate-100"
+                  className={inputClass()}
                   value={weatherForm.city}
                   onChange={(event) => setWeatherForm((prev) => ({ ...prev, city: event.target.value }))}
                   placeholder="Madrid"
                 />
               </label>
               <label className="flex flex-col text-sm">
-                <span className="text-slate-200/70">Latitud</span>
+                <span className={labelColor}>Latitud</span>
                 <input
                   type="number"
                   step="0.0001"
                   min="-90"
                   max="90"
-                  className="mt-1 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-slate-100"
+                  className={inputClass()}
                   value={weatherForm.lat}
                   onChange={(event) => setWeatherForm((prev) => ({ ...prev, lat: event.target.value }))}
                 />
               </label>
               <label className="flex flex-col text-sm">
-                <span className="text-slate-200/70">Longitud</span>
+                <span className={labelColor}>Longitud</span>
                 <input
                   type="number"
                   step="0.0001"
                   min="-180"
                   max="180"
-                  className="mt-1 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-slate-100"
+                  className={inputClass()}
                   value={weatherForm.lon}
                   onChange={(event) => setWeatherForm((prev) => ({ ...prev, lon: event.target.value }))}
                 />
               </label>
               <label className="flex flex-col text-sm">
-                <span className="text-slate-200/70">Unidades</span>
+                <span className={labelColor}>Unidades</span>
                 <select
-                  className="mt-1 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-slate-100"
+                  className={inputClass()}
                   value={weatherForm.units}
                   onChange={(event) => setWeatherForm((prev) => ({ ...prev, units: event.target.value }))}
                 >
@@ -485,14 +508,32 @@ const SettingsPanel = ({ open, onClose }: SettingsPanelProps) => {
         return (
           <form className="space-y-4" onSubmit={handleAppearanceSave}>
             <label className="flex flex-col text-sm">
-              <span className="text-slate-200/70">Intervalo de fondos (minutos)</span>
+              <span className={labelColor}>Intervalo de fondos (minutos)</span>
               <input
                 type="number"
                 name="intervalMinutes"
                 min="1"
                 max="60"
                 defaultValue={currentBackgroundInterval}
-                className="mt-1 w-32 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-slate-100"
+                className={inputClass('w-32')}
+              />
+            </label>
+            <label className="flex flex-col text-sm">
+              <span className={labelColor}>Modo de generación</span>
+              <select name="backgroundMode" defaultValue={currentBackgroundMode} className={inputClass()}>
+                <option value="daily">Diario (rotación fija)</option>
+                <option value="weather">Según clima</option>
+              </select>
+            </label>
+            <label className="flex flex-col text-sm">
+              <span className={labelColor}>Días a conservar</span>
+              <input
+                type="number"
+                name="retainDays"
+                min="1"
+                max="90"
+                defaultValue={currentRetainDays}
+                className={inputClass('w-32')}
               />
             </label>
             <p className="text-xs text-slate-300/70">
@@ -608,17 +649,34 @@ const SettingsPanel = ({ open, onClose }: SettingsPanelProps) => {
     return null;
   }
 
+  const panelGlass = tone === 'light' ? 'glass-light text-slate-900' : 'glass text-slate-100';
+  const headingColor = tone === 'light' ? 'text-slate-700' : 'text-slate-200';
+  const labelColor = tone === 'light' ? 'text-slate-600/85' : 'text-slate-200/70';
+  const fieldBaseClass =
+    tone === 'light'
+      ? 'rounded-lg border border-slate-300/70 bg-white/70 px-3 py-2 text-slate-800 placeholder:text-slate-500/70 focus:border-slate-400 focus:outline-none'
+      : 'rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-slate-100 placeholder:text-slate-300/60 focus:border-cyan-300/60 focus:outline-none';
+  const inputClass = (extra = '') => `mt-1 ${fieldBaseClass} ${extra}`.trim();
+  const secondaryButton =
+    tone === 'light'
+      ? 'rounded-lg border border-slate-300/70 bg-white/60 px-3 py-1 text-xs text-slate-800 hover:border-slate-400'
+      : 'rounded-lg border border-white/10 bg-white/10 px-3 py-1 text-xs text-slate-100 hover:border-white/20';
+
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/60 px-4 py-8">
-      <div className="relative w-full max-w-4xl rounded-3xl border border-white/10 bg-black/80 p-6 text-slate-100 shadow-2xl">
+      <div className={`relative w-full max-w-4xl glass-surface ${panelGlass} p-6 shadow-2xl`}> 
         <button
           onClick={onClose}
           aria-label="Cerrar ajustes"
-          className="absolute right-4 top-4 rounded-full border border-white/10 bg-black/60 p-2 text-slate-200 hover:text-white"
+          className={`absolute right-4 top-4 rounded-full border p-2 transition ${
+            tone === 'light'
+              ? 'border-slate-200/70 bg-white/50 text-slate-700 hover:border-slate-400'
+              : 'border-white/15 bg-black/50 text-slate-200 hover:text-white'
+          }`}
         >
           <X className="h-4 w-4" />
         </button>
-        <h2 className="text-lg font-semibold uppercase tracking-[0.35em] text-slate-200">Ajustes</h2>
+        <h2 className={`text-lg font-semibold uppercase tracking-[0.35em] ${headingColor}`}>Ajustes</h2>
         <div className="mt-4 flex flex-wrap gap-2">
           {TABS.map((tab) => (
             <button
@@ -626,7 +684,11 @@ const SettingsPanel = ({ open, onClose }: SettingsPanelProps) => {
               onClick={() => setActiveTab(tab.key)}
               className={`flex items-center gap-2 rounded-full border px-4 py-1 text-xs uppercase tracking-[0.2em] transition ${
                 activeTab === tab.key
-                  ? 'border-emerald-400 bg-emerald-500/20 text-emerald-200'
+                  ? tone === 'light'
+                    ? 'border-emerald-500/70 bg-emerald-400/30 text-emerald-700'
+                    : 'border-emerald-400 bg-emerald-500/20 text-emerald-200'
+                  : tone === 'light'
+                  ? 'border-slate-300/60 bg-white/50 text-slate-700 hover:border-slate-400'
                   : 'border-white/10 bg-white/5 text-slate-200 hover:border-white/20'
               }`}
             >
@@ -635,13 +697,17 @@ const SettingsPanel = ({ open, onClose }: SettingsPanelProps) => {
             </button>
           ))}
         </div>
-        <div className="mt-6 max-h-[60vh] overflow-y-auto pr-2 text-sm">
+        <div className={`mt-6 max-h-[60vh] overflow-y-auto pr-2 text-sm ${tone === 'light' ? 'text-slate-700' : 'text-slate-200/90'}`}>
           {activeContent}
         </div>
         {(message || error) && (
-          <div className="mt-4 rounded-lg border border-white/10 bg-black/60 px-4 py-2 text-xs">
-            {message && <p className="text-emerald-300">{message}</p>}
-            {error && <p className="text-rose-300">{error}</p>}
+          <div
+            className={`mt-4 rounded-lg border px-4 py-2 text-xs ${
+              tone === 'light' ? 'border-emerald-200/70 bg-emerald-100/60 text-emerald-700' : 'border-white/10 bg-black/60'
+            }`}
+          >
+            {message && <p className={tone === 'light' ? 'text-emerald-700' : 'text-emerald-300'}>{message}</p>}
+            {error && <p className="text-rose-400">{error}</p>}
           </div>
         )}
       </div>

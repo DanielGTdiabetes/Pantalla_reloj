@@ -1,0 +1,12 @@
+[Unit]
+Description=Pantalla Dash · Programador de fondos futuristas diarios
+
+[Timer]
+OnCalendar=*-*-* 09:00:00
+Persistent=true
+AccuracySec=1min
+RandomizedDelaySec=120
+Unit=pantalla-bg-generate.service
+
+[Install]
+WantedBy=timers.target

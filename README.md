@@ -11,7 +11,12 @@ OpenWeatherMap, gestión de Wi-Fi y TTS offline.
 .
 ├── dash-ui/                    # Frontend React
 ├── backend/                    # Backend FastAPI/Uvicorn
+├── opt/dash/scripts/           # Utilidades (generate_bg_daily.py)
+├── opt/dash/assets/backgrounds/auto/
 ├── system/pantalla-dash-backend.service
+├── system/pantalla-bg-generate.service
+├── system/pantalla-bg-generate.timer
+├── system/logrotate.d/pantalla-bg
 └── docs/DEPLOY_BACKEND.md      # Guía de despliegue completa
 ```
 
@@ -35,7 +40,7 @@ Desde la UI puedes:
 - Configurar API key, ciudad y coordenadas de OpenWeatherMap.
 - Gestionar Wi-Fi (escanear, conectar, olvidar y ver estado).
 - Seleccionar voz local y volumen TTS, lanzar prueba de voz.
-- Ajustar intervalo de rotación de fondos y el tema (sincronizado con backend).
+- Ajustar intervalo, modo y retención de fondos AI junto al tema (sincronizado con backend).
 
 ## Backend (FastAPI)
 
@@ -71,6 +76,40 @@ permisos, systemd y endurecimiento.
    `127.0.0.1:8787` (ya configurado en los servicios del frontend).
 3. Verifica con `curl http://127.0.0.1:8787/api/weather/current` que el backend
    responde antes de lanzar la UI.
+
+### Fondos futuristas generados con IA
+
+- Copia `opt/dash/scripts/generate_bg_daily.py` a `/opt/dash/scripts/` y asegúrate
+  de que sea ejecutable (`chmod +x`).
+- El script requiere `pip install openai requests pillow` y lee `OPENAI_API_KEY`
+  desde `/etc/pantalla-dash/env` (modo `600`).
+- Configura `/etc/pantalla-dash/config.json` con los campos:
+
+  ```json
+  {
+    "background": {
+      "mode": "daily",          // o "weather"
+      "retainDays": 30,
+      "intervalMinutes": 5
+    }
+  }
+  ```
+
+- Registra los servicios systemd incluidos en `system/`:
+
+  ```bash
+  sudo cp system/pantalla-bg-generate.service /etc/systemd/system/
+  sudo cp system/pantalla-bg-generate.timer /etc/systemd/system/
+  sudo cp system/logrotate.d/pantalla-bg /etc/logrotate.d/
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now pantalla-bg-generate.timer
+  ```
+
+- El temporizador ejecuta el script cada día a las 09:00 (hora local) y guarda
+  las imágenes (`.webp`, 1280x720) en `/opt/dash/assets/backgrounds/auto/`,
+  manteniendo las últimas 30 o el número de días configurado. El backend expone
+  la última imagen en `/api/backgrounds/current` y la UI actualiza el fondo con
+  transición suave.
 
 ## Seguridad
 

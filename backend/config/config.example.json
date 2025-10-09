@@ -10,7 +10,9 @@
     "current": "cyberpunkNeon"
   },
   "background": {
-    "intervalMinutes": 5
+    "intervalMinutes": 5,
+    "mode": "daily",
+    "retainDays": 30
   },
   "tts": {
     "voice": "pico-es",
