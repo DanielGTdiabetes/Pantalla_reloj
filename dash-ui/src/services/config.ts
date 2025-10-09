@@ -21,6 +21,7 @@ export interface WeatherConfig {
   lon?: number;
   city?: string;
   units?: 'metric' | 'imperial';
+  apiKey?: string;
 }
 
 export interface ThemeConfig {
@@ -40,12 +41,21 @@ export interface WifiConfig {
   preferredInterface?: string;
 }
 
+export interface CalendarConfig {
+  enabled?: boolean;
+  icsUrl?: string;
+  maxEvents?: number;
+  notifyMinutesBefore?: number;
+  icsConfigured?: boolean;
+}
+
 export interface DashboardConfig {
   weather?: WeatherConfig;
   theme?: ThemeConfig;
   background?: BackgroundConfig;
   tts?: TTSConfig;
   wifi?: WifiConfig;
+  calendar?: CalendarConfig;
 }
 
 export type ConfigUpdate = Partial<DashboardConfig>;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ComponentType } from 'react';
-import { X, Wifi, Settings2, Waves, Palette } from 'lucide-react';
+import { X, Wifi, Settings2, Waves, Palette, Calendar as CalendarIcon } from 'lucide-react';
 import { useDashboardConfig } from '../context/DashboardConfigContext';
 import type { DashboardConfig } from '../services/config';
 import { connectNetwork, fetchWifiStatus, forgetNetwork, scanNetworks, type WifiNetwork, type WifiStatus } from '../services/wifi';
@@ -10,7 +10,7 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type TabKey = 'weather' | 'wifi' | 'tts' | 'appearance';
+type TabKey = 'weather' | 'wifi' | 'tts' | 'appearance' | 'calendar';
 
 interface TabDefinition {
   key: TabKey;
@@ -23,6 +23,7 @@ const TABS: TabDefinition[] = [
   { key: 'wifi', label: 'Wi-Fi', icon: Wifi },
   { key: 'tts', label: 'Voces', icon: Settings2 },
   { key: 'appearance', label: 'Apariencia', icon: Palette },
+  { key: 'calendar', label: 'Calendario', icon: CalendarIcon },
 ];
 
 const SettingsPanel = ({ open, onClose }: SettingsPanelProps) => {
@@ -50,6 +51,14 @@ const SettingsPanel = ({ open, onClose }: SettingsPanelProps) => {
   const [ttsVolume, setTtsVolume] = useState(0.8);
   const [ttsText, setTtsText] = useState('Hola, esto es una prueba');
   const [ttsLoading, setTtsLoading] = useState(false);
+
+  const [calendarForm, setCalendarForm] = useState({
+    enabled: false,
+    icsUrl: '',
+    maxEvents: 3,
+    notifyMinutesBefore: 15,
+    icsConfigured: false,
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -88,6 +97,13 @@ const SettingsPanel = ({ open, onClose }: SettingsPanelProps) => {
     });
     setTtsVoice(cfg.tts?.voice ?? '');
     setTtsVolume(cfg.tts?.volume ?? 0.8);
+    setCalendarForm({
+      enabled: cfg.calendar?.enabled ?? false,
+      icsUrl: '',
+      maxEvents: cfg.calendar?.maxEvents ?? 3,
+      notifyMinutesBefore: cfg.calendar?.notifyMinutesBefore ?? 15,
+      icsConfigured: Boolean(cfg.calendar?.icsConfigured),
+    });
   };
 
   const loadWifiStatus = async () => {
@@ -233,6 +249,35 @@ const SettingsPanel = ({ open, onClose }: SettingsPanelProps) => {
   };
 
   const currentBackgroundInterval = config?.background?.intervalMinutes ?? 5;
+
+  const handleCalendarSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setMessage(null);
+    setError(null);
+    const rawMax = Number.isFinite(calendarForm.maxEvents) ? calendarForm.maxEvents : 3;
+    const rawNotify = Number.isFinite(calendarForm.notifyMinutesBefore)
+      ? calendarForm.notifyMinutesBefore
+      : 15;
+    const maxEvents = Math.min(Math.max(Math.round(rawMax), 1), 10);
+    const notifyMinutes = Math.min(Math.max(Math.round(rawNotify), 0), 360);
+    const payload: DashboardConfig = {
+      calendar: {
+        enabled: calendarForm.enabled,
+        maxEvents,
+        notifyMinutesBefore: notifyMinutes,
+      },
+    };
+    if (calendarForm.icsUrl.trim()) {
+      payload.calendar!.icsUrl = calendarForm.icsUrl.trim();
+    }
+    try {
+      await update(payload);
+      setCalendarForm((prev) => ({ ...prev, icsUrl: '' }));
+      setMessage('Preferencias de calendario guardadas');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo actualizar calendario');
+    }
+  };
 
   const activeContent = useMemo(() => {
     switch (activeTab) {
@@ -461,10 +506,103 @@ const SettingsPanel = ({ open, onClose }: SettingsPanelProps) => {
             </button>
           </form>
         );
+      case 'calendar':
+        return (
+          <form className="space-y-4" onSubmit={handleCalendarSubmit}>
+            <label className="flex items-center justify-between rounded-lg border border-white/10 bg-black/40 px-4 py-2 text-sm">
+              <span className="text-slate-200/70">Mostrar agenda del día</span>
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={calendarForm.enabled}
+                onChange={(event) =>
+                  setCalendarForm((prev) => ({ ...prev, enabled: event.target.checked }))
+                }
+              />
+            </label>
+            <label className="flex flex-col text-sm">
+              <span className="text-slate-200/70">Enlace privado ICS de Google Calendar</span>
+              <input
+                type="password"
+                className="mt-1 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-slate-100"
+                value={calendarForm.icsUrl}
+                onChange={(event) =>
+                  setCalendarForm((prev) => ({ ...prev, icsUrl: event.target.value }))
+                }
+                placeholder="https://calendar.google.com/.../basic.ics"
+              />
+            </label>
+            {calendarForm.icsConfigured && (
+              <p className="text-xs text-emerald-300/80">
+                Ya hay un enlace guardado. Si pegas uno nuevo, reemplazará el actual.
+              </p>
+            )}
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <label className="flex flex-col text-sm">
+                <span className="text-slate-200/70">Eventos a mostrar</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  className="mt-1 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-slate-100"
+                  value={calendarForm.maxEvents}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    setCalendarForm((prev) => ({
+                      ...prev,
+                      maxEvents: Number.isFinite(value) ? value : prev.maxEvents,
+                    }));
+                  }}
+                />
+              </label>
+              <label className="flex flex-col text-sm">
+                <span className="text-slate-200/70">Avisar minutos antes</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={360}
+                  className="mt-1 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-slate-100"
+                  value={calendarForm.notifyMinutesBefore}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    setCalendarForm((prev) => ({
+                      ...prev,
+                      notifyMinutesBefore: Number.isFinite(value) ? value : prev.notifyMinutesBefore,
+                    }));
+                  }}
+                />
+              </label>
+            </div>
+            <p className="text-xs text-slate-300/70">
+              Las alertas se muestran de forma discreta cuando un evento está por comenzar o en curso.
+            </p>
+            <button
+              type="submit"
+              className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 hover:bg-emerald-400"
+            >
+              Guardar calendario
+            </button>
+          </form>
+        );
       default:
         return null;
     }
-  }, [activeTab, weatherForm, networks, selectedNetwork, wifiPassword, wifiStatus, wifiLoading, voices, ttsVoice, ttsVolume, ttsText, ttsLoading, currentBackgroundInterval]);
+  }, [
+    activeTab,
+    weatherForm,
+    networks,
+    selectedNetwork,
+    wifiPassword,
+    wifiStatus,
+    wifiLoading,
+    voices,
+    ttsVoice,
+    ttsVolume,
+    ttsText,
+    ttsLoading,
+    currentBackgroundInterval,
+    calendarForm,
+  ]);
 
   if (!open) {
     return null;

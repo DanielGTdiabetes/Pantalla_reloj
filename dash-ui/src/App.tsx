@@ -9,6 +9,7 @@ import SettingsPanel from './components/SettingsPanel';
 import { DashboardConfigProvider, useDashboardConfig } from './context/DashboardConfigContext';
 import { DEFAULT_BACKGROUND_INTERVAL, DEFAULT_THEME, THEME_STORAGE_KEY, powerSave } from './services/config';
 import { THEME_MAP, type ThemeKey } from './styles/theme';
+import CalendarPeek from './components/CalendarPeek';
 
 function resolveInitialTheme(): ThemeKey {
   if (typeof window === 'undefined') return DEFAULT_THEME;
@@ -79,9 +80,10 @@ const AppContent = () => {
       footer={<ThemeSelector theme={theme} onChange={handleThemeChange} />}
     >
       <BackgroundRotator powerSave={powerSave} intervalMinutes={backgroundInterval} />
-      <div className="relative z-10 flex flex-col gap-10 items-center justify-center h-full px-8">
+      <div className="relative z-10 flex h-full flex-col items-center justify-center gap-8 px-8">
         <Clock />
         <Weather />
+        <CalendarPeek />
       </div>
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </Layout>

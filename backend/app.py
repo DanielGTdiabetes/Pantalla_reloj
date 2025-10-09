@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
+from .services.calendar import CalendarService, CalendarServiceError
 from .services.config import AppConfig, read_config, update_config
 from .services.tts import SpeechError, TTSService, TTSUnavailableError
 from .services.weather import MissingApiKeyError, WeatherService, WeatherServiceError
@@ -56,8 +58,19 @@ class TTSSpeakRequest(BaseModel):
     volume: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
+class CalendarEventResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    title: str
+    start: datetime
+    end: Optional[datetime] = None
+    all_day: bool = Field(default=False, alias="allDay", serialization_alias="allDay")
+    notify: bool = False
+
+
 weather_service = WeatherService()
 tts_service = TTSService()
+calendar_service = CalendarService()
 
 
 def get_config() -> AppConfig:
@@ -66,10 +79,10 @@ def get_config() -> AppConfig:
 
 @app.get("/api/weather/current", response_model=WeatherResponse)
 async def get_current_weather(
+    response: Response,
     lat: Optional[float] = Query(default=None, ge=-90, le=90),
     lon: Optional[float] = Query(default=None, ge=-180, le=180),
     config: AppConfig = Depends(get_config),
-    response: Response,
 ):
     lat = lat if lat is not None else (config.weather.lat if config.weather else None)
     lon = lon if lon is not None else (config.weather.lon if config.weather else None)
@@ -137,6 +150,43 @@ def speak(payload: TTSSpeakRequest):
     return {"status": "ok"}
 
 
+@app.get("/api/calendar/today", response_model=list[CalendarEventResponse])
+async def calendar_today(config: AppConfig = Depends(get_config)):
+    if not config.calendar or not config.calendar.enabled or not config.calendar.icsUrl:
+        return []
+
+    try:
+        events = await calendar_service.events_for_today(config.calendar)
+    except CalendarServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    now = datetime.now().astimezone()
+    notify_window = timedelta(minutes=config.calendar.notifyMinutesBefore or 0)
+    payload: list[CalendarEventResponse] = []
+
+    for event in events:
+        start = event.start.astimezone(now.tzinfo)
+        end = event.end.astimezone(now.tzinfo) if event.end else None
+        notify = False
+        if not event.all_day:
+            if end and start <= now <= end:
+                notify = True
+            elif now <= start <= now + notify_window:
+                notify = True
+
+        payload.append(
+            CalendarEventResponse(
+                title=event.title,
+                start=start,
+                end=end,
+                all_day=event.all_day,
+                notify=notify,
+            )
+        )
+
+    return payload
+
+
 @app.get("/api/config")
 def get_config_endpoint(config: AppConfig = Depends(get_config)):
     return config.public_view()
@@ -155,3 +205,4 @@ def update_config_endpoint(payload: dict = Body(...)):
 @app.on_event("shutdown")
 async def shutdown_event():
     await weather_service.close()
+    await calendar_service.close()
