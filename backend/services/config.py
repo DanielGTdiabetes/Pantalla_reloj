@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, MutableMapping, Optional
 
-from pydantic import BaseModel, Field, ValidationError, validator
+from pydantic import AnyUrl, BaseModel, Field, ValidationError, validator
 
 logger = logging.getLogger(__name__)
 
@@ -50,12 +50,23 @@ class WifiConfig(BaseModel):
     preferredInterface: Optional[str] = None
 
 
+class CalendarConfig(BaseModel):
+    enabled: bool = False
+    icsUrl: Optional[AnyUrl] = Field(default=None, alias="icsUrl")
+    maxEvents: int = Field(default=3, ge=1, le=10, alias="maxEvents")
+    notifyMinutesBefore: int = Field(default=15, ge=0, le=360, alias="notifyMinutesBefore")
+
+    class Config:
+        populate_by_name = True
+
+
 class AppConfig(BaseModel):
     weather: Optional[WeatherConfig] = None
     theme: Optional[ThemeConfig] = None
     background: Optional[BackgroundConfig] = None
     tts: Optional[TTSConfig] = None
     wifi: Optional[WifiConfig] = None
+    calendar: Optional[CalendarConfig] = None
 
     def public_view(self) -> Dict[str, Any]:
         return {
@@ -76,6 +87,20 @@ class AppConfig(BaseModel):
                 for key, value in (self.wifi.dict() if self.wifi else {}).items()
                 if key in {"preferredInterface"}
             },
+            "calendar": (
+                {
+                    **{
+                        key: value
+                        for key, value in (
+                            self.calendar.dict(by_alias=True, exclude={"icsUrl"}) if self.calendar else {}
+                        )
+                        if key in {"enabled", "maxEvents", "notifyMinutesBefore"}
+                    },
+                    "icsConfigured": bool(self.calendar.icsUrl) if self.calendar else False,
+                }
+                if self.calendar
+                else {}
+            ),
         }
 
 
@@ -124,6 +149,7 @@ def update_config(payload: Dict[str, Any]) -> AppConfig:
         "background": {"intervalMinutes"},
         "tts": {"voice", "volume"},
         "wifi": {"preferredInterface"},
+        "calendar": {"enabled", "icsUrl", "maxEvents", "notifyMinutesBefore"},
     }
 
     sanitized: Dict[str, Any] = {}
@@ -139,6 +165,12 @@ def update_config(payload: Dict[str, Any]) -> AppConfig:
     ):
         merged.setdefault("weather", {})
         merged["weather"]["apiKey"] = config.weather.apiKey
+
+    if config.calendar and config.calendar.icsUrl and (
+        "calendar" not in sanitized or "icsUrl" not in sanitized.get("calendar", {})
+    ):
+        merged.setdefault("calendar", {})
+        merged["calendar"]["icsUrl"] = config.calendar.icsUrl
 
     updated = AppConfig.parse_obj(merged)
 
