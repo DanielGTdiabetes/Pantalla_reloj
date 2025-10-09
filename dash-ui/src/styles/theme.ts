@@ -13,6 +13,7 @@ export interface ThemeDefinition {
     className: string;
     overlay?: string;
   };
+  glassTone: 'light' | 'dark';
 }
 
 export const THEMES: ThemeDefinition[] = [
@@ -28,7 +29,8 @@ export const THEMES: ThemeDefinition[] = [
     decorations: {
       className: 'neon-glow',
       overlay: 'rounded-[32px] bg-cyan-400/10 blur-3xl'
-    }
+    },
+    glassTone: 'dark'
   },
   {
     key: 'crtRetro',
@@ -42,7 +44,8 @@ export const THEMES: ThemeDefinition[] = [
     decorations: {
       className: 'crt-overlay',
       overlay: 'rounded-[32px] bg-emerald-400/8 mix-blend-color-dodge'
-    }
+    },
+    glassTone: 'dark'
   },
   {
     key: 'lightMinimal',
@@ -56,7 +59,8 @@ export const THEMES: ThemeDefinition[] = [
     decorations: {
       className: 'shadow-lg shadow-slate-200/40',
       overlay: 'rounded-[32px] bg-white/60 backdrop-blur-lg mix-blend-luminosity'
-    }
+    },
+    glassTone: 'light'
   }
 ];
 

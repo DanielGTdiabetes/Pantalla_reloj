@@ -5,7 +5,12 @@ import { useDashboardConfig } from '../context/DashboardConfigContext';
 
 const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
-const CalendarPeek = () => {
+interface CalendarPeekProps {
+  tone?: 'light' | 'dark';
+  className?: string;
+}
+
+const CalendarPeek = ({ tone = 'dark', className = '' }: CalendarPeekProps) => {
   const { config } = useDashboardConfig();
   const calendarPrefs = config?.calendar;
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -72,32 +77,46 @@ const CalendarPeek = () => {
     return null;
   }
 
+  const accentText = tone === 'light' ? 'text-slate-600/80' : 'text-slate-300/70';
+  const bodyText = tone === 'light' ? 'text-slate-700/85' : 'text-slate-200/80';
+  const mutedText = tone === 'light' ? 'text-slate-500/80' : 'text-slate-300/60';
+
   return (
-    <aside className="w-full max-w-md rounded-3xl border border-white/10 bg-black/40 p-4 text-slate-100 shadow-xl shadow-emerald-500/10 backdrop-blur">
-      <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.3em] text-slate-300/70">
+    <aside
+      className={`glass-surface ${tone === 'light' ? 'glass-light' : 'glass'} w-full max-w-md p-5 text-slate-100 shadow-lg shadow-emerald-500/10 transition ${className}`}
+    >
+      <div className={`flex items-center justify-between text-[11px] uppercase tracking-[0.3em] ${accentText}`}>
         <span className="flex items-center gap-2">
           <Calendar className="h-4 w-4" aria-hidden />
           Agenda
         </span>
         <span>{todayLabel}</span>
       </div>
-      <div className="mt-3 space-y-3 text-sm">
-        {loading && <p className="text-slate-300/60">Sincronizando…</p>}
+      <div className={`mt-3 space-y-3 text-sm ${bodyText}`}>
+        {loading && <p className={mutedText}>Sincronizando…</p>}
         {!loading && error && <p className="text-rose-300">{error}</p>}
         {!loading && !error && events.length === 0 && (
-          <p className="text-slate-300/60">Nada programado para hoy.</p>
+          <p className={mutedText}>Nada programado para hoy.</p>
         )}
         {!loading && !error &&
           events.map((event) => (
             <article
               key={`${event.title}-${event.start}`}
-              className={`flex items-start justify-between rounded-2xl border border-white/5 bg-white/5 px-3 py-2 transition ${
-                event.notify ? 'ring-2 ring-emerald-400/80' : 'ring-1 ring-white/5'
+              className={`flex items-start justify-between rounded-2xl border px-3 py-2 transition ${
+                event.notify
+                  ? 'border-emerald-400/70 bg-emerald-400/10'
+                  : tone === 'light'
+                  ? 'border-slate-200/40 bg-white/40'
+                  : 'border-white/5 bg-white/5'
               }`}
             >
               <div>
-                <h3 className="text-sm font-semibold leading-tight text-slate-100">{event.title}</h3>
-                <p className="text-xs text-slate-300/70">{formatEventTime(event)}</p>
+                <h3 className={`text-sm font-semibold leading-tight ${tone === 'light' ? 'text-slate-800' : 'text-slate-100'}`}>
+                  {event.title}
+                </h3>
+                <p className={`text-xs ${tone === 'light' ? 'text-slate-600/80' : 'text-slate-300/70'}`}>
+                  {formatEventTime(event)}
+                </p>
               </div>
               {event.notify && <Bell className="mt-1 h-4 w-4 flex-shrink-0 text-emerald-300" aria-hidden />}
             </article>

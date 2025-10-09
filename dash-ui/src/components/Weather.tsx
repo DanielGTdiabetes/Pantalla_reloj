@@ -11,7 +11,12 @@ const ICON_MAP = {
   fog: CloudFog,
 } as const;
 
-const Weather = () => {
+interface WeatherProps {
+  tone?: 'light' | 'dark';
+  className?: string;
+}
+
+const Weather = ({ tone = 'dark', className = '' }: WeatherProps) => {
   const [weather, setWeather] = useState<WeatherSnapshot | null>(null);
 
   useEffect(() => {
@@ -29,19 +34,28 @@ const Weather = () => {
 
   const Icon = ICON_MAP[weather.icon] ?? Cloud;
 
+  const toneTextSecondary = tone === 'light' ? 'text-slate-700/80' : 'text-slate-200/80';
+  const toneMeta = tone === 'light' ? 'text-slate-600/70' : 'text-slate-200/70';
+
   return (
     <section
       aria-label="Condiciones del clima"
-      className="rounded-3xl border border-white/10 bg-white/5 px-10 py-6 backdrop-blur-md reduced-motion"
+      className={`glass-surface ${tone === 'light' ? 'glass-light' : 'glass'} w-full max-w-3xl px-10 py-6 transition ${className}`}
     >
-      <div className="flex items-center gap-6 text-left">
-        <div className="rounded-full border border-white/20 bg-black/50 p-4">
-          <Icon className="h-12 w-12 text-white" strokeWidth={1.5} />
+      <div className="flex flex-col gap-6 text-left md:flex-row md:items-center">
+        <div
+          className={`rounded-full border p-4 ${
+            tone === 'light' ? 'border-slate-300/40 bg-white/50' : 'border-white/20 bg-black/50'
+          }`}
+        >
+          <Icon className={`h-12 w-12 ${tone === 'light' ? 'text-slate-900' : 'text-white'}`} strokeWidth={1.5} />
         </div>
         <div>
-          <p className="text-5xl font-semibold leading-none">{weather.temp.toFixed(0)}º</p>
-          <p className="text-sm uppercase tracking-[0.35em] text-slate-200/70">{weather.condition}</p>
-          <p className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-200/80">
+          <p className={`text-5xl font-semibold leading-none ${tone === 'light' ? 'text-slate-900' : 'text-white'}`}>
+            {weather.temp.toFixed(0)}º
+          </p>
+          <p className={`text-sm uppercase tracking-[0.35em] ${toneMeta}`}>{weather.condition}</p>
+          <p className={`mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm ${toneTextSecondary}`}>
             <span>Humedad {weather.humidity}%</span>
             <span>Prec. {weather.precipProb}%</span>
             <span>

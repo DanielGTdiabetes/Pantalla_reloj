@@ -39,6 +39,17 @@ class ThemeConfig(BaseModel):
 
 class BackgroundConfig(BaseModel):
     intervalMinutes: Optional[int] = Field(default=None, ge=1, le=240)
+    mode: Optional[str] = Field(default=None)
+    retainDays: Optional[int] = Field(default=None, ge=1, le=90)
+
+    @validator("mode")
+    def validate_mode(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        normalized = value.lower()
+        if normalized not in {"daily", "weather"}:
+            raise ValueError("mode must be 'daily' or 'weather'")
+        return normalized
 
 
 class TTSConfig(BaseModel):
@@ -146,7 +157,7 @@ def update_config(payload: Dict[str, Any]) -> AppConfig:
     allowed_fields = {
         "weather": {"lat", "lon", "city", "units", "apiKey"},
         "theme": {"current"},
-        "background": {"intervalMinutes"},
+        "background": {"intervalMinutes", "mode", "retainDays"},
         "tts": {"voice", "volume"},
         "wifi": {"preferredInterface"},
         "calendar": {"enabled", "icsUrl", "maxEvents", "notifyMinutesBefore"},
