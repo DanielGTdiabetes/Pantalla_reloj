@@ -5,6 +5,7 @@ import Clock from './components/Clock';
 import Weather from './components/Weather';
 import WeatherBrief from './components/WeatherBrief';
 import CalendarPeek from './components/CalendarPeek';
+import DayStrip from './components/DayStrip';
 import StormOverlay from './components/StormOverlay';
 import SceneEffects from './components/SceneEffects';
 import FpsMeter from './components/FpsMeter';
@@ -60,7 +61,10 @@ const DashboardLayout = () => {
             </div>
             <WeatherBrief />
           </div>
-          <CalendarPeek />
+          <div className="flex h-full flex-col gap-3">
+            <CalendarPeek />
+            <DayStrip />
+          </div>
         </div>
       </div>
       <StormOverlay />

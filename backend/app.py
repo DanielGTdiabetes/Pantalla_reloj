@@ -7,10 +7,10 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date as _date, datetime, timedelta, timezone
 from email.utils import format_datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import httpx
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
@@ -31,6 +31,7 @@ from .services.ai_text import (
 from .services.backgrounds import BackgroundAsset, list_backgrounds, latest_background
 from .services.calendar import CalendarService, CalendarServiceError
 from .services.config import AppConfig, read_config, update_config
+from .services.dayinfo import get_day_info
 from .services.location import set_location
 from .services.metrics import get_latency
 from .services.storms import get_radar_animation, get_radar_url, get_storm_status
@@ -716,6 +717,26 @@ async def calendar_peek(config: AppConfig = Depends(get_config)):
         selected_start = first.start.astimezone(tzinfo)
 
     return CalendarPeekResponse(title=selected_title, start=selected_start)
+
+
+@app.get("/api/day/brief")
+async def day_brief(date: str | None = None) -> Dict[str, Any]:
+    """Devuelve efemérides, santoral y festivos para la fecha indicada."""
+
+    try:
+        if date:
+            year, month, day = map(int, date.split("-"))
+            target = _date(year, month, day)
+        else:
+            target = _date.today()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Fecha inválida") from exc
+
+    try:
+        return get_day_info(target)
+    except Exception as exc:  # pragma: no cover - dependencias externas
+        logger.exception("Error al generar day brief para %s", target)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.get("/api/config")
