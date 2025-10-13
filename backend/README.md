@@ -52,9 +52,25 @@ La mini-web de configuración está en `/setup`. Los endpoints REST principales:
 - `POST /api/location/override` (geolocalización desde el navegador)
 - `GET /api/time/sync_status` para comprobar `systemd-timesyncd`
 
+### Tormentas y Radar (AEMET)
+
+- Endpoints:
+  - `GET /api/storms/status` → `{ storm_prob, near_activity, radar_url, updated_at }`
+  - `GET /api/storms/radar` → proxy de imagen radar (204 si no hay dato)
+- Configuración:
+  - `storm.threshold` (0..1) define el umbral para considerar actividad cercana.
+  - `storm.enableExperimentalLightning` permite activar futuras integraciones de rayos.
+- Caché:
+  - `backend/storage/cache/storms_prob.json` (TTL 15 min)
+  - `backend/storage/cache/storms_radar.json` (TTL 10 min)
+- Notas:
+  - Actualmente no existen datos JSON públicos fiables de rayos; se usa una heurística basada en precipitación y descriptores de tormenta.
+  - Preparado para integrar rayos cuando haya fuente estable (respetando la configuración experimental).
+
 ## Cachés y almacenamiento
 
 - Datos AEMET cacheados en `backend/storage/cache/aemet_*.json` (TTL 30 min).
+- Radar y probabilidad de tormenta en `backend/storage/cache/storms_*.json`.
 - Override de ubicación en `backend/storage/cache/location_override.json`.
 - Fondos automáticos servidos desde `/opt/dash/assets/backgrounds/auto/`.
 - El hotspot genera la contraseña en `/var/lib/pantalla/ap_pass`.
