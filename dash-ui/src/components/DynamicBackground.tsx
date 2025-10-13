@@ -1,29 +1,46 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useDynamicBackground } from '../hooks/useDynamicBackground';
+import { useBackgroundCycle } from '../hooks/useBackgroundCycle';
+import { ENABLE_WEBGL } from '../utils/runtimeFlags';
 
 interface DynamicBackgroundProps {
   refreshMinutes?: number;
 }
 
 const DynamicBackground = ({ refreshMinutes }: DynamicBackgroundProps) => {
-  const background = useDynamicBackground(refreshMinutes);
+  const { current, previous, cycleKey, isCrossfading } = useBackgroundCycle(refreshMinutes);
 
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      <AnimatePresence mode="wait">
-        {background.url && (
+      <AnimatePresence mode="sync">
+        {previous && (
           <motion.div
-            key={background.url}
-            className="absolute inset-0"
-            initial={{ opacity: 0 }}
+            key={`prev-${previous.generatedAt}`}
+            className="absolute inset-0 fade-layer"
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 1.2, ease: 'easeInOut' }}
+            style={{
+              backgroundImage: `url(${previous.url})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              filter: 'saturate(110%) contrast(105%)',
+            }}
+          />
+        )}
+        {current.url && (
+          <motion.div
+            key={`current-${cycleKey}`}
+            className="absolute inset-0 fade-layer"
+            initial={{ opacity: isCrossfading ? 0 : 1 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 1.2, ease: 'easeInOut' }}
             style={{
-              backgroundImage: `url(${background.url})`,
+              backgroundImage: `url(${current.url})`,
               backgroundSize: 'cover',
               backgroundPosition: 'center',
-              filter: 'saturate(110%) contrast(105%)',
+              filter: ENABLE_WEBGL ? 'saturate(118%) contrast(110%)' : 'saturate(110%) contrast(105%)',
             }}
           />
         )}

@@ -10,7 +10,10 @@ const Clock = () => {
   }, []);
 
   return (
-    <section className="flex h-full w-full flex-col justify-center rounded-3xl bg-black/35 p-8 text-shadow-strong backdrop-blur">
+    <section
+      className="flex h-full w-full flex-col justify-center rounded-3xl bg-black/35 p-8 text-shadow-strong backdrop-blur"
+      data-depth-blur="true"
+    >
       <p className="text-[160px] font-display leading-none tracking-tight" aria-live="polite" aria-atomic="true">
         {formatTime(now)}
       </p>

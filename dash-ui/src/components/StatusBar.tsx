@@ -47,7 +47,10 @@ const StatusBar = () => {
     : null;
 
   return (
-    <header className="flex items-center justify-between rounded-3xl bg-black/40 px-6 py-4 text-xs uppercase tracking-[0.35em] text-slate-100/80 backdrop-blur">
+    <header
+      className="flex items-center justify-between rounded-3xl bg-black/40 px-6 py-4 text-xs uppercase tracking-[0.35em] text-slate-100/80 backdrop-blur"
+      data-depth-blur="true"
+    >
       <div className="flex items-center gap-4 text-shadow-soft">
         <span>Dash 8.8"</span>
         <span className="hidden md:inline">·</span>

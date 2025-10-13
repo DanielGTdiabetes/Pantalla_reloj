@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Cloud, CloudFog, CloudLightning, CloudRain, Snowflake, Sun } from 'lucide-react';
 import { fetchWeatherToday, fetchWeatherWeekly, type WeatherDay, type WeatherToday } from '../services/weather';
+import LottieIcon, { type LottieIconName } from './LottieIcon';
+import { ENABLE_LOTTIE } from '../utils/runtimeFlags';
 
-const ICON_MAP = {
+const ICON_COMPONENTS = {
   cloud: Cloud,
   rain: CloudRain,
   sun: Sun,
@@ -10,6 +12,15 @@ const ICON_MAP = {
   storm: CloudLightning,
   fog: CloudFog,
 } as const;
+
+const LOTTIE_MAP: Record<string, LottieIconName> = {
+  sun: 'weather-sun',
+  rain: 'weather-rain',
+  cloud: 'weather-cloud',
+  fog: 'weather-cloud',
+  storm: 'weather-storm',
+  snow: 'weather-rain',
+};
 
 const REFRESH_INTERVAL = 15 * 60 * 1000;
 
@@ -50,13 +61,17 @@ const Weather = () => {
     };
   }, []);
 
-  const Icon = today ? ICON_MAP[today.icon] ?? Cloud : Cloud;
+  const Icon = today ? ICON_COMPONENTS[today.icon] ?? Cloud : Cloud;
+  const lottieName = today ? LOTTIE_MAP[today.icon] ?? 'weather-cloud' : 'weather-cloud';
   const updatedAt = today
     ? new Date(today.updatedAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
     : null;
 
   return (
-    <section className="flex h-full w-full flex-col rounded-3xl bg-slate-900/40 p-8 text-shadow-soft backdrop-blur">
+    <section
+      className="flex h-full w-full flex-col rounded-3xl bg-slate-900/40 p-8 text-shadow-soft backdrop-blur"
+      data-depth-blur="true"
+    >
       <header className="flex items-center justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.4em] text-cyan-200/80">Clima</p>
@@ -71,7 +86,11 @@ const Weather = () => {
         {today ? (
           <div className="flex items-center gap-6">
             <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-cyan-500/15">
-              <Icon className="h-12 w-12 text-cyan-100" strokeWidth={1.3} />
+              {ENABLE_LOTTIE ? (
+                <LottieIcon name={lottieName} className="h-20 w-20" />
+              ) : (
+                <Icon className="h-12 w-12 text-cyan-100" strokeWidth={1.3} />
+              )}
             </div>
             <div>
               <p className="text-7xl font-semibold leading-none">{today.temp.toFixed(0)}º</p>
@@ -90,7 +109,7 @@ const Weather = () => {
           <p className="text-xs uppercase tracking-[0.35em] text-cyan-100/60">Semana</p>
           <div className="mt-2 grid grid-cols-1 gap-2 text-sm text-cyan-50/90">
             {weekly.slice(0, 5).map((day) => {
-              const DayIcon = ICON_MAP[day.icon] ?? Cloud;
+              const DayIcon = ICON_COMPONENTS[day.icon] ?? Cloud;
               return (
                 <div
                   key={day.date}

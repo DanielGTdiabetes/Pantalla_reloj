@@ -65,7 +65,10 @@ const CalendarPeek = () => {
 
   if (!enabled) {
     return (
-      <aside className="flex h-full w-full flex-col justify-center rounded-3xl bg-emerald-500/5 p-6 text-sm text-emerald-100/70 backdrop-blur">
+      <aside
+        className="flex h-full w-full flex-col justify-center rounded-3xl bg-emerald-500/5 p-6 text-sm text-emerald-100/70 backdrop-blur"
+        data-depth-blur="true"
+      >
         <p className="text-xs uppercase tracking-[0.35em] text-emerald-200/80">Agenda</p>
         <p className="mt-3 text-emerald-100/80">Configura tu calendario desde la mini-web de ajustes.</p>
       </aside>
@@ -75,7 +78,10 @@ const CalendarPeek = () => {
   const displayEvents = events.slice(0, 4);
 
   return (
-    <aside className="flex h-full w-full flex-col rounded-3xl bg-emerald-500/10 p-6 text-emerald-50 backdrop-blur">
+    <aside
+      className="flex h-full w-full flex-col rounded-3xl bg-emerald-500/10 p-6 text-emerald-50 backdrop-blur"
+      data-depth-blur="true"
+    >
       <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.35em] text-emerald-200/80">
         <span className="flex items-center gap-2">
           <Calendar className="h-4 w-4" aria-hidden />

@@ -10,6 +10,7 @@ from typing import Any, Dict, Iterable, Optional
 import httpx
 
 from .config import get_api_key, read_config
+from .metrics import record_latency
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,7 @@ def _request_dataset(endpoint: str) -> Any:
     url = f"{BASE_URL}/{endpoint}"
     timeout = httpx.Timeout(20.0, read=20.0)
     with httpx.Client(timeout=timeout) as client:
+        start = time.perf_counter()
         try:
             descriptor = client.get(url, params={"api_key": api_key})
             descriptor.raise_for_status()
@@ -90,6 +92,8 @@ def _request_dataset(endpoint: str) -> Any:
             return data_resp.json()
         except json.JSONDecodeError:
             return data_resp.text
+        finally:
+            record_latency('aemet', time.perf_counter() - start)
 
 
 def _extract_daily(payload: Any) -> Dict[str, Any]:
@@ -211,23 +215,34 @@ def _extract_radar_url(payload: Any) -> Optional[str]:
     return None
 
 
-def _aemet_latest_radar_url() -> Optional[str]:
+def _extract_radar_frames(payload: Any) -> list[str]:
+    frames: list[str] = []
+    if isinstance(payload, dict):
+        for value in payload.values():
+            frames.extend(_extract_radar_frames(value))
+    elif isinstance(payload, list):
+        for entry in payload:
+            frames.extend(_extract_radar_frames(entry))
+    elif isinstance(payload, str):
+        lines = [line.strip() for line in payload.splitlines() if line.strip()]
+        frames.extend([line for line in lines if line.lower().startswith("http")])
+    return frames
+
+
+def _fetch_radar_data() -> tuple[Optional[str], list[str]]:
     try:
         payload = _request_dataset("red/radar/nacional")
     except Exception as exc:  # pylint: disable=broad-except
         logger.warning("No se pudo obtener radar AEMET: %s", exc)
-        return None
+        return None, []
 
+    frames = _extract_radar_frames(payload)
+    if frames:
+        return frames[-1], frames[-12:]
     url = _extract_radar_url(payload)
     if url:
-        return url
-
-    if isinstance(payload, str):
-        lines = [line.strip() for line in payload.splitlines() if line.strip()]
-        for line in reversed(lines):
-            if line.lower().startswith("http"):
-                return line
-    return None
+        return url, [url]
+    return None, []
 
 
 def _ensure_radar_cache() -> Dict[str, Any]:
@@ -236,17 +251,32 @@ def _ensure_radar_cache() -> Dict[str, Any]:
         return cached
     stale = _cache_read("radar", 24 * 3600, allow_stale=True)
 
-    url = _aemet_latest_radar_url()
+    url, frames = _fetch_radar_data()
     if url is None and stale:
         return stale
 
-    result = {"url": url, "updated_at": int(time.time() * 1000)}
+    result = {
+        "url": url,
+        "frames": frames,
+        "updated_at": int(time.time() * 1000),
+    }
     _cache_write("radar", result)
     return result
 
 
 def get_radar_url() -> Optional[str]:
     return _ensure_radar_cache().get("url")
+
+
+def get_radar_animation(limit: int = 8) -> Dict[str, Any]:
+    data = _ensure_radar_cache()
+    frames = data.get("frames") or []
+    if not isinstance(frames, list):
+        frames = []
+    ordered = [frame for frame in frames if isinstance(frame, str)]
+    trimmed = ordered[-limit:] if limit else ordered
+    updated_at = int(data.get("updated_at", int(time.time() * 1000)))
+    return {"frames": trimmed, "updated_at": updated_at}
 
 
 def get_lightning_strikes(bounds: Dict[str, float], since_epoch_ms: int) -> Dict[str, Any]:

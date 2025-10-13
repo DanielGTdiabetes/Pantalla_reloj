@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Tuple
 import httpx
 
 from .config import get_api_key, read_config
+from .metrics import record_latency
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,7 @@ class AemetClient:
 
         client = await self._get_client()
         url = f"{BASE_URL}/{endpoint}"
+        start = time.perf_counter()
         try:
             response = await client.get(url, params={"api_key": api_key})
             response.raise_for_status()
@@ -117,6 +119,8 @@ class AemetClient:
             if cached and allow_stale:
                 return cached[0], True, cached[1]
             raise DatasetUnavailableError("No se pudo descargar datos") from exc
+        finally:
+            record_latency('aemet', time.perf_counter() - start)
 
         payload: Any
         try:

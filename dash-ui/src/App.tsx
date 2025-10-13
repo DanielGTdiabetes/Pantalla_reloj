@@ -5,7 +5,10 @@ import Clock from './components/Clock';
 import Weather from './components/Weather';
 import CalendarPeek from './components/CalendarPeek';
 import StormOverlay from './components/StormOverlay';
+import SceneEffects from './components/SceneEffects';
+import FpsMeter from './components/FpsMeter';
 import { DashboardConfigProvider, useDashboardConfig } from './context/DashboardConfigContext';
+import { StormStatusProvider } from './context/StormStatusContext';
 import { BACKEND_BASE_URL } from './services/config';
 
 const useGeolocationSync = () => {
@@ -45,6 +48,7 @@ const DashboardLayout = () => {
   return (
     <div className="relative flex h-full w-full items-center justify-center overflow-hidden">
       <DynamicBackground refreshMinutes={refreshMinutes} />
+      <SceneEffects />
       <div className="relative z-10 flex h-full w-full max-w-[1920px] flex-col gap-4 px-10 py-6">
         <StatusBar />
         <div className="grid flex-1 grid-cols-[40%_35%_25%] gap-6">
@@ -54,13 +58,16 @@ const DashboardLayout = () => {
         </div>
       </div>
       <StormOverlay />
+      <FpsMeter />
     </div>
   );
 };
 
 const App = () => (
   <DashboardConfigProvider>
-    <DashboardLayout />
+    <StormStatusProvider>
+      <DashboardLayout />
+    </StormStatusProvider>
   </DashboardConfigProvider>
 );
 
