@@ -12,7 +12,7 @@ import time
 from datetime import datetime, timedelta
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import requests
 from openai import OpenAI
@@ -23,7 +23,10 @@ CONFIG_PATH = Path("/etc/pantalla-dash/config.json")
 ENV_PATH = Path("/etc/pantalla-dash/env")
 LOG_PATH = Path("/var/log/pantalla-dash/bg.log")
 LOCK_PATH = Path("/tmp/pantalla-bg-generate.lock")
-WEATHER_ENDPOINT = "http://127.0.0.1:8787/api/weather/current"
+API_BASE_URL = "http://127.0.0.1:8787/api"
+WEATHER_TODAY_ENDPOINT = f"{API_BASE_URL}/weather/today"
+STORMS_STATUS_ENDPOINT = f"{API_BASE_URL}/storms/status"
+CALENDAR_PEEK_ENDPOINT = f"{API_BASE_URL}/calendar/peek"
 
 NEGATIVE_PROMPT = "lowres, blurry, text, watermark, logo, deformed, oversaturated, cartoonish"
 IMAGE_MODEL = "gpt-image-1"
@@ -41,14 +44,16 @@ ROTATING_PROMPTS = {
     6: "retro-futuristic city at sunset, flying cars, holographic ads, cinematic lighting",
 }
 
-WEATHER_PROMPTS = {
-    "clear": "bright utopian city, white architecture, clean daylight, greenery, futuristic serenity",
-    "rain": "cyberpunk city under rain, neon reflections, puddles, volumetric fog, cinematic lighting",
-    "clouds": "futuristic skyline with clouds and soft light, moody atmosphere, aerial view",
-    "storm": "sci-fi industrial city during lightning storm, electric arcs, cinematic contrast",
-    "snow": "futuristic city in snow, reflections, blue tones, serene, cinematic winter",
-    "fog": "dense fog in cyberpunk streets, soft diffused lighting, neon silhouettes",
-    "sunset": "retro-futuristic city at sunset, glowing horizon, flying cars, warm tones",
+DAY_PERIOD_PROMPTS = {
+    "dawn": "futuristic coastal city at dawn, soft pastel sky, gentle morning haze, warm sun glow touching skyscrapers",
+    "day": "bright futuristic metropolis in daylight, polished architecture, floating vehicles, crisp atmosphere",
+    "night": "cyberpunk skyline at night, neon reflections, deep contrast lighting, cinematic ambience",
+}
+
+SIGNAL_DETAILS = {
+    "rain": "wet reflective streets with light rain streaks and floating mist",
+    "storm": "dramatic storm clouds with distant lightning illuminating the skyline",
+    "wind": "dynamic banners and holograms bending in strong wind, particles flowing",
 }
 
 
@@ -138,41 +143,161 @@ def resolve_retain_days(config: Dict[str, Any]) -> int:
     return max(1, min(retain, 90))
 
 
-def fetch_weather_summary() -> Optional[str]:
+def fetch_json(url: str, timeout: float = 8.0) -> Tuple[Optional[Any], int]:
     try:
-        response = requests.get(WEATHER_ENDPOINT, timeout=10)
-        response.raise_for_status()
-        payload = response.json()
+        response = requests.get(url, timeout=timeout)
     except requests.RequestException as exc:
-        logging.warning("No se pudo obtener clima para prompt dinámico: %s", exc)
+        logging.warning("No se pudo contactar %s: %s", url, exc)
+        return None, 0
+    if response.status_code in (204, 404):
+        return None, response.status_code
+    try:
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        logging.warning("Respuesta inesperada de %s: %s", url, exc)
+        return None, response.status_code
+    try:
+        return response.json(), response.status_code
+    except ValueError as exc:
+        logging.warning("JSON inválido en %s: %s", url, exc)
+        return None, response.status_code
+
+
+def collect_weather_context() -> Dict[str, Any]:
+    today, _ = fetch_json(WEATHER_TODAY_ENDPOINT)
+    storm, _ = fetch_json(STORMS_STATUS_ENDPOINT)
+    event, status = fetch_json(CALENDAR_PEEK_ENDPOINT)
+    if status == 404:
+        logging.debug("Calendario no configurado; se omite contexto de agenda")
+    return {"today": today, "storm": storm, "event": event}
+
+
+def determine_day_period(now: datetime) -> str:
+    hour = now.hour
+    if 5 <= hour < 9:
+        return "dawn"
+    if 9 <= hour < 19:
+        return "day"
+    return "night"
+
+
+def detect_signals(today: Optional[Dict[str, Any]], storm: Optional[Dict[str, Any]]) -> Dict[str, bool]:
+    rain_prob = float(today.get("rain_prob", 0)) if isinstance(today, dict) else 0.0
+    condition = str(today.get("condition", "")).lower() if isinstance(today, dict) else ""
+    rain = rain_prob >= 50 or "lluv" in condition or "precip" in condition
+    wind = "viento" in condition or "rach" in condition
+    storm_active = False
+    if isinstance(storm, dict):
+        storm_active = bool(storm.get("near_activity")) or float(storm.get("storm_prob", 0)) >= 0.6
+    if "tormenta" in condition:
+        storm_active = True
+    return {"rain": rain, "wind": wind, "storm": storm_active}
+
+
+def _format_event_time(value: Any) -> Tuple[str, Optional[str]]:
+    if not value:
+        return "", None
+    tz = datetime.now().astimezone().tzinfo
+    try:
+        if isinstance(value, (int, float)):
+            dt = datetime.fromtimestamp(float(value) / 1000.0, tz=tz)
+        elif isinstance(value, str):
+            cleaned = value.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(cleaned)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=tz)
+            dt = dt.astimezone(tz)
+        else:
+            return str(value), None
+        label = dt.strftime("%H:%M")
+        return label, dt.isoformat()
+    except (ValueError, TypeError):
+        return str(value), None
+
+
+def build_contextual_prompt(context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    today = context.get("today") if isinstance(context, dict) else None
+    if not isinstance(today, dict):
         return None
-    icon = str(payload.get("icon") or "").lower()
+
+    storm = context.get("storm") if isinstance(context, dict) else None
+    event = context.get("event") if isinstance(context, dict) else None
+
     now = datetime.now()
-    if icon == "sun":
-        if 18 <= now.hour <= 21:
-            return "sunset"
-        return "clear"
-    mapping = {
-        "cloud": "clouds",
-        "rain": "rain",
-        "storm": "storm",
-        "snow": "snow",
-        "fog": "fog",
-    }
-    return mapping.get(icon)
+    day_period = determine_day_period(now)
+    base_prompt = DAY_PERIOD_PROMPTS.get(day_period)
+    if not base_prompt:
+        base_prompt = ROTATING_PROMPTS.get(now.weekday(), next(iter(ROTATING_PROMPTS.values())))
+
+    signals = detect_signals(today, storm)
+    condition = str(today.get("condition") or "stable weather").lower()
+    temp = today.get("temp")
+    rain_prob = today.get("rain_prob")
+
+    descriptors = [base_prompt]
+    climate_bits = []
+    if isinstance(temp, (int, float)):
+        climate_bits.append(f"ambient temperature around {float(temp):.0f}°C")
+    if rain_prob not in (None, ""):
+        try:
+            prob = float(rain_prob)
+            climate_bits.append(f"rain probability {prob:.0f}%")
+        except (TypeError, ValueError):
+            pass
+    if condition:
+        climate_bits.append(f"conditions described as {condition}")
+    if climate_bits:
+        descriptors.append("Weather context: " + ", ".join(climate_bits) + ".")
+
+    for key, detail in SIGNAL_DETAILS.items():
+        if signals.get(key):
+            descriptors.append(detail + ".")
+
+    event_meta: Optional[Dict[str, Any]] = None
+    if isinstance(event, dict) and event.get("title"):
+        event_title = str(event["title"])
+        label, iso_value = _format_event_time(event.get("start"))
+        if event_title and label:
+            descriptors.append(f"Subtle reference to upcoming event '{event_title}' around {label}.")
+        elif event_title:
+            descriptors.append(f"Hint of upcoming event '{event_title}'.")
+        if event_title:
+            event_meta = {"title": event_title}
+            if iso_value:
+                event_meta["start"] = iso_value
+
+    prompt_body = " ".join(descriptors)
+    final_prompt = (
+        f"{prompt_body} Hyper-detailed cinematic concept art, volumetric lighting, ultra realistic materials. "
+        f"Negative prompt: {NEGATIVE_PROMPT}."
+    )
+
+    primary = "storm" if signals.get("storm") else "rain" if signals.get("rain") else "wind" if signals.get("wind") else str(today.get("icon") or "clear")
+    key_descriptor = f"{day_period}-{primary}".replace(" ", "-")
+    context_meta: Dict[str, Any] = {"dayPeriod": day_period, "storm": bool(signals.get("storm"))}
+    if event_meta:
+        context_meta["event"] = event_meta
+
+    return {"prompt": final_prompt, "mode": "weather", "key": key_descriptor, "context": context_meta}
 
 
-def select_prompt(mode: str, weather_key: Optional[str]) -> Dict[str, str]:
+def build_daily_prompt() -> Dict[str, Any]:
     today = datetime.now()
-    prompt: str
-    used_mode = mode
-    if mode == "weather" and weather_key and weather_key in WEATHER_PROMPTS:
-        prompt = WEATHER_PROMPTS[weather_key]
-    else:
-        used_mode = "daily"
-        prompt = ROTATING_PROMPTS.get(today.weekday(), ROTATING_PROMPTS[0])
-    final_prompt = f"{prompt}. Futuristic ultra-detailed concept art, hyperrealistic materials, cinematic composition. Negative prompt: {NEGATIVE_PROMPT}."
-    return {"prompt": final_prompt, "mode": used_mode, "key": weather_key or today.strftime("day-%w")}
+    base = ROTATING_PROMPTS.get(today.weekday(), next(iter(ROTATING_PROMPTS.values())))
+    final_prompt = (
+        f"{base}. Futuristic ultra-detailed concept art, hyperrealistic materials, cinematic composition. Negative prompt: {NEGATIVE_PROMPT}."
+    )
+    return {"prompt": final_prompt, "mode": "daily", "key": today.strftime("day-%w")}
+
+
+def select_prompt(mode: str) -> Dict[str, Any]:
+    if mode == "weather":
+        context = collect_weather_context()
+        prompt = build_contextual_prompt(context)
+        if prompt:
+            return prompt
+        logging.info("Fallo usando contexto meteorológico; se usará prompt diario")
+    return build_daily_prompt()
 
 
 def generate_image_bytes(client: OpenAI, prompt: str, timeout: int) -> bytes:
@@ -256,13 +381,7 @@ def main() -> int:
         mode = resolve_mode(config)
         retain_days = resolve_retain_days(config)
 
-        weather_key = None
-        if mode == "weather":
-            weather_key = fetch_weather_summary()
-            if not weather_key:
-                logging.info("No se pudo derivar clima, se usará prompt diario")
-
-        prompt_info = select_prompt(mode, weather_key)
+        prompt_info = select_prompt(mode)
         client = OpenAI(api_key=api_key)
         latency_ms = None
         try:
@@ -277,8 +396,10 @@ def main() -> int:
         metadata = {
             "mode": prompt_info["mode"],
             "prompt": prompt_info["prompt"],
-            "weatherKey": weather_key,
+            "weatherKey": prompt_info.get("key"),
         }
+        if prompt_info.get("context"):
+            metadata["context"] = prompt_info["context"]
         if latency_ms is not None:
             metadata["openaiLatencyMs"] = round(latency_ms, 2)
         write_metadata(target, metadata)

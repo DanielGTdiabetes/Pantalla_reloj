@@ -6,7 +6,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,7 @@ class BackgroundAsset:
     etag: Optional[str] = None
     last_modified: Optional[int] = None
     openai_latency_ms: Optional[float] = None
+    context: Optional[Dict[str, Any]] = None
 
 
 def _load_metadata() -> Optional[dict]:
@@ -68,12 +69,14 @@ def list_backgrounds(limit: int = 10) -> List[BackgroundAsset]:
         prompt: Optional[str] = None
         weather_key: Optional[str] = None
         openai_latency: Optional[float] = None
+        context: Optional[Dict[str, Any]] = None
         if metadata and metadata.get("filename") == path.name:
             generated_at = int(metadata.get("generatedAt", generated_at))
             mode = metadata.get("mode")
             prompt = metadata.get("prompt")
             weather_key = metadata.get("weatherKey")
             openai_latency = metadata.get("openaiLatencyMs")
+            context = metadata.get("context") if isinstance(metadata.get("context"), dict) else None
         assets.append(
             BackgroundAsset(
                 filename=path.name,
@@ -85,6 +88,7 @@ def list_backgrounds(limit: int = 10) -> List[BackgroundAsset]:
                 etag=etag,
                 last_modified=last_modified,
                 openai_latency_ms=openai_latency,
+                context=context,
             )
         )
     return assets

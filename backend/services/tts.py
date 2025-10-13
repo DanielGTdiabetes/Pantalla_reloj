@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import json
 import logging
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,9 @@ class SpeechError(Exception):
 class TTSService:
     def __init__(self) -> None:
         self._backends: List[BaseBackend] = []
+        piper = PiperBackend.detect()
+        if piper:
+            self._backends.append(piper)
         pico = PicoBackend.detect()
         if pico:
             self._backends.append(pico)
@@ -83,6 +88,130 @@ class BaseBackend:
         if not voices:
             raise TTSUnavailableError("No voices available")
         return voices[0].id
+
+
+class PiperBackend(BaseBackend):
+    name = "piper"
+
+    def __init__(self, binary: str, model: Path, config: Path, player: str, voice: Voice) -> None:
+        self.binary = binary
+        self.model = model
+        self.config = config
+        self.player = player
+        self._voices = [voice]
+
+    @classmethod
+    def detect(cls) -> Optional["PiperBackend"]:
+        binary = shutil.which("piper")
+        if not binary:
+            return None
+        player = shutil.which("aplay") or shutil.which("paplay") or shutil.which("mpv")
+        if not player:
+            logger.debug("Piper detectado sin reproductor de audio compatible")
+            return None
+        voice_info = cls._discover_voice()
+        if not voice_info:
+            logger.debug("No se encontraron modelos de voz para Piper")
+            return None
+        model_path, config_path, voice = voice_info
+        return cls(binary, model_path, config_path, player, voice)
+
+    @classmethod
+    def _discover_voice(cls) -> Optional[Tuple[Path, Path, Voice]]:
+        env_model = os.getenv("PIPER_MODEL")
+        env_config = os.getenv("PIPER_CONFIG")
+        if env_model and env_config:
+            model_path = Path(env_model)
+            config_path = Path(env_config)
+            if model_path.exists() and config_path.exists():
+                voice = cls._build_voice(model_path, config_path)
+                if voice:
+                    return model_path, config_path, voice
+
+        search_dirs = [
+            Path("/opt/piper"),
+            Path("/opt/pantalla/piper"),
+            Path("/usr/share/piper"),
+            Path("/usr/share/piper-voices"),
+            Path.home() / ".local/share/piper",
+        ]
+        for directory in search_dirs:
+            if not directory.exists():
+                continue
+            for model in directory.rglob("*.onnx*"):
+                config = cls._match_config(model)
+                if not config or not config.exists():
+                    continue
+                voice = cls._build_voice(model, config)
+                if voice:
+                    return model, config, voice
+        return None
+
+    @staticmethod
+    def _match_config(model: Path) -> Optional[Path]:
+        text = str(model)
+        if text.endswith(".onnx"):
+            return Path(text + ".json")
+        if text.endswith(".onnx.gz"):
+            return Path(text[:-3] + ".json")
+        return None
+
+    @staticmethod
+    def _build_voice(model: Path, config: Path) -> Optional[Voice]:
+        try:
+            with config.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            data = {}
+        lang = data.get("language") or data.get("lang") or "es-ES"
+        name = data.get("name") or data.get("description")
+        if not name:
+            espeak_cfg = data.get("espeak") or {}
+            name = espeak_cfg.get("voice") or model.stem
+        return Voice("piper-default", str(name), str(lang), "local")
+
+    def list_voices(self) -> List[Voice]:
+        return self._voices
+
+    def has_voice(self, voice_id: str) -> bool:
+        return any(voice.id == voice_id for voice in self._voices)
+
+    def speak(self, voice_id: str, text: str, volume: float) -> None:
+        if not text:
+            raise SpeechError("Texto requerido")
+        with NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        try:
+            cmd = [
+                self.binary,
+                "--model",
+                str(self.model),
+                "--config",
+                str(self.config),
+                "--output_file",
+                str(tmp_path),
+                "--text",
+                text,
+            ]
+            synth = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            if synth.returncode != 0:
+                logger.error("piper synth falló: %s", synth.stderr.strip())
+                raise SpeechError("No se pudo sintetizar voz con Piper")
+            play_cmd = [self.player, str(tmp_path)]
+            if self.player.endswith("mpv"):
+                play_cmd = [self.player, "--really-quiet", str(tmp_path)]
+            play = subprocess.run(play_cmd, capture_output=True, text=True, check=False)
+            if play.returncode != 0:
+                logger.error("Reproducción Piper fallida: %s", play.stderr.strip())
+                raise SpeechError("No se pudo reproducir el audio Piper")
+        finally:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def default_voice(self) -> str:
+        return self._voices[0].id
 
 
 class PicoBackend(BaseBackend):

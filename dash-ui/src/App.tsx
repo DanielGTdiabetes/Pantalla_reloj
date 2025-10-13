@@ -3,6 +3,7 @@ import DynamicBackground from './components/DynamicBackground';
 import StatusBar from './components/StatusBar';
 import Clock from './components/Clock';
 import Weather from './components/Weather';
+import WeatherBrief from './components/WeatherBrief';
 import CalendarPeek from './components/CalendarPeek';
 import StormOverlay from './components/StormOverlay';
 import SceneEffects from './components/SceneEffects';
@@ -53,7 +54,12 @@ const DashboardLayout = () => {
         <StatusBar />
         <div className="grid flex-1 grid-cols-[40%_35%_25%] gap-6">
           <Clock />
-          <Weather />
+          <div className="flex h-full flex-col gap-3">
+            <div className="flex flex-1">
+              <Weather />
+            </div>
+            <WeatherBrief />
+          </div>
           <CalendarPeek />
         </div>
       </div>
