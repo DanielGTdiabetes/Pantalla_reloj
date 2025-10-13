@@ -1,142 +1,272 @@
+"""Servicio de predicción basado en datos de AEMET."""
 from __future__ import annotations
 
-import json
 import logging
-import time
-from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Sequence, Tuple
 
-import httpx
-
-from .config import read_config
+from .aemet import AemetClient, DatasetUnavailableError, MissingApiKeyError
 
 logger = logging.getLogger(__name__)
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CACHE_PATH = PROJECT_ROOT / "storage" / "cache" / "weather_cache.json"
-OWM_ENDPOINT = "https://api.openweathermap.org/data/2.5/weather"
+UTC = timezone.utc
 
 
-class WeatherService:
-    def __init__(self) -> None:
-        self._client: Optional[httpx.AsyncClient] = None
+@dataclass
+class DailyForecast:
+    date: datetime
+    min_temp: float
+    max_temp: float
+    rain_prob: float
+    storm_prob: float
+    condition: str
+    icon: str
 
-    async def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None:
-            self._client = httpx.AsyncClient(timeout=httpx.Timeout(10.0, read=10.0))
-        return self._client
-
-    async def close(self) -> None:
-        if self._client:
-            await self._client.aclose()
-            self._client = None
-
-    async def fetch_current(self, lat: float, lon: float) -> Tuple[Dict[str, Any], bool]:
-        config = read_config()
-        api_key = config.weather.apiKey if config.weather else None
-        units = config.weather.units if config.weather and config.weather.units else "metric"
-
-        if not api_key:
-            logger.warning("Weather request rejected: OpenWeatherMap API key missing")
-            raise MissingApiKeyError("OPENWEATHER_API_KEY is missing")
-
-        params = {
-            "lat": lat,
-            "lon": lon,
-            "appid": api_key,
-            "units": units,
-            "lang": "es",
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "date": self.date.date().isoformat(),
+            "day": self.date.strftime("%a").title(),
+            "min": round(self.min_temp, 1),
+            "max": round(self.max_temp, 1),
+            "rain_prob": round(self.rain_prob, 1),
+            "storm_prob": round(self.storm_prob, 1),
+            "condition": self.condition,
+            "icon": self.icon,
         }
 
-        client = await self._get_client()
-        try:
-            response = await client.get(OWM_ENDPOINT, params=params)
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            logger.error("OpenWeatherMap request failed: %s", exc)
-            cached = load_cache()
-            if cached:
-                return cached, True
-            raise WeatherServiceError("No weather data available") from exc
 
-        data = response.json()
-        payload = transform_current_payload(data)
-        save_cache(payload)
-        return payload, False
+@dataclass
+class WeatherToday:
+    temperature: float
+    minimum: float
+    maximum: float
+    rain_prob: float
+    condition: str
+    icon: str
+    city: str
+    updated_at: datetime
 
-
-class MissingApiKeyError(Exception):
-    """Raised when no API key is configured."""
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "temp": round(self.temperature, 1),
+            "min": round(self.minimum, 1),
+            "max": round(self.maximum, 1),
+            "rain_prob": round(self.rain_prob, 1),
+            "condition": self.condition,
+            "icon": self.icon,
+            "city": self.city,
+            "updated_at": int(self.updated_at.timestamp() * 1000),
+        }
 
 
 class WeatherServiceError(Exception):
-    """Raised when the weather service cannot return data."""
+    """Error genérico de la capa de clima."""
 
 
-def transform_current_payload(data: Dict[str, Any]) -> Dict[str, Any]:
-    weather = (data.get("weather") or [{}])[0]
-    main = data.get("main") or {}
-    rain = data.get("rain") or {}
-    snow = data.get("snow") or {}
-    clouds = data.get("clouds") or {}
+class WeatherService:
+    """Agregador de datos diarios y horarios."""
 
-    condition = weather.get("description") or ""
-    if condition:
-        condition = condition[:1].upper() + condition[1:]
-    icon = normalize_icon(weather.get("id"))
+    def __init__(self) -> None:
+        self._client = AemetClient()
 
-    precipitation = 0.0
-    for key in ("1h", "3h"):
-        if key in rain:
-            precipitation = max(precipitation, float(rain[key]) * 10)
-        if key in snow:
-            precipitation = max(precipitation, float(snow[key]) * 10)
-    precip_prob = max(precipitation, float(clouds.get("all", 0)))
-    precip_prob = max(0.0, min(100.0, precip_prob))
+    async def close(self) -> None:
+        await self._client.close()
 
-    payload = {
-        "temp": float(main.get("temp", 0.0)),
-        "condition": condition or "Sin datos",
-        "icon": icon,
-        "precipProb": round(precip_prob, 1),
-        "humidity": int(main.get("humidity", 0)),
-        "updatedAt": int(time.time() * 1000),
-    }
-    return payload
+    async def get_forecast(
+        self,
+        municipio_id: str,
+        *,
+        city_hint: str | None = None,
+    ) -> Tuple[WeatherToday, List[DailyForecast], bool]:
+        try:
+            daily_raw, daily_cached, daily_ts = await self._client.fetch_daily(municipio_id)
+            hourly_raw, hourly_cached, hourly_ts = await self._client.fetch_hourly(municipio_id)
+        except MissingApiKeyError as exc:
+            raise MissingApiKeyError(str(exc)) from exc
+        except DatasetUnavailableError as exc:
+            raise WeatherServiceError(str(exc)) from exc
+
+        fetched_at = datetime.fromtimestamp(max(daily_ts, hourly_ts), tz=UTC)
+        daily_section = _extract_prediccion(daily_raw)
+        hourly_section = _extract_prediccion(hourly_raw)
+        if not daily_section:
+            raise WeatherServiceError("Datos de predicción diarios vacíos")
+
+        city_name = city_hint or _extract_city_name(daily_raw) or "Municipio"
+        days = _build_daily_forecast(daily_section)
+        if not days:
+            raise WeatherServiceError("Sin datos diarios procesables")
+
+        current_temp = _estimate_current_temperature(hourly_section or daily_section)
+        today = days[0]
+        summary = WeatherToday(
+            temperature=current_temp if current_temp is not None else (today.max_temp + today.min_temp) / 2,
+            minimum=today.min_temp,
+            maximum=today.max_temp,
+            rain_prob=today.rain_prob,
+            condition=today.condition,
+            icon=today.icon,
+            city=city_name,
+            updated_at=fetched_at,
+        )
+        cached = daily_cached and hourly_cached
+        return summary, days, cached
+
+    async def get_radar_descriptor(self) -> Tuple[Dict[str, Any], bool, datetime]:
+        try:
+            payload, cached, timestamp = await self._client.fetch_radar_summary()
+        except MissingApiKeyError as exc:
+            raise MissingApiKeyError(str(exc)) from exc
+        except DatasetUnavailableError as exc:
+            raise WeatherServiceError(str(exc)) from exc
+        fetched_at = datetime.fromtimestamp(timestamp, tz=UTC)
+        data = payload if isinstance(payload, dict) else {"url": payload}
+        return data, cached, fetched_at
 
 
-def normalize_icon(code: Optional[int]) -> str:
-    if not code:
-        return "cloud"
-    if 200 <= code < 300:
+def _extract_prediccion(raw: Any) -> Sequence[Dict[str, Any]]:
+    if isinstance(raw, list) and raw:
+        entry = raw[0]
+        prediccion = entry.get("prediccion") if isinstance(entry, dict) else None
+        if isinstance(prediccion, dict):
+            dias = prediccion.get("dia")
+            if isinstance(dias, list):
+                return dias
+    return []
+
+
+def _extract_city_name(raw: Any) -> str | None:
+    if isinstance(raw, list) and raw:
+        entry = raw[0]
+        if isinstance(entry, dict):
+            nombre = entry.get("nombre") or entry.get("municipio")
+            if isinstance(nombre, str) and nombre.strip():
+                return nombre.strip()
+    return None
+
+
+def _build_daily_forecast(days_raw: Sequence[Dict[str, Any]]) -> List[DailyForecast]:
+    days: List[DailyForecast] = []
+    for raw in days_raw:
+        date = _parse_date(raw.get("fecha"))
+        temperatura = raw.get("temperatura") or {}
+        min_temp = _safe_float(temperatura.get("minima"))
+        max_temp = _safe_float(temperatura.get("maxima"))
+        rain_prob = _extract_probability(raw.get("probPrecipitacion"))
+        storm_prob = _extract_probability(raw.get("probTormenta"))
+        condition = _extract_condition(raw.get("estadoCielo"))
+        icon = _map_condition_to_icon(condition)
+        if date is None or min_temp is None or max_temp is None:
+            continue
+        days.append(
+            DailyForecast(
+                date=date,
+                min_temp=min_temp,
+                max_temp=max_temp,
+                rain_prob=rain_prob,
+                storm_prob=storm_prob,
+                condition=condition,
+                icon=icon,
+            )
+        )
+    return days
+
+
+def _parse_date(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        if isinstance(value, str):
+            # Algunas respuestas incluyen hora en ISO y otras solo fecha
+            if len(value) == 10:
+                return datetime.fromisoformat(value).replace(tzinfo=UTC)
+            return datetime.fromisoformat(value).astimezone(UTC)
+    except ValueError:
+        logger.debug("No se pudo parsear fecha AEMET: %s", value)
+    return None
+
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_probability(items: Any) -> float:
+    if not isinstance(items, list):
+        return 0.0
+    prob = 0.0
+    for entry in items:
+        if not isinstance(entry, dict):
+            continue
+        value = entry.get("value") or entry.get("valor")
+        num = _safe_float(value)
+        if num is None:
+            continue
+        prob = max(prob, num)
+    return prob
+
+
+def _extract_condition(items: Any) -> str:
+    if isinstance(items, list):
+        for entry in items:
+            if not isinstance(entry, dict):
+                continue
+            descripcion = entry.get("descripcion") or entry.get("value")
+            if isinstance(descripcion, str) and descripcion.strip():
+                text = descripcion.strip().capitalize()
+                return text
+    return "Sin datos"
+
+
+def _map_condition_to_icon(condition: str) -> str:
+    text = condition.lower()
+    if any(token in text for token in ("tormenta", "elect", "ray")):
         return "storm"
-    if 300 <= code < 600:
-        return "rain"
-    if 600 <= code < 700:
+    if any(token in text for token in ("nieve", "helada")):
         return "snow"
-    if 700 <= code < 800:
+    if any(token in text for token in ("lluv", "chub", "aguac", "precip")):
+        return "rain"
+    if any(token in text for token in ("niebla", "bruma", "nubosidad baja")):
         return "fog"
-    if code == 800:
+    if any(token in text for token in ("despejado", "soleado", "poco nuboso")):
         return "sun"
-    if 801 <= code <= 804:
+    if any(token in text for token in ("nub", "nublado", "intervalos")):
         return "cloud"
     return "cloud"
 
 
-def load_cache() -> Optional[Dict[str, Any]]:
-    if not CACHE_PATH.exists():
+def _estimate_current_temperature(days: Sequence[Dict[str, Any]]) -> float | None:
+    if not days:
         return None
-    try:
-        with CACHE_PATH.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, json.JSONDecodeError) as exc:
-        logger.warning("Failed to read weather cache: %s", exc)
+    now = datetime.now(tz=UTC)
+    today_raw = days[0]
+    temp_section = today_raw.get("temperatura") if isinstance(today_raw, dict) else None
+    if not isinstance(temp_section, dict):
         return None
+    datos = temp_section.get("dato")
+    if not isinstance(datos, list):
+        return None
+    closest = None
+    best_delta = timedelta(days=999)
+    for entry in datos:
+        if not isinstance(entry, dict):
+            continue
+        hour_raw = entry.get("hora")
+        value = _safe_float(entry.get("value") or entry.get("valor"))
+        if value is None:
+            continue
+        try:
+            hour = int(hour_raw)
+        except (TypeError, ValueError):
+            continue
+        target = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+        delta = abs(target - now)
+        if delta < best_delta:
+            best_delta = delta
+            closest = value
+    return closest
 
-
-def save_cache(payload: Dict[str, Any]) -> None:
-    CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = CACHE_PATH.with_suffix(".tmp")
-    with tmp_path.open("w", encoding="utf-8") as f:
-        json.dump(payload, f)
-    tmp_path.replace(CACHE_PATH)

@@ -1,33 +1,29 @@
-# Guía de despliegue – Backend Pantalla Futurista
+# Guía de despliegue – Backend Pantalla 8.8"
 
-Esta guía cubre la instalación del backend mínimo (FastAPI + Uvicorn) que expone
-servicios de clima, Wi-Fi y TTS para la Pantalla Futurista. Está pensado para
-Raspberry Pi OS o distribuciones basadas en Debian con NetworkManager.
+Pasos para dejar operativo el backend FastAPI (clima AEMET, Wi-Fi, setup web) en
+una Raspberry Pi o equipo Linux con NetworkManager.
 
-## 1. Preparar usuario de servicio
+## 1. Usuario y permisos
 
-Crear usuario y grupo sin acceso interactivo:
+Crear usuario dedicado sin shell interactivo:
 
 ```bash
 sudo adduser --system --group --home /opt/pantalla dashsvc
 ```
 
-Conceder acceso a NetworkManager. Dos opciones:
+Concede acceso a NetworkManager. Si `nmcli` requiere privilegios, añade al grupo
+`netdev` o crea una entrada `sudoers` restringida:
 
-1. Añadir `dashsvc` al grupo `netdev` (si la política local lo permite):
-   ```bash
-   sudo usermod -a -G netdev dashsvc
-   ```
-2. O crear una política sudo restringida (recomendado cuando `nmcli` requiere privilegios):
-   ```bash
-   echo 'dashsvc ALL=(root) NOPASSWD:/usr/bin/nmcli' | sudo tee /etc/sudoers.d/pantalla-dash
-   sudo chmod 440 /etc/sudoers.d/pantalla-dash
-   ```
-   Luego exporta `NMCLI_BIN="sudo /usr/bin/nmcli"` si cambias el binario (por defecto no es necesario).
+```bash
+sudo usermod -a -G netdev dashsvc
+# o
+echo 'dashsvc ALL=(root) NOPASSWD:/usr/bin/nmcli' | sudo tee /etc/sudoers.d/pantalla-dash
+sudo chmod 440 /etc/sudoers.d/pantalla-dash
+```
 
-## 2. Configuración segura
+## 2. Configuración inicial
 
-Crear directorio y archivo de configuración:
+Instala la plantilla y ajusta permisos:
 
 ```bash
 sudo install -d -m700 /etc/pantalla-dash
@@ -35,16 +31,22 @@ sudo install -m600 backend/config/config.example.json /etc/pantalla-dash/config.
 sudo chown root:root /etc/pantalla-dash/config.json
 ```
 
-Edita `/etc/pantalla-dash/config.json` con:
+Edita `/etc/pantalla-dash/config.json`:
 
-- Latitud/longitud, ciudad y unidades.
-- `weather.apiKey` con tu clave de OpenWeatherMap.
-- `wifi.preferredInterface` si la interfaz no es `wlan0`.
-- Opcionales: tema inicial, intervalo de fondos, voz y volumen TTS.
+- `aemet.apiKey` y `aemet.municipioId` con tus datos.
+- `weather.city` y `weather.units` para la UI.
+- `storm.threshold` para el aviso de tormentas (0-1).
+- `wifi.preferredInterface` si no quieres autoselección.
 
-## 3. Instalar dependencias
+Activa `systemd-timesyncd` para garantizar hora correcta:
 
-Dentro de `/opt/pantalla` (o la ruta elegida):
+```bash
+sudo timedatectl set-ntp true
+```
+
+## 3. Dependencias y código
+
+Prepara el entorno:
 
 ```bash
 sudo mkdir -p /opt/pantalla
@@ -52,66 +54,83 @@ sudo chown dashsvc:dashsvc /opt/pantalla
 cd /opt/pantalla
 sudo -u dashsvc python3 -m venv .venv
 sudo -u dashsvc .venv/bin/pip install -r /ruta/al/repositorio/backend/requirements.txt
-```
-
-Copia el código (o enlaza) al directorio de trabajo:
-
-```bash
 sudo rsync -a /ruta/al/repositorio/backend/ /opt/pantalla/backend/
 ```
 
-Asegúrate de que `backend/storage/cache` y `backend/storage/logs` son propiedad de `dashsvc`:
+Asegura permisos de escritura para cachés:
 
 ```bash
 sudo chown -R dashsvc:dashsvc /opt/pantalla/backend/storage
 ```
 
-## 4. Servicio systemd
+## 4. Servicios `systemd`
 
-Copiar la unidad incluida:
+Copia los archivos de servicio y scripts auxiliares:
 
 ```bash
-sudo cp /ruta/al/repositorio/system/pantalla-dash-backend.service /etc/systemd/system/
+sudo install -Dm755 system/manage-ap.sh /opt/pantalla/manage-ap.sh
+sudo install -Dm755 system/ensure-ap.sh /opt/pantalla/ensure-ap.sh
+sudo install -Dm644 system/pantalla-dash-backend.service /etc/systemd/system/
+sudo install -Dm644 system/pantalla-ap.service /etc/systemd/system/
+sudo install -Dm644 system/pantalla-ap-ensure.service /etc/systemd/system/
+sudo install -Dm644 system/pantalla-bg-generate.service /etc/systemd/system/
+sudo install -Dm644 system/pantalla-bg-generate.timer /etc/systemd/system/
 ```
 
-Editar `WorkingDirectory` si el backend vive en otra ruta.
+Opcional: crea `/etc/pantalla-dash/ap.conf` para fijar interfaz del hotspot:
 
-Recargar y habilitar:
+```
+PREFERRED_IFACE=wlan0
+```
+
+Recarga y habilita servicios:
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now pantalla-dash-backend.service
+sudo systemctl enable --now pantalla-ap-ensure.service
+sudo systemctl enable --now pantalla-bg-generate.timer
 ```
 
-El servicio inicia Uvicorn en `127.0.0.1:8787`. Revisa estado y logs:
+El hotspot quedará disponible como `Pantalla-Setup` cuando no haya Wi-Fi activa.
+La contraseña se guarda en `/var/lib/pantalla/ap_pass`.
+
+Para consultarla:
 
 ```bash
-sudo systemctl status pantalla-dash-backend.service
-journalctl -u pantalla-dash-backend.service -f
+sudo cat /var/lib/pantalla/ap_pass
 ```
 
-## 5. Pruebas rápidas
+## 5. Verificaciones
 
-Ejecutar pruebas desde la propia Pi:
+Comprueba que el backend responde:
 
 ```bash
-curl -s http://127.0.0.1:8787/api/weather/current
-curl -s http://127.0.0.1:8787/api/wifi/status
-curl -s http://127.0.0.1:8787/api/tts/voices
+curl -s http://127.0.0.1:8787/api/weather/today
+curl -s http://127.0.0.1:8787/api/network/status
+curl -s http://127.0.0.1:8787/api/storms/status
 ```
 
-La UI servida en `:8080` debe apuntar a `http://127.0.0.1:8787` (se incluye de
-forma predeterminada en los servicios del frontend).
+Desde un cliente conectado al AP visita `http://10.42.0.1:8787/setup` para usar
+la mini-web de configuración (escaneo Wi-Fi y conexión con password).
 
 ## 6. Troubleshooting
 
-- **Clima 503**: verifica que `weather.apiKey` sea válido y que el dispositivo tenga conectividad saliente.
-- **Wi-Fi sin permisos**: confirma que `dashsvc` puede ejecutar `nmcli` sin contraseña.
-- **TTS silencioso**: instala `pico2wave` (`sudo apt install libttspico-utils`) o `espeak-ng`, y asegúrate de tener un reproductor (`alsa-utils` para `aplay`).
-- **Permisos de config**: deben ser `600` con propietario `root`. El backend rechazará configuraciones inválidas.
+- **Clima 503**: revisa API key de AEMET y conectividad saliente.
+- **AP no arranca**: verifica `nmcli` y la interfaz configurada. Consulta
+  `journalctl -u pantalla-ap.service`.
+- **Hora incorrecta**: comprueba `timedatectl show-timesync` o llama a
+  `/api/time/sync_status`.
+- **Wi-Fi sin permisos**: confirma que `dashsvc` puede ejecutar `nmcli` sin
+  contraseña.
 
-Mantén el backend actualizado sincronizando el repositorio y reiniciando el servicio:
+Para actualizar:
 
 ```bash
+cd /opt/pantalla
+sudo -u dashsvc git pull (si clonado) o vuelve a sincronizar archivos
 sudo systemctl restart pantalla-dash-backend.service
 ```
+
+La UI (frontend) debe apuntar a `http://127.0.0.1:8787` y servirse en kiosk
+modo pantalla completa.

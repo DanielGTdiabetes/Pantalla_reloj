@@ -1,28 +1,12 @@
 import type { ThemeKey } from '../styles/theme';
-import bg1 from '../assets/backgrounds/1.webp';
-import bg2 from '../assets/backgrounds/2.webp';
-import bg3 from '../assets/backgrounds/3.webp';
-import bg4 from '../assets/backgrounds/4.webp';
-import bg5 from '../assets/backgrounds/5.webp';
-import bg6 from '../assets/backgrounds/6.webp';
 
 export const API_BASE_URL = 'http://127.0.0.1:8787/api';
 export const BACKEND_BASE_URL = API_BASE_URL.replace(/\/?api$/, '');
-export const WEATHER_CACHE_KEY = 'weatherCache';
-export const THEME_STORAGE_KEY = 'dashTheme';
 export const CONFIG_CACHE_KEY = 'dashConfig';
-export const DEFAULT_THEME: ThemeKey = 'cyberpunkNeon';
-export const DEFAULT_BACKGROUND_INTERVAL = 5;
-export const powerSave = false;
-
-export const BACKGROUND_SOURCES = [bg1, bg2, bg3, bg4, bg5, bg6] as const;
 
 export interface WeatherConfig {
-  lat?: number;
-  lon?: number;
   city?: string;
   units?: 'metric' | 'imperial';
-  apiKey?: string;
 }
 
 export interface ThemeConfig {
@@ -31,8 +15,6 @@ export interface ThemeConfig {
 
 export interface BackgroundConfig {
   intervalMinutes?: number;
-  mode?: 'daily' | 'weather';
-  retainDays?: number;
 }
 
 export interface TTSConfig {
@@ -52,6 +34,11 @@ export interface CalendarConfig {
   icsConfigured?: boolean;
 }
 
+export interface StormConfig {
+  threshold?: number;
+  enableExperimentalLightning?: boolean;
+}
+
 export interface DashboardConfig {
   weather?: WeatherConfig;
   theme?: ThemeConfig;
@@ -59,6 +46,7 @@ export interface DashboardConfig {
   tts?: TTSConfig;
   wifi?: WifiConfig;
   calendar?: CalendarConfig;
+  storm?: StormConfig;
 }
 
 export type ConfigUpdate = Partial<DashboardConfig>;

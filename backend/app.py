@@ -1,26 +1,35 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Body, Depends, FastAPI, HTTPException, Query, Response
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict, Field
 
-from .services.calendar import CalendarService, CalendarServiceError
+from .services.aemet import MissingApiKeyError
 from .services.backgrounds import BackgroundAsset, list_backgrounds, latest_background
+from .services.calendar import CalendarService, CalendarServiceError
 from .services.config import AppConfig, read_config, update_config
+from .services.location import set_location
+from .services.storms import StormService, StormServiceError, resolve_radar_url
 from .services.tts import SpeechError, TTSService, TTSUnavailableError
-from .services.weather import MissingApiKeyError, WeatherService, WeatherServiceError
+from .services.weather import WeatherService, WeatherServiceError
 from .services.wifi import WifiError, connect as wifi_connect, forget as wifi_forget, scan_networks, status as wifi_status
 
 logger = logging.getLogger("pantalla.backend")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
 
-app = FastAPI(title="Pantalla Dash Backend", version="1.0.0")
+app = FastAPI(title="Pantalla Dash Backend", version="2.0.0")
+
+templates_dir = Path(__file__).resolve().parent / "templates"
+templates = Jinja2Templates(directory=str(templates_dir))
 
 AUTO_BACKGROUND_DIR = Path("/opt/dash/assets/backgrounds/auto")
 AUTO_BACKGROUND_DIR.mkdir(parents=True, exist_ok=True)
@@ -36,17 +45,55 @@ app.add_middleware(
     allow_origins=["http://127.0.0.1:8080", "http://localhost:8080", "http://localhost"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
 )
 
 
-class WeatherResponse(BaseModel):
-    temp: float
+class WeatherTodayResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    temp: float = Field(description="Temperatura aproximada actual")
+    min: float = Field(description="Mínima diaria")
+    max: float = Field(description="Máxima diaria")
+    rain_prob: float = Field(alias="rain_prob")
     condition: str
     icon: str
-    precipProb: float
-    humidity: int
-    updatedAt: int
+    city: str
+    updated_at: int = Field(alias="updated_at")
+    cached: bool = False
+
+
+class WeatherDayEntry(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    day: str
+    date: str
+    min: float
+    max: float
+    rain_prob: float = Field(alias="rain_prob")
+    storm_prob: float = Field(alias="storm_prob")
+    condition: str
+    icon: str
+
+
+class WeatherWeeklyResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    days: list[WeatherDayEntry]
+    updated_at: int
+    cached: bool = False
+
+
+class StormStatusResponse(BaseModel):
+    storm_prob: float
+    near_activity: bool
+    radar_url: Optional[str] = None
+    updated_at: int
+
+
+class RadarResponse(BaseModel):
+    url: Optional[str]
+    updated_at: int
 
 
 class WifiNetwork(BaseModel):
@@ -80,7 +127,22 @@ class CalendarEventResponse(BaseModel):
     notify: bool = False
 
 
+class LocationOverrideRequest(BaseModel):
+    lat: float = Field(ge=-90.0, le=90.0)
+    lon: float = Field(ge=-180.0, le=180.0)
+
+
+class BackgroundAssetResponse(BaseModel):
+    filename: str
+    url: str
+    generated_at: int = Field(alias="generatedAt")
+    mode: Optional[str] = None
+    prompt: Optional[str] = None
+    weather_key: Optional[str] = Field(default=None, alias="weatherKey")
+
+
 weather_service = WeatherService()
+storm_service = StormService(weather_service)
 tts_service = TTSService()
 calendar_service = CalendarService()
 
@@ -89,32 +151,92 @@ def get_config() -> AppConfig:
     return read_config()
 
 
-@app.get("/api/weather/current", response_model=WeatherResponse)
-async def get_current_weather(
-    response: Response,
-    lat: Optional[float] = Query(default=None, ge=-90, le=90),
-    lon: Optional[float] = Query(default=None, ge=-180, le=180),
-    config: AppConfig = Depends(get_config),
-):
-    lat = lat if lat is not None else (config.weather.lat if config.weather else None)
-    lon = lon if lon is not None else (config.weather.lon if config.weather else None)
-    if lat is None or lon is None:
-        raise HTTPException(status_code=400, detail="Latitud y longitud son requeridas")
+@app.get("/setup", response_class=HTMLResponse)
+async def setup_page(request: Request):
     try:
-        payload, cached = await weather_service.fetch_current(lat, lon)
+        network = wifi_status()
+    except WifiError:
+        network = {"connected": False, "ssid": None, "ip": None}
+    return templates.TemplateResponse("setup.html", {"request": request, "network": network})
+
+
+@app.get("/api/weather/today", response_model=WeatherTodayResponse)
+async def weather_today(config: AppConfig = Depends(get_config)):
+    if not config.aemet:
+        raise HTTPException(status_code=503, detail="Servicio AEMET no configurado")
+    city_hint = config.weather.city if config.weather else None
+    try:
+        today, days, cached = await weather_service.get_forecast(config.aemet.municipioId, city_hint=city_hint)
     except MissingApiKeyError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except WeatherServiceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    response.headers["X-Weather-Cache"] = "HIT" if cached else "MISS"
-    return WeatherResponse(**payload)
+    payload = today.as_dict()
+    payload["cached"] = cached
+    if days:
+        payload.setdefault("min", round(days[0].min_temp, 1))
+        payload.setdefault("max", round(days[0].max_temp, 1))
+    return WeatherTodayResponse(**payload)
+
+
+@app.get("/api/weather/weekly", response_model=WeatherWeeklyResponse)
+async def weather_weekly(
+    limit: int = Query(default=7, ge=1, le=7),
+    config: AppConfig = Depends(get_config),
+):
+    if not config.aemet:
+        raise HTTPException(status_code=503, detail="Servicio AEMET no configurado")
+    city_hint = config.weather.city if config.weather else None
+    try:
+        today, days, cached = await weather_service.get_forecast(config.aemet.municipioId, city_hint=city_hint)
+    except MissingApiKeyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except WeatherServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    payload = [WeatherDayEntry(**entry.as_dict()) for entry in days[:limit]]
+    return WeatherWeeklyResponse(days=payload, updated_at=int(today.updated_at.timestamp() * 1000), cached=cached)
+
+
+@app.get("/api/storms/status", response_model=StormStatusResponse)
+async def storms_status():
+    try:
+        payload = await storm_service.status()
+    except StormServiceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return StormStatusResponse(**payload)
+
+
+@app.get("/api/storms/radar", response_model=RadarResponse)
+async def storms_radar():
+    try:
+        descriptor, _, fetched_at = await weather_service.get_radar_descriptor()
+    except MissingApiKeyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except WeatherServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    url = resolve_radar_url(descriptor)
+    return RadarResponse(url=url, updated_at=int(fetched_at.timestamp() * 1000))
+
+
+@app.get("/api/backgrounds/current", response_model=BackgroundAssetResponse)
+def current_background():
+    asset = latest_background()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Sin fondos disponibles")
+    return _serialize_background(asset)
+
+
+@app.get("/api/backgrounds/auto", response_model=list[BackgroundAssetResponse])
+def auto_backgrounds(limit: int = Query(default=6, ge=1, le=30)):
+    assets = list_backgrounds(limit=limit)
+    return [_serialize_background(asset) for asset in assets]
 
 
 @app.get("/api/wifi/scan", response_model=list[WifiNetwork])
 def wifi_scan():
     try:
         networks = scan_networks()
-        return networks
+        return [WifiNetwork(**network) for network in networks]
     except WifiError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -125,7 +247,7 @@ def wifi_connect_endpoint(payload: WifiConnectRequest = Body(...)):
         wifi_connect(payload.ssid, payload.psk)
     except WifiError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"status": "ok"}
+    return {"ok": True, "ssid": payload.ssid}
 
 
 @app.post("/api/wifi/forget")
@@ -134,15 +256,44 @@ def wifi_forget_endpoint(payload: WifiForgetRequest = Body(...)):
         wifi_forget(payload.ssid)
     except WifiError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"status": "ok"}
+    return {"ok": True, "ssid": payload.ssid}
 
 
-@app.get("/api/wifi/status")
-def wifi_status_endpoint():
+@app.get("/api/network/status")
+def network_status():
     try:
         return wifi_status()
     except WifiError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/location/override")
+def location_override(payload: LocationOverrideRequest):
+    set_location(payload.lat, payload.lon)
+    return {"ok": True}
+
+
+@app.get("/api/time/sync_status")
+def time_sync_status():
+    try:
+        result = subprocess.run(
+            ["timedatectl", "show-timesync"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="timedatectl no disponible") from exc
+    if result.returncode != 0:
+        raise HTTPException(status_code=502, detail=result.stderr.strip() or "No disponible")
+    data: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key in {"SystemClockSynchronized", "NTPService", "ServerName", "PollIntervalUSec"}:
+            data[key] = value
+    return data
 
 
 @app.get("/api/tts/voices")
@@ -199,20 +350,6 @@ async def calendar_today(config: AppConfig = Depends(get_config)):
     return payload
 
 
-@app.get("/api/backgrounds/current", response_model=Optional[BackgroundAssetResponse])
-def current_background():
-    asset = latest_background()
-    if not asset:
-        return None
-    return _serialize_background(asset)
-
-
-@app.get("/api/backgrounds/auto", response_model=list[BackgroundAssetResponse])
-def auto_backgrounds(limit: int = Query(default=6, ge=1, le=30)):
-    assets = list_backgrounds(limit=limit)
-    return [_serialize_background(asset) for asset in assets]
-
-
 @app.get("/api/config")
 def get_config_endpoint(config: AppConfig = Depends(get_config)):
     return config.public_view()
@@ -223,7 +360,7 @@ def update_config_endpoint(payload: dict = Body(...)):
     try:
         updated = update_config(payload)
     except Exception as exc:  # pylint: disable=broad-except
-        logger.error("Error updating config: %s", exc)
+        logger.error("Error actualizando config: %s", exc)
         raise HTTPException(status_code=400, detail="Configuración inválida") from exc
     return updated.public_view()
 
@@ -232,13 +369,6 @@ def update_config_endpoint(payload: dict = Body(...)):
 async def shutdown_event():
     await weather_service.close()
     await calendar_service.close()
-class BackgroundAssetResponse(BaseModel):
-    filename: str
-    url: str
-    generatedAt: int
-    mode: Optional[str] = None
-    prompt: Optional[str] = None
-    weatherKey: Optional[str] = Field(default=None, alias="weatherKey")
 
 
 def _serialize_background(asset: BackgroundAsset) -> BackgroundAssetResponse:

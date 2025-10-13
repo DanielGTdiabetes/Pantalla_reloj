@@ -1,10 +1,15 @@
 {
+  "aemet": {
+    "apiKey": "AEMET_API_KEY_PLACEHOLDER",
+    "municipioId": "28079"
+  },
   "weather": {
-    "apiKey": "PON_AQUI_TU_API_KEY_DE_OPENWEATHERMAP",
-    "lat": 40.4168,
-    "lon": -3.7038,
-    "city": "Madrid",
-    "units": "metric"
+    "units": "metric",
+    "city": "Madrid"
+  },
+  "storm": {
+    "threshold": 0.6,
+    "enableExperimentalLightning": false
   },
   "theme": {
     "current": "cyberpunkNeon"

@@ -1,0 +1,11 @@
+[Unit]
+Description=Pantalla Dash access point ensure
+After=network-online.target pantalla-dash-backend.service
+Wants=network-online.target pantalla-ap.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/pantalla/ensure-ap.sh
+
+[Install]
+WantedBy=multi-user.target

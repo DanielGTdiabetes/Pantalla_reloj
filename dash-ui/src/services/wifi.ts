@@ -31,5 +31,5 @@ export async function forgetNetwork(ssid: string): Promise<void> {
 }
 
 export async function fetchWifiStatus(): Promise<WifiStatus> {
-  return await apiRequest<WifiStatus>('/wifi/status');
+  return await apiRequest<WifiStatus>('/network/status');
 }

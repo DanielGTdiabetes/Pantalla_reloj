@@ -10,6 +10,7 @@ from .config import get_wifi_interface, read_config
 logger = logging.getLogger(__name__)
 
 NMCLI_BIN = "nmcli"
+AP_SERVICE = "pantalla-ap.service"
 
 
 class WifiError(Exception):
@@ -66,7 +67,12 @@ def scan_networks() -> List[Dict[str, Optional[str]]]:
         existing = dedup.get(net["ssid"])
         if not existing or (net["signal"] or 0) > (existing["signal"] or 0):
             dedup[net["ssid"]] = net
-    return list(dedup.values())
+    ordered = sorted(
+        dedup.values(),
+        key=lambda item: item.get("signal") if item.get("signal") is not None else -1,
+        reverse=True,
+    )
+    return ordered
 
 
 def connect(ssid: str, psk: Optional[str] = None) -> None:
@@ -84,6 +90,8 @@ def connect(ssid: str, psk: Optional[str] = None) -> None:
         stderr = result.stderr.strip()
         logger.error("Error al conectar a Wi-Fi: %s", stderr)
         raise WifiError(stderr or "No se pudo conectar a la red")
+
+    stop_access_point_service()
 
 
 def forget(ssid: str) -> None:
@@ -138,3 +146,16 @@ def status() -> Dict[str, Optional[str]]:
         "ssid": active_ssid,
         "ip": ip_address,
     }
+
+
+def stop_access_point_service() -> None:
+    result = subprocess.run(
+        ["systemctl", "stop", AP_SERVICE],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        if stderr:
+            logger.debug("No se pudo detener %s: %s", AP_SERVICE, stderr)

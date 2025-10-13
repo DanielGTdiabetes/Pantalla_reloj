@@ -1,99 +1,66 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import Layout from './components/Layout';
+import { useEffect, useRef } from 'react';
+import DynamicBackground from './components/DynamicBackground';
+import StatusBar from './components/StatusBar';
 import Clock from './components/Clock';
 import Weather from './components/Weather';
-import BackgroundRotator from './components/BackgroundRotator';
-import StatusBar from './components/StatusBar';
-import ThemeSelector from './components/ThemeSelector';
-import SettingsPanel from './components/SettingsPanel';
-import { DashboardConfigProvider, useDashboardConfig } from './context/DashboardConfigContext';
-import { DEFAULT_BACKGROUND_INTERVAL, DEFAULT_THEME, THEME_STORAGE_KEY, powerSave } from './services/config';
-import { THEME_MAP, type ThemeKey } from './styles/theme';
 import CalendarPeek from './components/CalendarPeek';
+import StormOverlay from './components/StormOverlay';
+import { DashboardConfigProvider, useDashboardConfig } from './context/DashboardConfigContext';
+import { BACKEND_BASE_URL } from './services/config';
 
-function resolveInitialTheme(): ThemeKey {
-  if (typeof window === 'undefined') return DEFAULT_THEME;
-  try {
-    const stored = window.localStorage.getItem(THEME_STORAGE_KEY) as ThemeKey | null;
-    if (stored && THEME_MAP[stored]) {
-      return stored;
-    }
-  } catch (error) {
-    console.warn('No se pudo recuperar el tema previo', error);
-  }
-  return DEFAULT_THEME;
-}
-
-const AppContent = () => {
-  const { config, update } = useDashboardConfig();
-  const [theme, setTheme] = useState<ThemeKey>(() => resolveInitialTheme());
-  const [settingsOpen, setSettingsOpen] = useState(false);
+const useGeolocationSync = () => {
+  const postedRef = useRef(false);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const root = document.documentElement;
-    const body = document.body;
+    if (postedRef.current) return;
+    if (!('geolocation' in navigator)) return;
 
-    Object.keys(THEME_MAP).forEach((key) => {
-      root.classList.remove(`theme-${key}`);
-    });
-    root.classList.add(`theme-${theme}`);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        if (postedRef.current) return;
+        postedRef.current = true;
+        const { latitude, longitude } = position.coords;
+        void fetch(`${BACKEND_BASE_URL}/api/location/override`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat: latitude, lon: longitude }),
+        }).catch(() => {
+          // La ubicación es opcional; silenciosamente ignoramos errores.
+        });
+      },
+      () => {
+        postedRef.current = true;
+      },
+      { enableHighAccuracy: true, maximumAge: 5 * 60_000, timeout: 5_000 },
+    );
+  }, []);
+};
 
-    if (powerSave) {
-      body.classList.add('power-save');
-    } else {
-      body.classList.remove('power-save');
-    }
+const DashboardLayout = () => {
+  const { config } = useDashboardConfig();
+  useGeolocationSync();
 
-    try {
-      localStorage.setItem(THEME_STORAGE_KEY, theme);
-    } catch (error) {
-      console.warn('No se pudo persistir el tema', error);
-    }
-  }, [theme]);
-
-  useEffect(() => {
-    const configuredTheme = config?.theme?.current;
-    if (configuredTheme && configuredTheme !== theme && THEME_MAP[configuredTheme]) {
-      setTheme(configuredTheme);
-    }
-  }, [config?.theme?.current]);
-
-  const themeDefinition = useMemo(() => THEME_MAP[theme], [theme]);
-  const backgroundInterval = config?.background?.intervalMinutes ?? DEFAULT_BACKGROUND_INTERVAL;
-  const glassTone = themeDefinition.glassTone;
-
-  const handleThemeChange = useCallback(
-    (nextTheme: ThemeKey) => {
-      setTheme(nextTheme);
-      update({ theme: { current: nextTheme } }).catch((error) => {
-        console.warn('No se pudo actualizar el tema en backend', error);
-      });
-    },
-    [update]
-  );
+  const refreshMinutes = config?.background?.intervalMinutes ?? 60;
 
   return (
-    <Layout
-      theme={themeDefinition}
-      powerSave={powerSave}
-      header={<StatusBar themeKey={theme} tone={glassTone} onOpenSettings={() => setSettingsOpen(true)} />}
-      footer={<ThemeSelector theme={theme} tone={glassTone} onChange={handleThemeChange} />}
-    >
-      <BackgroundRotator powerSave={powerSave} intervalMinutes={backgroundInterval} />
-      <div className="relative z-10 flex h-full flex-col items-center justify-center gap-8 px-4 md:px-8">
-        <Clock tone={glassTone} />
-        <Weather tone={glassTone} />
-        <CalendarPeek tone={glassTone} />
+    <div className="relative flex h-full w-full items-center justify-center overflow-hidden">
+      <DynamicBackground refreshMinutes={refreshMinutes} />
+      <div className="relative z-10 flex h-full w-full max-w-[1920px] flex-col gap-4 px-10 py-6">
+        <StatusBar />
+        <div className="grid flex-1 grid-cols-[40%_35%_25%] gap-6">
+          <Clock />
+          <Weather />
+          <CalendarPeek />
+        </div>
       </div>
-      <SettingsPanel open={settingsOpen} tone={glassTone} onClose={() => setSettingsOpen(false)} />
-    </Layout>
+      <StormOverlay />
+    </div>
   );
 };
 
 const App = () => (
   <DashboardConfigProvider>
-    <AppContent />
+    <DashboardLayout />
   </DashboardConfigProvider>
 );
 

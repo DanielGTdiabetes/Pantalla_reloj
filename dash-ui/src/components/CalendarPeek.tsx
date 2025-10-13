@@ -5,12 +5,7 @@ import { useDashboardConfig } from '../context/DashboardConfigContext';
 
 const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
-interface CalendarPeekProps {
-  tone?: 'light' | 'dark';
-  className?: string;
-}
-
-const CalendarPeek = ({ tone = 'dark', className = '' }: CalendarPeekProps) => {
+const CalendarPeek = () => {
   const { config } = useDashboardConfig();
   const calendarPrefs = config?.calendar;
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -37,7 +32,6 @@ const CalendarPeek = ({ tone = 'dark', className = '' }: CalendarPeekProps) => {
         }
       } catch (err) {
         if (!cancelled) {
-          console.warn('No se pudo sincronizar calendario', err);
           setError('Sin respuesta del calendario');
         }
       } finally {
@@ -47,14 +41,10 @@ const CalendarPeek = ({ tone = 'dark', className = '' }: CalendarPeekProps) => {
       }
     };
 
-    load().catch(() => {
-      // handled via error state
-    });
+    void load();
 
     const interval = window.setInterval(() => {
-      load().catch(() => {
-        // handled via error state
-      });
+      void load();
     }, REFRESH_INTERVAL);
 
     return () => {
@@ -70,55 +60,48 @@ const CalendarPeek = ({ tone = 'dark', className = '' }: CalendarPeekProps) => {
         day: 'numeric',
         month: 'short',
       }),
-    []
+    [],
   );
 
   if (!enabled) {
-    return null;
+    return (
+      <aside className="flex h-full w-full flex-col justify-center rounded-3xl bg-emerald-500/5 p-6 text-sm text-emerald-100/70 backdrop-blur">
+        <p className="text-xs uppercase tracking-[0.35em] text-emerald-200/80">Agenda</p>
+        <p className="mt-3 text-emerald-100/80">Configura tu calendario desde la mini-web de ajustes.</p>
+      </aside>
+    );
   }
 
-  const accentText = tone === 'light' ? 'text-slate-600/80' : 'text-slate-300/70';
-  const bodyText = tone === 'light' ? 'text-slate-700/85' : 'text-slate-200/80';
-  const mutedText = tone === 'light' ? 'text-slate-500/80' : 'text-slate-300/60';
+  const displayEvents = events.slice(0, 4);
 
   return (
-    <aside
-      className={`glass-surface ${tone === 'light' ? 'glass-light' : 'glass'} w-full max-w-md p-5 text-slate-100 shadow-lg shadow-emerald-500/10 transition ${className}`}
-    >
-      <div className={`flex items-center justify-between text-[11px] uppercase tracking-[0.3em] ${accentText}`}>
+    <aside className="flex h-full w-full flex-col rounded-3xl bg-emerald-500/10 p-6 text-emerald-50 backdrop-blur">
+      <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.35em] text-emerald-200/80">
         <span className="flex items-center gap-2">
           <Calendar className="h-4 w-4" aria-hidden />
           Agenda
         </span>
         <span>{todayLabel}</span>
       </div>
-      <div className={`mt-3 space-y-3 text-sm ${bodyText}`}>
-        {loading && <p className={mutedText}>Sincronizando…</p>}
-        {!loading && error && <p className="text-rose-300">{error}</p>}
-        {!loading && !error && events.length === 0 && (
-          <p className={mutedText}>Nada programado para hoy.</p>
-        )}
+      <div className="mt-4 flex-1 space-y-3 text-sm text-emerald-50/90">
+        {loading && <p className="text-emerald-100/60">Sincronizando…</p>}
+        {!loading && error && <p className="text-rose-200">{error}</p>}
+        {!loading && !error && displayEvents.length === 0 && <p className="text-emerald-100/60">Nada programado para hoy.</p>}
         {!loading && !error &&
-          events.map((event) => (
+          displayEvents.map((event) => (
             <article
               key={`${event.title}-${event.start}`}
-              className={`flex items-start justify-between rounded-2xl border px-3 py-2 transition ${
+              className={`flex items-start justify-between rounded-2xl border px-3 py-2 ${
                 event.notify
-                  ? 'border-emerald-400/70 bg-emerald-400/10'
-                  : tone === 'light'
-                  ? 'border-slate-200/40 bg-white/40'
-                  : 'border-white/5 bg-white/5'
+                  ? 'border-emerald-300/70 bg-emerald-300/15'
+                  : 'border-emerald-300/30 bg-emerald-300/10'
               }`}
             >
               <div>
-                <h3 className={`text-sm font-semibold leading-tight ${tone === 'light' ? 'text-slate-800' : 'text-slate-100'}`}>
-                  {event.title}
-                </h3>
-                <p className={`text-xs ${tone === 'light' ? 'text-slate-600/80' : 'text-slate-300/70'}`}>
-                  {formatEventTime(event)}
-                </p>
+                <h3 className="text-sm font-semibold leading-tight text-emerald-50">{event.title}</h3>
+                <p className="text-xs text-emerald-100/70">{formatEventTime(event)}</p>
               </div>
-              {event.notify && <Bell className="mt-1 h-4 w-4 flex-shrink-0 text-emerald-300" aria-hidden />}
+              {event.notify && <Bell className="mt-1 h-4 w-4 flex-shrink-0 text-emerald-100" aria-hidden />}
             </article>
           ))}
       </div>

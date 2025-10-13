@@ -1,0 +1,14 @@
+[Unit]
+Description=Pantalla Dash access point
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=-/etc/pantalla-dash/ap.conf
+ExecStart=/bin/bash /opt/pantalla/manage-ap.sh start
+ExecStop=/bin/bash /opt/pantalla/manage-ap.sh stop
+
+[Install]
+WantedBy=multi-user.target
