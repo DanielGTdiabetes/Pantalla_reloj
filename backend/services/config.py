@@ -17,20 +17,37 @@ EXAMPLE_CONFIG_PATH = PROJECT_ROOT / "config" / "config.example.json"
 CONFIG_PATH = Path(os.environ.get("PANTALLA_CONFIG_PATH", DEFAULT_CONFIG_PATH))
 
 
-class WeatherConfig(BaseModel):
+class AemetConfig(BaseModel):
     apiKey: Optional[str] = Field(default=None, alias="apiKey")
-    lat: float
-    lon: float
+    municipioId: str = Field(default="28079", alias="municipioId", min_length=1)
+
+    class Config:
+        allow_population_by_field_name = True
+        extra = "ignore"
+
+
+class WeatherConfig(BaseModel):
+    units: str = Field(default="metric")
     city: Optional[str] = None
-    units: Optional[str] = Field(default="metric")
 
     @validator("units")
-    def validate_units(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return value
-        if value not in {"metric", "imperial"}:
+    def validate_units(cls, value: str) -> str:
+        normalized = value.lower()
+        if normalized not in {"metric", "imperial"}:
             raise ValueError("units must be 'metric' or 'imperial'")
-        return value
+        return normalized
+
+    class Config:
+        allow_population_by_field_name = True
+        extra = "ignore"
+
+
+class StormConfig(BaseModel):
+    threshold: float = Field(default=0.6, ge=0.0, le=1.0)
+    enableExperimentalLightning: bool = Field(default=False, alias="enableExperimentalLightning")
+
+    class Config:
+        allow_population_by_field_name = True
 
 
 class ThemeConfig(BaseModel):
@@ -72,7 +89,9 @@ class CalendarConfig(BaseModel):
 
 
 class AppConfig(BaseModel):
+    aemet: Optional[AemetConfig] = None
     weather: Optional[WeatherConfig] = None
+    storm: Optional[StormConfig] = None
     theme: Optional[ThemeConfig] = None
     background: Optional[BackgroundConfig] = None
     tts: Optional[TTSConfig] = None
@@ -84,7 +103,12 @@ class AppConfig(BaseModel):
             "weather": {
                 key: value
                 for key, value in (self.weather.dict(by_alias=True) if self.weather else {}).items()
-                if key in {"lat", "lon", "city", "units"}
+                if key in {"city", "units"}
+            },
+            "storm": {
+                key: value
+                for key, value in (self.storm.dict(by_alias=True) if self.storm else {}).items()
+                if key in {"threshold", "enableExperimentalLightning"}
             },
             "theme": (self.theme.dict() if self.theme else {}),
             "background": (self.background.dict() if self.background else {}),
@@ -155,7 +179,9 @@ def update_config(payload: Dict[str, Any]) -> AppConfig:
     config = read_config()
     data = config.dict(by_alias=True, exclude_none=True)
     allowed_fields = {
-        "weather": {"lat", "lon", "city", "units", "apiKey"},
+        "aemet": {"apiKey", "municipioId"},
+        "weather": {"city", "units"},
+        "storm": {"threshold", "enableExperimentalLightning"},
         "theme": {"current"},
         "background": {"intervalMinutes", "mode", "retainDays"},
         "tts": {"voice", "volume"},
@@ -171,11 +197,11 @@ def update_config(payload: Dict[str, Any]) -> AppConfig:
     merged = _deep_merge(data, sanitized)
 
     # Ensure sensitive fields are preserved if missing from payload
-    if config.weather and config.weather.apiKey and (
-        "weather" not in sanitized or "apiKey" not in sanitized.get("weather", {})
+    if config.aemet and config.aemet.apiKey and (
+        "aemet" not in sanitized or "apiKey" not in sanitized.get("aemet", {})
     ):
-        merged.setdefault("weather", {})
-        merged["weather"]["apiKey"] = config.weather.apiKey
+        merged.setdefault("aemet", {})
+        merged["aemet"]["apiKey"] = config.aemet.apiKey
 
     if config.calendar and config.calendar.icsUrl and (
         "calendar" not in sanitized or "icsUrl" not in sanitized.get("calendar", {})
@@ -200,7 +226,7 @@ def update_config(payload: Dict[str, Any]) -> AppConfig:
 
 def get_api_key() -> Optional[str]:
     config = read_config()
-    return config.weather.apiKey if config.weather else None
+    return config.aemet.apiKey if config.aemet else None
 
 
 def get_wifi_interface(config: Optional[AppConfig] = None) -> Optional[str]:

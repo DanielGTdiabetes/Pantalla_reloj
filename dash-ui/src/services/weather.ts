@@ -1,115 +1,90 @@
-import { apiRequest, WEATHER_CACHE_KEY } from './config';
+import { apiRequest } from './config';
 
 export type WeatherIcon = 'cloud' | 'rain' | 'sun' | 'snow' | 'storm' | 'fog';
 
-export interface WeatherSnapshot {
+export interface WeatherToday {
   temp: number;
+  min: number;
+  max: number;
+  rainProb: number;
   condition: string;
   icon: WeatherIcon;
-  precipProb: number;
-  humidity: number;
+  city: string;
   updatedAt: number;
-  stale?: boolean;
-  message?: string;
+  cached?: boolean;
 }
 
-interface ListenerState {
-  timer?: number;
-  backoffMs: number;
-  destroyed: boolean;
+export interface WeatherDay {
+  day: string;
+  date: string;
+  min: number;
+  max: number;
+  rainProb: number;
+  stormProb: number;
+  condition: string;
+  icon: WeatherIcon;
 }
 
-const listeners = new Map<(data: WeatherSnapshot | null) => void, ListenerState>();
-const DEFAULT_INTERVAL = 12 * 60_000;
-const MIN_BACKOFF = 60_000;
-const MAX_BACKOFF = 15 * 60_000;
-
-function persist(snapshot: WeatherSnapshot) {
-  try {
-    localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify(snapshot));
-  } catch (error) {
-    console.warn('No se pudo persistir el clima', error);
-  }
+interface WeatherTodayResponse {
+  temp: number;
+  min: number;
+  max: number;
+  rain_prob: number;
+  condition: string;
+  icon: WeatherIcon;
+  city: string;
+  updated_at: number;
+  cached?: boolean;
 }
 
-export function loadCachedWeather(): WeatherSnapshot | null {
-  try {
-    const raw = localStorage.getItem(WEATHER_CACHE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as WeatherSnapshot;
-  } catch (error) {
-    console.warn('No se pudo leer cache de clima', error);
-    return null;
-  }
+interface WeatherWeeklyResponse {
+  days: Array<{
+    day: string;
+    date: string;
+    min: number;
+    max: number;
+    rain_prob: number;
+    storm_prob: number;
+    condition: string;
+    icon: WeatherIcon;
+  }>;
+  updated_at: number;
+  cached?: boolean;
 }
 
-async function fetchWeather(): Promise<WeatherSnapshot> {
-  return await apiRequest<WeatherSnapshot>('/weather/current');
-}
-
-function schedule(listener: (data: WeatherSnapshot | null) => void, delay: number) {
-  const state = listeners.get(listener);
-  if (!state) return;
-  if (state.timer) {
-    window.clearTimeout(state.timer);
-  }
-  state.timer = window.setTimeout(() => {
-    tick(listener);
-  }, delay);
-}
-
-async function tick(listener: (data: WeatherSnapshot | null) => void) {
-  const state = listeners.get(listener);
-  if (!state || state.destroyed) return;
-  try {
-    const snapshot = await fetchWeather();
-    persist(snapshot);
-    state.backoffMs = MIN_BACKOFF;
-    listener({ ...snapshot, stale: false, message: undefined });
-    schedule(listener, DEFAULT_INTERVAL);
-  } catch (error) {
-    const cached = loadCachedWeather();
-    const message = error instanceof Error ? error.message : 'Error desconocido';
-    if (cached) {
-      listener({ ...cached, stale: true, message });
-    } else {
-      listener({
-        temp: 0,
-        condition: 'Sin datos',
-        icon: 'cloud',
-        precipProb: 0,
-        humidity: 0,
-        updatedAt: Date.now(),
-        stale: true,
-        message,
-      });
-    }
-    schedule(listener, state.backoffMs);
-    state.backoffMs = Math.min(state.backoffMs * 2, MAX_BACKOFF);
-  }
-}
-
-export function subscribeWeather(listener: (data: WeatherSnapshot | null) => void): () => void {
-  const cached = loadCachedWeather();
-  if (cached) {
-    listener({ ...cached, stale: true });
-  } else {
-    listener(null);
-  }
-  listeners.set(listener, { backoffMs: MIN_BACKOFF, destroyed: false });
-  tick(listener);
-  return () => {
-    const state = listeners.get(listener);
-    if (state?.timer) {
-      window.clearTimeout(state.timer);
-    }
-    if (state) {
-      state.destroyed = true;
-    }
-    listeners.delete(listener);
+function normalizeToday(payload: WeatherTodayResponse): WeatherToday {
+  return {
+    temp: payload.temp,
+    min: payload.min,
+    max: payload.max,
+    rainProb: payload.rain_prob,
+    condition: payload.condition,
+    icon: payload.icon,
+    city: payload.city,
+    updatedAt: payload.updated_at,
+    cached: payload.cached,
   };
 }
 
-export function getWeatherSnapshot(): WeatherSnapshot | null {
-  return loadCachedWeather();
+function normalizeWeekly(payload: WeatherWeeklyResponse): WeatherDay[] {
+  return payload.days.map((day) => ({
+    day: day.day,
+    date: day.date,
+    min: day.min,
+    max: day.max,
+    rainProb: day.rain_prob,
+    stormProb: day.storm_prob,
+    condition: day.condition,
+    icon: day.icon,
+  }));
+}
+
+export async function fetchWeatherToday(): Promise<WeatherToday> {
+  const data = await apiRequest<WeatherTodayResponse>('/weather/today');
+  return normalizeToday(data);
+}
+
+export async function fetchWeatherWeekly(): Promise<WeatherDay[]> {
+  const data = await apiRequest<WeatherWeeklyResponse>('/weather/weekly');
+  return normalizeWeekly(data);
 }

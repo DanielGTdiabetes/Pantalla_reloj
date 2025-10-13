@@ -6,8 +6,24 @@
   color-scheme: dark;
 }
 
+html,
+body,
+#root {
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
 body {
-  @apply bg-black text-white font-sans min-h-screen antialiased;
+  @apply bg-black text-white font-sans h-screen w-screen overflow-hidden antialiased;
+}
+
+.text-shadow-soft {
+  text-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+
+.text-shadow-strong {
+  text-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
 }
 
 .theme-cyberpunkNeon {
