@@ -6,7 +6,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
+import httpx
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,7 +19,7 @@ from .services.backgrounds import BackgroundAsset, list_backgrounds, latest_back
 from .services.calendar import CalendarService, CalendarServiceError
 from .services.config import AppConfig, read_config, update_config
 from .services.location import set_location
-from .services.storms import StormService, StormServiceError, resolve_radar_url
+from .services.storms import get_radar_url, get_storm_status
 from .services.tts import SpeechError, TTSService, TTSUnavailableError
 from .services.weather import WeatherService, WeatherServiceError
 from .services.wifi import WifiError, connect as wifi_connect, forget as wifi_forget, scan_networks, status as wifi_status
@@ -91,11 +92,6 @@ class StormStatusResponse(BaseModel):
     updated_at: int
 
 
-class RadarResponse(BaseModel):
-    url: Optional[str]
-    updated_at: int
-
-
 class WifiNetwork(BaseModel):
     ssid: str
     signal: Optional[int] = None
@@ -142,7 +138,6 @@ class BackgroundAssetResponse(BaseModel):
 
 
 weather_service = WeatherService()
-storm_service = StormService(weather_service)
 tts_service = TTSService()
 calendar_service = CalendarService()
 
@@ -200,22 +195,25 @@ async def weather_weekly(
 @app.get("/api/storms/status", response_model=StormStatusResponse)
 async def storms_status():
     try:
-        payload = await storm_service.status()
-    except StormServiceError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        payload = get_storm_status()
+    except Exception as exc:  # pylint: disable=broad-except
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     return StormStatusResponse(**payload)
 
 
-@app.get("/api/storms/radar", response_model=RadarResponse)
+@app.get("/api/storms/radar")
 async def storms_radar():
+    url = get_radar_url()
+    if not url:
+        return Response(status_code=204)
     try:
-        descriptor, _, fetched_at = await weather_service.get_radar_descriptor()
-    except MissingApiKeyError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except WeatherServiceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    url = resolve_radar_url(descriptor)
-    return RadarResponse(url=url, updated_at=int(fetched_at.timestamp() * 1000))
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+    except httpx.HTTPError:
+        return Response(status_code=204)
+    media_type = response.headers.get("content-type", "image/png")
+    return Response(content=response.content, media_type=media_type)
 
 
 @app.get("/api/backgrounds/current", response_model=BackgroundAssetResponse)
