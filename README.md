@@ -33,6 +33,17 @@ La UI espera que el backend esté disponible en `http://127.0.0.1:8787/api`.
 Se almacena en `localStorage` el último clima y la configuración básica para
 operar offline si el backend no responde.
 
+### Motor visual y flags de rendimiento
+
+- El hook `useBackgroundCycle` mantiene tres ranuras (anterior, actual, siguiente)
+  con precarga inteligente y transición *crossfade* en ≤16 ms por frame.
+- `SceneEffects` habilita un *overlay* WebGL opcional con grano sutil y aplica
+  desenfoque de profundidad simulado sobre los widgets cuando `VITE_ENABLE_WEBGL=1`.
+- Los iconos meteorológicos usan `lottie-web`; activa o desactiva la animación con
+  `VITE_ENABLE_LOTTIE=1|0`.
+- `VITE_ENABLE_FPSMETER=1` muestra un contador de FPS para depurar rendimiento
+  (oculto en producción).
+
 ### Panel de ajustes
 
 Desde la UI puedes:
@@ -64,6 +75,14 @@ uvicorn backend.app:app --reload --host 127.0.0.1 --port 8787
 
 Endpoints principales (`/api/*`): clima, Wi-Fi, TTS y gestión de configuración.
 La cache de clima se guarda en `backend/storage/cache/weather_cache.json`.
+
+Endpoints adicionales destacados:
+
+- `GET /api/backgrounds/current` devuelve la imagen más reciente junto a cabeceras
+  `ETag`/`Last-Modified` y dispara generación on-demand si se permite.
+- `GET /api/health/full` expone métricas de CPU, memoria, disco y latencias de AEMET/OpenAI.
+- `GET /api/storms/radar/animation` entrega la lista de frames recientes del radar
+  para precargar y animar en la UI.
 
 Consulta `backend/README.md` y `docs/DEPLOY_BACKEND.md` para detalles de
 permisos, systemd y endurecimiento.
@@ -105,11 +124,21 @@ permisos, systemd y endurecimiento.
   sudo systemctl enable --now pantalla-bg-generate.timer
   ```
 
-- El temporizador ejecuta el script cada día a las 09:00 (hora local) y guarda
+- El temporizador ejecuta el script cada día a las 07:00, 12:00 y 19:00 (hora local) y guarda
   las imágenes (`.webp`, 1280x720) en `/opt/dash/assets/backgrounds/auto/`,
   manteniendo las últimas 30 o el número de días configurado. El backend expone
   la última imagen en `/api/backgrounds/current` y la UI actualiza el fondo con
   transición suave.
+
+### Ajustes de sistema y red
+
+- `system/pantalla-dash-backend.service` inicia Uvicorn con 2 *workers* para
+  servir las nuevas rutas de salud y radar sin bloquear solicitudes.
+- La plantilla Nginx `system/nginx/pantalla-dash.conf` habilita `http2`,
+  `sendfile` y compresión `gzip`, además de exponer `/opt/dash/assets/` como
+  `/assets/`.
+- `system/pantalla-kiosk.service` lanza Chromium en modo kiosko con aceleración
+  VA-API, rasterización fuera de proceso y *zero-copy* para maximizar FPS.
 
 ## Seguridad
 

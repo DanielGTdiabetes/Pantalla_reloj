@@ -24,6 +24,9 @@ class BackgroundAsset:
     mode: Optional[str] = None
     prompt: Optional[str] = None
     weather_key: Optional[str] = None
+    etag: Optional[str] = None
+    last_modified: Optional[int] = None
+    openai_latency_ms: Optional[float] = None
 
 
 def _load_metadata() -> Optional[dict]:
@@ -59,14 +62,18 @@ def list_backgrounds(limit: int = 10) -> List[BackgroundAsset]:
     for path in _iter_background_files(limit=limit):
         stat = path.stat()
         generated_at = int(stat.st_mtime)
+        etag = f"W/\"{stat.st_mtime_ns:x}\""
+        last_modified = int(stat.st_mtime)
         mode: Optional[str] = None
         prompt: Optional[str] = None
         weather_key: Optional[str] = None
+        openai_latency: Optional[float] = None
         if metadata and metadata.get("filename") == path.name:
             generated_at = int(metadata.get("generatedAt", generated_at))
             mode = metadata.get("mode")
             prompt = metadata.get("prompt")
             weather_key = metadata.get("weatherKey")
+            openai_latency = metadata.get("openaiLatencyMs")
         assets.append(
             BackgroundAsset(
                 filename=path.name,
@@ -75,6 +82,9 @@ def list_backgrounds(limit: int = 10) -> List[BackgroundAsset]:
                 mode=mode,
                 prompt=prompt,
                 weather_key=weather_key,
+                etag=etag,
+                last_modified=last_modified,
+                openai_latency_ms=openai_latency,
             )
         )
     return assets

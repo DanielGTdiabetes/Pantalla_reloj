@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import sys
+import time
 from datetime import datetime, timedelta
 from io import BytesIO
 from pathlib import Path
@@ -263,14 +264,24 @@ def main() -> int:
 
         prompt_info = select_prompt(mode, weather_key)
         client = OpenAI(api_key=api_key)
+        latency_ms = None
         try:
+            started = time.perf_counter()
             image_bytes = generate_image_bytes(client, prompt_info["prompt"], TIMEOUT_SECONDS)
+            latency_ms = (time.perf_counter() - started) * 1000.0
         except Exception as exc:  # pylint: disable=broad-except
             logging.exception("Fallo al generar imagen: %s", exc)
             return 2
 
         target = persist_image(image_bytes, prompt_info["mode"], prompt_info.get("key", ""))
-        write_metadata(target, {"mode": prompt_info["mode"], "prompt": prompt_info["prompt"], "weatherKey": weather_key})
+        metadata = {
+            "mode": prompt_info["mode"],
+            "prompt": prompt_info["prompt"],
+            "weatherKey": weather_key,
+        }
+        if latency_ms is not None:
+            metadata["openaiLatencyMs"] = round(latency_ms, 2)
+        write_metadata(target, metadata)
         cleanup_old_files(retain_days)
         logging.info("Generación completada correctamente")
         return 0

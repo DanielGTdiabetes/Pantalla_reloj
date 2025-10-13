@@ -1,25 +1,31 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
-from datetime import datetime, timedelta
+import sys
+import time
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from pathlib import Path
 from typing import Optional
 
 import httpx
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict, Field
+import shutil
 
 from .services.aemet import MissingApiKeyError
 from .services.backgrounds import BackgroundAsset, list_backgrounds, latest_background
 from .services.calendar import CalendarService, CalendarServiceError
 from .services.config import AppConfig, read_config, update_config
 from .services.location import set_location
-from .services.storms import get_radar_url, get_storm_status
+from .services.metrics import get_latency
+from .services.storms import get_radar_animation, get_radar_url, get_storm_status
 from .services.tts import SpeechError, TTSService, TTSUnavailableError
 from .services.weather import WeatherService, WeatherServiceError
 from .services.wifi import WifiError, connect as wifi_connect, forget as wifi_forget, scan_networks, status as wifi_status
@@ -34,6 +40,91 @@ templates = Jinja2Templates(directory=str(templates_dir))
 
 AUTO_BACKGROUND_DIR = Path("/opt/dash/assets/backgrounds/auto")
 AUTO_BACKGROUND_DIR.mkdir(parents=True, exist_ok=True)
+
+ALLOW_ON_DEMAND_BG = os.getenv("ALLOW_ON_DEMAND_BG", "").lower() in {"1", "true", "on", "yes"}
+BG_GENERATOR_SCRIPT = Path("/opt/dash/scripts/generate_bg_daily.py")
+BG_GENERATION_TIMEOUT = 15
+
+
+def _trigger_background_generation() -> Optional[subprocess.Popen]:
+    if not ALLOW_ON_DEMAND_BG:
+        return None
+    if not BG_GENERATOR_SCRIPT.exists():
+        logger.warning("Script de generación de fondos no encontrado en %s", BG_GENERATOR_SCRIPT)
+        return None
+    python = sys.executable or "python3"
+    try:
+        process = subprocess.Popen(
+            [python, str(BG_GENERATOR_SCRIPT)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return process
+    except OSError as exc:  # pragma: no cover - dependiente del entorno
+        logger.error("No se pudo lanzar generate_bg_daily.py: %s", exc)
+        return None
+
+
+def _ensure_background(timeout: int = BG_GENERATION_TIMEOUT) -> Optional[BackgroundAsset]:
+    asset = latest_background()
+    if asset:
+        return asset
+    process = _trigger_background_generation()
+    if not process and not ALLOW_ON_DEMAND_BG:
+        return None
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(1)
+        asset = latest_background()
+        if asset:
+            return asset
+        if process and process.poll() is not None and process.returncode not in (0, None):
+            break
+    return latest_background()
+
+
+def _read_cpu_temp() -> Optional[float]:
+    candidates = [
+        Path("/sys/class/thermal/thermal_zone0/temp"),
+        Path("/sys/devices/virtual/thermal/thermal_zone0/temp"),
+    ]
+    for path in candidates:
+        try:
+            value = path.read_text(encoding="utf-8").strip()
+            if not value:
+                continue
+            temp = float(value) / 1000.0
+            return round(temp, 2)
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def _read_loadavg() -> Optional[float]:
+    try:
+        return os.getloadavg()[0]
+    except OSError:
+        return None
+
+
+def _read_mem_used_bytes() -> Optional[int]:
+    try:
+        with open("/proc/meminfo", "r", encoding="utf-8") as handle:
+            info = {line.split(":", 1)[0]: line.split(":", 1)[1].strip() for line in handle if ":" in line}
+        mem_total = int(info.get("MemTotal", "0 kB").split()[0])
+        mem_available = int(info.get("MemAvailable", "0 kB").split()[0])
+        used_kb = max(mem_total - mem_available, 0)
+        return used_kb * 1024
+    except (OSError, ValueError):
+        return None
+
+
+def _read_disk_free_bytes(path: str = "/") -> Optional[int]:
+    try:
+        usage = shutil.disk_usage(path)
+        return usage.free
+    except OSError:
+        return None
 
 app.mount(
     "/backgrounds/auto",
@@ -135,6 +226,9 @@ class BackgroundAssetResponse(BaseModel):
     mode: Optional[str] = None
     prompt: Optional[str] = None
     weather_key: Optional[str] = Field(default=None, alias="weatherKey")
+    etag: Optional[str] = None
+    last_modified: Optional[int] = Field(default=None, alias="lastModified")
+    openai_latency_ms: Optional[float] = Field(default=None, alias="openaiLatencyMs")
 
 
 weather_service = WeatherService()
@@ -216,18 +310,65 @@ async def storms_radar():
     return Response(content=response.content, media_type=media_type)
 
 
+@app.get("/api/storms/radar/animation")
+def storms_radar_animation(limit: int = Query(default=8, ge=3, le=24)):
+    data = get_radar_animation(limit)
+    frames = []
+    base_ts = int(data.get("updated_at", int(time.time() * 1000)))
+    raw_frames = data.get("frames") or []
+    for idx, url in enumerate(raw_frames):
+        ts = base_ts - (len(raw_frames) - idx - 1) * 60_000
+        frames.append({"url": url, "timestamp": ts})
+    return {"frames": frames, "updated_at": base_ts}
+
+
 @app.get("/api/backgrounds/current", response_model=BackgroundAssetResponse)
-def current_background():
+def current_background(request: Request):
     asset = latest_background()
     if not asset:
+        asset = _ensure_background()
+    if not asset:
         raise HTTPException(status_code=404, detail="Sin fondos disponibles")
-    return _serialize_background(asset)
+    if_none_match = request.headers.get("if-none-match")
+    if if_none_match and asset.etag and if_none_match.strip() == asset.etag:
+        response = Response(status_code=304)
+        response.headers["ETag"] = asset.etag
+        if asset.last_modified:
+            dt = datetime.fromtimestamp(asset.last_modified, tz=timezone.utc)
+            response.headers["Last-Modified"] = format_datetime(dt, usegmt=True)
+        return response
+    return _background_json_response(asset)
 
 
 @app.get("/api/backgrounds/auto", response_model=list[BackgroundAssetResponse])
 def auto_backgrounds(limit: int = Query(default=6, ge=1, le=30)):
     assets = list_backgrounds(limit=limit)
     return [_serialize_background(asset) for asset in assets]
+
+
+@app.get("/api/health/full")
+def health_full():
+    cpu_temp = _read_cpu_temp()
+    load1 = _read_loadavg()
+    mem_used = _read_mem_used_bytes()
+    disk_free = _read_disk_free_bytes("/opt") or _read_disk_free_bytes("/")
+    aemet_sample = get_latency("aemet")
+    aemet_latency = round(aemet_sample.duration_ms, 2) if aemet_sample else None
+    openai_latency = None
+    last_bg_ts = None
+    asset = latest_background()
+    if asset:
+        last_bg_ts = asset.generated_at
+        openai_latency = asset.openai_latency_ms
+    return {
+        "cpu_temp": cpu_temp,
+        "load1": load1,
+        "mem_used": mem_used,
+        "disk_free": disk_free,
+        "aemet_latency_ms": aemet_latency,
+        "openai_latency_ms": openai_latency,
+        "last_bg_ts": last_bg_ts,
+    }
 
 
 @app.get("/api/wifi/scan", response_model=list[WifiNetwork])
@@ -377,5 +518,20 @@ def _serialize_background(asset: BackgroundAsset) -> BackgroundAssetResponse:
         mode=asset.mode,
         prompt=asset.prompt,
         weatherKey=asset.weather_key,
+        etag=asset.etag,
+        lastModified=asset.last_modified,
+        openaiLatencyMs=asset.openai_latency_ms,
     )
+
+
+def _background_json_response(asset: BackgroundAsset) -> JSONResponse:
+    payload = _serialize_background(asset)
+    response = JSONResponse(content=payload.model_dump(by_alias=True))
+    if asset.etag:
+        response.headers["ETag"] = asset.etag
+    if asset.last_modified:
+        dt = datetime.fromtimestamp(asset.last_modified, tz=timezone.utc)
+        response.headers["Last-Modified"] = format_datetime(dt, usegmt=True)
+    response.headers.setdefault("Cache-Control", "public, max-age=300")
+    return response
 
