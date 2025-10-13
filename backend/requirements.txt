@@ -3,3 +3,4 @@ uvicorn[standard]==0.27.1
 httpx==0.26.0
 pydantic==2.6.1
 python-json-logger==2.0.7
+openai>=1.10.0

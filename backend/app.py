@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import ipaddress
 import logging
 import os
 import subprocess
@@ -20,6 +22,12 @@ from pydantic import BaseModel, ConfigDict, Field
 import shutil
 
 from .services.aemet import MissingApiKeyError
+from .services.ai_text import (
+    AISummaryError,
+    ai_summarize_weather,
+    load_cached_brief,
+    store_cached_brief,
+)
 from .services.backgrounds import BackgroundAsset, list_backgrounds, latest_background
 from .services.calendar import CalendarService, CalendarServiceError
 from .services.config import AppConfig, read_config, update_config
@@ -44,6 +52,72 @@ AUTO_BACKGROUND_DIR.mkdir(parents=True, exist_ok=True)
 ALLOW_ON_DEMAND_BG = os.getenv("ALLOW_ON_DEMAND_BG", "").lower() in {"1", "true", "on", "yes"}
 BG_GENERATOR_SCRIPT = Path("/opt/dash/scripts/generate_bg_daily.py")
 BG_GENERATION_TIMEOUT = 15
+
+
+class SpeechQueue:
+    def __init__(self, service: TTSService) -> None:
+        self._service = service
+        self._queue: "asyncio.Queue[object]" = asyncio.Queue()
+        self._worker: asyncio.Task[None] | None = None
+        self._sentinel = object()
+
+    def start(self) -> None:
+        if self._worker is None:
+            self._worker = asyncio.create_task(self._run())
+
+    async def close(self) -> None:
+        if self._worker is None:
+            return
+        await self._queue.put(self._sentinel)
+        try:
+            await self._worker
+        finally:
+            self._worker = None
+
+    async def enqueue(self, text: str, volume: float = 1.0) -> None:
+        if not text.strip():
+            raise SpeechError("Texto requerido")
+        loop = asyncio.get_running_loop()
+        future: "asyncio.Future[None]" = loop.create_future()
+        await self._queue.put((text, volume, future))
+        return await future
+
+    async def _run(self) -> None:
+        while True:
+            item = await self._queue.get()
+            if item is self._sentinel:
+                self._queue.task_done()
+                break
+            text, volume, future = item  # type: ignore[misc]
+            try:
+                await asyncio.to_thread(self._service.speak, "", text, volume)
+                future.set_result(None)
+            except Exception as exc:  # pragma: no cover - defensivo
+                future.set_exception(exc)
+            finally:
+                self._queue.task_done()
+        while not self._queue.empty():
+            try:
+                pending = self._queue.get_nowait()
+            except asyncio.QueueEmpty:  # pragma: no cover - vaciado rápido
+                break
+            self._queue.task_done()
+            if pending is self._sentinel:
+                continue
+            _, _, future = pending  # type: ignore[misc]
+            future.cancel()
+
+
+def _is_local_host(host: Optional[str]) -> bool:
+    if not host:
+        return False
+    if host in {"127.0.0.1", "::1"} or host.startswith("127."):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private
 
 
 def _trigger_background_generation() -> Optional[subprocess.Popen]:
@@ -81,6 +155,35 @@ def _ensure_background(timeout: int = BG_GENERATION_TIMEOUT) -> Optional[Backgro
         if process and process.poll() is not None and process.returncode not in (0, None):
             break
     return latest_background()
+
+
+async def raise_weather_alerts() -> None:
+    global _last_alert_ts  # pylint: disable=global-statement
+    try:
+        status = get_storm_status()
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.debug("No se pudo obtener estado de tormentas: %s", exc)
+        return
+    if not status.get("near_activity"):
+        return
+    now = time.time()
+    if now - _last_alert_ts < ALERT_COOLDOWN_SECONDS:
+        return
+    try:
+        await speech_queue.enqueue(ALERT_TEXT)
+    except (SpeechError, TTSUnavailableError) as exc:
+        logger.warning("No se pudo locutar alerta meteorológica: %s", exc)
+        return
+    _last_alert_ts = now
+
+
+async def _alerts_daemon() -> None:
+    while True:
+        try:
+            await raise_weather_alerts()
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.debug("Error en ciclo de alertas: %s", exc)
+        await asyncio.sleep(300)
 
 
 def _read_cpu_temp() -> Optional[float]:
@@ -229,11 +332,34 @@ class BackgroundAssetResponse(BaseModel):
     etag: Optional[str] = None
     last_modified: Optional[int] = Field(default=None, alias="lastModified")
     openai_latency_ms: Optional[float] = Field(default=None, alias="openaiLatencyMs")
+    context: Optional[dict] = None
+
+
+class WeatherBriefResponse(BaseModel):
+    title: str
+    tips: list[str]
+    updated_at: int = Field(alias="updated_at")
+    cached: bool = False
+
+
+class AlertTTSRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+
+
+class CalendarPeekResponse(BaseModel):
+    title: str
+    start: datetime
 
 
 weather_service = WeatherService()
 tts_service = TTSService()
 calendar_service = CalendarService()
+speech_queue = SpeechQueue(tts_service)
+
+ALERT_COOLDOWN_SECONDS = 60 * 60
+ALERT_TEXT = "Tormenta cercana. Precaución."
+_last_alert_ts: float = 0.0
+_alert_task: asyncio.Task[None] | None = None
 
 
 def get_config() -> AppConfig:
@@ -284,6 +410,63 @@ async def weather_weekly(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     payload = [WeatherDayEntry(**entry.as_dict()) for entry in days[:limit]]
     return WeatherWeeklyResponse(days=payload, updated_at=int(today.updated_at.timestamp() * 1000), cached=cached)
+
+
+@app.get("/api/ai/weather/brief", response_model=WeatherBriefResponse)
+async def weather_brief(config: AppConfig = Depends(get_config)):
+    now = datetime.now(timezone.utc)
+    cached_payload, fresh = load_cached_brief(now)
+    if fresh and cached_payload:
+        payload = {**cached_payload, "cached": True}
+        return WeatherBriefResponse(**payload)
+
+    if not config.aemet:
+        if cached_payload:
+            payload = {**cached_payload, "cached": True}
+            return WeatherBriefResponse(**payload)
+        raise HTTPException(status_code=503, detail="Servicio AEMET no configurado")
+
+    city_hint = config.weather.city if config.weather else None
+    try:
+        today, days, cached = await weather_service.get_forecast(config.aemet.municipioId, city_hint=city_hint)
+    except MissingApiKeyError as exc:
+        if cached_payload:
+            payload = {**cached_payload, "cached": True}
+            return WeatherBriefResponse(**payload)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except WeatherServiceError as exc:
+        if cached_payload:
+            payload = {**cached_payload, "cached": True}
+            return WeatherBriefResponse(**payload)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    today_dict = today.as_dict()
+    weekly_dicts = [entry.as_dict() for entry in days]
+
+    try:
+        summary = await asyncio.to_thread(ai_summarize_weather, today_dict, weekly_dicts, "es-ES")
+    except AISummaryError as exc:
+        logger.warning("Fallo al generar resumen AI: %s", exc)
+        if cached_payload:
+            payload = {**cached_payload, "cached": True}
+            return WeatherBriefResponse(**payload)
+
+        condition = today_dict.get("condition") or "Clima"
+        rain_prob = float(today_dict.get("rain_prob") or 0)
+        tips = [
+            f"Condición predominante: {condition}.",
+            f"Temperaturas entre {today_dict.get('min', '--')}º y {today_dict.get('max', '--')}º.",
+        ]
+        if rain_prob >= 50:
+            tips.append("Lleva paraguas o chubasquero: alta probabilidad de lluvia hoy.")
+        elif rain_prob >= 20:
+            tips.append("Podría haber chubascos aislados. Considera ropa repelente al agua.")
+        summary = {"title": f"Resumen del día: {condition}", "tips": tips[:3]}
+
+    updated_at_ms = int(today.updated_at.timestamp() * 1000)
+    payload = {"title": summary["title"], "tips": summary["tips"], "updated_at": updated_at_ms, "cached": cached}
+    store_cached_brief({k: payload[k] for k in ("title", "tips", "updated_at")})
+    return WeatherBriefResponse(**payload)
 
 
 @app.get("/api/storms/status", response_model=StormStatusResponse)
@@ -452,6 +635,23 @@ def speak(payload: TTSSpeakRequest):
     return {"status": "ok"}
 
 
+@app.post("/api/alerts/tts")
+async def alerts_tts(payload: AlertTTSRequest, request: Request):
+    host = request.client.host if request.client else None
+    if not _is_local_host(host):
+        raise HTTPException(status_code=403, detail="Solo disponible en la red local")
+    try:
+        await speech_queue.enqueue(payload.text)
+    except TTSUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except SpeechError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Fallo en cola TTS de alertas: %s", exc)
+        raise HTTPException(status_code=500, detail="No se pudo reproducir el aviso") from exc
+    return {"status": "queued"}
+
+
 @app.get("/api/calendar/today", response_model=list[CalendarEventResponse])
 async def calendar_today(config: AppConfig = Depends(get_config)):
     if not config.calendar or not config.calendar.enabled or not config.calendar.icsUrl:
@@ -489,6 +689,35 @@ async def calendar_today(config: AppConfig = Depends(get_config)):
     return payload
 
 
+@app.get("/api/calendar/peek", response_model=CalendarPeekResponse)
+async def calendar_peek(config: AppConfig = Depends(get_config)):
+    if not config.calendar or not config.calendar.enabled or not config.calendar.icsUrl:
+        raise HTTPException(status_code=404, detail="Calendario no configurado")
+    try:
+        events = await calendar_service.events_for_today(config.calendar)
+    except CalendarServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if not events:
+        raise HTTPException(status_code=204, detail="Sin eventos para hoy")
+
+    now = datetime.now().astimezone()
+    tzinfo = now.tzinfo
+    selected_title = None
+    selected_start = None
+    for event in events:
+        start = event.start.astimezone(tzinfo)
+        if start >= now:
+            selected_title = event.title
+            selected_start = start
+            break
+    if selected_title is None:
+        first = events[0]
+        selected_title = first.title
+        selected_start = first.start.astimezone(tzinfo)
+
+    return CalendarPeekResponse(title=selected_title, start=selected_start)
+
+
 @app.get("/api/config")
 def get_config_endpoint(config: AppConfig = Depends(get_config)):
     return config.public_view()
@@ -504,10 +733,27 @@ def update_config_endpoint(payload: dict = Body(...)):
     return updated.public_view()
 
 
+@app.on_event("startup")
+async def startup_event():
+    global _alert_task  # pylint: disable=global-statement
+    speech_queue.start()
+    if _alert_task is None:
+        _alert_task = asyncio.create_task(_alerts_daemon())
+
+
 @app.on_event("shutdown")
 async def shutdown_event():
+    global _alert_task  # pylint: disable=global-statement
+    if _alert_task is not None:
+        _alert_task.cancel()
+        try:
+            await _alert_task
+        except asyncio.CancelledError:  # pragma: no cover - esperado en apagado
+            pass
+        _alert_task = None
     await weather_service.close()
     await calendar_service.close()
+    await speech_queue.close()
 
 
 def _serialize_background(asset: BackgroundAsset) -> BackgroundAssetResponse:
@@ -521,6 +767,7 @@ def _serialize_background(asset: BackgroundAsset) -> BackgroundAssetResponse:
         etag=asset.etag,
         lastModified=asset.last_modified,
         openaiLatencyMs=asset.openai_latency_ms,
+        context=asset.context,
     )
 
 
