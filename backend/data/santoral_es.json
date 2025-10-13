@@ -1,0 +1,76 @@
+{
+  "1": {
+    "1": ["Santa María, Madre de Dios", "San Manuel"],
+    "2": ["San Basilio Magno", "San Gregorio Nacianceno"],
+    "6": ["Epifanía del Señor", "San Andrés Corsini"],
+    "17": ["San Antonio Abad"]
+  },
+  "2": {
+    "2": ["La Presentación del Señor"],
+    "11": ["Nuestra Señora de Lourdes"],
+    "14": ["San Valentín"],
+    "28": ["San Leandro de Sevilla"]
+  },
+  "3": {
+    "17": ["San Patricio"],
+    "19": ["San José", "San José, esposo de la Virgen María"],
+    "25": ["La Anunciación del Señor"]
+  },
+  "4": {
+    "4": ["San Isidoro de Sevilla"],
+    "23": ["San Jorge"],
+    "25": ["San Marcos Evangelista"],
+    "30": ["San Pío V"]
+  },
+  "5": {
+    "1": ["San José Obrero"],
+    "3": ["San Felipe apóstol", "Santiago el Menor"],
+    "15": ["San Isidro Labrador"],
+    "17": ["San Pascual Baylón"],
+    "31": ["La Visitación de la Virgen María"]
+  },
+  "6": {
+    "13": ["San Antonio de Padua"],
+    "24": ["Natividad de San Juan Bautista"],
+    "29": ["San Pedro y San Pablo"]
+  },
+  "7": {
+    "16": ["Nuestra Señora del Carmen"],
+    "22": ["Santa María Magdalena"],
+    "25": ["Santiago Apóstol"],
+    "26": ["San Joaquín y Santa Ana"]
+  },
+  "8": {
+    "4": ["San Juan María Vianney"],
+    "10": ["San Lorenzo"],
+    "15": ["Asunción de la Virgen"],
+    "24": ["San Bartolomé"]
+  },
+  "9": {
+    "8": ["Natividad de la Virgen María"],
+    "12": ["El Dulce Nombre de María"],
+    "15": ["Nuestra Señora de los Dolores"],
+    "29": ["San Miguel, San Gabriel y San Rafael"]
+  },
+  "10": {
+    "1": ["Santa Teresa del Niño Jesús"],
+    "4": ["San Francisco de Asís"],
+    "12": ["Virgen del Pilar"],
+    "31": ["Todos los Santos"],
+    "13": ["San Eduardo el Confesor"]
+  },
+  "11": {
+    "1": ["Todos los Santos"],
+    "2": ["Conmemoración de los Fieles Difuntos"],
+    "11": ["San Martín de Tours"],
+    "25": ["Santa Catalina de Alejandría"]
+  },
+  "12": {
+    "6": ["San Nicolás de Bari"],
+    "8": ["Inmaculada Concepción"],
+    "13": ["Santa Lucía"],
+    "25": ["Navidad del Señor"],
+    "26": ["San Esteban"],
+    "31": ["San Silvestre"]
+  }
+}

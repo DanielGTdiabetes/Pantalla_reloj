@@ -51,6 +51,7 @@ La mini-web de configuración está en `/setup`. Los endpoints REST principales:
 - `GET /api/network/status`, `GET /api/wifi/scan`, `POST /api/wifi/connect`
 - `POST /api/location/override` (geolocalización desde el navegador)
 - `GET /api/time/sync_status` para comprobar `systemd-timesyncd`
+- `GET /api/day/brief` para efemérides, santoral y festivos
 
 ### Tormentas y Radar (AEMET)
 
@@ -66,6 +67,19 @@ La mini-web de configuración está en `/setup`. Los endpoints REST principales:
 - Notas:
   - Actualmente no existen datos JSON públicos fiables de rayos; se usa una heurística basada en precipitación y descriptores de tormenta.
   - Preparado para integrar rayos cuando haya fuente estable (respetando la configuración experimental).
+
+### Efemérides, Santoral y Festivos
+
+- Endpoint: `GET /api/day/brief?date=YYYY-MM-DD` (fecha opcional, por defecto hoy).
+- Fuentes empleadas:
+  - Wikipedia (API REST "On This Day") para efemérides históricas.
+  - Wikipedia (sección de santoral) con fallback local `backend/data/santoral_es.json`.
+  - [Nager.Date](https://date.nager.at) para festivos nacionales y autonómicos de España.
+  - `config.json` para patrón local configurable.
+- Caché: `backend/storage/cache/dayinfo_YYYY-MM-DD.json` (TTL 24h) para limitar peticiones remotas.
+- Limitaciones:
+  - Los festivos regionales dependen de los códigos `counties` que expone la API de Nager.Date.
+  - El patrón local sólo se resuelve si coincide con la fecha configurada (`config.patron`).
 
 ## Cachés y almacenamiento
 

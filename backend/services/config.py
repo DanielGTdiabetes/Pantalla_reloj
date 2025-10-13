@@ -88,6 +88,20 @@ class CalendarConfig(BaseModel):
         populate_by_name = True
 
 
+class LocaleConfig(BaseModel):
+    country: Optional[str] = None
+    autonomousCommunity: Optional[str] = None
+    province: Optional[str] = None
+    city: Optional[str] = None
+
+
+class PatronConfig(BaseModel):
+    city: Optional[str] = None
+    name: Optional[str] = None
+    month: Optional[int] = Field(default=None, ge=1, le=12)
+    day: Optional[int] = Field(default=None, ge=1, le=31)
+
+
 class AppConfig(BaseModel):
     aemet: Optional[AemetConfig] = None
     weather: Optional[WeatherConfig] = None
@@ -97,6 +111,8 @@ class AppConfig(BaseModel):
     tts: Optional[TTSConfig] = None
     wifi: Optional[WifiConfig] = None
     calendar: Optional[CalendarConfig] = None
+    locale: Optional[LocaleConfig] = None
+    patron: Optional[PatronConfig] = None
 
     def public_view(self) -> Dict[str, Any]:
         return {
@@ -134,6 +150,16 @@ class AppConfig(BaseModel):
                     "icsConfigured": bool(self.calendar.icsUrl) if self.calendar else False,
                 }
                 if self.calendar
+                else {}
+            ),
+            "locale": (self.locale.dict() if self.locale else {}),
+            "patron": (
+                {
+                    key: value
+                    for key, value in (self.patron.dict() if self.patron else {}).items()
+                    if key in {"city", "name", "month", "day"}
+                }
+                if self.patron
                 else {}
             ),
         }
@@ -187,6 +213,8 @@ def update_config(payload: Dict[str, Any]) -> AppConfig:
         "tts": {"voice", "volume"},
         "wifi": {"preferredInterface"},
         "calendar": {"enabled", "icsUrl", "maxEvents", "notifyMinutesBefore"},
+        "locale": {"country", "autonomousCommunity", "province", "city"},
+        "patron": {"city", "name", "month", "day"},
     }
 
     sanitized: Dict[str, Any] = {}

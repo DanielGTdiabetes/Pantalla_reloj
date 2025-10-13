@@ -34,5 +34,17 @@
     "icsUrl": "https://calendar.google.com/calendar/ical/tu_id_privado/basic.ics",
     "maxEvents": 3,
     "notifyMinutesBefore": 15
+  },
+  "locale": {
+    "country": "ES",
+    "autonomousCommunity": "Comunitat Valenciana",
+    "province": "Castellón",
+    "city": "Vila-real"
+  },
+  "patron": {
+    "city": "Vila-real",
+    "name": "Sant Pasqual Baylón",
+    "month": 5,
+    "day": 17
   }
 }
