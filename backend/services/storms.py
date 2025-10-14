@@ -11,6 +11,7 @@ import httpx
 
 from .config import get_api_key, read_config
 from .metrics import record_latency
+from .offline_state import record_provider_failure, record_provider_success
 
 logger = logging.getLogger(__name__)
 
@@ -71,29 +72,38 @@ def _request_dataset(endpoint: str) -> Any:
             descriptor = client.get(url, params={"api_key": api_key})
             descriptor.raise_for_status()
         except httpx.HTTPError as exc:
+            record_latency('aemet', time.perf_counter() - start)
+            record_provider_failure("aemet", str(exc))
             raise RuntimeError(f"No se pudo obtener descriptor {endpoint}") from exc
 
         try:
             payload = descriptor.json()
         except json.JSONDecodeError as exc:
+            record_latency('aemet', time.perf_counter() - start)
+            record_provider_failure("aemet", "descriptor json inválido")
             raise RuntimeError("Descriptor AEMET inválido") from exc
 
         data_url = payload.get("datos") if isinstance(payload, dict) else None
         if not data_url:
+            record_latency('aemet', time.perf_counter() - start)
+            record_provider_failure("aemet", "descriptor sin datos")
             raise RuntimeError("Descriptor AEMET sin URL de datos")
 
         try:
             data_resp = client.get(data_url)
             data_resp.raise_for_status()
         except httpx.HTTPError as exc:
+            record_latency('aemet', time.perf_counter() - start)
+            record_provider_failure("aemet", str(exc))
             raise RuntimeError("No se pudo descargar datos de AEMET") from exc
+
+        record_latency('aemet', time.perf_counter() - start)
+        record_provider_success("aemet")
 
         try:
             return data_resp.json()
         except json.JSONDecodeError:
             return data_resp.text
-        finally:
-            record_latency('aemet', time.perf_counter() - start)
 
 
 def _extract_daily(payload: Any) -> Dict[str, Any]:
@@ -136,6 +146,9 @@ def _extract_states(items: Any) -> list[str]:
 def get_storm_probability() -> Dict[str, Any]:
     cached = _cache_read("prob", TTL_PROB)
     if cached:
+        if isinstance(cached, dict):
+            cached.setdefault("source", "cache")
+            cached.setdefault("cached_at", cached.get("updated_at"))
         return cached
     stale = _cache_read("prob", 24 * 3600, allow_stale=True)
 
@@ -174,6 +187,9 @@ def get_storm_probability() -> Dict[str, Any]:
     except Exception as exc:  # pylint: disable=broad-except
         logger.warning("Fallo calculando probabilidad de tormenta: %s", exc)
         if stale:
+            if isinstance(stale, dict):
+                stale.setdefault("source", "cache")
+                stale.setdefault("cached_at", stale.get("updated_at"))
             return stale
         prob = 0.0
         detail = {"error": str(exc)}
@@ -182,6 +198,8 @@ def get_storm_probability() -> Dict[str, Any]:
         "storm_prob": round(prob, 3),
         "detail": detail,
         "updated_at": int(time.time() * 1000),
+        "source": "live",
+        "cached_at": None,
     }
     _cache_write("prob", result)
     return result
@@ -253,12 +271,17 @@ def _ensure_radar_cache() -> Dict[str, Any]:
 
     url, frames = _fetch_radar_data()
     if url is None and stale:
+        if isinstance(stale, dict):
+            stale.setdefault("source", "cache")
+            stale.setdefault("cached_at", stale.get("updated_at"))
         return stale
 
     result = {
         "url": url,
         "frames": frames,
         "updated_at": int(time.time() * 1000),
+        "source": "live",
+        "cached_at": None,
     }
     _cache_write("radar", result)
     return result
@@ -309,10 +332,13 @@ def get_storm_status() -> Dict[str, Any]:
     if not updated_at:
         updated_at = int(time.time() * 1000)
 
-    return {
+    response = {
         "storm_prob": round(storm_prob, 3),
         "near_activity": bool(near_activity),
         "radar_url": radar_url,
         "updated_at": int(updated_at),
+        "source": prob_data.get("source") or radar_data.get("source") or "live",
+        "cached_at": prob_data.get("cached_at") or radar_data.get("cached_at"),
     }
+    return response
 
