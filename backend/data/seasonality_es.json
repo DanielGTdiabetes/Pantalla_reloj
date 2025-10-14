@@ -1,0 +1,206 @@
+{
+  "1": {
+    "hortalizas": [
+      "ajo (siembra diente)",
+      "cebolla (semillero)",
+      "acelga",
+      "espinaca"
+    ],
+    "frutas": [
+      "naranja",
+      "mandarina",
+      "kiwi (temporada)"
+    ],
+    "nota": "Proteger de heladas en zonas frías."
+  },
+  "2": {
+    "hortalizas": [
+      "guisante",
+      "haba",
+      "zanahoria (temprana)",
+      "lechuga (semillero)"
+    ],
+    "frutas": [
+      "fresa (inicio)",
+      "naranja",
+      "pomelo"
+    ],
+    "nota": "Semilleros bajo abrigo."
+  },
+  "3": {
+    "hortalizas": [
+      "tomate (semillero)",
+      "pimiento (semillero)",
+      "calabacín",
+      "berenjena (semillero)",
+      "patata (siembra)"
+    ],
+    "frutas": [
+      "fresa",
+      "naranja (fin)",
+      "mandarina (fin)"
+    ],
+    "nota": "Atento a últimas heladas."
+  },
+  "4": {
+    "hortalizas": [
+      "tomate (trasplante zonas templadas)",
+      "pimiento",
+      "calabacín",
+      "pepino",
+      "judía verde"
+    ],
+    "frutas": [
+      "fresa",
+      "albaricoque (inicio)"
+    ],
+    "nota": "Trasplantes cuando mínimas >10°C."
+  },
+  "5": {
+    "hortalizas": [
+      "tomate (campo)",
+      "pimiento",
+      "berenjena",
+      "pepino",
+      "calabaza",
+      "judía verde"
+    ],
+    "frutas": [
+      "fresa (fin)",
+      "cereza (inicio)",
+      "albaricoque",
+      "nispero"
+    ],
+    "nota": "Controlar pulgón y primeros golpes de calor."
+  },
+  "6": {
+    "hortalizas": [
+      "lechuga de verano",
+      "pepino",
+      "calabacín",
+      "judía verde",
+      "maíz dulce",
+      "melón (trasplante)"
+    ],
+    "frutas": [
+      "cereza",
+      "albaricoque",
+      "melocotón (inicio)",
+      "ciruela",
+      "nispero (fin)"
+    ],
+    "nota": "Riegos regulares y acolchado para conservar humedad."
+  },
+  "7": {
+    "hortalizas": [
+      "lechuga (siembra escalonada)",
+      "pepino",
+      "judía verde",
+      "zanahoria de verano",
+      "remolacha",
+      "coles de otoño (semillero)"
+    ],
+    "frutas": [
+      "melocotón",
+      "nectarina",
+      "paraguayo",
+      "ciruela",
+      "melón",
+      "sandía"
+    ],
+    "nota": "Proteger semilleros del sol directo."
+  },
+  "8": {
+    "hortalizas": [
+      "brócoli",
+      "coliflor",
+      "col lombarda",
+      "espinaca (siembra)",
+      "acelga",
+      "rábano"
+    ],
+    "frutas": [
+      "uva (inicio)",
+      "higo",
+      "melón",
+      "sandía",
+      "pera",
+      "manzana temprana"
+    ],
+    "nota": "Siembras de otoño-invierno comienzan ahora."
+  },
+  "9": {
+    "hortalizas": [
+      "coles de invierno",
+      "puerro",
+      "espinaca",
+      "lechuga de otoño",
+      "rábano",
+      "zanahoria de otoño"
+    ],
+    "frutas": [
+      "uva",
+      "higo",
+      "granada (inicio)",
+      "manzana",
+      "pera",
+      "membrillo (inicio)"
+    ],
+    "nota": "Aprovecha la humedad de finales de verano."
+  },
+  "10": {
+    "hortalizas": [
+      "ajo (siembra temprana)",
+      "haba",
+      "guisante",
+      "espinaca",
+      "acelga",
+      "coliflor (trasplante)"
+    ],
+    "frutas": [
+      "granada",
+      "caqui",
+      "manzana tardía",
+      "pera tardía",
+      "membrillo",
+      "uva (fin)"
+    ],
+    "nota": "Preparar el huerto para lluvias otoñales."
+  },
+  "11": {
+    "hortalizas": [
+      "ajo",
+      "cebolla temprana",
+      "haba",
+      "guisante",
+      "acelga",
+      "espinaca"
+    ],
+    "frutas": [
+      "caqui",
+      "granada",
+      "naranja (inicio)",
+      "mandarina",
+      "kiwi"
+    ],
+    "nota": "Mantener protección contra heladas tempranas."
+  },
+  "12": {
+    "hortalizas": [
+      "ajo (siembra)",
+      "cebolla (semillero)",
+      "acelga",
+      "espinaca",
+      "canónigo",
+      "nabo"
+    ],
+    "frutas": [
+      "naranja",
+      "mandarina",
+      "limón",
+      "pomelo",
+      "kiwi"
+    ],
+    "nota": "Aprovechar los días soleados para trabajos de mantenimiento."
+  }
+}

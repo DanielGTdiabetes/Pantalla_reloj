@@ -34,6 +34,8 @@ from .services.config import AppConfig, read_config, update_config
 from .services.dayinfo import get_day_info
 from .services.location import set_location
 from .services.metrics import get_latency
+from .services.seasonality import build_month_tip, get_current_month_season, get_month_season
+from .services.dst import current_time_payload, next_transition_info
 from .services.storms import get_radar_animation, get_radar_url, get_storm_status
 from .services.tts import SpeechError, TTSService, TTSUnavailableError
 from .services.weather import WeatherService, WeatherServiceError
@@ -590,10 +592,33 @@ def network_status():
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+@app.get("/api/season/month")
+async def season_month(month: int | None = Query(default=None, ge=1, le=12)):
+    today = _date.today()
+    try:
+        season = get_current_month_season(today) if month is None else get_month_season(month)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    payload = dict(season)
+    payload["tip"] = build_month_tip(payload)
+    return payload
+
+
 @app.post("/api/location/override")
 def location_override(payload: LocationOverrideRequest):
     set_location(payload.lat, payload.lon)
     return {"ok": True}
+
+
+@app.get("/api/time/dst/next")
+async def dst_next():
+    return next_transition_info(_date.today())
+
+
+@app.get("/api/time/now")
+async def time_now():
+    return current_time_payload()
 
 
 @app.get("/api/time/sync_status")

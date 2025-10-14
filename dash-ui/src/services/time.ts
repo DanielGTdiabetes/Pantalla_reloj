@@ -1,3 +1,5 @@
+import { apiRequest } from './config';
+
 export type TimeListener = (now: Date) => void;
 
 const listeners = new Set<TimeListener>();
@@ -44,4 +46,66 @@ export function formatDate(date: Date) {
     day: '2-digit',
     month: 'long'
   });
+}
+
+interface RawDstTransition {
+  has_upcoming: boolean;
+  date: string | null;
+  kind: 'back' | 'forward' | null;
+  delta_hours: number;
+  days_left: number | null;
+}
+
+export interface DstTransitionInfo {
+  hasUpcoming: boolean;
+  date: string | null;
+  kind: 'back' | 'forward' | null;
+  deltaHours: number;
+  daysLeft: number | null;
+}
+
+interface RawTimeNow {
+  datetime: string;
+  timestamp: number;
+  timezone: string;
+  utc_offset_seconds: number;
+  is_dst: boolean;
+}
+
+export interface BackendTimeNow {
+  datetime: string;
+  timestamp: number;
+  timezone: string;
+  utcOffsetSeconds: number;
+  isDst: boolean;
+}
+
+function normaliseDst(payload: RawDstTransition): DstTransitionInfo {
+  return {
+    hasUpcoming: payload.has_upcoming,
+    date: payload.date ?? null,
+    kind: payload.kind ?? null,
+    deltaHours: payload.delta_hours,
+    daysLeft: payload.days_left ?? null,
+  };
+}
+
+function normaliseTimeNow(payload: RawTimeNow): BackendTimeNow {
+  return {
+    datetime: payload.datetime,
+    timestamp: payload.timestamp,
+    timezone: payload.timezone,
+    utcOffsetSeconds: payload.utc_offset_seconds,
+    isDst: payload.is_dst,
+  };
+}
+
+export async function fetchNextDstTransition(): Promise<DstTransitionInfo> {
+  const data = await apiRequest<RawDstTransition>('/time/dst/next');
+  return normaliseDst(data);
+}
+
+export async function fetchBackendNow(): Promise<BackendTimeNow> {
+  const data = await apiRequest<RawTimeNow>('/time/now');
+  return normaliseTimeNow(data);
 }
