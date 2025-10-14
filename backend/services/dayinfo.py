@@ -13,6 +13,7 @@ from typing import Any, Dict, Iterable, List, Optional
 import httpx
 
 from .config import AppConfig, read_config
+from .offline_state import record_provider_failure, record_provider_success
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CACHE_DIR = PROJECT_ROOT / "storage" / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_TTL_SECONDS = 24 * 60 * 60
+STALE_CACHE_TTL_SECONDS = 48 * 60 * 60
 
 SANTORAL_FALLBACK_PATH = PROJECT_ROOT / "data" / "santoral_es.json"
 
@@ -68,6 +70,12 @@ _SANTORAL_FALLBACK: Optional[dict[str, Any]] = None
 
 
 @dataclass
+class CacheEntry:
+    payload: Dict[str, Any]
+    timestamp_ms: int
+
+
+@dataclass
 class LocaleConfig:
     country: Optional[str] = None
     autonomousCommunity: Optional[str] = None
@@ -86,72 +94,106 @@ class PatronConfig:
 def get_day_info(target_date: date) -> Dict[str, Any]:
     """Return historical efemerides, santoral and holidays for a date."""
 
-    cached = _load_cache(target_date)
-    if cached is not None:
-        return cached
+    fresh_entry = _load_cache(target_date, max_age=CACHE_TTL_SECONDS)
+    if fresh_entry is not None:
+        payload = dict(fresh_entry.payload)
+        payload["source"] = "cache"
+        payload.setdefault("cached_at", fresh_entry.timestamp_ms)
+        return payload
 
-    config = read_config()
-    locale_cfg = _extract_locale(config)
-    patron_cfg = _extract_patron(config)
+    stale_entry = _load_cache(target_date, max_age=STALE_CACHE_TTL_SECONDS)
+    fallback_payload = dict(stale_entry.payload) if stale_entry else None
 
-    result: Dict[str, Any] = {
-        "date": target_date.isoformat(),
-        "efemerides": [],
-        "santoral": [],
-        "holiday": {"is_holiday": False, "source": "nager.date", "scope": None, "region": None, "name": None},
-        "patron": None,
-    }
+    now_ms = int(time.time() * 1000)
 
     try:
-        result["efemerides"] = _fetch_wikipedia_efemerides(target_date.day, target_date.month)
-    except Exception as exc:  # pragma: no cover - dependent on remote API
-        logger.warning("No se pudieron obtener efemérides de Wikipedia: %s", exc)
+        config = read_config()
+        locale_cfg = _extract_locale(config)
+        patron_cfg = _extract_patron(config)
 
-    try:
-        santoral_entries = _fetch_wikipedia_santoral(target_date.day, target_date.month)
-        if not santoral_entries:
-            raise ValueError("Respuesta de santoral vacía")
-        result["santoral"] = santoral_entries
-    except Exception as exc:  # pragma: no cover - dependent on remote API
-        logger.warning("Fallo en santoral de Wikipedia: %s", exc)
-        fallback = _from_local_santoral_fallback(target_date.day, target_date.month)
-        if fallback:
-            result["santoral"] = fallback
+        result: Dict[str, Any] = {
+            "date": target_date.isoformat(),
+            "efemerides": [],
+            "santoral": [],
+            "holiday": {"is_holiday": False, "source": "nager.date", "scope": None, "region": None, "name": None},
+            "patron": None,
+        }
 
-    try:
-        result["holiday"] = _resolve_today_holiday(target_date, locale_cfg)
-    except Exception as exc:  # pragma: no cover - dependent on remote API
-        logger.warning("No se pudo resolver festivo: %s", exc)
-        result["holiday"] = {"is_holiday": False, "scope": None, "region": None, "name": None, "source": "nager.date"}
+        try:
+            result["efemerides"] = _fetch_wikipedia_efemerides(target_date.day, target_date.month)
+        except Exception as exc:  # pragma: no cover - dependent on remote API
+            logger.warning("No se pudieron obtener efemérides de Wikipedia: %s", exc)
 
-    patron = _resolve_patron(target_date, patron_cfg)
-    if patron:
-        result["patron"] = patron
+        try:
+            santoral_entries = _fetch_wikipedia_santoral(target_date.day, target_date.month)
+            if not santoral_entries:
+                raise ValueError("Respuesta de santoral vacía")
+            result["santoral"] = santoral_entries
+        except Exception as exc:  # pragma: no cover - dependent on remote API
+            logger.warning("Fallo en santoral de Wikipedia: %s", exc)
+            fallback = _from_local_santoral_fallback(target_date.day, target_date.month)
+            if fallback:
+                result["santoral"] = fallback
 
-    _store_cache(target_date, result)
-    return result
+        try:
+            result["holiday"] = _resolve_today_holiday(target_date, locale_cfg)
+        except Exception as exc:  # pragma: no cover - dependent on remote API
+            logger.warning("No se pudo resolver festivo: %s", exc)
+            result["holiday"] = {"is_holiday": False, "scope": None, "region": None, "name": None, "source": "nager.date"}
+
+        patron = _resolve_patron(target_date, patron_cfg)
+        if patron:
+            result["patron"] = patron
+
+        result["source"] = "live"
+        result["cached_at"] = now_ms
+        _store_cache(target_date, result, now_ms)
+        return result
+    except Exception as exc:  # pragma: no cover - fallback en modo offline
+        logger.error("Error generando day info para %s: %s", target_date, exc)
+        if fallback_payload is not None:
+            fallback_payload.setdefault("source", "cache")
+            fallback_payload.setdefault(
+                "cached_at", stale_entry.timestamp_ms if stale_entry else now_ms
+            )
+            return fallback_payload
+        raise
 
 
-def _load_cache(target_date: date) -> Optional[Dict[str, Any]]:
+def _load_cache(target_date: date, *, max_age: int) -> Optional[CacheEntry]:
     path = CACHE_DIR / f"dayinfo_{target_date.isoformat()}.json"
     if not path.exists():
         return None
     try:
-        age = time.time() - path.stat().st_mtime
-        if age > CACHE_TTL_SECONDS:
-            return None
         with path.open("r", encoding="utf-8") as fh:
-            return json.load(fh)
+            raw = json.load(fh)
     except (OSError, json.JSONDecodeError) as exc:
         logger.debug("Caché de dayinfo inválida en %s: %s", path, exc)
         return None
 
+    if isinstance(raw, dict) and "data" in raw and "timestamp" in raw:
+        payload = raw.get("data") if isinstance(raw.get("data"), dict) else None
+        timestamp_ms = int(raw.get("timestamp", 0))
+    else:
+        payload = raw if isinstance(raw, dict) else None
+        timestamp_ms = int(path.stat().st_mtime * 1000)
 
-def _store_cache(target_date: date, payload: Dict[str, Any]) -> None:
+    if payload is None:
+        return None
+
+    age_seconds = time.time() - (timestamp_ms / 1000)
+    if age_seconds > max_age:
+        return None
+
+    return CacheEntry(payload=payload, timestamp_ms=timestamp_ms)
+
+
+def _store_cache(target_date: date, payload: Dict[str, Any], timestamp_ms: int) -> None:
     path = CACHE_DIR / f"dayinfo_{target_date.isoformat()}.json"
+    data = {"timestamp": timestamp_ms, "data": payload}
     try:
         with path.open("w", encoding="utf-8") as fh:
-            json.dump(payload, fh, ensure_ascii=False, indent=2)
+            json.dump(data, fh, ensure_ascii=False, indent=2)
     except OSError as exc:
         logger.warning("No se pudo escribir la caché de dayinfo: %s", exc)
 
@@ -299,9 +341,15 @@ def _from_local_santoral_fallback(day: int, month: int) -> List[Dict[str, Any]]:
 
 def _fetch_nager_holidays(year: int) -> list[dict[str, Any]]:
     if year in _NAGER_CACHE:
+        record_provider_success("nager")
         return _NAGER_CACHE[year]
     url = f"https://date.nager.at/api/v3/PublicHolidays/{year}/ES"
-    payload = _http_get_json(url)
+    try:
+        payload = _http_get_json(url)
+    except Exception as exc:  # pragma: no cover - depende de red
+        record_provider_failure("nager", str(exc))
+        raise
+    record_provider_success("nager")
     if not isinstance(payload, list):
         holidays: list[dict[str, Any]] = []
     else:

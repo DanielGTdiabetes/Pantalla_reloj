@@ -4,13 +4,15 @@ from __future__ import annotations
 import json
 import logging
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
 from .config import get_api_key, read_config
 from .metrics import record_latency
+from .offline_state import record_provider_failure, record_provider_success
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +21,21 @@ CACHE_DIR = PROJECT_ROOT / "storage" / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 BASE_URL = "https://opendata.aemet.es/opendata/api"
 CACHE_TTL_SECONDS = 30 * 60
+
+
+@dataclass
+class CacheEntry:
+    data: Any
+    timestamp: float
+
+
+@dataclass
+class DatasetResult:
+    payload: Any
+    from_cache: bool
+    timestamp: float
+    stale: bool = False
+    error: Optional[str] = None
 
 
 class AemetError(Exception):
@@ -50,19 +67,19 @@ class AemetClient:
             await self._client.aclose()
             self._client = None
 
-    async def fetch_daily(self, municipio_id: str) -> Tuple[List[Dict[str, Any]], bool, float]:
+    async def fetch_daily(self, municipio_id: str) -> DatasetResult:
         return await self._fetch_dataset(
             f"prediccion/especifica/municipio/diaria/{municipio_id}",
             f"aemet_daily_{municipio_id}.json",
         )
 
-    async def fetch_hourly(self, municipio_id: str) -> Tuple[List[Dict[str, Any]], bool, float]:
+    async def fetch_hourly(self, municipio_id: str) -> DatasetResult:
         return await self._fetch_dataset(
             f"prediccion/especifica/municipio/horaria/{municipio_id}",
             f"aemet_hourly_{municipio_id}.json",
         )
 
-    async def fetch_radar_summary(self) -> Tuple[Dict[str, Any], bool, float]:
+    async def fetch_radar_summary(self) -> DatasetResult:
         """Obtiene el último resumen de radar nacional."""
         return await self._fetch_dataset(
             "red/radar/nacional", "aemet_radar.json", allow_stale=True, ttl_seconds=10 * 60
@@ -75,12 +92,16 @@ class AemetClient:
         *,
         allow_stale: bool = True,
         ttl_seconds: int = CACHE_TTL_SECONDS,
-    ) -> Tuple[Any, bool, float]:
+    ) -> DatasetResult:
         cache_path = CACHE_DIR / cache_name
         cached = self._load_cache(cache_path)
         now = time.time()
-        if cached and now - cached[1] < ttl_seconds:
-            return cached[0], True, cached[1]
+        if cached and now - cached.timestamp < ttl_seconds:
+            return DatasetResult(
+                payload=cached.data,
+                from_cache=True,
+                timestamp=cached.timestamp,
+            )
 
         api_key = get_api_key()
         if not api_key:
@@ -93,22 +114,45 @@ class AemetClient:
             response = await client.get(url, params={"api_key": api_key})
             response.raise_for_status()
         except httpx.HTTPError as exc:
+            duration = time.perf_counter() - start
+            record_latency("aemet", duration)
             logger.error("Fallo solicitando recurso AEMET %s: %s", endpoint, exc)
             if cached and allow_stale:
                 logger.warning("Usando caché antigua para %s", endpoint)
-                return cached[0], True, cached[1]
+                record_provider_failure("aemet", str(exc))
+                return DatasetResult(
+                    payload=cached.data,
+                    from_cache=True,
+                    timestamp=cached.timestamp,
+                    stale=True,
+                    error=str(exc),
+                )
+            record_provider_failure("aemet", str(exc))
             raise DatasetUnavailableError("AEMET no disponible") from exc
 
         try:
             descriptor = response.json()
         except json.JSONDecodeError as exc:
+            duration = time.perf_counter() - start
+            record_latency("aemet", duration)
+            record_provider_failure("aemet", "descriptor json inválido")
             raise DatasetUnavailableError("Respuesta inesperada de AEMET") from exc
 
         data_url = descriptor.get("datos")
         if not data_url:
             logger.error("Descriptor AEMET sin URL de datos: %s", descriptor)
+            duration = time.perf_counter() - start
+            record_latency("aemet", duration)
             if cached and allow_stale:
-                return cached[0], True, cached[1]
+                record_provider_failure("aemet", "descriptor sin datos")
+                return DatasetResult(
+                    payload=cached.data,
+                    from_cache=True,
+                    timestamp=cached.timestamp,
+                    stale=True,
+                    error="descriptor sin datos",
+                )
+            record_provider_failure("aemet", "descriptor sin datos")
             raise DatasetUnavailableError("Descriptor de datos incompleto")
 
         try:
@@ -116,11 +160,19 @@ class AemetClient:
             data_response.raise_for_status()
         except httpx.HTTPError as exc:
             logger.error("No se pudo descargar dataset %s: %s", data_url, exc)
+            duration = time.perf_counter() - start
+            record_latency("aemet", duration)
             if cached and allow_stale:
-                return cached[0], True, cached[1]
+                record_provider_failure("aemet", str(exc))
+                return DatasetResult(
+                    payload=cached.data,
+                    from_cache=True,
+                    timestamp=cached.timestamp,
+                    stale=True,
+                    error=str(exc),
+                )
+            record_provider_failure("aemet", str(exc))
             raise DatasetUnavailableError("No se pudo descargar datos") from exc
-        finally:
-            record_latency('aemet', time.perf_counter() - start)
 
         payload: Any
         try:
@@ -128,16 +180,24 @@ class AemetClient:
         except json.JSONDecodeError:
             payload = data_response.text
 
-        self._save_cache(cache_path, payload, now)
-        return payload, False, now
+        duration = time.perf_counter() - start
+        record_latency("aemet", duration)
+        record_provider_success("aemet")
 
-    def _load_cache(self, path: Path) -> Tuple[Any, float] | None:
+        self._save_cache(cache_path, payload, now)
+        return DatasetResult(payload=payload, from_cache=False, timestamp=now)
+
+    def _load_cache(self, path: Path) -> CacheEntry | None:
         if not path.exists():
             return None
         try:
             with path.open("r", encoding="utf-8") as handle:
                 raw = json.load(handle)
-            return raw.get("data"), float(raw.get("timestamp", 0))
+            if isinstance(raw, dict) and "data" in raw and "timestamp" in raw:
+                timestamp = float(raw.get("timestamp", 0))
+                return CacheEntry(raw.get("data"), timestamp)
+            stat = path.stat()
+            return CacheEntry(raw, stat.st_mtime)
         except (OSError, ValueError, TypeError) as exc:
             logger.warning("No se pudo leer caché %s: %s", path, exc)
             return None

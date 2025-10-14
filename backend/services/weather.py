@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Sequence, Tuple
 
-from .aemet import AemetClient, DatasetUnavailableError, MissingApiKeyError
+from .aemet import AemetClient, DatasetResult, DatasetUnavailableError, MissingApiKeyError
+from .offline_state import record_provider_failure, record_provider_success
 
 logger = logging.getLogger(__name__)
 UTC = timezone.utc
@@ -63,6 +64,16 @@ class WeatherServiceError(Exception):
     """Error genérico de la capa de clima."""
 
 
+@dataclass
+class WeatherForecastMeta:
+    cached: bool
+    source: str
+    fetched_at: datetime
+    cached_at: datetime | None
+    provider_ok: bool
+    provider_error: str | None = None
+
+
 class WeatherService:
     """Agregador de datos diarios y horarios."""
 
@@ -77,22 +88,24 @@ class WeatherService:
         municipio_id: str,
         *,
         city_hint: str | None = None,
-    ) -> Tuple[WeatherToday, List[DailyForecast], bool]:
+    ) -> Tuple[WeatherToday, List[DailyForecast], WeatherForecastMeta]:
         try:
-            daily_raw, daily_cached, daily_ts = await self._client.fetch_daily(municipio_id)
-            hourly_raw, hourly_cached, hourly_ts = await self._client.fetch_hourly(municipio_id)
+            daily_result = await self._client.fetch_daily(municipio_id)
+            hourly_result = await self._client.fetch_hourly(municipio_id)
         except MissingApiKeyError as exc:
             raise MissingApiKeyError(str(exc)) from exc
         except DatasetUnavailableError as exc:
             raise WeatherServiceError(str(exc)) from exc
 
-        fetched_at = datetime.fromtimestamp(max(daily_ts, hourly_ts), tz=UTC)
-        daily_section = _extract_prediccion(daily_raw)
-        hourly_section = _extract_prediccion(hourly_raw)
+        fetched_at = datetime.fromtimestamp(
+            max(daily_result.timestamp, hourly_result.timestamp), tz=UTC
+        )
+        daily_section = _extract_prediccion(daily_result.payload)
+        hourly_section = _extract_prediccion(hourly_result.payload)
         if not daily_section:
             raise WeatherServiceError("Datos de predicción diarios vacíos")
 
-        city_name = city_hint or _extract_city_name(daily_raw) or "Municipio"
+        city_name = city_hint or _extract_city_name(daily_result.payload) or "Municipio"
         days = _build_daily_forecast(daily_section)
         if not days:
             raise WeatherServiceError("Sin datos diarios procesables")
@@ -109,19 +122,48 @@ class WeatherService:
             city=city_name,
             updated_at=fetched_at,
         )
-        cached = daily_cached and hourly_cached
-        return summary, days, cached
+        cached = daily_result.from_cache and hourly_result.from_cache
+        cached_at: datetime | None = None
+        if cached:
+            cached_at = datetime.fromtimestamp(
+                max(daily_result.timestamp, hourly_result.timestamp), tz=UTC
+            )
+
+        source = "cache" if cached else "live"
+        error_parts = [
+            part
+            for part in (daily_result.error, hourly_result.error)
+            if part
+        ]
+        provider_ok = not error_parts and not (daily_result.stale or hourly_result.stale)
+        provider_error = "; ".join(error_parts) or None
+
+        meta = WeatherForecastMeta(
+            cached=cached,
+            source=source,
+            fetched_at=fetched_at,
+            cached_at=cached_at,
+            provider_ok=provider_ok,
+            provider_error=provider_error,
+        )
+
+        if provider_ok:
+            record_provider_success("aemet")
+        else:
+            record_provider_failure("aemet", provider_error)
+
+        return summary, days, meta
 
     async def get_radar_descriptor(self) -> Tuple[Dict[str, Any], bool, datetime]:
         try:
-            payload, cached, timestamp = await self._client.fetch_radar_summary()
+            result: DatasetResult = await self._client.fetch_radar_summary()
         except MissingApiKeyError as exc:
             raise MissingApiKeyError(str(exc)) from exc
         except DatasetUnavailableError as exc:
             raise WeatherServiceError(str(exc)) from exc
-        fetched_at = datetime.fromtimestamp(timestamp, tz=UTC)
-        data = payload if isinstance(payload, dict) else {"url": payload}
-        return data, cached, fetched_at
+        fetched_at = datetime.fromtimestamp(result.timestamp, tz=UTC)
+        data = result.payload if isinstance(result.payload, dict) else {"url": result.payload}
+        return data, result.from_cache, fetched_at
 
 
 def _extract_prediccion(raw: Any) -> Sequence[Dict[str, Any]]:

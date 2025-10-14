@@ -4,6 +4,7 @@ import asyncio
 import ipaddress
 import logging
 import os
+import re
 import subprocess
 import sys
 import time
@@ -40,9 +41,40 @@ from .services.storms import get_radar_animation, get_radar_url, get_storm_statu
 from .services.tts import SpeechError, TTSService, TTSUnavailableError
 from .services.weather import WeatherService, WeatherServiceError
 from .services.wifi import WifiError, connect as wifi_connect, forget as wifi_forget, scan_networks, status as wifi_status
+from .services.offline_state import get_offline_state, record_provider_failure, record_provider_success
 
 logger = logging.getLogger("pantalla.backend")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
+
+
+SENSITIVE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"sk-[A-Za-z0-9]{8,}"), "sk-****"),
+    (re.compile(r"(?i)(openai[_-]?api[_-]?key\s*[:=]\s*)([^\s\"']+)"), r"\1******"),
+    (re.compile(r"(?i)(aemet[_-]?api[_-]?key\s*[:=]\s*)([^\s\"']+)"), r"\1******"),
+    (re.compile(r"(?i)(api[_-]?key\s*[:=]\s*)([^\s\"']+)"), r"\1******"),
+    (re.compile(r"(?i)(authorization\s*[:=]\s*bearer\s+)([A-Za-z0-9._-]+)"), r"\1****"),
+)
+
+
+def _mask_sensitive(text: str) -> str:
+    masked = text
+    for pattern, replacement in SENSITIVE_PATTERNS:
+        masked = pattern.sub(replacement, masked)
+    return masked
+
+
+class SensitiveDataFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:  # pragma: no cover - logging infra
+        if isinstance(record.msg, str):
+            record.msg = _mask_sensitive(record.msg)
+        if record.args:
+            record.args = tuple(
+                _mask_sensitive(arg) if isinstance(arg, str) else arg for arg in record.args
+            )
+        return True
+
+
+logging.getLogger().addFilter(SensitiveDataFilter())
 
 app = FastAPI(title="Pantalla Dash Backend", version="2.0.0")
 
@@ -238,13 +270,34 @@ app.mount(
     name="auto-backgrounds",
 )
 
+PRIVATE_ORIGIN_REGEX = (
+    r"^https?://("  # inicio
+    r"localhost"
+    r"|127(?:\.[0-9]{1,3}){3}"
+    r"|10(?:\.[0-9]{1,3}){3}"
+    r"|192\.168(?:\.[0-9]{1,3}){2}"
+    r"|172\.(?:1[6-9]|2[0-9]|3[0-1])(?:\.[0-9]{1,3}){2}"  # rangos privados
+    r")(:[0-9]{2,5})?$"
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:8080", "http://localhost:8080", "http://localhost"],
+    allow_origins=[
+        "http://127.0.0.1",
+        "http://127.0.0.1:8080",
+        "http://localhost",
+        "http://localhost:8080",
+    ],
+    allow_origin_regex=PRIVATE_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/api/system/offline-state")
+def system_offline_state() -> Dict[str, Any]:
+    return get_offline_state()
 
 
 class WeatherTodayResponse(BaseModel):
@@ -259,6 +312,8 @@ class WeatherTodayResponse(BaseModel):
     city: str
     updated_at: int = Field(alias="updated_at")
     cached: bool = False
+    source: str = Field(default="live")
+    cached_at: Optional[int] = Field(default=None, alias="cached_at")
 
 
 class WeatherDayEntry(BaseModel):
@@ -280,6 +335,8 @@ class WeatherWeeklyResponse(BaseModel):
     days: list[WeatherDayEntry]
     updated_at: int
     cached: bool = False
+    source: str = Field(default="live")
+    cached_at: Optional[int] = Field(default=None, alias="cached_at")
 
 
 class StormStatusResponse(BaseModel):
@@ -287,6 +344,8 @@ class StormStatusResponse(BaseModel):
     near_activity: bool
     radar_url: Optional[str] = None
     updated_at: int
+    source: str = Field(default="live")
+    cached_at: Optional[int] = Field(default=None, alias="cached_at")
 
 
 class WifiNetwork(BaseModel):
@@ -343,6 +402,8 @@ class WeatherBriefResponse(BaseModel):
     tips: list[str]
     updated_at: int = Field(alias="updated_at")
     cached: bool = False
+    source: str = Field(default="live")
+    cached_at: Optional[int] = Field(default=None, alias="cached_at")
 
 
 class AlertTTSRequest(BaseModel):
@@ -384,13 +445,19 @@ async def weather_today(config: AppConfig = Depends(get_config)):
         raise HTTPException(status_code=503, detail="Servicio AEMET no configurado")
     city_hint = config.weather.city if config.weather else None
     try:
-        today, days, cached = await weather_service.get_forecast(config.aemet.municipioId, city_hint=city_hint)
+        today, days, meta = await weather_service.get_forecast(
+            config.aemet.municipioId, city_hint=city_hint
+        )
     except MissingApiKeyError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except WeatherServiceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     payload = today.as_dict()
-    payload["cached"] = cached
+    payload["cached"] = meta.cached
+    payload["source"] = meta.source
+    payload["cached_at"] = (
+        int(meta.cached_at.timestamp() * 1000) if meta.cached_at else None
+    )
     if days:
         payload.setdefault("min", round(days[0].min_temp, 1))
         payload.setdefault("max", round(days[0].max_temp, 1))
@@ -406,13 +473,22 @@ async def weather_weekly(
         raise HTTPException(status_code=503, detail="Servicio AEMET no configurado")
     city_hint = config.weather.city if config.weather else None
     try:
-        today, days, cached = await weather_service.get_forecast(config.aemet.municipioId, city_hint=city_hint)
+        today, days, meta = await weather_service.get_forecast(
+            config.aemet.municipioId, city_hint=city_hint
+        )
     except MissingApiKeyError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except WeatherServiceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    payload = [WeatherDayEntry(**entry.as_dict()) for entry in days[:limit]]
-    return WeatherWeeklyResponse(days=payload, updated_at=int(today.updated_at.timestamp() * 1000), cached=cached)
+    payload_days = [WeatherDayEntry(**entry.as_dict()) for entry in days[:limit]]
+    cached_at = int(meta.cached_at.timestamp() * 1000) if meta.cached_at else None
+    return WeatherWeeklyResponse(
+        days=payload_days,
+        updated_at=int(meta.fetched_at.timestamp() * 1000),
+        cached=meta.cached,
+        source=meta.source,
+        cached_at=cached_at,
+    )
 
 
 @app.get("/api/ai/weather/brief", response_model=WeatherBriefResponse)
@@ -421,25 +497,32 @@ async def weather_brief(config: AppConfig = Depends(get_config)):
     cached_payload, fresh = load_cached_brief(now)
     if fresh and cached_payload:
         payload = {**cached_payload, "cached": True}
+        payload.setdefault("source", "cache")
+        payload.setdefault("cached_at", cached_payload.get("cached_at"))
         return WeatherBriefResponse(**payload)
 
     if not config.aemet:
         if cached_payload:
             payload = {**cached_payload, "cached": True}
+            payload.setdefault("source", "cache")
             return WeatherBriefResponse(**payload)
         raise HTTPException(status_code=503, detail="Servicio AEMET no configurado")
 
     city_hint = config.weather.city if config.weather else None
     try:
-        today, days, cached = await weather_service.get_forecast(config.aemet.municipioId, city_hint=city_hint)
+        today, days, meta = await weather_service.get_forecast(
+            config.aemet.municipioId, city_hint=city_hint
+        )
     except MissingApiKeyError as exc:
         if cached_payload:
             payload = {**cached_payload, "cached": True}
+            payload.setdefault("source", "cache")
             return WeatherBriefResponse(**payload)
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except WeatherServiceError as exc:
         if cached_payload:
             payload = {**cached_payload, "cached": True}
+            payload.setdefault("source", "cache")
             return WeatherBriefResponse(**payload)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -448,10 +531,14 @@ async def weather_brief(config: AppConfig = Depends(get_config)):
 
     try:
         summary = await asyncio.to_thread(ai_summarize_weather, today_dict, weekly_dicts, "es-ES")
+        record_provider_success("openai")
+        summary_source = "live"
     except AISummaryError as exc:
         logger.warning("Fallo al generar resumen AI: %s", exc)
+        record_provider_failure("openai", str(exc))
         if cached_payload:
             payload = {**cached_payload, "cached": True}
+            payload.setdefault("source", "cache")
             return WeatherBriefResponse(**payload)
 
         condition = today_dict.get("condition") or "Clima"
@@ -465,10 +552,24 @@ async def weather_brief(config: AppConfig = Depends(get_config)):
         elif rain_prob >= 20:
             tips.append("Podría haber chubascos aislados. Considera ropa repelente al agua.")
         summary = {"title": f"Resumen del día: {condition}", "tips": tips[:3]}
+        summary_source = "fallback"
 
-    updated_at_ms = int(today.updated_at.timestamp() * 1000)
-    payload = {"title": summary["title"], "tips": summary["tips"], "updated_at": updated_at_ms, "cached": cached}
-    store_cached_brief({k: payload[k] for k in ("title", "tips", "updated_at")})
+    updated_at_ms = int(meta.fetched_at.timestamp() * 1000)
+    cached_at_ms = int(meta.cached_at.timestamp() * 1000) if meta.cached_at else None
+    payload = {
+        "title": summary["title"],
+        "tips": summary["tips"],
+        "updated_at": updated_at_ms,
+        "cached": meta.cached or summary_source != "live",
+        "source": summary_source if summary_source != "fallback" else summary_source,
+        "cached_at": cached_at_ms if summary_source != "fallback" else updated_at_ms,
+    }
+    store_cached_brief(
+        {
+            key: payload[key]
+            for key in ("title", "tips", "updated_at", "source", "cached_at")
+        }
+    )
     return WeatherBriefResponse(**payload)
 
 

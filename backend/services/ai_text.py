@@ -86,13 +86,32 @@ def load_cached_brief(now: Optional[datetime] = None) -> tuple[Optional[Dict[str
         return None, False
     reference = now or datetime.now(timezone.utc)
     is_fresh = reference.timestamp() < expires_at
+    if "cached_at" not in cached_data:
+        approx = (expires_at - CACHE_TTL_SECONDS) * 1000
+        if approx > 0:
+            cached_data["cached_at"] = int(approx)
+        else:
+            try:
+                cached_data["cached_at"] = int(CACHE_PATH.stat().st_mtime * 1000)
+            except OSError:
+                cached_data["cached_at"] = int(reference.timestamp() * 1000)
+    cached_data.setdefault("source", "cache")
     return cached_data, is_fresh
 
 
 def store_cached_brief(data: Dict[str, Any]) -> None:
-    now_ts = datetime.now(timezone.utc).timestamp()
+    now_dt = datetime.now(timezone.utc)
+    now_ts = now_dt.timestamp()
     expires = int(now_ts + CACHE_TTL_SECONDS)
-    payload = {"expires_at": expires, "data": data}
+    cached_at_ms = int(data.get("cached_at") or (now_ts * 1000))
+    payload = {
+        "expires_at": expires,
+        "data": {
+            **data,
+            "cached_at": cached_at_ms,
+            "source": data.get("source", "live"),
+        },
+    }
     tmp_path = CACHE_PATH.with_suffix(".tmp")
     try:
         with tmp_path.open("w", encoding="utf-8") as handle:
