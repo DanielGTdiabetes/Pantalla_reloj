@@ -17,3 +17,10 @@ export async function speakPreview(voice: string | undefined, text: string, volu
     body: JSON.stringify({ voice, text, volume }),
   });
 }
+
+export async function enqueueAlertTts(text: string): Promise<void> {
+  await apiRequest('/alerts/tts', {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  });
+}
