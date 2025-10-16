@@ -162,7 +162,7 @@ log "Servicio backend templated…"
 if [[ -f "$SYSTEMD_DIR/${BACKEND_SVC_BASENAME}.service" ]]; then
   mv "$SYSTEMD_DIR/${BACKEND_SVC_BASENAME}.service" "$SYSTEMD_DIR/${BACKEND_SVC_TEMPLATE}"
 fi
-cat > "$SYSTEMD_DIR/${BACKEND_SVC_TEMPLATE}" <<'SERVICE'
+cat > "$SYSTEMD_DIR/${BACKEND_SVC_TEMPLATE}" <<SERVICE
 [Unit]
 Description=Pantalla Dash Backend (FastAPI)
 After=network-online.target
@@ -171,7 +171,7 @@ Wants=network-online.target
 [Service]
 User=%i
 SupplementaryGroups=pantalla
-WorkingDirectory=%h/proyectos/Pantalla_reloj/backend
+WorkingDirectory=$BACKEND_DIR
 Environment="PYTHONUNBUFFERED=1"
 ExecStart=/bin/bash -lc 'source .venv/bin/activate && uvicorn app:app --host 127.0.0.1 --port 8787 --workers 2 --timeout-keep-alive 30'
 Restart=always
