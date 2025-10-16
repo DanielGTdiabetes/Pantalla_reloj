@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # ==========================
-# Pantalla Futurista - Installer (hardening)
+# Pantalla Futurista - Installer (hardened)
+# Ejecutar desde: Pantalla_reloj/scripts/install.sh
 # Ubuntu/Debian + systemd · idempotente
 # ==========================
 
@@ -12,9 +13,9 @@ warn(){ printf "\033[1;33m[WARN]\033[0m %s\n" "$*"; }
 err(){ printf "\033[1;31m[ERR ]\033[0m %s\n" "$*" >&2; }
 die(){ err "$*"; exit 1; }
 
-# ----- Paths base -----
+# ----- Paths base (script dentro de /scripts -> raíz es su padre) -----
 APP_USER="${SUDO_USER:-${USER}}"
-REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$(dirname "$0")"/.. && pwd)"
 BACKEND_DIR="$REPO_DIR/backend"
 FRONTEND_DIR="$REPO_DIR/dash-ui"
 ENV_DIR="/etc/pantalla-dash"
@@ -40,19 +41,19 @@ OPENAI_KEY="${OPENAI_KEY:-}"
 AEMET_KEY="${AEMET_KEY:-}"
 NON_INTERACTIVE="0"
 ENV_FILE=""
-INSTALL_NODE="1"
+INSTALL_NODE="1"    # instala Node LTS si falta
 
 usage() {
   cat <<EOF
-Uso: sudo bash install.sh [opciones]
-  --openai-key KEY        Clave OpenAI (para fondos IA)
+Uso: sudo ./scripts/install.sh [opciones]
+  --openai-key KEY        Clave OpenAI (fondos IA)
   --aemet-key KEY         Clave AEMET
   --municipio-id ID       (por defecto: ${AEMET_MUNICIPIO_ID})
   --municipio-name NAME   (por defecto: ${AEMET_MUNICIPIO_NAME})
   --postal-code CP        (por defecto: ${AEMET_POSTAL_CODE})
   --province NAME         (por defecto: ${AEMET_PROVINCE})
   --city NAME             (por defecto: ${CITY_NAME})
-  --env FILE              Cargar variables desde .env (OPENAI_KEY=..., AEMET_KEY=...)
+  --env FILE              Cargar variables (.env con OPENAI_KEY=..., AEMET_KEY=...)
   --no-node               No instalar Node LTS
   --non-interactive       Sin preguntas
   -h, --help              Ayuda
@@ -122,11 +123,10 @@ chmod 750 "$ENV_DIR"
 usermod -aG pantalla "$APP_USER" || true
 
 log "Escribiendo $ENV_DIR/env …"
-# normaliza formato: si se pasó clave sin prefijo, la convertimos
+# Normaliza formato: si se pasó clave sin prefijo, la convertimos
 if [[ -n "${OPENAI_KEY:-}" ]]; then
   printf "OPENAI_API_KEY=%s\n" "$OPENAI_KEY" > "$ENV_DIR/env"
 else
-  # mantiene fichero (si existe) o crea vacío con comentario
   if [[ ! -f "$ENV_DIR/env" ]]; then echo "# OPENAI_API_KEY=" > "$ENV_DIR/env"; fi
 fi
 chgrp pantalla "$ENV_DIR/env"
@@ -158,7 +158,7 @@ sudo -u "$APP_USER" bash -lc "python3 -m venv .venv"
 sudo -u "$APP_USER" bash -lc "source .venv/bin/activate && pip install -U pip && pip install fastapi uvicorn httpx pydantic requests python-dateutil Jinja2 openai pillow"
 
 log "Servicio backend templated…"
-# migra posible unidad antigua
+# Migra posible unidad antigua
 if [[ -f "$SYSTEMD_DIR/${BACKEND_SVC_BASENAME}.service" ]]; then
   mv "$SYSTEMD_DIR/${BACKEND_SVC_BASENAME}.service" "$SYSTEMD_DIR/${BACKEND_SVC_TEMPLATE}"
 fi
@@ -184,10 +184,10 @@ SERVICE
 systemctl daemon-reload
 systemctl enable --now "${BACKEND_SVC_BASENAME}@$APP_USER" || true
 
-# --- Hardening del generador IA: corrige parámetros del script ---
+# --- Hardening generador IA: corrige parámetros del script ---
 GEN_SCRIPT="$REPO_DIR/opt/dash/scripts/generate_bg_daily.py"
 if [[ -f "$GEN_SCRIPT" ]]; then
-  log "Revisando/parcheando $GEN_SCRIPT (response_format / size)…"
+  log "Parcheando $GEN_SCRIPT (response_format / size)…"
   sed -i -E 's/,?\s*response_format\s*=\s*["'\''][^"'\'']*["'\'']//g' "$GEN_SCRIPT" || true
   sed -i -E 's/size\s*=\s*["'\''][^"'\'']*["'\'']/size="1536x1024"/g' "$GEN_SCRIPT" || true
 fi
@@ -202,6 +202,9 @@ if [[ -f "$FRONTEND_DIR/package.json" ]]; then
     warn "No hay package-lock.json, usando npm install"
     sudo -u "$APP_USER" bash -lc "npm install"
   fi
+  # Asegura react-router-dom para la mini web de configuración (HashRouter)
+  sudo -u "$APP_USER" bash -lc 'jq ".dependencies += {\"react-router-dom\":\"^6\"}" package.json > package.tmp.json && mv package.tmp.json package.json' 2>/dev/null || true
+  sudo -u "$APP_USER" bash -lc "npm install"
   sudo -u "$APP_USER" bash -lc "npm run build"
   rm -rf /var/www/html/*
   cp -r dist/* /var/www/html/
@@ -278,12 +281,15 @@ TIMER
 systemctl daemon-reload
 systemctl enable --now "$BG_TIMER"
 
+# ----- Reinicia backend para cargar endpoints nuevos (config/Wi-Fi si los añadiste) -----
+systemctl restart "${BACKEND_SVC_BASENAME}@$APP_USER" || true
+
 # ----- Checks finales -----
 echo
 log "Checks finales:"
 set +e
-curl -fsS http://127.0.0.1:8787/api/health >/dev/null && echo "  ✅ Backend UP" || echo "  ❌ Backend DOWN (ver: journalctl -u ${BACKEND_SVC_BASENAME}@$APP_USER -n 100)"
-curl -fsS http://127.0.0.1/healthz        >/dev/null && echo "  ✅ Nginx UP"   || echo "  ❌ Nginx DOWN (ver: journalctl -u nginx -n 100)"
+curl -fsS http://127.0.0.1:8787/api/health >/dev/null && echo "  ✅ Backend UP" || echo "  ❌ Backend DOWN (journalctl -u ${BACKEND_SVC_BASENAME}@$APP_USER -n 100)"
+curl -fsS http://127.0.0.1/healthz        >/dev/null && echo "  ✅ Nginx UP"   || echo "  ❌ Nginx DOWN (journalctl -u nginx -n 100)"
 set -e
 
 # genera primer fondo si hay clave
@@ -307,4 +313,3 @@ echo "  Backend:  http://127.0.0.1:8787"
 echo "  Config:   $ENV_DIR/config.json (root:pantalla 640)"
 echo "  Secretos: $ENV_DIR/env (root:pantalla 640)"
 echo "  Fondos:   $ASSETS_DIR"
-
