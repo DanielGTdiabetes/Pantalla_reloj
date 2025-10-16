@@ -919,6 +919,32 @@ def update_config_endpoint(payload: Dict[str, Any] = Body(...)):
 
     stored_config, stored_path = read_store_config()
 
+    for section in REMOTE_CONFIG_ALLOWED_KEYS:
+        stored_section = stored_config.get(section) if isinstance(stored_config, dict) else None
+        sanitized_section = sanitized_config.get(section)
+
+        if stored_section is None:
+            continue
+
+        if sanitized_section is None:
+            sanitized_patch[section] = None
+            continue
+
+        if not isinstance(stored_section, dict) or not isinstance(sanitized_section, dict):
+            continue
+
+        missing_keys = set(stored_section.keys()) - set(sanitized_section.keys())
+        if not missing_keys:
+            continue
+
+        section_patch = sanitized_patch.setdefault(section, {})
+        if section_patch is None:
+            # Entire section is scheduled for removal; no need to mark individual keys.
+            continue
+
+        for key in missing_keys:
+            section_patch[key] = None
+
     if sanitized_patch:
         ok, path_or_reason = write_config_partial(sanitized_patch)
         if not ok:
