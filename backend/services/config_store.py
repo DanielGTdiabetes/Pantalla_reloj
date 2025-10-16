@@ -52,8 +52,16 @@ def _read_env_file(path: Path) -> Dict[str, str]:
 
 def _merge_dict(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
     for key, value in patch.items():
-        if isinstance(value, dict) and isinstance(base.get(key), dict):
-            base[key] = _merge_dict(dict(base[key]), value)
+        if value is None:
+            base.pop(key, None)
+            continue
+
+        if isinstance(value, dict):
+            existing = base.get(key)
+            if isinstance(existing, dict):
+                base[key] = _merge_dict(dict(existing), value)
+            else:
+                base[key] = _merge_dict({}, value)
         else:
             base[key] = value
     return base
