@@ -200,7 +200,7 @@ def _deep_merge(original: MutableMapping[str, Any], updates: MutableMapping[str,
     return original
 
 
-def update_config(payload: Dict[str, Any]) -> AppConfig:
+def update_config(payload: Dict[str, Any], *, persist: bool = True) -> AppConfig:
     """Update a subset of the configuration while keeping the rest intact."""
     config = read_config()
     data = config.dict(by_alias=True, exclude_none=True)
@@ -239,15 +239,21 @@ def update_config(payload: Dict[str, Any]) -> AppConfig:
 
     updated = AppConfig.parse_obj(merged)
 
-    if CONFIG_PATH.exists() or CONFIG_PATH.parent.exists():
-        _ensure_parent_permissions(CONFIG_PATH)
-        tmp_path = CONFIG_PATH.with_suffix(".tmp")
-        with tmp_path.open("w", encoding="utf-8") as f:
-            json.dump(updated.dict(by_alias=True, exclude_none=True), f, indent=2, ensure_ascii=False)
-        os.chmod(tmp_path, 0o600)
-        tmp_path.replace(CONFIG_PATH)
-    else:
-        logger.warning("Skipping config write, target path %s missing", CONFIG_PATH)
+    if persist:
+        if CONFIG_PATH.exists() or CONFIG_PATH.parent.exists():
+            _ensure_parent_permissions(CONFIG_PATH)
+            tmp_path = CONFIG_PATH.with_suffix(".tmp")
+            with tmp_path.open("w", encoding="utf-8") as f:
+                json.dump(
+                    updated.dict(by_alias=True, exclude_none=True),
+                    f,
+                    indent=2,
+                    ensure_ascii=False,
+                )
+            os.chmod(tmp_path, 0o600)
+            tmp_path.replace(CONFIG_PATH)
+        else:
+            logger.warning("Skipping config write, target path %s missing", CONFIG_PATH)
 
     return updated
 

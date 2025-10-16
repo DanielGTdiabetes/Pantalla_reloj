@@ -40,14 +40,14 @@ from .services.dst import current_time_payload, next_transition_info
 from .services.storms import get_radar_animation, get_radar_url, get_storm_status
 from .services.tts import SpeechError, TTSService, TTSUnavailableError
 from .services.weather import WeatherService, WeatherServiceError
-from services.config_store import (
+from .services.config_store import (
     has_openai_key,
     read_config as read_store_config,
     read_env,
     write_config_partial,
     write_openai_key,
 )
-from services.wifi import wifi_connect as simple_wifi_connect, wifi_scan as simple_wifi_scan
+from .services.wifi import wifi_connect as simple_wifi_connect, wifi_scan as simple_wifi_scan
 from .services.wifi import WifiError, forget as wifi_forget, status as wifi_status
 from .services.offline_state import get_offline_state, record_provider_failure, record_provider_success
 
@@ -904,20 +904,34 @@ def update_config_endpoint(payload: Dict[str, Any] = Body(...)):
             detail=f"Claves no permitidas: {', '.join(invalid)}",
         )
 
-    ok, path_or_reason = write_config_partial(payload)
-    if not ok:
-        raise HTTPException(
-            status_code=409,
-            detail="read-only: ajusta permisos en /etc/pantalla-dash o usa ~/.config/pantalla-dash",
-        )
-
     try:
-        updated = update_config(payload)
+        updated = update_config(payload, persist=False)
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("Error actualizando config: %s", exc)
         raise HTTPException(status_code=400, detail="Configuración inválida") from exc
 
-    stored_config, _ = read_store_config()
+    sanitized_config = updated.dict(by_alias=True, exclude_none=True)
+    sanitized_patch = {
+        section: sanitized_config[section]
+        for section in REMOTE_CONFIG_ALLOWED_KEYS
+        if section in sanitized_config
+    }
+
+    stored_config, stored_path = read_store_config()
+
+    if sanitized_patch:
+        ok, path_or_reason = write_config_partial(sanitized_patch)
+        if not ok:
+            raise HTTPException(
+                status_code=409,
+                detail="read-only: ajusta permisos en /etc/pantalla-dash o usa ~/.config/pantalla-dash",
+            )
+    else:
+        ok, path_or_reason = True, stored_path
+
+    if ok:
+        stored_config, _ = read_store_config()
+
     public_view = updated.public_view()
     response = dict(public_view)
     response.update({
