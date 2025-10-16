@@ -1,3 +1,4 @@
+import { Routes, Route } from 'react-router-dom';
 import { useEffect, useRef } from 'react';
 import DynamicBackground from './components/DynamicBackground';
 import StatusBar from './components/StatusBar';
@@ -10,9 +11,11 @@ import MonthTips from './components/MonthTips';
 import StormOverlay from './components/StormOverlay';
 import SceneEffects from './components/SceneEffects';
 import FpsMeter from './components/FpsMeter';
+import GearButton from './components/GearButton';
 import { DashboardConfigProvider, useDashboardConfig } from './context/DashboardConfigContext';
 import { StormStatusProvider } from './context/StormStatusContext';
 import { BACKEND_BASE_URL } from './services/config';
+import Settings from './pages/Settings';
 
 const useGeolocationSync = () => {
   const postedRef = useRef(false);
@@ -52,6 +55,9 @@ const DashboardLayout = () => {
     <div className="relative flex h-full w-full items-center justify-center overflow-hidden">
       <DynamicBackground refreshMinutes={refreshMinutes} />
       <SceneEffects />
+      <div className="absolute right-10 top-6 z-20">
+        <GearButton />
+      </div>
       <div className="relative z-10 flex h-full w-full max-w-[1920px] flex-col gap-4 px-10 py-6">
         <StatusBar />
         <div className="grid flex-1 grid-cols-[40%_35%_25%] gap-6">
@@ -78,7 +84,12 @@ const DashboardLayout = () => {
 const App = () => (
   <DashboardConfigProvider>
     <StormStatusProvider>
-      <DashboardLayout />
+      <div className="h-full w-full">
+        <Routes>
+          <Route path="/" element={<DashboardLayout />} />
+          <Route path="/config" element={<Settings />} />
+        </Routes>
+      </div>
     </StormStatusProvider>
   </DashboardConfigProvider>
 );
