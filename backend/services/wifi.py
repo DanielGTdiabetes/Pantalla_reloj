@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import shlex
+import shutil
 import subprocess
 from typing import Dict, List, Optional
 
@@ -31,6 +32,15 @@ def _run_nmcli(args: List[str]) -> subprocess.CompletedProcess:
             mask_next = True
     logger.debug("Executing nmcli command: %s", " ".join(shlex.quote(part) for part in sanitized))
     return subprocess.run(cmd, check=False, capture_output=True, text=True)
+
+
+def _truncate(text: str, limit: int = 4096) -> str:
+    if not text:
+        return ""
+    text = text.strip()
+    if len(text) > limit:
+        return text[:limit]
+    return text
 
 
 def scan_networks() -> List[Dict[str, Optional[str]]]:
@@ -159,3 +169,86 @@ def stop_access_point_service() -> None:
         stderr = result.stderr.strip()
         if stderr:
             logger.debug("No se pudo detener %s: %s", AP_SERVICE, stderr)
+
+
+def wifi_scan() -> Dict[str, object]:
+    if shutil.which(NMCLI_BIN) is None:
+        return {"items": [], "raw": "nmcli not found"}
+
+    config = read_config()
+    interface = get_wifi_interface(config)
+    args = ["-t", "-f", "SSID,SIGNAL,SECURITY", "dev", "wifi", "list"]
+    if interface:
+        args.extend(["ifname", interface])
+
+    result = _run_nmcli(args)
+    raw_parts = [part for part in (result.stdout, result.stderr) if part]
+    raw_output = _truncate("\n".join(raw_parts))
+
+    if result.returncode != 0:
+        if not raw_output:
+            raw_output = f"nmcli exited with code {result.returncode}"
+        return {"items": [], "raw": raw_output}
+
+    items: List[Dict[str, object]] = []
+    for line in result.stdout.splitlines():
+        if not line:
+            continue
+        parts = line.split(":")
+        if len(parts) < 3:
+            continue
+        ssid = parts[0].strip()
+        signal = parts[1].strip()
+        security = parts[2].strip() or "OPEN"
+        entry: Dict[str, object] = {"ssid": ssid, "security": security}
+        if signal.isdigit():
+            entry["signal"] = int(signal)
+        items.append(entry)
+
+    # Deduplicate by SSID keeping highest signal strength
+    dedup: Dict[str, Dict[str, object]] = {}
+    for item in items:
+        existing = dedup.get(item["ssid"])
+        current_signal = item.get("signal")
+        existing_signal = existing.get("signal") if isinstance(existing, dict) else None
+        if existing is None or (
+            isinstance(current_signal, int)
+            and (not isinstance(existing_signal, int) or current_signal > existing_signal)
+        ):
+            dedup[item["ssid"]] = item
+
+    ordered = sorted(
+        dedup.values(),
+        key=lambda entry: entry.get("signal") if isinstance(entry.get("signal"), int) else -1,
+        reverse=True,
+    )
+    return {"items": ordered, "raw": raw_output}
+
+
+def wifi_connect(ssid: str, psk: Optional[str] = None) -> Dict[str, object]:
+    if not ssid:
+        return {"ok": False, "stdout": "", "stderr": "SSID requerido"}
+
+    if shutil.which(NMCLI_BIN) is None:
+        return {"ok": False, "stdout": "", "stderr": "nmcli not found"}
+
+    config = read_config()
+    interface = get_wifi_interface(config)
+    args = ["device", "wifi", "connect", ssid]
+    if interface:
+        args.extend(["ifname", interface])
+    if psk:
+        args.extend(["password", psk])
+
+    result = _run_nmcli(args)
+    stdout = _truncate(result.stdout)
+    stderr = _truncate(result.stderr)
+    ok = result.returncode == 0
+
+    if ok:
+        try:
+            stop_access_point_service()
+        except Exception:  # pragma: no cover - defensivo
+            logger.debug("Fallo al detener AP tras conectar", exc_info=True)
+
+    return {"ok": ok, "stdout": stdout, "stderr": stderr}

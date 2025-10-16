@@ -31,7 +31,7 @@ from .services.ai_text import (
 )
 from .services.backgrounds import BackgroundAsset, list_backgrounds, latest_background
 from .services.calendar import CalendarService, CalendarServiceError
-from .services.config import AppConfig, read_config, update_config
+from .services.config import AppConfig, read_config as load_app_config, update_config
 from .services.dayinfo import get_day_info
 from .services.location import set_location
 from .services.metrics import get_latency
@@ -40,7 +40,15 @@ from .services.dst import current_time_payload, next_transition_info
 from .services.storms import get_radar_animation, get_radar_url, get_storm_status
 from .services.tts import SpeechError, TTSService, TTSUnavailableError
 from .services.weather import WeatherService, WeatherServiceError
-from .services.wifi import WifiError, connect as wifi_connect, forget as wifi_forget, scan_networks, status as wifi_status
+from services.config_store import (
+    has_openai_key,
+    read_config as read_store_config,
+    read_env,
+    write_config_partial,
+    write_openai_key,
+)
+from services.wifi import wifi_connect as simple_wifi_connect, wifi_scan as simple_wifi_scan
+from .services.wifi import WifiError, forget as wifi_forget, status as wifi_status
 from .services.offline_state import get_offline_state, record_provider_failure, record_provider_success
 
 logger = logging.getLogger("pantalla.backend")
@@ -424,10 +432,11 @@ ALERT_COOLDOWN_SECONDS = 60 * 60
 ALERT_TEXT = "Tormenta cercana. Precaución."
 _last_alert_ts: float = 0.0
 _alert_task: asyncio.Task[None] | None = None
+REMOTE_CONFIG_ALLOWED_KEYS = {"aemet", "weather", "background", "locale"}
 
 
 def get_config() -> AppConfig:
-    return read_config()
+    return load_app_config()
 
 
 @app.get("/setup", response_class=HTMLResponse)
@@ -658,22 +667,19 @@ def health_full():
     }
 
 
-@app.get("/api/wifi/scan", response_model=list[WifiNetwork])
+@app.get("/api/wifi/scan")
 def wifi_scan():
     try:
-        networks = scan_networks()
-        return [WifiNetwork(**network) for network in networks]
-    except WifiError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return simple_wifi_scan()
+    except Exception as exc:  # pragma: no cover - defensivo
+        logger.error("Error escaneando Wi-Fi: %s", exc)
+        raise HTTPException(status_code=502, detail="No se pudo escanear redes Wi-Fi") from exc
 
 
 @app.post("/api/wifi/connect")
 def wifi_connect_endpoint(payload: WifiConnectRequest = Body(...)):
-    try:
-        wifi_connect(payload.ssid, payload.psk)
-    except WifiError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"ok": True, "ssid": payload.ssid}
+    result = simple_wifi_connect(payload.ssid, payload.psk)
+    return result
 
 
 @app.post("/api/wifi/forget")
@@ -865,19 +871,77 @@ async def day_brief(date: str | None = None) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.get("/api/config/status")
+def config_status() -> Dict[str, Any]:
+    _, config_path = read_store_config()
+    _, env_path = read_env()
+    return {
+        "hasOpenAI": has_openai_key(),
+        "configPath": config_path,
+        "envPath": env_path,
+    }
+
+
 @app.get("/api/config")
 def get_config_endpoint(config: AppConfig = Depends(get_config)):
-    return config.public_view()
+    stored_config, path = read_store_config()
+    public_view = config.public_view()
+    payload = dict(public_view)
+    payload["config"] = stored_config or public_view
+    payload["path"] = path
+    return payload
 
 
 @app.post("/api/config")
-def update_config_endpoint(payload: dict = Body(...)):
+def update_config_endpoint(payload: Dict[str, Any] = Body(...)):
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Payload inválido")
+
+    invalid = [key for key in payload if key not in REMOTE_CONFIG_ALLOWED_KEYS]
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Claves no permitidas: {', '.join(invalid)}",
+        )
+
+    ok, path_or_reason = write_config_partial(payload)
+    if not ok:
+        raise HTTPException(
+            status_code=409,
+            detail="read-only: ajusta permisos en /etc/pantalla-dash o usa ~/.config/pantalla-dash",
+        )
+
     try:
         updated = update_config(payload)
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("Error actualizando config: %s", exc)
         raise HTTPException(status_code=400, detail="Configuración inválida") from exc
-    return updated.public_view()
+
+    stored_config, _ = read_store_config()
+    public_view = updated.public_view()
+    response = dict(public_view)
+    response.update({
+        "config": stored_config or public_view,
+        "ok": True,
+        "path": path_or_reason,
+    })
+    return response
+
+
+@app.post("/api/config/openai")
+def update_openai_key(payload: Dict[str, Any] = Body(...)):
+    key = payload.get("key") if isinstance(payload, dict) else None
+    if not isinstance(key, str) or not key.strip():
+        raise HTTPException(status_code=400, detail="Clave OpenAI requerida")
+
+    ok, path_or_reason = write_openai_key(key.strip())
+    if not ok:
+        raise HTTPException(
+            status_code=409,
+            detail="read-only: ajusta permisos en /etc/pantalla-dash o usa ~/.config/pantalla-dash",
+        )
+
+    return {"ok": True, "path": path_or_reason}
 
 
 @app.on_event("startup")
