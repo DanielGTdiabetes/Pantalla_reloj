@@ -23,6 +23,10 @@ ASSETS_DIR="/opt/dash/assets/backgrounds/auto"
 LOG_DIR="/var/log/pantalla-dash"
 NGINX_SITE="/etc/nginx/sites-available/pantalla"
 SYSTEMD_DIR="/etc/systemd/system"
+UI_SERVICE_NAME="pantalla-ui.service"
+UI_SERVICE_SRC="$REPO_DIR/system/$UI_SERVICE_NAME"
+UI_LAUNCHER_SRC="$REPO_DIR/scripts/pantalla-ui-launch.sh"
+UI_LAUNCHER_DST="/usr/local/bin/pantalla-ui-launch.sh"
 
 BACKEND_SVC_BASENAME="pantalla-dash-backend"
 BACKEND_SVC_TEMPLATE="${BACKEND_SVC_BASENAME}@.service"
@@ -164,40 +168,58 @@ if xrandr | grep -qE "$OUT[[:space:]]+connected[[:space:]]+480x1920"; then
   xrandr --output "$OUT" --rotate left
 fi
 
+# Mantén la pantalla despierta en kiosko
+xset -dpms
+xset s off
+xset s noblank
+
 # Ocultar cursor en kiosko (descomenta si quieres):
 # unclutter -idle 0.5 &
 
-# Da un pequeño margen para que el backend/NGINX arranquen antes de abrir el navegador
-sleep 3
-
-# Detecta un navegador Chromium disponible
-BROWSER_CMD=""
-for candidate in chromium-browser chromium google-chrome-stable google-chrome; do
-  if command -v "$candidate" >/dev/null 2>&1; then
-    BROWSER_CMD="$candidate"
-    break
-  fi
-done
-
-KIOSK_URL="${KIOSK_URL:-http://localhost}"
-
-if [[ -n "$BROWSER_CMD" ]]; then
-  "${BROWSER_CMD}" \
-    --kiosk "$KIOSK_URL" \
-    --noerrdialogs \
-    --disable-session-crashed-bubble \
-    --disable-infobars \
-    --overscroll-history-navigation=0 \
-    --disable-translate \
-    --disable-features=TranslateUI \
-    --start-maximized \
-    --check-for-update-interval=31536000 \
-    --disable-restore-session-state &
-else
-  echo "[autostart] No se encontró Chromium; intentando abrir $KIOSK_URL con xdg-open" >&2
-  xdg-open "$KIOSK_URL" >/dev/null 2>&1 &
-fi
+# El servicio systemd pantalla-ui.service se encarga de lanzar Chromium en modo kiosko.
 EOF
+
+log "Deshabilitando autostart XDG de Chromium (si existen)…"
+disable_autostart_file() {
+  local file="$1"
+  if [[ -f "$file" ]]; then
+    if grep -qiE 'chromium|google-chrome' "$file"; then
+      if [[ "$file" == *.disabled ]]; then
+        log "  Autostart ya deshabilitado: $file"
+      else
+        mv "$file" "$file.disabled"
+        log "  Movido $file -> $file.disabled"
+      fi
+    fi
+  fi
+}
+
+if [[ -d "${APP_HOME}/.config/autostart" ]]; then
+  while IFS= read -r -d '' desktop; do
+    disable_autostart_file "$desktop"
+  done < <(find "${APP_HOME}/.config/autostart" -maxdepth 1 -type f -name '*.desktop' -print0)
+fi
+
+if [[ -d "/etc/xdg/autostart" ]]; then
+  while IFS= read -r -d '' desktop; do
+    disable_autostart_file "$desktop"
+  done < <(find /etc/xdg/autostart -maxdepth 1 -type f -name '*.desktop' -print0)
+fi
+
+log "Instalando lanzador de Chromium para systemd (${UI_LAUNCHER_DST})…"
+install -m 755 "$UI_LAUNCHER_SRC" "$UI_LAUNCHER_DST"
+
+log "Instalando servicio systemd ${UI_SERVICE_NAME}…"
+UI_USER="${PANTALLA_UI_USER:-$APP_USER}"
+if ! id "$UI_USER" >/dev/null 2>&1; then
+  die "El usuario $UI_USER no existe; ajusta PANTALLA_UI_USER antes de continuar"
+fi
+tmp_service="$(mktemp)"
+sed "s/{{UI_USER}}/${UI_USER}/g" "$UI_SERVICE_SRC" > "$tmp_service"
+install -m 644 "$tmp_service" "$SYSTEMD_DIR/$UI_SERVICE_NAME"
+rm -f "$tmp_service"
+systemctl daemon-reload
+systemctl enable --now "$UI_SERVICE_NAME"
 
 sudo chown -R "${APP_USER}:${APP_USER}" "${APP_HOME}/.config/openbox"
 sudo chmod +x "${APP_HOME}/.config/openbox/autostart"
