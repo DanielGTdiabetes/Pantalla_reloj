@@ -6,14 +6,20 @@ export interface WifiNetwork {
   security?: string;
 }
 
+export interface WifiScanResult {
+  networks: WifiNetwork[];
+  raw?: string;
+}
+
 export interface WifiStatus {
   connected: boolean;
   ssid?: string | null;
   ip?: string | null;
+  interface?: string | null;
 }
 
-export async function scanNetworks(): Promise<WifiNetwork[]> {
-  return await apiRequest<WifiNetwork[]>('/wifi/scan');
+export async function scanNetworks(): Promise<WifiScanResult> {
+  return await apiRequest<WifiScanResult>('/wifi/scan');
 }
 
 export async function connectNetwork(ssid: string, password?: string): Promise<void> {
@@ -23,13 +29,6 @@ export async function connectNetwork(ssid: string, password?: string): Promise<v
   });
 }
 
-export async function forgetNetwork(ssid: string): Promise<void> {
-  await apiRequest('/wifi/forget', {
-    method: 'POST',
-    body: JSON.stringify({ ssid }),
-  });
-}
-
 export async function fetchWifiStatus(): Promise<WifiStatus> {
-  return await apiRequest<WifiStatus>('/network/status');
+  return await apiRequest<WifiStatus>('/wifi/status');
 }
