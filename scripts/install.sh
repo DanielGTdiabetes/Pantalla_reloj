@@ -155,11 +155,26 @@ sudo chmod +x "${APP_HOME}/.config/openbox/autostart"
 log "Habilitando LightDM para iniciar entorno gráfico en el arranque…"
 sudo systemctl enable lightdm || true
 
+NODE_MAJ=0
+NODE_VERSION=""
+if command -v node >/dev/null 2>&1; then
+  NODE_VERSION="$(node -v)"
+  NODE_MAJ="$(printf '%s' "$NODE_VERSION" | sed 's/v\([0-9]\+\).*/\1/')"
+fi
+
 if [[ "$INSTALL_NODE" == "1" ]]; then
-  if ! command -v node >/dev/null 2>&1; then
-    log "Instalando Node LTS…"
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-    apt-get install -y nodejs
+  if [[ "$NODE_MAJ" -lt 20 ]]; then
+    log "Instalando Node 20 LTS (Nodesource)…"
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+    NODE_VERSION="$(node -v)"
+    NODE_MAJ="$(printf '%s' "$NODE_VERSION" | sed 's/v\([0-9]\+\).*/\1/')"
+  else
+    log "Node ${NODE_VERSION:-desconocido} detectado (>=20)."
+  fi
+else
+  if [[ "$NODE_MAJ" -lt 20 ]]; then
+    warn "Node <20 detectado y --no-node; la build del frontend podría fallar."
   fi
 fi
 
@@ -247,18 +262,39 @@ fi
 
 # ----- Frontend -----
 if [[ -f "$FRONTEND_DIR/package.json" ]]; then
-  log "Construyendo frontend…"
+  log "Construyendo frontend (dash-ui)…"
   cd "$FRONTEND_DIR"
-  if [[ -f package-lock.json ]]; then
-    sudo -u "$APP_USER" bash -lc "npm ci"
+
+  # Limpieza previa opcional
+  rm -rf node_modules 2>/dev/null || true
+
+  # Intento 1: npm ci
+  if sudo -u "$APP_USER" bash -lc "cd '$FRONTEND_DIR' && npm ci"; then
+    log "npm ci OK"
   else
-    warn "No hay package-lock.json, usando npm install"
-    sudo -u "$APP_USER" bash -lc "npm install"
+    warn "npm ci falló (lock desincronizado). Intentando npm install…"
+    rm -rf node_modules 2>/dev/null || true
+    if sudo -u "$APP_USER" bash -lc "cd '$FRONTEND_DIR' && npm install"; then
+      log "npm install OK (lock actualizado)"
+    else
+      die "Fallo en npm install. Revisa package.json/package-lock.json."
+    fi
   fi
+
   # Asegura react-router-dom para la mini web de configuración (HashRouter)
-  sudo -u "$APP_USER" bash -lc 'jq ".dependencies += {\"react-router-dom\":\"^6\"}" package.json > package.tmp.json && mv package.tmp.json package.json' 2>/dev/null || true
-  sudo -u "$APP_USER" bash -lc "npm install"
-  sudo -u "$APP_USER" bash -lc "npm run build"
+  sudo -u "$APP_USER" bash -lc "cd '$FRONTEND_DIR' && jq \".dependencies += {\\\"react-router-dom\\\":\\\"^6\\\"}\" package.json > package.tmp.json && mv package.tmp.json package.json" 2>/dev/null || true
+  if sudo -u "$APP_USER" bash -lc "cd '$FRONTEND_DIR' && npm install"; then
+    log "npm install de dependencias obligatorias OK"
+  else
+    die "Fallo en npm install tras ajustar dependencias obligatorias."
+  fi
+
+  if sudo -u "$APP_USER" bash -lc "cd '$FRONTEND_DIR' && npm run build"; then
+    log "Build frontend OK"
+  else
+    die "Fallo en 'npm run build'"
+  fi
+
   rm -rf /var/www/html/*
   cp -r dist/* /var/www/html/
 else
