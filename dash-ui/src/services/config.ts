@@ -1,7 +1,7 @@
 import type { ThemeKey } from '../styles/theme';
 
-export const API_BASE_URL = 'http://127.0.0.1:8787/api';
-export const BACKEND_BASE_URL = API_BASE_URL.replace(/\/?api$/, '');
+export const API_BASE_URL = '/api';
+export const BACKEND_BASE_URL = '';
 export const CONFIG_CACHE_KEY = 'dashConfig';
 
 export interface WeatherConfig {
@@ -51,6 +51,12 @@ export interface DashboardConfig {
 
 export type ConfigUpdate = Partial<DashboardConfig>;
 
+export interface ConfigEnvelope {
+  config: Record<string, unknown>;
+  paths: { config: string; secrets: string };
+  secrets: Record<string, unknown>;
+}
+
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -70,6 +76,8 @@ async function safeParseError(response: Response): Promise<string | undefined> {
   try {
     const data = await response.json();
     if (typeof data?.detail === 'string') return data.detail;
+    if (data?.detail && typeof data.detail.message === 'string') return data.detail.message;
+    if (typeof data?.detail?.error === 'string') return data.detail.error;
     if (typeof data?.message === 'string') return data.message;
   } catch (error) {
     // ignore
@@ -78,14 +86,16 @@ async function safeParseError(response: Response): Promise<string | undefined> {
 }
 
 export async function fetchDashboardConfig(): Promise<DashboardConfig> {
-  return await apiRequest<DashboardConfig>('/config');
+  const envelope = await apiRequest<ConfigEnvelope>('/config');
+  return (envelope?.config as DashboardConfig) ?? {};
 }
 
 export async function updateDashboardConfig(payload: ConfigUpdate): Promise<DashboardConfig> {
-  return await apiRequest<DashboardConfig>('/config', {
-    method: 'POST',
+  const envelope = await apiRequest<ConfigEnvelope>('/config', {
+    method: 'PUT',
     body: JSON.stringify(payload),
   });
+  return (envelope?.config as DashboardConfig) ?? {};
 }
 
 export function loadCachedConfig(): DashboardConfig | null {

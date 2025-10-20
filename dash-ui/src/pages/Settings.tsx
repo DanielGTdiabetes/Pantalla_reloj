@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DynamicBackground from '../components/DynamicBackground';
 import SceneEffects from '../components/SceneEffects';
-import { BACKEND_BASE_URL } from '../services/config';
+import { BACKEND_BASE_URL, type ConfigEnvelope } from '../services/config';
 
 type NoticeType = 'success' | 'error' | 'info';
 
@@ -11,16 +11,20 @@ interface Notice {
   text: string;
 }
 
-interface ConfigStatus {
-  hasOpenAI: boolean;
-  configPath: string;
-  envPath: string;
-}
-
 interface WifiItem {
   ssid: string;
   signal?: number;
   security?: string;
+}
+
+interface SecretsMetaEntry {
+  hasKey: boolean;
+  updatedAt: string | null;
+  path: string;
+}
+
+interface SecretsMeta {
+  openai?: SecretsMetaEntry;
 }
 
 interface ConfigDraft {
@@ -43,6 +47,8 @@ async function parseError(response: Response): Promise<string> {
   try {
     const data = await response.json();
     if (typeof data?.detail === 'string') return data.detail;
+    if (data?.detail && typeof data.detail.message === 'string') return data.detail.message;
+    if (data?.detail && typeof data.detail.error === 'string') return data.detail.error;
     if (typeof data?.message === 'string') return data.message;
   } catch (error) {
     // ignore
@@ -66,11 +72,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 const buildDraftFromConfig = (config: Record<string, unknown> | null): ConfigDraft => {
   if (!config) return DEFAULT_DRAFT;
-  const raw = (config.config as Record<string, any> | undefined) ?? {};
-  const locale = (raw.locale as Record<string, unknown> | undefined) ?? {};
-  const background = (raw.background as Record<string, unknown> | undefined) ?? {};
-  const aemet = (raw.aemet as Record<string, unknown> | undefined) ?? {};
-  const weather = (raw.weather as Record<string, unknown> | undefined) ?? {};
+  const locale = (config.locale as Record<string, unknown> | undefined) ?? {};
+  const background = (config.background as Record<string, unknown> | undefined) ?? {};
+  const aemet = (config.aemet as Record<string, unknown> | undefined) ?? {};
+  const weather = (config.weather as Record<string, unknown> | undefined) ?? {};
   return {
     aemetApiKey: typeof aemet.apiKey === 'string' ? aemet.apiKey : '',
     aemetMunicipioId: typeof aemet.municipioId === 'string' ? aemet.municipioId : '',
@@ -88,7 +93,8 @@ const buildDraftFromConfig = (config: Record<string, unknown> | null): ConfigDra
 const Settings = () => {
   const navigate = useNavigate();
   const [notice, setNotice] = useState<Notice | null>(null);
-  const [status, setStatus] = useState<ConfigStatus | null>(null);
+  const [configEnvelope, setConfigEnvelope] = useState<ConfigEnvelope | null>(null);
+  const [secretsMeta, setSecretsMeta] = useState<SecretsMeta | null>(null);
   const [draft, setDraft] = useState<ConfigDraft>(DEFAULT_DRAFT);
   const [initialDraft, setInitialDraft] = useState<ConfigDraft>(DEFAULT_DRAFT);
   const [openAiKey, setOpenAiKey] = useState('');
@@ -99,6 +105,7 @@ const Settings = () => {
   const [wifiRaw, setWifiRaw] = useState('');
   const [scanningWifi, setScanningWifi] = useState(false);
   const [wifiMessage, setWifiMessage] = useState<string | null>(null);
+  const [connectingSsid, setConnectingSsid] = useState<string | null>(null);
 
   useEffect(() => {
     if (!notice) return;
@@ -110,12 +117,15 @@ const Settings = () => {
     void (async () => {
       try {
         setLoading(true);
-        const [statusPayload, configPayload] = await Promise.all([
-          request<ConfigStatus>('/api/config/status'),
-          request<Record<string, unknown>>('/api/config'),
+        const [configPayload, secretsMetaPayload] = await Promise.all([
+          request<ConfigEnvelope>('/api/config'),
+          request<SecretsMeta>('/api/secrets/meta'),
         ]);
-        setStatus(statusPayload);
-        const nextDraft = buildDraftFromConfig(configPayload);
+        setConfigEnvelope(configPayload);
+        setSecretsMeta(secretsMetaPayload);
+        const nextDraft = buildDraftFromConfig(
+          (configPayload.config as Record<string, unknown>) ?? {}
+        );
         setDraft(nextDraft);
         setInitialDraft(nextDraft);
       } catch (error) {
@@ -130,10 +140,22 @@ const Settings = () => {
     })();
   }, []);
 
+  const openAiDetails = useMemo(() => {
+    const secrets = (configEnvelope?.secrets ?? {}) as Record<string, any>;
+    const openai = secrets?.openai as { hasKey?: boolean; masked?: string | null } | undefined;
+    const meta = secretsMeta?.openai;
+    return {
+      hasKey: Boolean(openai?.hasKey ?? meta?.hasKey ?? false),
+      masked: typeof openai?.masked === 'string' ? openai.masked : null,
+      updatedAt: meta?.updatedAt ?? null,
+      path: meta?.path ?? configEnvelope?.paths?.secrets ?? '',
+    };
+  }, [configEnvelope, secretsMeta]);
+
   const openAiStateLabel = useMemo(() => {
-    if (!status) return 'Desconocido';
-    return status.hasOpenAI ? 'Configurada' : 'Sin configurar';
-  }, [status]);
+    if (!configEnvelope && !secretsMeta) return 'Desconocido';
+    return openAiDetails.hasKey ? 'Configurada' : 'Sin configurar';
+  }, [configEnvelope, secretsMeta, openAiDetails.hasKey]);
 
   const buildConfigPatch = () => {
     const patch: Record<string, unknown> = {};
@@ -178,11 +200,12 @@ const Settings = () => {
     try {
       setSavingConfig(true);
       const patch = buildConfigPatch();
-      const result = await request<Record<string, unknown>>('/api/config', {
-        method: 'POST',
+      const result = await request<ConfigEnvelope>('/api/config', {
+        method: 'PUT',
         body: JSON.stringify(patch),
       });
-      const nextDraft = buildDraftFromConfig(result);
+      setConfigEnvelope(result);
+      const nextDraft = buildDraftFromConfig((result.config as Record<string, unknown>) ?? {});
       setDraft(nextDraft);
       setInitialDraft(nextDraft);
       setNotice({ type: 'success', text: 'Configuración guardada correctamente' });
@@ -206,14 +229,18 @@ const Settings = () => {
 
     try {
       setSavingKey(true);
-      await request<Record<string, unknown>>('/api/config/openai', {
-        method: 'POST',
-        body: JSON.stringify({ key: trimmed }),
+      const result = await request<ConfigEnvelope>('/api/secrets', {
+        method: 'PUT',
+        body: JSON.stringify({ openai: { apiKey: trimmed } }),
       });
       setOpenAiKey('');
       setNotice({ type: 'success', text: 'Clave OpenAI actualizada' });
-      const freshStatus = await request<ConfigStatus>('/api/config/status');
-      setStatus(freshStatus);
+      setConfigEnvelope(result);
+      const nextDraft = buildDraftFromConfig((result.config as Record<string, unknown>) ?? {});
+      setDraft(nextDraft);
+      setInitialDraft(nextDraft);
+      const meta = await request<SecretsMeta>('/api/secrets/meta');
+      setSecretsMeta(meta);
     } catch (error) {
       setNotice({ type: 'error', text: error instanceof Error ? error.message : 'No se pudo guardar la clave' });
     } finally {
@@ -224,8 +251,8 @@ const Settings = () => {
   const handleScanWifi = async () => {
     try {
       setScanningWifi(true);
-      const result = await request<{ items?: WifiItem[]; raw?: string }>('/api/wifi/scan');
-      setWifiNetworks(result.items ?? []);
+      const result = await request<{ networks?: WifiItem[]; raw?: string }>('/api/wifi/scan');
+      setWifiNetworks(result.networks ?? []);
       setWifiRaw(result.raw ?? '');
       setWifiMessage('Escaneo completado');
     } catch (error) {
@@ -248,21 +275,25 @@ const Settings = () => {
     }
 
     try {
-      const result = await request<{ ok?: boolean; stdout?: string; stderr?: string }>('/api/wifi/connect', {
+      setConnectingSsid(network.ssid);
+      const result = await request<{ connected?: boolean; ssid?: string; stdout?: string }>('/api/wifi/connect', {
         method: 'POST',
         body: JSON.stringify({ ssid: network.ssid, ...(psk ? { psk } : {}) }),
       });
-      if (result.ok) {
-        setWifiMessage(`Conectado a ${network.ssid}`);
-        setNotice({ type: 'success', text: `Conectado a ${network.ssid}` });
+      if (result.connected) {
+        const ssid = result.ssid ?? network.ssid;
+        setWifiMessage(`Conectado a ${ssid}`);
+        setNotice({ type: 'success', text: `Conectado a ${ssid}` });
       } else {
-        const reason = result.stderr || 'No se pudo conectar';
+        const reason = result.stdout || 'No se pudo conectar';
         setWifiMessage(reason);
         setNotice({ type: 'error', text: reason });
       }
     } catch (error) {
       setWifiMessage(null);
       setNotice({ type: 'error', text: error instanceof Error ? error.message : 'No se pudo conectar a la red' });
+    } finally {
+      setConnectingSsid(null);
     }
   };
 
@@ -321,12 +352,20 @@ const Settings = () => {
               >
                 {savingKey ? 'Guardando...' : 'Guardar clave'}
               </button>
-              {status && (
-                <div className="mt-2 space-y-1 text-xs text-white/70">
-                  <p>Config: {status.configPath || '—'}</p>
-                  <p>Env: {status.envPath || '—'}</p>
-                </div>
-              )}
+              <div className="mt-2 space-y-1 text-xs text-white/70">
+                <p>Config: {configEnvelope?.paths?.config || '—'}</p>
+                <p>Secrets: {configEnvelope?.paths?.secrets || openAiDetails.path || '—'}</p>
+                <p>Clave guardada: {openAiDetails.masked || '—'}</p>
+                {openAiDetails.updatedAt && (
+                  <p>
+                    Actualizado:{' '}
+                    {new Date(openAiDetails.updatedAt).toLocaleString('es-ES', {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    })}
+                  </p>
+                )}
+              </div>
             </div>
           </section>
           <section className="flex flex-col rounded-3xl bg-black/30 p-6 backdrop-blur-lg">
@@ -427,9 +466,10 @@ const Settings = () => {
                     <button
                       type="button"
                       onClick={() => handleWifiConnect(network)}
-                      className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-white/30"
+                      disabled={connectingSsid === network.ssid}
+                      className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-white/30 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      Conectar
+                      {connectingSsid === network.ssid ? 'Conectando…' : 'Conectar'}
                     </button>
                   </div>
                 ))}

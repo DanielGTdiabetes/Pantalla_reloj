@@ -102,6 +102,9 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y python3 python3-venv python3-pip nginx curl jq unzip ca-certificates espeak-ng network-manager
 
+log "Asegurando NetworkManager activo…"
+systemctl enable --now NetworkManager || true
+
 # --- X stack mínimo y sesión ligera (idempotente) ---
 log "Instalando Xorg + Openbox + LightDM + utilidades..."
 sudo apt-get update
@@ -121,6 +124,16 @@ fi
 APP_USER="${SUDO_USER:-${USER}}"
 APP_HOME="$(getent passwd "$APP_USER" | cut -d: -f6)"
 [[ -n "$APP_HOME" ]] || die "No se pudo determinar HOME para $APP_USER"
+
+LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+if [[ -z "$LAN_IP" ]]; then
+  warn "No se pudo detectar IP LAN. Ajusta PANTALLA_ALLOWED_ORIGINS manualmente si es necesario."
+fi
+
+ALLOWED_ORIGINS="http://localhost,http://127.0.0.1"
+if [[ -n "$LAN_IP" ]]; then
+  ALLOWED_ORIGINS+=",http://${LAN_IP}"
+fi
 
 log "Configurando autologin de LightDM para ${APP_USER} y sesión por defecto openbox..."
 sudo mkdir -p /etc/lightdm/lightdm.conf.d
@@ -192,6 +205,33 @@ sudo chmod +x "${APP_HOME}/.config/openbox/autostart"
 log "Habilitando LightDM para iniciar entorno gráfico en el arranque…"
 sudo systemctl enable lightdm || true
 
+log "Aplicando políticas de geolocalización para Chromium…"
+LAN_IP_VALUE="$LAN_IP" python3 <<'PY'
+import json
+import os
+
+lan_ip = os.environ.get("LAN_IP_VALUE", "").strip()
+urls = ["http://localhost", "http://127.0.0.1"]
+if lan_ip:
+    urls.append(f"http://{lan_ip}")
+
+policy = {
+    "DefaultGeolocationSetting": 1,
+    "GeolocationAllowedUrls": urls,
+}
+
+paths = [
+    "/etc/chromium/policies/managed/allow_geolocation.json",
+    "/var/snap/chromium/common/chromium/policies/managed/allow_geolocation.json",
+]
+
+for target in paths:
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    with open(target, "w", encoding="utf-8") as handle:
+        json.dump(policy, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+PY
+
 NODE_MAJ=0
 NODE_VERSION=""
 if command -v node >/dev/null 2>&1; then
@@ -227,6 +267,11 @@ chgrp pantalla "$ENV_DIR" || true
 chmod 750 "$ENV_DIR"
 usermod -aG pantalla "$APP_USER" || true
 
+log "Configurando sudoers para nmcli sin contraseña…"
+SUDOERS_FILE="/etc/sudoers.d/pantalla-wifi"
+printf "%s ALL=(root) NOPASSWD:/usr/bin/nmcli\n" "$APP_USER" > "$SUDOERS_FILE"
+chmod 440 "$SUDOERS_FILE"
+
 log "Escribiendo $ENV_DIR/env …"
 # Normaliza formato: si se pasó clave sin prefijo, la convertimos
 if [[ -n "${OPENAI_KEY:-}" ]]; then
@@ -236,6 +281,7 @@ else
 fi
 chgrp pantalla "$ENV_DIR/env"
 chmod 640 "$ENV_DIR/env"
+chown "$APP_USER":pantalla "$ENV_DIR/env"
 
 log "Escribiendo $ENV_DIR/config.json …"
 cat > "$ENV_DIR/config.json" <<JSON
@@ -250,12 +296,38 @@ cat > "$ENV_DIR/config.json" <<JSON
   "weather": { "units": "metric", "city": "${CITY_NAME}" },
   "storm": { "threshold": 0.6, "enableExperimentalLightning": false },
   "wifi": { "preferredInterface": "wlan0" },
-  "background": { "intervalMinutes": 60, "mode": "auto", "retainDays": 7 },
+  "background": { "intervalMinutes": 60, "mode": "daily", "retainDays": 7 },
   "locale": { "country": "ES", "autonomousCommunity": "Comunitat Valenciana", "province": "Castellón", "city": "${CITY_NAME}" }
 }
 JSON
-chgrp pantalla "$ENV_DIR/config.json"
+chown "$APP_USER":pantalla "$ENV_DIR/config.json"
 chmod 640 "$ENV_DIR/config.json"
+
+log "Escribiendo $ENV_DIR/secrets.json …"
+SECRETS_PATH="$ENV_DIR/secrets.json" OPENAI_SECRET_VALUE="$OPENAI_KEY" python3 <<'PY'
+import json
+import os
+
+path = os.environ["SECRETS_PATH"]
+key = os.environ.get("OPENAI_SECRET_VALUE", "").strip()
+data = {}
+if key:
+    data["openai"] = {"apiKey": key}
+
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle, ensure_ascii=False, indent=2)
+    handle.write("\n")
+PY
+chown "$APP_USER":"$APP_USER" "$ENV_DIR/secrets.json"
+chmod 600 "$ENV_DIR/secrets.json"
+
+log "Escribiendo $ENV_DIR/backend.env …"
+cat > "$ENV_DIR/backend.env" <<EOF
+PANTALLA_ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+EOF
+chown "$APP_USER":pantalla "$ENV_DIR/backend.env"
+chmod 640 "$ENV_DIR/backend.env"
 
 log "Preparando backend (venv + deps)…"
 cd "$BACKEND_DIR"
@@ -277,8 +349,9 @@ Wants=network-online.target
 User=%i
 SupplementaryGroups=pantalla
 WorkingDirectory=$BACKEND_DIR
+EnvironmentFile=$ENV_DIR/backend.env
 Environment="PYTHONUNBUFFERED=1"
-ExecStart=/bin/bash -lc 'source .venv/bin/activate && uvicorn app:app --host 127.0.0.1 --port 8787 --workers 2 --timeout-keep-alive 30'
+ExecStart=/bin/bash -lc 'source .venv/bin/activate && uvicorn app:app --host 127.0.0.1 --port 8081 --workers 2 --timeout-keep-alive 30'
 Restart=always
 RestartSec=2
 
@@ -347,7 +420,7 @@ server {
   index index.html;
 
   location /api/ {
-    proxy_pass http://127.0.0.1:8787/;
+    proxy_pass http://127.0.0.1:8081/;
     proxy_set_header Host $host;
   }
 
@@ -414,8 +487,9 @@ systemctl restart "${BACKEND_SVC_BASENAME}@$APP_USER" || true
 echo
 log "Checks finales:"
 set +e
-curl -fsS http://127.0.0.1:8787/api/health >/dev/null && echo "  ✅ Backend UP" || echo "  ❌ Backend DOWN (journalctl -u ${BACKEND_SVC_BASENAME}@$APP_USER -n 100)"
-curl -fsS http://127.0.0.1/healthz        >/dev/null && echo "  ✅ Nginx UP"   || echo "  ❌ Nginx DOWN (journalctl -u nginx -n 100)"
+curl -fsS http://127.0.0.1:8081/api/health >/dev/null && echo "  ✅ Backend UP" || echo "  ❌ Backend DOWN (journalctl -u ${BACKEND_SVC_BASENAME}@$APP_USER -n 100)"
+curl -sI http://127.0.0.1/ | head -n1 | grep -q " 200 " && echo "  ✅ Nginx sirve SPA" || echo "  ❌ Nginx NOK"
+nmcli -t -f DEVICE device status >/dev/null && echo "  ✅ nmcli OK" || echo "  ❌ nmcli reportó error"
 set -e
 
 # genera primer fondo si hay clave
@@ -435,7 +509,8 @@ fi
 echo
 log "Instalación completada."
 echo "  UI:       http://localhost/"
-echo "  Backend:  http://127.0.0.1:8787"
-echo "  Config:   $ENV_DIR/config.json (root:pantalla 640)"
-echo "  Secretos: $ENV_DIR/env (root:pantalla 640)"
+echo "  Backend:  http://127.0.0.1:8081"
+echo "  Config:   $ENV_DIR/config.json ($APP_USER:pantalla 640)"
+echo "  Secretos: $ENV_DIR/secrets.json ($APP_USER:$APP_USER 600)"
+echo "  Env:      $ENV_DIR/env ($APP_USER:pantalla 640)"
 echo "  Fondos:   $ASSETS_DIR"
