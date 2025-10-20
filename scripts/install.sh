@@ -102,6 +102,59 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y python3 python3-venv python3-pip nginx curl jq unzip ca-certificates espeak-ng network-manager
 
+# --- X stack mínimo y sesión ligera (idempotente) ---
+log "Instalando Xorg + Openbox + LightDM + utilidades..."
+sudo apt-get update
+sudo apt-get install -y xorg openbox lightdm x11-xserver-utils
+# Opcional para kiosko puro (ocultar cursor); queda comentado en autostart
+sudo apt-get install -y unclutter || true
+
+APP_USER="${SUDO_USER:-${USER}}"
+APP_HOME="$(getent passwd "$APP_USER" | cut -d: -f6)"
+[[ -n "$APP_HOME" ]] || die "No se pudo determinar HOME para $APP_USER"
+
+log "Configurando autologin de LightDM para ${APP_USER} y sesión por defecto openbox..."
+sudo mkdir -p /etc/lightdm/lightdm.conf.d
+
+# Autologin
+sudo tee /etc/lightdm/lightdm.conf.d/50-autologin.conf >/dev/null <<EOF
+[Seat:*]
+autologin-user=${APP_USER}
+autologin-user-timeout=0
+EOF
+
+# Sesión openbox
+sudo tee /etc/lightdm/lightdm.conf.d/60-session.conf >/dev/null <<'EOF'
+[Seat:*]
+user-session=openbox
+EOF
+
+# --- Autostart de Openbox con rotación automática si está en vertical (480x1920) ---
+log "Preparando autostart de Openbox con rotación automática (480x1920 -> horizontal)..."
+sudo -u "${APP_USER}" mkdir -p "${APP_HOME}/.config/openbox"
+
+sudo tee "${APP_HOME}/.config/openbox/autostart" >/dev/null <<'EOF'
+#!/bin/bash
+# Rotar Wisecoco 8.8" a horizontal si el servidor X arranca en 480x1920 (portrait)
+OUT="$(xrandr --query | awk '/ connected primary| connected/{print $1; exit}')"
+if xrandr | grep -qE "$OUT[[:space:]]+connected[[:space:]]+480x1920"; then
+  # Cambia "left" por "right" si tu panel concreto invierte el sentido
+  xrandr --output "$OUT" --rotate left
+fi
+
+# Ocultar cursor en kiosko (descomenta si quieres):
+# unclutter -idle 0.5 &
+
+# Si NO usas pantalla-kiosk.service, puedes lanzar Chromium aquí (descomentando):
+# chromium-browser --kiosk http://127.0.0.1
+EOF
+
+sudo chown -R "${APP_USER}:${APP_USER}" "${APP_HOME}/.config/openbox"
+sudo chmod +x "${APP_HOME}/.config/openbox/autostart"
+
+log "Habilitando LightDM para iniciar entorno gráfico en el arranque…"
+sudo systemctl enable lightdm || true
+
 if [[ "$INSTALL_NODE" == "1" ]]; then
   if ! command -v node >/dev/null 2>&1; then
     log "Instalando Node LTS…"
