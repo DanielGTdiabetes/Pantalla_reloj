@@ -1,5 +1,8 @@
-# Notas de build del instalador
+# Build notes (dash-ui)
 
-El instalador intenta primero `npm ci` al construir `dash-ui`. Si falla por un lockfile desincronizado, limpia `node_modules`, ejecuta `npm install` para resincronizar y vuelve a compilar.
+- Node LTS recomendado: 20.x (ver `.nvmrc`).
+- Mantén `package-lock.json` sincronizado con `package.json`.
+- En el instalador / servidores CI:
+  1. Ejecuta `npm ci` cuando el lockfile esté alineado.
+  2. Si `npm ci` falla por lock desincronizado, limpiar `node_modules`, correr `npm install` y reintentar la build.
 
-Mantén `package-lock.json` actualizado en el repositorio para asegurar builds reproducibles.
