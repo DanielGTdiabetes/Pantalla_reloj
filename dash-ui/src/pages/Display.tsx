@@ -7,6 +7,7 @@ import { useDashboardConfig } from '../context/DashboardConfigContext';
 import { fetchWeatherToday, type WeatherToday } from '../services/weather';
 import { fetchDayBrief, type DayInfoPayload } from '../services/dayinfo';
 import { fetchHealth, fetchOfflineState, type HealthStatus, type OfflineState } from '../services/system';
+import { overrideLocation } from '../services/location';
 
 const REFRESH_INTERVAL_MS = 60_000;
 
@@ -58,6 +59,36 @@ const Display = () => {
     }, REFRESH_INTERVAL_MS);
     return () => window.clearInterval(interval);
   }, [load]);
+
+  useEffect(() => {
+    if (!('geolocation' in navigator)) {
+      return;
+    }
+
+    let cancelled = false;
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        if (cancelled) return;
+        void overrideLocation({
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+        }).catch((error) => {
+          console.warn('No se pudo sincronizar geolocalización', error);
+        });
+      },
+      (error) => {
+        console.warn('No se pudo obtener geolocalización', error);
+      },
+      {
+        maximumAge: 5 * 60 * 1000,
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const healthLabel = useMemo(() => {
     if (!health) return '';
