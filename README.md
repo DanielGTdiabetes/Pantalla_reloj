@@ -146,6 +146,23 @@ permisos, systemd y endurecimiento.
 - `/etc/pantalla-dash/config.json` debe tener permisos `600` (root:root).
 - No se exponen secretos vía endpoints ni logs.
 
+## Autoinicio UI
+
+El instalador (`scripts/install.sh`) registra el servicio `pantalla-ui.service`,
+que lanza Chromium en modo *app+kiosk* apuntando a `http://127.0.0.1:8080/` con
+las barras ocultas y tamaño fijo `1920x480`.
+
+- **Habilitar**: `sudo systemctl enable --now pantalla-ui.service`
+- **Deshabilitar temporalmente**: `sudo systemctl disable --now pantalla-ui.service`
+- **Cambiar la URL/ajustes**: edita `/etc/systemd/system/pantalla-ui.service` o
+  usa `sudo systemctl edit pantalla-ui.service` para sobreescribir la variable
+  `PANTALLA_UI_URL`. Recarga y reinicia con `sudo systemctl daemon-reload` y
+  `sudo systemctl restart pantalla-ui.service`.
+- **Verificar estado/logs**: `systemctl status pantalla-ui.service --no-pager -l`
+
+El binario a lanzar se resuelve automáticamente (Chromium, `chromium-browser` o
+Google Chrome) mediante `/usr/local/bin/pantalla-ui-launch.sh`.
+
 ## Licencia
 
 MIT (o la licencia original del repositorio si se define).
