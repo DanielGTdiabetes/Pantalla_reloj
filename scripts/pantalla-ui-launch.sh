@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-URL="${PANTALLA_UI_URL:-http://127.0.0.1:8080/}"
+URL="${PANTALLA_UI_URL:-http://127.0.0.1/}"
 WIDTH="${PANTALLA_UI_WIDTH:-1920}"
 HEIGHT="${PANTALLA_UI_HEIGHT:-480}"
 POSITION_X="${PANTALLA_UI_POS_X:-0}"

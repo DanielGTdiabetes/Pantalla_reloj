@@ -7,7 +7,7 @@ Wants=graphical.target
 Type=simple
 User={{UI_USER}}
 Environment=DISPLAY=:0
-Environment=PANTALLA_UI_URL=http://127.0.0.1:8080/
+Environment=PANTALLA_UI_URL=http://127.0.0.1/
 ExecStartPre=/usr/bin/bash -c '/usr/bin/pkill -f chromium || true'
 ExecStart=/usr/local/bin/pantalla-ui-launch.sh
 Restart=always
