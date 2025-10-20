@@ -31,7 +31,7 @@ from .services.ai_text import (
 )
 from .services.backgrounds import BackgroundAsset, list_backgrounds, latest_background
 from .services.calendar import CalendarService, CalendarServiceError
-from .services.config import AppConfig, read_config as load_app_config, update_config
+from .services.config import AppConfig, read_config as load_app_config
 from .services.dayinfo import get_day_info
 from .services.location import set_location
 from .services.metrics import get_latency
@@ -42,13 +42,15 @@ from .services.tts import SpeechError, TTSService, TTSUnavailableError
 from .services.weather import WeatherService, WeatherServiceError
 from services.config_store import (
     has_openai_key,
+    mask_secrets,
     read_config as read_store_config,
-    read_env,
-    write_config_partial,
-    write_openai_key,
+    read_secrets as read_store_secrets,
+    secrets_metadata,
+    write_config_patch,
+    write_secrets_patch,
 )
-from services.wifi import wifi_connect as simple_wifi_connect, wifi_scan as simple_wifi_scan
-from .services.wifi import WifiError, forget as wifi_forget, status as wifi_status
+from services.wifi import wifi_connect, wifi_scan, wifi_status
+from .services.wifi import WifiError, forget as wifi_forget
 from .services.offline_state import get_offline_state, record_provider_failure, record_provider_success
 
 logger = logging.getLogger("pantalla.backend")
@@ -95,6 +97,27 @@ AUTO_BACKGROUND_DIR.mkdir(parents=True, exist_ok=True)
 ALLOW_ON_DEMAND_BG = os.getenv("ALLOW_ON_DEMAND_BG", "").lower() in {"1", "true", "on", "yes"}
 BG_GENERATOR_SCRIPT = Path("/opt/dash/scripts/generate_bg_daily.py")
 BG_GENERATION_TIMEOUT = 15
+
+
+def _parse_allowed_origins() -> list[str]:
+    raw = os.getenv("PANTALLA_ALLOWED_ORIGINS", "")
+    if raw.strip():
+        origins = [item.strip() for item in raw.split(",") if item.strip()]
+    else:
+        origins = [
+            "http://localhost",
+            "http://127.0.0.1",
+            "http://localhost:80",
+            "http://127.0.0.1:80",
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
+        ]
+
+    dedup: list[str] = []
+    for origin in origins:
+        if origin not in dedup:
+            dedup.append(origin)
+    return dedup
 
 
 class SpeechQueue:
@@ -278,29 +301,28 @@ app.mount(
     name="auto-backgrounds",
 )
 
-PRIVATE_ORIGIN_REGEX = (
-    r"^https?://("  # inicio
-    r"localhost"
-    r"|127(?:\.[0-9]{1,3}){3}"
-    r"|10(?:\.[0-9]{1,3}){3}"
-    r"|192\.168(?:\.[0-9]{1,3}){2}"
-    r"|172\.(?:1[6-9]|2[0-9]|3[0-1])(?:\.[0-9]{1,3}){2}"  # rangos privados
-    r")(:[0-9]{2,5})?$"
-)
+ALLOWED_CORS_ORIGINS = _parse_allowed_origins()
+logger.info("CORS permitido para orígenes: %s", ", ".join(ALLOWED_CORS_ORIGINS))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://127.0.0.1",
-        "http://127.0.0.1:8080",
-        "http://localhost",
-        "http://localhost:8080",
-    ],
-    allow_origin_regex=PRIVATE_ORIGIN_REGEX,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_CORS_ORIGINS,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
+
+
+START_TIME = time.monotonic()
+
+
+@app.get("/api/health")
+def healthcheck() -> Dict[str, Any]:
+    uptime = time.monotonic() - START_TIME
+    return {
+        "status": "ok",
+        "uptime": round(uptime, 2),
+        "version": app.version,
+    }
 
 
 @app.get("/api/system/offline-state")
@@ -432,7 +454,6 @@ ALERT_COOLDOWN_SECONDS = 60 * 60
 ALERT_TEXT = "Tormenta cercana. Precaución."
 _last_alert_ts: float = 0.0
 _alert_task: asyncio.Task[None] | None = None
-REMOTE_CONFIG_ALLOWED_KEYS = {"aemet", "weather", "background", "locale"}
 
 
 def get_config() -> AppConfig:
@@ -668,18 +689,29 @@ def health_full():
 
 
 @app.get("/api/wifi/scan")
-def wifi_scan():
+def wifi_scan_endpoint() -> Dict[str, Any]:
     try:
-        return simple_wifi_scan()
-    except Exception as exc:  # pragma: no cover - defensivo
-        logger.error("Error escaneando Wi-Fi: %s", exc)
-        raise HTTPException(status_code=502, detail="No se pudo escanear redes Wi-Fi") from exc
+        return wifi_scan()
+    except WifiError as exc:
+        detail = {"message": str(exc)}
+        if exc.stderr:
+            detail["stderr"] = exc.stderr.strip()
+        if exc.code is not None:
+            detail["code"] = exc.code
+        raise HTTPException(status_code=502, detail=detail) from exc
 
 
 @app.post("/api/wifi/connect")
-def wifi_connect_endpoint(payload: WifiConnectRequest = Body(...)):
-    result = simple_wifi_connect(payload.ssid, payload.psk)
-    return result
+def wifi_connect_endpoint(payload: WifiConnectRequest = Body(...)) -> Dict[str, Any]:
+    try:
+        return wifi_connect(payload.ssid, payload.psk)
+    except WifiError as exc:
+        detail = {"message": str(exc)}
+        if exc.stderr:
+            detail["stderr"] = exc.stderr.strip()
+        if exc.code is not None:
+            detail["code"] = exc.code
+        raise HTTPException(status_code=400, detail=detail) from exc
 
 
 @app.post("/api/wifi/forget")
@@ -691,12 +723,26 @@ def wifi_forget_endpoint(payload: WifiForgetRequest = Body(...)):
     return {"ok": True, "ssid": payload.ssid}
 
 
-@app.get("/api/network/status")
-def network_status():
+def _wifi_status_payload() -> Dict[str, Any]:
     try:
         return wifi_status()
     except WifiError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        detail = {"message": str(exc)}
+        if exc.stderr:
+            detail["stderr"] = exc.stderr.strip()
+        if exc.code is not None:
+            detail["code"] = exc.code
+        raise HTTPException(status_code=502, detail=detail) from exc
+
+
+@app.get("/api/wifi/status")
+def wifi_status_endpoint() -> Dict[str, Any]:
+    return _wifi_status_payload()
+
+
+@app.get("/api/network/status")
+def network_status():
+    return _wifi_status_payload()
 
 
 @app.get("/api/season/month")
@@ -874,74 +920,89 @@ async def day_brief(date: str | None = None) -> Dict[str, Any]:
 @app.get("/api/config/status")
 def config_status() -> Dict[str, Any]:
     _, config_path = read_store_config()
-    _, env_path = read_env()
+    _, secrets_path = read_store_secrets()
     return {
         "hasOpenAI": has_openai_key(),
         "configPath": config_path,
-        "envPath": env_path,
+        "secretsPath": secrets_path,
+    }
+
+
+def _config_response(
+    config_data: Dict[str, Any],
+    secrets_data: Dict[str, Any],
+    *,
+    config_path: str | None = None,
+    secrets_path: str | None = None,
+) -> Dict[str, Any]:
+    if config_path is None:
+        _, config_path = read_store_config()
+    if secrets_path is None:
+        _, secrets_path = read_store_secrets()
+    return {
+        "config": config_data,
+        "paths": {"config": config_path, "secrets": secrets_path},
+        "secrets": mask_secrets(secrets_data),
     }
 
 
 @app.get("/api/config")
-def get_config_endpoint(config: AppConfig = Depends(get_config)):
-    stored_config, path = read_store_config()
-    public_view = config.public_view()
-    payload = dict(public_view)
-    payload["config"] = stored_config or public_view
-    payload["path"] = path
-    return payload
+def get_config_endpoint() -> Dict[str, Any]:
+    config_data, config_path = read_store_config()
+    secrets_data, secrets_path = read_store_secrets()
+    return _config_response(
+        config_data or {},
+        secrets_data or {},
+        config_path=config_path,
+        secrets_path=secrets_path,
+    )
 
 
-@app.post("/api/config")
-def update_config_endpoint(payload: Dict[str, Any] = Body(...)):
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="Payload inválido")
-
-    invalid = [key for key in payload if key not in REMOTE_CONFIG_ALLOWED_KEYS]
-    if invalid:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Claves no permitidas: {', '.join(invalid)}",
-        )
-
-    ok, path_or_reason = write_config_partial(payload)
-    if not ok:
-        raise HTTPException(
-            status_code=409,
-            detail="read-only: ajusta permisos en /etc/pantalla-dash o usa ~/.config/pantalla-dash",
-        )
+@app.put("/api/config")
+def update_config_endpoint(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+    if not isinstance(payload, dict) or not payload:
+        raise HTTPException(status_code=400, detail="Payload debe ser un objeto JSON con cambios")
 
     try:
-        updated = update_config(payload)
-    except Exception as exc:  # pylint: disable=broad-except
-        logger.error("Error actualizando config: %s", exc)
-        raise HTTPException(status_code=400, detail="Configuración inválida") from exc
+        updated_config, config_path = write_config_patch(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
-    stored_config, _ = read_store_config()
-    public_view = updated.public_view()
-    response = dict(public_view)
-    response.update({
-        "config": stored_config or public_view,
-        "ok": True,
-        "path": path_or_reason,
-    })
-    return response
+    secrets_data, secrets_path = read_store_secrets()
+    return _config_response(
+        updated_config,
+        secrets_data,
+        config_path=config_path,
+        secrets_path=secrets_path,
+    )
 
 
-@app.post("/api/config/openai")
-def update_openai_key(payload: Dict[str, Any] = Body(...)):
-    key = payload.get("key") if isinstance(payload, dict) else None
-    if not isinstance(key, str) or not key.strip():
-        raise HTTPException(status_code=400, detail="Clave OpenAI requerida")
+@app.put("/api/secrets")
+def update_secrets(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+    if not isinstance(payload, dict) or not payload:
+        raise HTTPException(status_code=400, detail="Payload debe ser un objeto JSON")
 
-    ok, path_or_reason = write_openai_key(key.strip())
-    if not ok:
-        raise HTTPException(
-            status_code=409,
-            detail="read-only: ajusta permisos en /etc/pantalla-dash o usa ~/.config/pantalla-dash",
-        )
+    try:
+        secrets_data, secrets_path = write_secrets_patch(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
-    return {"ok": True, "path": path_or_reason}
+    config_data, config_path = read_store_config()
+    return _config_response(
+        config_data or {},
+        secrets_data,
+        config_path=config_path,
+        secrets_path=secrets_path,
+    )
+
+
+@app.get("/api/secrets/meta")
+def secrets_meta() -> Dict[str, Any]:
+    return secrets_metadata()
 
 
 @app.on_event("startup")
