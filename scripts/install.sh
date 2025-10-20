@@ -109,6 +109,15 @@ sudo apt-get install -y xorg openbox lightdm x11-xserver-utils
 # Opcional para kiosko puro (ocultar cursor); queda comentado en autostart
 sudo apt-get install -y unclutter || true
 
+log "Instalando navegador Chromium para modo kiosko..."
+if sudo apt-get install -y chromium-browser; then
+  log "Paquete chromium-browser instalado."
+elif sudo apt-get install -y chromium; then
+  log "Paquete chromium instalado."
+else
+  warn "No se pudo instalar Chromium automáticamente. Instálalo manualmente para el modo kiosko."
+fi
+
 APP_USER="${SUDO_USER:-${USER}}"
 APP_HOME="$(getent passwd "$APP_USER" | cut -d: -f6)"
 [[ -n "$APP_HOME" ]] || die "No se pudo determinar HOME para $APP_USER"
@@ -145,8 +154,36 @@ fi
 # Ocultar cursor en kiosko (descomenta si quieres):
 # unclutter -idle 0.5 &
 
-# Si NO usas pantalla-kiosk.service, puedes lanzar Chromium aquí (descomentando):
-# chromium-browser --kiosk http://127.0.0.1
+# Da un pequeño margen para que el backend/NGINX arranquen antes de abrir el navegador
+sleep 3
+
+# Detecta un navegador Chromium disponible
+BROWSER_CMD=""
+for candidate in chromium-browser chromium google-chrome-stable google-chrome; do
+  if command -v "$candidate" >/dev/null 2>&1; then
+    BROWSER_CMD="$candidate"
+    break
+  fi
+done
+
+KIOSK_URL="${KIOSK_URL:-http://localhost}"
+
+if [[ -n "$BROWSER_CMD" ]]; then
+  "${BROWSER_CMD}" \
+    --kiosk "$KIOSK_URL" \
+    --noerrdialogs \
+    --disable-session-crashed-bubble \
+    --disable-infobars \
+    --overscroll-history-navigation=0 \
+    --disable-translate \
+    --disable-features=TranslateUI \
+    --start-maximized \
+    --check-for-update-interval=31536000 \
+    --disable-restore-session-state &
+else
+  echo "[autostart] No se encontró Chromium; intentando abrir $KIOSK_URL con xdg-open" >&2
+  xdg-open "$KIOSK_URL" >/dev/null 2>&1 &
+fi
 EOF
 
 sudo chown -R "${APP_USER}:${APP_USER}" "${APP_HOME}/.config/openbox"
