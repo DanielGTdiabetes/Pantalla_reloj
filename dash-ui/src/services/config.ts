@@ -4,6 +4,14 @@ export const API_BASE_URL = '/api';
 export const BACKEND_BASE_URL = '';
 export const CONFIG_CACHE_KEY = 'dashConfig';
 
+export interface AemetConfig {
+  apiKey?: string;
+  municipioId?: string;
+  municipioName?: string;
+  postalCode?: string;
+  province?: string;
+}
+
 export interface WeatherConfig {
   city?: string;
   units?: 'metric' | 'imperial';
@@ -15,6 +23,8 @@ export interface ThemeConfig {
 
 export interface BackgroundConfig {
   intervalMinutes?: number;
+  mode?: 'daily' | 'weather';
+  retainDays?: number;
 }
 
 export interface TTSConfig {
@@ -28,10 +38,25 @@ export interface WifiConfig {
 
 export interface CalendarConfig {
   enabled?: boolean;
-  icsUrl?: string;
+  icsUrl?: string | null;
   maxEvents?: number;
   notifyMinutesBefore?: number;
   icsConfigured?: boolean;
+}
+
+export interface LocaleConfig {
+  language?: string;
+  country?: string;
+  autonomousCommunity?: string;
+  province?: string;
+  city?: string;
+}
+
+export interface PatronConfig {
+  city?: string;
+  name?: string;
+  month?: number;
+  day?: number;
 }
 
 export interface StormConfig {
@@ -40,6 +65,7 @@ export interface StormConfig {
 }
 
 export interface DashboardConfig {
+  aemet?: AemetConfig;
   weather?: WeatherConfig;
   theme?: ThemeConfig;
   background?: BackgroundConfig;
@@ -47,6 +73,8 @@ export interface DashboardConfig {
   wifi?: WifiConfig;
   calendar?: CalendarConfig;
   storm?: StormConfig;
+  locale?: LocaleConfig;
+  patron?: PatronConfig;
 }
 
 export type ConfigUpdate = Partial<DashboardConfig>;
@@ -55,6 +83,10 @@ export interface ConfigEnvelope {
   config: Record<string, unknown>;
   paths: { config: string; secrets: string };
   secrets: Record<string, unknown>;
+}
+
+export interface SecretsPatch {
+  openai?: { apiKey?: string | null };
 }
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -85,17 +117,32 @@ async function safeParseError(response: Response): Promise<string | undefined> {
   return response.statusText;
 }
 
+export async function fetchConfigEnvelope(): Promise<ConfigEnvelope> {
+  return await apiRequest<ConfigEnvelope>('/config');
+}
+
 export async function fetchDashboardConfig(): Promise<DashboardConfig> {
-  const envelope = await apiRequest<ConfigEnvelope>('/config');
+  const envelope = await fetchConfigEnvelope();
   return (envelope?.config as DashboardConfig) ?? {};
 }
 
 export async function updateDashboardConfig(payload: ConfigUpdate): Promise<DashboardConfig> {
-  const envelope = await apiRequest<ConfigEnvelope>('/config', {
+  const envelope = await saveConfigPatch(payload);
+  return (envelope?.config as DashboardConfig) ?? {};
+}
+
+export async function saveConfigPatch(payload: ConfigUpdate): Promise<ConfigEnvelope> {
+  return await apiRequest<ConfigEnvelope>('/config', {
     method: 'PUT',
     body: JSON.stringify(payload),
   });
-  return (envelope?.config as DashboardConfig) ?? {};
+}
+
+export async function saveSecretsPatch(payload: SecretsPatch): Promise<ConfigEnvelope> {
+  return await apiRequest<ConfigEnvelope>('/secrets', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
 }
 
 export function loadCachedConfig(): DashboardConfig | null {
