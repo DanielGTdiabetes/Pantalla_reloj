@@ -14,6 +14,8 @@ try:  # pragma: no cover - compat con distintas versiones del SDK
 except ImportError:  # pragma: no cover - compatibilidad
     from openai.error import OpenAIError  # type: ignore
 
+from .config_store import read_secrets
+
 logger = logging.getLogger(__name__)
 
 ENV_PATH = Path("/etc/pantalla-dash/env")
@@ -48,7 +50,24 @@ def _read_env_file(path: Path) -> Dict[str, str]:
     return data
 
 
+def _get_secret_openai_key() -> Optional[str]:
+    try:
+        secrets, _ = read_secrets()
+    except Exception as exc:  # pragma: no cover - defensivo
+        logger.debug("No se pudo leer secrets.json: %s", exc)
+        return None
+    openai_section = secrets.get("openai") if isinstance(secrets, dict) else None
+    if isinstance(openai_section, dict):
+        key = openai_section.get("apiKey")
+        if isinstance(key, str) and key.strip():
+            return key.strip()
+    return None
+
+
 def _get_openai_key() -> Optional[str]:
+    key = _get_secret_openai_key()
+    if key:
+        return key
     env = _read_env_file(ENV_PATH)
     key = env.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
     return key.strip() if key else None
