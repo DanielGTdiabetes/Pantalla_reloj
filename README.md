@@ -149,7 +149,7 @@ permisos, systemd y endurecimiento.
 ## Autoinicio UI
 
 El instalador (`scripts/install.sh`) registra el servicio `pantalla-ui.service`,
-que lanza Chromium en modo *app+kiosk* apuntando a `http://127.0.0.1:8080/` con
+que lanza Chromium en modo *app+kiosk* apuntando a `http://127.0.0.1/` con
 las barras ocultas y tamaño fijo `1920x480`.
 
 - **Habilitar**: `sudo systemctl enable --now pantalla-ui.service`
