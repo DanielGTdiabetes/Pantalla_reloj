@@ -314,6 +314,21 @@ class AemetClient:
                 )
             record_provider_failure("aemet", str(exc))
             raise DatasetUnavailableError("No se pudo descargar datos") from exc
+        except httpx.HTTPError as exc:
+            logger.error("Fallo de red descargando dataset %s: %s", data_url, exc)
+            duration = time.perf_counter() - start
+            record_latency("aemet", duration)
+            if cached and allow_stale:
+                record_provider_failure("aemet", str(exc))
+                return DatasetResult(
+                    payload=cached.data,
+                    from_cache=True,
+                    timestamp=cached.timestamp,
+                    stale=True,
+                    error=str(exc),
+                )
+            record_provider_failure("aemet", str(exc))
+            raise DatasetUnavailableError("AEMET no disponible") from exc
         except AemetDecodeError as exc:
             logger.error("No se pudo decodificar dataset %s: %s", data_url, exc)
             duration = time.perf_counter() - start
