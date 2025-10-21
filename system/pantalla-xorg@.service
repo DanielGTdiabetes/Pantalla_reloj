@@ -5,13 +5,17 @@ Wants=multi-user.target
 
 [Service]
 Type=simple
-User=%i
-# Detectar ruta Xorg en runtime: /usr/lib/xorg/Xorg o /usr/bin/Xorg
-ExecStart=/bin/bash -lc 'XBIN=""; for p in /usr/lib/xorg/Xorg /usr/bin/Xorg; do [ -x "$p" ] && XBIN="$p" && break; done; [ -n "$XBIN" ] || { echo "Xorg bin not found"; exit 1; }; exec "$XBIN" :0 -nolisten tcp vt1'
+# Ejecutar como root para tomar VT1 sin problemas de permisos
+# (no incluir 'User=' aquí)
+StandardInput=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+ExecStart=/bin/bash -lc 'XBIN=""; for p in /usr/lib/xorg/Xorg /usr/bin/Xorg; do [ -x "$p" ] && XBIN="$p" && break; done; [ -n "$XBIN" ] || { echo "Xorg bin not found"; exit 1; }; exec "$XBIN" :0 -nolisten tcp vt1 -keeptty'
 Restart=always
 RestartSec=2
-Environment=HOME=/home/%i
-Environment=XDG_RUNTIME_DIR=/run/user/%U
+Environment=HOME=/root
+Environment=XDG_RUNTIME_DIR=/run/user/0
 
 [Install]
 WantedBy=multi-user.target
