@@ -126,7 +126,7 @@ else
   warn "No se pudo instalar Chromium automáticamente. Instálalo manualmente para el modo kiosko."
 fi
 
-APP_USER="${SUDO_USER:-${USER}}"
+# APP_USER ya está definido en línea 17, no redefinir
 APP_HOME="$(getent passwd "$APP_USER" | cut -d: -f6)"
 [[ -n "$APP_HOME" ]] || die "No se pudo determinar HOME para $APP_USER"
 
@@ -211,7 +211,13 @@ log "Instalando lanzador de Chromium para systemd (${UI_LAUNCHER_DST})…"
 install -m 755 "$UI_LAUNCHER_SRC" "$UI_LAUNCHER_DST"
 
 log "Instalando servicio systemd de usuario ${UI_SERVICE_NAME}…"
-UI_USER="${PANTALLA_UI_USER:-$APP_USER}"
+# Asegurar que UI_USER esté correctamente definido
+if [[ -n "${PANTALLA_UI_USER:-}" ]]; then
+  UI_USER="$PANTALLA_UI_USER"
+else
+  UI_USER="$APP_USER"
+fi
+
 if ! id "$UI_USER" >/dev/null 2>&1; then
   die "El usuario $UI_USER no existe; ajusta PANTALLA_UI_USER antes de continuar"
 fi
@@ -223,6 +229,8 @@ if [[ -f "$SYSTEMD_DIR/$UI_SERVICE_NAME" ]]; then
   systemctl daemon-reload || true
 fi
 
+# Asegurar que el directorio systemd de usuario existe
+mkdir -p "$USER_SYSTEMD_DIR"
 install -D -m 644 "$UI_SERVICE_SRC" "$USER_SYSTEMD_DIR/$UI_SERVICE_NAME"
 
 UI_UID="$(id -u "$UI_USER")"
@@ -373,7 +381,13 @@ chmod 640 "$ENV_DIR/backend.env"
 log "Preparando backend (venv + deps)…"
 cd "$BACKEND_DIR"
 sudo -u "$APP_USER" bash -lc "python3 -m venv .venv"
-sudo -u "$APP_USER" bash -lc "source .venv/bin/activate && pip install -U pip && pip install fastapi uvicorn httpx pydantic requests python-dateutil Jinja2 openai pillow"
+# Verificar que requirements.txt existe, sino instalar manualmente
+if [[ -f "requirements.txt" ]]; then
+  sudo -u "$APP_USER" bash -lc "source .venv/bin/activate && pip install -U pip && pip install -r requirements.txt"
+else
+  log "requirements.txt no encontrado, instalando dependencias manualmente..."
+  sudo -u "$APP_USER" bash -lc "source .venv/bin/activate && pip install -U pip && pip install fastapi uvicorn httpx pydantic requests python-dateutil Jinja2 openai pillow"
+fi
 
 log "Servicio backend templated…"
 # Migra posible unidad antigua
@@ -407,8 +421,18 @@ systemctl enable --now "${BACKEND_SVC_BASENAME}@$APP_USER" || true
 GEN_SCRIPT="$REPO_DIR/opt/dash/scripts/generate_bg_daily.py"
 if [[ -f "$GEN_SCRIPT" ]]; then
   log "Parcheando $GEN_SCRIPT (response_format / size)…"
-  sed -i -E 's/,?\s*response_format\s*=\s*["'\''][^"'\'']*["'\'']//g' "$GEN_SCRIPT" || true
-  sed -i -E 's/size\s*=\s*["'\''][^"'\'']*["'\'']/size="1536x1024"/g' "$GEN_SCRIPT" || true
+  # Crear backup antes de modificar
+  cp "$GEN_SCRIPT" "$GEN_SCRIPT.bak"
+  if sed -i -E 's/,?\s*response_format\s*=\s*["'\''][^"'\'']*["'\'']//g' "$GEN_SCRIPT" && \
+     sed -i -E 's/size\s*=\s*["'\''][^"'\'']*["'\'']/size="1536x1024"/g' "$GEN_SCRIPT"; then
+    log "  Parches aplicados correctamente"
+    rm -f "$GEN_SCRIPT.bak"
+  else
+    warn "  Fallo aplicando parches, restaurando desde backup"
+    mv "$GEN_SCRIPT.bak" "$GEN_SCRIPT"
+  fi
+else
+  warn "Script generador no encontrado: $GEN_SCRIPT"
 fi
 
 # ----- Frontend -----
@@ -433,11 +457,20 @@ if [[ -f "$FRONTEND_DIR/package.json" ]]; then
   fi
 
   # Asegura react-router-dom para la mini web de configuración (HashRouter)
-  sudo -u "$APP_USER" bash -lc "cd '$FRONTEND_DIR' && jq \".dependencies += {\\\"react-router-dom\\\":\\\"^6\\\"}\" package.json > package.tmp.json && mv package.tmp.json package.json" 2>/dev/null || true
-  if sudo -u "$APP_USER" bash -lc "cd '$FRONTEND_DIR' && npm install"; then
-    log "npm install de dependencias obligatorias OK"
+  # Primero verificar si jq está instalado
+  if command -v jq >/dev/null 2>&1; then
+    log "Verificando dependencias obligatorias con jq..."
+    if sudo -u "$APP_USER" bash -lc "cd '$FRONTEND_DIR' && jq \".dependencies += {\\\"react-router-dom\\\":\\\"^6\\\"}\" package.json > package.tmp.json && mv package.tmp.json package.json" 2>/dev/null; then
+      if sudo -u "$APP_USER" bash -lc "cd '$FRONTEND_DIR' && npm install"; then
+        log "npm install de dependencias obligatorias OK"
+      else
+        die "Fallo en npm install tras ajustar dependencias obligatorias."
+      fi
+    else
+      warn "jq falló al modificar package.json, continuando sin cambios..."
+    fi
   else
-    die "Fallo en npm install tras ajustar dependencias obligatorias."
+    warn "jq no está disponible, saltando verificación de react-router-dom"
   fi
 
   if sudo -u "$APP_USER" bash -lc "cd '$FRONTEND_DIR' && npm run build"; then
@@ -575,7 +608,8 @@ if grep -qE '^OPENAI_API_KEY=.+$' "$ENV_DIR/env"; then
   log "Generando primer fondo IA…"
   systemctl start "$BG_SVC" || true
   sleep 2
-  if ls -1 "$ASSETS_DIR"/*.webp >/dev/null 2>&1; then
+  # Verificar que el directorio existe antes de listar
+  if [[ -d "$ASSETS_DIR" ]] && ls -1 "$ASSETS_DIR"/*.webp >/dev/null 2>&1; then
     echo "  ✅ Fondo IA generado en $ASSETS_DIR"
   else
     echo "  ℹ️  Aún no se ve .webp; revisa log: tail -n 120 $LOG_DIR/bg.log"

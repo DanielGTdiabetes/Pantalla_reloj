@@ -97,21 +97,81 @@ systemctl disable pantalla-bg-generate.timer 2>/dev/null || true
 systemctl stop "${BACKEND_SVC_BASENAME}@$APP_USER" 2>/dev/null || true
 systemctl disable "${BACKEND_SVC_BASENAME}@$APP_USER" 2>/dev/null || true
 
+# UI service (systemd user service)
+USER_SYSTEMD_DIR="/etc/systemd/user"
+UI_SERVICE_NAME="pantalla-ui.service"
+if [[ -f "$USER_SYSTEMD_DIR/$UI_SERVICE_NAME" ]]; then
+  log "Deshabilitando servicio de UI de usuario..."
+  UI_UID="$(id -u "$APP_USER" 2>/dev/null)" || true
+  if [[ -n "$UI_UID" ]]; then
+    UI_RUNTIME_DIR="/run/user/$UI_UID"
+    UI_SYSTEMD_ENV=("XDG_RUNTIME_DIR=$UI_RUNTIME_DIR" "DBUS_SESSION_BUS_ADDRESS=unix:path=$UI_RUNTIME_DIR/bus")
+    sudo -u "$APP_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user stop "$UI_SERVICE_NAME" 2>/dev/null || true
+    sudo -u "$APP_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user disable "$UI_SERVICE_NAME" 2>/dev/null || true
+  fi
+fi
+
+# Kiosk service (legacy system service si existe)
+KIOSK_SERVICE="pantalla-kiosk.service"
+if [[ -f "$SYSTEMD_DIR/$KIOSK_SERVICE" ]]; then
+  systemctl stop "$KIOSK_SERVICE" 2>/dev/null || true
+  systemctl disable "$KIOSK_SERVICE" 2>/dev/null || true
+fi
+
 log "Eliminando unit files systemd…"
 rm -f "$BG_SVC_FILE" "$BG_TIMER_FILE"
 rm -f "$BACKEND_SVC_TEMPLATE"
+rm -f "$SYSTEMD_DIR/$KIOSK_SERVICE" 2>/dev/null || true
+rm -f "$USER_SYSTEMD_DIR/$UI_SERVICE_NAME" 2>/dev/null || true
 
 log "Recargando systemd…"
 systemctl daemon-reload
+# También recargar systemd de usuario si es posible
+if [[ -n "${APP_USER:-}" ]]; then
+  UI_UID="$(id -u "$APP_USER" 2>/dev/null)" || true
+  if [[ -n "$UI_UID" ]]; then
+    UI_RUNTIME_DIR="/run/user/$UI_UID"
+    UI_SYSTEMD_ENV=("XDG_RUNTIME_DIR=$UI_RUNTIME_DIR" "DBUS_SESSION_BUS_ADDRESS=unix:path=$UI_RUNTIME_DIR/bus")
+    sudo -u "$APP_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user daemon-reload 2>/dev/null || true
+  fi
+fi
 
 log "Eliminando vhost de Nginx…"
 rm -f "$NGINX_SITE_EN" "$NGINX_SITE_AV"
-nginx -t >/dev/null 2>&1 && systemctl restart nginx || warn "nginx -t falló (quizá ya no está instalado)"
+# Verificar si nginx está instalado antes de intentar reiniciar
+if command -v nginx >/dev/null 2>&1; then
+  if nginx -t >/dev/null 2>&1; then
+    systemctl restart nginx 2>/dev/null || service nginx restart 2>/dev/null || warn "No se pudo reiniciar nginx"
+  else
+    warn "nginx -t falló, saltando reinicio"
+  fi
+else
+  log "nginx no está instalado, saltando configuración"
+fi
+
+log "Eliminando launcher de UI…"
+UI_LAUNCHER="/usr/local/bin/pantalla-ui-launch.sh"
+if [[ -f "$UI_LAUNCHER" ]]; then
+  rm -f "$UI_LAUNCHER"
+  log "  Eliminado $UI_LAUNCHER"
+fi
+
+log "Eliminando configuración de sudoers…"
+SUDOERS_FILE="/etc/sudoers.d/pantalla-wifi"
+if [[ -f "$SUDOERS_FILE" ]]; then
+  rm -f "$SUDOERS_FILE"
+  log "  Eliminado $SUDOERS_FILE"
+fi
 
 # Purges opcionales
 if [[ "$PURGE_WEBROOT" -eq 1 ]]; then
-  log "Vaciando $WEB_ROOT…"
-  rm -rf "${WEB_ROOT:?}/"* 2>/dev/null || true
+  # Verificación de seguridad: asegurar que WEB_ROOT no está vacío y es una ruta válida
+  if [[ -n "$WEB_ROOT" ]] && [[ "$WEB_ROOT" != "/" ]] && [[ -d "$WEB_ROOT" ]]; then
+    log "Vaciando $WEB_ROOT…"
+    rm -rf "${WEB_ROOT:?}/"* 2>/dev/null || true
+  else
+    warn "WEB_ROOT no válido o vacío, saltando limpieza de webroot"
+  fi
 fi
 
 if [[ "$PURGE_VENV" -eq 1 ]]; then
@@ -146,6 +206,31 @@ fi
 if [[ "$PURGE_CONFIG" -eq 1 ]]; then
   log "Borrando configuración y secretos… ($ENV_DIR)"
   rm -rf "$ENV_DIR"
+  
+  # Limpiar configuraciones de LightDM si existen
+  log "Limpiando configuraciones de LightDM y Openbox…"
+  rm -f /etc/lightdm/lightdm.conf.d/50-autologin.conf 2>/dev/null || true
+  rm -f /etc/lightdm/lightdm.conf.d/60-session.conf 2>/dev/null || true
+  
+  # Limpiar políticas de Chromium
+  log "Limpiando políticas de geolocalización de Chromium…"
+  rm -f /etc/chromium/policies/managed/allow_geolocation.json 2>/dev/null || true
+  rm -f /var/snap/chromium/common/chromium/policies/managed/allow_geolocation.json 2>/dev/null || true
+  
+  # Restaurar autostart de Openbox
+  if [[ -n "${APP_USER:-}" ]]; then
+    APP_HOME="$(getent passwd "$APP_USER" 2>/dev/null | cut -d: -f6)" || true
+    if [[ -n "$APP_HOME" ]] && [[ -f "${APP_HOME}/.config/openbox/autostart" ]]; then
+      log "Eliminando autostart de Openbox para ${APP_USER}…"
+      rm -f "${APP_HOME}/.config/openbox/autostart"
+    fi
+    # Restaurar .desktop deshabilitados
+    if [[ -d "${APP_HOME}/.config/autostart" ]]; then
+      find "${APP_HOME}/.config/autostart" -name '*.desktop.disabled' -type f 2>/dev/null | while read -r disabled; do
+        mv "$disabled" "${disabled%.disabled}" 2>/dev/null || true
+      done
+    fi
+  fi
 fi
 
 # Limpieza del grupo si quedó sin uso (best-effort)
