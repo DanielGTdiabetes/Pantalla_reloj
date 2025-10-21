@@ -148,20 +148,36 @@ permisos, systemd y endurecimiento.
 
 ## Autoinicio UI
 
-El instalador (`scripts/install.sh`) registra el servicio `pantalla-ui.service`,
-que lanza Chromium en modo *app+kiosk* apuntando a `http://127.0.0.1:8080/` con
-las barras ocultas y tamaño fijo `1920x480`.
+El instalador (`scripts/install.sh`) registra el servicio de **usuario**
+`pantalla-ui.service`, que lanza Chromium en modo *app+kiosk* apuntando a
+`http://127.0.0.1:8080/` con las barras ocultas y tamaño fijo `1920x480`. El
+unit se instala en `/etc/systemd/user/pantalla-ui.service`, se ejecuta en la
+sesión de `dani` (o el usuario configurado) y se engancha a
+`graphical-session.target`.
 
-- **Habilitar**: `sudo systemctl enable --now pantalla-ui.service`
-- **Deshabilitar temporalmente**: `sudo systemctl disable --now pantalla-ui.service`
-- **Cambiar la URL/ajustes**: edita `/etc/systemd/system/pantalla-ui.service` o
-  usa `sudo systemctl edit pantalla-ui.service` para sobreescribir la variable
-  `PANTALLA_UI_URL`. Recarga y reinicia con `sudo systemctl daemon-reload` y
-  `sudo systemctl restart pantalla-ui.service`.
-- **Verificar estado/logs**: `systemctl status pantalla-ui.service --no-pager -l`
+- **Habilitar**: `systemctl --user enable --now pantalla-ui.service`
+- **Deshabilitar temporalmente**: `systemctl --user disable --now pantalla-ui.service`
+- **Cambiar la URL/ajustes**: edita
+  `/etc/systemd/user/pantalla-ui.service` o usa
+  `systemctl --user edit pantalla-ui.service` para sobreescribir la variable
+  `PANTALLA_UI_URL`. Recarga y reinicia con
+  `systemctl --user daemon-reload` y
+  `systemctl --user restart pantalla-ui.service`.
+- **Verificar estado/logs**:
+  `systemctl --user status pantalla-ui.service --no-pager -l`
 
-El binario a lanzar se resuelve automáticamente (Chromium, `chromium-browser` o
-Google Chrome) mediante `/usr/local/bin/pantalla-ui-launch.sh`.
+El binario a lanzar se resuelve automáticamente (prefiriendo
+`/snap/bin/chromium`, luego `chromium`, `chromium-browser` o Google Chrome)
+mediante `/usr/local/bin/pantalla-ui-launch.sh`.
+
+### Troubleshooting
+
+- Comprueba el entorno en la sesión del usuario:
+  `echo $XDG_RUNTIME_DIR` debe apuntar a `/run/user/1000` (o el UID
+  correspondiente) y `echo $DBUS_SESSION_BUS_ADDRESS` a
+  `unix:path=/run/user/1000/bus`.
+- Verifica que `/snap/bin/chromium` existe y es ejecutable.
+- Desde el usuario, revisa el servicio: `systemctl --user status pantalla-ui.service -l --no-pager`.
 
 ## Licencia
 
