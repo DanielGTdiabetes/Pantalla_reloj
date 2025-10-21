@@ -1,0 +1,14 @@
+[Unit]
+Description=Pantalla Dash Xorg Session (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=%i
+Environment=DISPLAY=:0
+ExecStart=/usr/lib/xorg/Xorg :0 -seat seat0 vt1 -nolisten tcp -noreset
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

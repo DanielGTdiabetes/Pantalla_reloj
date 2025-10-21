@@ -2,7 +2,7 @@
 
 Dashboard futurista para Raspberry Pi que muestra reloj, clima y controles de
 configuración. La UI (React + Vite) se sirve como estático (Busybox/NGINX) y
-usa un backend local mínimo (FastAPI) en `127.0.0.1:8787` para integrar
+usa un backend local mínimo (FastAPI) en `127.0.0.1:8081` para integrar
 OpenWeatherMap, gestión de Wi-Fi y TTS offline.
 
 ## Estructura
@@ -13,9 +13,12 @@ OpenWeatherMap, gestión de Wi-Fi y TTS offline.
 ├── backend/                    # Backend FastAPI/Uvicorn
 ├── opt/dash/scripts/           # Utilidades (generate_bg_daily.py)
 ├── opt/dash/assets/backgrounds/auto/
-├── system/pantalla-dash-backend.service
+├── system/pantalla-dash-backend@.service
 ├── system/pantalla-bg-generate.service
 ├── system/pantalla-bg-generate.timer
+├── system/pantalla-xorg@.service
+├── system/pantalla-ui.service
+├── system/user/pantalla-openbox.service
 ├── system/logrotate.d/pantalla-bg
 └── docs/DEPLOY_BACKEND.md      # Guía de despliegue completa
 ```
@@ -29,7 +32,7 @@ npm run dev       # desarrollo
 npm run build     # genera estáticos para Busybox
 ```
 
-La UI espera que el backend esté disponible en `http://127.0.0.1:8787/api`.
+La UI espera que el backend esté disponible en `http://127.0.0.1:8081/api`.
 Se almacena en `localStorage` el último clima y la configuración básica para
 operar offline si el backend no responde.
 
@@ -70,7 +73,7 @@ Ejecución local apuntando a la configuración de ejemplo:
 
 ```bash
 PANTALLA_CONFIG_PATH=$(pwd)/backend/config/config.example.json \
-uvicorn backend.app:app --reload --host 127.0.0.1 --port 8787
+uvicorn backend.app:app --reload --host 127.0.0.1 --port 8081
 ```
 
 Endpoints principales (`/api/*`): clima, Wi-Fi, TTS y gestión de configuración.
@@ -90,10 +93,11 @@ permisos, systemd y endurecimiento.
 ## Despliegue en Raspberry Pi
 
 1. Sigue la guía `docs/DEPLOY_BACKEND.md` para instalar dependencias, crear el
-   usuario `dashsvc` y registrar el servicio `pantalla-dash-backend.service`.
+   usuario de servicio (por ejemplo `dani`) y registrar
+   `pantalla-dash-backend@dani.service`.
 2. Sirve el contenido de `dash-ui/dist` en Busybox/NGINX apuntando la API a
-   `127.0.0.1:8787` (ya configurado en los servicios del frontend).
-3. Verifica con `curl http://127.0.0.1:8787/api/weather/current` que el backend
+   `127.0.0.1:8081`.
+3. Verifica con `curl http://127.0.0.1:8081/api/weather/current` que el backend
    responde antes de lanzar la UI.
 
 ### Fondos futuristas generados con IA
@@ -132,13 +136,15 @@ permisos, systemd y endurecimiento.
 
 ### Ajustes de sistema y red
 
-- `system/pantalla-dash-backend.service` inicia Uvicorn con 2 *workers* para
-  servir las nuevas rutas de salud y radar sin bloquear solicitudes.
-- La plantilla Nginx `system/nginx/pantalla-dash.conf` sirve la UI desde
-  `/var/www/html` y mantiene únicamente un alias específico para
-  `/assets/backgrounds/`.
-- `system/pantalla-kiosk.service` lanza Chromium en modo kiosko con aceleración
-  VA-API, rasterización fuera de proceso y *zero-copy* para maximizar FPS.
+- `system/pantalla-dash-backend@.service` inicia Uvicorn con 2 *workers* en
+  `127.0.0.1:8081` dentro de `/home/<usuario>/proyectos/Pantalla_reloj`.
+- `system/pantalla-xorg@.service` lanza `Xorg :0` en `vt1` y
+  `system/user/pantalla-openbox.service` mantiene `openbox` vivo como sesión de
+  usuario.
+- `system/pantalla-ui.service` exporta `PANTALLA_UI_URL=http://127.0.0.1/` y se
+  apoya en `/usr/local/bin/pantalla-ui-launch.sh` para localizar Chromium (snap).
+- La plantilla Nginx `system/nginx/pantalla-dash.conf` sirve la SPA desde
+  `/var/www/html` y sólo delega `/assets/backgrounds/auto/` a `/opt/dash/...`.
 
 ## Seguridad
 
@@ -148,27 +154,75 @@ permisos, systemd y endurecimiento.
 
 ## Autoinicio UI
 
-El instalador (`scripts/install.sh`) registra el servicio de **usuario**
-`pantalla-ui.service`, que lanza Chromium en modo *app+kiosk* apuntando a
-`http://127.0.0.1:8080/` con las barras ocultas y tamaño fijo `1920x480`. El
-unit se instala en `/etc/systemd/user/pantalla-ui.service`, se ejecuta en la
-sesión de `dani` (o el usuario configurado) y se engancha a
-`graphical-session.target`.
+El modo kiosko queda desacoplado del escritorio GNOME y se apoya en tres
+unidades systemd:
 
-- **Habilitar**: `systemctl --user enable --now pantalla-ui.service`
-- **Deshabilitar temporalmente**: `systemctl --user disable --now pantalla-ui.service`
-- **Cambiar la URL/ajustes**: edita
-  `/etc/systemd/user/pantalla-ui.service` o usa
-  `systemctl --user edit pantalla-ui.service` para sobreescribir la variable
-  `PANTALLA_UI_URL`. Recarga y reinicia con
-  `systemctl --user daemon-reload` y
-  `systemctl --user restart pantalla-ui.service`.
-- **Verificar estado/logs**:
-  `systemctl --user status pantalla-ui.service --no-pager -l`
+1. **`pantalla-dash-backend@dani.service`** (sistema) – levanta Uvicorn dentro
+   del repositorio `/home/dani/proyectos/Pantalla_reloj` usando el entorno
+   virtual `backend/.venv`.
+2. **`pantalla-xorg@dani.service`** (sistema) – inicia `Xorg :0` directamente en
+   `vt1` sin *display manager*.
+3. **`pantalla-openbox.service`** y **`pantalla-ui.service`** (usuario `dani`) –
+   `openbox` mantiene una sesión X ligera y el servicio de la UI lanza Chromium
+   en modo `--app`/`--kiosk` contra `http://127.0.0.1/`.
 
-El binario a lanzar se resuelve automáticamente (prefiriendo
-`/snap/bin/chromium`, luego `chromium`, `chromium-browser` o Google Chrome)
-mediante `/usr/local/bin/pantalla-ui-launch.sh`.
+Los units de usuario se instalan en `/etc/systemd/user/` y requieren
+`loginctl enable-linger dani` (el instalador ya lo aplica). Operaciones básicas:
+
+- **Habilitar todo el stack**:
+  ```bash
+  sudo systemctl enable --now pantalla-dash-backend@dani.service
+  sudo systemctl enable --now pantalla-xorg@dani.service
+  sudo -u dani systemctl --user enable --now pantalla-openbox.service pantalla-ui.service
+  ```
+- **Detener temporalmente Chromium**: `sudo -u dani systemctl --user stop pantalla-ui.service`
+- **Reiniciar sólo la UI**: `sudo -u dani systemctl --user restart pantalla-ui.service`
+- **Modificar la URL del kiosko**: crea un *drop-in* con
+  `sudo -u dani systemctl --user edit pantalla-ui.service` y sobrescribe la
+  variable `PANTALLA_UI_URL`.
+- **Inspeccionar estados**:
+  ```bash
+  sudo systemctl status pantalla-xorg@dani.service --no-pager
+  sudo -u dani systemctl --user status pantalla-openbox.service --no-pager
+  sudo -u dani systemctl --user status pantalla-ui.service --no-pager
+  ```
+
+El lanzador `/usr/local/bin/pantalla-ui-launch.sh` valida que `DISPLAY` esté
+disponible y prioriza `/snap/bin/chromium` antes de buscar otras variantes del
+navegador.
+
+## Kiosk headless (multi-user.target)
+
+`scripts/install.sh` prepara un entorno sin gestor gráfico que arranca en
+`multi-user.target` y, aun así, levanta una sesión X dedicada para el kiosko.
+Resumen de pasos automatizados:
+
+1. Instalación de `xserver-xorg`, `openbox`, `x11-xserver-utils` y `unclutter`
+   (opcional) junto a Chromium (snap).
+2. Escritura de `/etc/Xwrapper.config` con `allowed_users=anybody` y
+   `needs_root_rights=yes` para permitir que `pantalla-xorg@dani.service`
+   arranque sin consola activa.
+3. Registro y activación de `pantalla-dash-backend@dani.service` (FastAPI en
+   `127.0.0.1:8081`) seguido de `pantalla-xorg@dani.service`.
+4. Habilitación de `pantalla-openbox.service` y `pantalla-ui.service` dentro de
+   la sesión de `dani` (con *linger*). La UI lanza Chromium con flags
+   `--app`, `--kiosk`, `--start-fullscreen`, `--window-size=1920,480` y
+   `PANTALLA_UI_URL=http://127.0.0.1/`.
+5. Hardening extra: desactiva autostarts previos (`snap.chromium.daemon` y
+   `.desktop` heredados) para evitar que aparezcan ventanas no deseadas.
+
+Validaciones post-instalación (todas ejecutadas por el script):
+
+- `curl -fsS http://127.0.0.1/api/health` → `200` (backend).
+- `curl -fsS http://127.0.0.1/assets/index-*.js` → `200` (SPA).
+- `systemctl status pantalla-dash-backend@dani` → `active (running)`.
+- `systemctl status pantalla-xorg@dani` → `active (running)`.
+- `sudo -u dani systemctl --user status pantalla-openbox.service` → activo.
+- `sudo -u dani systemctl --user status pantalla-ui.service` → activo.
+
+Si `Xorg` falla con «Only console users are allowed…», comprueba que
+`/etc/Xwrapper.config` contenga exactamente los valores anteriores y reinicia el
+servicio (`sudo systemctl restart pantalla-xorg@dani`).
 
 ### Troubleshooting
 
@@ -185,11 +239,15 @@ mediante `/usr/local/bin/pantalla-ui-launch.sh`.
 - No debe existir un alias global `alias /opt/dash/assets/;` sobre `/assets/`,
   ya que desviaría los ficheros `index-*.js`, `vendor-*.js` e `index-*.css` del
   build.
-- Si se requieren fondos externos, usa un bloque dedicado en Nginx:
+- La configuración por defecto utiliza `try_files $uri /index.html;` para que la
+  SPA resuelva rutas internas y sólo crea un alias específico para
+  `/assets/backgrounds/auto/`.
+- Si se requieren fondos adicionales, puedes añadir un bloque dedicado en
+  Nginx:
 
   ```nginx
-  location ^~ /assets/backgrounds/ {
-    alias /opt/dash/assets/backgrounds/;
+  location /assets/backgrounds/auto/ {
+    alias /opt/dash/assets/backgrounds/auto/;
     access_log off;
     expires 7d;
   }
@@ -200,7 +258,7 @@ mediante `/usr/local/bin/pantalla-ui-launch.sh`.
   ```bash
   curl -I http://127.0.0.1/
   curl -I http://127.0.0.1/assets/<bundle>.js
-  curl -I http://127.0.0.1/api/healthz
+  curl -I http://127.0.0.1/api/health
   ```
 
 ## Licencia
