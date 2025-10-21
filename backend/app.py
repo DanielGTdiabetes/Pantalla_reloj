@@ -495,7 +495,10 @@ async def weather_today(config: AppConfig = Depends(get_config)):
     except MissingApiKeyError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except WeatherServiceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        message = str(exc)
+        detail_lower = message.lower()
+        status = 503 if "aemet" in detail_lower else 502
+        raise HTTPException(status_code=status, detail=message) from exc
     payload = today.as_dict()
     payload["cached"] = meta.cached
     payload["source"] = meta.source

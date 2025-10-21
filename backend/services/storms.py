@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, Optional
 
 import httpx
 
+from .aemet import AemetDecodeError, CacheEntry, _decode_aemet_payload
 from .config import get_api_key, read_config
 from .metrics import record_latency
 from .offline_state import record_provider_failure, record_provider_success
@@ -21,6 +22,10 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 BASE_URL = "https://opendata.aemet.es/opendata/api"
 TTL_PROB = 15 * 60
 TTL_RADAR = 10 * 60
+MEMORY_TTL_DEFAULT = 5 * 60
+
+
+_MEMORY_CACHE: Dict[str, CacheEntry] = {}
 
 
 def _cache_path(name: str) -> Path:
@@ -59,13 +64,30 @@ def _cache_write(name: str, data: Dict[str, Any]) -> None:
         logger.debug("No se pudo escribir caché %s: %s", path, exc)
 
 
-def _request_dataset(endpoint: str) -> Any:
+def _memory_read(key: str, ttl: int) -> CacheEntry | None:
+    entry = _MEMORY_CACHE.get(key)
+    if not entry:
+        return None
+    if ttl > 0 and time.time() - entry.timestamp > ttl:
+        return None
+    return entry
+
+
+def _memory_write(key: str, data: Any, timestamp: Optional[float] = None) -> None:
+    _MEMORY_CACHE[key] = CacheEntry(data, timestamp or time.time())
+
+
+def _request_dataset(endpoint: str, *, cache_key: str, memory_ttl: int) -> Any:
     api_key = get_api_key()
     if not api_key:
         raise RuntimeError("Falta API key de AEMET en la configuración")
 
     url = f"{BASE_URL}/{endpoint}"
     timeout = httpx.Timeout(20.0, read=20.0)
+    mem_entry_raw = _MEMORY_CACHE.get(cache_key)
+    mem_entry = _memory_read(cache_key, memory_ttl)
+    if mem_entry:
+        return mem_entry.data
     with httpx.Client(timeout=timeout) as client:
         start = time.perf_counter()
         try:
@@ -74,6 +96,10 @@ def _request_dataset(endpoint: str) -> Any:
         except httpx.HTTPError as exc:
             record_latency('aemet', time.perf_counter() - start)
             record_provider_failure("aemet", str(exc))
+            status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+            if status == 429 and mem_entry_raw:
+                logger.warning("AEMET rate limited para %s, sirviendo caché", endpoint)
+                return mem_entry_raw.data
             raise RuntimeError(f"No se pudo obtener descriptor {endpoint}") from exc
 
         try:
@@ -90,20 +116,30 @@ def _request_dataset(endpoint: str) -> Any:
             raise RuntimeError("Descriptor AEMET sin URL de datos")
 
         try:
-            data_resp = client.get(data_url)
+            data_resp = client.get(data_url, headers={"Accept-Encoding": "gzip, deflate"})
             data_resp.raise_for_status()
         except httpx.HTTPError as exc:
             record_latency('aemet', time.perf_counter() - start)
             record_provider_failure("aemet", str(exc))
+            status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+            if status == 429 and mem_entry_raw:
+                logger.warning("AEMET datos rate limited para %s, usando caché", data_url)
+                return mem_entry_raw.data
             raise RuntimeError("No se pudo descargar datos de AEMET") from exc
 
         record_latency('aemet', time.perf_counter() - start)
         record_provider_success("aemet")
 
         try:
-            return data_resp.json()
-        except json.JSONDecodeError:
-            return data_resp.text
+            data = _decode_aemet_payload(data_url, data_resp.headers, data_resp.content)
+        except AemetDecodeError as exc:
+            if mem_entry_raw:
+                logger.warning("Fallo decodificando %s, devolviendo caché", data_url)
+                return mem_entry_raw.data
+            raise RuntimeError(str(exc)) from exc
+
+        _memory_write(cache_key, data)
+        return data
 
 
 def _extract_daily(payload: Any) -> Dict[str, Any]:
@@ -158,7 +194,9 @@ def get_storm_probability() -> Dict[str, Any]:
             raise RuntimeError("Falta configuración de municipio AEMET")
 
         daily_payload = _request_dataset(
-            f"prediccion/especifica/municipio/diaria/{config.aemet.municipioId}"
+            f"prediccion/especifica/municipio/diaria/{config.aemet.municipioId}",
+            cache_key=f"prediccion:municipio:{config.aemet.municipioId}",
+            memory_ttl=MEMORY_TTL_DEFAULT,
         )
         today = _extract_daily(daily_payload)
 
@@ -256,7 +294,11 @@ def _extract_radar_frames(payload: Any) -> list[str]:
 
 def _fetch_radar_data() -> tuple[Optional[str], list[str]]:
     try:
-        payload = _request_dataset("red/radar/nacional")
+        payload = _request_dataset(
+            "red/radar/nacional",
+            cache_key="radar:nacional",
+            memory_ttl=TTL_RADAR,
+        )
     except Exception as exc:  # pylint: disable=broad-except
         logger.warning("No se pudo obtener radar AEMET: %s", exc)
         return None, []
