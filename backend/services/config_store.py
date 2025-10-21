@@ -81,12 +81,19 @@ def _mask_secret(value: str) -> str:
 
 
 def _merge(base: dict[str, Any], patches: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """Merge configuration patches into base configuration.
+    
+    Note: This function recursively merges dictionaries but replaces other values
+    including lists/arrays. This is intentional - arrays in config are meant to be
+    replaced entirely rather than merged element-by-element.
+    """
     result = dict(base)
     for patch in patches:
         for key, value in patch.items():
             if isinstance(value, dict) and isinstance(result.get(key), dict):
                 result[key] = _merge(result[key], [value])  # type: ignore[arg-type]
             else:
+                # Non-dict values (including lists) are replaced, not merged
                 result[key] = value
     return result
 

@@ -39,16 +39,19 @@ def _run_nmcli(args: List[str]) -> CommandResult:
     if shutil.which(NMCLI_BIN) is None:
         raise WifiError("nmcli no está instalado")
 
+    # Mask password values for logging
     sanitized: List[str] = []
-    mask_next = False
-    for part in args:
-        if mask_next:
+    i = 0
+    while i < len(args):
+        part = args[i]
+        # Check if this argument is "password" and mask the next argument
+        if i + 1 < len(args) and part.lower() == "password":
+            sanitized.append(part)
             sanitized.append("****")
-            mask_next = False
-            continue
-        sanitized.append(part)
-        if part.lower() == "password":
-            mask_next = True
+            i += 2  # Skip both password keyword and value
+        else:
+            sanitized.append(part)
+            i += 1
 
     logger.debug("Ejecutando nmcli %s", " ".join(shlex.quote(part) for part in sanitized))
 
@@ -155,6 +158,8 @@ def wifi_status() -> Dict[str, Any]:
 
     active_device = None
     active_ssid = None
+    preferred_device_active = False
+    
     for line in result.stdout.splitlines():
         if not line:
             continue
@@ -162,15 +167,19 @@ def wifi_status() -> Dict[str, Any]:
         if dev_type != "wifi":
             continue
         if state == "connected":
-            active_device = device
-            active_ssid = connection
-            break
-
-    if preferred_interface and active_device and active_device != preferred_interface:
-        active_ssid = None
+            # Check if this is the preferred interface
+            if preferred_interface and device == preferred_interface:
+                active_device = device
+                active_ssid = connection
+                preferred_device_active = True
+                break
+            # If no preferred interface set, or this is first connected device
+            if not preferred_interface and not active_device:
+                active_device = device
+                active_ssid = connection
 
     ip_address = None
-    device_name = preferred_interface or active_device
+    device_name = active_device
     if active_ssid and device_name:
         show = _run_nmcli(["-t", "-f", "GENERAL.STATE,IP4.ADDRESS[1]", "device", "show", device_name])
         if show.returncode == 0:

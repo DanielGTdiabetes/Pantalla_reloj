@@ -171,12 +171,19 @@ def get_storm_probability() -> Dict[str, Any]:
             for token in ("tormenta", "chubasco", "nube convectiva", "granizo")
         )
 
+        # Start with explicit storm probability from API
         prob = storm_prob
+        
+        # If no explicit storm data, estimate from rain probability
         if prob == 0.0 and rain_prob > 0.0:
-            prob = min(1.0, rain_prob * 0.75)
-        prob = max(prob, rain_prob * 0.6)
+            prob = rain_prob * 0.75
+        
+        # Apply state-based boost if storm conditions mentioned
         if has_storm_state:
             prob = max(prob, 0.7)
+        
+        # Ensure final probability doesn't exceed 1.0
+        prob = min(1.0, prob)
 
         detail = {
             "storm_prob_raw": storm_prob,
@@ -320,8 +327,12 @@ def get_storm_status() -> Dict[str, Any]:
     radar_url = radar_data.get("url")
 
     near_activity = storm_prob >= threshold
-    if not near_activity and radar_url and storm_prob >= max(0.4, threshold * 0.8):
-        near_activity = True
+    # Lower threshold if radar data is available (visual confirmation of activity)
+    if not near_activity and radar_url:
+        # Use 80% of configured threshold, but not less than 0.3
+        radar_threshold = max(0.3, threshold * 0.8)
+        if storm_prob >= radar_threshold:
+            near_activity = True
 
     if lightning_enabled:
         strikes = get_lightning_strikes({}, int(time.time() * 1000) - 30 * 60 * 1000)

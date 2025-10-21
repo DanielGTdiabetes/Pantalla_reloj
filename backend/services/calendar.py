@@ -66,9 +66,12 @@ class CalendarService:
             end_local = event.end.astimezone(self._timezone) if event.end else None
             if event.all_day:
                 start_date = start_local.date()
-                end_date = (
-                    (end_local - timedelta(days=1)).date() if end_local else start_date
-                )
+                # iCalendar DTEND for all-day events is exclusive (next day after event ends)
+                # So we subtract 1 day to get the actual last day of the event
+                if end_local:
+                    end_date = end_local.date() - timedelta(days=1)
+                else:
+                    end_date = start_date
             else:
                 start_date = start_local.date()
                 end_date = end_local.date() if end_local else start_date

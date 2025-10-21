@@ -44,6 +44,7 @@ export function useBackgroundCycle(refreshMinutes = DEFAULT_REFRESH_MINUTES): Ba
   const [cycleKey, setCycleKey] = useState(0);
   const etagRef = useRef<string | undefined>();
   const lastSwitchRef = useRef<number>(Date.now());
+  const isCommittingRef = useRef<boolean>(false);
   const refreshMs = refreshMinutes * 60_000;
 
   const normalizePayload = useCallback(
@@ -118,15 +119,17 @@ export function useBackgroundCycle(refreshMinutes = DEFAULT_REFRESH_MINUTES): Ba
   }, [prepareNext, refreshMs]);
 
   const commitNext = useCallback(() => {
-    setPrevious((prev) => (next ? current : prev));
-    if (!next) {
+    if (isCommittingRef.current || !next) {
       return;
     }
+    isCommittingRef.current = true;
+    setPrevious(current);
     setCurrent(next);
     setNext(null);
     setIsCrossfading(true);
     lastSwitchRef.current = Date.now();
     setCycleKey((value) => value + 1);
+    isCommittingRef.current = false;
   }, [current, next]);
 
   useEffect(() => {

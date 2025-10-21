@@ -232,15 +232,17 @@ async def raise_weather_alerts() -> None:
         return
     if not status.get("near_activity"):
         return
-    now = time.time()
-    if now - _last_alert_ts < ALERT_COOLDOWN_SECONDS:
-        return
-    try:
-        await speech_queue.enqueue(ALERT_TEXT)
-    except (SpeechError, TTSUnavailableError) as exc:
-        logger.warning("No se pudo locutar alerta meteorológica: %s", exc)
-        return
-    _last_alert_ts = now
+    
+    async with _alert_lock:
+        now = time.time()
+        if now - _last_alert_ts < ALERT_COOLDOWN_SECONDS:
+            return
+        try:
+            await speech_queue.enqueue(ALERT_TEXT)
+        except (SpeechError, TTSUnavailableError) as exc:
+            logger.warning("No se pudo locutar alerta meteorológica: %s", exc)
+            return
+        _last_alert_ts = now
 
 
 async def _alerts_daemon() -> None:
@@ -454,6 +456,7 @@ ALERT_COOLDOWN_SECONDS = 60 * 60
 ALERT_TEXT = "Tormenta cercana. Precaución."
 _last_alert_ts: float = 0.0
 _alert_task: asyncio.Task[None] | None = None
+_alert_lock = asyncio.Lock()
 
 
 def get_config() -> AppConfig:
