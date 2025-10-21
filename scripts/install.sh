@@ -39,6 +39,7 @@ BG_SVC="pantalla-bg-generate.service"
 BG_TIMER="pantalla-bg-generate.timer"
 
 # ----- Defaults de configuración -----
+TZ_DEFAULT="${TZ_DEFAULT:-Europe/Madrid}"
 AEMET_MUNICIPIO_ID="${AEMET_MUNICIPIO_ID:-12138}"   # Vila-real
 AEMET_MUNICIPIO_NAME="${AEMET_MUNICIPIO_NAME:-Vila-real}"
 AEMET_POSTAL_CODE="${AEMET_POSTAL_CODE:-12540}"
@@ -604,6 +605,14 @@ systemctl enable --now "$BG_TIMER"
 # ----- Reinicia backend para cargar endpoints nuevos (config/Wi-Fi si los añadiste) -----
 systemctl restart "${BACKEND_SVC_BASENAME}@$APP_USER" || true
 
+# Ajuste de zona horaria (solo si no está ya configurada)
+if ! timedatectl | grep -q "Time zone: ${TZ_DEFAULT}"; then
+  log "Configurando zona horaria ${TZ_DEFAULT}..."
+  sudo timedatectl set-timezone "${TZ_DEFAULT}"
+else
+  log "Zona horaria ya configurada: ${TZ_DEFAULT}"
+fi
+
 # ----- Checks finales -----
 echo
 log "Checks finales:"
@@ -640,3 +649,4 @@ echo "  Config:   $ENV_DIR/config.json ($APP_USER:pantalla 640)"
 echo "  Secretos: $ENV_DIR/secrets.json ($APP_USER:$APP_USER 600)"
 echo "  Env:      $ENV_DIR/env ($APP_USER:pantalla 640)"
 echo "  Fondos:   $ASSETS_DIR"
+log "Hora local del sistema: $(date)"
