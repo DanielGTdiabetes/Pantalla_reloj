@@ -136,7 +136,7 @@ permisos, systemd y endurecimiento.
   servir las nuevas rutas de salud y radar sin bloquear solicitudes.
 - La plantilla Nginx `system/nginx/pantalla-dash.conf` sirve la UI desde
   `/var/www/html` y mantiene únicamente un alias específico para
-  `/assets/backgrounds/auto/`.
+  `/assets/backgrounds/`.
 - `system/pantalla-kiosk.service` lanza Chromium en modo kiosko con aceleración
   VA-API, rasterización fuera de proceso y *zero-copy* para maximizar FPS.
 
@@ -185,6 +185,16 @@ mediante `/usr/local/bin/pantalla-ui-launch.sh`.
 - No debe existir un alias global `alias /opt/dash/assets/;` sobre `/assets/`,
   ya que desviaría los ficheros `index-*.js`, `vendor-*.js` e `index-*.css` del
   build.
+- Si se requieren fondos externos, usa un bloque dedicado en Nginx:
+
+  ```nginx
+  location ^~ /assets/backgrounds/ {
+    alias /opt/dash/assets/backgrounds/;
+    access_log off;
+    expires 7d;
+  }
+  ```
+
 - Tras instalar o actualizar, valida que todo responde con:
 
   ```bash

@@ -9,13 +9,12 @@ server {
     proxy_set_header Host $host;
   }
 
-  # Servir estáticos directamente desde /var/www/html; 404 si el recurso no existe.
-  # ⚠️ No añadir alias globales sobre /assets/, para evitar desviar los bundles del build.
+  # Servir estáticos desde el root; 404 si no existe
   location / {
     try_files $uri $uri/ =404;
   }
 
-  # RUTA ESPECÍFICA para fondos (no tocar bundles).
+  # RUTA ESPECÍFICA para fondos (no tocar bundles)
   location ^~ /assets/backgrounds/ {
     alias /opt/dash/assets/backgrounds/;
     access_log off;
