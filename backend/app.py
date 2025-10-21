@@ -13,6 +13,13 @@ from email.utils import format_datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+if __package__ in {None, ""}:
+    # Permitir que el módulo funcione tanto como parte del paquete "backend"
+    # como cuando se ejecuta directamente (por ejemplo, `uvicorn app:app`).
+    # Añadimos el directorio padre al sys.path para que `import backend.*`
+    # resuelva correctamente.
+    sys.path.append(str(Path(__file__).resolve().parent.parent))
+
 import httpx
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,25 +29,25 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict, Field
 import shutil
 
-from .services.aemet import MissingApiKeyError
-from .services.ai_text import (
+from backend.services.aemet import MissingApiKeyError
+from backend.services.ai_text import (
     AISummaryError,
     ai_summarize_weather,
     load_cached_brief,
     store_cached_brief,
 )
-from .services.backgrounds import BackgroundAsset, list_backgrounds, latest_background
-from .services.calendar import CalendarService, CalendarServiceError
-from .services.config import AppConfig, read_config as load_app_config
-from .services.dayinfo import get_day_info
-from .services.location import set_location
-from .services.metrics import get_latency
-from .services.seasonality import build_month_tip, get_current_month_season, get_month_season
-from .services.dst import current_time_payload, next_transition_info
-from .services.storms import get_radar_animation, get_radar_url, get_storm_status
-from .services.tts import SpeechError, TTSService, TTSUnavailableError
-from .services.weather import WeatherService, WeatherServiceError
-from .services.config_store import (
+from backend.services.backgrounds import BackgroundAsset, list_backgrounds, latest_background
+from backend.services.calendar import CalendarService, CalendarServiceError
+from backend.services.config import AppConfig, read_config as load_app_config
+from backend.services.dayinfo import get_day_info
+from backend.services.location import set_location
+from backend.services.metrics import get_latency
+from backend.services.seasonality import build_month_tip, get_current_month_season, get_month_season
+from backend.services.dst import current_time_payload, next_transition_info
+from backend.services.storms import get_radar_animation, get_radar_url, get_storm_status
+from backend.services.tts import SpeechError, TTSService, TTSUnavailableError
+from backend.services.weather import WeatherService, WeatherServiceError
+from backend.services.config_store import (
     has_openai_key,
     mask_secrets,
     read_config as read_store_config,
@@ -49,9 +56,13 @@ from .services.config_store import (
     write_config_patch,
     write_secrets_patch,
 )
-from .services.wifi import wifi_connect, wifi_scan, wifi_status
-from .services.wifi import WifiError, forget as wifi_forget
-from .services.offline_state import get_offline_state, record_provider_failure, record_provider_success
+from backend.services.wifi import wifi_connect, wifi_scan, wifi_status
+from backend.services.wifi import WifiError, forget as wifi_forget
+from backend.services.offline_state import (
+    get_offline_state,
+    record_provider_failure,
+    record_provider_success,
+)
 
 logger = logging.getLogger("pantalla.backend")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
