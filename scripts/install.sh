@@ -446,8 +446,14 @@ if [[ -f "$FRONTEND_DIR/package.json" ]]; then
     die "Fallo en 'npm run build'"
   fi
 
+  log "Actualizando /var/www/html con el build generado…"
+  install -d -m 0755 /var/www/html
   rm -rf /var/www/html/*
-  cp -r dist/* /var/www/html/
+  cp -a dist/. /var/www/html/
+  chown -R root:root /var/www/html
+  chmod 755 /var/www/html
+  find /var/www/html -mindepth 1 -type d -exec chmod 755 {} +
+  find /var/www/html -type f -exec chmod 644 {} +
 else
   warn "dash-ui no encontrado; saltando build"
 fi
@@ -465,10 +471,14 @@ server {
     proxy_set_header Host $host;
   }
 
-  location /assets/ {
-    alias /opt/dash/assets/;
+  # Servimos la UI directamente desde /var/www/html. No añadir alias globales sobre /assets/.
+  location / {
+    try_files $uri $uri/ =404;
+  }
+
+  location /assets/backgrounds/auto/ {
+    alias /opt/dash/assets/backgrounds/auto/;
     access_log off;
-    expires 7d;
   }
 
   location = /healthz {
@@ -478,8 +488,35 @@ server {
 }
 NGINX
 ln -sf "$NGINX_SITE" /etc/nginx/sites-enabled/pantalla
+find /etc/nginx/sites-enabled -maxdepth 1 -type f -name 'pantalla.bak*' -delete 2>/dev/null || true
 rm -f /etc/nginx/sites-enabled/default || true
-nginx -t && systemctl restart nginx
+nginx -t
+if ! systemctl reload nginx; then
+  service nginx reload
+fi
+
+log "Post-checks de Nginx y estáticos…"
+ASSETS_ROOT="/var/www/html/assets"
+[[ -d "$ASSETS_ROOT" ]] || die "No existe el directorio $ASSETS_ROOT"
+INDEX_JS="$(find "$ASSETS_ROOT" -maxdepth 1 -type f -name 'index-*.js' -printf '%f\n' | head -n1)"
+[[ -n "$INDEX_JS" ]] || die "No se encontró bundle index-*.js en $ASSETS_ROOT"
+VENDOR_JS="$(find "$ASSETS_ROOT" -maxdepth 1 -type f -name 'vendor-*.js' -printf '%f\n' | head -n1)"
+[[ -n "$VENDOR_JS" ]] || die "No se encontró bundle vendor-*.js en $ASSETS_ROOT"
+INDEX_CSS="$(find "$ASSETS_ROOT" -maxdepth 1 -type f -name 'index-*.css' -printf '%f\n' | head -n1)"
+[[ -n "$INDEX_CSS" ]] || die "No se encontró bundle index-*.css en $ASSETS_ROOT"
+
+ROOT_STATUS="$(curl -s -I http://127.0.0.1/ | head -n1 || true)"
+[[ "$ROOT_STATUS" =~ HTTP/1\.[01]\ 200 ]] || die "Nginx no responde 200 en / (obtenido: $ROOT_STATUS)"
+
+ASSET_STATUS="$(curl -s -I "http://127.0.0.1/assets/${INDEX_JS}" | head -n1 || true)"
+[[ "$ASSET_STATUS" =~ HTTP/1\.[01]\ 200 ]] || die "El bundle ${INDEX_JS} no responde 200 (obtenido: $ASSET_STATUS)"
+
+API_STATUS="$(curl -s -I http://127.0.0.1/api/healthz | head -n1 || true)"
+if [[ "$API_STATUS" =~ HTTP/1\.[01]\ 200 ]]; then
+  log "Backend OK (healthz 200)"
+else
+  warn "Backend no responde 200 en /api/healthz (obtenido: $API_STATUS)"
+fi
 
 # ----- Servicio fondos IA -----
 log "Instalando servicio y timer de fondos IA…"

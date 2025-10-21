@@ -134,9 +134,9 @@ permisos, systemd y endurecimiento.
 
 - `system/pantalla-dash-backend.service` inicia Uvicorn con 2 *workers* para
   servir las nuevas rutas de salud y radar sin bloquear solicitudes.
-- La plantilla Nginx `system/nginx/pantalla-dash.conf` habilita `http2`,
-  `sendfile` y compresión `gzip`, además de exponer `/opt/dash/assets/` como
-  `/assets/`.
+- La plantilla Nginx `system/nginx/pantalla-dash.conf` sirve la UI desde
+  `/var/www/html` y mantiene únicamente un alias específico para
+  `/assets/backgrounds/auto/`.
 - `system/pantalla-kiosk.service` lanza Chromium en modo kiosko con aceleración
   VA-API, rasterización fuera de proceso y *zero-copy* para maximizar FPS.
 
@@ -178,6 +178,20 @@ mediante `/usr/local/bin/pantalla-ui-launch.sh`.
   `unix:path=/run/user/1000/bus`.
 - Verifica que `/snap/bin/chromium` existe y es ejecutable.
 - Desde el usuario, revisa el servicio: `systemctl --user status pantalla-ui.service -l --no-pager`.
+
+### Nginx & estáticos
+
+- Los bundles generados por `dash-ui` se instalan en `/var/www/html/assets/`.
+- No debe existir un alias global `alias /opt/dash/assets/;` sobre `/assets/`,
+  ya que desviaría los ficheros `index-*.js`, `vendor-*.js` e `index-*.css` del
+  build.
+- Tras instalar o actualizar, valida que todo responde con:
+
+  ```bash
+  curl -I http://127.0.0.1/
+  curl -I http://127.0.0.1/assets/<bundle>.js
+  curl -I http://127.0.0.1/api/healthz
+  ```
 
 ## Licencia
 
