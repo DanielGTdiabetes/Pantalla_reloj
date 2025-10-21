@@ -1,9 +1,12 @@
 """Cliente ligero para consumir datos de AEMET OpenData."""
 from __future__ import annotations
 
+import gzip
+import io
 import json
 import logging
 import time
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -21,6 +24,7 @@ CACHE_DIR = PROJECT_ROOT / "storage" / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 BASE_URL = "https://opendata.aemet.es/opendata/api"
 CACHE_TTL_SECONDS = 30 * 60
+MEMORY_CACHE_TTL_SECONDS = 5 * 60
 
 
 @dataclass
@@ -48,6 +52,95 @@ class MissingApiKeyError(AemetError):
 
 class DatasetUnavailableError(AemetError):
     """Señala que AEMET no pudo entregar datos válidos."""
+
+
+class AemetDecodeError(AemetError):
+    """Señala que no se pudo decodificar un recurso de datos de AEMET."""
+
+
+_MEMORY_CACHE: Dict[str, CacheEntry] = {}
+
+
+def _decode_aemet_payload(url: str, headers: httpx.Headers, content: bytes) -> Dict[str, Any]:
+    """Normaliza contenido AEMET, manejando compresión y codificación errónea."""
+
+    content_type = headers.get("content-type", "")
+    content_encoding = headers.get("content-encoding", "")
+    size = len(content)
+    applied_gzip = False
+    applied_zip = False
+    raw_bytes = content
+
+    if content_encoding.lower() == "gzip" or raw_bytes.startswith(b"\x1f\x8b"):
+        try:
+            raw_bytes = gzip.decompress(raw_bytes)
+            applied_gzip = True
+        except OSError as exc:
+            raise AemetDecodeError(
+                f"No se pudo descomprimir contenido gzip de {url}"
+            ) from exc
+
+    if "zip" in content_type.lower() or raw_bytes.startswith(b"PK"):
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zip_file:
+                for name in zip_file.namelist():
+                    if name.lower().endswith(".json"):
+                        with zip_file.open(name) as member:
+                            raw_bytes = member.read()
+                            applied_zip = True
+                            break
+                else:
+                    raise AemetDecodeError(
+                        f"Archivo ZIP sin JSON utilizable en {url}"
+                    )
+        except (OSError, zipfile.BadZipFile) as exc:
+            raise AemetDecodeError(
+                f"No se pudo abrir ZIP devuelto por {url}"
+            ) from exc
+
+    try:
+        decoded = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        try:
+            decoded = raw_bytes.decode("latin-1")
+        except UnicodeDecodeError:
+            decoded = raw_bytes.decode("utf-8", errors="ignore")
+
+    logger.debug(
+        "AEMET fetch ok url=%s type=%s encoding=%s size=%d gzip=%s zip=%s",
+        url,
+        content_type,
+        content_encoding,
+        size,
+        applied_gzip,
+        applied_zip,
+    )
+
+    try:
+        return json.loads(decoded)
+    except json.JSONDecodeError as exc:
+        sample = raw_bytes[:16].hex()
+        raise AemetDecodeError(
+            f"JSON inválido desde {url} (tipo={content_type}, bytes={sample})"
+        ) from exc
+
+
+def _fetch_aemet_json(url: str) -> Dict[str, Any]:
+    """Descarga un JSON AEMET manejando compresiones problemáticas."""
+
+    headers = {"Accept-Encoding": "gzip, deflate"}
+    timeout = httpx.Timeout(15.0, read=15.0)
+    with httpx.Client(timeout=timeout) as client:
+        response = client.get(url, headers=headers)
+        response.raise_for_status()
+        return _decode_aemet_payload(url, response.headers, response.content)
+
+
+async def _fetch_aemet_json_async(client: httpx.AsyncClient, url: str) -> Dict[str, Any]:
+    headers = {"Accept-Encoding": "gzip, deflate"}
+    response = await client.get(url, headers=headers)
+    response.raise_for_status()
+    return _decode_aemet_payload(url, response.headers, response.content)
 
 
 class AemetClient:
@@ -82,7 +175,11 @@ class AemetClient:
     async def fetch_radar_summary(self) -> DatasetResult:
         """Obtiene el último resumen de radar nacional."""
         return await self._fetch_dataset(
-            "red/radar/nacional", "aemet_radar.json", allow_stale=True, ttl_seconds=10 * 60
+            "red/radar/nacional",
+            "aemet_radar.json",
+            allow_stale=True,
+            ttl_seconds=10 * 60,
+            memory_ttl_seconds=10 * 60,
         )
 
     async def _fetch_dataset(
@@ -92,11 +189,26 @@ class AemetClient:
         *,
         allow_stale: bool = True,
         ttl_seconds: int = CACHE_TTL_SECONDS,
+        memory_ttl_seconds: int = MEMORY_CACHE_TTL_SECONDS,
     ) -> DatasetResult:
         cache_path = CACHE_DIR / cache_name
         cached = self._load_cache(cache_path)
+        mem_key = cache_name
+        mem_cached = _MEMORY_CACHE.get(mem_key)
         now = time.time()
+        if (
+            mem_cached
+            and memory_ttl_seconds > 0
+            and now - mem_cached.timestamp < memory_ttl_seconds
+        ):
+            return DatasetResult(
+                payload=mem_cached.data,
+                from_cache=True,
+                timestamp=mem_cached.timestamp,
+            )
+
         if cached and now - cached.timestamp < ttl_seconds:
+            _MEMORY_CACHE[mem_key] = CacheEntry(cached.data, cached.timestamp)
             return DatasetResult(
                 payload=cached.data,
                 from_cache=True,
@@ -117,6 +229,22 @@ class AemetClient:
             duration = time.perf_counter() - start
             record_latency("aemet", duration)
             logger.error("Fallo solicitando recurso AEMET %s: %s", endpoint, exc)
+            status_code = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+            if status_code == 429:
+                fallback = mem_cached or cached
+                if fallback:
+                    logger.warning("AEMET rate limited para %s, usando caché", endpoint)
+                    record_provider_failure("aemet", "rate limited")
+                    return DatasetResult(
+                        payload=fallback.data,
+                        from_cache=True,
+                        timestamp=fallback.timestamp,
+                        stale=True,
+                        error="rate limited",
+                    )
+                record_provider_failure("aemet", "rate limited")
+                raise DatasetUnavailableError("AEMET rate limited") from exc
+
             if cached and allow_stale:
                 logger.warning("Usando caché antigua para %s", endpoint)
                 record_provider_failure("aemet", str(exc))
@@ -156,12 +284,25 @@ class AemetClient:
             raise DatasetUnavailableError("Descriptor de datos incompleto")
 
         try:
-            data_response = await client.get(data_url)
-            data_response.raise_for_status()
-        except httpx.HTTPError as exc:
+            payload = await _fetch_aemet_json_async(client, data_url)
+        except httpx.HTTPStatusError as exc:
             logger.error("No se pudo descargar dataset %s: %s", data_url, exc)
             duration = time.perf_counter() - start
             record_latency("aemet", duration)
+            if exc.response.status_code == 429:
+                fallback = mem_cached or cached
+                if fallback:
+                    logger.warning("AEMET datos rate limited para %s, usando caché", data_url)
+                    record_provider_failure("aemet", "rate limited")
+                    return DatasetResult(
+                        payload=fallback.data,
+                        from_cache=True,
+                        timestamp=fallback.timestamp,
+                        stale=True,
+                        error="rate limited",
+                    )
+                record_provider_failure("aemet", "rate limited")
+                raise DatasetUnavailableError("AEMET rate limited") from exc
             if cached and allow_stale:
                 record_provider_failure("aemet", str(exc))
                 return DatasetResult(
@@ -173,18 +314,38 @@ class AemetClient:
                 )
             record_provider_failure("aemet", str(exc))
             raise DatasetUnavailableError("No se pudo descargar datos") from exc
-
-        payload: Any
-        try:
-            payload = data_response.json()
-        except json.JSONDecodeError:
-            payload = data_response.text
+        except AemetDecodeError as exc:
+            logger.error("No se pudo decodificar dataset %s: %s", data_url, exc)
+            duration = time.perf_counter() - start
+            record_latency("aemet", duration)
+            if cached and allow_stale:
+                record_provider_failure("aemet", str(exc))
+                return DatasetResult(
+                    payload=cached.data,
+                    from_cache=True,
+                    timestamp=cached.timestamp,
+                    stale=True,
+                    error=str(exc),
+                )
+            fallback = mem_cached
+            if fallback:
+                record_provider_failure("aemet", str(exc))
+                return DatasetResult(
+                    payload=fallback.data,
+                    from_cache=True,
+                    timestamp=fallback.timestamp,
+                    stale=True,
+                    error=str(exc),
+                )
+            record_provider_failure("aemet", str(exc))
+            raise DatasetUnavailableError("AEMET no disponible temporalmente") from exc
 
         duration = time.perf_counter() - start
         record_latency("aemet", duration)
         record_provider_success("aemet")
 
         self._save_cache(cache_path, payload, now)
+        _MEMORY_CACHE[mem_key] = CacheEntry(payload, now)
         return DatasetResult(payload=payload, from_cache=False, timestamp=now)
 
     def _load_cache(self, path: Path) -> CacheEntry | None:
