@@ -26,10 +26,26 @@ sudo chmod 440 /etc/sudoers.d/pantalla-dash
 Instala la plantilla y ajusta permisos:
 
 ```bash
-sudo install -d -m700 /etc/pantalla-dash
-sudo install -m600 backend/config/config.example.json /etc/pantalla-dash/config.json
-sudo chown root:root /etc/pantalla-dash/config.json
+sudo groupadd -f pantalla
+sudo install -d -m2770 -o root -g pantalla /etc/pantalla-dash
+sudo install -m660 backend/config/config.example.json /etc/pantalla-dash/config.json
+sudo chown dani:pantalla /etc/pantalla-dash/config.json
 ```
+
+Asegura que el usuario del backend pertenezca al grupo `pantalla` y que el
+resto de archivos compartan permisos:
+
+```bash
+sudo usermod -aG pantalla dani
+sudo chgrp -R pantalla /etc/pantalla-dash
+sudo chown dani:pantalla /etc/pantalla-dash/backend.env /etc/pantalla-dash/env
+sudo chmod 660 /etc/pantalla-dash/backend.env /etc/pantalla-dash/env /etc/pantalla-dash/config.json
+sudo chown dani:pantalla /etc/pantalla-dash/secrets.json
+sudo chmod 660 /etc/pantalla-dash/secrets.json
+```
+
+Recuerda reiniciar sesión (o `newgrp pantalla`) tras añadir el usuario al grupo
+para heredar los permisos.
 
 Edita `/etc/pantalla-dash/config.json`:
 

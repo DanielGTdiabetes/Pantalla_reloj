@@ -105,7 +105,7 @@ permisos, systemd y endurecimiento.
 - Copia `opt/dash/scripts/generate_bg_daily.py` a `/opt/dash/scripts/` y asegúrate
   de que sea ejecutable (`chmod +x`).
 - El script requiere `pip install openai requests pillow` y lee `OPENAI_API_KEY`
-  desde `/etc/pantalla-dash/env` (modo `600`).
+  desde `/etc/pantalla-dash/env` (modo `660`, grupo `pantalla`).
 - Configura `/etc/pantalla-dash/config.json` con los campos:
 
   ```json
@@ -149,7 +149,9 @@ permisos, systemd y endurecimiento.
 ## Seguridad
 
 - El backend sólo escucha en `127.0.0.1`.
-- `/etc/pantalla-dash/config.json` debe tener permisos `600` (root:root).
+- `/etc/pantalla-dash/` se instala con `drwxrws---` (root:pantalla) para que los
+  servicios puedan escribir de forma segura, y los ficheros `config.json`,
+  `backend.env`, `env` y `secrets.json` quedan en `660` (`dani:pantalla`).
 - No se exponen secretos vía endpoints ni logs.
 
 ## Autoinicio UI
