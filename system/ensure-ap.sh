@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-STATUS=$(curl -fsS --max-time 3 http://127.0.0.1:8787/api/network/status 2>/dev/null || echo '{}')
+STATUS=$(curl -fsS --max-time 3 http://127.0.0.1:8081/api/network/status 2>/dev/null || echo '{}')
 CONNECTED=$(python3 - <<'PY'
 import json, sys
 try:
