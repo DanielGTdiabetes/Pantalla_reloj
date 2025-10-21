@@ -7,7 +7,7 @@ HEIGHT="${PANTALLA_UI_HEIGHT:-480}"
 POSITION_X="${PANTALLA_UI_POS_X:-0}"
 POSITION_Y="${PANTALLA_UI_POS_Y:-0}"
 
-candidates=(chromium-browser chromium google-chrome-stable google-chrome)
+candidates=(/snap/bin/chromium chromium chromium-browser google-chrome-stable google-chrome)
 CHROMIUM_BIN=""
 for candidate in "${candidates[@]}"; do
   if command -v "$candidate" >/dev/null 2>&1; then

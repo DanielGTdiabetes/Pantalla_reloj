@@ -1,17 +1,19 @@
 [Unit]
 Description=Pantalla Chromium UI (kiosk)
-After=graphical.target
-Wants=graphical.target
+After=graphical-session.target
+Wants=graphical-session.target
 
 [Service]
 Type=simple
-User={{UI_USER}}
 Environment=DISPLAY=:0
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
 Environment=PANTALLA_UI_URL=http://127.0.0.1:8080/
-ExecStartPre=/usr/bin/bash -c '/usr/bin/pkill -f chromium || true'
+ExecStartPre=/usr/bin/bash -lc 'pkill -9 -f "^/snap/bin/chromium( |$)" || true'
 ExecStart=/usr/local/bin/pantalla-ui-launch.sh
+KillMode=process
 Restart=always
 RestartSec=2
 
 [Install]
-WantedBy=graphical.target
+WantedBy=graphical-session.target

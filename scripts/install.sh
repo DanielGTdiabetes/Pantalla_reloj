@@ -23,6 +23,7 @@ ASSETS_DIR="/opt/dash/assets/backgrounds/auto"
 LOG_DIR="/var/log/pantalla-dash"
 NGINX_SITE="/etc/nginx/sites-available/pantalla"
 SYSTEMD_DIR="/etc/systemd/system"
+USER_SYSTEMD_DIR="/etc/systemd/user"
 UI_SERVICE_NAME="pantalla-ui.service"
 UI_SERVICE_SRC="$REPO_DIR/system/$UI_SERVICE_NAME"
 UI_LAUNCHER_SRC="$REPO_DIR/scripts/pantalla-ui-launch.sh"
@@ -209,17 +210,35 @@ fi
 log "Instalando lanzador de Chromium para systemd (${UI_LAUNCHER_DST})…"
 install -m 755 "$UI_LAUNCHER_SRC" "$UI_LAUNCHER_DST"
 
-log "Instalando servicio systemd ${UI_SERVICE_NAME}…"
+log "Instalando servicio systemd de usuario ${UI_SERVICE_NAME}…"
 UI_USER="${PANTALLA_UI_USER:-$APP_USER}"
 if ! id "$UI_USER" >/dev/null 2>&1; then
   die "El usuario $UI_USER no existe; ajusta PANTALLA_UI_USER antes de continuar"
 fi
-tmp_service="$(mktemp)"
-sed "s/{{UI_USER}}/${UI_USER}/g" "$UI_SERVICE_SRC" > "$tmp_service"
-install -m 644 "$tmp_service" "$SYSTEMD_DIR/$UI_SERVICE_NAME"
-rm -f "$tmp_service"
-systemctl daemon-reload
-systemctl enable --now "$UI_SERVICE_NAME"
+
+if [[ -f "$SYSTEMD_DIR/$UI_SERVICE_NAME" ]]; then
+  warn "  Detectado servicio de sistema legacy; se deshabilita y elimina."
+  systemctl disable --now "$UI_SERVICE_NAME" || true
+  rm -f "$SYSTEMD_DIR/$UI_SERVICE_NAME"
+  systemctl daemon-reload || true
+fi
+
+install -D -m 644 "$UI_SERVICE_SRC" "$USER_SYSTEMD_DIR/$UI_SERVICE_NAME"
+
+UI_UID="$(id -u "$UI_USER")"
+UI_RUNTIME_DIR="/run/user/$UI_UID"
+sudo loginctl enable-linger "$UI_USER" || true
+
+if [[ ! -d "$UI_RUNTIME_DIR" ]]; then
+  sudo mkdir -p "$UI_RUNTIME_DIR"
+  sudo chown "$UI_USER":"$UI_USER" "$UI_RUNTIME_DIR"
+fi
+
+UI_SYSTEMD_ENV=("XDG_RUNTIME_DIR=$UI_RUNTIME_DIR" "DBUS_SESSION_BUS_ADDRESS=unix:path=$UI_RUNTIME_DIR/bus")
+
+sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user daemon-reload || true
+sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user enable "$UI_SERVICE_NAME" || true
+sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user restart "$UI_SERVICE_NAME" || true
 
 sudo chown -R "${APP_USER}:${APP_USER}" "${APP_HOME}/.config/openbox"
 sudo chmod +x "${APP_HOME}/.config/openbox/autostart"
