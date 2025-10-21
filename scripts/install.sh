@@ -313,15 +313,16 @@ fi
 
 log "Creando grupos/rutas y permisos…"
 groupadd -f pantalla
-mkdir -p "$ENV_DIR" "$ASSETS_DIR" "$LOG_DIR" /opt/dash/assets
+install -d -m 2770 -o root -g pantalla "$ENV_DIR"
+mkdir -p "$ASSETS_DIR" "$LOG_DIR" /opt/dash/assets
 chown -R "$APP_USER:$APP_USER" /opt/dash
 chmod 755 /opt/dash /opt/dash/assets
 touch "$LOG_DIR/bg.log"
 chown "$APP_USER:$APP_USER" "$LOG_DIR/bg.log"
 chmod 664 "$LOG_DIR/bg.log"
-chgrp pantalla "$ENV_DIR" || true
-chmod 750 "$ENV_DIR"
 usermod -aG pantalla "$APP_USER" || true
+log "Si acabamos de añadir '$APP_USER' al grupo 'pantalla', es necesario reiniciar sesión o ejecutar 'newgrp pantalla' para que tome efecto."
+log "Sugerencia: verifica pertenencia al grupo con 'id $APP_USER'."
 
 log "Configurando sudoers para nmcli sin contraseña…"
 SUDOERS_FILE="/etc/sudoers.d/pantalla-wifi"
@@ -335,9 +336,8 @@ if [[ -n "${OPENAI_KEY:-}" ]]; then
 else
   if [[ ! -f "$ENV_DIR/env" ]]; then echo "# OPENAI_API_KEY=" > "$ENV_DIR/env"; fi
 fi
-chgrp pantalla "$ENV_DIR/env"
-chmod 640 "$ENV_DIR/env"
 chown "$APP_USER":pantalla "$ENV_DIR/env"
+chmod 660 "$ENV_DIR/env"
 
 log "Escribiendo $ENV_DIR/config.json …"
 cat > "$ENV_DIR/config.json" <<JSON
@@ -357,7 +357,7 @@ cat > "$ENV_DIR/config.json" <<JSON
 }
 JSON
 chown "$APP_USER":pantalla "$ENV_DIR/config.json"
-chmod 640 "$ENV_DIR/config.json"
+chmod 660 "$ENV_DIR/config.json"
 
 log "Escribiendo $ENV_DIR/secrets.json …"
 SECRETS_PATH="$ENV_DIR/secrets.json" OPENAI_SECRET_VALUE="$OPENAI_KEY" python3 <<'PY'
@@ -375,15 +375,27 @@ with open(path, "w", encoding="utf-8") as handle:
     json.dump(data, handle, ensure_ascii=False, indent=2)
     handle.write("\n")
 PY
-chown "$APP_USER":"$APP_USER" "$ENV_DIR/secrets.json"
-chmod 600 "$ENV_DIR/secrets.json"
+chown "$APP_USER":pantalla "$ENV_DIR/secrets.json"
+chmod 660 "$ENV_DIR/secrets.json"
 
 log "Escribiendo $ENV_DIR/backend.env …"
 cat > "$ENV_DIR/backend.env" <<EOF
 PANTALLA_ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
 EOF
 chown "$APP_USER":pantalla "$ENV_DIR/backend.env"
-chmod 640 "$ENV_DIR/backend.env"
+chmod 660 "$ENV_DIR/backend.env"
+
+chgrp -R pantalla "$ENV_DIR"
+
+log "Permisos actuales en $ENV_DIR:"
+ls -ld "$ENV_DIR"
+ls -l "$ENV_DIR"
+id "$APP_USER" || true
+if sudo -u "$APP_USER" bash -lc "echo ok > '$ENV_DIR/.write_test' && ls -l '$ENV_DIR/.write_test'"; then
+  log "Prueba de escritura en $ENV_DIR exitosa."
+else
+  warn "No se pudo crear el archivo de prueba en $ENV_DIR; revisa la pertenencia al grupo."
+fi
 
 log "Preparando backend (venv + deps)…"
 cd "$BACKEND_DIR"
