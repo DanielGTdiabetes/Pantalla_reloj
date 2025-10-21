@@ -1,14 +1,17 @@
 [Unit]
-Description=Pantalla Dash Xorg Session (%i)
-After=network-online.target
-Wants=network-online.target
+Description=Pantalla - Xorg headless seat on %i
+After=multi-user.target
+Wants=multi-user.target
 
 [Service]
+Type=simple
 User=%i
-Environment=DISPLAY=:0
-ExecStart=/usr/lib/xorg/Xorg :0 -seat seat0 vt1 -nolisten tcp -noreset
+# Detectar ruta Xorg en runtime: /usr/lib/xorg/Xorg o /usr/bin/Xorg
+ExecStart=/bin/bash -lc 'XBIN=""; for p in /usr/lib/xorg/Xorg /usr/bin/Xorg; do [ -x "$p" ] && XBIN="$p" && break; done; [ -n "$XBIN" ] || { echo "Xorg bin not found"; exit 1; }; exec "$XBIN" :0 -nolisten tcp vt1'
 Restart=always
 RestartSec=2
+Environment=HOME=/home/%i
+Environment=XDG_RUNTIME_DIR=/run/user/%U
 
 [Install]
 WantedBy=multi-user.target
