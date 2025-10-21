@@ -11,7 +11,7 @@ StandardInput=tty
 TTYPath=/dev/tty1
 TTYReset=yes
 TTYVHangup=yes
-ExecStart=/bin/bash -lc 'XBIN=""; for p in /usr/lib/xorg/Xorg /usr/bin/Xorg; do [ -x "$p" ] && XBIN="$p" && break; done; [ -n "$XBIN" ] || { echo "Xorg bin not found"; exit 1; }; exec "$XBIN" :0 -nolisten tcp vt1 -keeptty'
+ExecStart=/bin/bash -lc 'XBIN=""; for p in /usr/lib/xorg/Xorg /usr/bin/Xorg; do [ -x "$p" ] && XBIN="$p" && break; done; [ -n "$XBIN" ] || { echo "Xorg bin not found"; exit 1; }; exec "$XBIN" :0 -nolisten tcp vt1 -keeptty -nocursor'
 Restart=always
 RestartSec=2
 Environment=HOME=/root
