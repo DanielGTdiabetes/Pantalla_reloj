@@ -307,7 +307,7 @@ def generate_image_bytes(client: OpenAI, prompt: str, timeout: int) -> bytes:
         prompt=prompt,
         size=IMAGE_SIZE,
         response_format="b64_json",
-        timeout=timeout,
+        timeout=timeout
     )
     if not result.data:
         raise RuntimeError("Respuesta vacía de OpenAI")
