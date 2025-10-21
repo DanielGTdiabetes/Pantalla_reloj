@@ -286,6 +286,13 @@ def _estimate_current_temperature(days: Sequence[Dict[str, Any]]) -> float | Non
         return None
     now = datetime.now(tz=UTC)
     today_raw = days[0]
+    
+    # Get the date to properly construct datetime objects in the correct timezone
+    date_raw = today_raw.get("fecha") if isinstance(today_raw, dict) else None
+    base_date = _parse_date(date_raw)
+    if not base_date:
+        base_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    
     temp_section = today_raw.get("temperatura") if isinstance(today_raw, dict) else None
     if not isinstance(temp_section, dict):
         return None
@@ -305,7 +312,8 @@ def _estimate_current_temperature(days: Sequence[Dict[str, Any]]) -> float | Non
             hour = int(hour_raw)
         except (TypeError, ValueError):
             continue
-        target = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+        # Construct target time relative to the base date in UTC
+        target = base_date.replace(hour=hour, minute=0, second=0, microsecond=0)
         delta = abs(target - now)
         if delta < best_delta:
             best_delta = delta

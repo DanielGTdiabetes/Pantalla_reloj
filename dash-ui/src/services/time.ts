@@ -21,7 +21,17 @@ function ensureTimer() {
 export function subscribeTime(listener: TimeListener) {
   listeners.add(listener);
   ensureTimer();
-  listener(new Date());
+  try {
+    listener(new Date());
+  } catch (error) {
+    // If initial call fails, remove listener to prevent memory leak
+    listeners.delete(listener);
+    if (listeners.size === 0 && timerId !== undefined) {
+      window.clearInterval(timerId);
+      timerId = undefined;
+    }
+    throw error;
+  }
   return () => {
     listeners.delete(listener);
     if (listeners.size === 0 && timerId !== undefined) {
