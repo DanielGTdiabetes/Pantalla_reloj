@@ -26,11 +26,15 @@ SYSTEMD_DIR="/etc/systemd/system"
 USER_SYSTEMD_DIR="/etc/systemd/user"
 UI_SERVICE_NAME="pantalla-ui.service"
 UI_SERVICE_SRC="$REPO_DIR/system/$UI_SERVICE_NAME"
+OPENBOX_SERVICE_NAME="pantalla-openbox.service"
+OPENBOX_SERVICE_SRC="$REPO_DIR/system/user/$OPENBOX_SERVICE_NAME"
 UI_LAUNCHER_SRC="$REPO_DIR/scripts/pantalla-ui-launch.sh"
 UI_LAUNCHER_DST="/usr/local/bin/pantalla-ui-launch.sh"
 
 BACKEND_SVC_BASENAME="pantalla-dash-backend"
 BACKEND_SVC_TEMPLATE="${BACKEND_SVC_BASENAME}@.service"
+XORG_SERVICE_NAME="pantalla-xorg@.service"
+XORG_SERVICE_SRC="$REPO_DIR/system/$XORG_SERVICE_NAME"
 BG_SVC="pantalla-bg-generate.service"
 BG_TIMER="pantalla-bg-generate.timer"
 
@@ -111,19 +115,25 @@ log "Asegurando NetworkManager activo…"
 systemctl enable --now NetworkManager || true
 
 # --- X stack mínimo y sesión ligera (idempotente) ---
-log "Instalando Xorg + Openbox + LightDM + utilidades..."
-sudo apt-get update
-sudo apt-get install -y xorg openbox lightdm x11-xserver-utils
+log "Instalando Xorg + Openbox en modo mínimo…"
+apt-get update -y
+apt-get install -y xserver-xorg-core xserver-xorg-video-all xserver-xorg-input-all xinit openbox x11-xserver-utils
 # Opcional para kiosko puro (ocultar cursor); queda comentado en autostart
-sudo apt-get install -y unclutter || true
+apt-get install -y unclutter || true
 
-log "Instalando navegador Chromium para modo kiosko..."
-if sudo apt-get install -y chromium-browser; then
-  log "Paquete chromium-browser instalado."
-elif sudo apt-get install -y chromium; then
-  log "Paquete chromium instalado."
+log "Verificando disponibilidad de Chromium (snap)…"
+if [[ ! -x /snap/bin/chromium ]]; then
+  if command -v snap >/dev/null 2>&1; then
+    if snap install chromium; then
+      log "Chromium (snap) instalado."
+    else
+      warn "No se pudo instalar Chromium vía snap automáticamente."
+    fi
+  else
+    warn "snapd no está disponible; instala Chromium manualmente para el modo kiosko."
+  fi
 else
-  warn "No se pudo instalar Chromium automáticamente. Instálalo manualmente para el modo kiosko."
+  log "Chromium snap detectado."
 fi
 
 # APP_USER ya está definido en línea 17, no redefinir
@@ -139,22 +149,6 @@ ALLOWED_ORIGINS="http://localhost,http://127.0.0.1"
 if [[ -n "$LAN_IP" ]]; then
   ALLOWED_ORIGINS+=",http://${LAN_IP}"
 fi
-
-log "Configurando autologin de LightDM para ${APP_USER} y sesión por defecto openbox..."
-sudo mkdir -p /etc/lightdm/lightdm.conf.d
-
-# Autologin
-sudo tee /etc/lightdm/lightdm.conf.d/50-autologin.conf >/dev/null <<EOF
-[Seat:*]
-autologin-user=${APP_USER}
-autologin-user-timeout=0
-EOF
-
-# Sesión openbox
-sudo tee /etc/lightdm/lightdm.conf.d/60-session.conf >/dev/null <<'EOF'
-[Seat:*]
-user-session=openbox
-EOF
 
 # --- Autostart de Openbox con rotación automática si está en vertical (480x1920) ---
 log "Preparando autostart de Openbox con rotación automática (480x1920 -> horizontal)..."
@@ -178,6 +172,12 @@ xset s noblank
 # unclutter -idle 0.5 &
 
 # El servicio systemd pantalla-ui.service se encarga de lanzar Chromium en modo kiosko.
+EOF
+
+log "Preparando /etc/Xwrapper.config para permitir Xorg sin sesión gráfica…"
+cat >/etc/Xwrapper.config <<'EOF'
+allowed_users=anybody
+needs_root_rights=yes
 EOF
 
 log "Deshabilitando autostart XDG de Chromium (si existen)…"
@@ -207,6 +207,13 @@ if [[ -d "/etc/xdg/autostart" ]]; then
   done < <(find /etc/xdg/autostart -maxdepth 1 -type f -name '*.desktop' -print0)
 fi
 
+log "Desactivando servicios automáticos del snap de Chromium…"
+systemctl stop snap.chromium.daemon.service || true
+systemctl disable snap.chromium.daemon.service || true
+if command -v snap >/dev/null 2>&1; then
+  snap set chromium daemon.autostart=false || true
+fi
+
 log "Instalando lanzador de Chromium para systemd (${UI_LAUNCHER_DST})…"
 install -m 755 "$UI_LAUNCHER_SRC" "$UI_LAUNCHER_DST"
 
@@ -232,6 +239,9 @@ fi
 # Asegurar que el directorio systemd de usuario existe
 mkdir -p "$USER_SYSTEMD_DIR"
 install -D -m 644 "$UI_SERVICE_SRC" "$USER_SYSTEMD_DIR/$UI_SERVICE_NAME"
+if [[ -f "$OPENBOX_SERVICE_SRC" ]]; then
+  install -D -m 644 "$OPENBOX_SERVICE_SRC" "$USER_SYSTEMD_DIR/$OPENBOX_SERVICE_NAME"
+fi
 
 UI_UID="$(id -u "$UI_USER")"
 UI_RUNTIME_DIR="/run/user/$UI_UID"
@@ -245,14 +255,11 @@ fi
 UI_SYSTEMD_ENV=("XDG_RUNTIME_DIR=$UI_RUNTIME_DIR" "DBUS_SESSION_BUS_ADDRESS=unix:path=$UI_RUNTIME_DIR/bus")
 
 sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user daemon-reload || true
+sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user enable "$OPENBOX_SERVICE_NAME" || true
 sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user enable "$UI_SERVICE_NAME" || true
-sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user restart "$UI_SERVICE_NAME" || true
 
 sudo chown -R "${APP_USER}:${APP_USER}" "${APP_HOME}/.config/openbox"
 sudo chmod +x "${APP_HOME}/.config/openbox/autostart"
-
-log "Habilitando LightDM para iniciar entorno gráfico en el arranque…"
-sudo systemctl enable lightdm || true
 
 log "Aplicando políticas de geolocalización para Chromium…"
 LAN_IP_VALUE="$LAN_IP" python3 <<'PY'
@@ -394,28 +401,22 @@ log "Servicio backend templated…"
 if [[ -f "$SYSTEMD_DIR/${BACKEND_SVC_BASENAME}.service" ]]; then
   mv "$SYSTEMD_DIR/${BACKEND_SVC_BASENAME}.service" "$SYSTEMD_DIR/${BACKEND_SVC_TEMPLATE}"
 fi
-cat > "$SYSTEMD_DIR/${BACKEND_SVC_TEMPLATE}" <<SERVICE
-[Unit]
-Description=Pantalla Dash Backend (FastAPI)
-After=network-online.target
-Wants=network-online.target
+if [[ -f "$REPO_DIR/system/${BACKEND_SVC_TEMPLATE}" ]]; then
+  install -D -m 644 "$REPO_DIR/system/${BACKEND_SVC_TEMPLATE}" "$SYSTEMD_DIR/${BACKEND_SVC_TEMPLATE}"
+  sed -i "s|__REPO_DIR__|$REPO_DIR|g" "$SYSTEMD_DIR/${BACKEND_SVC_TEMPLATE}"
+else
+  die "No se encontró plantilla de servicio en $REPO_DIR/system/${BACKEND_SVC_TEMPLATE}"
+fi
 
-[Service]
-User=%i
-SupplementaryGroups=pantalla
-WorkingDirectory=$BACKEND_DIR
-EnvironmentFile=$ENV_DIR/backend.env
-Environment="PYTHONUNBUFFERED=1"
-ExecStart=/bin/bash -lc 'source .venv/bin/activate && uvicorn app:app --host 127.0.0.1 --port 8081 --workers 2 --timeout-keep-alive 30'
-Restart=always
-RestartSec=2
-
-[Install]
-WantedBy=multi-user.target
-SERVICE
+if [[ -f "$XORG_SERVICE_SRC" ]]; then
+  install -D -m 644 "$XORG_SERVICE_SRC" "$SYSTEMD_DIR/$XORG_SERVICE_NAME"
+fi
 
 systemctl daemon-reload
 systemctl enable --now "${BACKEND_SVC_BASENAME}@$APP_USER" || true
+systemctl enable --now "pantalla-xorg@$UI_USER" || true
+sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user start "$OPENBOX_SERVICE_NAME" || true
+sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user start "$UI_SERVICE_NAME" || true
 
 # --- Hardening generador IA: corrige parámetros del script ---
 GEN_SCRIPT="$REPO_DIR/opt/dash/scripts/generate_bg_daily.py"
@@ -500,23 +501,17 @@ server {
   index index.html;
 
   location /api/ {
-    proxy_pass http://127.0.0.1:8081/;
+    proxy_pass http://127.0.0.1:8081;
     proxy_set_header Host $host;
   }
 
-  # Servimos la UI directamente desde /var/www/html. No añadir alias globales sobre /assets/.
   location / {
-    try_files $uri $uri/ =404;
+    try_files $uri /index.html;
   }
 
   location /assets/backgrounds/auto/ {
     alias /opt/dash/assets/backgrounds/auto/;
     access_log off;
-  }
-
-  location = /healthz {
-    default_type text/plain;
-    return 200 'ok';
   }
 }
 NGINX
@@ -541,14 +536,17 @@ INDEX_CSS="$(find "$ASSETS_ROOT" -maxdepth 1 -type f -name 'index-*.css' -printf
 ROOT_STATUS="$(curl -s -I http://127.0.0.1/ | head -n1 || true)"
 [[ "$ROOT_STATUS" =~ HTTP/1\.[01]\ 200 ]] || die "Nginx no responde 200 en / (obtenido: $ROOT_STATUS)"
 
-ASSET_STATUS="$(curl -s -I "http://127.0.0.1/assets/${INDEX_JS}" | head -n1 || true)"
-[[ "$ASSET_STATUS" =~ HTTP/1\.[01]\ 200 ]] || die "El bundle ${INDEX_JS} no responde 200 (obtenido: $ASSET_STATUS)"
+ASSET_HEAD_STATUS="$(curl -s -I "http://127.0.0.1/assets/${INDEX_JS}" | head -n1 || true)"
+[[ "$ASSET_HEAD_STATUS" =~ HTTP/1\.[01]\ 200 ]] || die "El bundle ${INDEX_JS} no responde 200 (obtenido: $ASSET_HEAD_STATUS)"
 
-API_STATUS="$(curl -s -I http://127.0.0.1/api/healthz | head -n1 || true)"
-if [[ "$API_STATUS" =~ HTTP/1\.[01]\ 200 ]]; then
-  log "Backend OK (healthz 200)"
+ASSET_BODY_STATUS="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1/assets/${INDEX_JS}" || true)"
+[[ "$ASSET_BODY_STATUS" == "200" ]] || die "El bundle ${INDEX_JS} no devolvió 200 en descarga (obtenido: $ASSET_BODY_STATUS)"
+
+API_STATUS_CODE="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/api/health || true)"
+if [[ "$API_STATUS_CODE" == "200" ]]; then
+  log "Backend OK (/api/health 200)"
 else
-  warn "Backend no responde 200 en /api/healthz (obtenido: $API_STATUS)"
+  warn "Backend no responde 200 en /api/health (obtenido: $API_STATUS_CODE)"
 fi
 
 # ----- Servicio fondos IA -----
@@ -598,8 +596,12 @@ systemctl restart "${BACKEND_SVC_BASENAME}@$APP_USER" || true
 echo
 log "Checks finales:"
 set +e
-curl -fsS http://127.0.0.1:8081/api/health >/dev/null && echo "  ✅ Backend UP" || echo "  ❌ Backend DOWN (journalctl -u ${BACKEND_SVC_BASENAME}@$APP_USER -n 100)"
-curl -sI http://127.0.0.1/ | head -n1 | grep -q " 200 " && echo "  ✅ Nginx sirve SPA" || echo "  ❌ Nginx NOK"
+curl -fsS http://127.0.0.1/api/health >/dev/null && echo "  ✅ Backend responde /api/health" || echo "  ❌ Backend DOWN (journalctl -u ${BACKEND_SVC_BASENAME}@$APP_USER -n 100)"
+curl -fsS "http://127.0.0.1/assets/${INDEX_JS}" >/dev/null && echo "  ✅ Assets JS disponibles" || echo "  ❌ Assets inaccesibles"
+systemctl is-active --quiet "${BACKEND_SVC_BASENAME}@$APP_USER" && echo "  ✅ Servicio backend activo" || echo "  ❌ Servicio backend inactivo"
+systemctl is-active --quiet "pantalla-xorg@$UI_USER" && echo "  ✅ Xorg activo" || echo "  ❌ Xorg no está activo"
+sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user is-active "$OPENBOX_SERVICE_NAME" >/dev/null 2>&1 && echo "  ✅ Openbox (usuario) activo" || echo "  ❌ Openbox (usuario) no activo"
+sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user is-active "$UI_SERVICE_NAME" >/dev/null 2>&1 && echo "  ✅ UI Chromium activa" || echo "  ❌ UI Chromium no activa"
 nmcli -t -f DEVICE device status >/dev/null && echo "  ✅ nmcli OK" || echo "  ❌ nmcli reportó error"
 set -e
 

@@ -1,0 +1,17 @@
+[Unit]
+Description=Pantalla Dash Backend (FastAPI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=%i
+SupplementaryGroups=pantalla
+WorkingDirectory=__REPO_DIR__
+EnvironmentFile=-/etc/pantalla-dash/backend.env
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/bin/bash -lc 'source backend/.venv/bin/activate && uvicorn backend.app:app --host 127.0.0.1 --port 8081 --workers 2 --timeout-keep-alive 30'
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
