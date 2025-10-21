@@ -40,7 +40,7 @@ from .services.dst import current_time_payload, next_transition_info
 from .services.storms import get_radar_animation, get_radar_url, get_storm_status
 from .services.tts import SpeechError, TTSService, TTSUnavailableError
 from .services.weather import WeatherService, WeatherServiceError
-from services.config_store import (
+from .services.config_store import (
     has_openai_key,
     mask_secrets,
     read_config as read_store_config,
@@ -49,7 +49,7 @@ from services.config_store import (
     write_config_patch,
     write_secrets_patch,
 )
-from services.wifi import wifi_connect, wifi_scan, wifi_status
+from .services.wifi import wifi_connect, wifi_scan, wifi_status
 from .services.wifi import WifiError, forget as wifi_forget
 from .services.offline_state import get_offline_state, record_provider_failure, record_provider_success
 
