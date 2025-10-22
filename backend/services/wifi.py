@@ -6,7 +6,7 @@ import shlex
 import shutil
 import subprocess
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .config import get_wifi_interface, read_config
 
@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 NMCLI_BIN = os.environ.get("NMCLI_BIN", "nmcli")
 AP_SERVICE = "pantalla-ap.service"
+
+_STATE_PRIORITY_ORDER: Tuple[str, ...] = ("connected", "connecting", "disconnected", "unavailable")
 
 
 @dataclass
@@ -102,20 +104,113 @@ def _parse_networks(output: str) -> List[Dict[str, Any]]:
     return ordered
 
 
-def wifi_scan() -> Dict[str, Any]:
-    config = read_config()
-    interface = get_wifi_interface(config)
-    args = ["-t", "-f", "SSID,SIGNAL,SECURITY", "dev", "wifi", "list"]
-    if interface:
-        args.extend(["ifname", interface])
+def _state_priority(state: str) -> int:
+    normalized = state.strip().lower()
+    for index, prefix in enumerate(_STATE_PRIORITY_ORDER):
+        if normalized.startswith(prefix):
+            return len(_STATE_PRIORITY_ORDER) - index
+    return -1
 
-    result = _run_nmcli(args)
-    raw_output = _truncate("\n".join(part for part in [result.stdout, result.stderr] if part))
+
+def _extract_wifi_devices(lines: Sequence[str]) -> Dict[str, Dict[str, Optional[str]]]:
+    devices: Dict[str, Dict[str, Optional[str]]] = {}
+    for raw_line in lines:
+        if not raw_line:
+            continue
+        parts = (raw_line.split(":") + [None, None, None, None])[:4]
+        device, dev_type, state, connection = parts
+        if dev_type != "wifi":
+            continue
+        devices[device] = {
+            "state": state or "",
+            "connection": connection if connection not in {None, "", "--"} else None,
+        }
+    return devices
+
+
+def _validate_wifi_interface(interface: str) -> None:
+    result = _run_nmcli(["-t", "-f", "TYPE", "device", "show", interface])
     if result.returncode != 0:
-        message = result.stderr.strip() or "No se pudo escanear redes Wi-Fi"
+        message = result.stderr.strip() or f"No se pudo inspeccionar la interfaz '{interface}'"
         raise WifiError(message, stderr=result.stderr, code=result.returncode)
 
-    networks = _parse_networks(result.stdout)
+    for line in result.stdout.splitlines():
+        if not line:
+            continue
+        if line.startswith("TYPE:"):
+            iface_type = line.split(":", 1)[1].strip()
+            if iface_type == "wifi":
+                return
+            raise WifiError(f"La interfaz configurada '{interface}' no es Wi-Fi")
+
+    raise WifiError(f"No se pudo determinar el tipo de interfaz '{interface}'")
+
+
+def _autodetect_wifi_interface() -> str:
+    result = _run_nmcli(["-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device"])
+    if result.returncode != 0:
+        message = result.stderr.strip() or "No se pudo enumerar interfaces Wi-Fi"
+        raise WifiError(message, stderr=result.stderr, code=result.returncode)
+
+    wifi_devices = _extract_wifi_devices(result.stdout.splitlines())
+    if not wifi_devices:
+        raise WifiError("No se encontró interfaz Wi-Fi disponible")
+
+    best_device: Optional[str] = None
+    best_score = -1
+    for device, info in wifi_devices.items():
+        score = _state_priority(info.get("state") or "")
+        if score > best_score:
+            best_device = device
+            best_score = score
+
+    if best_device is None:
+        raise WifiError("No se encontró interfaz Wi-Fi disponible")
+    return best_device
+
+
+def get_wifi_iface() -> str:
+    config = read_config()
+    preferred = get_wifi_interface(config)
+    if preferred:
+        _validate_wifi_interface(preferred)
+        return preferred
+
+    detected = _autodetect_wifi_interface()
+    if not detected:
+        raise WifiError("No se encontró interfaz Wi-Fi disponible")
+    return detected
+
+
+def wifi_scan() -> Dict[str, Any]:
+    interface = get_wifi_iface()
+    logger.info("WiFi iface: %s", interface)
+
+    rescan_result = _run_nmcli(["device", "wifi", "rescan", "ifname", interface])
+    if rescan_result.returncode != 0:
+        message = rescan_result.stderr.strip() or "No se pudo escanear redes Wi-Fi"
+        raise WifiError(message, stderr=rescan_result.stderr, code=rescan_result.returncode)
+
+    list_result = _run_nmcli(
+        ["-t", "-f", "SSID,SIGNAL,SECURITY", "dev", "wifi", "list", "ifname", interface]
+    )
+    raw_output = _truncate(
+        "\n".join(
+            part
+            for part in [
+                rescan_result.stdout,
+                rescan_result.stderr,
+                list_result.stdout,
+                list_result.stderr,
+            ]
+            if part
+        )
+    )
+    if list_result.returncode != 0:
+        message = list_result.stderr.strip() or "No se pudo escanear redes Wi-Fi"
+        raise WifiError(message, stderr=list_result.stderr, code=list_result.returncode)
+
+    networks = _parse_networks(list_result.stdout)
     return {"networks": networks, "raw": raw_output}
 
 
@@ -123,13 +218,13 @@ def wifi_connect(ssid: str, psk: Optional[str] = None) -> Dict[str, Any]:
     if not ssid:
         raise WifiError("SSID requerido")
 
-    config = read_config()
-    interface = get_wifi_interface(config)
+    interface = get_wifi_iface()
+    logger.info("WiFi iface: %s", interface)
+
     args = ["device", "wifi", "connect", ssid]
-    if interface:
-        args.extend(["ifname", interface])
     if psk:
         args.extend(["password", psk])
+    args.extend(["ifname", interface])
 
     result = _run_nmcli(args)
     if result.returncode != 0:
@@ -149,51 +244,40 @@ def wifi_connect(ssid: str, psk: Optional[str] = None) -> Dict[str, Any]:
 
 
 def wifi_status() -> Dict[str, Any]:
-    config = read_config()
-    preferred_interface = get_wifi_interface(config)
+    interface = get_wifi_iface()
+    logger.info("WiFi iface: %s", interface)
+
     result = _run_nmcli(["-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device"])
     if result.returncode != 0:
         message = result.stderr.strip() or "No se pudo obtener el estado"
         raise WifiError(message, stderr=result.stderr, code=result.returncode)
 
-    active_device = None
-    active_ssid = None
-    preferred_device_active = False
-    
-    for line in result.stdout.splitlines():
-        if not line:
-            continue
-        device, dev_type, state, connection = (line.split(":") + [None, None, None, None])[:4]
-        if dev_type != "wifi":
-            continue
-        if state == "connected":
-            # Check if this is the preferred interface
-            if preferred_interface and device == preferred_interface:
-                active_device = device
-                active_ssid = connection
-                preferred_device_active = True
-                break
-            # If no preferred interface set, or this is first connected device
-            if not preferred_interface and not active_device:
-                active_device = device
-                active_ssid = connection
+    wifi_devices = _extract_wifi_devices(result.stdout.splitlines())
+    current = wifi_devices.get(interface, {"state": "", "connection": None})
+
+    state = current.get("state") or ""
+    connection = current.get("connection")
+    connected = bool(connection) and state.strip().lower().startswith("connected")
 
     ip_address = None
-    device_name = active_device
-    if active_ssid and device_name:
-        show = _run_nmcli(["-t", "-f", "GENERAL.STATE,IP4.ADDRESS[1]", "device", "show", device_name])
+    if connected:
+        show = _run_nmcli(["-t", "-f", "IP4.ADDRESS", "device", "show", interface])
         if show.returncode == 0:
             for line in show.stdout.splitlines():
-                if line.startswith("GENERAL.STATE"):
+                if not line.startswith("IP4.ADDRESS"):
                     continue
-                if line:
-                    ip_address = line.split("/")[0]
+                _, value = line.split(":", 1)
+                address = value.strip()
+                if address:
+                    ip_address = address.split("/")[0]
                     break
+        else:
+            logger.debug("No se pudo obtener la IP para %s: %s", interface, show.stderr.strip())
 
     return {
-        "connected": bool(active_ssid),
-        "ssid": active_ssid,
-        "interface": device_name,
+        "connected": connected,
+        "ssid": connection,
+        "interface": interface,
         "ip": ip_address,
     }
 
