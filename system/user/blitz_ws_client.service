@@ -1,0 +1,25 @@
+[Unit]
+Description=Blitzortung WebSocket client -> MQTT (local)
+After=network-online.target mosquitto.service
+Wants=mosquitto.service
+
+[Service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/opt/blitzortung/ws_client
+ExecStart=/opt/blitzortung/.venv/bin/python ws_client.py \
+  --mqtt-host 127.0.0.1 --mqtt-port 1883 \
+  --topic-prefix blitzortung/1.1 \
+  --geohash-precision 4 \
+  --log /home/dani/.local/share/blitzortung/ws_client.log
+Restart=on-failure
+RestartSec=5
+User=dani
+Group=dani
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=no
+
+[Install]
+WantedBy=default.target
