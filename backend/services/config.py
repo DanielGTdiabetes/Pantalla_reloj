@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, MutableMapping, Optional
 
-from pydantic import AnyUrl, BaseModel, Field, ValidationError, validator
+from pydantic import AnyUrl, BaseModel, ConfigDict, Field, ValidationError, validator
 
 logger = logging.getLogger(__name__)
 
@@ -17,16 +17,15 @@ EXAMPLE_CONFIG_PATH = PROJECT_ROOT / "config" / "config.example.json"
 CONFIG_PATH = Path(os.environ.get("PANTALLA_CONFIG_PATH", DEFAULT_CONFIG_PATH))
 
 
-class AemetConfig(BaseModel):
+class ExtraAllowModel(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+
+class AemetConfig(ExtraAllowModel):
     apiKey: Optional[str] = Field(default=None, alias="apiKey")
     municipioId: str = Field(default="28079", alias="municipioId", min_length=1)
 
-    class Config:
-        allow_population_by_field_name = True
-        extra = "ignore"
-
-
-class WeatherConfig(BaseModel):
+class WeatherConfig(ExtraAllowModel):
     units: str = Field(default="metric")
     city: Optional[str] = None
 
@@ -37,25 +36,19 @@ class WeatherConfig(BaseModel):
             raise ValueError("units must be 'metric' or 'imperial'")
         return normalized
 
-    class Config:
-        allow_population_by_field_name = True
-        extra = "ignore"
-
-
-class StormConfig(BaseModel):
+class StormConfig(ExtraAllowModel):
     threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     enableExperimentalLightning: bool = Field(default=False, alias="enableExperimentalLightning")
-    radarCacheSeconds: int = Field(default=180, ge=60, le=3600, alias="radarCacheSeconds")
+    radarCacheSeconds: int | None = Field(
+        default=None, ge=60, le=3600, alias="radarCacheSeconds"
+    )
 
-    class Config:
-        allow_population_by_field_name = True
 
-
-class ThemeConfig(BaseModel):
+class ThemeConfig(ExtraAllowModel):
     current: Optional[str] = None
 
 
-class BackgroundConfig(BaseModel):
+class BackgroundConfig(ExtraAllowModel):
     intervalMinutes: Optional[int] = Field(default=None, ge=1, le=240)
     mode: Optional[str] = Field(default=None)
     retainDays: Optional[int] = Field(default=None, ge=1, le=90)
@@ -70,16 +63,16 @@ class BackgroundConfig(BaseModel):
         return normalized
 
 
-class TTSConfig(BaseModel):
+class TTSConfig(ExtraAllowModel):
     voice: Optional[str] = None
     volume: Optional[float] = Field(default=None, ge=0.0, le=1.0)
 
 
-class WifiConfig(BaseModel):
+class WifiConfig(ExtraAllowModel):
     preferredInterface: Optional[str] = None
 
 
-class CalendarConfig(BaseModel):
+class CalendarConfig(ExtraAllowModel):
     enabled: bool = False
     mode: str = Field(default="url")
     url: Optional[AnyUrl] = None
@@ -123,26 +116,21 @@ class CalendarConfig(BaseModel):
         legacy = values.get("icsUrl")
         return legacy
 
-    class Config:
-        allow_population_by_field_name = True
-        extra = "ignore"
-
-
-class LocaleConfig(BaseModel):
+class LocaleConfig(ExtraAllowModel):
     country: Optional[str] = None
     autonomousCommunity: Optional[str] = None
     province: Optional[str] = None
     city: Optional[str] = None
 
 
-class PatronConfig(BaseModel):
+class PatronConfig(ExtraAllowModel):
     city: Optional[str] = None
     name: Optional[str] = None
     month: Optional[int] = Field(default=None, ge=1, le=12)
     day: Optional[int] = Field(default=None, ge=1, le=31)
 
 
-class AppConfig(BaseModel):
+class AppConfig(ExtraAllowModel):
     aemet: Optional[AemetConfig] = None
     weather: Optional[WeatherConfig] = None
     storm: Optional[StormConfig] = None
