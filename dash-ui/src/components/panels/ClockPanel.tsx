@@ -2,13 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import GlassPanel from '../GlassPanel';
 import RotatingInfoPanel from '../RotatingInfoPanel';
 import type { LocaleConfig, RotatingPanelSectionKey } from '../../services/config';
-import type { WeatherToday } from '../../services/weather';
-import type { DayInfoPayload } from '../../services/dayinfo';
 
 interface ClockPanelProps {
   locale?: LocaleConfig;
-  weather?: WeatherToday | null;
-  dayInfo?: DayInfoPayload | null;
   rotatingPanel?: {
     enabled: boolean;
     sections: RotatingPanelSectionKey[];
@@ -17,7 +13,7 @@ interface ClockPanelProps {
   };
 }
 
-const ClockPanel = ({ locale, weather, dayInfo, rotatingPanel }: ClockPanelProps) => {
+const ClockPanel = ({ locale, rotatingPanel }: ClockPanelProps) => {
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -89,8 +85,6 @@ const ClockPanel = ({ locale, weather, dayInfo, rotatingPanel }: ClockPanelProps
           sections={activeRotatingPanel.sections}
           intervalMs={activeRotatingPanel.intervalMs}
           height={activeRotatingPanel.height}
-          weather={weather}
-          dayInfo={dayInfo}
         />
       ) : null}
     </GlassPanel>

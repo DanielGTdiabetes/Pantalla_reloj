@@ -23,7 +23,7 @@ interface UseSeasonMonthResult {
 
 const CACHE_KEY = 'seasonMonthCache_v1';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const MAX_FORMAT_LENGTH = 220;
+const MAX_FORMAT_LENGTH = 160;
 const ERROR_RETRY_MS = 60 * 60 * 1000;
 
 let memoryCache: SeasonCacheRecord = { data: null, timestamp: null };
@@ -134,12 +134,6 @@ function formatSeasonLine(payload: SeasonMonthPayload | null): string | null {
   }
   if (frutas) {
     segments.push(`Frutas: ${frutas}`);
-  }
-  if (typeof payload.nota === 'string' && payload.nota.trim()) {
-    segments.push(payload.nota.trim());
-  }
-  if (typeof payload.tip === 'string' && payload.tip.trim()) {
-    segments.push(payload.tip.trim());
   }
   const fullLine = segments.join(' · ');
   return truncate(fullLine, MAX_FORMAT_LENGTH);

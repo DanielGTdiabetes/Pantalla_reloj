@@ -66,7 +66,7 @@ export interface StormConfig {
   enableExperimentalLightning?: boolean;
 }
 
-export type RotatingPanelSectionKey = 'weather' | 'calendar' | 'season';
+export type RotatingPanelSectionKey = 'calendar' | 'season' | 'weekly' | 'lunar';
 
 export interface RotatingPanelConfig {
   enabled?: boolean;
