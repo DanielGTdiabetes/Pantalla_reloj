@@ -39,6 +39,8 @@ from backend.services.ai_text import (
 )
 from backend.services.backgrounds import BackgroundAsset, list_backgrounds, latest_background
 from backend.services.calendar import CalendarService, CalendarServiceError
+from backend.services.google_calendar import GoogleCalendarError, GoogleCalendarService
+from backend.services.google_oauth import GoogleOAuthDeviceFlowManager, GoogleOAuthError
 from backend.services.config import AppConfig, read_config as load_app_config
 from backend.services.dayinfo import get_day_info
 from backend.services.location import set_location
@@ -179,6 +181,22 @@ def _build_calendar_status(calendar_section: Optional[Dict[str, Any]] = None) ->
     else:
         raw_calendar = dict(calendar_section)
 
+    provider_raw = str(raw_calendar.get("provider") or "")
+    provider = provider_raw.lower().strip() if provider_raw else ""
+    enabled = bool(raw_calendar.get("enabled", False))
+    if provider not in {"none", "ics", "url", "google"}:
+        mode_hint = str(raw_calendar.get("mode") or "").strip().lower()
+        if not enabled:
+            provider = "none"
+        elif mode_hint in {"ics", "url"}:
+            provider = mode_hint
+        elif raw_calendar.get("icsPath"):
+            provider = "ics"
+        elif raw_calendar.get("url") or raw_calendar.get("icsUrl"):
+            provider = "url"
+        else:
+            provider = "none"
+
     mode_raw = str(raw_calendar.get("mode") or "")
     mode = mode_raw.lower() if mode_raw else None
     if mode not in {"url", "ics"}:
@@ -203,7 +221,9 @@ def _build_calendar_status(calendar_section: Optional[Dict[str, Any]] = None) ->
             size = None
             mtime = None
 
-    return {
+    payload: Dict[str, Any] = {
+        "enabled": enabled,
+        "provider": provider,
         "mode": mode or "url",
         "url": url_str,
         "icsPath": str(path_obj),
@@ -211,6 +231,13 @@ def _build_calendar_status(calendar_section: Optional[Dict[str, Any]] = None) ->
         "size": size,
         "mtime": mtime,
     }
+
+    google_section = raw_calendar.get("google")
+    if isinstance(google_section, dict):
+        calendar_id = google_section.get("calendarId") or "primary"
+        payload["google"] = {"calendarId": str(calendar_id)}
+
+    return payload
 
 
 def _parse_allowed_origins() -> list[str]:
@@ -564,6 +591,8 @@ class CalendarPeekResponse(BaseModel):
 weather_service = WeatherService()
 tts_service = TTSService()
 calendar_service = CalendarService()
+google_oauth_manager = GoogleOAuthDeviceFlowManager()
+google_calendar_service = GoogleCalendarService(google_oauth_manager)
 speech_queue = SpeechQueue(tts_service)
 
 ALERT_COOLDOWN_SECONDS = 60 * 60
@@ -959,6 +988,42 @@ def calendar_status_endpoint() -> Dict[str, Any]:
     return _build_calendar_status()
 
 
+@app.post("/api/calendar/google/device/start")
+async def calendar_google_device_start(payload: Dict[str, Any] | None = Body(default=None)) -> Dict[str, Any]:
+    scopes_value = payload.get("scopes") if isinstance(payload, dict) else None
+    scopes: list[str] | None = None
+    if scopes_value is not None:
+        if not isinstance(scopes_value, list) or not all(isinstance(item, str) for item in scopes_value):
+            raise HTTPException(status_code=400, detail="Scopes inválidos")
+        scopes = [scope.strip() for scope in scopes_value if isinstance(scope, str) and scope.strip()]
+        if not scopes:
+            scopes = None
+    try:
+        return await google_oauth_manager.start_device_flow(scopes=scopes)
+    except GoogleOAuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/calendar/google/device/status")
+async def calendar_google_device_status() -> Dict[str, Any]:
+    return await google_oauth_manager.status()
+
+
+@app.post("/api/calendar/google/device/cancel")
+async def calendar_google_device_cancel() -> Dict[str, Any]:
+    cancelled = await google_oauth_manager.cancel()
+    return {"cancelled": cancelled}
+
+
+@app.get("/api/calendar/google/calendars")
+async def calendar_google_calendars() -> Dict[str, Any]:
+    try:
+        calendars = await google_calendar_service.list_calendars()
+    except GoogleCalendarError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"items": calendars}
+
+
 @app.post("/api/calendar/upload")
 async def calendar_upload(file: UploadFile = File(...)) -> Dict[str, Any]:
     if file is None:
@@ -1080,9 +1145,13 @@ async def calendar_today(config: AppConfig = Depends(get_config)):
     if not config.calendar or not config.calendar.enabled:
         return []
 
-    if config.calendar.mode == "url" and not config.calendar.url:
+    provider = config.calendar.provider_kind()
+    if provider == "google":
         return []
-    if config.calendar.mode == "ics" and not config.calendar.icsPath:
+
+    if provider == "url" and not config.calendar.url:
+        return []
+    if provider == "ics" and not config.calendar.icsPath:
         return []
 
     try:
@@ -1122,9 +1191,13 @@ async def calendar_peek(config: AppConfig = Depends(get_config)):
     if not config.calendar or not config.calendar.enabled:
         raise HTTPException(status_code=404, detail="Calendario no configurado")
 
-    if config.calendar.mode == "url" and not config.calendar.url:
+    provider = config.calendar.provider_kind()
+    if provider == "google":
+        raise HTTPException(status_code=204, detail="Sin eventos para hoy")
+
+    if provider == "url" and not config.calendar.url:
         raise HTTPException(status_code=404, detail="Calendario no configurado")
-    if config.calendar.mode == "ics" and not config.calendar.icsPath:
+    if provider == "ics" and not config.calendar.icsPath:
         raise HTTPException(status_code=404, detail="Calendario no configurado")
     try:
         events = await calendar_service.events_for_today(config.calendar)
@@ -1149,6 +1222,71 @@ async def calendar_peek(config: AppConfig = Depends(get_config)):
         selected_start = first.start.astimezone(tzinfo)
 
     return CalendarPeekResponse(title=selected_title, start=selected_start)
+
+
+@app.get("/api/calendar/events")
+async def calendar_events(
+    days: int = Query(default=7, ge=1, le=90),
+    config: AppConfig = Depends(get_config),
+) -> Dict[str, Any]:
+    timestamp = int(time.time())
+    if not config.calendar or not config.calendar.enabled:
+        return {"provider": "none", "items": [], "note": "Sin datos", "updated_at": timestamp}
+
+    provider = config.calendar.provider_kind()
+    if provider == "google":
+        calendar_id = "primary"
+        if config.calendar.google and config.calendar.google.calendarId:
+            calendar_id = config.calendar.google.calendarId
+
+        status = await google_oauth_manager.status()
+        if not status.get("authorized"):
+            return {
+                "provider": "google",
+                "calendarId": calendar_id,
+                "items": [],
+                "note": "Sin datos",
+                "updated_at": timestamp,
+            }
+
+        now = datetime.now().astimezone()
+        tzinfo = now.tzinfo or timezone.utc
+        timezone_name = (
+            getattr(tzinfo, "key", None)
+            or getattr(tzinfo, "zone", None)
+            or tzinfo.tzname(now)
+            or "UTC"
+        )
+        try:
+            payload = await google_calendar_service.upcoming_events(
+                calendar_id,
+                days=days,
+                timezone_name=timezone_name,
+            )
+        except GoogleCalendarError as exc:
+            logger.error("Google Calendar: fallo al obtener eventos: %s", exc)
+            return {
+                "provider": "google",
+                "calendarId": calendar_id,
+                "items": [],
+                "note": "Sin datos",
+                "updated_at": timestamp,
+            }
+        result = dict(payload)
+        result.setdefault("updated_at", int(time.time()))
+        if not result.get("items"):
+            result.setdefault("note", "Sin eventos")
+        else:
+            result.setdefault("note", None)
+        return result
+
+    provider_key = provider if provider in {"ics", "url"} else provider or "none"
+    return {
+        "provider": provider_key,
+        "items": [],
+        "note": "Sin datos",
+        "updated_at": timestamp,
+    }
 
 
 @app.get("/api/day/brief")
@@ -1279,6 +1417,8 @@ async def shutdown_event():
         _alert_task = None
     await weather_service.close()
     await calendar_service.close()
+    await google_calendar_service.close()
+    await google_oauth_manager.close()
     await speech_queue.close()
 
 

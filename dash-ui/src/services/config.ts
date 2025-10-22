@@ -39,11 +39,15 @@ export interface WifiConfig {
 export interface CalendarConfig {
   enabled?: boolean;
   mode?: 'url' | 'ics';
+  provider?: 'none' | 'ics' | 'url' | 'google';
   url?: string | null;
   icsPath?: string | null;
   maxEvents?: number;
   notifyMinutesBefore?: number;
   icsConfigured?: boolean;
+  google?: {
+    calendarId?: string | null;
+  };
 }
 
 export interface LocaleConfig {

@@ -33,10 +33,14 @@
   "calendar": {
     "enabled": false,
     "mode": "url",
+    "provider": "url",
     "url": "https://calendar.google.com/calendar/ical/tu_id_privado/basic.ics",
     "icsPath": "/etc/pantalla-dash/calendar/calendar.ics",
     "maxEvents": 3,
-    "notifyMinutesBefore": 15
+    "notifyMinutesBefore": 15,
+    "google": {
+      "calendarId": "primary"
+    }
   },
   "locale": {
     "country": "ES",

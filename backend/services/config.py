@@ -72,13 +72,19 @@ class WifiConfig(ExtraAllowModel):
     preferredInterface: Optional[str] = None
 
 
+class CalendarGoogleConfig(ExtraAllowModel):
+    calendarId: str = Field(default="primary", alias="calendarId", min_length=1)
+
+
 class CalendarConfig(ExtraAllowModel):
     enabled: bool = False
     mode: str = Field(default="url")
+    provider: Optional[str] = Field(default=None)
     url: Optional[AnyUrl] = None
     icsPath: Optional[str] = Field(default=None, alias="icsPath")
     maxEvents: int = Field(default=3, ge=1, le=10, alias="maxEvents")
     notifyMinutesBefore: int = Field(default=15, ge=0, le=360, alias="notifyMinutesBefore")
+    google: Optional[CalendarGoogleConfig] = None
 
     @validator("mode")
     def validate_mode(cls, value: str) -> str:
@@ -86,6 +92,28 @@ class CalendarConfig(ExtraAllowModel):
         if normalized not in {"url", "ics"}:
             raise ValueError("mode must be 'url' or 'ics'")
         return normalized
+
+    @validator("provider", pre=True, always=True)
+    def normalize_provider(cls, value: Optional[str], values: Dict[str, Any]) -> str:  # type: ignore[override]
+        if value is not None and str(value).strip():
+            normalized = str(value).strip().lower()
+            if normalized not in {"none", "ics", "url", "google"}:
+                raise ValueError("provider must be 'none', 'ics', 'url' or 'google'")
+            return normalized
+
+        enabled = bool(values.get("enabled", False))
+        if not enabled:
+            return "none"
+
+        mode = (values.get("mode") or "").strip().lower()
+        if mode in {"ics", "url"}:
+            return mode
+
+        if values.get("url"):
+            return "url"
+        if values.get("icsPath"):
+            return "ics"
+        return "none"
 
     @validator("icsPath")
     def normalize_ics_path(cls, value: Optional[str]) -> Optional[str]:
@@ -115,6 +143,21 @@ class CalendarConfig(ExtraAllowModel):
             return value
         legacy = values.get("icsUrl")
         return legacy
+
+    def provider_kind(self) -> str:
+        provider = (self.provider or "").strip().lower()
+        if provider in {"none", "ics", "url", "google"}:
+            return provider
+        if not self.enabled:
+            return "none"
+        mode = (self.mode or "").strip().lower()
+        if mode in {"ics", "url"}:
+            return mode
+        if self.url:
+            return "url"
+        if self.icsPath:
+            return "ics"
+        return "none"
 
 class LocaleConfig(ExtraAllowModel):
     country: Optional[str] = None
@@ -173,7 +216,16 @@ class AppConfig(ExtraAllowModel):
                         for key, value in (
                             self.calendar.dict(
                                 by_alias=True,
-                                include={"enabled", "mode", "url", "icsPath", "maxEvents", "notifyMinutesBefore"},
+                                include={
+                                    "enabled",
+                                    "mode",
+                                    "provider",
+                                    "url",
+                                    "icsPath",
+                                    "maxEvents",
+                                    "notifyMinutesBefore",
+                                    "google",
+                                },
                             )
                             if self.calendar
                             else {}
