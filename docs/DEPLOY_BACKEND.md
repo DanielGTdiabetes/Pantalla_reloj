@@ -91,6 +91,10 @@ sudo install -Dm644 system/pantalla-ap.service /etc/systemd/system/
 sudo install -Dm644 system/pantalla-ap-ensure.service /etc/systemd/system/
 sudo install -Dm644 system/pantalla-bg-generate.service /etc/systemd/system/
 sudo install -Dm644 system/pantalla-bg-generate.timer /etc/systemd/system/
+sudo install -Dm644 system/pantalla-bg-sync.service /etc/systemd/system/
+sudo install -Dm644 system/pantalla-bg-sync.path /etc/systemd/system/
+sudo install -Dm755 scripts/pantalla-bg-sync-timer /usr/local/sbin/pantalla-bg-sync-timer
+sudo mkdir -p /etc/systemd/system/pantalla-bg-generate.timer.d
 ```
 
 Opcional: crea `/etc/pantalla-dash/ap.conf` para fijar interfaz del hotspot:
@@ -106,6 +110,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now pantalla-dash-backend.service
 sudo systemctl enable --now pantalla-ap-ensure.service
 sudo systemctl enable --now pantalla-bg-generate.timer
+sudo systemctl enable --now pantalla-bg-sync.path
+sudo systemctl start pantalla-bg-sync.service
 ```
 
 El hotspot quedará disponible como `Pantalla-Setup` cuando no haya Wi-Fi activa.

@@ -13,6 +13,7 @@ El script **NO borra** datos sensibles por defecto (configs, assets, logs), a me
 - Detiene y **deshabilita** los servicios:
   - `pantalla-dash-backend@<usuario>`
   - `pantalla-bg-generate.service` + `pantalla-bg-generate.timer`
+  - `pantalla-bg-sync.service` + `pantalla-bg-sync.path`
 - Elimina los **unit files** de systemd anteriores (si existen).
 - Elimina el **vhost** de Nginx `pantalla` de `sites-available` y `sites-enabled`.
 - Recarga **systemd** y **Nginx**.
@@ -54,6 +55,8 @@ Después de desinstalar:
 # No debería haber servicios activos
 systemctl status pantalla-bg-generate.service
 systemctl status pantalla-bg-generate.timer
+systemctl status pantalla-bg-sync.service
+systemctl status pantalla-bg-sync.path
 systemctl status "pantalla-dash-backend@$USER"
 
 # Nginx sin el vhost 'pantalla'

@@ -27,6 +27,10 @@ BACKEND_SVC_BASENAME="pantalla-dash-backend"
 BACKEND_SVC_TEMPLATE="$SYSTEMD_DIR/${BACKEND_SVC_BASENAME}@.service"
 BG_SVC_FILE="$SYSTEMD_DIR/pantalla-bg-generate.service"
 BG_TIMER_FILE="$SYSTEMD_DIR/pantalla-bg-generate.timer"
+BG_TIMER_OVERRIDE_DIR="$SYSTEMD_DIR/pantalla-bg-generate.timer.d"
+BG_SYNC_SERVICE_FILE="$SYSTEMD_DIR/pantalla-bg-sync.service"
+BG_SYNC_PATH_FILE="$SYSTEMD_DIR/pantalla-bg-sync.path"
+BG_SYNC_SCRIPT="/usr/local/sbin/pantalla-bg-sync-timer"
 
 NGINX_SITE_AV="/etc/nginx/sites-available/pantalla"
 NGINX_SITE_EN="/etc/nginx/sites-enabled/pantalla"
@@ -92,6 +96,10 @@ systemctl stop pantalla-bg-generate.service 2>/dev/null || true
 systemctl disable pantalla-bg-generate.service 2>/dev/null || true
 systemctl stop pantalla-bg-generate.timer 2>/dev/null || true
 systemctl disable pantalla-bg-generate.timer 2>/dev/null || true
+systemctl stop pantalla-bg-sync.service 2>/dev/null || true
+systemctl disable pantalla-bg-sync.service 2>/dev/null || true
+systemctl stop pantalla-bg-sync.path 2>/dev/null || true
+systemctl disable pantalla-bg-sync.path 2>/dev/null || true
 
 # Backend (templated por usuario)
 systemctl stop "${BACKEND_SVC_BASENAME}@$APP_USER" 2>/dev/null || true
@@ -119,7 +127,9 @@ if [[ -f "$SYSTEMD_DIR/$KIOSK_SERVICE" ]]; then
 fi
 
 log "Eliminando unit files systemd…"
-rm -f "$BG_SVC_FILE" "$BG_TIMER_FILE"
+rm -f "$BG_SVC_FILE" "$BG_TIMER_FILE" "$BG_SYNC_SERVICE_FILE" "$BG_SYNC_PATH_FILE"
+rm -rf "$BG_TIMER_OVERRIDE_DIR"
+rm -f "$BG_SYNC_SCRIPT"
 rm -f "$BACKEND_SVC_TEMPLATE"
 rm -f "$SYSTEMD_DIR/$KIOSK_SERVICE" 2>/dev/null || true
 rm -f "$USER_SYSTEMD_DIR/$UI_SERVICE_NAME" 2>/dev/null || true

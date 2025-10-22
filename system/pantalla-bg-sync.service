@@ -1,0 +1,7 @@
+[Unit]
+Description=Sincroniza timer de fondos IA con intervalMinutes
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pantalla-bg-sync-timer
