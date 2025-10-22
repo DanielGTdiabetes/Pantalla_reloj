@@ -330,6 +330,9 @@ chmod 755 /opt/dash /opt/dash/assets
 touch "$LOG_DIR/bg.log"
 chown "$APP_USER:$APP_USER" "$LOG_DIR/bg.log"
 chmod 664 "$LOG_DIR/bg.log"
+touch "$LOG_DIR/bg-sync.log"
+chown root:root "$LOG_DIR/bg-sync.log"
+chmod 640 "$LOG_DIR/bg-sync.log"
 usermod -aG pantalla "$APP_USER" || true
 log "Si acabamos de añadir '$APP_USER' al grupo 'pantalla', es necesario reiniciar sesión o ejecutar 'newgrp pantalla' para que tome efecto."
 log "Sugerencia: verifica pertenencia al grupo con 'id $APP_USER'."
@@ -594,16 +597,13 @@ SERVICE
 
 cat > "$SYSTEMD_DIR/$BG_TIMER" <<'TIMER'
 [Unit]
-Description=Timer fondos IA
+Description=Timer fondos IA (dinámico por config.json)
+
 [Timer]
-OnBootSec=30s
-OnCalendar=*-*-* 07:00:00
-OnCalendar=*-*-* 12:00:00
-OnCalendar=*-*-* 19:00:00
-Persistent=true
-AccuracySec=1min
-RandomizedDelaySec=120
+OnBootSec=1min
+OnUnitActiveSec=360min
 Unit=pantalla-bg-generate.service
+
 [Install]
 WantedBy=timers.target
 TIMER
@@ -612,7 +612,6 @@ log "Configurando sincronización automática del timer de fondos IA…"
 install -Dm755 "$BG_SYNC_SCRIPT_SRC" "$BG_SYNC_SCRIPT_DST"
 install -Dm644 "$REPO_DIR/system/$BG_SYNC_SERVICE" "$SYSTEMD_DIR/$BG_SYNC_SERVICE"
 install -Dm644 "$REPO_DIR/system/$BG_SYNC_PATH" "$SYSTEMD_DIR/$BG_SYNC_PATH"
-mkdir -p "$SYSTEMD_DIR/${BG_TIMER}.d"
 
 systemctl daemon-reload
 systemctl enable --now "$BG_TIMER"

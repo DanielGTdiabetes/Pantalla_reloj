@@ -1,14 +1,9 @@
 [Unit]
-Description=Pantalla Dash · Programador de fondos futuristas diarios
+Description=Timer fondos IA (dinámico por config.json)
 
 [Timer]
-OnBootSec=30s
-OnCalendar=*-*-* 07:00:00
-OnCalendar=*-*-* 12:00:00
-OnCalendar=*-*-* 19:00:00
-Persistent=true
-AccuracySec=1min
-RandomizedDelaySec=120
+OnBootSec=1min
+OnUnitActiveSec=360min
 Unit=pantalla-bg-generate.service
 
 [Install]
