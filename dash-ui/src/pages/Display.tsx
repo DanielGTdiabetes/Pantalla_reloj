@@ -5,11 +5,11 @@ import WeatherPanel from '../components/panels/WeatherPanel';
 import InfoPanel from '../components/panels/InfoPanel';
 import { useDashboardConfig } from '../context/DashboardConfigContext';
 import { fetchWeatherToday, type WeatherToday } from '../services/weather';
-import { fetchDayBrief, type DayInfoPayload } from '../services/dayinfo';
 import type { RotatingPanelSectionKey } from '../services/config';
+import { useDayBrief } from '../hooks/useDayBrief';
 
 const REFRESH_INTERVAL_MS = 60_000;
-const DEFAULT_ROTATING_SECTIONS: RotatingPanelSectionKey[] = ['weather', 'calendar', 'season'];
+const DEFAULT_ROTATING_SECTIONS: RotatingPanelSectionKey[] = ['calendar', 'season', 'weekly', 'lunar'];
 const DEFAULT_ROTATING_INTERVAL_SECONDS = 7;
 const MIN_ROTATING_INTERVAL_SECONDS = 4;
 const MAX_ROTATING_INTERVAL_SECONDS = 30;
@@ -18,12 +18,14 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+const ALLOWED_SECTIONS: RotatingPanelSectionKey[] = ['calendar', 'season', 'weekly', 'lunar'];
+
 function sanitizeSections(sections: RotatingPanelSectionKey[] | undefined): RotatingPanelSectionKey[] {
   if (!Array.isArray(sections)) return DEFAULT_ROTATING_SECTIONS;
   const seen = new Set<RotatingPanelSectionKey>();
   const valid: RotatingPanelSectionKey[] = [];
   sections.forEach((section) => {
-    if (DEFAULT_ROTATING_SECTIONS.includes(section) && !seen.has(section)) {
+    if (ALLOWED_SECTIONS.includes(section) && !seen.has(section)) {
       seen.add(section);
       valid.push(section);
     }
@@ -34,21 +36,14 @@ function sanitizeSections(sections: RotatingPanelSectionKey[] | undefined): Rota
 const Display = () => {
   const { config, refresh: refreshConfig } = useDashboardConfig();
   const [weather, setWeather] = useState<WeatherToday | null>(null);
-  const [dayInfo, setDayInfo] = useState<DayInfoPayload | null>(null);
+  const { data: dayInfo } = useDayBrief();
   const load = useCallback(async () => {
-    const [weatherData, dayInfoData] = await Promise.all([
-      fetchWeatherToday().catch((error) => {
-        console.warn('No se pudo cargar el clima', error);
-        return null;
-      }),
-      fetchDayBrief().catch((error) => {
-        console.warn('No se pudo cargar la información del día', error);
-        return null;
-      }),
-    ]);
+    const weatherData = await fetchWeatherToday().catch((error) => {
+      console.warn('No se pudo cargar el clima', error);
+      return null;
+    });
 
     if (weatherData) setWeather(weatherData);
-    if (dayInfoData) setDayInfo(dayInfoData);
 
     try {
       await refreshConfig();
@@ -91,8 +86,6 @@ const Display = () => {
         <div className="grid h-full w-full max-w-[1840px] grid-cols-3 gap-8">
           <ClockPanel
             locale={config?.locale}
-            weather={weather}
-            dayInfo={dayInfo}
             rotatingPanel={rotatingPanelSettings}
           />
           <WeatherPanel weather={weather} />

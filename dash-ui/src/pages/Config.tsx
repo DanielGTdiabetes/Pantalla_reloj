@@ -27,19 +27,24 @@ const ROTATING_PANEL_SECTION_OPTIONS: Array<{
   description: string;
 }> = [
   {
-    key: 'weather',
-    label: 'Clima',
-    description: 'Resumen meteorológico actual y probabilidad de lluvia.',
-  },
-  {
     key: 'calendar',
     label: 'Calendario',
-    description: 'Efemérides, santoral y festivos del día.',
+    description: 'Agenda compacta con los eventos programados para hoy.',
   },
   {
     key: 'season',
     label: 'Temporada',
-    description: 'Frutas y hortalizas recomendadas del mes.',
+    description: 'Frutas y hortalizas destacadas para el mes en curso.',
+  },
+  {
+    key: 'weekly',
+    label: 'Previsión semanal',
+    description: 'Resumen de iconos, lluvias y temperaturas de los próximos días.',
+  },
+  {
+    key: 'lunar',
+    label: 'Fase lunar',
+    description: 'Estado actual de la luna y porcentaje de iluminación.',
   },
 ];
 
@@ -73,7 +78,7 @@ interface FormState {
   backgroundRetainDays: string;
   rotatingPanelEnabled: boolean;
   rotatingPanelIntervalSeconds: string;
-  rotatingPanelSections: Record<'weather' | 'calendar' | 'season', boolean>;
+  rotatingPanelSections: Record<RotatingPanelSectionKey, boolean>;
 }
 
 const DEFAULT_FORM: FormState = {
@@ -92,9 +97,10 @@ const DEFAULT_FORM: FormState = {
   rotatingPanelEnabled: true,
   rotatingPanelIntervalSeconds: '7',
   rotatingPanelSections: {
-    weather: true,
     calendar: true,
     season: true,
+    weekly: true,
+    lunar: true,
   },
 };
 
@@ -166,10 +172,13 @@ const Config = () => {
         : '';
 
     const sectionsArray = Array.isArray(rotating.sections) ? rotating.sections : [];
+    const allowedSections = new Set<RotatingPanelSectionKey>(
+      ROTATING_PANEL_SECTION_OPTIONS.map((option) => option.key),
+    );
     const sectionSet = new Set<RotatingPanelSectionKey>();
     sectionsArray.forEach((value) => {
-      if (value === 'weather' || value === 'calendar' || value === 'season') {
-        sectionSet.add(value);
+      if (allowedSections.has(value as RotatingPanelSectionKey)) {
+        sectionSet.add(value as RotatingPanelSectionKey);
       }
     });
     const hasCustomSections = sectionSet.size > 0;
@@ -205,17 +214,15 @@ const Config = () => {
         typeof rotating.intervalSeconds === 'number'
           ? String(rotating.intervalSeconds)
           : DEFAULT_FORM.rotatingPanelIntervalSeconds,
-      rotatingPanelSections: {
-        weather: hasCustomSections
-          ? sectionSet.has('weather')
-          : DEFAULT_FORM.rotatingPanelSections.weather,
-        calendar: hasCustomSections
-          ? sectionSet.has('calendar')
-          : DEFAULT_FORM.rotatingPanelSections.calendar,
-        season: hasCustomSections
-          ? sectionSet.has('season')
-          : DEFAULT_FORM.rotatingPanelSections.season,
-      },
+      rotatingPanelSections: ROTATING_PANEL_SECTION_OPTIONS.reduce(
+        (acc, option) => ({
+          ...acc,
+          [option.key]: hasCustomSections
+            ? sectionSet.has(option.key)
+            : DEFAULT_FORM.rotatingPanelSections[option.key],
+        }),
+        {} as Record<RotatingPanelSectionKey, boolean>,
+      ),
     };
   }, []);
 
@@ -473,10 +480,9 @@ const Config = () => {
       4,
       30,
     );
-    const rotatingSections: RotatingPanelSectionKey[] = [];
-    if (form.rotatingPanelSections.weather) rotatingSections.push('weather');
-    if (form.rotatingPanelSections.calendar) rotatingSections.push('calendar');
-    if (form.rotatingPanelSections.season) rotatingSections.push('season');
+    const rotatingSections: RotatingPanelSectionKey[] = ROTATING_PANEL_SECTION_OPTIONS.filter(
+      (option) => form.rotatingPanelSections[option.key],
+    ).map((option) => option.key);
 
     const rotatingPanelPatch: {
       enabled: boolean;
@@ -1014,7 +1020,7 @@ const Config = () => {
               <div>
                 <h2 className="text-lg font-medium text-white/85">Panel rotativo</h2>
                 <p className="text-sm text-white/55">
-                  Configura el carrusel que alterna clima, calendario y temporada en la pantalla principal.
+                  Configura el carrusel que muestra calendario, temporada, previsión semanal y fase lunar bajo el reloj.
                 </p>
               </div>
 
