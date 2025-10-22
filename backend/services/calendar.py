@@ -42,10 +42,8 @@ class CalendarService:
         today = datetime.now(tz=self._timezone).date()
         if config.mode == "ics" and config.icsPath:
             cache_key = self._cache_key_for_path(config.icsPath, today)
-            payload = await self._load_from_path(config.icsPath)
         elif config.mode == "url" and config.url:
             cache_key = f"{config.url}|{today.isoformat()}"
-            payload = await self._load_from_url(str(config.url))
         else:
             return []
 
@@ -54,6 +52,12 @@ class CalendarService:
         if cached and now_monotonic - cached[0] < 300:
             return cached[1]
 
+        if config.mode == "ics":
+            assert config.icsPath  # for type checkers
+            payload = await self._load_from_path(config.icsPath)
+        else:
+            assert config.url
+            payload = await self._load_from_url(str(config.url))
         events = self._parse_ics(payload)
         filtered = self._filter_for_day(events, today)
         filtered.sort(key=lambda event: event.start)
