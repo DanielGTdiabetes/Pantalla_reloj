@@ -29,7 +29,8 @@ Instala la plantilla y ajusta permisos:
 sudo groupadd -f pantalla
 sudo install -d -m2770 -o root -g pantalla /etc/pantalla-dash
 sudo install -m660 backend/config/config.example.json /etc/pantalla-dash/config.json
-sudo chown dani:pantalla /etc/pantalla-dash/config.json
+sudo install -m600 /dev/null /etc/pantalla-dash/secrets.json
+sudo chown dani:pantalla /etc/pantalla-dash/config.json /etc/pantalla-dash/secrets.json
 ```
 
 Asegura que el usuario del backend pertenezca al grupo `pantalla` y que el
@@ -40,8 +41,7 @@ sudo usermod -aG pantalla dani
 sudo chgrp -R pantalla /etc/pantalla-dash
 sudo chown dani:pantalla /etc/pantalla-dash/backend.env /etc/pantalla-dash/env
 sudo chmod 660 /etc/pantalla-dash/backend.env /etc/pantalla-dash/env /etc/pantalla-dash/config.json
-sudo chown dani:pantalla /etc/pantalla-dash/secrets.json
-sudo chmod 660 /etc/pantalla-dash/secrets.json
+sudo chmod 600 /etc/pantalla-dash/secrets.json
 ```
 
 Recuerda reiniciar sesión (o `newgrp pantalla`) tras añadir el usuario al grupo
@@ -53,6 +53,7 @@ Edita `/etc/pantalla-dash/config.json`:
 - `weather.city` y `weather.units` para la UI.
 - `storm.threshold` para el aviso de tormentas (0-1).
 - `wifi.preferredInterface` si no quieres autoselección.
+- `calendar.provider` (`url`, `ics` o `google`), junto a `calendar.google.calendarId` si vas a usar Google Calendar.
 
 Activa `systemd-timesyncd` para garantizar hora correcta:
 
@@ -128,12 +129,12 @@ sudo cat /var/lib/pantalla/ap_pass
 Comprueba que el backend responde:
 
 ```bash
-curl -s http://127.0.0.1:8787/api/weather/today
-curl -s http://127.0.0.1:8787/api/network/status
-curl -s http://127.0.0.1:8787/api/storms/status
+curl -s http://127.0.0.1:8081/api/weather/today
+curl -s http://127.0.0.1:8081/api/network/status
+curl -s http://127.0.0.1:8081/api/storms/status
 ```
 
-Desde un cliente conectado al AP visita `http://10.42.0.1:8787/setup` para usar
+Desde un cliente conectado al AP visita `http://10.42.0.1:8081/setup` para usar
 la mini-web de configuración (escaneo Wi-Fi y conexión con password).
 
 ## 6. Troubleshooting
@@ -154,5 +155,13 @@ sudo -u dashsvc git pull (si clonado) o vuelve a sincronizar archivos
 sudo systemctl restart pantalla-dash-backend.service
 ```
 
-La UI (frontend) debe apuntar a `http://127.0.0.1:8787` y servirse en kiosk
+La UI (frontend) debe apuntar a `http://127.0.0.1:8081` y servirse en kiosk
 modo pantalla completa.
+
+### Credenciales para Google Calendar
+
+1. Define las credenciales OAuth en `/etc/pantalla-dash/secrets.json` (`client_id`, `client_secret`).
+2. Elige **Google** como proveedor en `/#/config` y sigue el flujo de código de dispositivo.
+3. El `refresh_token` se guarda automáticamente en `secrets.json` con permisos `600`.
+
+Consulta [google-calendar.md](./google-calendar.md) para un desglose paso a paso de la integración.
