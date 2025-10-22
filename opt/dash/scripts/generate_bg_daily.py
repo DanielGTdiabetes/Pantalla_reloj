@@ -272,7 +272,15 @@ def build_contextual_prompt(context: Dict[str, Any]) -> Optional[Dict[str, Any]]
         f"Negative prompt: {NEGATIVE_PROMPT}."
     )
 
-    primary = "storm" if signals.get("storm") else "rain" if signals.get("rain") else "wind" if signals.get("wind") else str(today.get("icon") or "clear")
+    primary = (
+        "storm"
+        if signals.get("storm")
+        else "rain"
+        if signals.get("rain")
+        else "wind"
+        if signals.get("wind")
+        else str(today.get("icon") or "clear")
+    )
     key_descriptor = f"{day_period}-{primary}".replace(" ", "-")
     context_meta: Dict[str, Any] = {"dayPeriod": day_period, "storm": bool(signals.get("storm"))}
     if event_meta:
