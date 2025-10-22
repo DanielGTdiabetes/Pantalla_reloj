@@ -38,7 +38,9 @@ export interface WifiConfig {
 
 export interface CalendarConfig {
   enabled?: boolean;
-  icsUrl?: string | null;
+  mode?: 'url' | 'ics';
+  url?: string | null;
+  icsPath?: string | null;
   maxEvents?: number;
   notifyMinutesBefore?: number;
   icsConfigured?: boolean;

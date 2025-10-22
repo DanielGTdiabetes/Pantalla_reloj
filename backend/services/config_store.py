@@ -25,7 +25,7 @@ ALLOWED_CONFIG_FIELDS: dict[str, set[str]] = {
     "background": {"intervalMinutes", "mode", "retainDays"},
     "tts": {"voice", "volume"},
     "wifi": {"preferredInterface"},
-    "calendar": {"enabled", "icsUrl", "maxEvents", "notifyMinutesBefore"},
+    "calendar": {"enabled", "mode", "url", "icsPath", "icsUrl", "maxEvents", "notifyMinutesBefore"},
     "locale": {"country", "autonomousCommunity", "province", "city"},
     "patron": {"city", "name", "month", "day"},
 }
@@ -117,6 +117,10 @@ def _sanitize_patch(payload: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(
                 f"Claves no permitidas en {section}: " + ", ".join(sorted(invalid_nested))
             )
+        if section == "calendar" and "icsUrl" in filtered:
+            if "url" not in filtered:
+                filtered["url"] = filtered["icsUrl"]
+            filtered.pop("icsUrl", None)
         if filtered:
             sanitized[section] = filtered
     return sanitized
@@ -124,6 +128,8 @@ def _sanitize_patch(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _migrate_config(data: dict[str, Any]) -> dict[str, Any]:
     migrated = dict(data)
+    needs_write = False
+
     background = migrated.get("background")
     if isinstance(background, dict):
         mode = background.get("mode")
@@ -132,10 +138,29 @@ def _migrate_config(data: dict[str, Any]) -> dict[str, Any]:
             background["mode"] = "daily"
             migrated["background"] = background
             logger.warning("Migrando background.mode=auto -> daily")
-            try:
-                _write_json(CONFIG_PATH, migrated, mode=0o640)
-            except OSError as exc:
-                logger.error("No se pudo persistir migración de background.mode: %s", exc)
+            needs_write = True
+
+    calendar = migrated.get("calendar")
+    if isinstance(calendar, dict):
+        calendar_copy = dict(calendar)
+        calendar_changed = False
+        if "icsUrl" in calendar_copy:
+            if "url" not in calendar_copy:
+                calendar_copy["url"] = calendar_copy["icsUrl"]
+            calendar_copy.pop("icsUrl", None)
+            calendar_changed = True
+        if "mode" not in calendar_copy:
+            calendar_copy["mode"] = "ics" if calendar_copy.get("icsPath") else "url"
+            calendar_changed = True
+        if calendar_changed:
+            migrated["calendar"] = calendar_copy
+            needs_write = True
+
+    if needs_write:
+        try:
+            _write_json(CONFIG_PATH, migrated, mode=0o640)
+        except OSError as exc:
+            logger.error("No se pudo persistir migración de configuración: %s", exc)
     return migrated
 
 

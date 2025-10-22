@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Background from '../components/Background';
 import GlassPanel from '../components/GlassPanel';
 import {
@@ -8,8 +8,27 @@ import {
   type ConfigEnvelope,
   type ConfigUpdate,
 } from '../services/config';
+import {
+  deleteCalendarFile,
+  fetchCalendarStatus,
+  uploadCalendarFile,
+  type CalendarStatus,
+} from '../services/calendar';
 import { connectNetwork, fetchWifiStatus, scanNetworks, type WifiNetwork, type WifiStatus } from '../services/wifi';
 import { useDashboardConfig } from '../context/DashboardConfigContext';
+
+const MAX_CALENDAR_FILE_BYTES = 5 * 1024 * 1024;
+const ACCEPTED_CALENDAR_TYPES = ['text/calendar', 'text/plain', 'application/octet-stream'];
+
+function formatBytes(value: number): string {
+  if (value >= 1024 * 1024) {
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  if (value >= 1024) {
+    return `${(value / 1024).toFixed(1)} KB`;
+  }
+  return `${value} B`;
+}
 
 interface Notice {
   type: 'success' | 'error' | 'info';
@@ -22,7 +41,8 @@ interface FormState {
   weatherCity: string;
   weatherUnits: 'metric' | 'imperial';
   calendarEnabled: boolean;
-  calendarIcsUrl: string;
+  calendarMode: 'url' | 'ics';
+  calendarUrl: string;
   calendarMaxEvents: string;
   calendarNotifyMinutesBefore: string;
   backgroundMode: 'daily' | 'weather';
@@ -36,7 +56,8 @@ const DEFAULT_FORM: FormState = {
   weatherCity: '',
   weatherUnits: 'metric',
   calendarEnabled: false,
-  calendarIcsUrl: '',
+  calendarMode: 'url',
+  calendarUrl: '',
   calendarMaxEvents: '3',
   calendarNotifyMinutesBefore: '15',
   backgroundMode: 'daily',
@@ -61,6 +82,22 @@ const Config = () => {
   const [openAiInput, setOpenAiInput] = useState('');
   const [savingSecrets, setSavingSecrets] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
+  const [calendarStatus, setCalendarStatus] = useState<CalendarStatus | null>(null);
+  const [calendarUploadState, setCalendarUploadState] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+  const [calendarUploadMessage, setCalendarUploadMessage] = useState<string | null>(null);
+  const [calendarUploadProgress, setCalendarUploadProgress] = useState(0);
+  const [calendarDeleting, setCalendarDeleting] = useState(false);
+  const [calendarDragActive, setCalendarDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const calendarUploading = calendarUploadState === 'uploading';
+  const calendarFileDetails = useMemo(() => {
+    if (!calendarStatus) {
+      return { updated: null as string | null, size: null as string | null };
+    }
+    const updated = calendarStatus.mtime ? new Date(calendarStatus.mtime).toLocaleString('es-ES') : null;
+    const size = typeof calendarStatus.size === 'number' ? formatBytes(calendarStatus.size) : null;
+    return { updated, size };
+  }, [calendarStatus]);
 
   const openAiDetails = useMemo(() => {
     const secrets = (envelope?.secrets ?? {}) as Record<string, any>;
@@ -78,13 +115,29 @@ const Config = () => {
     const calendar = (configData.calendar as Record<string, any> | undefined) ?? {};
     const background = (configData.background as Record<string, any> | undefined) ?? {};
 
+    const modeValue = typeof calendar.mode === 'string' ? calendar.mode.toLowerCase() : '';
+    const calendarMode: 'url' | 'ics' = modeValue === 'ics'
+      ? 'ics'
+      : modeValue === 'url'
+      ? 'url'
+      : calendar.icsPath
+      ? 'ics'
+      : 'url';
+    const calendarUrlValue =
+      typeof calendar.url === 'string'
+        ? calendar.url
+        : typeof calendar.icsUrl === 'string'
+        ? calendar.icsUrl
+        : '';
+
     return {
       aemetApiKey: typeof aemet.apiKey === 'string' ? aemet.apiKey : '',
       aemetMunicipioId: typeof aemet.municipioId === 'string' ? aemet.municipioId : '',
       weatherCity: typeof weather.city === 'string' ? weather.city : '',
       weatherUnits: weather.units === 'imperial' ? 'imperial' : 'metric',
       calendarEnabled: Boolean(calendar.enabled),
-      calendarIcsUrl: typeof calendar.icsUrl === 'string' ? calendar.icsUrl : '',
+      calendarMode,
+      calendarUrl: calendarUrlValue,
       calendarMaxEvents:
         typeof calendar.maxEvents === 'number' ? String(calendar.maxEvents) : DEFAULT_FORM.calendarMaxEvents,
       calendarNotifyMinutesBefore:
@@ -106,13 +159,15 @@ const Config = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [configData, wifiData] = await Promise.all([
+      const [configData, wifiData, calendarData] = await Promise.all([
         fetchConfigEnvelope(),
         fetchWifiStatus().catch(() => null),
+        fetchCalendarStatus().catch(() => null),
       ]);
       setEnvelope(configData);
       setForm(buildFormFromConfig((configData.config as Record<string, any>) ?? null));
       if (wifiData) setWifiStatus(wifiData);
+      if (calendarData) setCalendarStatus(calendarData as CalendarStatus);
       setNotice(null);
       setWifiNotice(null);
     } catch (error) {
@@ -125,6 +180,18 @@ const Config = () => {
       setLoading(false);
     }
   }, [buildFormFromConfig]);
+
+  const refreshCalendarState = useCallback(async () => {
+    try {
+      const [configData, status] = await Promise.all([fetchConfigEnvelope(), fetchCalendarStatus()]);
+      setEnvelope(configData);
+      setForm(buildFormFromConfig((configData.config as Record<string, any>) ?? null));
+      setCalendarStatus(status);
+      await refreshConfig();
+    } catch (error) {
+      console.error('No se pudo refrescar estado de calendario', error);
+    }
+  }, [buildFormFromConfig, refreshConfig]);
 
   useEffect(() => {
     void load();
@@ -146,6 +213,153 @@ const Config = () => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  const handleCalendarModeChange = (mode: 'url' | 'ics') => {
+    setForm((prev) => ({ ...prev, calendarMode: mode }));
+  };
+
+  const validateCalendarFile = (file: File): string | null => {
+    if (!file) return 'Selecciona un archivo .ics';
+    const hasValidExtension = file.name.toLowerCase().endsWith('.ics');
+    const hasValidType = !file.type || ACCEPTED_CALENDAR_TYPES.includes(file.type);
+    if (!hasValidExtension && !hasValidType) {
+      return 'Formato no válido. Usa un archivo .ics';
+    }
+    if (file.size === 0) {
+      return 'El archivo está vacío';
+    }
+    if (file.size > MAX_CALENDAR_FILE_BYTES) {
+      return 'El archivo supera el límite de 5 MB';
+    }
+    return null;
+  };
+
+  const handleCalendarFileUpload = useCallback(
+    async (file: File) => {
+      const validationError = validateCalendarFile(file);
+      if (validationError) {
+        setCalendarUploadState('error');
+        setCalendarUploadMessage(validationError);
+        return;
+      }
+
+      setCalendarUploadState('uploading');
+      setCalendarUploadProgress(0);
+      setCalendarUploadMessage(null);
+
+      try {
+        const response = await uploadCalendarFile(file, (percent) => {
+          if (typeof percent === 'number' && !Number.isNaN(percent)) {
+            setCalendarUploadProgress(percent);
+          }
+        });
+        setCalendarUploadState('success');
+        setCalendarUploadMessage(response.message ?? 'Archivo ICS actualizado');
+        setCalendarStatus(response);
+        await refreshCalendarState();
+      } catch (error) {
+        console.error('No se pudo subir el calendario', error);
+        setCalendarUploadState('error');
+        setCalendarUploadMessage(
+          error instanceof Error ? error.message : 'No se pudo subir el archivo .ics',
+        );
+      } finally {
+        setCalendarUploadProgress(0);
+      }
+    },
+    [refreshCalendarState],
+  );
+
+  const handleCalendarFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      void handleCalendarFileUpload(file);
+    }
+    event.target.value = '';
+  };
+
+  const handleCalendarSelectClick = () => {
+    if (calendarUploading) return;
+    fileInputRef.current?.click();
+  };
+
+  const handleCalendarDownload = async () => {
+    try {
+      const response = await fetch('/api/calendar/download');
+      if (!response.ok) {
+        let message: string | undefined;
+        try {
+          const payload = await response.json();
+          message = payload?.detail || payload?.message;
+        } catch (error) {
+          // ignore parse errors
+        }
+        throw new Error(message || `Error ${response.status}`);
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'calendar.ics';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('No se pudo descargar calendario', error);
+      setCalendarUploadState('error');
+      setCalendarUploadMessage(
+        error instanceof Error ? error.message : 'No se pudo descargar el archivo',
+      );
+    }
+  };
+
+  const handleCalendarDelete = async () => {
+    if (calendarDeleting || calendarUploading) return;
+    if (!window.confirm('¿Eliminar el archivo .ics actual?')) return;
+    setCalendarDeleting(true);
+    setCalendarUploadMessage(null);
+    try {
+      const response = await deleteCalendarFile();
+      setCalendarUploadState('success');
+      setCalendarUploadMessage(response.message ?? 'Archivo ICS eliminado');
+      setCalendarStatus(response);
+      await refreshCalendarState();
+    } catch (error) {
+      console.error('No se pudo eliminar calendario', error);
+      setCalendarUploadState('error');
+      setCalendarUploadMessage(
+        error instanceof Error ? error.message : 'No se pudo eliminar el archivo .ics',
+      );
+    } finally {
+      setCalendarDeleting(false);
+    }
+  };
+
+  const handleCalendarDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!calendarUploading) {
+      setCalendarDragActive(true);
+    }
+  };
+
+  const handleCalendarDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setCalendarDragActive(false);
+  };
+
+  const handleCalendarDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setCalendarDragActive(false);
+    if (calendarUploading) return;
+    const file = event.dataTransfer?.files?.[0];
+    if (file) {
+      void handleCalendarFileUpload(file);
+    }
+  };
+
   const parseInteger = (value: string) => {
     const parsed = Number.parseInt(value, 10);
     return Number.isNaN(parsed) ? undefined : parsed;
@@ -165,7 +379,10 @@ const Config = () => {
       },
       calendar: {
         enabled: form.calendarEnabled,
-        icsUrl: form.calendarIcsUrl || null,
+        mode: form.calendarMode,
+        ...(form.calendarMode === 'url'
+          ? { url: form.calendarUrl ? form.calendarUrl : null }
+          : {}),
         maxEvents: parseInteger(form.calendarMaxEvents),
         notifyMinutesBefore: parseInteger(form.calendarNotifyMinutesBefore),
       },
@@ -181,6 +398,12 @@ const Config = () => {
       setEnvelope(updated);
       setForm(buildFormFromConfig((updated.config as Record<string, any>) ?? null));
       setNotice({ type: 'success', text: 'Configuración guardada' });
+      try {
+        const status = await fetchCalendarStatus();
+        setCalendarStatus(status);
+      } catch (error) {
+        console.warn('No se pudo refrescar estado del calendario tras guardar', error);
+      }
       await refreshConfig();
     } catch (error) {
       console.error('No se pudo guardar configuración', error);
@@ -370,13 +593,123 @@ const Config = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs uppercase tracking-wide text-white/50">Google Calendar ICS</label>
-                  <input
-                    type="url"
-                    className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
-                    value={form.calendarIcsUrl}
-                    onChange={(event) => handleFormChange('calendarIcsUrl', event.target.value)}
-                  />
+                  <label className="block text-xs uppercase tracking-wide text-white/50">Calendario</label>
+                  <div className="mt-2 inline-flex overflow-hidden rounded-lg border border-white/20 bg-white/10 text-xs">
+                    <button
+                      type="button"
+                      className={`px-3 py-1 font-medium transition ${
+                        form.calendarMode === 'url' ? 'bg-white/20 text-white' : 'text-white/60 hover:bg-white/5'
+                      }`}
+                      onClick={() => handleCalendarModeChange('url')}
+                    >
+                      URL ICS
+                    </button>
+                    <button
+                      type="button"
+                      className={`px-3 py-1 font-medium transition ${
+                        form.calendarMode === 'ics' ? 'bg-white/20 text-white' : 'text-white/60 hover:bg-white/5'
+                      }`}
+                      onClick={() => handleCalendarModeChange('ics')}
+                    >
+                      Archivo .ics
+                    </button>
+                  </div>
+                  {form.calendarMode === 'url' ? (
+                    <div className="mt-3 space-y-2">
+                      <input
+                        type="url"
+                        className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
+                        placeholder="https://calendar.google.com/.../basic.ics"
+                        value={form.calendarUrl}
+                        onChange={(event) => handleFormChange('calendarUrl', event.target.value)}
+                      />
+                      <p className="text-xs text-white/45">
+                        Introduce la dirección ICS de tu calendario remoto. Se conserva aunque uses un archivo local.
+                      </p>
+                      {calendarStatus?.mode === 'ics' ? (
+                        <p className="text-xs text-amber-200/80">
+                          Actualmente está activo un archivo .ics local. Cambia a «Archivo .ics» para gestionarlo.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="mt-3 space-y-3">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".ics,text/calendar"
+                        className="hidden"
+                        onChange={handleCalendarFileChange}
+                      />
+                      <div
+                        onDragOver={handleCalendarDragOver}
+                        onDragEnter={handleCalendarDragOver}
+                        onDragLeave={handleCalendarDragLeave}
+                        onDrop={handleCalendarDrop}
+                        className={`flex flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-6 text-sm transition ${
+                          calendarDragActive ? 'border-emerald-400 bg-emerald-500/10' : 'border-white/25 bg-white/5'
+                        }`}
+                      >
+                        <p className="text-white/85">Suelta aquí tu archivo .ics</p>
+                        <p className="mt-1 text-xs text-white/55">Tamaño máximo: 5 MB</p>
+                        <button
+                          type="button"
+                          onClick={handleCalendarSelectClick}
+                          className="mt-3 rounded-md bg-emerald-500/80 px-3 py-2 text-xs font-medium text-white shadow-md transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={calendarUploading}
+                        >
+                          Seleccionar archivo .ics
+                        </button>
+                      </div>
+                      {calendarUploadState === 'uploading' ? (
+                        <div className="h-2 w-full rounded-full bg-white/10">
+                          <div
+                            className="h-full rounded-full bg-emerald-400 transition-all"
+                            style={{ width: `${Math.min(100, Math.round(calendarUploadProgress))}%` }}
+                          />
+                        </div>
+                      ) : null}
+                      {calendarUploadState !== 'idle' && calendarUploadMessage ? (
+                        <div
+                          className={`rounded-md border px-3 py-2 text-xs ${
+                            calendarUploadState === 'error'
+                              ? 'border-red-400/40 bg-red-500/15 text-red-100'
+                              : 'border-emerald-400/40 bg-emerald-500/15 text-emerald-100'
+                          }`}
+                        >
+                          {calendarUploadMessage}
+                        </div>
+                      ) : null}
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-white/70">
+                        <button
+                          type="button"
+                          onClick={handleCalendarDownload}
+                          className="rounded-md border border-white/20 px-3 py-2 transition hover:border-white/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={!calendarStatus?.exists || calendarUploading}
+                        >
+                          Descargar ICS actual
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCalendarDelete}
+                          className="rounded-md border border-rose-400/40 px-3 py-2 text-rose-100 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={calendarDeleting || calendarUploading || !calendarStatus?.exists}
+                        >
+                          {calendarDeleting ? 'Eliminando…' : 'Eliminar archivo'}
+                        </button>
+                      </div>
+                      <div className="space-y-1 text-xs text-white/55">
+                        <p>
+                          {calendarStatus?.exists
+                            ? `Última carga: ${calendarFileDetails.updated ?? 'desconocida'}${
+                                calendarFileDetails.size ? ` • ${calendarFileDetails.size}` : ''
+                              }`
+                            : 'No hay archivo .ics cargado.'}
+                        </p>
+                        <p>Ruta: {calendarStatus?.icsPath ?? '/etc/pantalla-dash/calendar/calendar.ics'}</p>
+                      </div>
+                    </div>
+                  )}
                   <div className="mt-3 grid gap-3 md:grid-cols-3">
                     <label className="flex items-center gap-2 text-xs text-white/70">
                       <input

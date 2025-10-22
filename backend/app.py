@@ -12,6 +12,7 @@ from datetime import date as _date, datetime, timedelta, timezone
 from email.utils import format_datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
+from threading import Lock
 
 if __package__ in {None, ""}:
     # Permitir que el módulo funcione tanto como parte del paquete "backend"
@@ -21,9 +22,10 @@ if __package__ in {None, ""}:
     sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 import httpx
-from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi import Body, Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi import status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict, Field
@@ -108,6 +110,108 @@ AUTO_BACKGROUND_DIR.mkdir(parents=True, exist_ok=True)
 ALLOW_ON_DEMAND_BG = os.getenv("ALLOW_ON_DEMAND_BG", "").lower() in {"1", "true", "on", "yes"}
 BG_GENERATOR_SCRIPT = Path("/opt/dash/scripts/generate_bg_daily.py")
 BG_GENERATION_TIMEOUT = 15
+
+CALENDAR_STORAGE_DIR = Path("/etc/pantalla-dash/calendar")
+CALENDAR_FILE_PATH = CALENDAR_STORAGE_DIR / "calendar.ics"
+CALENDAR_LOG_PATH = Path("/var/log/pantalla-dash/calendar.log")
+CALENDAR_MAX_SIZE_BYTES = 5 * 1024 * 1024
+CALENDAR_ALLOWED_TYPES = {"text/calendar", "text/plain", "application/octet-stream"}
+
+calendar_logger = logging.getLogger("pantalla.calendar")
+calendar_logger.setLevel(logging.INFO)
+calendar_logger.propagate = False
+_calendar_log_lock = Lock()
+_calendar_log_configured = False
+
+
+def _ensure_calendar_log_handler() -> None:
+    global _calendar_log_configured  # pylint: disable=global-statement
+    if _calendar_log_configured:
+        return
+    with _calendar_log_lock:
+        if _calendar_log_configured:
+            return
+        try:
+            CALENDAR_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            handler = logging.FileHandler(CALENDAR_LOG_PATH, encoding="utf-8")
+            handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s :: %(message)s"))
+            calendar_logger.addHandler(handler)
+            _apply_permissions(CALENDAR_LOG_PATH.parent, 0o755)
+            _calendar_log_configured = True
+        except OSError as exc:  # pragma: no cover - permisos insuficientes
+            logger.warning("No se pudo preparar calendar.log: %s", exc)
+            _calendar_log_configured = False
+
+
+def _calendar_log(message: str, level: int = logging.INFO) -> None:
+    _ensure_calendar_log_handler()
+    calendar_logger.log(level, message)
+
+
+def _apply_permissions(path: Path, mode: int) -> None:
+    try:
+        os.chmod(path, mode)
+    except OSError:
+        logger.debug("No se pudo ajustar permisos de %s", path, exc_info=True)
+    if hasattr(os, "chown"):
+        try:
+            os.chown(path, 0, 0)
+        except OSError:
+            logger.debug("No se pudo ajustar propietario de %s", path, exc_info=True)
+
+
+def _prepare_calendar_storage() -> None:
+    try:
+        CALENDAR_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+        _apply_permissions(CALENDAR_STORAGE_DIR, 0o755)
+    except OSError as exc:
+        logger.error("No se pudo preparar el directorio del calendario: %s", exc)
+        raise HTTPException(status_code=500, detail="No se pudo preparar el directorio del calendario") from exc
+
+
+def _build_calendar_status(calendar_section: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    if calendar_section is None:
+        config_data, _ = read_store_config()
+        raw_calendar = (
+            config_data.get("calendar")
+            if isinstance(config_data, dict) and isinstance(config_data.get("calendar"), dict)
+            else {}
+        )
+    else:
+        raw_calendar = dict(calendar_section)
+
+    mode_raw = str(raw_calendar.get("mode") or "")
+    mode = mode_raw.lower() if mode_raw else None
+    if mode not in {"url", "ics"}:
+        mode = "ics" if raw_calendar.get("icsPath") else "url"
+
+    url_value = raw_calendar.get("url") or raw_calendar.get("icsUrl")
+    url_str = str(url_value) if url_value else None
+
+    ics_path = raw_calendar.get("icsPath") or str(CALENDAR_FILE_PATH)
+    path_obj = Path(ics_path)
+    exists = path_obj.is_file()
+    size: Optional[int] = None
+    mtime: Optional[str] = None
+    if exists:
+        try:
+            stat_result = path_obj.stat()
+            size = stat_result.st_size
+            mtime = datetime.fromtimestamp(stat_result.st_mtime, tz=timezone.utc).isoformat()
+        except OSError as exc:
+            logger.warning("No se pudo leer metadatos del calendario: %s", exc)
+            exists = False
+            size = None
+            mtime = None
+
+    return {
+        "mode": mode or "url",
+        "url": url_str,
+        "icsPath": str(path_obj),
+        "exists": exists,
+        "size": size,
+        "mtime": mtime,
+    }
 
 
 def _parse_allowed_origins() -> list[str]:
@@ -848,9 +952,135 @@ async def alerts_tts(payload: AlertTTSRequest, request: Request):
     return {"status": "queued"}
 
 
+@app.get("/api/calendar/status")
+def calendar_status_endpoint() -> Dict[str, Any]:
+    return _build_calendar_status()
+
+
+@app.post("/api/calendar/upload")
+async def calendar_upload(file: UploadFile = File(...)) -> Dict[str, Any]:
+    if file is None:
+        raise HTTPException(status_code=400, detail="Se requiere un archivo .ics")
+
+    filename = file.filename or "calendar.ics"
+    suffix = Path(filename).suffix.lower()
+    media_type = (file.content_type or "").split(";")[0].strip().lower()
+    if suffix != ".ics" and media_type not in CALENDAR_ALLOWED_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Formato no soportado. Usa un archivo .ics",
+        )
+
+    data = await file.read(CALENDAR_MAX_SIZE_BYTES + 1)
+    try:
+        if len(data) > CALENDAR_MAX_SIZE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Archivo demasiado grande (máximo 5 MB)",
+            )
+        if not data.strip():
+            raise HTTPException(status_code=400, detail="El archivo está vacío")
+        upper = data.upper()
+        if b"BEGIN:VCALENDAR" not in upper or b"END:VCALENDAR" not in upper:
+            raise HTTPException(
+                status_code=400,
+                detail="El archivo no parece ser un calendario ICS válido",
+            )
+
+        _prepare_calendar_storage()
+        tmp_path = CALENDAR_FILE_PATH.with_suffix(".ics.tmp")
+        with tmp_path.open("wb") as handle:
+            handle.write(data)
+        _apply_permissions(tmp_path, 0o644)
+        tmp_path.replace(CALENDAR_FILE_PATH)
+        _apply_permissions(CALENDAR_FILE_PATH, 0o644)
+    except HTTPException:
+        raise
+    except OSError as exc:
+        logger.error("No se pudo escribir calendario.ics: %s", exc)
+        raise HTTPException(status_code=500, detail="No se pudo guardar el archivo ICS") from exc
+    finally:
+        await file.close()
+
+    calendar_service._cache.clear()
+    _calendar_log("Archivo ICS actualizado (%d bytes)", len(data))
+
+    try:
+        updated_config, _ = write_config_patch(
+            {"calendar": {"mode": "ics", "icsPath": str(CALENDAR_FILE_PATH)}}
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=500, detail="No se pudo actualizar la configuración") from exc
+
+    status_payload = _build_calendar_status(
+        updated_config.get("calendar") if isinstance(updated_config, dict) else None
+    )
+    status_payload.update({"ok": True, "message": "Archivo ICS actualizado"})
+    return status_payload
+
+
+@app.get("/api/calendar/download")
+def calendar_download() -> FileResponse:
+    path = CALENDAR_FILE_PATH
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="No hay archivo ICS disponible")
+    return FileResponse(path, media_type="text/calendar", filename="calendar.ics")
+
+
+@app.delete("/api/calendar/file")
+def calendar_delete() -> Dict[str, Any]:
+    config_data, _ = read_store_config()
+    calendar_section = (
+        config_data.get("calendar")
+        if isinstance(config_data, dict) and isinstance(config_data.get("calendar"), dict)
+        else {}
+    )
+    ics_path = calendar_section.get("icsPath") or str(CALENDAR_FILE_PATH)
+    path = Path(ics_path)
+    removed = False
+    backup_path: Optional[Path] = None
+
+    if path.exists():
+        _prepare_calendar_storage()
+        timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d%H%M%S")
+        backup_path = path.with_name(f"calendar-{timestamp}.ics.bak")
+        try:
+            path.replace(backup_path)
+            _apply_permissions(backup_path, 0o644)
+            removed = True
+        except OSError as exc:
+            logger.error("No se pudo eliminar el archivo ICS: %s", exc)
+            raise HTTPException(status_code=500, detail="No se pudo eliminar el archivo ICS") from exc
+
+    try:
+        updated_config, _ = write_config_patch(
+            {"calendar": {"mode": "url", "icsPath": str(CALENDAR_FILE_PATH)}}
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=500, detail="No se pudo actualizar la configuración") from exc
+
+    calendar_service._cache.clear()
+    if removed and backup_path is not None:
+        _calendar_log("Archivo ICS eliminado (backup: %s)", backup_path.name)
+    elif not removed:
+        _calendar_log("Petición de eliminación sin archivo existente")
+
+    status_payload = _build_calendar_status(
+        updated_config.get("calendar") if isinstance(updated_config, dict) else None
+    )
+    message = "Archivo ICS eliminado" if removed else "No había archivo ICS para eliminar"
+    status_payload.update({"ok": True, "message": message})
+    return status_payload
+
+
 @app.get("/api/calendar/today", response_model=list[CalendarEventResponse])
 async def calendar_today(config: AppConfig = Depends(get_config)):
-    if not config.calendar or not config.calendar.enabled or not config.calendar.icsUrl:
+    if not config.calendar or not config.calendar.enabled:
+        return []
+
+    if config.calendar.mode == "url" and not config.calendar.url:
+        return []
+    if config.calendar.mode == "ics" and not config.calendar.icsPath:
         return []
 
     try:
@@ -887,7 +1117,12 @@ async def calendar_today(config: AppConfig = Depends(get_config)):
 
 @app.get("/api/calendar/peek", response_model=CalendarPeekResponse)
 async def calendar_peek(config: AppConfig = Depends(get_config)):
-    if not config.calendar or not config.calendar.enabled or not config.calendar.icsUrl:
+    if not config.calendar or not config.calendar.enabled:
+        raise HTTPException(status_code=404, detail="Calendario no configurado")
+
+    if config.calendar.mode == "url" and not config.calendar.url:
+        raise HTTPException(status_code=404, detail="Calendario no configurado")
+    if config.calendar.mode == "ics" and not config.calendar.icsPath:
         raise HTTPException(status_code=404, detail="Calendario no configurado")
     try:
         events = await calendar_service.events_for_today(config.calendar)
