@@ -127,6 +127,7 @@ const Display = () => {
       MAX_SIDE_INTERVAL_SECONDS,
     );
     const showSantoral = sideInfo?.showSantoralWithEfemerides ?? true;
+    const showHolidays = sideInfo?.showHolidaysWithEfemerides ?? true;
     const newsDisabledNote = !backendNewsEnabled
       ? 'Servicio de noticias desactivado'
       : !uiNewsEnabled
@@ -138,6 +139,7 @@ const Display = () => {
       sections,
       intervalMs: intervalSeconds * 1000,
       showSantoral,
+      showHolidays,
       newsEnabled,
       newsDisabledNote,
     };
@@ -158,6 +160,7 @@ const Display = () => {
             sections={sideInfoSettings.sections}
             intervalMs={sideInfoSettings.intervalMs}
             showSantoralWithEfemerides={sideInfoSettings.showSantoral}
+            showHolidaysWithEfemerides={sideInfoSettings.showHolidays}
             dayInfo={dayInfo}
             newsEnabled={sideInfoSettings.newsEnabled}
             newsDisabledNote={sideInfoSettings.newsDisabledNote}

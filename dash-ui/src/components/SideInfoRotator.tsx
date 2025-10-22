@@ -9,6 +9,7 @@ interface SideInfoRotatorProps {
   sections: SideInfoSectionKey[];
   intervalMs: number;
   showSantoralWithEfemerides: boolean;
+  showHolidaysWithEfemerides: boolean;
   dayInfo?: DayInfoPayload | null;
   newsEnabled: boolean;
   newsDisabledNote?: string | null;
@@ -18,7 +19,7 @@ interface SlideContent {
   key: SideInfoSectionKey;
   label: string;
   primary: string;
-  secondary?: string | null;
+  details: string[];
   placeholder?: boolean;
 }
 
@@ -34,9 +35,9 @@ const PRIMARY_STYLE: CSSProperties = {
   overflow: 'hidden',
 };
 
-const SECONDARY_STYLE: CSSProperties = {
+const DETAIL_STYLE: CSSProperties = {
   display: '-webkit-box',
-  WebkitLineClamp: 2,
+  WebkitLineClamp: 1,
   WebkitBoxOrient: 'vertical',
   overflow: 'hidden',
 };
@@ -68,6 +69,7 @@ const SideInfoRotator = ({
   sections,
   intervalMs,
   showSantoralWithEfemerides,
+  showHolidaysWithEfemerides,
   dayInfo,
   newsEnabled,
   newsDisabledNote,
@@ -94,6 +96,34 @@ const SideInfoRotator = ({
     return formatSantoral(names);
   }, [dayInfo?.santoral, showSantoralWithEfemerides]);
 
+  const holidayNames = useMemo(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    const rawNames = Array.isArray(dayInfo?.holidayNames) ? dayInfo?.holidayNames : [];
+    rawNames.forEach((value) => {
+      const text = sanitizeText(value);
+      if (!text) return;
+      const key = text.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      result.push(text);
+    });
+    const fallbackName = sanitizeText(dayInfo?.holiday?.name);
+    if (fallbackName) {
+      const key = fallbackName.toLowerCase();
+      if (!seen.has(key)) {
+        result.push(fallbackName);
+      }
+    }
+    return result;
+  }, [dayInfo?.holiday?.name, dayInfo?.holidayNames]);
+
+  const holidayLine = useMemo(() => {
+    if (holidayNames.length === 0) return '';
+    const label = holidayNames.length === 1 ? 'Festivo' : 'Festivos';
+    return `${label}: ${holidayNames.join(', ')}`;
+  }, [holidayNames]);
+
   const currentNewsItem = useMemo(() => {
     if (!newsEnabled || newsItems.length === 0) return null;
     const index = newsHeadlineIndex % newsItems.length;
@@ -107,14 +137,21 @@ const SideInfoRotator = ({
     sections.forEach((section) => {
       if (section === 'efemerides') {
         const primary = efemerideText || 'Efemérides no disponibles';
-        const secondary = showSantoralWithEfemerides
-          ? santoralText || 'Santoral no disponible'
-          : null;
+        const details: string[] = [];
+        if (showHolidaysWithEfemerides && holidayLine) {
+          details.push(holidayLine);
+        }
+        if (showSantoralWithEfemerides && santoralText) {
+          const line = `Santoral: ${santoralText}`;
+          if (details.length < 2) {
+            details.push(line);
+          }
+        }
         items.push({
           key: section,
           label: LABELS[section],
           primary,
-          secondary,
+          details,
           placeholder: efemerideText.length === 0,
         });
         return;
@@ -126,14 +163,14 @@ const SideInfoRotator = ({
             key: section,
             label: LABELS[section],
             primary: newsDisabledNote || 'Noticias desactivadas',
-            secondary: null,
+            details: [],
             placeholder: true,
           });
           return;
         }
 
         let primary: string;
-        let secondary: string | null = null;
+        const details: string[] = [];
         let placeholder = false;
 
         if (currentNewsItem) {
@@ -146,14 +183,16 @@ const SideInfoRotator = ({
         } else {
           primary = 'Noticias no disponibles';
           placeholder = true;
-          secondary = newsNote ?? null;
+          if (newsNote) {
+            details.push(newsNote);
+          }
         }
 
         items.push({
           key: section,
           label: LABELS[section],
           primary,
-          secondary,
+          details,
           placeholder,
         });
       }
@@ -166,6 +205,8 @@ const SideInfoRotator = ({
     efemerideText,
     santoralText,
     showSantoralWithEfemerides,
+    showHolidaysWithEfemerides,
+    holidayLine,
     newsEnabled,
     newsLoading,
     newsNote,
@@ -256,10 +297,14 @@ const SideInfoRotator = ({
             >
               {slide.primary}
             </p>
-            {slide.secondary ? (
-              <p className="text-sm text-white/70" style={SECONDARY_STYLE}>
-                {slide.secondary}
-              </p>
+            {slide.details.length > 0 ? (
+              <div className="flex flex-col gap-1 text-sm text-white/70">
+                {slide.details.map((detail, detailIndex) => (
+                  <p key={`${slide.key}-detail-${detailIndex}`} style={DETAIL_STYLE}>
+                    {detail}
+                  </p>
+                ))}
+              </div>
             ) : null}
           </div>
         </div>
