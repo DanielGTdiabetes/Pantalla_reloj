@@ -435,11 +435,6 @@ const Config = () => {
     return Number.isNaN(parsed) ? undefined : parsed;
   };
 
-  const clampNumber = (value: number | undefined, min: number, max: number) => {
-    if (typeof value !== 'number') return undefined;
-    return Math.min(Math.max(value, min), max);
-  };
-
   const handleSaveConfig = async () => {
     setSavingConfig(true);
     setNotice(null);
@@ -466,32 +461,6 @@ const Config = () => {
         intervalMinutes: parseInteger(form.backgroundIntervalMinutes),
         retainDays: parseInteger(form.backgroundRetainDays),
       },
-    };
-
-    const rotatingInterval = clampNumber(
-      parseInteger(form.rotatingPanelIntervalSeconds),
-      4,
-      30,
-    );
-    const rotatingSections: RotatingPanelSectionKey[] = [];
-    if (form.rotatingPanelSections.weather) rotatingSections.push('weather');
-    if (form.rotatingPanelSections.calendar) rotatingSections.push('calendar');
-    if (form.rotatingPanelSections.season) rotatingSections.push('season');
-
-    const rotatingPanelPatch: {
-      enabled: boolean;
-      sections: RotatingPanelSectionKey[];
-      intervalSeconds?: number;
-    } = {
-      enabled: form.rotatingPanelEnabled,
-      sections: rotatingSections,
-    };
-    if (typeof rotatingInterval === 'number') {
-      rotatingPanelPatch.intervalSeconds = rotatingInterval;
-    }
-
-    patch.ui = {
-      rotatingPanel: rotatingPanelPatch,
     };
 
     try {
