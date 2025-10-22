@@ -37,6 +37,10 @@ XORG_SERVICE_NAME="pantalla-xorg@.service"
 XORG_SERVICE_SRC="$REPO_DIR/system/$XORG_SERVICE_NAME"
 BG_SVC="pantalla-bg-generate.service"
 BG_TIMER="pantalla-bg-generate.timer"
+BG_SYNC_SERVICE="pantalla-bg-sync.service"
+BG_SYNC_PATH="pantalla-bg-sync.path"
+BG_SYNC_SCRIPT_SRC="$REPO_DIR/scripts/pantalla-bg-sync-timer"
+BG_SYNC_SCRIPT_DST="/usr/local/sbin/pantalla-bg-sync-timer"
 
 # ----- Defaults de configuración -----
 TZ_DEFAULT="${TZ_DEFAULT:-Europe/Madrid}"
@@ -599,8 +603,16 @@ Unit=pantalla-bg-generate.service
 WantedBy=timers.target
 TIMER
 
+log "Configurando sincronización automática del timer de fondos IA…"
+install -Dm755 "$BG_SYNC_SCRIPT_SRC" "$BG_SYNC_SCRIPT_DST"
+install -Dm644 "$REPO_DIR/system/$BG_SYNC_SERVICE" "$SYSTEMD_DIR/$BG_SYNC_SERVICE"
+install -Dm644 "$REPO_DIR/system/$BG_SYNC_PATH" "$SYSTEMD_DIR/$BG_SYNC_PATH"
+mkdir -p "$SYSTEMD_DIR/${BG_TIMER}.d"
+
 systemctl daemon-reload
 systemctl enable --now "$BG_TIMER"
+systemctl enable --now "$BG_SYNC_PATH"
+systemctl start "$BG_SYNC_SERVICE"
 
 # ----- Reinicia backend para cargar endpoints nuevos (config/Wi-Fi si los añadiste) -----
 systemctl restart "${BACKEND_SVC_BASENAME}@$APP_USER" || true

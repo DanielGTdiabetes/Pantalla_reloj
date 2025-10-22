@@ -1,0 +1,9 @@
+[Unit]
+Description=Vigila cambios en /etc/pantalla-dash/config.json y re-sincroniza timer
+
+[Path]
+PathChanged=/etc/pantalla-dash/config.json
+Unit=pantalla-bg-sync.service
+
+[Install]
+WantedBy=multi-user.target

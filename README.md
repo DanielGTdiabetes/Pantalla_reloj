@@ -118,18 +118,25 @@ permisos, systemd y endurecimiento.
   }
   ```
 
-- Registra los servicios systemd incluidos en `system/`:
+- Registra los servicios systemd incluidos en `system/` y el script de sincronización:
 
   ```bash
   sudo cp system/pantalla-bg-generate.service /etc/systemd/system/
   sudo cp system/pantalla-bg-generate.timer /etc/systemd/system/
+  sudo cp system/pantalla-bg-sync.service /etc/systemd/system/
+  sudo cp system/pantalla-bg-sync.path /etc/systemd/system/
+  sudo install -Dm755 scripts/pantalla-bg-sync-timer /usr/local/sbin/pantalla-bg-sync-timer
+  sudo mkdir -p /etc/systemd/system/pantalla-bg-generate.timer.d
   sudo cp system/logrotate.d/pantalla-bg /etc/logrotate.d/
   sudo systemctl daemon-reload
   sudo systemctl enable --now pantalla-bg-generate.timer
+  sudo systemctl enable --now pantalla-bg-sync.path
+  sudo systemctl start pantalla-bg-sync.service
   ```
 
-- El temporizador ejecuta el script cada día a las 07:00, 12:00 y 19:00 (hora local) y guarda
-  las imágenes (`.webp`, 1280x720) en `/opt/dash/assets/backgrounds/auto/`,
+- El temporizador se sincroniza automáticamente con `config.background.intervalMinutes`
+  (con valores válidos entre 1 y 1440 minutos) y guarda las imágenes (`.webp`, 1280x720)
+  en `/opt/dash/assets/backgrounds/auto/`,
   manteniendo las últimas 30 o el número de días configurado. El backend expone
   la última imagen en `/api/backgrounds/current` y la UI actualiza el fondo con
   transición suave.
