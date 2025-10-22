@@ -53,5 +53,25 @@
     "name": "Sant Pasqual Baylón",
     "month": 5,
     "day": 17
+  },
+  "news": {
+    "enabled": true,
+    "feeds": [
+      "https://www.elperiodicomediterraneo.com/rss/section/1002",
+      "https://www.xatakaciencia.com/index.xml"
+    ],
+    "maxItemsPerFeed": 5,
+    "cacheTtlSeconds": 900
+  },
+  "ui": {
+    "sideInfo": {
+      "enabled": true,
+      "sections": ["efemerides", "news"],
+      "intervalSeconds": 10,
+      "showSantoralWithEfemerides": true,
+      "news": {
+        "enabled": true
+      }
+    }
   }
 }

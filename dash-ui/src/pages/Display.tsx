@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Background from '../components/Background';
 import ClockPanel from '../components/panels/ClockPanel';
 import WeatherPanel from '../components/panels/WeatherPanel';
-import InfoPanel from '../components/panels/InfoPanel';
+import SideInfoRotator from '../components/SideInfoRotator';
 import { useDashboardConfig } from '../context/DashboardConfigContext';
 import { fetchWeatherToday, type WeatherToday } from '../services/weather';
-import type { RotatingPanelSectionKey } from '../services/config';
+import type { RotatingPanelSectionKey, SideInfoSectionKey } from '../services/config';
 import { useDayBrief } from '../hooks/useDayBrief';
 
 const REFRESH_INTERVAL_MS = 60_000;
@@ -13,12 +13,17 @@ const DEFAULT_ROTATING_SECTIONS: RotatingPanelSectionKey[] = ['calendar', 'seaso
 const DEFAULT_ROTATING_INTERVAL_SECONDS = 7;
 const MIN_ROTATING_INTERVAL_SECONDS = 4;
 const MAX_ROTATING_INTERVAL_SECONDS = 30;
+const DEFAULT_SIDE_SECTIONS: SideInfoSectionKey[] = ['efemerides', 'news'];
+const DEFAULT_SIDE_INTERVAL_SECONDS = 10;
+const MIN_SIDE_INTERVAL_SECONDS = 5;
+const MAX_SIDE_INTERVAL_SECONDS = 30;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
 const ALLOWED_SECTIONS: RotatingPanelSectionKey[] = ['calendar', 'season', 'weekly', 'lunar'];
+const ALLOWED_SIDE_SECTIONS: SideInfoSectionKey[] = ['efemerides', 'news'];
 
 function sanitizeSections(sections: RotatingPanelSectionKey[] | undefined): RotatingPanelSectionKey[] {
   if (!Array.isArray(sections)) return DEFAULT_ROTATING_SECTIONS;
@@ -31,6 +36,31 @@ function sanitizeSections(sections: RotatingPanelSectionKey[] | undefined): Rota
     }
   });
   return valid.length > 0 ? valid : DEFAULT_ROTATING_SECTIONS;
+}
+
+function sanitizeSideSections(
+  sections: SideInfoSectionKey[] | undefined,
+  allowNews: boolean,
+): SideInfoSectionKey[] {
+  const fallback = allowNews ? DEFAULT_SIDE_SECTIONS : (['efemerides'] as SideInfoSectionKey[]);
+  const raw = Array.isArray(sections) && sections.length > 0 ? sections : fallback;
+  const allowed = new Set<SideInfoSectionKey>(['efemerides']);
+  if (allowNews) {
+    allowed.add('news');
+  }
+  const seen = new Set<SideInfoSectionKey>();
+  const normalized: SideInfoSectionKey[] = [];
+  raw.forEach((section) => {
+    if (!ALLOWED_SIDE_SECTIONS.includes(section)) return;
+    if (!allowed.has(section)) return;
+    if (seen.has(section)) return;
+    seen.add(section);
+    normalized.push(section);
+  });
+  if (normalized.length === 0) {
+    normalized.push('efemerides');
+  }
+  return normalized;
 }
 
 const Display = () => {
@@ -79,6 +109,40 @@ const Display = () => {
     };
   }, [config?.ui?.rotatingPanel]);
 
+  const sideInfoSettings = useMemo(() => {
+    const sideInfo = config?.ui?.sideInfo;
+    const enabled = sideInfo?.enabled ?? true;
+    const uiNewsEnabled = sideInfo?.news?.enabled ?? true;
+    const backendNewsEnabled = config?.news?.enabled ?? true;
+    const newsEnabled = uiNewsEnabled && backendNewsEnabled;
+    const sections = sanitizeSideSections(
+      sideInfo?.sections as SideInfoSectionKey[] | undefined,
+      newsEnabled,
+    );
+    const intervalSeconds = clamp(
+      typeof sideInfo?.intervalSeconds === 'number'
+        ? Math.round(sideInfo.intervalSeconds)
+        : DEFAULT_SIDE_INTERVAL_SECONDS,
+      MIN_SIDE_INTERVAL_SECONDS,
+      MAX_SIDE_INTERVAL_SECONDS,
+    );
+    const showSantoral = sideInfo?.showSantoralWithEfemerides ?? true;
+    const newsDisabledNote = !backendNewsEnabled
+      ? 'Servicio de noticias desactivado'
+      : !uiNewsEnabled
+      ? 'Noticias desactivadas en la configuración'
+      : null;
+
+    return {
+      enabled,
+      sections,
+      intervalMs: intervalSeconds * 1000,
+      showSantoral,
+      newsEnabled,
+      newsDisabledNote,
+    };
+  }, [config?.ui?.sideInfo, config?.news?.enabled]);
+
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-black text-white">
       <Background refreshMinutes={config?.background?.intervalMinutes ?? 60} />
@@ -89,7 +153,15 @@ const Display = () => {
             rotatingPanel={rotatingPanelSettings}
           />
           <WeatherPanel weather={weather} />
-          <InfoPanel dayInfo={dayInfo} />
+          <SideInfoRotator
+            enabled={sideInfoSettings.enabled}
+            sections={sideInfoSettings.sections}
+            intervalMs={sideInfoSettings.intervalMs}
+            showSantoralWithEfemerides={sideInfoSettings.showSantoral}
+            dayInfo={dayInfo}
+            newsEnabled={sideInfoSettings.newsEnabled}
+            newsDisabledNote={sideInfoSettings.newsDisabledNote}
+          />
         </div>
       </div>
     </div>

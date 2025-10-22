@@ -71,6 +71,7 @@ export interface StormConfig {
 }
 
 export type RotatingPanelSectionKey = 'calendar' | 'season' | 'weekly' | 'lunar';
+export type SideInfoSectionKey = 'efemerides' | 'news';
 
 export interface RotatingPanelConfig {
   enabled?: boolean;
@@ -78,8 +79,28 @@ export interface RotatingPanelConfig {
   intervalSeconds?: number;
 }
 
+export interface SideInfoNewsConfig {
+  enabled?: boolean;
+}
+
+export interface SideInfoConfig {
+  enabled?: boolean;
+  sections?: SideInfoSectionKey[];
+  intervalSeconds?: number;
+  showSantoralWithEfemerides?: boolean;
+  news?: SideInfoNewsConfig;
+}
+
 export interface UIConfig {
   rotatingPanel?: RotatingPanelConfig;
+  sideInfo?: SideInfoConfig;
+}
+
+export interface NewsConfig {
+  enabled?: boolean;
+  feeds?: string[];
+  maxItemsPerFeed?: number;
+  cacheTtlSeconds?: number;
 }
 
 export interface DashboardConfig {
@@ -94,6 +115,7 @@ export interface DashboardConfig {
   locale?: LocaleConfig;
   patron?: PatronConfig;
   ui?: UIConfig;
+  news?: NewsConfig;
 }
 
 export type ConfigUpdate = Partial<DashboardConfig>;

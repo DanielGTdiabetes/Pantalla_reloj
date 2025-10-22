@@ -16,6 +16,7 @@ import {
   type ConfigEnvelope,
   type ConfigUpdate,
   type RotatingPanelSectionKey,
+  type SideInfoSectionKey,
 } from '../services/config';
 import {
   deleteCalendarFile,
@@ -63,6 +64,30 @@ const ROTATING_PANEL_SECTION_OPTIONS: Array<{
   },
 ];
 
+const SIDE_INFO_SECTION_OPTIONS: Array<{
+  key: SideInfoSectionKey;
+  label: string;
+  description: string;
+}> = [
+  {
+    key: 'efemerides',
+    label: 'Efemérides',
+    description: 'Muestra la efeméride destacada del día y el santoral opcional.',
+  },
+  {
+    key: 'news',
+    label: 'Noticias',
+    description: 'Titulares recientes obtenidos de los feeds RSS configurados.',
+  },
+];
+
+const SIDE_INFO_MIN_INTERVAL_SECONDS = 5;
+const SIDE_INFO_MAX_INTERVAL_SECONDS = 30;
+const DEFAULT_NEWS_FEEDS = [
+  'https://www.elperiodicomediterraneo.com/rss/section/1002',
+  'https://www.xatakaciencia.com/index.xml',
+];
+
 function formatBytes(value: number): string {
   if (value >= 1024 * 1024) {
     return `${(value / (1024 * 1024)).toFixed(1)} MB`;
@@ -96,6 +121,13 @@ interface FormState {
   rotatingPanelEnabled: boolean;
   rotatingPanelIntervalSeconds: string;
   rotatingPanelSections: Record<RotatingPanelSectionKey, boolean>;
+  sideInfoEnabled: boolean;
+  sideInfoIntervalSeconds: string;
+  sideInfoSections: Record<SideInfoSectionKey, boolean>;
+  sideInfoShowSantoral: boolean;
+  sideInfoNewsEnabled: boolean;
+  sideInfoNewsFeeds: string;
+  newsServiceEnabled: boolean;
 }
 
 const DEFAULT_FORM: FormState = {
@@ -121,6 +153,16 @@ const DEFAULT_FORM: FormState = {
     weekly: true,
     lunar: true,
   },
+  sideInfoEnabled: true,
+  sideInfoIntervalSeconds: '10',
+  sideInfoSections: {
+    efemerides: true,
+    news: true,
+  },
+  sideInfoShowSantoral: true,
+  sideInfoNewsEnabled: true,
+  sideInfoNewsFeeds: DEFAULT_NEWS_FEEDS.join('\n'),
+  newsServiceEnabled: true,
 };
 
 const Config = () => {
@@ -219,6 +261,30 @@ const Config = () => {
     });
     const hasCustomSections = sectionSet.size > 0;
 
+    const sideInfo = (ui.sideInfo as Record<string, any> | undefined) ?? {};
+    const sideInfoNews = (sideInfo.news as Record<string, any> | undefined) ?? {};
+    const newsConfig = (configData.news as Record<string, any> | undefined) ?? {};
+
+    const sideSectionsArray = Array.isArray(sideInfo.sections) ? sideInfo.sections : [];
+    const allowedSideSections = new Set<SideInfoSectionKey>(
+      SIDE_INFO_SECTION_OPTIONS.map((option) => option.key),
+    );
+    const sideSectionSet = new Set<SideInfoSectionKey>();
+    sideSectionsArray.forEach((value) => {
+      if (allowedSideSections.has(value as SideInfoSectionKey)) {
+        sideSectionSet.add(value as SideInfoSectionKey);
+      }
+    });
+    const hasCustomSideSections = sideSectionSet.size > 0;
+
+    const newsFeedsList = Array.isArray(newsConfig.feeds)
+      ? newsConfig.feeds
+          .map((item) => (typeof item === 'string' ? item.trim() : ''))
+          .filter((item) => item.length > 0)
+      : [];
+    const hasFeedsField =
+      newsConfig && typeof newsConfig === 'object' && Object.prototype.hasOwnProperty.call(newsConfig, 'feeds');
+
     return {
       aemetApiKey: typeof aemet.apiKey === 'string' ? aemet.apiKey : '',
       aemetMunicipioId: typeof aemet.municipioId === 'string' ? aemet.municipioId : '',
@@ -264,6 +330,39 @@ const Config = () => {
         }),
         {} as Record<RotatingPanelSectionKey, boolean>,
       ),
+      sideInfoEnabled:
+        typeof sideInfo.enabled === 'boolean' ? sideInfo.enabled : DEFAULT_FORM.sideInfoEnabled,
+      sideInfoIntervalSeconds:
+        typeof sideInfo.intervalSeconds === 'number'
+          ? String(sideInfo.intervalSeconds)
+          : DEFAULT_FORM.sideInfoIntervalSeconds,
+      sideInfoSections: SIDE_INFO_SECTION_OPTIONS.reduce(
+        (acc, option) => ({
+          ...acc,
+          [option.key]: hasCustomSideSections
+            ? sideSectionSet.has(option.key)
+            : DEFAULT_FORM.sideInfoSections[option.key],
+        }),
+        {} as Record<SideInfoSectionKey, boolean>,
+      ),
+      sideInfoShowSantoral:
+        typeof sideInfo.showSantoralWithEfemerides === 'boolean'
+          ? sideInfo.showSantoralWithEfemerides
+          : DEFAULT_FORM.sideInfoShowSantoral,
+      sideInfoNewsEnabled:
+        typeof sideInfoNews.enabled === 'boolean'
+          ? sideInfoNews.enabled
+          : DEFAULT_FORM.sideInfoNewsEnabled,
+      sideInfoNewsFeeds:
+        newsFeedsList.length > 0
+          ? newsFeedsList.join('\n')
+          : hasFeedsField
+          ? ''
+          : DEFAULT_FORM.sideInfoNewsFeeds,
+      newsServiceEnabled:
+        typeof newsConfig.enabled === 'boolean'
+          ? newsConfig.enabled
+          : DEFAULT_FORM.newsServiceEnabled,
     };
   }, []);
 
@@ -497,6 +596,21 @@ const Config = () => {
     }));
   };
 
+  const handleSideInfoSectionToggle = (section: SideInfoSectionKey, value: boolean) => {
+    setForm((prev) => ({
+      ...prev,
+      sideInfoSections: { ...prev.sideInfoSections, [section]: value },
+    }));
+  };
+
+  const handleSideInfoNewsToggle = (value: boolean) => {
+    setForm((prev) => ({
+      ...prev,
+      sideInfoNewsEnabled: value,
+      newsServiceEnabled: value,
+    }));
+  };
+
   const validateCalendarFile = (file: File): string | null => {
     if (!file) return 'Selecciona un archivo .ics';
     const hasValidExtension = file.name.toLowerCase().endsWith('.ics');
@@ -658,6 +772,34 @@ const Config = () => {
   const handleSaveConfig = async () => {
     setSavingConfig(true);
     setNotice(null);
+
+    const feedList = Array.from(
+      new Set(
+        form.sideInfoNewsFeeds
+          .split(/\r?\n/)
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0),
+      ),
+    );
+
+    const invalidFeed = feedList.find((feed) => {
+      try {
+        const url = new URL(feed);
+        return !(url.protocol === 'http:' || url.protocol === 'https:');
+      } catch (error) {
+        return true;
+      }
+    });
+
+    if (invalidFeed) {
+      setNotice({
+        type: 'error',
+        text: `Feed RSS inválido: ${invalidFeed}`,
+      });
+      setSavingConfig(false);
+      return;
+    }
+
     const patch: ConfigUpdate = {
       aemet: {
         apiKey: form.aemetApiKey || undefined,
@@ -707,8 +849,43 @@ const Config = () => {
       rotatingPanelPatch.intervalSeconds = rotatingInterval;
     }
 
+    const sideInfoSectionsSelected: SideInfoSectionKey[] = SIDE_INFO_SECTION_OPTIONS.filter(
+      (option) => form.sideInfoSections[option.key],
+    ).map((option) => option.key);
+    if (sideInfoSectionsSelected.length === 0) {
+      sideInfoSectionsSelected.push('efemerides');
+    }
+
+    const sideInterval = clampNumber(
+      parseInteger(form.sideInfoIntervalSeconds),
+      SIDE_INFO_MIN_INTERVAL_SECONDS,
+      SIDE_INFO_MAX_INTERVAL_SECONDS,
+    );
+
+    const sideInfoPatch: {
+      enabled: boolean;
+      sections: SideInfoSectionKey[];
+      intervalSeconds?: number;
+      showSantoralWithEfemerides: boolean;
+      news: { enabled: boolean };
+    } = {
+      enabled: form.sideInfoEnabled,
+      sections: sideInfoSectionsSelected,
+      showSantoralWithEfemerides: form.sideInfoShowSantoral,
+      news: { enabled: form.sideInfoNewsEnabled },
+    };
+    if (typeof sideInterval === 'number') {
+      sideInfoPatch.intervalSeconds = sideInterval;
+    }
+
     patch.ui = {
       rotatingPanel: rotatingPanelPatch,
+      sideInfo: sideInfoPatch,
+    };
+
+    patch.news = {
+      enabled: form.newsServiceEnabled,
+      feeds: feedList,
     };
 
     try {
@@ -1302,6 +1479,130 @@ const Config = () => {
                     {connectingWifi ? 'Conectando…' : 'Conectar' }
                   </button>
                 </div>
+              </div>
+            </GlassPanel>
+
+            <GlassPanel className="gap-6">
+              <div>
+                <h2 className="text-lg font-medium text-white/85">Panel Efemérides/Noticias</h2>
+                <p className="text-sm text-white/55">
+                  Configura el panel lateral que alterna efemérides, santoral y titulares RSS.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-5">
+                <label className="flex items-center gap-3 text-sm text-white/75">
+                  <input
+                    type="checkbox"
+                    checked={form.sideInfoEnabled}
+                    onChange={(event) => handleFormChange('sideInfoEnabled', event.target.checked)}
+                    className="h-4 w-4 rounded border-white/30 bg-white/10 text-emerald-400 focus:ring-emerald-400"
+                  />
+                  Panel activo
+                </label>
+
+                <div>
+                  <label className="block text-xs uppercase tracking-wide text-white/50">
+                    Intervalo (segundos)
+                  </label>
+                  <input
+                    type="number"
+                    min={SIDE_INFO_MIN_INTERVAL_SECONDS}
+                    max={SIDE_INFO_MAX_INTERVAL_SECONDS}
+                    className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                    value={form.sideInfoIntervalSeconds}
+                    onChange={(event) => handleFormChange('sideInfoIntervalSeconds', event.target.value)}
+                    disabled={!form.sideInfoEnabled}
+                  />
+                  <p className="mt-1 text-xs text-white/45">Rango permitido: 5-30 segundos.</p>
+                </div>
+
+                <label className="flex items-center gap-3 text-sm text-white/75">
+                  <input
+                    type="checkbox"
+                    checked={form.sideInfoShowSantoral}
+                    onChange={(event) => handleFormChange('sideInfoShowSantoral', event.target.checked)}
+                    className="h-4 w-4 rounded border-white/30 bg-white/10 text-emerald-400 focus:ring-emerald-400"
+                    disabled={!form.sideInfoEnabled}
+                  />
+                  Mostrar santoral junto a efemérides
+                </label>
+
+                <div>
+                  <span className="block text-xs uppercase tracking-wide text-white/50">Secciones visibles</span>
+                  <div className="mt-3 flex flex-col gap-3 md:flex-row md:flex-wrap">
+                    {SIDE_INFO_SECTION_OPTIONS.map((option) => {
+                      const checked = form.sideInfoSections[option.key];
+                      return (
+                        <label
+                          key={option.key}
+                          className={`flex flex-1 min-w-[220px] cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 transition ${
+                            checked
+                              ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-50'
+                              : 'border-white/15 bg-white/5 text-white/80 hover:border-white/30 hover:bg-white/10'
+                          } ${!form.sideInfoEnabled ? 'cursor-not-allowed opacity-60 hover:border-white/15 hover:bg-white/5' : ''}`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-1 h-4 w-4 rounded border-white/30 bg-white/10 text-emerald-400 focus:ring-emerald-400"
+                            checked={checked}
+                            onChange={(event) => handleSideInfoSectionToggle(option.key, event.target.checked)}
+                            disabled={!form.sideInfoEnabled}
+                          />
+                          <span className="flex flex-col">
+                            <span className="text-sm font-medium text-white/90">{option.label}</span>
+                            <span className="text-xs text-white/55">{option.description}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
+                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h3 className="text-sm font-medium text-white/85">Noticias</h3>
+                    <p className="text-xs text-white/55">
+                      Activa los titulares y define los feeds RSS a consultar.
+                    </p>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-white/75">
+                    <input
+                      type="checkbox"
+                      checked={form.sideInfoNewsEnabled}
+                      onChange={(event) => handleSideInfoNewsToggle(event.target.checked)}
+                      className="h-4 w-4 rounded border-white/30 bg-white/10 text-emerald-400 focus:ring-emerald-400"
+                      disabled={!form.sideInfoEnabled}
+                    />
+                    Activar noticias
+                  </label>
+                </div>
+                <div>
+                  <label className="block text-xs uppercase tracking-wide text-white/50">
+                    Feeds RSS (uno por línea)
+                  </label>
+                  <textarea
+                    className="mt-2 h-28 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                    value={form.sideInfoNewsFeeds}
+                    onChange={(event) => handleFormChange('sideInfoNewsFeeds', event.target.value)}
+                    placeholder={DEFAULT_NEWS_FEEDS.join('\n')}
+                    disabled={!form.sideInfoEnabled}
+                  />
+                  <p className="mt-1 text-xs text-white/45">Solo URLs válidas con http o https.</p>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleSaveConfig}
+                  className="rounded-lg bg-white/15 px-4 py-2 text-sm font-medium text-white shadow-md transition hover:bg-white/25"
+                  disabled={savingConfig || loading}
+                >
+                  {savingConfig ? 'Guardando…' : 'Guardar cambios'}
+                </button>
               </div>
             </GlassPanel>
 

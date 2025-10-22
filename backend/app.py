@@ -66,6 +66,7 @@ from backend.services.offline_state import (
     record_provider_failure,
     record_provider_success,
 )
+from backend.services.news import NewsServiceError, news_service
 
 logger = logging.getLogger("pantalla.backend")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
@@ -1307,6 +1308,19 @@ async def day_brief(date: str | None = None) -> Dict[str, Any]:
     except Exception as exc:  # pragma: no cover - dependencias externas
         logger.exception("Error al generar day brief para %s", target)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/news/headlines")
+async def news_headlines() -> Dict[str, Any]:
+    try:
+        return await news_service.get_headlines()
+    except NewsServiceError as exc:
+        logger.warning("Fallo al obtener noticias: %s", exc)
+        return {
+            "items": [],
+            "updated_at": int(datetime.now(tz=timezone.utc).timestamp()),
+            "note": str(exc),
+        }
 
 
 @app.get("/api/config/status")
