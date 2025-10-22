@@ -2,8 +2,8 @@
 Description=Timer fondos IA (dinámico por config.json)
 
 [Timer]
-OnBootSec=1min
-OnUnitActiveSec=360min
+OnBootSec=30s
+OnUnitActiveSec=60min
 Unit=pantalla-bg-generate.service
 
 [Install]

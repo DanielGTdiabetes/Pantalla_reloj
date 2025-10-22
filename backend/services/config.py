@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, MutableMapping, Optional
 
@@ -24,6 +26,17 @@ class ExtraAllowModel(BaseModel):
 class AemetConfig(ExtraAllowModel):
     apiKey: Optional[str] = Field(default=None, alias="apiKey")
     municipioId: str = Field(default="28079", alias="municipioId", min_length=1)
+
+    @validator("apiKey")
+    def normalize_api_key(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized or normalized.upper() == "AEMET_API_KEY_PLACEHOLDER":
+            return None
+        if not re.fullmatch(r"[0-9A-Fa-f]{32}", normalized):
+            raise ValueError("apiKey debe contener 32 caracteres hexadecimales")
+        return normalized
 
 class WeatherConfig(ExtraAllowModel):
     units: str = Field(default="metric")
@@ -182,6 +195,8 @@ class PatronConfig(ExtraAllowModel):
 
 
 class AppConfig(ExtraAllowModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
     aemet: Optional[AemetConfig] = None
     weather: Optional[WeatherConfig] = None
     storm: Optional[StormConfig] = None
@@ -284,7 +299,7 @@ def read_config() -> AppConfig:
         data = json.load(f)
 
     try:
-        return AppConfig.parse_obj(data)
+        return AppConfig.model_validate(data)
     except ValidationError as exc:
         logger.error("Invalid configuration: %s", exc)
         raise
@@ -302,7 +317,22 @@ def _deep_merge(original: MutableMapping[str, Any], updates: MutableMapping[str,
 def update_config(payload: Dict[str, Any]) -> AppConfig:
     """Update a subset of the configuration while keeping the rest intact."""
     config = read_config()
-    data = config.dict(by_alias=True, exclude_none=True)
+    base_data: Dict[str, Any] = {}
+    source_candidates = [CONFIG_PATH, EXAMPLE_CONFIG_PATH]
+    for candidate in source_candidates:
+        if candidate.exists():
+            try:
+                with candidate.open("r", encoding="utf-8") as handle:
+                    raw = json.load(handle)
+                    if isinstance(raw, dict):
+                        base_data = raw
+                        break
+            except (OSError, json.JSONDecodeError):
+                logger.warning("No se pudo leer configuración desde %s", candidate, exc_info=True)
+    if not base_data:
+        base_data = config.dict(by_alias=True, exclude_none=True)
+
+    data = copy.deepcopy(base_data)
     allowed_fields = {
         "aemet": {"apiKey", "municipioId"},
         "weather": {"city", "units"},
@@ -367,13 +397,21 @@ def update_config(payload: Dict[str, Any]) -> AppConfig:
         ):
             merged["calendar"]["mode"] = config.calendar.mode
 
-    updated = AppConfig.parse_obj(merged)
+    updated = AppConfig.model_validate(merged)
+    canonical = updated.dict(by_alias=True, exclude_none=True)
+    serialized = copy.deepcopy(merged)
+    _deep_merge(serialized, canonical)
+    aemet_section = serialized.get("aemet")
+    if isinstance(aemet_section, dict):
+        api_key_value = aemet_section.get("apiKey")
+        if not api_key_value or str(api_key_value).strip().upper() == "AEMET_API_KEY_PLACEHOLDER":
+            aemet_section.pop("apiKey", None)
 
     if CONFIG_PATH.exists() or CONFIG_PATH.parent.exists():
         _ensure_parent_permissions(CONFIG_PATH)
         tmp_path = CONFIG_PATH.with_suffix(".tmp")
         with tmp_path.open("w", encoding="utf-8") as f:
-            json.dump(updated.dict(by_alias=True, exclude_none=True), f, indent=2, ensure_ascii=False)
+            json.dump(serialized, f, indent=2, ensure_ascii=False)
         os.chmod(tmp_path, 0o600)
         tmp_path.replace(CONFIG_PATH)
     else:
