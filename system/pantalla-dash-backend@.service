@@ -9,6 +9,11 @@ SupplementaryGroups=pantalla
 WorkingDirectory=__REPO_DIR__
 EnvironmentFile=-/etc/pantalla-dash/backend.env
 Environment="PYTHONUNBUFFERED=1"
+PermissionsStartOnly=yes
+ExecStartPre=/usr/bin/install -d -o %i -g pantalla -m 775 /var/cache/pantalla-dash
+ExecStartPre=/usr/bin/install -d -o %i -g pantalla -m 775 /var/cache/pantalla-dash/radar
+ExecStartPre=/usr/bin/install -d -o %i -g pantalla -m 775 __REPO_DIR__/backend/storage
+ExecStartPre=/usr/bin/install -d -o %i -g pantalla -m 775 __REPO_DIR__/backend/storage/cache
 ExecStart=/bin/bash -lc 'source backend/.venv/bin/activate && uvicorn backend.app:app --host 127.0.0.1 --port 8081 --workers 2 --timeout-keep-alive 30'
 Restart=always
 RestartSec=2

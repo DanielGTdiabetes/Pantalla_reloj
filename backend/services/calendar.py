@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time as dt_time, timedelta, timezone
 from pathlib import Path
 from time import monotonic
-from typing import Dict, List, Optional, Tuple
+from typing import Awaitable, Callable, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -40,12 +40,16 @@ class CalendarService:
             return []
 
         today = datetime.now(tz=self._timezone).date()
+        loader: Callable[[str], Awaitable[str]]
+        loader_arg: str
         if config.mode == "ics" and config.icsPath:
             cache_key = self._cache_key_for_path(config.icsPath, today)
-            payload = await self._load_from_path(config.icsPath)
+            loader = self._load_from_path
+            loader_arg = config.icsPath
         elif config.mode == "url" and config.url:
             cache_key = f"{config.url}|{today.isoformat()}"
-            payload = await self._load_from_url(str(config.url))
+            loader = self._load_from_url
+            loader_arg = str(config.url)
         else:
             return []
 
@@ -54,12 +58,14 @@ class CalendarService:
         if cached and now_monotonic - cached[0] < 300:
             return cached[1]
 
+        payload = await loader(loader_arg)
+
         events = self._parse_ics(payload)
         filtered = self._filter_for_day(events, today)
         filtered.sort(key=lambda event: event.start)
         limit = max(1, min(config.maxEvents or 3, 10))
         limited = filtered[:limit]
-        self._cache[cache_key] = (now_monotonic, limited)
+        self._cache[cache_key] = (monotonic(), limited)
         return limited
 
     async def _load_from_url(self, url: str) -> str:

@@ -411,6 +411,13 @@ else
 fi
 
 log "Preparando backend (venv + deps)…"
+
+log "Asegurando directorios de caché y almacenamiento…"
+install -d -m 775 -o "$APP_USER" -g pantalla /var/cache/pantalla-dash
+install -d -m 775 -o "$APP_USER" -g pantalla /var/cache/pantalla-dash/radar
+install -d -m 775 -o "$APP_USER" -g pantalla "$BACKEND_DIR/storage"
+install -d -m 775 -o "$APP_USER" -g pantalla "$BACKEND_DIR/storage/cache"
+
 cd "$BACKEND_DIR"
 sudo -u "$APP_USER" bash -lc "python3 -m venv .venv"
 # Verificar que requirements.txt existe, sino instalar manualmente
@@ -418,7 +425,7 @@ if [[ -f "requirements.txt" ]]; then
   sudo -u "$APP_USER" bash -lc "source .venv/bin/activate && pip install -U pip && pip install -r requirements.txt"
 else
   log "requirements.txt no encontrado, instalando dependencias manualmente..."
-  sudo -u "$APP_USER" bash -lc "source .venv/bin/activate && pip install -U pip && pip install fastapi uvicorn httpx pydantic requests python-dateutil Jinja2 openai pillow"
+  sudo -u "$APP_USER" bash -lc "source .venv/bin/activate && pip install -U pip && pip install fastapi uvicorn httpx pydantic python-multipart requests python-dateutil Jinja2 openai pillow"
 fi
 
 log "Servicio backend templated…"
