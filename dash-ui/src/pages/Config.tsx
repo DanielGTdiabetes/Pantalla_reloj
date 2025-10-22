@@ -7,6 +7,7 @@ import {
   saveSecretsPatch,
   type ConfigEnvelope,
   type ConfigUpdate,
+  type RotatingPanelSectionKey,
 } from '../services/config';
 import {
   deleteCalendarFile,
@@ -19,6 +20,28 @@ import { useDashboardConfig } from '../context/DashboardConfigContext';
 
 const MAX_CALENDAR_FILE_BYTES = 5 * 1024 * 1024;
 const ACCEPTED_CALENDAR_TYPES = ['text/calendar', 'text/plain', 'application/octet-stream'];
+
+const ROTATING_PANEL_SECTION_OPTIONS: Array<{
+  key: RotatingPanelSectionKey;
+  label: string;
+  description: string;
+}> = [
+  {
+    key: 'weather',
+    label: 'Clima',
+    description: 'Resumen meteorológico actual y probabilidad de lluvia.',
+  },
+  {
+    key: 'calendar',
+    label: 'Calendario',
+    description: 'Efemérides, santoral y festivos del día.',
+  },
+  {
+    key: 'season',
+    label: 'Temporada',
+    description: 'Frutas y hortalizas recomendadas del mes.',
+  },
+];
 
 function formatBytes(value: number): string {
   if (value >= 1024 * 1024) {
@@ -48,6 +71,9 @@ interface FormState {
   backgroundMode: 'daily' | 'weather';
   backgroundIntervalMinutes: string;
   backgroundRetainDays: string;
+  rotatingPanelEnabled: boolean;
+  rotatingPanelIntervalSeconds: string;
+  rotatingPanelSections: Record<'weather' | 'calendar' | 'season', boolean>;
 }
 
 const DEFAULT_FORM: FormState = {
@@ -63,6 +89,13 @@ const DEFAULT_FORM: FormState = {
   backgroundMode: 'daily',
   backgroundIntervalMinutes: '60',
   backgroundRetainDays: '7',
+  rotatingPanelEnabled: true,
+  rotatingPanelIntervalSeconds: '7',
+  rotatingPanelSections: {
+    weather: true,
+    calendar: true,
+    season: true,
+  },
 };
 
 const Config = () => {
@@ -114,6 +147,8 @@ const Config = () => {
     const weather = (configData.weather as Record<string, any> | undefined) ?? {};
     const calendar = (configData.calendar as Record<string, any> | undefined) ?? {};
     const background = (configData.background as Record<string, any> | undefined) ?? {};
+    const ui = (configData.ui as Record<string, any> | undefined) ?? {};
+    const rotating = (ui.rotatingPanel as Record<string, any> | undefined) ?? {};
 
     const modeValue = typeof calendar.mode === 'string' ? calendar.mode.toLowerCase() : '';
     const calendarMode: 'url' | 'ics' = modeValue === 'ics'
@@ -129,6 +164,15 @@ const Config = () => {
         : typeof calendar.icsUrl === 'string'
         ? calendar.icsUrl
         : '';
+
+    const sectionsArray = Array.isArray(rotating.sections) ? rotating.sections : [];
+    const sectionSet = new Set<RotatingPanelSectionKey>();
+    sectionsArray.forEach((value) => {
+      if (value === 'weather' || value === 'calendar' || value === 'season') {
+        sectionSet.add(value);
+      }
+    });
+    const hasCustomSections = sectionSet.size > 0;
 
     return {
       aemetApiKey: typeof aemet.apiKey === 'string' ? aemet.apiKey : '',
@@ -153,6 +197,25 @@ const Config = () => {
         typeof background.retainDays === 'number'
           ? String(background.retainDays)
           : DEFAULT_FORM.backgroundRetainDays,
+      rotatingPanelEnabled:
+        typeof rotating.enabled === 'boolean'
+          ? rotating.enabled
+          : DEFAULT_FORM.rotatingPanelEnabled,
+      rotatingPanelIntervalSeconds:
+        typeof rotating.intervalSeconds === 'number'
+          ? String(rotating.intervalSeconds)
+          : DEFAULT_FORM.rotatingPanelIntervalSeconds,
+      rotatingPanelSections: {
+        weather: hasCustomSections
+          ? sectionSet.has('weather')
+          : DEFAULT_FORM.rotatingPanelSections.weather,
+        calendar: hasCustomSections
+          ? sectionSet.has('calendar')
+          : DEFAULT_FORM.rotatingPanelSections.calendar,
+        season: hasCustomSections
+          ? sectionSet.has('season')
+          : DEFAULT_FORM.rotatingPanelSections.season,
+      },
     };
   }, []);
 
@@ -215,6 +278,13 @@ const Config = () => {
 
   const handleCalendarModeChange = (mode: 'url' | 'ics') => {
     setForm((prev) => ({ ...prev, calendarMode: mode }));
+  };
+
+  const handleRotatingSectionToggle = (section: RotatingPanelSectionKey, value: boolean) => {
+    setForm((prev) => ({
+      ...prev,
+      rotatingPanelSections: { ...prev.rotatingPanelSections, [section]: value },
+    }));
   };
 
   const validateCalendarFile = (file: File): string | null => {
@@ -365,6 +435,11 @@ const Config = () => {
     return Number.isNaN(parsed) ? undefined : parsed;
   };
 
+  const clampNumber = (value: number | undefined, min: number, max: number) => {
+    if (typeof value !== 'number') return undefined;
+    return Math.min(Math.max(value, min), max);
+  };
+
   const handleSaveConfig = async () => {
     setSavingConfig(true);
     setNotice(null);
@@ -391,6 +466,32 @@ const Config = () => {
         intervalMinutes: parseInteger(form.backgroundIntervalMinutes),
         retainDays: parseInteger(form.backgroundRetainDays),
       },
+    };
+
+    const rotatingInterval = clampNumber(
+      parseInteger(form.rotatingPanelIntervalSeconds),
+      4,
+      30,
+    );
+    const rotatingSections: RotatingPanelSectionKey[] = [];
+    if (form.rotatingPanelSections.weather) rotatingSections.push('weather');
+    if (form.rotatingPanelSections.calendar) rotatingSections.push('calendar');
+    if (form.rotatingPanelSections.season) rotatingSections.push('season');
+
+    const rotatingPanelPatch: {
+      enabled: boolean;
+      sections: RotatingPanelSectionKey[];
+      intervalSeconds?: number;
+    } = {
+      enabled: form.rotatingPanelEnabled,
+      sections: rotatingSections,
+    };
+    if (typeof rotatingInterval === 'number') {
+      rotatingPanelPatch.intervalSeconds = rotatingInterval;
+    }
+
+    patch.ui = {
+      rotatingPanel: rotatingPanelPatch,
     };
 
     try {
@@ -906,6 +1007,88 @@ const Config = () => {
                     {connectingWifi ? 'Conectando…' : 'Conectar' }
                   </button>
                 </div>
+              </div>
+            </GlassPanel>
+
+            <GlassPanel className="gap-6">
+              <div>
+                <h2 className="text-lg font-medium text-white/85">Panel rotativo</h2>
+                <p className="text-sm text-white/55">
+                  Configura el carrusel que alterna clima, calendario y temporada en la pantalla principal.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-5">
+                <label className="flex items-center gap-3 text-sm text-white/75">
+                  <input
+                    type="checkbox"
+                    checked={form.rotatingPanelEnabled}
+                    onChange={(event) => handleFormChange('rotatingPanelEnabled', event.target.checked)}
+                    className="h-4 w-4 rounded border-white/30 bg-white/10 text-emerald-400 focus:ring-emerald-400"
+                  />
+                  Panel activo
+                </label>
+
+                <div>
+                  <label className="block text-xs uppercase tracking-wide text-white/50">
+                    Intervalo (segundos)
+                  </label>
+                  <input
+                    type="number"
+                    min={4}
+                    max={30}
+                    className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                    value={form.rotatingPanelIntervalSeconds}
+                    onChange={(event) => handleFormChange('rotatingPanelIntervalSeconds', event.target.value)}
+                    disabled={!form.rotatingPanelEnabled}
+                  />
+                  <p className="mt-1 text-xs text-white/45">Rango permitido: 4-30 segundos.</p>
+                </div>
+
+                <div>
+                  <span className="block text-xs uppercase tracking-wide text-white/50">Secciones visibles</span>
+                  <div className="mt-3 flex flex-col gap-3 md:flex-row md:flex-wrap">
+                    {ROTATING_PANEL_SECTION_OPTIONS.map((option) => {
+                      const checked = form.rotatingPanelSections[option.key];
+                      return (
+                        <label
+                          key={option.key}
+                          className={`flex flex-1 min-w-[220px] cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 transition ${
+                            checked
+                              ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-50'
+                              : 'border-white/15 bg-white/5 text-white/80 hover:border-white/30 hover:bg-white/10'
+                          } ${!form.rotatingPanelEnabled ? 'cursor-not-allowed opacity-60 hover:border-white/15 hover:bg-white/5' : ''}`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-1 h-4 w-4 rounded border-white/30 bg-white/10 text-emerald-400 focus:ring-emerald-400"
+                            checked={checked}
+                            onChange={(event) => handleRotatingSectionToggle(option.key, event.target.checked)}
+                            disabled={!form.rotatingPanelEnabled}
+                          />
+                          <span className="flex flex-col">
+                            <span className="text-sm font-medium text-white/90">{option.label}</span>
+                            <span className="text-xs text-white/55">{option.description}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-2 text-xs text-white/50">
+                    Las secciones sin datos se ocultarán automáticamente hasta que estén disponibles.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleSaveConfig}
+                  className="rounded-lg bg-white/15 px-4 py-2 text-sm font-medium text-white shadow-md transition hover:bg-white/25"
+                  disabled={savingConfig || loading}
+                >
+                  {savingConfig ? 'Guardando…' : 'Guardar cambios'}
+                </button>
               </div>
             </GlassPanel>
           </div>
