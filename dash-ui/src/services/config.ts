@@ -66,6 +66,18 @@ export interface StormConfig {
   enableExperimentalLightning?: boolean;
 }
 
+export type RotatingPanelSectionKey = 'weather' | 'calendar' | 'season';
+
+export interface RotatingPanelConfig {
+  enabled?: boolean;
+  sections?: RotatingPanelSectionKey[];
+  intervalSeconds?: number;
+}
+
+export interface UIConfig {
+  rotatingPanel?: RotatingPanelConfig;
+}
+
 export interface DashboardConfig {
   aemet?: AemetConfig;
   weather?: WeatherConfig;
@@ -77,6 +89,7 @@ export interface DashboardConfig {
   storm?: StormConfig;
   locale?: LocaleConfig;
   patron?: PatronConfig;
+  ui?: UIConfig;
 }
 
 export type ConfigUpdate = Partial<DashboardConfig>;

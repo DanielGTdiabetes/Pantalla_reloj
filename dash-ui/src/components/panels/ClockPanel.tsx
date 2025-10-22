@@ -1,12 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import GlassPanel from '../GlassPanel';
-import type { LocaleConfig } from '../../services/config';
+import RotatingInfoPanel from '../RotatingInfoPanel';
+import type { LocaleConfig, RotatingPanelSectionKey } from '../../services/config';
+import type { WeatherToday } from '../../services/weather';
+import type { DayInfoPayload } from '../../services/dayinfo';
 
 interface ClockPanelProps {
   locale?: LocaleConfig;
+  weather?: WeatherToday | null;
+  dayInfo?: DayInfoPayload | null;
+  rotatingPanel?: {
+    enabled: boolean;
+    sections: RotatingPanelSectionKey[];
+    intervalMs: number;
+    height?: number;
+  };
 }
 
-const ClockPanel = ({ locale }: ClockPanelProps) => {
+const ClockPanel = ({ locale, weather, dayInfo, rotatingPanel }: ClockPanelProps) => {
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -58,8 +69,14 @@ const ClockPanel = ({ locale }: ClockPanelProps) => {
   const formattedSeconds = useMemo(() => secondsFormatter.format(now), [secondsFormatter, now]);
   const formattedDate = useMemo(() => dateFormatter.format(now), [dateFormatter, now]);
 
+  const activeRotatingPanel =
+    rotatingPanel && rotatingPanel.enabled && rotatingPanel.sections.length > 0
+      ? rotatingPanel
+      : null;
+  const showRotatingPanel = Boolean(activeRotatingPanel);
+
   return (
-    <GlassPanel className="justify-center">
+    <GlassPanel className={`justify-between ${showRotatingPanel ? 'gap-6' : 'gap-4'}`}>
       <div className="flex flex-col gap-2">
         <div className="text-[112px] font-light leading-none tracking-tight text-white/95">
           <span>{formattedTime}</span>
@@ -67,6 +84,15 @@ const ClockPanel = ({ locale }: ClockPanelProps) => {
         </div>
         <div className="text-2xl capitalize text-white/80">{formattedDate}</div>
       </div>
+      {activeRotatingPanel ? (
+        <RotatingInfoPanel
+          sections={activeRotatingPanel.sections}
+          intervalMs={activeRotatingPanel.intervalMs}
+          height={activeRotatingPanel.height}
+          weather={weather}
+          dayInfo={dayInfo}
+        />
+      ) : null}
     </GlassPanel>
   );
 };
