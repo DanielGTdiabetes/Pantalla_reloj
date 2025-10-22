@@ -320,6 +320,11 @@ log "Creando grupos/rutas y permisos…"
 groupadd -f pantalla
 install -d -m 2770 -o root -g pantalla "$ENV_DIR"
 mkdir -p "$ASSETS_DIR" "$LOG_DIR" /opt/dash/assets
+install -d -m 755 -o root -g root "$ENV_DIR/calendar"
+chmod 755 "$LOG_DIR"
+touch "$LOG_DIR/calendar.log"
+chown root:root "$LOG_DIR/calendar.log"
+chmod 644 "$LOG_DIR/calendar.log"
 chown -R "$APP_USER:$APP_USER" /opt/dash
 chmod 755 /opt/dash /opt/dash/assets
 touch "$LOG_DIR/bg.log"

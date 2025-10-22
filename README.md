@@ -55,6 +55,16 @@ Desde la UI puedes:
 - Gestionar Wi-Fi (escanear, conectar, olvidar y ver estado).
 - Seleccionar voz local y volumen TTS, lanzar prueba de voz.
 - Ajustar intervalo, modo y retención de fondos AI junto al tema (sincronizado con backend).
+- Activar el calendario y elegir si se carga desde una URL ICS o desde un archivo local `.ics`.
+
+### Calendario (URL o archivo .ics)
+
+- Desde `/#/config` selecciona la pestaña **URL ICS** para pegar la dirección remota o **Archivo .ics** para subir un fichero local.
+- Al subir un archivo se envía una petición `POST /api/calendar/upload` (multipart) con validación de tamaño ≤5 MB, extensión `.ics`/`text/calendar` y contenido mínimo (`BEGIN:VCALENDAR`…`END:VCALENDAR`).
+- El backend guarda el archivo en `/etc/pantalla-dash/calendar/calendar.ics` (permisos `0644`, directorio `0755`) y actualiza `config.calendar` con `mode="ics"` y la ruta persistida.
+- Puedes descargar el archivo almacenado con `GET /api/calendar/download` o eliminarlo vía `DELETE /api/calendar/file` (se renombra a `.bak` con sello temporal y se vuelve al modo URL si existe una dirección configurada).
+- `GET /api/calendar/status` devuelve `{ mode, url, icsPath, exists, size, mtime }` para sincronizar la UI y mostrar la fecha/tamaño de la última carga.
+- Todos los eventos se registran en `/var/log/pantalla-dash/calendar.log` para auditar subidas, eliminaciones y errores.
 
 ## Backend (FastAPI)
 

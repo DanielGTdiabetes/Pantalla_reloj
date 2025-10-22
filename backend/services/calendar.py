@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, time as dt_time, timedelta, timezone
+from pathlib import Path
 from time import monotonic
 from typing import Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
@@ -35,29 +36,60 @@ class CalendarService:
         await self._client.aclose()
 
     async def events_for_today(self, config: Optional[CalendarConfig]) -> List[ParsedCalendarEvent]:
-        if not config or not config.enabled or not config.icsUrl:
+        if not config or not config.enabled:
             return []
 
         today = datetime.now(tz=self._timezone).date()
-        cache_key = f"{config.icsUrl}|{today.isoformat()}"
+        if config.mode == "ics" and config.icsPath:
+            cache_key = self._cache_key_for_path(config.icsPath, today)
+            payload = await self._load_from_path(config.icsPath)
+        elif config.mode == "url" and config.url:
+            cache_key = f"{config.url}|{today.isoformat()}"
+            payload = await self._load_from_url(str(config.url))
+        else:
+            return []
+
         cached = self._cache.get(cache_key)
         now_monotonic = monotonic()
         if cached and now_monotonic - cached[0] < 300:
             return cached[1]
 
-        try:
-            response = await self._client.get(str(config.icsUrl), headers={"Cache-Control": "no-cache"})
-            response.raise_for_status()
-        except httpx.HTTPError as exc:  # pragma: no cover - network failure path
-            raise CalendarServiceError("No se pudo descargar el calendario") from exc
-
-        events = self._parse_ics(response.text)
+        events = self._parse_ics(payload)
         filtered = self._filter_for_day(events, today)
         filtered.sort(key=lambda event: event.start)
         limit = max(1, min(config.maxEvents or 3, 10))
         limited = filtered[:limit]
         self._cache[cache_key] = (now_monotonic, limited)
         return limited
+
+    async def _load_from_url(self, url: str) -> str:
+        try:
+            response = await self._client.get(url, headers={"Cache-Control": "no-cache"})
+            response.raise_for_status()
+        except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+            raise CalendarServiceError("No se pudo descargar el calendario") from exc
+        return response.text
+
+    async def _load_from_path(self, location: str) -> str:
+        path = Path(location)
+        try:
+            data = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            raise CalendarServiceError("Archivo ICS no disponible")
+        except OSError as exc:  # pragma: no cover - permisos insuficientes
+            raise CalendarServiceError("No se pudo leer el archivo ICS") from exc
+        if not data.strip():
+            raise CalendarServiceError("Archivo ICS vacío")
+        return data
+
+    def _cache_key_for_path(self, path_value: str, day: date) -> str:
+        path = Path(path_value)
+        try:
+            stat = path.stat()
+            stamp = f"{stat.st_mtime_ns}"
+        except OSError:
+            stamp = "missing"
+        return f"file://{path.resolve()}|{stamp}|{day.isoformat()}"
 
     def _filter_for_day(self, events: List[ParsedCalendarEvent], day: date) -> List[ParsedCalendarEvent]:
         matches: List[ParsedCalendarEvent] = []

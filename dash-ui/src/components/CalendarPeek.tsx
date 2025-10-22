@@ -12,7 +12,14 @@ const CalendarPeek = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const enabled = Boolean(calendarPrefs?.enabled && calendarPrefs?.icsConfigured);
+  const hasSource = calendarPrefs
+    ? calendarPrefs.mode === 'ics'
+      ? Boolean(calendarPrefs.icsPath || calendarPrefs.icsConfigured)
+      : calendarPrefs.mode === 'url'
+      ? Boolean(calendarPrefs.url)
+      : Boolean(calendarPrefs.url || calendarPrefs.icsPath || calendarPrefs.icsConfigured)
+    : false;
+  const enabled = Boolean(calendarPrefs?.enabled && hasSource);
 
   useEffect(() => {
     if (!enabled) {

@@ -80,12 +80,51 @@ class WifiConfig(BaseModel):
 
 class CalendarConfig(BaseModel):
     enabled: bool = False
-    icsUrl: Optional[AnyUrl] = Field(default=None, alias="icsUrl")
+    mode: str = Field(default="url")
+    url: Optional[AnyUrl] = None
+    icsPath: Optional[str] = Field(default=None, alias="icsPath")
     maxEvents: int = Field(default=3, ge=1, le=10, alias="maxEvents")
     notifyMinutesBefore: int = Field(default=15, ge=0, le=360, alias="notifyMinutesBefore")
 
+    @validator("mode")
+    def validate_mode(cls, value: str) -> str:
+        normalized = (value or "url").lower()
+        if normalized not in {"url", "ics"}:
+            raise ValueError("mode must be 'url' or 'ics'")
+        return normalized
+
+    @validator("icsPath")
+    def normalize_ics_path(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        normalized = value.strip()
+        return normalized or None
+
+    @validator("url")
+    def normalize_url(cls, value: Optional[AnyUrl]) -> Optional[AnyUrl]:
+        return value
+
+    @validator("mode", pre=True, always=True)
+    def default_mode(cls, value: Optional[str], values: Dict[str, Any]) -> str:  # type: ignore[override]
+        if value:
+            return value
+        if values.get("icsPath"):
+            return "ics"
+        raw_url = values.get("url")
+        if raw_url:
+            return "url"
+        return "url"
+
+    @validator("url", pre=True)
+    def alias_ics_url(cls, value: Any, values: Dict[str, Any]) -> Any:  # type: ignore[override]
+        if value is not None:
+            return value
+        legacy = values.get("icsUrl")
+        return legacy
+
     class Config:
-        populate_by_name = True
+        allow_population_by_field_name = True
+        extra = "ignore"
 
 
 class LocaleConfig(BaseModel):
@@ -143,11 +182,15 @@ class AppConfig(BaseModel):
                     **{
                         key: value
                         for key, value in (
-                            self.calendar.dict(by_alias=True, exclude={"icsUrl"}) if self.calendar else {}
+                            self.calendar.dict(
+                                by_alias=True,
+                                include={"enabled", "mode", "url", "icsPath", "maxEvents", "notifyMinutesBefore"},
+                            )
+                            if self.calendar
+                            else {}
                         )
-                        if key in {"enabled", "maxEvents", "notifyMinutesBefore"}
                     },
-                    "icsConfigured": bool(self.calendar.icsUrl) if self.calendar else False,
+                    "icsConfigured": bool(self.calendar.icsPath) if self.calendar else False,
                 }
                 if self.calendar
                 else {}
@@ -212,7 +255,7 @@ def update_config(payload: Dict[str, Any]) -> AppConfig:
         "background": {"intervalMinutes", "mode", "retainDays"},
         "tts": {"voice", "volume"},
         "wifi": {"preferredInterface"},
-        "calendar": {"enabled", "icsUrl", "maxEvents", "notifyMinutesBefore"},
+        "calendar": {"enabled", "mode", "url", "icsPath", "icsUrl", "maxEvents", "notifyMinutesBefore"},
         "locale": {"country", "autonomousCommunity", "province", "city"},
         "patron": {"city", "name", "month", "day"},
     }
@@ -231,11 +274,42 @@ def update_config(payload: Dict[str, Any]) -> AppConfig:
         merged.setdefault("aemet", {})
         merged["aemet"]["apiKey"] = config.aemet.apiKey
 
-    if config.calendar and config.calendar.icsUrl and (
-        "calendar" not in sanitized or "icsUrl" not in sanitized.get("calendar", {})
-    ):
+    calendar_payload = sanitized.get("calendar")
+    if isinstance(calendar_payload, dict) and "icsUrl" in calendar_payload and "url" not in calendar_payload:
+        calendar_payload["url"] = calendar_payload.pop("icsUrl")
+
+    if config.calendar:
         merged.setdefault("calendar", {})
-        merged["calendar"]["icsUrl"] = config.calendar.icsUrl
+        if (
+            config.calendar.url
+            and (
+                "calendar" not in sanitized
+                or (
+                    isinstance(sanitized.get("calendar"), dict)
+                    and "url" not in sanitized.get("calendar", {})
+                    and "icsUrl" not in sanitized.get("calendar", {})
+                )
+            )
+        ):
+            merged["calendar"]["url"] = str(config.calendar.url)
+
+        if (
+            config.calendar.icsPath
+            and (
+                "calendar" not in sanitized
+                or "icsPath" not in sanitized.get("calendar", {})
+            )
+        ):
+            merged["calendar"]["icsPath"] = config.calendar.icsPath
+
+        if (
+            config.calendar.mode
+            and (
+                "calendar" not in sanitized
+                or "mode" not in sanitized.get("calendar", {})
+            )
+        ):
+            merged["calendar"]["mode"] = config.calendar.mode
 
     updated = AppConfig.parse_obj(merged)
 
