@@ -72,7 +72,7 @@ const SIDE_INFO_SECTION_OPTIONS: Array<{
   {
     key: 'efemerides',
     label: 'Efemérides',
-    description: 'Muestra la efeméride destacada del día y el santoral opcional.',
+    description: 'Muestra la efeméride destacada del día, festivos y el santoral opcional.',
   },
   {
     key: 'news',
@@ -125,6 +125,7 @@ interface FormState {
   sideInfoIntervalSeconds: string;
   sideInfoSections: Record<SideInfoSectionKey, boolean>;
   sideInfoShowSantoral: boolean;
+  sideInfoShowHolidays: boolean;
   sideInfoNewsEnabled: boolean;
   sideInfoNewsFeeds: string;
   newsServiceEnabled: boolean;
@@ -160,6 +161,7 @@ const DEFAULT_FORM: FormState = {
     news: true,
   },
   sideInfoShowSantoral: true,
+  sideInfoShowHolidays: true,
   sideInfoNewsEnabled: true,
   sideInfoNewsFeeds: DEFAULT_NEWS_FEEDS.join('\n'),
   newsServiceEnabled: true,
@@ -349,6 +351,10 @@ const Config = () => {
         typeof sideInfo.showSantoralWithEfemerides === 'boolean'
           ? sideInfo.showSantoralWithEfemerides
           : DEFAULT_FORM.sideInfoShowSantoral,
+      sideInfoShowHolidays:
+        typeof sideInfo.showHolidaysWithEfemerides === 'boolean'
+          ? sideInfo.showHolidaysWithEfemerides
+          : DEFAULT_FORM.sideInfoShowHolidays,
       sideInfoNewsEnabled:
         typeof sideInfoNews.enabled === 'boolean'
           ? sideInfoNews.enabled
@@ -867,11 +873,13 @@ const Config = () => {
       sections: SideInfoSectionKey[];
       intervalSeconds?: number;
       showSantoralWithEfemerides: boolean;
+      showHolidaysWithEfemerides: boolean;
       news: { enabled: boolean };
     } = {
       enabled: form.sideInfoEnabled,
       sections: sideInfoSectionsSelected,
       showSantoralWithEfemerides: form.sideInfoShowSantoral,
+      showHolidaysWithEfemerides: form.sideInfoShowHolidays,
       news: { enabled: form.sideInfoNewsEnabled },
     };
     if (typeof sideInterval === 'number') {
@@ -1526,6 +1534,17 @@ const Config = () => {
                     disabled={!form.sideInfoEnabled}
                   />
                   Mostrar santoral junto a efemérides
+                </label>
+
+                <label className="flex items-center gap-3 text-sm text-white/75">
+                  <input
+                    type="checkbox"
+                    checked={form.sideInfoShowHolidays}
+                    onChange={(event) => handleFormChange('sideInfoShowHolidays', event.target.checked)}
+                    className="h-4 w-4 rounded border-white/30 bg-white/10 text-emerald-400 focus:ring-emerald-400"
+                    disabled={!form.sideInfoEnabled}
+                  />
+                  Mostrar festivos junto a efemérides
                 </label>
 
                 <div>

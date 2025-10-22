@@ -88,6 +88,7 @@ export interface SideInfoConfig {
   sections?: SideInfoSectionKey[];
   intervalSeconds?: number;
   showSantoralWithEfemerides?: boolean;
+  showHolidaysWithEfemerides?: boolean;
   news?: SideInfoNewsConfig;
 }
 
