@@ -129,7 +129,14 @@ def _extract_wifi_devices(lines: Sequence[str]) -> Dict[str, Dict[str, Optional[
 
 
 def _validate_wifi_interface(interface: str) -> None:
-    result = _run_nmcli(["-t", "-f", "TYPE", "device", "show", interface])
+    result = _run_nmcli([
+        "-t",
+        "-f",
+        "GENERAL.TYPE,TYPE",
+        "device",
+        "show",
+        interface,
+    ])
     if result.returncode != 0:
         message = result.stderr.strip() or f"No se pudo inspeccionar la interfaz '{interface}'"
         raise WifiError(message, stderr=result.stderr, code=result.returncode)
@@ -137,8 +144,12 @@ def _validate_wifi_interface(interface: str) -> None:
     for line in result.stdout.splitlines():
         if not line:
             continue
-        if line.startswith("TYPE:"):
-            iface_type = line.split(":", 1)[1].strip()
+        key, _, value = line.partition(":")
+        if not value:
+            continue
+        key = key.strip().upper()
+        iface_type = value.strip().lower()
+        if key in {"TYPE", "GENERAL.TYPE"}:
             if iface_type == "wifi":
                 return
             raise WifiError(f"La interfaz configurada '{interface}' no es Wi-Fi")
