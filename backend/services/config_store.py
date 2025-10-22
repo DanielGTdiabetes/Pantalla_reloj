@@ -5,7 +5,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, Tuple
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -16,19 +16,6 @@ logger = logging.getLogger(__name__)
 CONFIG_DIR = Path(os.environ.get("PANTALLA_CONFIG_DIR", "/etc/pantalla-dash"))
 CONFIG_PATH = CONFIG_DIR / "config.json"
 SECRETS_PATH = CONFIG_DIR / "secrets.json"
-
-ALLOWED_CONFIG_FIELDS: dict[str, set[str]] = {
-    "aemet": {"municipioId", "municipioName", "apiKey", "postalCode", "province"},
-    "weather": {"city", "units"},
-    "storm": {"threshold", "enableExperimentalLightning"},
-    "theme": {"current"},
-    "background": {"intervalMinutes", "mode", "retainDays"},
-    "tts": {"voice", "volume"},
-    "wifi": {"preferredInterface"},
-    "calendar": {"enabled", "mode", "url", "icsPath", "icsUrl", "maxEvents", "notifyMinutesBefore"},
-    "locale": {"country", "autonomousCommunity", "province", "city"},
-    "patron": {"city", "name", "month", "day"},
-}
 
 class SecretPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -44,6 +31,7 @@ class SecretPatch(BaseModel):
 def _ensure_dir(path: Path) -> None:
     try:
         path.mkdir(parents=True, exist_ok=True)
+        os.chmod(path, 0o755)
     except OSError as exc:  # pragma: no cover - defensive
         logger.warning("No se pudo crear directorio %s: %s", path, exc)
 
@@ -62,14 +50,34 @@ def _load_json(path: Path) -> dict[str, Any]:
         return {}
 
 
-def _write_json(path: Path, data: dict[str, Any], *, mode: int) -> None:
+def _write_json(
+    path: Path,
+    data: dict[str, Any],
+    *,
+    mode: int,
+    owner: int | None = None,
+    group: int | None = None,
+) -> None:
     _ensure_dir(path.parent)
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     with tmp_path.open("w", encoding="utf-8") as handle:
         json.dump(data, handle, ensure_ascii=False, indent=2, sort_keys=True)
         handle.write("\n")
     os.chmod(tmp_path, mode)
-    tmp_path.replace(path)
+    if owner is not None or group is not None:
+        try:
+            os.chown(tmp_path, owner if owner is not None else -1, group if group is not None else -1)
+        except PermissionError as exc:  # pragma: no cover - defensive
+            logger.error("No se pudo ajustar propietario de %s: %s", tmp_path, exc)
+            raise
+    os.replace(tmp_path, path)
+    os.chmod(path, mode)
+    if owner is not None or group is not None:
+        try:
+            os.chown(path, owner if owner is not None else -1, group if group is not None else -1)
+        except PermissionError as exc:  # pragma: no cover - defensive
+            logger.error("No se pudo ajustar propietario final de %s: %s", path, exc)
+            raise
 
 
 def _mask_secret(value: str) -> str:
@@ -80,50 +88,40 @@ def _mask_secret(value: str) -> str:
     return f"***…{last4}"
 
 
-def _merge(base: dict[str, Any], patches: Iterable[dict[str, Any]]) -> dict[str, Any]:
-    """Merge configuration patches into base configuration.
-    
-    Note: This function recursively merges dictionaries but replaces other values
-    including lists/arrays. This is intentional - arrays in config are meant to be
-    replaced entirely rather than merged element-by-element.
-    """
+def _deep_merge(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge ``update`` into ``base`` preserving nested mappings."""
+
     result = dict(base)
-    for patch in patches:
-        for key, value in patch.items():
-            if isinstance(value, dict) and isinstance(result.get(key), dict):
-                result[key] = _merge(result[key], [value])  # type: ignore[arg-type]
-            else:
-                # Non-dict values (including lists) are replaced, not merged
-                result[key] = value
+    for key, value in update.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _deep_merge(result[key], value)  # type: ignore[arg-type]
+        else:
+            result[key] = value
     return result
 
 
-def _sanitize_patch(payload: dict[str, Any]) -> dict[str, Any]:
-    sanitized: dict[str, Any] = {}
-    invalid_top = [key for key in payload if key not in ALLOWED_CONFIG_FIELDS]
-    if invalid_top:
-        raise ValueError(
-            "Claves no permitidas: " + ", ".join(sorted(invalid_top))
-        )
-    for section, allowed_fields in ALLOWED_CONFIG_FIELDS.items():
-        if section not in payload:
-            continue
-        value = payload[section]
-        if not isinstance(value, dict):
-            raise ValueError(f"Sección {section} debe ser un objeto")
-        filtered = {k: v for k, v in value.items() if k in allowed_fields}
-        invalid_nested = [k for k in value.keys() if k not in allowed_fields]
-        if invalid_nested:
-            raise ValueError(
-                f"Claves no permitidas en {section}: " + ", ".join(sorted(invalid_nested))
-            )
-        if section == "calendar" and "icsUrl" in filtered:
-            if "url" not in filtered:
-                filtered["url"] = filtered["icsUrl"]
-            filtered.pop("icsUrl", None)
-        if filtered:
-            sanitized[section] = filtered
-    return sanitized
+def _collect_unknown_keys(value: Any, prefix: str = "") -> list[str]:
+    unknown: list[str] = []
+    if isinstance(value, BaseModel):
+        extras = getattr(value, "model_extra", {}) or {}
+        for key, extra_value in extras.items():
+            path = f"{prefix}.{key}" if prefix else key
+            unknown.append(path)
+            unknown.extend(_collect_unknown_keys(extra_value, path))
+        for field_name in value.model_fields:
+            nested_prefix = f"{prefix}.{field_name}" if prefix else field_name
+            nested_value = getattr(value, field_name)
+            unknown.extend(_collect_unknown_keys(nested_value, nested_prefix))
+    elif isinstance(value, dict):
+        for key, nested in value.items():
+            path = f"{prefix}.{key}" if prefix else key
+            unknown.append(path)
+            unknown.extend(_collect_unknown_keys(nested, path))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            list_prefix = f"{prefix}[{index}]"
+            unknown.extend(_collect_unknown_keys(item, list_prefix))
+    return unknown
 
 
 def _migrate_config(data: dict[str, Any]) -> dict[str, Any]:
@@ -158,7 +156,7 @@ def _migrate_config(data: dict[str, Any]) -> dict[str, Any]:
 
     if needs_write:
         try:
-            _write_json(CONFIG_PATH, migrated, mode=0o640)
+            _write_json(CONFIG_PATH, migrated, mode=0o644, owner=0, group=0)
         except OSError as exc:
             logger.error("No se pudo persistir migración de configuración: %s", exc)
     return migrated
@@ -168,7 +166,7 @@ def read_config() -> tuple[dict[str, Any], str]:
     data = _load_json(CONFIG_PATH)
     if not data and not CONFIG_PATH.exists():
         try:
-            _write_json(CONFIG_PATH, {}, mode=0o640)
+            _write_json(CONFIG_PATH, {}, mode=0o644, owner=0, group=0)
         except OSError as exc:  # pragma: no cover - defensive
             logger.error("No se pudo inicializar config.json: %s", exc)
     migrated = _migrate_config(data)
@@ -195,11 +193,12 @@ def has_openai_key() -> bool:
 
 
 def write_config_patch(patch: dict[str, Any]) -> tuple[dict[str, Any], str]:
-    sanitized = _sanitize_patch(patch)
+    if not isinstance(patch, dict):
+        raise ValueError("El cuerpo debe ser un objeto JSON")
     current, _ = read_config()
-    merged = _merge(current, [sanitized])
+    merged = _deep_merge(current, patch)
     try:
-        AppConfig.model_validate(merged)
+        validated = AppConfig.model_validate(merged)
     except ValidationError as exc:
         details = exc.errors()
         if details:
@@ -211,9 +210,13 @@ def write_config_patch(patch: dict[str, Any]) -> tuple[dict[str, Any], str]:
             raise ValueError(message) from exc
         raise ValueError(str(exc)) from exc
     try:
-        _write_json(CONFIG_PATH, merged, mode=0o640)
+        _write_json(CONFIG_PATH, merged, mode=0o644, owner=0, group=0)
     except OSError as exc:  # pragma: no cover - permisos insuficientes
         raise PermissionError("No se pudo escribir config.json") from exc
+    logger.info("config merged")
+    preserved = sorted(set(_collect_unknown_keys(validated)))
+    message = ", ".join(preserved) if preserved else "(none)"
+    logger.info("unknown keys preserved: %s", message)
     return merged, str(CONFIG_PATH)
 
 
