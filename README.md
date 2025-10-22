@@ -20,7 +20,9 @@ OpenWeatherMap, gestión de Wi-Fi y TTS offline.
 ├── system/pantalla-ui.service
 ├── system/user/pantalla-openbox.service
 ├── system/logrotate.d/pantalla-bg
-└── docs/DEPLOY_BACKEND.md      # Guía de despliegue completa
+└── docs/
+    ├── DEPLOY_BACKEND.md      # Guía de despliegue completa
+    └── google-calendar.md     # Configuración de OAuth para Google Calendar
 ```
 
 ## Frontend (dash-ui)
@@ -57,14 +59,16 @@ Desde la UI puedes:
 - Ajustar intervalo, modo y retención de fondos AI junto al tema (sincronizado con backend).
 - Activar el calendario y elegir si se carga desde una URL ICS o desde un archivo local `.ics`.
 
-### Calendario (URL o archivo .ics)
+### Calendario (Google, URL o archivo .ics)
 
-- Desde `/#/config` selecciona la pestaña **URL ICS** para pegar la dirección remota o **Archivo .ics** para subir un fichero local.
-- Al subir un archivo se envía una petición `POST /api/calendar/upload` (multipart) con validación de tamaño ≤5 MB, extensión `.ics`/`text/calendar` y contenido mínimo (`BEGIN:VCALENDAR`…`END:VCALENDAR`).
-- El backend guarda el archivo en `/etc/pantalla-dash/calendar/calendar.ics` (permisos `0644`, directorio `0755`) y actualiza `config.calendar` con `mode="ics"` y la ruta persistida.
-- Puedes descargar el archivo almacenado con `GET /api/calendar/download` o eliminarlo vía `DELETE /api/calendar/file` (se renombra a `.bak` con sello temporal y se vuelve al modo URL si existe una dirección configurada).
-- `GET /api/calendar/status` devuelve `{ mode, url, icsPath, exists, size, mtime }` para sincronizar la UI y mostrar la fecha/tamaño de la última carga.
-- Todos los eventos se registran en `/var/log/pantalla-dash/calendar.log` para auditar subidas, eliminaciones y errores.
+- El panel de ajustes ofrece tres proveedores: **Google**, **URL remota (.ics)** o **Archivo local (.ics)**. El backend mantiene la configuración en `config.calendar.provider`.
+- Para Google Calendar utiliza el flujo OAuth *device code* (ver [docs/google-calendar.md](docs/google-calendar.md)). Necesitas un `client_id`/`client_secret` válidos en `/etc/pantalla-dash/secrets.json` para que el botón **Conectar con Google** esté disponible.
+- Durante la autorización la UI muestra el `user_code` y el enlace de verificación (`https://www.google.com/device`). El backend guarda el `refresh_token` en `secrets.json` con permisos `0600` y renueva tokens automáticamente. Puedes listar calendarios con `GET /api/calendar/google/calendars` y seleccionar cuál sincronizar (`config.calendar.google.calendarId`).
+- El backend cachea eventos en `backend/storage/cache/calendar_google_upcoming.json` durante 5 minutos para reducir llamadas.
+- Con proveedor **URL** pega la dirección remota en la pestaña **URL ICS**; el backend la valida y la UI la usará en el próximo refresco.
+- Con proveedor **Archivo** sube un `.ics` (≤5 MB) desde la pestaña **Archivo .ics**. La petición `POST /api/calendar/upload` verifica el contenido (`BEGIN:VCALENDAR`…`END:VCALENDAR`) y persiste el archivo en `/etc/pantalla-dash/calendar/calendar.ics` (`0644`).
+- El archivo actual puede descargarse (`GET /api/calendar/download`) o eliminarse (`DELETE /api/calendar/file`), lo que revierte a proveedor URL si existe.
+- `GET /api/calendar/status` expone `{ mode, provider, url, icsPath, exists, size, mtime, google }` para sincronizar la UI. Los eventos del gestor se registran en `/var/log/pantalla-dash/calendar.log`.
 
 ## Backend (FastAPI)
 

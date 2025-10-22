@@ -2,7 +2,7 @@
 
 Este backend en FastAPI sirve a la pantalla 8.8" proporcionando clima AEMET, radar
 meteorológico, gestión Wi-Fi, fondos dinámicos y la mini-web de configuración.
-Escucha en `127.0.0.1:8787` y está pensado para ejecutarse como servicio `systemd`.
+Escucha en `127.0.0.1:8081` y está pensado para ejecutarse como servicio `systemd`.
 
 ## Requisitos
 
@@ -11,6 +11,7 @@ Escucha en `127.0.0.1:8787` y está pensado para ejecutarse como servicio `syste
 - `curl`, `systemd` y `systemd-timesyncd`
 - Dependencias de Python listadas en `backend/requirements.txt`
 - Acceso de lectura/escritura a `/etc/pantalla-dash/config.json`
+- Acceso de lectura/escritura a `/etc/pantalla-dash/secrets.json` (credenciales y tokens)
 
 Instala las dependencias de Python en un entorno virtual:
 
@@ -40,7 +41,7 @@ La variable `PANTALLA_CONFIG_PATH` permite usar otro archivo durante pruebas.
 
 ```bash
 PANTALLA_CONFIG_PATH=$(pwd)/backend/config/config.example.json \
-uvicorn backend.app:app --reload --host 127.0.0.1 --port 8787
+uvicorn backend.app:app --reload --host 127.0.0.1 --port 8081
 ```
 
 La mini-web de configuración está en `/setup`. Los endpoints REST principales:
@@ -52,6 +53,9 @@ La mini-web de configuración está en `/setup`. Los endpoints REST principales:
 - `POST /api/location/override` (geolocalización desde el navegador)
 - `GET /api/time/sync_status` para comprobar `systemd-timesyncd`
 - `GET /api/day/brief` para efemérides, santoral y festivos
+- `POST /api/calendar/google/device/start`, `GET /api/calendar/google/device/status`,
+  `POST /api/calendar/google/device/cancel` y `GET /api/calendar/google/calendars`
+  para el flujo OAuth de Google Calendar
 
 ### Tormentas y Radar (AEMET)
 
@@ -81,12 +85,25 @@ La mini-web de configuración está en `/setup`. Los endpoints REST principales:
   - Los festivos regionales dependen de los códigos `counties` que expone la API de Nager.Date.
   - El patrón local sólo se resuelve si coincide con la fecha configurada (`config.patron`).
 
+### Calendario y Google OAuth
+
+- Configuración principal en `config.calendar` (`provider`, `mode`, `google.calendarId`).
+- Credenciales (`client_id`, `client_secret`) y `refresh_token` se almacenan en `/etc/pantalla-dash/secrets.json` con permisos `0600`.
+- El flujo OAuth de dispositivo expone los endpoints:
+  - `POST /api/calendar/google/device/start`
+  - `GET /api/calendar/google/device/status`
+  - `POST /api/calendar/google/device/cancel`
+  - `GET /api/calendar/google/calendars`
+- Los eventos próximos (`GET /api/calendar/upcoming`) emplean `GoogleCalendarService` y cachean la respuesta en `backend/storage/cache/calendar_google_upcoming.json` (TTL 5 min).
+- Documentación detallada en `../docs/google-calendar.md`.
+
 ## Cachés y almacenamiento
 
 - Datos AEMET cacheados en `backend/storage/cache/aemet_*.json` (TTL 30 min).
 - Radar y probabilidad de tormenta en `backend/storage/cache/storms_*.json`.
 - Override de ubicación en `backend/storage/cache/location_override.json`.
 - Fondos automáticos servidos desde `/opt/dash/assets/backgrounds/auto/`.
+- `backend/storage/cache/calendar_google_upcoming.json` (eventos de Google Calendar, TTL 5 min).
 - El hotspot genera la contraseña en `/var/lib/pantalla/ap_pass`.
 
 ## Seguridad

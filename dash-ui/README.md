@@ -41,12 +41,13 @@ Activa el modo de ahorro ajustando `powerSave` a `true` en `src/services/config.
 
 ## Integración con backend
 
-La UI consume el backend local en `http://127.0.0.1:8787/api`:
+La UI consume el backend local en `http://127.0.0.1:8081/api`:
 
 - `src/services/weather.ts` realiza polling cada 12 minutos con backoff exponencial y cachea el último dato en `localStorage`.
 - `src/services/wifi.ts` y `src/components/SettingsPanel.tsx` ofrecen gestión completa de Wi-Fi vía `nmcli`.
 - `src/services/tts.ts` permite listar voces y lanzar pruebas de audio.
 - `src/context/DashboardConfigContext.tsx` centraliza la configuración compartida (tema, fondos, voz, etc.).
+- `src/services/calendar.ts` implementa el flujo OAuth de Google Calendar (`startGoogleDeviceFlow`, `fetchGoogleCalendars`, etc.).
 
 ## Bundle objetivo
 
