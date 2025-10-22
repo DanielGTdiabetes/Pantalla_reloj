@@ -45,6 +45,7 @@ class WeatherConfig(BaseModel):
 class StormConfig(BaseModel):
     threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     enableExperimentalLightning: bool = Field(default=False, alias="enableExperimentalLightning")
+    radarCacheSeconds: int = Field(default=180, ge=60, le=3600, alias="radarCacheSeconds")
 
     class Config:
         allow_population_by_field_name = True

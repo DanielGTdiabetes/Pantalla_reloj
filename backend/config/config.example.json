@@ -8,7 +8,8 @@
   },
   "storm": {
     "threshold": 0.6,
-    "enableExperimentalLightning": false
+    "enableExperimentalLightning": false,
+    "radarCacheSeconds": 180
   },
   "weather": {
     "units": "metric",
