@@ -127,7 +127,7 @@ class GoogleCalendarService:
                 and cached.calendar_id == calendar_id
                 and cached.days == days
                 and cached.timezone == timezone_name
-                and time.monotonic() < cached.expires_at
+                and time.time() < cached.expires_at
             ):
                 payload = dict(cached.payload)
                 payload["cached"] = True
@@ -241,7 +241,7 @@ class GoogleCalendarService:
     ) -> None:
         cache_entry = {
             "payload": payload,
-            "expires_at": time.monotonic() + self._cache_ttl,
+            "expires_at": time.time() + self._cache_ttl,
             "calendar_id": calendar_id,
             "days": days,
             "timezone": timezone_name,
