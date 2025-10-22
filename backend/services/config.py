@@ -26,16 +26,19 @@ class ExtraAllowModel(BaseModel):
 
 
 class AemetConfig(ExtraAllowModel):
-    apiKey: str = Field(..., alias="apiKey", min_length=32, max_length=512, description="AEMET API key (JWT o legacy 32 hex)")
+    apiKey: str = Field(
+        default="",
+        alias="apiKey",
+        max_length=512,
+        description="AEMET API key (JWT o legacy 32 hex)",
+    )
     municipioId: str = Field(default="28079", alias="municipioId", min_length=1)
 
     @validator("apiKey")
     def normalize_api_key(cls, value: str) -> str:
         normalized = value.strip()
-        if not normalized:
-            raise ValueError("apiKey no puede estar vacío")
-        if normalized.upper() == "AEMET_API_KEY_PLACEHOLDER":
-            raise ValueError("apiKey debe establecerse con una clave real")
+        if not normalized or normalized.upper() == "AEMET_API_KEY_PLACEHOLDER":
+            return ""
         if re.fullmatch(r"[0-9A-Fa-f]{32}", normalized):
             return normalized
         if JWT_API_KEY_PATTERN.fullmatch(normalized):
