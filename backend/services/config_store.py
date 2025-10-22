@@ -50,6 +50,31 @@ def _load_json(path: Path) -> dict[str, Any]:
         return {}
 
 
+def _can_adjust_ownership(owner: int | None, group: int | None) -> tuple[bool, str | None]:
+    if owner is None and group is None:
+        return False, None
+    if not hasattr(os, "chown"):
+        return False, "unsupported"
+    geteuid = getattr(os, "geteuid", None)
+    if geteuid is not None and geteuid() != 0:
+        return False, "insufficient privileges"
+    return True, None
+
+
+def _apply_ownership(path: Path, owner: int | None, group: int | None) -> None:
+    can_chown, reason = _can_adjust_ownership(owner, group)
+    if not can_chown:
+        if owner is not None or group is not None:
+            detail = reason or "skipped"
+            logger.debug("Skipping chown for %s: %s", path, detail)
+        return
+    try:
+        os.chown(path, owner if owner is not None else -1, group if group is not None else -1)
+    except PermissionError as exc:  # pragma: no cover - defensive
+        logger.error("No se pudo ajustar propietario de %s: %s", path, exc)
+        raise
+
+
 def _write_json(
     path: Path,
     data: dict[str, Any],
@@ -64,20 +89,10 @@ def _write_json(
         json.dump(data, handle, ensure_ascii=False, indent=2, sort_keys=True)
         handle.write("\n")
     os.chmod(tmp_path, mode)
-    if owner is not None or group is not None:
-        try:
-            os.chown(tmp_path, owner if owner is not None else -1, group if group is not None else -1)
-        except PermissionError as exc:  # pragma: no cover - defensive
-            logger.error("No se pudo ajustar propietario de %s: %s", tmp_path, exc)
-            raise
+    _apply_ownership(tmp_path, owner, group)
     os.replace(tmp_path, path)
     os.chmod(path, mode)
-    if owner is not None or group is not None:
-        try:
-            os.chown(path, owner if owner is not None else -1, group if group is not None else -1)
-        except PermissionError as exc:  # pragma: no cover - defensive
-            logger.error("No se pudo ajustar propietario final de %s: %s", path, exc)
-            raise
+    _apply_ownership(path, owner, group)
 
 
 def _mask_secret(value: str) -> str:
