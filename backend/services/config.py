@@ -12,6 +12,8 @@ from pydantic import AnyUrl, BaseModel, ConfigDict, Field, ValidationError, vali
 
 logger = logging.getLogger(__name__)
 
+JWT_API_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]+={0,2}\.[A-Za-z0-9_-]+={0,2}\.[A-Za-z0-9_-]+={0,2}$")
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = Path("/etc/pantalla-dash/config.json")
 EXAMPLE_CONFIG_PATH = PROJECT_ROOT / "config" / "config.example.json"
@@ -24,19 +26,21 @@ class ExtraAllowModel(BaseModel):
 
 
 class AemetConfig(ExtraAllowModel):
-    apiKey: Optional[str] = Field(default=None, alias="apiKey")
+    apiKey: str = Field(..., alias="apiKey", min_length=32, max_length=512, description="AEMET API key (JWT o legacy 32 hex)")
     municipioId: str = Field(default="28079", alias="municipioId", min_length=1)
 
     @validator("apiKey")
-    def normalize_api_key(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return None
+    def normalize_api_key(cls, value: str) -> str:
         normalized = value.strip()
-        if not normalized or normalized.upper() == "AEMET_API_KEY_PLACEHOLDER":
-            return None
-        if not re.fullmatch(r"[0-9A-Fa-f]{32}", normalized):
-            raise ValueError("apiKey debe contener 32 caracteres hexadecimales")
-        return normalized
+        if not normalized:
+            raise ValueError("apiKey no puede estar vacío")
+        if normalized.upper() == "AEMET_API_KEY_PLACEHOLDER":
+            raise ValueError("apiKey debe establecerse con una clave real")
+        if re.fullmatch(r"[0-9A-Fa-f]{32}", normalized):
+            return normalized
+        if JWT_API_KEY_PATTERN.fullmatch(normalized):
+            return normalized
+        raise ValueError("apiKey debe ser un JWT válido o 32 caracteres hexadecimales")
 
 class WeatherConfig(ExtraAllowModel):
     units: str = Field(default="metric")
