@@ -21,8 +21,20 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 BASE_URL = "https://opendata.aemet.es/opendata/api"
 TTL_PROB = 15 * 60
-TTL_RADAR = 10 * 60
 MEMORY_TTL_DEFAULT = 5 * 60
+
+RADAR_ENDPOINT = "red/radar/nacional"
+RADAR_CACHE_DIR = Path("/var/cache/pantalla-dash/radar")
+RADAR_CACHE_PATH = RADAR_CACHE_DIR / "aemet_nacional.gif"
+RADAR_META_PATH = RADAR_CACHE_DIR / "aemet_nacional.json"
+RADAR_MEMORY_KEY = "radar:aemet:nacional"
+MAX_RADAR_SIZE = 10 * 1024 * 1024
+
+RADAR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    RADAR_CACHE_DIR.chmod(0o755)
+except OSError:
+    pass
 
 
 _MEMORY_CACHE: Dict[str, CacheEntry] = {}
@@ -75,6 +87,257 @@ def _memory_read(key: str, ttl: int) -> CacheEntry | None:
 
 def _memory_write(key: str, data: Any, timestamp: Optional[float] = None) -> None:
     _MEMORY_CACHE[key] = CacheEntry(data, timestamp or time.time())
+
+
+def _get_radar_cache_ttl() -> int:
+    config = read_config()
+    storm_cfg = getattr(config, "storm", None)
+    value = getattr(storm_cfg, "radarCacheSeconds", None) if storm_cfg else None
+    try:
+        ttl = int(value) if value is not None else 180
+    except (TypeError, ValueError):
+        ttl = 180
+    if ttl <= 0:
+        ttl = 180
+    return ttl
+
+
+def _normalize_content_type(raw: Optional[str]) -> str:
+    if not raw:
+        return "image/gif"
+    content_type = raw.split(";", 1)[0].strip()
+    if not content_type:
+        return "image/gif"
+    if not content_type.lower().startswith("image/"):
+        return "image/gif"
+    return content_type
+
+
+def _read_radar_meta() -> Dict[str, Any]:
+    if not RADAR_META_PATH.exists():
+        return {}
+    try:
+        with RADAR_META_PATH.open("r", encoding="utf-8") as handle:
+            payload: Dict[str, Any] = json.load(handle)
+            return payload
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.debug("Radar AEMET: metadatos de caché ilegibles: %s", exc)
+        return {}
+
+
+def _write_radar_cache(content: bytes, *, content_type: str, url: Optional[str], fetched_at_ms: int) -> None:
+    size = len(content)
+    try:
+        RADAR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        RADAR_CACHE_DIR.chmod(0o755)
+    except OSError as exc:
+        logger.debug("Radar AEMET: no se pudo asegurar directorio de caché: %s", exc)
+    try:
+        RADAR_CACHE_PATH.write_bytes(content)
+    except OSError as exc:
+        logger.warning("Radar AEMET: fallo guardando binario en disco: %s", exc)
+    meta = {
+        "url": url,
+        "content_type": content_type,
+        "fetched_at": int(fetched_at_ms),
+        "size": size,
+    }
+    try:
+        with RADAR_META_PATH.open("w", encoding="utf-8") as handle:
+            json.dump(meta, handle, indent=2, ensure_ascii=False)
+    except OSError as exc:
+        logger.warning("Radar AEMET: fallo guardando metadatos de caché: %s", exc)
+
+
+def _load_radar_cache_from_disk(ttl: int) -> Optional[Dict[str, Any]]:
+    if not RADAR_CACHE_PATH.exists():
+        return None
+    meta = _read_radar_meta()
+    try:
+        file_mtime = RADAR_CACHE_PATH.stat().st_mtime
+    except OSError as exc:
+        logger.debug("Radar AEMET: no se pudo obtener mtime de caché: %s", exc)
+        return None
+    fetched_at_ms = int(meta.get("fetched_at") or int(file_mtime * 1000))
+    age = time.time() - (fetched_at_ms / 1000)
+    if ttl > 0 and age > ttl:
+        return None
+    try:
+        content = RADAR_CACHE_PATH.read_bytes()
+    except OSError as exc:
+        logger.debug("Radar AEMET: no se pudo leer caché binaria: %s", exc)
+        return None
+    if not content:
+        return None
+    content_type = _normalize_content_type(meta.get("content_type"))
+    size = len(content)
+    return {
+        "content": content,
+        "content_type": content_type,
+        "url": meta.get("url"),
+        "updated_at": fetched_at_ms,
+        "size": size,
+        "source": "cache",
+        "cached_at": fetched_at_ms,
+    }
+
+
+def _http_get_with_retry(
+    client: httpx.Client,
+    url: str,
+    *,
+    params: Optional[Dict[str, Any]] = None,
+    headers: Optional[Dict[str, str]] = None,
+    attempts: int = 2,
+) -> httpx.Response:
+    last_exc: Optional[httpx.HTTPError] = None
+    for attempt in range(attempts):
+        try:
+            response = client.get(url, params=params, headers=headers)
+            response.raise_for_status()
+            return response
+        except httpx.HTTPError as exc:
+            last_exc = exc
+            if attempt + 1 >= attempts:
+                raise
+            time.sleep(0.5)
+    assert last_exc is not None
+    raise last_exc
+
+
+def _download_radar_resource() -> Optional[Dict[str, Any]]:
+    api_key = get_api_key()
+    if not api_key:
+        logger.warning("Radar AEMET: sin API key configurada, devolviendo 204…")
+        return None
+
+    descriptor_url = f"{BASE_URL}/{RADAR_ENDPOINT}"
+    timeout = httpx.Timeout(8.0, connect=5.0, read=8.0)
+    start = time.perf_counter()
+    with httpx.Client(timeout=timeout) as client:
+        try:
+            descriptor = _http_get_with_retry(
+                client,
+                descriptor_url,
+                params={"api_key": api_key},
+            )
+        except httpx.HTTPError as exc:
+            record_latency('aemet', time.perf_counter() - start)
+            record_provider_failure("aemet", str(exc))
+            logger.warning("Radar AEMET: sin datos/descarga fallida, devolviendo 204… (%s)", exc)
+            return None
+
+        try:
+            payload = descriptor.json()
+        except json.JSONDecodeError as exc:
+            record_latency('aemet', time.perf_counter() - start)
+            record_provider_failure("aemet", "descriptor json inválido")
+            logger.warning(
+                "Radar AEMET: sin datos/descarga fallida, devolviendo 204… (descriptor inválido: %s)",
+                exc,
+            )
+            return None
+
+        data_url = payload.get("datos") if isinstance(payload, dict) else None
+        if not data_url:
+            record_latency('aemet', time.perf_counter() - start)
+            record_provider_failure("aemet", "descriptor sin datos")
+            logger.warning("Radar AEMET: sin datos/descarga fallida, devolviendo 204… (descriptor sin URL)")
+            return None
+
+        try:
+            data_response = _http_get_with_retry(
+                client,
+                data_url,
+                headers={"Accept": "image/*", "Accept-Encoding": "gzip, deflate"},
+            )
+        except httpx.HTTPError as exc:
+            record_latency('aemet', time.perf_counter() - start)
+            record_provider_failure("aemet", str(exc))
+            logger.warning("Radar AEMET: sin datos/descarga fallida, devolviendo 204… (%s)", exc)
+            return None
+
+    content_type_raw = data_response.headers.get("content-type")
+    content_type = _normalize_content_type(content_type_raw)
+    if not content_type.lower().startswith("image/"):
+        record_latency('aemet', time.perf_counter() - start)
+        record_provider_failure("aemet", f"tipo inválido: {content_type_raw}")
+        logger.warning(
+            "Radar AEMET: sin datos/descarga fallida, devolviendo 204… (content-type=%s)",
+            content_type_raw,
+        )
+        return None
+
+    content = data_response.content
+    size = len(content)
+    if not content:
+        record_latency('aemet', time.perf_counter() - start)
+        record_provider_failure("aemet", "contenido vacío")
+        logger.warning("Radar AEMET: sin datos/descarga fallida, devolviendo 204… (contenido vacío)")
+        return None
+    if size > MAX_RADAR_SIZE:
+        record_latency('aemet', time.perf_counter() - start)
+        record_provider_failure("aemet", f"contenido demasiado grande: {size}")
+        logger.warning(
+            "Radar AEMET: sin datos/descarga fallida, devolviendo 204… (tamaño=%d)",
+            size,
+        )
+        return None
+
+    record_latency('aemet', time.perf_counter() - start)
+    record_provider_success("aemet")
+
+    fetched_at_ms = int(time.time() * 1000)
+    logger.info(
+        "Radar AEMET: obtenido datos → content-type=%s, guardando binario en cache (%d bytes)",
+        content_type,
+        size,
+    )
+    _write_radar_cache(content, content_type=content_type, url=data_url, fetched_at_ms=fetched_at_ms)
+    return {
+        "content": content,
+        "content_type": content_type,
+        "url": data_url,
+        "updated_at": fetched_at_ms,
+        "size": size,
+        "source": "live",
+        "cached_at": None,
+    }
+
+
+def _ensure_radar_resource() -> Optional[Dict[str, Any]]:
+    ttl = _get_radar_cache_ttl()
+    memory_entry = _memory_read(RADAR_MEMORY_KEY, ttl)
+    if memory_entry:
+        return memory_entry.data
+
+    disk_data = _load_radar_cache_from_disk(ttl)
+    if disk_data:
+        timestamp = disk_data.get("updated_at", int(time.time() * 1000)) / 1000
+        _memory_write(RADAR_MEMORY_KEY, disk_data, timestamp=timestamp)
+        return disk_data
+
+    fresh_data = _download_radar_resource()
+    if fresh_data:
+        timestamp = fresh_data.get("updated_at", int(time.time() * 1000)) / 1000
+        _memory_write(RADAR_MEMORY_KEY, fresh_data, timestamp=timestamp)
+        return fresh_data
+
+    return None
+
+
+def get_radar_image() -> Optional[Dict[str, Any]]:
+    return _ensure_radar_resource()
+
+
+def get_radar_url() -> Optional[str]:
+    data = get_radar_image()
+    if not data:
+        return None
+    url = data.get("url")
+    if isinstance(url, str) and url.strip():
+        return url
+    return None
 
 
 def _request_dataset(endpoint: str, *, cache_key: str, memory_ttl: int) -> Any:
@@ -250,107 +513,6 @@ def get_storm_probability() -> Dict[str, Any]:
     return result
 
 
-def _extract_radar_url(payload: Any) -> Optional[str]:
-    candidates = []
-    if isinstance(payload, dict):
-        candidates.extend(
-            str(payload[key])
-            for key in ("url", "datos", "path", "enlace", "image")
-            if isinstance(payload.get(key), str)
-        )
-        for value in payload.values():
-            if isinstance(value, (list, dict)):
-                nested = _extract_radar_url(value)
-                if nested:
-                    return nested
-    elif isinstance(payload, list):
-        for entry in reversed(payload):
-            nested = _extract_radar_url(entry)
-            if nested:
-                return nested
-    elif isinstance(payload, str):
-        candidates.append(payload)
-
-    for candidate in reversed(candidates):
-        text = candidate.strip()
-        if text.lower().startswith("http"):
-            return text
-    return None
-
-
-def _extract_radar_frames(payload: Any) -> list[str]:
-    frames: list[str] = []
-    if isinstance(payload, dict):
-        for value in payload.values():
-            frames.extend(_extract_radar_frames(value))
-    elif isinstance(payload, list):
-        for entry in payload:
-            frames.extend(_extract_radar_frames(entry))
-    elif isinstance(payload, str):
-        lines = [line.strip() for line in payload.splitlines() if line.strip()]
-        frames.extend([line for line in lines if line.lower().startswith("http")])
-    return frames
-
-
-def _fetch_radar_data() -> tuple[Optional[str], list[str]]:
-    try:
-        payload = _request_dataset(
-            "red/radar/nacional",
-            cache_key="radar:nacional",
-            memory_ttl=TTL_RADAR,
-        )
-    except Exception as exc:  # pylint: disable=broad-except
-        logger.warning("No se pudo obtener radar AEMET: %s", exc)
-        return None, []
-
-    frames = _extract_radar_frames(payload)
-    if frames:
-        return frames[-1], frames[-12:]
-    url = _extract_radar_url(payload)
-    if url:
-        return url, [url]
-    return None, []
-
-
-def _ensure_radar_cache() -> Dict[str, Any]:
-    cached = _cache_read("radar", TTL_RADAR)
-    if cached:
-        return cached
-    stale = _cache_read("radar", 24 * 3600, allow_stale=True)
-
-    url, frames = _fetch_radar_data()
-    if url is None and stale:
-        if isinstance(stale, dict):
-            stale.setdefault("source", "cache")
-            stale.setdefault("cached_at", stale.get("updated_at"))
-        return stale
-
-    result = {
-        "url": url,
-        "frames": frames,
-        "updated_at": int(time.time() * 1000),
-        "source": "live",
-        "cached_at": None,
-    }
-    _cache_write("radar", result)
-    return result
-
-
-def get_radar_url() -> Optional[str]:
-    return _ensure_radar_cache().get("url")
-
-
-def get_radar_animation(limit: int = 8) -> Dict[str, Any]:
-    data = _ensure_radar_cache()
-    frames = data.get("frames") or []
-    if not isinstance(frames, list):
-        frames = []
-    ordered = [frame for frame in frames if isinstance(frame, str)]
-    trimmed = ordered[-limit:] if limit else ordered
-    updated_at = int(data.get("updated_at", int(time.time() * 1000)))
-    return {"frames": trimmed, "updated_at": updated_at}
-
-
 def get_lightning_strikes(bounds: Dict[str, float], since_epoch_ms: int) -> Dict[str, Any]:
     """Stub para futura integración de rayos en tiempo real."""
     _ = bounds, since_epoch_ms
@@ -363,10 +525,10 @@ def get_storm_status() -> Dict[str, Any]:
     lightning_enabled = bool(getattr(config.storm, "enableExperimentalLightning", False))
 
     prob_data = get_storm_probability()
-    radar_data = _ensure_radar_cache()
+    radar_data = get_radar_image()
 
     storm_prob = float(prob_data.get("storm_prob", 0.0))
-    radar_url = radar_data.get("url")
+    radar_url = radar_data.get("url") if radar_data else None
 
     near_activity = storm_prob >= threshold
     # Lower threshold if radar data is available (visual confirmation of activity)
@@ -381,7 +543,8 @@ def get_storm_status() -> Dict[str, Any]:
         if strikes.get("count"):
             near_activity = True
 
-    updated_at = max(prob_data.get("updated_at", 0), radar_data.get("updated_at", 0))
+    radar_updated_at = int(radar_data.get("updated_at", 0)) if radar_data else 0
+    updated_at = max(int(prob_data.get("updated_at", 0)), radar_updated_at)
     if not updated_at:
         updated_at = int(time.time() * 1000)
 
@@ -390,8 +553,11 @@ def get_storm_status() -> Dict[str, Any]:
         "near_activity": bool(near_activity),
         "radar_url": radar_url,
         "updated_at": int(updated_at),
-        "source": prob_data.get("source") or radar_data.get("source") or "live",
-        "cached_at": prob_data.get("cached_at") or radar_data.get("cached_at"),
+        "source": prob_data.get("source")
+        or (radar_data.get("source") if radar_data else None)
+        or "live",
+        "cached_at": prob_data.get("cached_at")
+        or (radar_data.get("cached_at") if radar_data else None),
     }
     return response
 

@@ -21,7 +21,6 @@ if __package__ in {None, ""}:
     # resuelva correctamente.
     sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-import httpx
 from fastapi import Body, Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi import status
 from fastapi.middleware.cors import CORSMiddleware
@@ -46,7 +45,7 @@ from backend.services.location import set_location
 from backend.services.metrics import get_latency
 from backend.services.seasonality import build_month_tip, get_current_month_season, get_month_season
 from backend.services.dst import current_time_payload, next_transition_info
-from backend.services.storms import get_radar_animation, get_radar_url, get_storm_status
+from backend.services.storms import get_radar_image, get_storm_status
 from backend.services.tts import SpeechError, TTSService, TTSUnavailableError
 from backend.services.weather import WeatherService, WeatherServiceError
 from backend.services.config_store import (
@@ -733,31 +732,34 @@ async def storms_status():
     return StormStatusResponse(**payload)
 
 
+def _radar_binary_response() -> Response:
+    radar_data = get_radar_image()
+    if not radar_data:
+        return Response(status_code=204)
+
+    content = radar_data.get("content")
+    if not isinstance(content, (bytes, bytearray, memoryview)):
+        return Response(status_code=204)
+
+    media_type = radar_data.get("content_type") or "image/gif"
+    payload = bytes(content)
+    response = Response(content=payload, media_type=media_type)
+    response.headers["Cache-Control"] = "public, max-age=60"
+    size = radar_data.get("size")
+    if isinstance(size, int) and size >= 0:
+        response.headers["Content-Length"] = str(size)
+    return response
+
+
 @app.get("/api/storms/radar")
-async def storms_radar():
-    url = get_radar_url()
-    if not url:
-        return Response(status_code=204)
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url)
-            response.raise_for_status()
-    except httpx.HTTPError:
-        return Response(status_code=204)
-    media_type = response.headers.get("content-type", "image/png")
-    return Response(content=response.content, media_type=media_type)
+def storms_radar():
+    return _radar_binary_response()
 
 
 @app.get("/api/storms/radar/animation")
 def storms_radar_animation(limit: int = Query(default=8, ge=3, le=24)):
-    data = get_radar_animation(limit)
-    frames = []
-    base_ts = int(data.get("updated_at", int(time.time() * 1000)))
-    raw_frames = data.get("frames") or []
-    for idx, url in enumerate(raw_frames):
-        ts = base_ts - (len(raw_frames) - idx - 1) * 60_000
-        frames.append({"url": url, "timestamp": ts})
-    return {"frames": frames, "updated_at": base_ts}
+    _ = limit  # keep parameter for backward compatibility
+    return _radar_binary_response()
 
 
 @app.get("/api/backgrounds/current", response_model=BackgroundAssetResponse)
