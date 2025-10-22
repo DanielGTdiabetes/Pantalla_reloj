@@ -1,18 +1,27 @@
 #!/usr/bin/env python3
-"""Synchronize pantalla-bg-generate timer interval with config.json."""
+"""Synchronize pantalla-bg-generate.timer with the dynamic interval."""
 from __future__ import annotations
 
 import json
+import logging
+import os
+import shutil
 import subprocess
+import tempfile
+from hashlib import sha256
 from pathlib import Path
+from typing import Optional
 
 CONFIG_PATH = Path("/etc/pantalla-dash/config.json")
-TIMER_OVERRIDE_DIR = Path("/etc/systemd/system/pantalla-bg-generate.timer.d")
-TIMER_OVERRIDE_FILE = TIMER_OVERRIDE_DIR / "override.conf"
-TIMER_UNIT = "pantalla-bg-generate.timer"
-SERVICE_UNIT = "pantalla-bg-generate.service"
-DEFAULT_INTERVAL_MIN = 60
-MIN_INTERVAL_MIN = 1
+TIMER_UNIT_NAME = "pantalla-bg-generate.timer"
+SERVICE_UNIT_NAME = "pantalla-bg-generate.service"
+TIMER_UNIT_PATH = Path("/etc/systemd/system") / TIMER_UNIT_NAME
+TIMER_DROPIN_DIR = TIMER_UNIT_PATH.with_suffix(TIMER_UNIT_PATH.suffix + ".d")
+LOG_DIR = Path("/var/log/pantalla-dash")
+LOG_FILE = LOG_DIR / "bg-sync.log"
+
+DEFAULT_INTERVAL_MIN = 360
+MIN_INTERVAL_MIN = 5
 MAX_INTERVAL_MIN = 1440
 
 
@@ -20,93 +29,237 @@ class SyncError(Exception):
     """Raised when synchronization fails."""
 
 
-def _load_interval() -> int:
-    """Return sanitized interval in minutes from config.json."""
-    interval = DEFAULT_INTERVAL_MIN
+def _setup_logger() -> logging.Logger:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    logger = logging.getLogger("pantalla-bg-sync")
+    if logger.handlers:
+        return logger
+
+    logger.setLevel(logging.INFO)
+
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+
+    file_handler = logging.FileHandler(LOG_FILE)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    logger.addHandler(stream_handler)
+
+    return logger
+
+
+def _extract_interval(data: object) -> Optional[float]:
+    if isinstance(data, dict):
+        background = data.get("background")
+        if isinstance(background, dict) and "intervalMinutes" in background:
+            return background["intervalMinutes"]
+        if "config" in data and isinstance(data["config"], dict):
+            return _extract_interval(data["config"])
+    return None
+
+
+def _load_interval(logger: logging.Logger) -> Optional[int]:
+    """Return sanitized interval in minutes from config.json.
+
+    Returns ``None`` when the timer must be disabled.
+    """
+
     try:
         raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        data = raw
-        if isinstance(raw, dict) and "config" in raw and isinstance(raw["config"], dict):
-            data = raw["config"]
-        if isinstance(data, dict) and "background" in data and isinstance(data["background"], dict):
-            candidate = data["background"].get("intervalMinutes")
-        else:
-            candidate = None
-        if candidate is not None:
-            if isinstance(candidate, (int, float)):
-                interval = int(candidate)
-            elif isinstance(candidate, str) and candidate.strip():
-                interval = int(float(candidate.strip()))
     except FileNotFoundError:
-        pass
-    except (json.JSONDecodeError, ValueError, TypeError) as exc:
+        logger.info(
+            "Config %s no encontrada. Usando intervalo por defecto: %s min.",
+            CONFIG_PATH,
+            DEFAULT_INTERVAL_MIN,
+        )
+        return DEFAULT_INTERVAL_MIN
+    except (json.JSONDecodeError, OSError) as exc:
         raise SyncError(f"Config inválido: {exc}") from exc
 
-    interval = max(MIN_INTERVAL_MIN, min(MAX_INTERVAL_MIN, interval))
-    if interval <= 0:
-        interval = DEFAULT_INTERVAL_MIN
-    return interval
+    candidate = _extract_interval(raw)
+
+    if candidate is None:
+        logger.info(
+            "intervalMinutes no definido en config. Usando %s min.",
+            DEFAULT_INTERVAL_MIN,
+        )
+        return DEFAULT_INTERVAL_MIN
+
+    if isinstance(candidate, (int, float)):
+        value = float(candidate)
+    elif isinstance(candidate, str) and candidate.strip():
+        try:
+            value = float(candidate.strip())
+        except ValueError as exc:
+            raise SyncError(f"intervalMinutes inválido: {candidate!r}") from exc
+    else:
+        raise SyncError(f"intervalMinutes inválido: {candidate!r}")
+
+    if value <= 0:
+        logger.info("intervalMinutes=%s -> deshabilitar timer.", value)
+        return None
+
+    clamped = max(MIN_INTERVAL_MIN, min(MAX_INTERVAL_MIN, int(value)))
+    if clamped != int(value):
+        logger.info(
+            "intervalMinutes=%s fuera de rango. Aplicando clamp a %s min.",
+            value,
+            clamped,
+        )
+    else:
+        logger.info("intervalMinutes=%s min.", clamped)
+    return clamped
 
 
-def _write_override(interval: int) -> None:
-    TIMER_OVERRIDE_DIR.mkdir(parents=True, exist_ok=True)
-    content = """[Unit]
-Description=Timer fondos IA (override desde config.json)
-
-[Timer]
-OnBootSec=30s
-OnUnitActiveSec={interval}min
-AccuracySec=10s
-RandomizedDelaySec=0
-OnCalendar=
-Unit={service}
-""".format(interval=interval, service=SERVICE_UNIT)
-    TIMER_OVERRIDE_FILE.write_text(content, encoding="utf-8")
+def _remove_dropins(logger: logging.Logger) -> None:
+    if TIMER_DROPIN_DIR.exists():
+        shutil.rmtree(TIMER_DROPIN_DIR)
+        logger.info("Override eliminado: %s", TIMER_DROPIN_DIR)
+    else:
+        logger.info("Sin overrides que eliminar (%s).", TIMER_DROPIN_DIR)
 
 
-def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(cmd, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+def _write_unit(interval: int, logger: logging.Logger) -> tuple[Optional[str], bool]:
+    new_content = (
+        "[Unit]\n"
+        "Description=Timer fondos IA (dinámico por config.json)\n\n"
+        "[Timer]\n"
+        f"OnBootSec=1min\n"
+        f"OnUnitActiveSec={interval}min\n"
+        f"Unit={SERVICE_UNIT_NAME}\n\n"
+        "[Install]\n"
+        "WantedBy=timers.target\n"
+    )
+
+    try:
+        old_content = TIMER_UNIT_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        old_content = None
+
+    if old_content == new_content:
+        logger.info("Unit sin cambios (hash=%s).", sha256(new_content.encode()).hexdigest())
+        return old_content, False
+
+    TIMER_UNIT_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=str(TIMER_UNIT_PATH.parent))
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as tmp_file:
+            tmp_file.write(new_content)
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+        os.replace(tmp_path, TIMER_UNIT_PATH)
+    except Exception:
+        os.unlink(tmp_path)
+        raise
+
+    logger.info(
+        "Unit reescrito (hash=%s).",
+        sha256(new_content.encode()).hexdigest(),
+    )
+    return old_content, True
 
 
-def _run_no_check(cmd: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(cmd, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+def _restore_unit(previous: Optional[str], logger: logging.Logger) -> None:
+    if previous is None:
+        try:
+            TIMER_UNIT_PATH.unlink()
+            logger.info("Unit eliminado tras fallo de verificación.")
+        except FileNotFoundError:
+            pass
+        return
+
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=str(TIMER_UNIT_PATH.parent))
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as tmp_file:
+            tmp_file.write(previous)
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+        os.replace(tmp_path, TIMER_UNIT_PATH)
+    except Exception:
+        os.unlink(tmp_path)
+        raise
+
+    logger.info("Unit restaurado tras fallo de verificación.")
+
+
+def _run(cmd: list[str], logger: logging.Logger, *, check: bool = True) -> subprocess.CompletedProcess[str]:
+    logger.info("Ejecutando: %s", " ".join(cmd))
+    result = subprocess.run(
+        cmd,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.stdout.strip():
+        logger.info(result.stdout.strip())
+    if result.stderr.strip():
+        level = logging.INFO if result.returncode == 0 else logging.ERROR
+        logger.log(level, result.stderr.strip())
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, cmd)
+    return result
+
+
+def _verify_unit(logger: logging.Logger) -> bool:
+    result = _run(["systemd-analyze", "verify", str(TIMER_UNIT_PATH)], logger, check=False)
+    if result.returncode == 0:
+        logger.info("Unit verificado OK: %s", TIMER_UNIT_PATH)
+        return True
+
+    logger.error("systemd-analyze verify falló (code=%s)", result.returncode)
+    return False
+
+
+def _disable_timer(logger: logging.Logger) -> int:
+    logger.info("Deshabilitando timer %s", TIMER_UNIT_NAME)
+    try:
+        _run(["systemctl", "disable", "--now", TIMER_UNIT_NAME], logger, check=False)
+    except subprocess.CalledProcessError:
+        # No se alcanzará porque check=False, pero mantenemos por claridad.
+        pass
+    return 0
 
 
 def main() -> int:
-    try:
-        interval = _load_interval()
-    except SyncError as exc:
-        print(f"[pantalla-bg-sync] Aviso: {exc}. Usando {DEFAULT_INTERVAL_MIN} min.")
-        interval = DEFAULT_INTERVAL_MIN
+    logger = _setup_logger()
+    logger.info("Sincronización de timer iniciada")
 
-    _write_override(interval)
+    try:
+        interval = _load_interval(logger)
+    except SyncError as exc:
+        logger.error("%s", exc)
+        interval = DEFAULT_INTERVAL_MIN
+        logger.info("Usando intervalo por defecto: %s min.", interval)
+
+    _remove_dropins(logger)
+
+    if interval is None:
+        return _disable_timer(logger)
+
+    previous_content, changed = _write_unit(interval, logger)
+
+    if not _verify_unit(logger):
+        if changed:
+            _restore_unit(previous_content, logger)
+        return 1
 
     for cmd in (
         ["systemctl", "daemon-reload"],
-        ["systemctl", "enable", "--now", TIMER_UNIT],
-        ["systemctl", "restart", TIMER_UNIT],
+        ["systemctl", "enable", "--now", TIMER_UNIT_NAME],
+        ["systemctl", "restart", TIMER_UNIT_NAME],
     ):
         try:
-            result = _run(cmd)
-            output = "\n".join(
-                part.strip()
-                for part in (result.stdout, result.stderr)
-                if part and part.strip()
-            )
-            if output:
-                print(output)
+            _run(cmd, logger)
         except subprocess.CalledProcessError as exc:
-            print(exc.stderr.strip())
+            logger.error("Comando falló (%s): returncode=%s", " ".join(cmd), exc.returncode)
             return exc.returncode
 
-    print(f"Intervalo aplicado: {interval} minutos")
-
-    timers = _run_no_check(["systemctl", "list-timers", "--no-legend", "--all"]).stdout.splitlines()
-    match = next((line for line in timers if TIMER_UNIT in line), "")
-    if match:
-        print(match)
-    else:
-        print(f"No se encontró {TIMER_UNIT} en systemctl list-timers")
+    logger.info("Intervalo aplicado correctamente: %s minutos", interval)
     return 0
 
 
