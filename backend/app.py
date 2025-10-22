@@ -514,12 +514,19 @@ class WeatherWeeklyResponse(BaseModel):
 
 
 class StormStatusResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
     storm_prob: float
     near_activity: bool
     radar_url: Optional[str] = None
     updated_at: int
     source: str = Field(default="live")
     cached_at: Optional[int] = Field(default=None, alias="cached_at")
+    last_strike_km: Optional[float] = Field(default=None, alias="last_strike_km")
+    last_strike_at: Optional[str] = Field(default=None, alias="last_strike_at")
+    strikes_window_minutes: Optional[int] = Field(
+        default=None, alias="strikes_window_minutes"
+    )
 
 
 class WifiNetwork(BaseModel):

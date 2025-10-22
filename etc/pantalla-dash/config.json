@@ -1,4 +1,14 @@
 {
   "backgroundMode": "daily",
-  "retainDays": 30
+  "retainDays": 30,
+  "storm": {
+    "enableExperimentalLightning": true,
+    "threshold": 0.6,
+    "nearKm": 15,
+    "recentMinutes": 30,
+    "alert": {
+      "soundEnabled": false,
+      "cooldownMinutes": 30
+    }
+  }
 }

@@ -42,6 +42,14 @@ class StormConfig(ExtraAllowModel):
     radarCacheSeconds: int | None = Field(
         default=None, ge=60, le=3600, alias="radarCacheSeconds"
     )
+    nearKm: float = Field(default=15.0, alias="nearKm")
+    recentMinutes: int = Field(default=30, alias="recentMinutes", ge=1, le=180)
+    alert: Optional["StormAlertConfig"] = None
+
+
+class StormAlertConfig(ExtraAllowModel):
+    soundEnabled: bool = Field(default=False, alias="soundEnabled")
+    cooldownMinutes: int = Field(default=30, alias="cooldownMinutes", ge=1, le=360)
 
 
 class ThemeConfig(ExtraAllowModel):
@@ -195,7 +203,14 @@ class AppConfig(ExtraAllowModel):
             "storm": {
                 key: value
                 for key, value in (self.storm.dict(by_alias=True) if self.storm else {}).items()
-                if key in {"threshold", "enableExperimentalLightning"}
+                if key
+                in {
+                    "threshold",
+                    "enableExperimentalLightning",
+                    "nearKm",
+                    "recentMinutes",
+                    "alert",
+                }
             },
             "theme": (self.theme.dict() if self.theme else {}),
             "background": (self.background.dict() if self.background else {}),

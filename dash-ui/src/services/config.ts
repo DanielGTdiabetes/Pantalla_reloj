@@ -68,6 +68,14 @@ export interface PatronConfig {
 export interface StormConfig {
   threshold?: number;
   enableExperimentalLightning?: boolean;
+  nearKm?: number;
+  recentMinutes?: number;
+  alert?: StormAlertConfig;
+}
+
+export interface StormAlertConfig {
+  soundEnabled?: boolean;
+  cooldownMinutes?: number;
 }
 
 export type RotatingPanelSectionKey = 'calendar' | 'season' | 'weekly' | 'lunar';

@@ -3,9 +3,13 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
+
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -13,6 +17,7 @@ from .aemet import AemetDecodeError, CacheEntry, _decode_aemet_payload
 from .config import get_api_key, read_config
 from .metrics import record_latency
 from .offline_state import record_provider_failure, record_provider_success
+from .location import get_location as get_location_override
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +40,16 @@ try:
     RADAR_CACHE_DIR.chmod(0o755)
 except OSError:
     pass
+
+
+MADRID_TZ = ZoneInfo("Europe/Madrid")
+UTC = timezone.utc
+EARTH_RADIUS_KM = 6371.0
+LIGHTNING_ENDPOINT = "observacion/rayos/todas"
+LIGHTNING_CACHE_NAME = "lightning"
+LIGHTNING_CACHE_KEY = "lightning:aemet:observacion"
+LIGHTNING_CACHE_TTL = 180
+LIGHTNING_MEMORY_TTL = 150
 
 
 _MEMORY_CACHE: Dict[str, CacheEntry] = {}
@@ -88,6 +103,292 @@ def _memory_read(key: str, ttl: int) -> CacheEntry | None:
 def _memory_write(key: str, data: Any, timestamp: Optional[float] = None) -> None:
     _MEMORY_CACHE[key] = CacheEntry(data, timestamp or time.time())
 
+
+def _coerce_float(
+    value: Any, *, default: float, min_value: Optional[float] = None, max_value: Optional[float] = None
+) -> float:
+    candidate = _safe_float(value)
+    if candidate is None:
+        return default
+    if min_value is not None and candidate < min_value:
+        candidate = min_value
+    if max_value is not None and candidate > max_value:
+        candidate = max_value
+    return candidate
+
+
+def _coerce_int(
+    value: Any, *, default: int, min_value: Optional[int] = None, max_value: Optional[int] = None
+) -> int:
+    try:
+        candidate = int(round(float(value)))
+    except (TypeError, ValueError):
+        candidate = default
+    if min_value is not None and candidate < min_value:
+        candidate = min_value
+    if max_value is not None and candidate > max_value:
+        candidate = max_value
+    return candidate
+
+
+def _safe_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        normalized = value.strip().replace(",", ".")
+        if not normalized:
+            return None
+        try:
+            candidate = float(normalized)
+        except ValueError:
+            return None
+        if not math.isfinite(candidate):
+            return None
+        return candidate
+    try:
+        candidate = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(candidate):
+        return None
+    return candidate
+
+
+def _parse_lightning_timestamp(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        timestamp = float(value)
+        if not math.isfinite(timestamp):
+            return None
+        if timestamp > 1e12:
+            timestamp /= 1000.0
+        try:
+            return datetime.fromtimestamp(timestamp, tz=UTC)
+        except (OSError, OverflowError, ValueError):
+            return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        normalized = text
+        upper = normalized.upper()
+        if upper.endswith("UTC"):
+            normalized = normalized[: -len("UTC")] + "+00:00"
+        elif upper.endswith("Z"):
+            normalized = normalized[:-1] + "+00:00"
+        if "+" not in normalized[10:] and "-" not in normalized[10:]:
+            # Assume UTC when timezone missing
+            normalized = f"{normalized}+00:00"
+        try:
+            dt = datetime.fromisoformat(normalized)
+        except ValueError:
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+                try:
+                    naive = datetime.strptime(text, fmt)
+                    dt = naive.replace(tzinfo=UTC)
+                    break
+                except ValueError:
+                    continue
+            else:
+                return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        else:
+            dt = dt.astimezone(UTC)
+        return dt
+    return None
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+    sin_phi = math.sin(delta_phi / 2.0)
+    sin_lambda = math.sin(delta_lambda / 2.0)
+    a = sin_phi * sin_phi + math.cos(phi1) * math.cos(phi2) * sin_lambda * sin_lambda
+    c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(max(0.0, 1.0 - a)))
+    return EARTH_RADIUS_KM * c
+
+
+def _extract_distance_km(entry: Dict[str, Any]) -> Optional[float]:
+    keys = (
+        "dist",
+        "dist_km",
+        "distance",
+        "distance_km",
+        "distancia",
+        "distancia_km",
+        "distanciaKm",
+        "radio",
+        "km",
+    )
+    for key in keys:
+        if key not in entry:
+            continue
+        distance = _safe_float(entry.get(key))
+        if distance is None:
+            continue
+        lowered = key.lower()
+        if "metro" in lowered or lowered.endswith("_m") or lowered.endswith("metros"):
+            distance /= 1000.0
+        return abs(distance)
+    meters_value = entry.get("dist_m") or entry.get("distance_m")
+    meters = _safe_float(meters_value)
+    if meters is not None:
+        return abs(meters) / 1000.0
+    return None
+
+
+def _normalize_lightning_entry(
+    entry: Dict[str, Any], location: Optional[tuple[float, float]]
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(entry, dict):
+        return None
+    timestamp = _parse_lightning_timestamp(
+        entry.get("fint")
+        or entry.get("fecha")
+        or entry.get("timestamp")
+        or entry.get("time")
+        or entry.get("datetime")
+    )
+    distance_km = _extract_distance_km(entry)
+    lat = _safe_float(entry.get("lat")) or _safe_float(entry.get("latitud"))
+    lon = _safe_float(entry.get("lon")) or _safe_float(entry.get("longitud"))
+    if distance_km is None and location and lat is not None and lon is not None:
+        distance_km = _haversine_km(location[0], location[1], lat, lon)
+    result: Dict[str, Any] = {
+        "timestamp": timestamp,
+        "distance_km": distance_km,
+    }
+    return result
+
+
+def _extract_lightning_items(payload: Any) -> list[Dict[str, Any]]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        for key in ("rayos", "datos", "items", "values", "observaciones", "data"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+def _resolve_reference_location(config: Any) -> Optional[tuple[float, float]]:
+    override = get_location_override()
+    if override:
+        return override
+    weather_cfg = getattr(config, "weather", None)
+    if weather_cfg:
+        lat = _safe_float(getattr(weather_cfg, "lat", None))
+        lon = _safe_float(getattr(weather_cfg, "lon", None))
+        if lat is not None and lon is not None:
+            return lat, lon
+    return None
+
+
+def _summarize_lightning_items(
+    items: Iterable[Dict[str, Any]],
+    *,
+    near_km: float,
+    recent_minutes: int,
+    count_key: str,
+    location: Optional[tuple[float, float]],
+) -> Dict[str, Any]:
+    now = datetime.now(tz=UTC)
+    threshold = now - timedelta(minutes=recent_minutes)
+    nearest_km: Optional[float] = None
+    latest_dt: Optional[datetime] = None
+    strikes_recent = 0
+    for entry in items:
+        normalized = _normalize_lightning_entry(entry, location)
+        if not normalized:
+            continue
+        timestamp = normalized.get("timestamp")
+        distance_km = normalized.get("distance_km")
+        if isinstance(distance_km, float) and math.isfinite(distance_km):
+            if nearest_km is None or distance_km < nearest_km:
+                nearest_km = distance_km
+        if isinstance(timestamp, datetime):
+            if latest_dt is None or timestamp > latest_dt:
+                latest_dt = timestamp
+            if timestamp >= threshold:
+                strikes_recent += 1
+
+    result: Dict[str, Any] = {
+        "last_strike_km": round(nearest_km, 2) if nearest_km is not None else None,
+        "last_strike_at": None,
+        count_key: strikes_recent,
+        "near_activity": False,
+    }
+
+    if latest_dt is not None:
+        try:
+            result["last_strike_at"] = latest_dt.astimezone(MADRID_TZ).isoformat()
+        except Exception:  # pragma: no cover - defensive conversion
+            result["last_strike_at"] = latest_dt.replace(tzinfo=UTC).isoformat()
+
+    if nearest_km is not None and latest_dt is not None:
+        age_minutes = (now - latest_dt).total_seconds() / 60.0
+        if age_minutes <= recent_minutes and nearest_km <= near_km:
+            result["near_activity"] = True
+
+    return result
+
+
+def _load_lightning_summary(
+    *,
+    near_km: float,
+    recent_minutes: int,
+    location: Optional[tuple[float, float]],
+) -> Optional[Dict[str, Any]]:
+    count_key = f"strikes_count_{recent_minutes}m"
+    cached = _cache_read(LIGHTNING_CACHE_NAME, LIGHTNING_CACHE_TTL)
+    if isinstance(cached, dict):
+        cached.setdefault("source", "cache")
+        cached.setdefault("cached_at", cached.get("updated_at"))
+        cached.setdefault("strikes_window_minutes", recent_minutes)
+        cached.setdefault("count_key", count_key)
+        return cached
+
+    stale = _cache_read(LIGHTNING_CACHE_NAME, 24 * 3600, allow_stale=True)
+
+    try:
+        payload = _request_dataset(
+            LIGHTNING_ENDPOINT,
+            cache_key=LIGHTNING_CACHE_KEY,
+            memory_ttl=LIGHTNING_MEMORY_TTL,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("Fallo obteniendo observación de rayos: %s", exc)
+        if isinstance(stale, dict):
+            stale = dict(stale)
+            stale.setdefault("source", "cache")
+            stale.setdefault("cached_at", stale.get("updated_at"))
+            stale.setdefault("strikes_window_minutes", recent_minutes)
+            stale.setdefault("count_key", count_key)
+            stale["near_activity"] = False
+            return stale
+        return None
+
+    items = _extract_lightning_items(payload)
+    summary = _summarize_lightning_items(
+        items,
+        near_km=near_km,
+        recent_minutes=recent_minutes,
+        count_key=count_key,
+        location=location,
+    )
+    summary["updated_at"] = int(time.time() * 1000)
+    summary["source"] = "live"
+    summary["cached_at"] = None
+    summary["count_key"] = count_key
+    summary["strikes_window_minutes"] = recent_minutes
+
+    _cache_write(LIGHTNING_CACHE_NAME, summary)
+    return summary
 
 def _get_radar_cache_ttl() -> int:
     config = read_config()
@@ -513,16 +814,13 @@ def get_storm_probability() -> Dict[str, Any]:
     return result
 
 
-def get_lightning_strikes(bounds: Dict[str, float], since_epoch_ms: int) -> Dict[str, Any]:
-    """Stub para futura integración de rayos en tiempo real."""
-    _ = bounds, since_epoch_ms
-    return {"count": 0, "items": []}
-
-
 def get_storm_status() -> Dict[str, Any]:
     config = read_config()
-    threshold = float(getattr(config.storm, "threshold", 0.6) or 0.6)
-    lightning_enabled = bool(getattr(config.storm, "enableExperimentalLightning", False))
+    storm_cfg = getattr(config, "storm", None)
+    threshold = _coerce_float(getattr(storm_cfg, "threshold", 0.6), default=0.6, min_value=0.0, max_value=1.0)
+    lightning_enabled = bool(getattr(storm_cfg, "enableExperimentalLightning", False))
+    near_km = _coerce_float(getattr(storm_cfg, "nearKm", 15.0), default=15.0, min_value=1.0)
+    recent_minutes = _coerce_int(getattr(storm_cfg, "recentMinutes", 30), default=30, min_value=1, max_value=360)
 
     prob_data = get_storm_probability()
     radar_data = get_radar_image()
@@ -538,9 +836,15 @@ def get_storm_status() -> Dict[str, Any]:
         if storm_prob >= radar_threshold:
             near_activity = True
 
+    lightning_summary: Optional[Dict[str, Any]] = None
     if lightning_enabled:
-        strikes = get_lightning_strikes({}, int(time.time() * 1000) - 30 * 60 * 1000)
-        if strikes.get("count"):
+        location = _resolve_reference_location(config)
+        lightning_summary = _load_lightning_summary(
+            near_km=near_km,
+            recent_minutes=recent_minutes,
+            location=location,
+        )
+        if lightning_summary and lightning_summary.get("near_activity"):
             near_activity = True
 
     radar_updated_at = int(radar_data.get("updated_at", 0)) if radar_data else 0
@@ -559,5 +863,24 @@ def get_storm_status() -> Dict[str, Any]:
         "cached_at": prob_data.get("cached_at")
         or (radar_data.get("cached_at") if radar_data else None),
     }
+    if lightning_summary:
+        count_key = lightning_summary.get("count_key")
+        if isinstance(count_key, str):
+            count_value = lightning_summary.get(count_key, 0)
+            try:
+                response[count_key] = int(round(float(count_value)))
+            except (TypeError, ValueError):
+                response[count_key] = 0
+        response["last_strike_km"] = lightning_summary.get("last_strike_km")
+        response["last_strike_at"] = lightning_summary.get("last_strike_at")
+        response["strikes_window_minutes"] = lightning_summary.get("strikes_window_minutes", recent_minutes)
+        lightning_cached_at = lightning_summary.get("cached_at")
+        if lightning_cached_at and not response.get("cached_at"):
+            response["cached_at"] = lightning_cached_at
+    else:
+        if lightning_enabled:
+            response["last_strike_km"] = None
+            response["last_strike_at"] = None
+            response["strikes_window_minutes"] = recent_minutes
     return response
 

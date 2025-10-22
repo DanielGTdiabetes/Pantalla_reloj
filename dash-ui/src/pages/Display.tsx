@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Background from '../components/Background';
+import LightningAlertBanner from '../components/LightningAlertBanner';
 import ClockPanel from '../components/panels/ClockPanel';
 import WeatherPanel from '../components/panels/WeatherPanel';
 import SideInfoRotator from '../components/SideInfoRotator';
@@ -147,6 +148,7 @@ const Display = () => {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-black text-white">
+      <LightningAlertBanner />
       <Background refreshMinutes={config?.background?.intervalMinutes ?? 60} />
       <div className="relative z-10 flex h-full w-full items-center justify-center px-12 py-8">
         <div className="grid h-full w-full max-w-[1840px] grid-cols-3 gap-8">
