@@ -39,9 +39,12 @@ class SecretPatch(BaseModel):
 def _ensure_dir(path: Path) -> None:
     try:
         path.mkdir(parents=True, exist_ok=True)
-        os.chmod(path, 0o755)
     except OSError as exc:  # pragma: no cover - defensive
         logger.warning("No se pudo crear directorio %s: %s", path, exc)
+    try:
+        os.chmod(path, 0o755)
+    except PermissionError:
+        logger.debug("No se pudo ajustar permisos de %s porque no somos dueños", path)
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -72,7 +75,8 @@ def _write_json(
         json.dump(data, handle, ensure_ascii=False, indent=2, sort_keys=True)
         handle.write("\n")
     os.chmod(tmp_path, mode)
-    if owner is not None or group is not None:
+    # Ajustamos propietario/grupo solo cuando corremos como root; en modo no-root lo omitimos.
+    if (owner is not None or group is not None) and os.geteuid() == 0:
         try:
             os.chown(tmp_path, owner if owner is not None else -1, group if group is not None else -1)
         except PermissionError as exc:  # pragma: no cover - defensive
@@ -80,7 +84,7 @@ def _write_json(
             raise
     os.replace(tmp_path, path)
     os.chmod(path, mode)
-    if owner is not None or group is not None:
+    if (owner is not None or group is not None) and os.geteuid() == 0:
         try:
             os.chown(path, owner if owner is not None else -1, group if group is not None else -1)
         except PermissionError as exc:  # pragma: no cover - defensive
@@ -181,7 +185,7 @@ def _migrate_config(data: dict[str, Any]) -> dict[str, Any]:
 
     if needs_write:
         try:
-            _write_json(CONFIG_PATH, migrated, mode=0o644, owner=0, group=0)
+            _write_json(CONFIG_PATH, migrated, mode=0o644)
         except OSError as exc:
             logger.error("No se pudo persistir migración de configuración: %s", exc)
     return migrated
@@ -191,7 +195,7 @@ def read_config() -> tuple[dict[str, Any], str]:
     data = _load_json(CONFIG_PATH)
     if not data and not CONFIG_PATH.exists():
         try:
-            _write_json(CONFIG_PATH, {}, mode=0o644, owner=0, group=0)
+            _write_json(CONFIG_PATH, {}, mode=0o644)
         except OSError as exc:  # pragma: no cover - defensive
             logger.error("No se pudo inicializar config.json: %s", exc)
     migrated = _migrate_config(data)
@@ -235,7 +239,7 @@ def write_config_patch(patch: dict[str, Any]) -> tuple[dict[str, Any], str]:
             raise ValueError(message) from exc
         raise ValueError(str(exc)) from exc
     try:
-        _write_json(CONFIG_PATH, merged, mode=0o644, owner=0, group=0)
+        _write_json(CONFIG_PATH, merged, mode=0o644)
     except OSError as exc:  # pragma: no cover - permisos insuficientes
         raise PermissionError("No se pudo escribir config.json") from exc
     logger.info("config merged")
