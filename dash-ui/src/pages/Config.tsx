@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type DragEvent,
+} from 'react';
 import Background from '../components/Background';
 import GlassPanel from '../components/GlassPanel';
 import {
@@ -13,7 +21,14 @@ import {
   deleteCalendarFile,
   fetchCalendarStatus,
   uploadCalendarFile,
+  startGoogleDeviceFlow,
+  fetchGoogleDeviceStatus,
+  cancelGoogleDeviceFlow,
+  fetchGoogleCalendars,
   type CalendarStatus,
+  type GoogleDeviceStartResponse,
+  type GoogleDeviceStatus,
+  type GoogleCalendarListItem,
 } from '../services/calendar';
 import { connectNetwork, fetchWifiStatus, scanNetworks, type WifiNetwork, type WifiStatus } from '../services/wifi';
 import { useDashboardConfig } from '../context/DashboardConfigContext';
@@ -69,10 +84,12 @@ interface FormState {
   weatherCity: string;
   weatherUnits: 'metric' | 'imperial';
   calendarEnabled: boolean;
+  calendarProvider: 'none' | 'ics' | 'url' | 'google';
   calendarMode: 'url' | 'ics';
   calendarUrl: string;
   calendarMaxEvents: string;
   calendarNotifyMinutesBefore: string;
+  googleCalendarId: string;
   backgroundMode: 'daily' | 'weather';
   backgroundIntervalMinutes: string;
   backgroundRetainDays: string;
@@ -87,10 +104,12 @@ const DEFAULT_FORM: FormState = {
   weatherCity: '',
   weatherUnits: 'metric',
   calendarEnabled: false,
+  calendarProvider: 'none',
   calendarMode: 'url',
   calendarUrl: '',
   calendarMaxEvents: '3',
   calendarNotifyMinutesBefore: '15',
+  googleCalendarId: 'primary',
   backgroundMode: 'daily',
   backgroundIntervalMinutes: '60',
   backgroundRetainDays: '7',
@@ -127,6 +146,12 @@ const Config = () => {
   const [calendarUploadProgress, setCalendarUploadProgress] = useState(0);
   const [calendarDeleting, setCalendarDeleting] = useState(false);
   const [calendarDragActive, setCalendarDragActive] = useState(false);
+  const [googleStatus, setGoogleStatus] = useState<GoogleDeviceStatus | null>(null);
+  const [googleDeviceInfo, setGoogleDeviceInfo] = useState<GoogleDeviceStartResponse | null>(null);
+  const [googleCalendars, setGoogleCalendars] = useState<GoogleCalendarListItem[]>([]);
+  const [googleCalendarsLoading, setGoogleCalendarsLoading] = useState(false);
+  const [googleActionError, setGoogleActionError] = useState<string | null>(null);
+  const googleStatusTimerRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const calendarUploading = calendarUploadState === 'uploading';
   const calendarFileDetails = useMemo(() => {
@@ -156,14 +181,25 @@ const Config = () => {
     const ui = (configData.ui as Record<string, any> | undefined) ?? {};
     const rotating = (ui.rotatingPanel as Record<string, any> | undefined) ?? {};
 
-    const modeValue = typeof calendar.mode === 'string' ? calendar.mode.toLowerCase() : '';
-    const calendarMode: 'url' | 'ics' = modeValue === 'ics'
-      ? 'ics'
-      : modeValue === 'url'
-      ? 'url'
-      : calendar.icsPath
-      ? 'ics'
-      : 'url';
+    const providerValue = typeof calendar.provider === 'string' ? calendar.provider.toLowerCase() : '';
+    let calendarProvider: FormState['calendarProvider'];
+    if (providerValue === 'google') {
+      calendarProvider = 'google';
+    } else if (providerValue === 'ics') {
+      calendarProvider = 'ics';
+    } else if (providerValue === 'url') {
+      calendarProvider = 'url';
+    } else if (providerValue === 'none') {
+      calendarProvider = 'none';
+    } else if (!calendar.enabled) {
+      calendarProvider = 'none';
+    } else if (calendar.icsPath) {
+      calendarProvider = 'ics';
+    } else {
+      calendarProvider = 'url';
+    }
+
+    const calendarMode: 'url' | 'ics' = calendarProvider === 'ics' ? 'ics' : 'url';
     const calendarUrlValue =
       typeof calendar.url === 'string'
         ? calendar.url
@@ -188,7 +224,8 @@ const Config = () => {
       aemetMunicipioId: typeof aemet.municipioId === 'string' ? aemet.municipioId : '',
       weatherCity: typeof weather.city === 'string' ? weather.city : '',
       weatherUnits: weather.units === 'imperial' ? 'imperial' : 'metric',
-      calendarEnabled: Boolean(calendar.enabled),
+      calendarEnabled: Boolean(calendar.enabled ?? calendarProvider !== 'none'),
+      calendarProvider,
       calendarMode,
       calendarUrl: calendarUrlValue,
       calendarMaxEvents:
@@ -197,6 +234,10 @@ const Config = () => {
         typeof calendar.notifyMinutesBefore === 'number'
           ? String(calendar.notifyMinutesBefore)
           : DEFAULT_FORM.calendarNotifyMinutesBefore,
+      googleCalendarId:
+        typeof (calendar.google as Record<string, any> | undefined)?.calendarId === 'string'
+          ? (calendar.google as Record<string, any>).calendarId
+          : DEFAULT_FORM.googleCalendarId,
       backgroundMode: background.mode === 'weather' ? 'weather' : 'daily',
       backgroundIntervalMinutes:
         typeof background.intervalMinutes === 'number'
@@ -279,12 +320,174 @@ const Config = () => {
     return () => window.clearTimeout(timeout);
   }, [wifiNotice]);
 
+  useEffect(() => {
+    if (form.calendarProvider !== 'google' || !form.calendarEnabled) {
+      if (googleStatusTimerRef.current) {
+        window.clearInterval(googleStatusTimerRef.current);
+        googleStatusTimerRef.current = null;
+      }
+      setGoogleStatus((prev) => (prev && prev.authorized ? prev : null));
+      setGoogleDeviceInfo(null);
+      setGoogleCalendars([]);
+      setGoogleCalendarsLoading(false);
+      setGoogleActionError(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const pollStatus = async () => {
+      try {
+        const status = await fetchGoogleDeviceStatus();
+        if (cancelled) return;
+        setGoogleStatus(status);
+        if (status.authorized) {
+          setGoogleDeviceInfo(null);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        console.warn('No se pudo obtener estado de Google Calendar', error);
+      }
+    };
+
+    void pollStatus();
+    googleStatusTimerRef.current = window.setInterval(pollStatus, 3000);
+
+    return () => {
+      cancelled = true;
+      if (googleStatusTimerRef.current) {
+        window.clearInterval(googleStatusTimerRef.current);
+        googleStatusTimerRef.current = null;
+      }
+    };
+  }, [form.calendarProvider, form.calendarEnabled]);
+
+  useEffect(() => {
+    if (form.calendarProvider !== 'google') {
+      return;
+    }
+    if (!googleStatus?.authorized) {
+      setGoogleCalendars([]);
+      setGoogleCalendarsLoading(false);
+      return;
+    }
+    if (googleCalendarsLoading || googleCalendars.length > 0) {
+      return;
+    }
+    let cancelled = false;
+    setGoogleCalendarsLoading(true);
+    setGoogleActionError(null);
+    void fetchGoogleCalendars()
+      .then((items) => {
+        if (cancelled) return;
+        setGoogleCalendars(items);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('No se pudieron listar calendarios de Google', error);
+        setGoogleActionError(
+          error instanceof Error ? error.message : 'No se pudo listar los calendarios de Google',
+        );
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setGoogleCalendarsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.calendarProvider, googleStatus?.authorized, googleCalendars.length, googleCalendarsLoading]);
+
   const handleFormChange = <T extends keyof FormState>(key: T, value: FormState[T]) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    setForm((prev) => {
+      if (key === 'calendarEnabled') {
+        const enabled = Boolean(value);
+        if (!enabled) {
+          return { ...prev, calendarEnabled: false, calendarProvider: 'none' };
+        }
+        const nextProvider = prev.calendarProvider === 'none' ? 'url' : prev.calendarProvider;
+        return {
+          ...prev,
+          calendarEnabled: true,
+          calendarProvider: nextProvider,
+          calendarMode: nextProvider === 'ics' ? 'ics' : 'url',
+        };
+      }
+      if (key === 'googleCalendarId') {
+        return { ...prev, googleCalendarId: value as string };
+      }
+      return { ...prev, [key]: value };
+    });
   };
 
-  const handleCalendarModeChange = (mode: 'url' | 'ics') => {
-    setForm((prev) => ({ ...prev, calendarMode: mode }));
+  const handleCalendarProviderChange = (provider: FormState['calendarProvider']) => {
+    setForm((prev) => {
+      const wasGoogle = prev.calendarProvider === 'google';
+      const next: FormState = {
+        ...prev,
+        calendarProvider: provider,
+        calendarEnabled: provider === 'none' ? false : true,
+        calendarMode: provider === 'ics' ? 'ics' : 'url',
+      };
+      if (wasGoogle && provider !== 'google') {
+        setGoogleDeviceInfo(null);
+        setGoogleStatus(null);
+        setGoogleCalendars([]);
+        setGoogleActionError(null);
+        void cancelGoogleDeviceFlow().catch(() => undefined);
+      }
+      if (provider === 'google' && !next.calendarEnabled) {
+        next.calendarEnabled = true;
+      }
+      return next;
+    });
+  };
+
+  const handleGoogleStart = async () => {
+    setGoogleActionError(null);
+    try {
+      const response = await startGoogleDeviceFlow();
+      setGoogleCalendars([]);
+      setGoogleCalendarsLoading(false);
+      setGoogleDeviceInfo(response);
+      setGoogleStatus((prev) => ({
+        ...(prev ?? {}),
+        authorized: false,
+        needs_action: true,
+        user_code: response.user_code,
+        verification_url: response.verification_url,
+      }));
+    } catch (error) {
+      console.error('No se pudo iniciar la autorización de Google', error);
+      setGoogleActionError(
+        error instanceof Error ? error.message : 'No se pudo iniciar la autorización con Google',
+      );
+    }
+  };
+
+  const handleGoogleCancel = async () => {
+    setGoogleActionError(null);
+    try {
+      await cancelGoogleDeviceFlow();
+      setGoogleDeviceInfo(null);
+      setGoogleCalendars([]);
+      setGoogleCalendarsLoading(false);
+      setGoogleStatus((prev) =>
+        prev
+          ? {
+              ...prev,
+              needs_action: false,
+              user_code: undefined,
+              verification_url: undefined,
+            }
+          : prev,
+      );
+    } catch (error) {
+      console.error('No se pudo cancelar la autorización de Google', error);
+      setGoogleActionError(
+        error instanceof Error ? error.message : 'No se pudo cancelar la autorización con Google',
+      );
+    }
   };
 
   const handleRotatingSectionToggle = (section: RotatingPanelSectionKey, value: boolean) => {
@@ -312,6 +515,11 @@ const Config = () => {
 
   const handleCalendarFileUpload = useCallback(
     async (file: File) => {
+      if (form.calendarProvider !== 'ics') {
+        setCalendarUploadState('error');
+        setCalendarUploadMessage('Selecciona el proveedor "Archivo ICS" para cargar un archivo.');
+        return;
+      }
       const validationError = validateCalendarFile(file);
       if (validationError) {
         setCalendarUploadState('error');
@@ -343,10 +551,10 @@ const Config = () => {
         setCalendarUploadProgress(0);
       }
     },
-    [refreshCalendarState],
+    [form.calendarProvider, refreshCalendarState],
   );
 
-  const handleCalendarFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCalendarFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       void handleCalendarFileUpload(file);
@@ -412,7 +620,7 @@ const Config = () => {
     }
   };
 
-  const handleCalendarDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+  const handleCalendarDragOver = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
     if (!calendarUploading) {
@@ -420,13 +628,13 @@ const Config = () => {
     }
   };
 
-  const handleCalendarDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+  const handleCalendarDragLeave = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
     setCalendarDragActive(false);
   };
 
-  const handleCalendarDrop = (event: React.DragEvent<HTMLDivElement>) => {
+  const handleCalendarDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
     setCalendarDragActive(false);
@@ -461,10 +669,13 @@ const Config = () => {
       },
       calendar: {
         enabled: form.calendarEnabled,
+        provider: form.calendarEnabled ? form.calendarProvider : 'none',
         mode: form.calendarMode,
-        ...(form.calendarMode === 'url'
-          ? { url: form.calendarUrl ? form.calendarUrl : null }
-          : {}),
+        url: form.calendarProvider === 'url' ? (form.calendarUrl ? form.calendarUrl : null) : null,
+        google:
+          form.calendarProvider === 'google'
+            ? { calendarId: form.googleCalendarId || 'primary' }
+            : undefined,
         maxEvents: parseInteger(form.calendarMaxEvents),
         notifyMinutesBefore: parseInteger(form.calendarNotifyMinutesBefore),
       },
@@ -701,27 +912,34 @@ const Config = () => {
 
                 <div>
                   <label className="block text-xs uppercase tracking-wide text-white/50">Calendario</label>
-                  <div className="mt-2 inline-flex overflow-hidden rounded-lg border border-white/20 bg-white/10 text-xs">
-                    <button
-                      type="button"
-                      className={`px-3 py-1 font-medium transition ${
-                        form.calendarMode === 'url' ? 'bg-white/20 text-white' : 'text-white/60 hover:bg-white/5'
-                      }`}
-                      onClick={() => handleCalendarModeChange('url')}
-                    >
-                      URL ICS
-                    </button>
-                    <button
-                      type="button"
-                      className={`px-3 py-1 font-medium transition ${
-                        form.calendarMode === 'ics' ? 'bg-white/20 text-white' : 'text-white/60 hover:bg-white/5'
-                      }`}
-                      onClick={() => handleCalendarModeChange('ics')}
-                    >
-                      Archivo .ics
-                    </button>
+                  <div className="mt-2 grid gap-3 md:grid-cols-2">
+                    <div>
+                      <span className="block text-xs uppercase tracking-wide text-white/50">Proveedor</span>
+                      <select
+                        className="mt-1 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none"
+                        value={form.calendarProvider}
+                        onChange={(event) =>
+                          handleCalendarProviderChange(event.target.value as FormState['calendarProvider'])
+                        }
+                      >
+                        <option value="none">Ninguno</option>
+                        <option value="url">ICS URL</option>
+                        <option value="ics">Archivo ICS</option>
+                        <option value="google">Google</option>
+                      </select>
+                    </div>
+                    <label className="flex items-center gap-2 text-xs text-white/70">
+                      <input
+                        type="checkbox"
+                        checked={form.calendarEnabled}
+                        onChange={(event) => handleFormChange('calendarEnabled', event.target.checked)}
+                        className="h-4 w-4 rounded border-white/30 bg-white/10 text-emerald-400 focus:ring-emerald-400"
+                        disabled={form.calendarProvider === 'none'}
+                      />
+                      Calendario activo
+                    </label>
                   </div>
-                  {form.calendarMode === 'url' ? (
+                  {form.calendarProvider === 'url' ? (
                     <div className="mt-3 space-y-2">
                       <input
                         type="url"
@@ -733,13 +951,9 @@ const Config = () => {
                       <p className="text-xs text-white/45">
                         Introduce la dirección ICS de tu calendario remoto. Se conserva aunque uses un archivo local.
                       </p>
-                      {calendarStatus?.mode === 'ics' ? (
-                        <p className="text-xs text-amber-200/80">
-                          Actualmente está activo un archivo .ics local. Cambia a «Archivo .ics» para gestionarlo.
-                        </p>
-                      ) : null}
                     </div>
-                  ) : (
+                  ) : null}
+                  {form.calendarProvider === 'ics' ? (
                     <div className="mt-3 space-y-3">
                       <input
                         ref={fileInputRef}
@@ -816,17 +1030,92 @@ const Config = () => {
                         <p>Ruta: {calendarStatus?.icsPath ?? '/etc/pantalla-dash/calendar/calendar.ics'}</p>
                       </div>
                     </div>
-                  )}
-                  <div className="mt-3 grid gap-3 md:grid-cols-3">
-                    <label className="flex items-center gap-2 text-xs text-white/70">
-                      <input
-                        type="checkbox"
-                        checked={form.calendarEnabled}
-                        onChange={(event) => handleFormChange('calendarEnabled', event.target.checked)}
-                        className="h-4 w-4 rounded border-white/30 bg-white/10 text-emerald-400 focus:ring-emerald-400"
-                      />
-                      Calendario activo
-                    </label>
+                  ) : null}
+                  {form.calendarProvider === 'google' ? (
+                    <div className="mt-3 space-y-3">
+                      {googleStatus && googleStatus.has_credentials === false ? (
+                        <div className="rounded-md border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-xs text-amber-100">
+                          Configura <code>client_id</code> y <code>client_secret</code> en /etc/pantalla-dash/secrets.json.
+                        </div>
+                      ) : null}
+                      {googleActionError ? (
+                        <div className="rounded-md border border-red-400/40 bg-red-500/15 px-3 py-2 text-xs text-red-100">
+                          {googleActionError}
+                        </div>
+                      ) : null}
+                      {googleStatus?.authorized ? (
+                        <div className="space-y-3">
+                          <p className="text-sm text-white/80">
+                            Conectado{googleStatus.email ? ` como ${googleStatus.email}` : ''}.
+                          </p>
+                          <div>
+                            <span className="block text-xs uppercase tracking-wide text-white/50">Calendario</span>
+                            <select
+                              className="mt-1 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none"
+                              value={form.googleCalendarId}
+                              onChange={(event) => handleFormChange('googleCalendarId', event.target.value)}
+                              disabled={googleCalendarsLoading}
+                            >
+                              <option value="primary">Principal</option>
+                              {googleCalendars
+                                .filter((calendar) => calendar.id && calendar.id !== 'primary')
+                                .map((calendar) => (
+                                  <option key={calendar.id} value={calendar.id}>
+                                    {calendar.summary || calendar.id}
+                                    {calendar.primary ? ' (Principal)' : ''}
+                                  </option>
+                                ))}
+                            </select>
+                            {googleCalendarsLoading ? (
+                              <p className="mt-1 text-xs text-white/45">Cargando calendarios…</p>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {googleStatus?.needs_action ? (
+                            <div className="space-y-2 rounded-md border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
+                              <p>
+                                Introduce el código{' '}
+                                <span className="font-semibold">
+                                  {googleStatus.user_code || googleDeviceInfo?.user_code || '—'}
+                                </span>{' '}
+                                en{' '}
+                                <a
+                                  href={googleStatus.verification_url || googleDeviceInfo?.verification_url || 'https://www.google.com/device'}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="underline"
+                                >
+                                  {googleStatus.verification_url || googleDeviceInfo?.verification_url || 'https://www.google.com/device'}
+                                </a>
+                              </p>
+                              <button
+                                type="button"
+                                onClick={handleGoogleCancel}
+                                className="rounded-md border border-white/25 px-3 py-2 text-xs text-white transition hover:border-white/40 hover:bg-white/10"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={handleGoogleStart}
+                              className="rounded-md bg-emerald-500/80 px-3 py-2 text-xs font-medium text-white shadow-md transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                              disabled={googleStatus?.has_credentials === false}
+                            >
+                              Conectar con Google
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                  {form.calendarProvider === 'none' ? (
+                    <p className="mt-3 text-xs text-white/45">Selecciona un proveedor para activar el calendario.</p>
+                  ) : null}
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
                     <div>
                       <span className="block text-xs uppercase tracking-wide text-white/50">Máx. eventos</span>
                       <input

@@ -25,7 +25,15 @@ class SecretPatch(BaseModel):
 
         apiKey: str | None = Field(default=None, alias="apiKey", max_length=200)
 
+    class GoogleSecret(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+        client_id: str | None = Field(default=None, alias="client_id", max_length=200)
+        client_secret: str | None = Field(default=None, alias="client_secret", max_length=200)
+        refresh_token: str | None = Field(default=None, alias="refresh_token", max_length=500)
+
     openai: OpenAISecret | None = None
+    google: GoogleSecret | None = Field(default=None, alias="google")
 
 
 def _ensure_dir(path: Path) -> None:
@@ -150,6 +158,23 @@ def _migrate_config(data: dict[str, Any]) -> dict[str, Any]:
         if "mode" not in calendar_copy:
             calendar_copy["mode"] = "ics" if calendar_copy.get("icsPath") else "url"
             calendar_changed = True
+        provider = str(calendar_copy.get("provider") or "").strip().lower()
+        if provider not in {"none", "ics", "url", "google"}:
+            enabled = bool(calendar_copy.get("enabled", False))
+            if not enabled:
+                provider = "none"
+            else:
+                mode_hint = str(calendar_copy.get("mode") or "").strip().lower()
+                if mode_hint in {"ics", "url"}:
+                    provider = mode_hint
+                elif calendar_copy.get("icsPath"):
+                    provider = "ics"
+                elif calendar_copy.get("url"):
+                    provider = "url"
+                else:
+                    provider = "none"
+            calendar_copy["provider"] = provider
+            calendar_changed = True
         if calendar_changed:
             migrated["calendar"] = calendar_copy
             needs_write = True
@@ -248,6 +273,36 @@ def write_secrets_patch(payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
             if not openai_data:
                 updated.pop("openai", None)
 
+    if patch.google:
+        google_data = updated.get("google") if isinstance(updated.get("google"), dict) else {}
+        google_section: dict[str, Any] = dict(google_data) if google_data else {}
+
+        if patch.google.client_id is not None:
+            client_id = patch.google.client_id.strip() if patch.google.client_id else ""
+            if client_id:
+                google_section["client_id"] = client_id
+            else:
+                google_section.pop("client_id", None)
+
+        if patch.google.client_secret is not None:
+            client_secret = patch.google.client_secret.strip() if patch.google.client_secret else ""
+            if client_secret:
+                google_section["client_secret"] = client_secret
+            else:
+                google_section.pop("client_secret", None)
+
+        if patch.google.refresh_token is not None:
+            refresh_token = patch.google.refresh_token.strip() if patch.google.refresh_token else ""
+            if refresh_token:
+                google_section["refresh_token"] = refresh_token
+            else:
+                google_section.pop("refresh_token", None)
+
+        if google_section:
+            updated["google"] = google_section
+        else:
+            updated.pop("google", None)
+
     try:
         _write_json(SECRETS_PATH, updated, mode=0o600)
     except OSError as exc:  # pragma: no cover - permisos insuficientes
@@ -269,6 +324,25 @@ def mask_secrets(secrets: dict[str, Any]) -> dict[str, Any]:
             masked["openai"] = {"hasKey": False, "masked": None}
     else:
         masked["openai"] = {"hasKey": False, "masked": None}
+
+    google_secret = secrets.get("google") if isinstance(secrets, dict) else None
+    if isinstance(google_secret, dict):
+        has_credentials = bool(
+            isinstance(google_secret.get("client_id"), str)
+            and google_secret.get("client_id", "").strip()
+            and isinstance(google_secret.get("client_secret"), str)
+            and google_secret.get("client_secret", "").strip()
+        )
+        has_refresh = bool(
+            isinstance(google_secret.get("refresh_token"), str)
+            and google_secret.get("refresh_token", "").strip()
+        )
+        masked["google"] = {
+            "hasCredentials": has_credentials,
+            "hasRefreshToken": has_refresh,
+        }
+    else:
+        masked["google"] = {"hasCredentials": False, "hasRefreshToken": False}
     return masked
 
 
@@ -285,4 +359,58 @@ def secrets_metadata() -> dict[str, Any]:
         }
     else:
         meta["openai"] = {"hasKey": False, "updatedAt": None, "path": str(SECRETS_PATH)}
+    secrets, _ = read_secrets()
+    google_secret = secrets.get("google") if isinstance(secrets, dict) else None
+    if isinstance(google_secret, dict):
+        has_credentials = bool(
+            isinstance(google_secret.get("client_id"), str)
+            and google_secret.get("client_id", "").strip()
+            and isinstance(google_secret.get("client_secret"), str)
+            and google_secret.get("client_secret", "").strip()
+        )
+        has_refresh = bool(
+            isinstance(google_secret.get("refresh_token"), str)
+            and google_secret.get("refresh_token", "").strip()
+        )
+    else:
+        has_credentials = False
+        has_refresh = False
+    meta["google"] = {
+        "hasCredentials": has_credentials,
+        "hasRefreshToken": has_refresh,
+        "path": str(SECRETS_PATH),
+    }
     return meta
+
+
+def read_google_secrets() -> dict[str, str]:
+    secrets, _ = read_secrets()
+    google_secret = secrets.get("google") if isinstance(secrets, dict) else None
+    if not isinstance(google_secret, dict):
+        return {}
+    payload: dict[str, str] = {}
+    for key in ("client_id", "client_secret", "refresh_token"):
+        value = google_secret.get(key)
+        if isinstance(value, str) and value.strip():
+            payload[key] = value.strip()
+    return payload
+
+
+def write_google_refresh_token(refresh_token: str | None) -> dict[str, Any]:
+    secrets, _ = read_secrets()
+    updated = dict(secrets)
+    google_secret = updated.get("google") if isinstance(updated.get("google"), dict) else {}
+    google_section: dict[str, Any] = dict(google_secret) if google_secret else {}
+
+    if refresh_token and refresh_token.strip():
+        google_section["refresh_token"] = refresh_token.strip()
+    else:
+        google_section.pop("refresh_token", None)
+
+    if google_section:
+        updated["google"] = google_section
+    else:
+        updated.pop("google", None)
+
+    _write_json(SECRETS_PATH, updated, mode=0o600)
+    return updated

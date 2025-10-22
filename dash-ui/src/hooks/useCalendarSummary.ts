@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchCalendarStatus, fetchTodayEvents, type CalendarStatus, type CalendarEvent } from '../services/calendar';
+import {
+  fetchCalendarStatus,
+  fetchTodayEvents,
+  fetchCalendarEvents,
+  type CalendarStatus,
+  type CalendarEvent,
+  type CalendarEventsResponse,
+  type CalendarProvider,
+  type CalendarUpcomingEvent,
+} from '../services/calendar';
 import { useDashboardConfig } from '../context/DashboardConfigContext';
 import type { CalendarConfig } from '../services/config';
 
@@ -30,9 +39,48 @@ export const useCalendarSummary = (): CalendarSummaryResult => {
     if (!isMountedRef.current) return;
     setLoading((previous) => (textRef.current ? previous : true));
 
+    const handleGoogleEvents = (response: CalendarEventsResponse | undefined) => {
+      if (!isMountedRef.current) return;
+      if (!response) {
+        setText('Sin datos');
+        setLoading(false);
+        return;
+      }
+      const items = Array.isArray(response.items) ? response.items : [];
+      const todayItems = filterEventsForToday(items);
+      if (todayItems.length === 0) {
+        setText(response.note ?? 'Sin eventos');
+      } else {
+        setText(formatCalendarLine(todayItems));
+      }
+      setLoading(false);
+    };
+
     try {
       const status = await fetchCalendarStatus();
-      const readiness = resolveCalendarReadiness(calendarPrefs, status);
+      const provider = determineCalendarProvider(calendarPrefs, status);
+
+      if (provider === 'none') {
+        if (!isMountedRef.current) return;
+        setText('Sin datos');
+        setLoading(false);
+        return;
+      }
+
+      if (provider === 'google') {
+        try {
+          const response = await fetchCalendarEvents(1);
+          handleGoogleEvents(response);
+        } catch (googleError) {
+          console.warn('No se pudo cargar eventos de Google Calendar', googleError);
+          if (!isMountedRef.current) return;
+          setText('Sin datos');
+          setLoading(false);
+        }
+        return;
+      }
+
+      const readiness = resolveCalendarReadiness(calendarPrefs, status, provider);
 
       if (readiness !== 'ready') {
         if (!isMountedRef.current) return;
@@ -92,21 +140,45 @@ export const useCalendarSummary = (): CalendarSummaryResult => {
 
 type Readiness = 'no-source' | 'ready';
 
+function determineCalendarProvider(
+  calendarPrefs: CalendarConfig | undefined,
+  status: CalendarStatus,
+): CalendarProvider {
+  const fromConfig = calendarPrefs?.provider?.toLowerCase() as CalendarProvider | undefined;
+  if (fromConfig && fromConfig !== 'none') {
+    return fromConfig;
+  }
+  const statusProvider = status?.provider?.toLowerCase() as CalendarProvider | undefined;
+  if (statusProvider) {
+    return statusProvider;
+  }
+  const enabled = Boolean(calendarPrefs?.enabled);
+  if (!enabled) return 'none';
+  const mode = (calendarPrefs?.mode || status?.mode || 'url').toLowerCase();
+  if (mode === 'ics') return 'ics';
+  if (mode === 'url') return 'url';
+  return enabled ? 'url' : 'none';
+}
+
 function resolveCalendarReadiness(
   calendarPrefs: CalendarConfig | undefined,
   status: CalendarStatus,
+  provider: CalendarProvider,
 ): Readiness {
+  if (provider === 'google') {
+    return 'ready';
+  }
+
   const enabled = Boolean(calendarPrefs?.enabled);
   if (!enabled) {
     return 'no-source';
   }
 
-  const mode = (calendarPrefs?.mode || status?.mode || 'url').toLowerCase();
-  if (mode === 'url') {
+  if (provider === 'url') {
     const hasUrl = Boolean(calendarPrefs?.url || status?.url);
     return hasUrl ? 'ready' : 'no-source';
   }
-  if (mode === 'ics') {
+  if (provider === 'ics') {
     const hasFile = Boolean(status?.exists || calendarPrefs?.icsConfigured || calendarPrefs?.icsPath);
     return hasFile ? 'ready' : 'no-source';
   }
@@ -114,7 +186,18 @@ function resolveCalendarReadiness(
   return 'no-source';
 }
 
-function formatCalendarLine(events: CalendarEvent[]): string {
+type CalendarSummaryEvent = Pick<CalendarUpcomingEvent, 'title' | 'start' | 'end' | 'allDay'>;
+
+function filterEventsForToday(events: CalendarUpcomingEvent[]): CalendarSummaryEvent[] {
+  const today = new Date();
+  return events.filter((event) => {
+    const start = safeDate(event.start);
+    if (!start) return false;
+    return isSameDay(start, today);
+  });
+}
+
+function formatCalendarLine(events: CalendarSummaryEvent[]): string {
   const safeEvents = events.filter((event) => event && typeof event.title === 'string');
   if (safeEvents.length === 0) {
     return 'Sin eventos';
@@ -124,10 +207,10 @@ function formatCalendarLine(events: CalendarEvent[]): string {
   if (safeEvents.length > 3) {
     segments.push(`+${safeEvents.length - 3}`);
   }
-  return segments.join(' · ');
+  return `Hoy · ${segments.join(' · ')}`;
 }
 
-function formatCalendarEvent(event: CalendarEvent): string {
+function formatCalendarEvent(event: CalendarSummaryEvent): string {
   const title = event.title?.trim() || 'Evento';
   if (event.allDay) {
     return `${title} (todo el día)`;
@@ -158,5 +241,13 @@ function formatTime(date: Date): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function isSameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
 }
 
