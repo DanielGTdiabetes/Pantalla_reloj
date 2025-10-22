@@ -115,11 +115,29 @@ def _deep_merge(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _apply_legacy_calendar_aliases(config: dict[str, Any]) -> None:
+def _apply_legacy_calendar_aliases(
+    config: dict[str, Any], *, patch: dict[str, Any] | None = None
+) -> None:
     """Ensure legacy calendar keys populate canonical fields before validation."""
 
     calendar = config.get("calendar")
     if not isinstance(calendar, dict):
+        return
+
+    calendar_patch = None
+    if patch:
+        candidate = patch.get("calendar")
+        if isinstance(candidate, dict):
+            calendar_patch = candidate
+
+    if (
+        calendar_patch
+        and "icsUrl" in calendar_patch
+        and "url" not in calendar_patch
+    ):
+        calendar_copy = dict(calendar)
+        calendar_copy["url"] = calendar_patch.get("icsUrl")
+        config["calendar"] = calendar_copy
         return
 
     if "icsUrl" in calendar and "url" not in calendar:
@@ -225,7 +243,7 @@ def write_config_patch(patch: dict[str, Any]) -> tuple[dict[str, Any], str]:
         raise ValueError("El cuerpo debe ser un objeto JSON")
     current, _ = read_config()
     merged = _deep_merge(current, patch)
-    _apply_legacy_calendar_aliases(merged)
+    _apply_legacy_calendar_aliases(merged, patch=patch)
     try:
         validated = AppConfig.model_validate(merged)
     except ValidationError as exc:
