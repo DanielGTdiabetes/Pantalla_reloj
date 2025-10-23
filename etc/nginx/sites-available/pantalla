@@ -25,8 +25,7 @@ server {
     alias /opt/dash/assets/backgrounds/auto/;
     access_log off;
     types { image/webp webp; }
-    default_type image/webp;
-    add_header Cache-Control "public, max-age=60";
+    add_header Cache-Control "public, max-age=120";
   }
 
   location = /healthz {
