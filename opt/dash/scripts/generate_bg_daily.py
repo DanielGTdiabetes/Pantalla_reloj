@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import base64
 import json
 import logging
@@ -12,7 +13,7 @@ import time
 from datetime import datetime, timedelta
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 import requests
 from openai import OpenAI
@@ -48,6 +49,8 @@ if IMAGE_SIZE not in ALLOWED_IMAGE_SIZES:
         DEFAULT_IMAGE_SIZE,
     )
     IMAGE_SIZE = DEFAULT_IMAGE_SIZE
+FALLBACK_CANONICAL_SIZE = (1920, 480)
+FALLBACK_MIN_SIZE = 50_000
 TIMEOUT_SECONDS = 60
 MAX_FILES = 30
 
@@ -85,21 +88,18 @@ def setup_logging() -> None:
     root.addHandler(handler)
 
 
-def _ensure_autocreated_fallback(path: Path) -> Path:
-    width, height = _parse_image_size(DEFAULT_IMAGE_SIZE)
-    needs_creation = True
-    if path.exists():
-        try:
-            if path.stat().st_size >= 50_000:
-                needs_creation = False
-        except OSError:
-            needs_creation = True
-    if not needs_creation:
-        return path
+def _determine_fallback_dimensions() -> Tuple[int, int]:
+    if IMAGE_SIZE == "auto":
+        return _parse_image_size(DEFAULT_IMAGE_SIZE)
+    return FALLBACK_CANONICAL_SIZE
 
-    AUTO_BACKGROUND_DIR.mkdir(parents=True, exist_ok=True)
-    top_color = (18, 24, 34)
-    bottom_color = (36, 54, 78)
+
+def _generate_gradient_fallback(path: Path) -> Path:
+    width, height = _determine_fallback_dimensions()
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    top_color = (12, 16, 24)
+    bottom_color = (28, 38, 52)
     image = Image.new("RGB", (width, height))
     draw = ImageDraw.Draw(image)
     for y in range(height):
@@ -109,47 +109,108 @@ def _ensure_autocreated_fallback(path: Path) -> Path:
             for top, bottom in zip(top_color, bottom_color)
         )
         draw.line((0, y, width, y), fill=color)
-    noise = Image.effect_noise((width, height), 48).convert("L")
+
+    noise = Image.effect_noise((width, height), 46).convert("L")
     noise_rgb = Image.merge("RGB", (noise, noise, noise))
-    image = Image.blend(image, noise_rgb, 0.25)
-    overlay = Image.new("RGBA", (width, height), (0, 0, 0, int(255 * 0.22)))
-    image = Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB")
-    draw = ImageDraw.Draw(image)
-    draw.rounded_rectangle((32, 32, width - 32, height - 32), radius=42, outline=(90, 110, 150), width=3)
-    draw.text((64, 64), "Pantalla Dash", fill=(220, 235, 255))
-    image.save(path, "WEBP", method=6, quality=92)
+    image = Image.blend(image, noise_rgb, 0.22)
+
+    vignette = Image.new("L", (width, height), color=0)
+    vignette_draw = ImageDraw.Draw(vignette)
+    vignette_draw.ellipse((-width * 0.4, -height * 0.6, width * 1.4, height * 1.6), fill=220)
+    vignette_rgb = Image.merge("RGB", (vignette, vignette, vignette))
+    image = Image.blend(image, vignette_rgb, 0.08)
+
+    overlay = Image.new("RGBA", (width, height), (6, 10, 18, int(255 * 0.32)))
+    highlight = Image.new("RGBA", (width, height), (90, 180, 255, int(255 * 0.12)))
+    try:
+        highlight_mask = Image.linear_gradient("L").rotate(35, expand=False).resize((width, height))
+    except AttributeError:  # Pillow < 9.2 fallback
+        mask = Image.new("L", (width, height), color=0)
+        mask_draw = ImageDraw.Draw(mask)
+        mask_draw.rectangle((0, 0, width, height), fill=180)
+        highlight_mask = mask
+    highlight.putalpha(highlight_mask)
+    combined = Image.alpha_composite(image.convert("RGBA"), overlay)
+    combined = Image.alpha_composite(combined, highlight)
+    final_image = combined.convert("RGB")
+
+    draw = ImageDraw.Draw(final_image)
+    font = ImageFont.load_default()
+    footer_text = "Pantalla Dash"
+    draw.text((32, 24), footer_text, fill=(210, 225, 245), font=font)
+    draw.text((32, height - 40), "Fallback activo", fill=(180, 195, 215), font=font)
+
+    final_image.save(path, "WEBP", method=6, quality=88)
     os.chmod(path, 0o644)
     return path
 
 
-def ensure_latest_json() -> None:
-    """Garantiza que exista el archivo latest.json para el fondo actual."""
-    latest_path = AUTO_BACKGROUND_DIR / "latest.json"
-    AUTO_BACKGROUND_DIR.mkdir(parents=True, exist_ok=True)
+def ensure_latest_json(assets_dir: Path) -> None:
+    """Garantiza que exista un latest.json consistente y un fondo válido."""
+
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    latest_path = assets_dir / "latest.json"
+
+    reason: Optional[str] = None
+    payload: Dict[str, Any] = {}
 
     if latest_path.exists():
+        try:
+            with latest_path.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (OSError, json.JSONDecodeError) as exc:
+            reason = f"invalid latest.json ({exc})"
+    else:
+        reason = "missing latest.json"
+
+    candidate_path: Optional[Path] = None
+    if reason is None:
+        filename = payload.get("filename")
+        url = payload.get("url")
+        candidate_name: Optional[str] = None
+        if isinstance(filename, str) and filename.strip():
+            candidate_name = Path(filename.strip()).name
+        elif isinstance(url, str) and url.strip():
+            candidate_name = Path(url.strip()).name
+        if candidate_name:
+            candidate_name = candidate_name.split("?", 1)[0]
+            candidate_path = assets_dir / candidate_name
+        else:
+            reason = "missing filename/url in latest.json"
+
+    if reason is None and candidate_path is not None:
+        try:
+            if candidate_path.stat().st_size < FALLBACK_MIN_SIZE:
+                reason = f"background too small ({candidate_path.stat().st_size} bytes)"
+        except FileNotFoundError:
+            reason = "background file missing"
+        except OSError as exc:
+            reason = f"background stat failed ({exc})"
+
+    if reason is None:
         return
 
-    fallback = _ensure_autocreated_fallback(AUTO_BACKGROUND_DIR / "autocreated_fallback.webp")
-    candidates = sorted(
-        AUTO_BACKGROUND_DIR.glob("*.webp"),
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
-    newest = candidates[0] if candidates else fallback
-
-    data = {
-        "filename": newest.name,
-        "url": f"/backgrounds/auto/{newest.name}",
-        "generatedAt": int(time.time()),
+    timestamp = int(time.time())
+    fallback_name = f"{timestamp}_autofallback.webp"
+    fallback_path = _generate_gradient_fallback(assets_dir / fallback_name)
+    latest_payload = {
+        "filename": fallback_path.name,
+        "url": f"/backgrounds/auto/{fallback_path.name}",
+        "generatedAt": timestamp,
         "mode": "daily",
         "prompt": "(auto-created fallback while no latest.json found)",
         "weatherKey": None,
     }
-    with open(latest_path, "w", encoding="utf-8") as handle:
-        json.dump(data, handle, indent=2)
-    os.chmod(latest_path, 0o644)
-    logging.warning("[ensure_latest_json] Generado archivo missing: %s", latest_path)
+    tmp_path = latest_path.with_suffix(".tmp")
+    with tmp_path.open("w", encoding="utf-8") as handle:
+        json.dump(latest_payload, handle, ensure_ascii=False, indent=2)
+    os.chmod(tmp_path, 0o644)
+    tmp_path.replace(latest_path)
+    logging.warning(
+        "[ensure_latest_json] %s → fallback regenerado (%s)",
+        reason,
+        fallback_path.name,
+    )
 
 
 def acquire_lock() -> Optional[int]:
@@ -595,9 +656,17 @@ def _complete_with_placeholder(reason: str, prompt_info: Dict[str, Any], retain_
     return 0
 
 
-def main() -> int:
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description="Pantalla Dash background generator")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="forzar regeneración del fondo aunque no haya pasado el intervalo",
+    )
+    args = parser.parse_args(argv)
+
     setup_logging()
-    ensure_latest_json()
+    ensure_latest_json(AUTO_BACKGROUND_DIR)
     lock_fd = acquire_lock()
     if lock_fd is None:
         logging.warning("Otro proceso de generación está en curso; se omite ejecución")
@@ -618,7 +687,12 @@ def main() -> int:
         else:
             elapsed_seconds = max(0, now_ts - last_generated_at)
 
-        if threshold_seconds > 0 and elapsed_seconds is not None and elapsed_seconds < threshold_seconds:
+        if (
+            not args.force
+            and threshold_seconds > 0
+            and elapsed_seconds is not None
+            and elapsed_seconds < threshold_seconds
+        ):
             logging.info(
                 "[background] Decision: skip (not due yet) (mode=%s, elapsed=%ss, threshold=%ss)",
                 mode,
@@ -634,6 +708,8 @@ def main() -> int:
             elapsed_display,
             threshold_seconds,
         )
+        if args.force:
+            logging.info("[background] Regeneración forzada por bandera --force")
 
         prompt_info = select_prompt(mode)
         api_key = resolve_openai_api_key()

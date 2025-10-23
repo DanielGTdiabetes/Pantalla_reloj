@@ -45,7 +45,7 @@ const FpsMeter = () => {
   }
 
   return (
-    <div className="pointer-events-none fixed bottom-4 right-6 z-40 select-none rounded-xl border border-cyan-400/30 bg-black/60 px-4 py-2 text-xs font-mono text-cyan-200/80 shadow-lg">
+    <div className="pointer-events-none fixed bottom-4 right-6 z-40 select-none rounded-xl border border-cyan-400/30 bg-black/30 px-4 py-2 text-xs font-mono text-cyan-200/80 shadow-lg">
       <span>FPS {fps.toFixed(1)}</span>
     </div>
   );

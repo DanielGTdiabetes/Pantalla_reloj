@@ -72,7 +72,7 @@ const DayStrip = () => {
 
   return (
     <aside
-      className="relative rounded-3xl border border-sky-400/20 bg-slate-900/60 px-5 py-4 text-sky-100/80 shadow-lg backdrop-blur"
+      className="relative rounded-3xl border border-sky-400/20 bg-slate-900/30 px-5 py-4 text-sky-100/80 shadow-lg backdrop-blur"
       data-depth-blur="true"
     >
       <button
@@ -99,7 +99,7 @@ const DayStrip = () => {
       </button>
 
       {open && info && (
-        <div className="absolute left-0 right-0 top-full z-20 mt-3 rounded-2xl border border-sky-400/30 bg-slate-950/90 p-5 text-sky-50 shadow-xl backdrop-blur">
+        <div className="absolute left-0 right-0 top-full z-20 mt-3 rounded-2xl border border-sky-400/30 bg-slate-950/35 p-5 text-sky-50 shadow-xl backdrop-blur">
           <h3 className="text-xs uppercase tracking-[0.4em] text-sky-300/70">{formatDate(info.date)}</h3>
           <div className="mt-3 space-y-4 text-sm text-sky-100/90">
             {info.efemerides.length > 0 && (

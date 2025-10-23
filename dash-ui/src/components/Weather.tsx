@@ -69,7 +69,7 @@ const Weather = () => {
 
   return (
     <section
-      className="flex h-full w-full flex-col rounded-3xl bg-slate-900/40 p-8 text-shadow-soft backdrop-blur"
+      className="flex h-full w-full flex-col rounded-3xl bg-slate-900/30 p-8 text-shadow-soft backdrop-blur"
       data-depth-blur="true"
     >
       <header className="flex items-center justify-between gap-4">

@@ -82,7 +82,7 @@ export function useBackgroundCycle(refreshMinutes = DEFAULT_REFRESH_MINUTES): Ba
       if (!slot) {
         return;
       }
-      await preloadImage(slot.url);
+      await preloadImage(slot);
       setNext(slot);
     } catch (error) {
       console.warn('No se pudo precargar fondo siguiente', error);
@@ -95,6 +95,7 @@ export function useBackgroundCycle(refreshMinutes = DEFAULT_REFRESH_MINUTES): Ba
       try {
         const slot = await fetchBackground();
         if (slot && !cancelled) {
+          await preloadImage(slot);
           setCurrent(slot);
           lastSwitchRef.current = Date.now();
         }
@@ -171,11 +172,22 @@ export function useBackgroundCycle(refreshMinutes = DEFAULT_REFRESH_MINUTES): Ba
   return { previous, current, next, isCrossfading, cycleKey };
 }
 
-async function preloadImage(url: string): Promise<void> {
+export function buildVersionedSrc(slot: BackgroundSlot): string {
+  const base = slot.url.split('?')[0];
+  const version = slot.etag ?? slot.generatedAt;
+  if (!version) {
+    return base;
+  }
+  const separator = slot.url.includes('?') ? '&' : '?';
+  return `${base}${separator}v=${encodeURIComponent(String(version))}`;
+}
+
+async function preloadImage(slot: BackgroundSlot): Promise<void> {
+  const src = buildVersionedSrc(slot);
   await new Promise<void>((resolve, reject) => {
     const image = new Image();
     image.onload = () => resolve();
-    image.onerror = () => reject(new Error(`No se pudo precargar ${url}`));
-    image.src = url;
+    image.onerror = () => reject(new Error(`No se pudo precargar ${src}`));
+    image.src = src;
   });
 }

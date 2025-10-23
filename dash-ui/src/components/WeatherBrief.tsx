@@ -64,7 +64,7 @@ const WeatherBrief = () => {
 
   return (
     <aside
-      className="rounded-3xl border border-cyan-400/20 bg-slate-900/60 px-5 py-4 text-cyan-100/80 shadow-lg backdrop-blur"
+      className="rounded-3xl border border-cyan-400/20 bg-slate-900/30 px-5 py-4 text-cyan-100/80 shadow-lg backdrop-blur"
       data-depth-blur="true"
     >
       <button
