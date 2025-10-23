@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import GlassPanel from './GlassPanel';
 import type { DayInfoPayload } from '../services/dayinfo';
 import type { SideInfoSectionKey } from '../services/config';
@@ -50,6 +50,8 @@ const SINGLE_LINE_STYLE: CSSProperties = {
 };
 
 const MIN_INTERVAL_MS = 5000;
+const MARQUEE_SPEED_PX_PER_SECOND = 60;
+const MARQUEE_MIN_DURATION_SECONDS = 12;
 
 function sanitizeText(value: string | undefined | null): string {
   if (!value) return '';
@@ -289,21 +291,40 @@ const SideInfoRotator = ({
         >
           <span className="text-xs uppercase tracking-[0.3em] text-white/50">{slide.label}</span>
           <div className="flex flex-col gap-2">
-            <p
-              className={`text-xl font-medium leading-snug ${
-                slide.placeholder ? 'text-white/60' : 'text-white/90'
-              }`}
-              style={slide.key === 'news' ? SINGLE_LINE_STYLE : PRIMARY_STYLE}
-            >
-              {slide.primary}
-            </p>
+            {slide.key === 'efemerides' ? (
+              <MarqueeText
+                text={slide.primary}
+                className={`text-xl font-medium leading-snug ${
+                  slide.placeholder ? 'text-white/60' : 'text-white/90'
+                }`}
+                active={index === activeIndex}
+              />
+            ) : (
+              <p
+                className={`text-xl font-medium leading-snug ${
+                  slide.placeholder ? 'text-white/60' : 'text-white/90'
+                }`}
+                style={slide.key === 'news' ? SINGLE_LINE_STYLE : PRIMARY_STYLE}
+              >
+                {slide.primary}
+              </p>
+            )}
             {slide.details.length > 0 ? (
               <div className="flex flex-col gap-1 text-sm text-white/70">
-                {slide.details.map((detail, detailIndex) => (
-                  <p key={`${slide.key}-detail-${detailIndex}`} style={DETAIL_STYLE}>
-                    {detail}
-                  </p>
-                ))}
+                {slide.details.map((detail, detailIndex) =>
+                  slide.key === 'efemerides' ? (
+                    <MarqueeText
+                      key={`${slide.key}-detail-${detailIndex}`}
+                      text={detail}
+                      className="text-sm text-white/70"
+                      active={index === activeIndex}
+                    />
+                  ) : (
+                    <p key={`${slide.key}-detail-${detailIndex}`} style={DETAIL_STYLE}>
+                      {detail}
+                    </p>
+                  ),
+                )}
               </div>
             ) : null}
           </div>
@@ -312,5 +333,67 @@ const SideInfoRotator = ({
     </GlassPanel>
   );
 };
+
+interface MarqueeTextProps {
+  text: string;
+  className?: string;
+  active: boolean;
+}
+
+function MarqueeText({ text, className, active }: MarqueeTextProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLSpanElement | null>(null);
+  const [needsScroll, setNeedsScroll] = useState(false);
+  const [durationSeconds, setDurationSeconds] = useState(MARQUEE_MIN_DURATION_SECONDS);
+
+  const updateScrolling = useCallback(() => {
+    const container = containerRef.current;
+    const content = contentRef.current;
+    if (!container || !content) {
+      setNeedsScroll(false);
+      return;
+    }
+    const overflow = content.scrollWidth > container.clientWidth + 8;
+    setNeedsScroll(overflow);
+    if (overflow) {
+      const distance = content.scrollWidth;
+      const estimated = distance / MARQUEE_SPEED_PX_PER_SECOND;
+      setDurationSeconds(Math.max(estimated, MARQUEE_MIN_DURATION_SECONDS));
+    }
+  }, []);
+
+  useEffect(() => {
+    updateScrolling();
+  }, [text, active, updateScrolling]);
+
+  useEffect(() => {
+    const handleResize = () => updateScrolling();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [updateScrolling]);
+
+  if (!text) {
+    return null;
+  }
+
+  return (
+    <div ref={containerRef} className="marquee-container">
+      {needsScroll ? (
+        <div className="marquee-track" style={{ animationDuration: `${durationSeconds}s` }}>
+          <span ref={contentRef} className={`marquee-segment ${className ?? ''}`}>
+            {text}
+          </span>
+          <span className={`marquee-segment ${className ?? ''}`} aria-hidden>
+            {text}
+          </span>
+        </div>
+      ) : (
+        <span ref={contentRef} className={className}>
+          {text}
+        </span>
+      )}
+    </div>
+  );
+}
 
 export default SideInfoRotator;
