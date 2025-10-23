@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useBackgroundCycle } from '../hooks/useBackgroundCycle';
+import { buildVersionedSrc, useBackgroundCycle } from '../hooks/useBackgroundCycle';
 import { ENABLE_WEBGL } from '../utils/runtimeFlags';
 
 interface DynamicBackgroundProps {
@@ -9,37 +9,38 @@ interface DynamicBackgroundProps {
 const DynamicBackground = ({ refreshMinutes }: DynamicBackgroundProps) => {
   const { current, previous, cycleKey, isCrossfading } = useBackgroundCycle(refreshMinutes);
 
+  const currentSrc = current ? buildVersionedSrc(current) : '';
+  const previousSrc = previous ? buildVersionedSrc(previous) : '';
+
   return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+    <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
       <AnimatePresence mode="sync">
-        {previous && (
-          <motion.div
-            key={`prev-${previous.generatedAt}`}
-            className="absolute inset-0 fade-layer"
+        {previous && previousSrc && (
+          <motion.img
+            key={`prev-${previous.generatedAt}-${previous.etag ?? 'none'}`}
+            className="fixed inset-0 h-full w-full object-cover fade-layer"
+            src={previousSrc}
+            alt=""
+            aria-hidden
             initial={{ opacity: 1 }}
             animate={{ opacity: 0 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 1.2, ease: 'easeInOut' }}
-            style={{
-              backgroundImage: `url(${previous.url})`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              filter: 'saturate(110%) contrast(105%)',
-            }}
+            style={{ filter: 'saturate(110%) contrast(105%)' }}
           />
         )}
-        {current.url && (
-          <motion.div
-            key={`current-${cycleKey}`}
-            className="absolute inset-0 fade-layer"
+        {currentSrc && (
+          <motion.img
+            key={`current-${cycleKey}-${current.etag ?? current.generatedAt}`}
+            className="fixed inset-0 h-full w-full object-cover fade-layer"
+            src={currentSrc}
+            alt=""
+            aria-hidden
             initial={{ opacity: isCrossfading ? 0 : 1 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 1.2, ease: 'easeInOut' }}
             style={{
-              backgroundImage: `url(${current.url})`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
               filter: ENABLE_WEBGL ? 'saturate(118%) contrast(110%)' : 'saturate(110%) contrast(105%)',
             }}
           />

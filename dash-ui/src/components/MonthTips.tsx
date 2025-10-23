@@ -121,7 +121,7 @@ const MonthTips = () => {
   return (
     <section
       ref={containerRef}
-      className="relative rounded-3xl bg-slate-900/40 p-4 text-sm text-slate-100/80 shadow-lg backdrop-blur"
+      className="relative rounded-3xl bg-slate-900/30 p-4 text-sm text-slate-100/80 shadow-lg backdrop-blur"
       data-depth-blur="true"
     >
       <header className="flex items-start justify-between gap-3">
@@ -143,7 +143,7 @@ const MonthTips = () => {
             aria-expanded={popoverOpen}
             aria-controls="month-tips-popover"
             onClick={() => setPopoverOpen((value) => !value)}
-            className="rounded-full border border-slate-500/40 bg-slate-900/60 px-2 py-1 text-xs text-slate-200/90 transition hover:bg-slate-800/80"
+            className="rounded-full border border-slate-500/40 bg-slate-900/30 px-2 py-1 text-xs text-slate-200/90 transition hover:bg-slate-800/60"
           >
             ℹ︎
           </button>
@@ -155,7 +155,7 @@ const MonthTips = () => {
           id="month-tips-popover"
           role="dialog"
           aria-modal="false"
-          className="absolute right-4 top-full z-20 mt-3 w-72 rounded-2xl border border-slate-500/30 bg-slate-900/95 p-4 text-xs text-slate-100 shadow-2xl backdrop-blur"
+          className="absolute right-4 top-full z-20 mt-3 w-72 rounded-2xl border border-slate-500/30 bg-slate-900/35 p-4 text-xs text-slate-100 shadow-2xl backdrop-blur"
         >
           <div className="space-y-4">
             <div>
@@ -189,7 +189,7 @@ const MonthTips = () => {
               )}
             </div>
             {season.nota && (
-              <p className="rounded-2xl border border-slate-500/20 bg-slate-800/60 p-3 text-[0.75rem] leading-relaxed text-slate-100/80">
+              <p className="rounded-2xl border border-slate-500/20 bg-slate-800/30 p-3 text-[0.75rem] leading-relaxed text-slate-100/80">
                 {season.nota}
               </p>
             )}

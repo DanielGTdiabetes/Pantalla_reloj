@@ -49,7 +49,7 @@ const StatusBar = () => {
 
   return (
     <header
-      className="relative flex items-center justify-between rounded-3xl bg-black/40 px-6 py-4 text-xs uppercase tracking-[0.35em] text-slate-100/80 backdrop-blur"
+      className="relative flex items-center justify-between rounded-3xl bg-black/30 px-6 py-4 text-xs uppercase tracking-[0.35em] text-slate-100/80 backdrop-blur"
       data-depth-blur="true"
     >
       <div className="flex items-center gap-4 text-shadow-soft">

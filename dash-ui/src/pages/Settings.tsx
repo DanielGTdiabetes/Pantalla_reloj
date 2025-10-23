@@ -476,7 +476,7 @@ const Settings = () => {
               </div>
               {wifiMessage && <p className="text-xs text-white/70">{wifiMessage}</p>}
               {wifiRaw && (
-                <pre className="max-h-32 overflow-y-auto rounded-2xl bg-black/40 px-3 py-2 text-[11px] text-white/50">
+                <pre className="max-h-32 overflow-y-auto rounded-2xl bg-black/25 px-3 py-2 text-[11px] text-white/50">
                   {wifiRaw}
                 </pre>
               )}
@@ -484,7 +484,7 @@ const Settings = () => {
           </section>
         </div>
         {loading && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/40 text-white">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/25 text-white">
             Cargando ajustes...
           </div>
         )}

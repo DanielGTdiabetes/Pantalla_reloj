@@ -104,13 +104,13 @@ body.power-save {
 }
 
 .glass {
-  background: rgba(12, 17, 28, 0.55);
+  background: rgba(12, 17, 28, 0.32); /* reduced opacity for background visibility */
 }
 
 .glass-light {
-  background: rgba(255, 255, 255, 0.22);
-  border-color: rgba(255, 255, 255, 0.35);
-  box-shadow: 0 14px 40px rgba(148, 163, 184, 0.35);
+  background: rgba(255, 255, 255, 0.28); /* reduced opacity for background visibility */
+  border-color: rgba(255, 255, 255, 0.32);
+  box-shadow: 0 14px 40px rgba(148, 163, 184, 0.28);
 }
 
 .glass-surface {
@@ -124,7 +124,7 @@ body.power-save {
   inset: 0;
   pointer-events: none;
   background: linear-gradient(120deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.08) 45%, rgba(255, 255, 255, 0) 100%);
-  opacity: 0.18;
+  opacity: 0.11; /* reduced opacity for background visibility */
   mix-blend-mode: screen;
 }
 
