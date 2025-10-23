@@ -9,23 +9,19 @@ server {
     proxy_set_header Host $host;
   }
 
-  # Servir estáticos desde el root; 404 si no existe
+  # Aplicación SPA: servir index.html en rutas desconocidas
   location / {
-    try_files $uri $uri/ =404;
+    try_files $uri /index.html;
   }
 
-  # RUTA ESPECÍFICA para fondos (no tocar bundles)
-  location ^~ /assets/backgrounds/ {
-    alias /opt/dash/assets/backgrounds/;
+  location /assets/backgrounds/auto/ {
+    alias /opt/dash/assets/backgrounds/auto/;
     access_log off;
-    expires 7d;
   }
 
   location /backgrounds/auto/ {
     alias /opt/dash/assets/backgrounds/auto/;
     access_log off;
-    types { image/webp webp; }
-    add_header Cache-Control "public, max-age=120";
   }
 
   location = /healthz {
