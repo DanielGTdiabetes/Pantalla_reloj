@@ -144,6 +144,8 @@ fi
 # APP_USER ya está definido en línea 17, no redefinir
 APP_HOME="$(getent passwd "$APP_USER" | cut -d: -f6)"
 [[ -n "$APP_HOME" ]] || die "No se pudo determinar HOME para $APP_USER"
+APP_GROUP="$(id -gn "$APP_USER")"
+[[ -n "$APP_GROUP" ]] || die "No se pudo determinar grupo para $APP_USER"
 
 LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 if [[ -z "$LAN_IP" ]]; then
@@ -472,13 +474,14 @@ else
   echo "[INFO] Desplegando cliente Blitzortung (si existe ZIP en home)…"
   ZIP=$HOME/homeassistant-blitzortung-master.zip
   if [ -f "$ZIP" ]; then
-    sudo install -d -m 0755 -o dani -g dani /opt/blitzortung/ws_client
+    sudo install -d -m 0755 -o "$APP_USER" -g "$APP_GROUP" /opt/blitzortung
+    sudo install -d -m 0755 -o "$APP_USER" -g "$APP_GROUP" /opt/blitzortung/ws_client
     tmpdir=$(mktemp -d)
     unzip -q "$ZIP" -d "$tmpdir"
     SRC=$(find "$tmpdir" -type f -name "ws_client.py" | head -n1 | sed "s|/ws_client\\.py$||")
     if [ -n "$SRC" ]; then
       rsync -a --delete "$SRC"/ /opt/blitzortung/ws_client/
-      chown -R dani:dani /opt/blitzortung
+      chown -R "$APP_USER:$APP_GROUP" /opt/blitzortung
       echo "  ✅ Copiado cliente Blitzortung."
     else
       echo "  ⚠️ No se encontró ws_client.py dentro del ZIP."
@@ -489,9 +492,24 @@ else
   fi
 fi
 
+if [[ -d /opt/blitzortung/ws_client ]]; then
+  sudo install -d -m 0755 -o "$APP_USER" -g "$APP_GROUP" /opt/blitzortung
+  if [[ ! -d /opt/blitzortung/.venv ]]; then
+    echo "[INFO] Creando entorno virtual para Blitzortung…"
+    sudo -u "$APP_USER" python3 -m venv /opt/blitzortung/.venv
+  fi
+  if [[ -d /opt/blitzortung/.venv ]]; then
+    echo "[INFO] Instalando dependencias de Blitzortung…"
+    sudo -u "$APP_USER" /opt/blitzortung/.venv/bin/python -m pip install --upgrade pip
+    if [[ -f /opt/blitzortung/ws_client/requirements.txt ]]; then
+      sudo -u "$APP_USER" /opt/blitzortung/.venv/bin/python -m pip install -r /opt/blitzortung/ws_client/requirements.txt
+    fi
+  fi
+fi
+
 # Configuración del servicio de usuario
-sudo -u dani mkdir -p /home/dani/.config/systemd/user /home/dani/.local/share/blitzortung
-sudo -u dani bash -c 'cat > /home/dani/.config/systemd/user/blitz_ws_client.service <<EOF
+sudo -u "$APP_USER" mkdir -p "$APP_HOME/.config/systemd/user" "$APP_HOME/.local/share/blitzortung"
+cat <<EOF | sudo -u "$APP_USER" tee "$APP_HOME/.config/systemd/user/blitz_ws_client.service" >/dev/null
 [Unit]
 Description=Blitzortung WebSocket client -> MQTT (local)
 After=network-online.target mosquitto.service
@@ -504,8 +522,8 @@ WorkingDirectory=/opt/blitzortung/ws_client
 ExecStart=/opt/blitzortung/.venv/bin/python /opt/blitzortung/ws_client/ws_client.py --config /opt/blitzortung/ws_client/config.yaml
 Restart=on-failure
 RestartSec=5
-User=dani
-Group=dani
+User=$APP_USER
+Group=$APP_GROUP
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=full
@@ -513,10 +531,10 @@ ProtectHome=no
 
 [Install]
 WantedBy=default.target
-EOF'
-sudo loginctl enable-linger dani
-sudo -u dani systemctl --user daemon-reload
-sudo -u dani systemctl --user enable --now blitz_ws_client.service
+EOF
+sudo loginctl enable-linger "$APP_USER"
+sudo -u "$APP_USER" systemctl --user daemon-reload
+sudo -u "$APP_USER" systemctl --user enable --now blitz_ws_client.service
 
 echo "[INFO] Blitzortung listo para integrarse con backend FastAPI."
 
