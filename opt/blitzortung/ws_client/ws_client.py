@@ -1,387 +1,269 @@
 #!/usr/bin/env python3
-"""Blitzortung WebSocket client that republishes strokes to MQTT."""
+"""Asynchronous Blitzortung WebSocket -> MQTT forwarder for Pantalla."""
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import logging
+import os
 import signal
-import ssl
 import sys
-import threading
 import time
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Optional
+from typing import Any, Dict, Optional
 
+import aiohttp
 import paho.mqtt.client as mqtt
-from dateutil import parser as date_parser
-import websocket
 
-try:
-    import yaml
-except ImportError:  # pragma: no cover - PyYAML is optional at runtime
-    yaml = None  # type: ignore
-
-LOGGER = logging.getLogger("blitz_ws_client")
-_BASE32 = "0123456789bcdefghjkmnpqrstuvwxyz"
-
-
-def configure_logging(log_path: Optional[Path]) -> None:
-    """Configure logging either to stdout or to the provided file."""
-    handlers: List[logging.Handler] = []
-    log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-
-    if log_path:
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        handler = logging.FileHandler(log_path, encoding="utf-8")
-        handlers.append(handler)
-    else:
-        handlers.append(logging.StreamHandler(sys.stdout))
-
-    logging.basicConfig(level=logging.INFO, format=log_format, handlers=handlers, force=True)
+DEFAULT_CONFIG_PATH = Path("/etc/pantalla-dash/config.json")
 
 
 @dataclass
-class ClientSettings:
-    ws_url: str = "wss://ws.blitzortung.org:3000"
-    mqtt_host: str = "127.0.0.1"
-    mqtt_port: int = 1883
-    topic_prefix: str = "blitzortung/1.1"
-    geohash_precision: int = 4
-    reconnect_delay: float = 10.0
-    keepalive: int = 30
-    client_id: str = "blitz-ws-client"
-    station_filter: List[int] = field(default_factory=list)
-    log_file: Optional[Path] = None
-    raw_topic: Optional[str] = None
-    ping_interval: Optional[int] = None
+class Settings:
+    """Runtime configuration for the WebSocket client."""
+
+    ws_url: str
+    mqtt_host: str
+    mqtt_port: int
+    mqtt_topic: str
+    reconnect_initial: float = 5.0
+    reconnect_max: float = 60.0
+    heartbeat: float = 30.0
 
 
-def load_settings(args: argparse.Namespace) -> ClientSettings:
-    """Load settings from CLI arguments and optional YAML file."""
-    settings = ClientSettings()
-
-    config_path = Path(args.config).expanduser() if getattr(args, "config", None) else None
-    if config_path and config_path.exists() and yaml is not None:
-        with config_path.open("r", encoding="utf-8") as fh:
-            data = yaml.safe_load(fh) or {}
-        for key, value in data.items():
-            if hasattr(settings, key):
-                setattr(settings, key, value)
-
-    for key in ("ws_url", "mqtt_host", "mqtt_port", "topic_prefix", "geohash_precision",
-                "reconnect_delay", "keepalive", "client_id", "raw_topic", "ping_interval"):
-        if getattr(args, key, None) is not None:
-            setattr(settings, key, getattr(args, key))
-
-    if getattr(args, "station_filter", None):
-        settings.station_filter = list({int(v) for v in args.station_filter})
-
-    if getattr(args, "log", None):
-        settings.log_file = Path(args.log).expanduser()
-
-    if settings.raw_topic is None:
-        settings.raw_topic = f"{settings.topic_prefix}/raw"
-
-    return settings
-
-
-class MQTTForwarder:
-    """Wrapper around a paho MQTT client with auto reconnect."""
-
-    def __init__(self, settings: ClientSettings) -> None:
-        self._settings = settings
-        self._client = mqtt.Client(client_id=settings.client_id, clean_session=True)
-        self._client.enable_logger(LOGGER.getChild("mqtt"))
-        self._client.on_connect = self._on_connect
-        self._client.on_disconnect = self._on_disconnect
-        self._connected = threading.Event()
-        self._lock = threading.Lock()
-
-    def start(self) -> None:
-        LOGGER.info("Connecting to MQTT broker %s:%s", self._settings.mqtt_host, self._settings.mqtt_port)
-        try:
-            self._client.connect(self._settings.mqtt_host, self._settings.mqtt_port, self._settings.keepalive)
-            self._client.loop_start()
-        except Exception:
-            LOGGER.exception("Unable to connect to MQTT broker")
-            raise
-
-    def stop(self) -> None:
-        with self._lock:
-            try:
-                self._client.loop_stop()
-                self._client.disconnect()
-            except Exception:
-                LOGGER.debug("Ignoring MQTT shutdown error", exc_info=True)
-
-    def publish(self, topic: str, payload: str, retain: bool = False) -> None:
-        if not self._client.is_connected():
-            LOGGER.debug("MQTT client not connected, skipping publish to %s", topic)
-            return
-        result = self._client.publish(topic, payload=payload, qos=0, retain=retain)
-        if result.rc != mqtt.MQTT_ERR_SUCCESS:
-            LOGGER.warning("MQTT publish failed (%s) for topic %s", result.rc, topic)
-
-    # MQTT callbacks -----------------------------------------------------
-    def _on_connect(self, client: mqtt.Client, userdata: Any, flags: Dict[str, Any], rc: int) -> None:  # noqa: D401
-        if rc == 0:
-            LOGGER.info("Connected to MQTT broker")
-            self._connected.set()
-        else:
-            LOGGER.error("MQTT connection failed with rc=%s", rc)
-
-    def _on_disconnect(self, client: mqtt.Client, userdata: Any, rc: int) -> None:  # noqa: D401
-        if rc == 0:
-            LOGGER.info("MQTT broker closed the connection")
-        else:
-            LOGGER.warning("MQTT disconnected unexpectedly (rc=%s)", rc)
-        self._connected.clear()
-
-
-def encode_geohash(latitude: float, longitude: float, precision: int) -> str:
-    if precision <= 0:
-        raise ValueError("precision must be positive")
-
-    lat_interval = [-90.0, 90.0]
-    lon_interval = [-180.0, 180.0]
-    geohash: List[str] = []
-    bits = [16, 8, 4, 2, 1]
-    bit = 0
-    ch = 0
-    even = True
-
-    while len(geohash) < precision:
-        if even:
-            mid = (lon_interval[0] + lon_interval[1]) / 2
-            if longitude > mid:
-                ch |= bits[bit]
-                lon_interval[0] = mid
-            else:
-                lon_interval[1] = mid
-        else:
-            mid = (lat_interval[0] + lat_interval[1]) / 2
-            if latitude > mid:
-                ch |= bits[bit]
-                lat_interval[0] = mid
-            else:
-                lat_interval[1] = mid
-        even = not even
-        if bit < 4:
-            bit += 1
-        else:
-            geohash.append(_BASE32[ch])
-            bit = 0
-            ch = 0
-
-    return "".join(geohash)
-
-
-def _extract_time(data: Dict[str, Any]) -> str:
-    for key in ("time", "timestamp", "datetime", "created_at", "t"):
-        if key in data and data[key]:
-            value = data[key]
-            if isinstance(value, (int, float)):
-                dt = datetime.fromtimestamp(float(value), tz=timezone.utc)
-                return dt.isoformat()
-            try:
-                dt = date_parser.parse(str(value))
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                return dt.astimezone(timezone.utc).isoformat()
-            except Exception:
-                LOGGER.debug("Unable to parse time value %s", value, exc_info=True)
-    return datetime.now(tz=timezone.utc).isoformat()
-
-
-def _extract_stations(data: Dict[str, Any]) -> List[int]:
-    for key in ("stations", "sta", "station", "s"):
-        if key in data and data[key]:
-            value = data[key]
-            if isinstance(value, list):
-                try:
-                    return [int(v) for v in value]
-                except Exception:
-                    return []
-            try:
-                return [int(value)]
-            except Exception:
-                return []
-    return []
-
-
-def parse_events(message: str) -> Iterable[Dict[str, Any]]:
-    try:
-        payload = json.loads(message)
-    except json.JSONDecodeError:
-        LOGGER.debug("Non JSON payload received: %s", message)
-        return []
-
-    return list(_walk_payload(payload))
-
-
-def _walk_payload(payload: Any) -> Iterator[Dict[str, Any]]:
-    if isinstance(payload, dict):
-        lowered = {k.lower(): k for k in payload.keys()}
-        if "lat" in lowered and "lon" in lowered:
-            lat_key = lowered["lat"]
-            lon_key = lowered["lon"]
-            try:
-                latitude = float(payload[lat_key])
-                longitude = float(payload[lon_key])
-            except (TypeError, ValueError):
-                LOGGER.debug("Invalid coordinates in payload: %s", payload)
-            else:
-                event: Dict[str, Any] = {
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "time": _extract_time(payload),
-                    "polarity": payload.get(lowered.get("pol") or lowered.get("polarity")),
-                    "amplitude": payload.get(lowered.get("amp") or lowered.get("amplitude")),
-                    "station_ids": _extract_stations(payload),
-                    "raw": payload,
-                }
-                if "id" in lowered:
-                    event["id"] = payload[lowered["id"]]
-                yield event
-        for value in payload.values():
-            yield from _walk_payload(value)
-    elif isinstance(payload, list):
-        for item in payload:
-            yield from _walk_payload(item)
-
-
-class BlitzWSClient:
-    def __init__(self, settings: ClientSettings, forwarder: MQTTForwarder) -> None:
-        self._settings = settings
-        self._forwarder = forwarder
-        self._ws: Optional[websocket.WebSocketApp] = None
-        self._stop_event = threading.Event()
-
-    def start(self, run_duration: Optional[float] = None) -> None:
-        end_time = time.monotonic() + run_duration if run_duration else None
-        while not self._stop_event.is_set():
-            if end_time and time.monotonic() >= end_time:
-                LOGGER.info("Run duration reached, stopping WebSocket client")
-                break
-            self._run_once()
-            if self._stop_event.is_set():
-                break
-            LOGGER.info("Reconnecting in %.1f seconds", self._settings.reconnect_delay)
-            time.sleep(self._settings.reconnect_delay)
-
-    def stop(self) -> None:
-        self._stop_event.set()
-        if self._ws:
-            try:
-                self._ws.close()
-            except Exception:
-                LOGGER.debug("Error closing websocket", exc_info=True)
-
-    # Internal helpers --------------------------------------------------
-    def _run_once(self) -> None:
-        sslopt: Dict[str, Any] = {"cert_reqs": ssl.CERT_REQUIRED}
-        self._ws = websocket.WebSocketApp(
-            self._settings.ws_url,
-            on_message=self._on_message,
-            on_error=self._on_error,
-            on_close=self._on_close,
-            on_open=self._on_open,
-        )
-
-        LOGGER.info("Connecting to Blitzortung WebSocket %s", self._settings.ws_url)
-        try:
-            self._ws.run_forever(
-                sslopt=sslopt,
-                ping_interval=self._settings.ping_interval,
-                ping_timeout=10,
-            )
-        except Exception:
-            LOGGER.exception("WebSocket connection crashed")
-
-    # WebSocket callbacks -----------------------------------------------
-    def _on_open(self, ws: websocket.WebSocketApp) -> None:  # noqa: D401
-        LOGGER.info("WebSocket connection established")
-
-    def _on_close(self, ws: websocket.WebSocketApp, status_code: int, msg: str) -> None:  # noqa: D401
-        LOGGER.warning("WebSocket closed (code=%s, message=%s)", status_code, msg)
-
-    def _on_error(self, ws: websocket.WebSocketApp, error: Exception) -> None:  # noqa: D401
-        LOGGER.error("WebSocket error: %s", error)
-
-    def _on_message(self, ws: websocket.WebSocketApp, message: str) -> None:  # noqa: D401
-        events = parse_events(message)
-        if not events:
-            return
-        for event in events:
-            if self._settings.station_filter:
-                if not event["station_ids"]:
-                    LOGGER.debug("Skipping event without station info due to filter")
-                    continue
-                if not any(sta in self._settings.station_filter for sta in event["station_ids"]):
-                    continue
-            try:
-                geohash = encode_geohash(event["latitude"], event["longitude"], self._settings.geohash_precision)
-            except ValueError:
-                LOGGER.debug("Skipping event with invalid coordinates: %s", event)
-                continue
-            topic = f"{self._settings.topic_prefix}/{geohash}/stroke"
-            payload = json.dumps(event, ensure_ascii=False, sort_keys=True)
-            self._forwarder.publish(topic, payload)
-            if self._settings.raw_topic:
-                self._forwarder.publish(self._settings.raw_topic, json.dumps(event["raw"], ensure_ascii=False))
-            LOGGER.info("Published stroke to %s", topic)
-
-
-def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Blitzortung WebSocket client -> MQTT forwarder")
-    parser.add_argument("--config", help="YAML configuration file", default=None)
-    parser.add_argument("--ws-url", dest="ws_url", help="WebSocket endpoint", default=None)
-    parser.add_argument("--mqtt-host", dest="mqtt_host", help="MQTT host", default=None)
-    parser.add_argument("--mqtt-port", dest="mqtt_port", type=int, help="MQTT port", default=None)
-    parser.add_argument("--topic-prefix", dest="topic_prefix", help="MQTT topic prefix", default=None)
-    parser.add_argument("--geohash-precision", dest="geohash_precision", type=int, help="Geohash precision", default=None)
-    parser.add_argument("--log", dest="log", help="Log file path", default=None)
-    parser.add_argument("--reconnect-delay", dest="reconnect_delay", type=float, default=None)
-    parser.add_argument("--keepalive", dest="keepalive", type=int, default=None)
-    parser.add_argument("--client-id", dest="client_id", default=None)
-    parser.add_argument("--station-filter", dest="station_filter", action="append", help="Station IDs to include", default=None)
-    parser.add_argument("--raw-topic", dest="raw_topic", default=None)
-    parser.add_argument("--ping-interval", dest="ping_interval", type=int, default=None)
-    parser.add_argument("--run-duration", dest="run_duration", type=float, default=None,
-                        help="Optional duration (seconds) for foreground runs, useful for tests")
+def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Blitzortung WebSocket client")
+    parser.add_argument("--config", help="Ruta al config.json", default=None)
+    parser.add_argument("--ws-url", help="URL del WebSocket", default=None)
+    parser.add_argument("--mqtt-host", help="Host MQTT", default=None)
+    parser.add_argument("--mqtt-port", help="Puerto MQTT", default=None)
+    parser.add_argument("--mqtt-topic", help="Topic MQTT", default=None)
+    parser.add_argument("--debug", action="store_true", help="Activa logs DEBUG")
     return parser.parse_args(argv)
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def load_json(path: Path) -> Dict[str, Any]:
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except FileNotFoundError:
+        logging.debug("Config file %s no encontrado", path)
+    except json.JSONDecodeError as exc:
+        logging.warning("Config file %s inválido: %s", path, exc)
+    return {}
+
+
+def resolve_settings(args: argparse.Namespace) -> Settings:
+    config_path = Path(args.config).expanduser() if args.config else DEFAULT_CONFIG_PATH
+    data = load_json(config_path)
+    blitz_cfg = data.get("blitzortung", {})
+    mqtt_cfg = data.get("mqtt", {})
+
+    env = os.environ
+    ws_url = (
+        args.ws_url
+        or env.get("BLITZ_WS_URL")
+        or blitz_cfg.get("ws_url")
+        or "wss://ws.blitzortung.org:3000"
+    )
+    mqtt_host = args.mqtt_host or env.get("MQTT_HOST") or mqtt_cfg.get("host") or "127.0.0.1"
+    mqtt_port = int(args.mqtt_port or env.get("MQTT_PORT") or mqtt_cfg.get("port") or 1883)
+    mqtt_topic = args.mqtt_topic or env.get("MQTT_TOPIC") or mqtt_cfg.get("topic") or "blitzortung/1"
+
+    return Settings(ws_url=ws_url, mqtt_host=mqtt_host, mqtt_port=mqtt_port, mqtt_topic=mqtt_topic)
+
+
+class MQTTBridge:
+    """Thin wrapper around a Paho MQTT client."""
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._client = mqtt.Client(client_id="pantalla-blitz-ws")
+        self._client.on_connect = self._on_connect
+        self._client.on_disconnect = self._on_disconnect
+        self._client.enable_logger(logging.getLogger("mqtt"))
+        self._connected = False
+
+    def start(self) -> None:
+        logging.info("Conectando MQTT %s:%s", self._settings.mqtt_host, self._settings.mqtt_port)
+        try:
+            self._client.connect(self._settings.mqtt_host, self._settings.mqtt_port, keepalive=60)
+        except Exception as exc:  # pragma: no cover - dependencias externas
+            logging.error("No se pudo conectar a MQTT: %s", exc)
+        self._client.loop_start()
+
+    def stop(self) -> None:
+        self._client.loop_stop()
+        try:
+            self._client.disconnect()
+        except Exception:  # pragma: no cover - mejor esfuerzo
+            logging.debug("Ignorando error al desconectar MQTT", exc_info=True)
+
+    # callbacks ---------------------------------------------------------
+    def _on_connect(self, client: mqtt.Client, userdata: Any, flags: Dict[str, Any], rc: int) -> None:
+        if rc == 0:
+            self._connected = True
+            logging.info("MQTT conectado")
+        else:
+            self._connected = False
+            logging.warning("MQTT conexión falló (rc=%s)", rc)
+
+    def _on_disconnect(self, client: mqtt.Client, userdata: Any, rc: int) -> None:
+        self._connected = False
+        if rc == 0:
+            logging.info("MQTT desconectado")
+        else:
+            logging.warning("MQTT desconectado inesperadamente (rc=%s)", rc)
+
+    def publish(self, payload: Dict[str, Any]) -> None:
+        if not self._connected:
+            logging.debug("MQTT no conectado, descartando evento")
+            return
+        try:
+            result = self._client.publish(self._settings.mqtt_topic, json.dumps(payload), qos=0, retain=False)
+            if result.rc != mqtt.MQTT_ERR_SUCCESS:
+                logging.warning("Publicación MQTT falló rc=%s", result.rc)
+        except Exception:  # pragma: no cover
+            logging.exception("Error publicando en MQTT")
+
+
+def parse_event(message: str) -> Optional[Dict[str, Any]]:
+    """Intenta convertir la cadena recibida en evento JSON listo para MQTT."""
+
+    try:
+        data = json.loads(message)
+    except json.JSONDecodeError:
+        logging.debug("Payload no JSON: %s", message)
+        return None
+
+    if isinstance(data, list) and data:
+        data = data[0]
+    if not isinstance(data, dict):
+        logging.debug("Payload no soportado: %s", data)
+        return None
+
+    timestamp = _extract_timestamp(data)
+    lat = _coerce_float(data.get("lat") or data.get("latitude"))
+    lon = _coerce_float(data.get("lon") or data.get("longitude"))
+    if lat is None or lon is None:
+        logging.debug("Evento sin lat/lon: %s", data)
+        return None
+
+    payload: Dict[str, Any] = {
+        "timestamp": timestamp,
+        "lat": lat,
+        "lon": lon,
+    }
+    intensity = _coerce_float(data.get("intensity") or data.get("ampere") or data.get("strength"))
+    if intensity is not None:
+        payload["intensity"] = intensity
+    return payload
+
+
+def _coerce_float(value: Any) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_timestamp(data: Dict[str, Any]) -> str:
+    for key in ("timestamp", "time", "datetime", "created_at"):
+        raw = data.get(key)
+        if raw is None:
+            continue
+        if isinstance(raw, (int, float)):
+            return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(float(raw)))
+        if isinstance(raw, str) and raw:
+            return raw
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+async def consume_ws(settings: Settings, mqtt_bridge: MQTTBridge, stop_event: asyncio.Event) -> None:
+    reconnect = settings.reconnect_initial
+    timeout = aiohttp.ClientTimeout(total=None, sock_connect=30)
+
+    while not stop_event.is_set():
+        logging.info("Conectando WS %s", settings.ws_url)
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.ws_connect(settings.ws_url, heartbeat=settings.heartbeat) as ws:
+                    logging.info("WS conectado")
+                    reconnect = settings.reconnect_initial
+                    async for msg in ws:
+                        if stop_event.is_set():
+                            break
+                        if msg.type == aiohttp.WSMsgType.TEXT:
+                            payload = parse_event(msg.data)
+                            if payload:
+                                mqtt_bridge.publish(payload)
+                                logging.debug("Evento publicado: %s", payload)
+                            else:
+                                logging.debug("Evento descartado")
+                        elif msg.type == aiohttp.WSMsgType.BINARY:
+                            logging.debug("Evento binario ignorado (%d bytes)", len(msg.data))
+                        elif msg.type == aiohttp.WSMsgType.ERROR:
+                            raise msg.data
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logging.warning("Error en WS: %s", exc, exc_info=True)
+        if stop_event.is_set():
+            break
+        logging.info("Reconectando WS en %.1f s", reconnect)
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=reconnect)
+        except asyncio.TimeoutError:
+            pass
+        reconnect = min(reconnect * 2, settings.reconnect_max)
+
+
+async def amain(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
-    settings = load_settings(args)
-    configure_logging(settings.log_file)
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
+    settings = resolve_settings(args)
+    logging.info(
+        "Iniciando Blitzortung WS client (ws=%s mqtt=%s:%s topic=%s)",
+        settings.ws_url,
+        settings.mqtt_host,
+        settings.mqtt_port,
+        settings.mqtt_topic,
+    )
 
-    LOGGER.info("Starting Blitzortung WebSocket client")
-    forwarder = MQTTForwarder(settings)
+    mqtt_bridge = MQTTBridge(settings)
+    mqtt_bridge.start()
+
+    loop = asyncio.get_running_loop()
+    stop_event = asyncio.Event()
+
+    def _stop() -> None:
+        if not stop_event.is_set():
+            logging.info("Recibida señal de parada")
+            stop_event.set()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, _stop)
+        except NotImplementedError:  # pragma: no cover - Windows
+            signal.signal(sig, lambda s, f: _stop())
+
     try:
-        forwarder.start()
-    except Exception:
-        LOGGER.error("Aborting due to MQTT connection failure")
-        return 2
-
-    client = BlitzWSClient(settings, forwarder)
-
-    def _handle_signal(signum: int, _frame: Any) -> None:
-        LOGGER.info("Received signal %s, shutting down", signum)
-        client.stop()
-
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        signal.signal(sig, _handle_signal)
-
-    try:
-        client.start(run_duration=args.run_duration)
+        await consume_ws(settings, mqtt_bridge, stop_event)
     finally:
-        forwarder.stop()
+        mqtt_bridge.stop()
     return 0
+
+
+def main() -> int:
+    try:
+        return asyncio.run(amain())
+    except KeyboardInterrupt:
+        return 0
 
 
 if __name__ == "__main__":
