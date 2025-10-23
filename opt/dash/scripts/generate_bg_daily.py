@@ -75,13 +75,16 @@ def setup_logging() -> None:
     root.addHandler(handler)
 
 
-def ensure_latest_json() -> None:
-    """Garantiza que exista el archivo latest.json para el fondo actual."""
+def ensure_latest_json() -> bool:
+    """Garantiza que exista el archivo latest.json para el fondo actual.
+
+    Returns True si el archivo fue creado en esta ejecución.
+    """
     latest_path = AUTO_BACKGROUND_DIR / "latest.json"
     AUTO_BACKGROUND_DIR.mkdir(parents=True, exist_ok=True)
 
     if latest_path.exists():
-        return
+        return False
 
     candidates = sorted(
         AUTO_BACKGROUND_DIR.glob("*.webp"),
@@ -109,6 +112,7 @@ def ensure_latest_json() -> None:
     with open(latest_path, "w", encoding="utf-8") as handle:
         json.dump(data, handle, indent=2)
     logging.warning("[ensure_latest_json] Generado archivo missing: %s", latest_path)
+    return True
 
 
 def acquire_lock() -> Optional[int]:
@@ -555,7 +559,7 @@ def _complete_with_placeholder(reason: str, prompt_info: Dict[str, Any], retain_
 
 def main() -> int:
     setup_logging()
-    ensure_latest_json()
+    created_latest = ensure_latest_json()
     lock_fd = acquire_lock()
     if lock_fd is None:
         logging.warning("Otro proceso de generación está en curso; se omite ejecución")
@@ -571,12 +575,19 @@ def main() -> int:
         last_generated_at = read_latest_generated_at(latest_path)
         now_ts = int(time.time())
         elapsed_seconds: Optional[int]
-        if last_generated_at is None:
+        if created_latest:
+            elapsed_seconds = None
+        elif last_generated_at is None:
             elapsed_seconds = None
         else:
             elapsed_seconds = max(0, now_ts - last_generated_at)
 
-        if threshold_seconds > 0 and elapsed_seconds is not None and elapsed_seconds < threshold_seconds:
+        if (
+            not created_latest
+            and threshold_seconds > 0
+            and elapsed_seconds is not None
+            and elapsed_seconds < threshold_seconds
+        ):
             logging.info(
                 "[background] Decision: skip (not due yet) (mode=%s, elapsed=%ss, threshold=%ss)",
                 mode,
