@@ -11,7 +11,6 @@ export interface ThemeDefinition {
   muted: string;
   decorations: {
     className: string;
-    overlay?: string;
   };
   glassTone: 'light' | 'dark';
 }
@@ -27,8 +26,7 @@ export const THEMES: ThemeDefinition[] = [
     text: 'var(--text-primary)',
     muted: 'rgba(148, 163, 184, 0.75)',
     decorations: {
-      className: 'neon-glow',
-      overlay: 'rounded-[32px] bg-cyan-400/10 blur-3xl'
+      className: 'neon-glow'
     },
     glassTone: 'dark'
   },
@@ -42,8 +40,7 @@ export const THEMES: ThemeDefinition[] = [
     text: 'var(--text-primary)',
     muted: 'rgba(203, 213, 225, 0.75)',
     decorations: {
-      className: 'crt-overlay',
-      overlay: 'rounded-[32px] bg-emerald-400/8 mix-blend-color-dodge'
+      className: 'crt-overlay'
     },
     glassTone: 'dark'
   },
@@ -57,8 +54,7 @@ export const THEMES: ThemeDefinition[] = [
     text: 'var(--text-primary)',
     muted: 'rgba(51, 65, 85, 0.7)',
     decorations: {
-      className: 'shadow-lg shadow-slate-200/40',
-      overlay: 'rounded-[32px] bg-white/60 backdrop-blur-lg mix-blend-luminosity'
+      className: 'shadow-lg shadow-slate-200/40'
     },
     glassTone: 'light'
   }
