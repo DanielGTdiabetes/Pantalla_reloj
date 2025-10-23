@@ -6,12 +6,6 @@
   color-scheme: dark;
 }
 
-:root,
-body,
-#root {
-  --dash-text-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
-}
-
 html,
 body,
 #root {
@@ -27,12 +21,19 @@ body,
   background: transparent !important;
 }
 
+:root {
+  --dash-text-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
 body {
   @apply font-sans h-screen w-screen overflow-hidden antialiased;
   color: inherit;
 }
 
-.text-shadow-soft {
+.text-shadow-soft,
+.card *,
+.panel *,
+.widget * {
   text-shadow: var(--dash-text-shadow);
 }
 
@@ -40,9 +41,6 @@ body {
   text-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
 }
 
-.card *,
-.panel *,
-.widget *,
 .glass *,
 .glass-light *,
 .glass-panel * {
@@ -99,6 +97,7 @@ body.power-save {
   background: transparent !important;
 }
 
+/* 100% transparente, sin blur/velo */
 .glass,
 .glass-light {
   border-radius: 1.5rem;
