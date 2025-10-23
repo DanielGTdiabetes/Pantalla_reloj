@@ -371,16 +371,28 @@ def generate_image_bytes(client: OpenAI, prompt: str, timeout: int) -> bytes:
         model=IMAGE_MODEL,
         prompt=prompt,
         size=IMAGE_SIZE,
-        response_format="b64_json",
         timeout=timeout,
     )
     if not result.data:
         raise RuntimeError("Respuesta vacía de OpenAI")
-    encoded = result.data[0].b64_json
+    first = result.data[0]
+    encoded = getattr(first, "b64_json", None)
+    if not encoded and isinstance(first, dict):
+        encoded = first.get("b64_json") or first.get("image_base64")
     if not encoded:
-        raise RuntimeError("Payload de imagen vacío")
-    raw = base64.b64decode(encoded)
-    with Image.open(BytesIO(raw)) as image:
+        encoded = getattr(first, "image_base64", None)
+    if encoded:
+        raw_bytes = base64.b64decode(encoded)
+    else:
+        url = getattr(first, "url", None)
+        if not url and isinstance(first, dict):
+            url = first.get("url")
+        if not url:
+            raise RuntimeError("Respuesta de OpenAI sin datos de imagen utilizables")
+        response = requests.get(url, timeout=timeout)
+        response.raise_for_status()
+        raw_bytes = response.content
+    with Image.open(BytesIO(raw_bytes)) as image:
         image = image.convert("RGB")
         buffer = BytesIO()
         image.save(buffer, format="WEBP", method=6, quality=90)
@@ -455,6 +467,17 @@ def write_placeholder(reason: str, prompt_info: Dict[str, Any]) -> Tuple[Path, D
     return target, metadata
 
 
+def _complete_with_placeholder(reason: str, prompt_info: Dict[str, Any], retain_days: int) -> int:
+    target, metadata = write_placeholder(reason, prompt_info)
+    write_metadata(target, metadata)
+    cleanup_old_files(retain_days)
+    logging.info("Generación completada con placeholder (%s)", reason)
+    logging.info("== RESUMEN ==")
+    logging.info("- resultado: %s", target)
+    logging.info("- modo: %s", metadata.get("mode"))
+    return 0
+
+
 def main() -> int:
     setup_logging()
     lock_fd = acquire_lock()
@@ -471,14 +494,7 @@ def main() -> int:
         api_key = resolve_openai_api_key()
         if not api_key:
             logging.error("OPENAI_API_KEY no configurada; se usará placeholder")
-            target, metadata = write_placeholder("OPENAI_API_KEY ausente", prompt_info)
-            write_metadata(target, metadata)
-            cleanup_old_files(retain_days)
-            logging.info("Generación finalizada con placeholder por falta de clave")
-            logging.info("== RESUMEN ==")
-            logging.info("- resultado: %s", target)
-            logging.info("- modo: %s", metadata.get("mode"))
-            return 0
+            return _complete_with_placeholder("OPENAI_API_KEY ausente", prompt_info, retain_days)
 
         client = OpenAI(api_key=api_key, max_retries=1)
         latency_ms = None
@@ -489,29 +505,15 @@ def main() -> int:
         except OpenAIError as exc:
             if _is_auth_or_billing_error(exc):
                 logging.error("Fallo de autenticación/billing con OpenAI: %s", exc)
-                target, metadata = write_placeholder("OpenAI 4xx o límite de facturación", prompt_info)
-                write_metadata(target, metadata)
-                cleanup_old_files(retain_days)
-                logging.info("Generación completada con placeholder por error de OpenAI")
-                logging.info("== RESUMEN ==")
-                logging.info("- resultado: %s", target)
-                logging.info("- modo: %s", metadata.get("mode"))
-                return 0
+                return _complete_with_placeholder("OpenAI 4xx o límite de facturación", prompt_info, retain_days)
             logging.exception("Fallo al generar imagen: %s", exc)
-            return 2
+            return _complete_with_placeholder("Error de OpenAI", prompt_info, retain_days)
         except Exception as exc:  # pylint: disable=broad-except
             if _is_auth_or_billing_error(exc):
                 logging.error("Fallo de autenticación/billing con OpenAI: %s", exc)
-                target, metadata = write_placeholder("OpenAI 4xx o límite de facturación", prompt_info)
-                write_metadata(target, metadata)
-                cleanup_old_files(retain_days)
-                logging.info("Generación completada con placeholder por error de OpenAI")
-                logging.info("== RESUMEN ==")
-                logging.info("- resultado: %s", target)
-                logging.info("- modo: %s", metadata.get("mode"))
-                return 0
+                return _complete_with_placeholder("OpenAI 4xx o límite de facturación", prompt_info, retain_days)
             logging.exception("Fallo al generar imagen: %s", exc)
-            return 2
+            return _complete_with_placeholder("Error inesperado generando imagen", prompt_info, retain_days)
 
         target = persist_image(image_bytes, prompt_info["mode"], prompt_info.get("key", ""))
         metadata = {
