@@ -5,6 +5,9 @@ export interface StormStatus {
   nearActivity: boolean;
   radarUrl?: string;
   updatedAt: number;
+  provider: 'aemet' | 'blitzortung';
+  strikeCount: number;
+  strikeCoords: Array<[number, number]>;
   lastStrikeKm?: number | null;
   lastStrikeAt?: string | null;
   strikesCount?: number;
@@ -22,6 +25,9 @@ interface StormStatusResponse {
   near_activity: boolean;
   radar_url?: string;
   updated_at: number;
+  provider?: string;
+  strike_count?: number;
+  strike_coords?: unknown;
   last_strike_km?: number | null;
   last_strike_at?: string | null;
   strikes_window_minutes?: number | null;
@@ -36,6 +42,29 @@ interface RadarAnimationResponse {
 
 export async function fetchStormStatus(): Promise<StormStatus> {
   const data = await apiRequest<StormStatusResponse>('/storms/status');
+
+  const providerRaw = typeof data.provider === 'string' ? data.provider.toLowerCase() : 'aemet';
+  const provider: 'aemet' | 'blitzortung' = providerRaw === 'blitzortung' ? 'blitzortung' : 'aemet';
+
+  const strikeCoords: Array<[number, number]> = [];
+  if (Array.isArray(data.strike_coords)) {
+    for (const entry of data.strike_coords) {
+      if (!Array.isArray(entry) || entry.length < 2) continue;
+      const lat = Number.parseFloat(`${entry[0]}`);
+      const lon = Number.parseFloat(`${entry[1]}`);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        strikeCoords.push([lat, lon]);
+      }
+    }
+  }
+
+  let strikeCount = 0;
+  if (typeof data.strike_count === 'number' && Number.isFinite(data.strike_count)) {
+    strikeCount = Math.max(0, Math.round(data.strike_count));
+  } else if (strikeCoords.length) {
+    strikeCount = strikeCoords.length;
+  }
+
   const strikesEntry = Object.entries(data).find(([key]) => key.startsWith('strikes_count_') && key.endsWith('m'));
   let strikesCount: number | undefined;
   let strikesCountKey: string | null = null;
@@ -77,6 +106,9 @@ export async function fetchStormStatus(): Promise<StormStatus> {
     nearActivity: data.near_activity,
     radarUrl: data.radar_url,
     updatedAt: data.updated_at,
+    provider,
+    strikeCount,
+    strikeCoords,
     lastStrikeKm,
     lastStrikeAt,
     strikesCount,

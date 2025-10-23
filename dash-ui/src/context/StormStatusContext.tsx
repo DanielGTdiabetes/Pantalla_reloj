@@ -8,7 +8,7 @@ interface StormStatusState {
 
 const StormStatusContext = createContext<StormStatusState | undefined>(undefined);
 
-const POLL_INTERVAL_MS = 5 * 60 * 1000;
+const POLL_INTERVAL_MS = 10_000;
 
 export function StormStatusProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<StormStatus | null>(null);
@@ -17,7 +17,13 @@ export function StormStatusProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     let timer: number | undefined;
 
+    let inFlight = false;
+
     const load = async () => {
+      if (inFlight) {
+        return;
+      }
+      inFlight = true;
       try {
         const data = await fetchStormStatus();
         if (!cancelled) {
@@ -28,6 +34,8 @@ export function StormStatusProvider({ children }: { children: ReactNode }) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Sin datos');
         }
+      } finally {
+        inFlight = false;
       }
     };
 

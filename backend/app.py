@@ -47,7 +47,12 @@ from backend.services.location import set_location
 from backend.services.metrics import get_latency
 from backend.services.seasonality import build_month_tip, get_current_month_season, get_month_season
 from backend.services.dst import current_time_payload, next_transition_info
-from backend.services.storms import get_radar_image, get_storm_status
+from backend.services.storms import (
+    configure_blitzortung,
+    get_radar_image,
+    get_storm_status,
+    shutdown_blitzortung,
+)
 from backend.services.tts import SpeechError, TTSService, TTSUnavailableError
 from backend.services.weather import WeatherService, WeatherServiceError
 from backend.services.config_store import (
@@ -124,6 +129,24 @@ calendar_logger.setLevel(logging.INFO)
 calendar_logger.propagate = False
 _calendar_log_lock = Lock()
 _calendar_log_configured = False
+
+
+def _configure_blitzortung_from_config() -> None:
+    try:
+        app_config = read_config()
+    except Exception as exc:  # pragma: no cover - lectura defensiva
+        logger.warning("No se pudo cargar configuración para Blitzortung: %s", exc)
+        configure_blitzortung("aemet")
+        return
+
+    storm_cfg = getattr(app_config, "storm", None)
+    provider = getattr(storm_cfg, "provider", "aemet") if storm_cfg else "aemet"
+    mqtt_cfg = getattr(app_config, "mqtt", None)
+    host_value = getattr(mqtt_cfg, "host", None) if mqtt_cfg else None
+    port_value = getattr(mqtt_cfg, "port", 1883) if mqtt_cfg else 1883
+
+    host = str(host_value) if host_value else "127.0.0.1"
+    configure_blitzortung(provider, host=host, port=port_value)
 
 
 def _ensure_calendar_log_handler() -> None:
@@ -1383,6 +1406,8 @@ def update_config_endpoint(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
+    _configure_blitzortung_from_config()
+
     secrets_data, secrets_path = read_store_secrets()
     return _config_response(
         updated_config,
@@ -1424,6 +1449,7 @@ async def startup_event():
     speech_queue.start()
     if _alert_task is None:
         _alert_task = asyncio.create_task(_alerts_daemon())
+    _configure_blitzortung_from_config()
 
 
 @app.on_event("shutdown")
@@ -1436,6 +1462,7 @@ async def shutdown_event():
         except asyncio.CancelledError:  # pragma: no cover - esperado en apagado
             pass
         _alert_task = None
+    shutdown_blitzortung()
     await weather_service.close()
     await calendar_service.close()
     await google_calendar_service.close()
