@@ -2,6 +2,7 @@
   "backgroundMode": "daily",
   "retainDays": 30,
   "storm": {
+    "provider": "blitzortung",
     "enableExperimentalLightning": true,
     "threshold": 0.6,
     "nearKm": 15,
@@ -10,5 +11,9 @@
       "soundEnabled": false,
       "cooldownMinutes": 30
     }
+  },
+  "mqtt": {
+    "host": "127.0.0.1",
+    "port": 1883
   }
 }

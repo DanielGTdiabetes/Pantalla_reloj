@@ -54,6 +54,7 @@ class WeatherConfig(ExtraAllowModel):
         return normalized
 
 class StormConfig(ExtraAllowModel):
+    provider: str = Field(default="aemet", alias="provider")
     threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     enableExperimentalLightning: bool = Field(default=False, alias="enableExperimentalLightning")
     radarCacheSeconds: int | None = Field(
@@ -62,6 +63,13 @@ class StormConfig(ExtraAllowModel):
     nearKm: float = Field(default=15.0, alias="nearKm")
     recentMinutes: int = Field(default=30, alias="recentMinutes", ge=1, le=180)
     alert: Optional["StormAlertConfig"] = None
+
+    @validator("provider", pre=True, always=True)
+    def normalize_provider(cls, value: Optional[str]) -> str:  # type: ignore[override]
+        normalized = (value or "aemet").strip().lower()
+        if normalized not in {"aemet", "blitzortung"}:
+            return "aemet"
+        return normalized
 
 
 class StormAlertConfig(ExtraAllowModel):
@@ -97,6 +105,16 @@ class TTSConfig(ExtraAllowModel):
 
 class WifiConfig(ExtraAllowModel):
     preferredInterface: Optional[str] = None
+
+
+class MQTTConfig(ExtraAllowModel):
+    host: str = Field(default="127.0.0.1")
+    port: int = Field(default=1883, ge=1, le=65535)
+
+    @validator("host")
+    def normalize_host(cls, value: str) -> str:  # type: ignore[override]
+        normalized = value.strip()
+        return normalized or "127.0.0.1"
 
 
 class CalendarGoogleConfig(ExtraAllowModel):
@@ -210,6 +228,7 @@ class AppConfig(ExtraAllowModel):
     background: Optional[BackgroundConfig] = None
     tts: Optional[TTSConfig] = None
     wifi: Optional[WifiConfig] = None
+    mqtt: Optional[MQTTConfig] = None
     calendar: Optional[CalendarConfig] = None
     locale: Optional[LocaleConfig] = None
     patron: Optional[PatronConfig] = None
@@ -226,6 +245,7 @@ class AppConfig(ExtraAllowModel):
                 for key, value in (self.storm.dict(by_alias=True) if self.storm else {}).items()
                 if key
                 in {
+                    "provider",
                     "threshold",
                     "enableExperimentalLightning",
                     "nearKm",
