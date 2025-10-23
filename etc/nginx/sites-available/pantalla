@@ -16,11 +16,13 @@ server {
 
   location /assets/backgrounds/auto/ {
     alias /opt/dash/assets/backgrounds/auto/;
+    types { image/webp webp; }
     access_log off;
   }
 
   location /backgrounds/auto/ {
     alias /opt/dash/assets/backgrounds/auto/;
+    types { image/webp webp; }
     access_log off;
   }
 
