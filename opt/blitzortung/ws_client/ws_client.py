@@ -92,6 +92,7 @@ class MQTTBridge:
             self._client.connect(self._settings.mqtt_host, self._settings.mqtt_port, keepalive=60)
         except Exception as exc:  # pragma: no cover - dependencias externas
             logging.error("No se pudo conectar a MQTT: %s", exc)
+            raise
         self._client.loop_start()
 
     def stop(self) -> None:
