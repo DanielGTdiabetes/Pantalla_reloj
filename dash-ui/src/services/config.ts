@@ -23,7 +23,7 @@ export interface ThemeConfig {
 
 export interface BackgroundConfig {
   intervalMinutes?: number;
-  mode?: 'daily' | 'weather';
+  mode?: 'daily' | 'weekly' | 'weather';
   retainDays?: number;
 }
 

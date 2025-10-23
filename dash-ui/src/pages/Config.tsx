@@ -115,7 +115,7 @@ interface FormState {
   calendarMaxEvents: string;
   calendarNotifyMinutesBefore: string;
   googleCalendarId: string;
-  backgroundMode: 'daily' | 'weather';
+  backgroundMode: 'daily' | 'weekly' | 'weather';
   backgroundIntervalMinutes: string;
   backgroundRetainDays: string;
   rotatingPanelEnabled: boolean;
@@ -306,7 +306,12 @@ const Config = () => {
         typeof (calendar.google as Record<string, any> | undefined)?.calendarId === 'string'
           ? (calendar.google as Record<string, any>).calendarId
           : DEFAULT_FORM.googleCalendarId,
-      backgroundMode: background.mode === 'weather' ? 'weather' : 'daily',
+      backgroundMode:
+        background.mode === 'weather'
+          ? 'weather'
+          : background.mode === 'weekly'
+          ? 'weekly'
+          : 'daily',
       backgroundIntervalMinutes:
         typeof background.intervalMinutes === 'number'
           ? String(background.intervalMinutes)
@@ -829,7 +834,10 @@ const Config = () => {
       },
       background: {
         mode: form.backgroundMode,
-        intervalMinutes: parseInteger(form.backgroundIntervalMinutes),
+        intervalMinutes:
+          form.backgroundMode === 'weekly'
+            ? undefined
+            : parseInteger(form.backgroundIntervalMinutes),
         retainDays: parseInteger(form.backgroundRetainDays),
       },
     };
@@ -1354,23 +1362,31 @@ const Config = () => {
                     className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none"
                     value={form.backgroundMode}
                     onChange={(event) =>
-                      handleFormChange('backgroundMode', event.target.value === 'weather' ? 'weather' : 'daily')
+                      handleFormChange('backgroundMode', event.target.value as FormState['backgroundMode'])
                     }
                   >
                     <option value="daily">Diario</option>
+                    <option value="weekly">Semanal</option>
                     <option value="weather">Según clima</option>
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs uppercase tracking-wide text-white/50">Intervalo (minutos)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={240}
-                    className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none"
-                    value={form.backgroundIntervalMinutes}
-                    onChange={(event) => handleFormChange('backgroundIntervalMinutes', event.target.value)}
-                  />
+                  {form.backgroundMode === 'weekly' ? (
+                    <p className="mt-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/70">
+                      En modo semanal, la app genera un fondo automáticamente cada 7 días. Cambia a «Diario» si quieres
+                      ajustar un intervalo en minutos.
+                    </p>
+                  ) : (
+                    <input
+                      type="number"
+                      min={1}
+                      max={240}
+                      className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none"
+                      value={form.backgroundIntervalMinutes}
+                      onChange={(event) => handleFormChange('backgroundIntervalMinutes', event.target.value)}
+                    />
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs uppercase tracking-wide text-white/50">Retención (días)</label>
