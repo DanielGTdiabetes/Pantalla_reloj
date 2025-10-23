@@ -83,8 +83,10 @@ class BackgroundConfig(ExtraAllowModel):
         if value is None:
             return value
         normalized = value.lower()
-        if normalized not in {"daily", "weather"}:
-            raise ValueError("mode must be 'daily' or 'weather'")
+        allowed_modes = {"daily", "weekly", "weather"}
+        if normalized not in allowed_modes:
+            allowed_list = "', '".join(sorted(allowed_modes))
+            raise ValueError(f"mode must be one of '{allowed_list}'")
         return normalized
 
 

@@ -171,9 +171,32 @@ def load_config(path: Path) -> Dict[str, Any]:
 def resolve_mode(config: Dict[str, Any]) -> str:
     background = config.get("background") or {}
     mode = background.get("mode") or config.get("backgroundMode")
-    if isinstance(mode, str) and mode.lower() in {"daily", "weather"}:
-        return mode.lower()
+    allowed = {"daily", "weekly", "weather"}
+    if isinstance(mode, str):
+        normalized = mode.lower()
+        if normalized in allowed:
+            return normalized
     return "daily"
+
+
+def resolve_interval_seconds(config: Dict[str, Any], mode: str) -> int:
+    background = config.get("background") or {}
+    raw_interval = background.get("intervalMinutes") or config.get("backgroundIntervalMinutes")
+    try:
+        interval_minutes = int(raw_interval)
+    except (TypeError, ValueError):
+        interval_minutes = 0
+
+    if interval_minutes > 0:
+        return max(60, interval_minutes * 60)
+
+    if mode == "weekly":
+        return 7 * 24 * 60 * 60
+    if mode == "daily":
+        return 24 * 60 * 60
+
+    # Para modos que dependen del clima generamos siempre.
+    return 0
 
 
 def resolve_retain_days(config: Dict[str, Any]) -> int:
@@ -184,6 +207,22 @@ def resolve_retain_days(config: Dict[str, Any]) -> int:
     except (TypeError, ValueError):
         retain = 30
     return max(1, min(retain, 90))
+
+
+def read_latest_generated_at(path: Path) -> Optional[int]:
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        return None
+    except (OSError, json.JSONDecodeError) as exc:
+        logging.warning("No se pudo leer %s: %s", path, exc)
+        return None
+
+    generated_at = data.get("generatedAt")
+    if isinstance(generated_at, (int, float)):
+        return int(generated_at)
+    return None
 
 
 def fetch_json(url: str, timeout: float = 8.0) -> Tuple[Optional[Any], int]:
@@ -526,6 +565,33 @@ def main() -> int:
         config = load_config(CONFIG_PATH)
         mode = resolve_mode(config)
         retain_days = resolve_retain_days(config)
+        threshold_seconds = resolve_interval_seconds(config, mode)
+
+        latest_path = AUTO_BACKGROUND_DIR / "latest.json"
+        last_generated_at = read_latest_generated_at(latest_path)
+        now_ts = int(time.time())
+        elapsed_seconds: Optional[int]
+        if last_generated_at is None:
+            elapsed_seconds = None
+        else:
+            elapsed_seconds = max(0, now_ts - last_generated_at)
+
+        if threshold_seconds > 0 and elapsed_seconds is not None and elapsed_seconds < threshold_seconds:
+            logging.info(
+                "[background] Decision: skip (not due yet) (mode=%s, elapsed=%ss, threshold=%ss)",
+                mode,
+                elapsed_seconds,
+                threshold_seconds,
+            )
+            return 0
+
+        elapsed_display = f"{elapsed_seconds}s" if elapsed_seconds is not None else "unknown"
+        logging.info(
+            "[background] Decision: generate (mode=%s, elapsed=%s, threshold=%ss)",
+            mode,
+            elapsed_display,
+            threshold_seconds,
+        )
 
         prompt_info = select_prompt(mode)
         api_key = resolve_openai_api_key()
