@@ -88,6 +88,8 @@ const DEFAULT_NEWS_FEEDS = [
   'https://www.xatakaciencia.com/index.xml',
 ];
 
+const WEEKLY_BACKGROUND_INTERVAL_MINUTES = 7 * 24 * 60;
+
 function formatBytes(value: number): string {
   if (value >= 1024 * 1024) {
     return `${(value / (1024 * 1024)).toFixed(1)} MB`;
@@ -313,7 +315,9 @@ const Config = () => {
           ? 'weekly'
           : 'daily',
       backgroundIntervalMinutes:
-        typeof background.intervalMinutes === 'number'
+        background.mode === 'weekly'
+          ? DEFAULT_FORM.backgroundIntervalMinutes
+          : typeof background.intervalMinutes === 'number'
           ? String(background.intervalMinutes)
           : DEFAULT_FORM.backgroundIntervalMinutes,
       backgroundRetainDays:
@@ -836,7 +840,7 @@ const Config = () => {
         mode: form.backgroundMode,
         intervalMinutes:
           form.backgroundMode === 'weekly'
-            ? undefined
+            ? WEEKLY_BACKGROUND_INTERVAL_MINUTES
             : parseInteger(form.backgroundIntervalMinutes),
         retainDays: parseInteger(form.backgroundRetainDays),
       },
