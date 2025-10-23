@@ -76,11 +76,13 @@ def _load_json(path: Path) -> dict[str, Any]:
     except FileNotFoundError:
         return {}
     except json.JSONDecodeError as exc:
-        logger.warning("JSON inválido en %s: %s", path, exc)
-        return {}
+        message = f"JSON inválido en {path}: {exc}"
+        logger.error(message)
+        raise ValueError(message) from exc
     except OSError as exc:  # pragma: no cover - defensive
-        logger.error("No se pudo leer %s: %s", path, exc)
-        return {}
+        message = f"No se pudo leer {path}: {exc}"
+        logger.error(message)
+        raise RuntimeError(message) from exc
 
 
 def _write_json(

@@ -1311,7 +1311,7 @@ async def day_brief(date: str | None = None) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="Fecha inválida") from exc
 
     try:
-        return get_day_info(target)
+        return await asyncio.to_thread(get_day_info, target)
     except Exception as exc:  # pragma: no cover - dependencias externas
         logger.exception("Error al generar day brief para %s", target)
         raise HTTPException(status_code=500, detail=str(exc)) from exc

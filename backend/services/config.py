@@ -291,22 +291,48 @@ def _ensure_parent_permissions(path: Path) -> None:
 
 
 def read_config() -> AppConfig:
-    """Read configuration from disk. Falls back to example file for development."""
+    """Read configuration from disk. Falls back to example file for development.
+
+    Si la configuración principal no está disponible o contiene placeholders
+    inválidos, degradamos de forma segura a una configuración vacía para evitar
+    que el backend quede inutilizado.
+    """
+
     source_path: Path
+    using_example = False
     if CONFIG_PATH.exists():
         source_path = CONFIG_PATH
     elif EXAMPLE_CONFIG_PATH.exists():
         logger.warning("Using example configuration file at %s", EXAMPLE_CONFIG_PATH)
         source_path = EXAMPLE_CONFIG_PATH
+        using_example = True
     else:
         raise FileNotFoundError("No configuration file available")
 
     with source_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
 
+    # El archivo de ejemplo incluye placeholders para credenciales. Los
+    # eliminamos para que el modelo pueda validarse y el servicio arranque.
+    if isinstance(data, dict):
+        aemet_section = data.get("aemet")
+        placeholder = "AEMET_API_KEY_PLACEHOLDER"
+        if (
+            isinstance(aemet_section, dict)
+            and str(aemet_section.get("apiKey", "")).strip().upper() == placeholder
+        ):
+            logger.info("Dropping placeholder AEMET config while loading %s", source_path)
+            data = dict(data)
+            data.pop("aemet", None)
+
     try:
         return AppConfig.model_validate(data)
     except ValidationError as exc:
+        if using_example:
+            logger.warning(
+                "Example configuration invalid (%s). Falling back to empty AppConfig.", exc
+            )
+            return AppConfig()
         logger.error("Invalid configuration: %s", exc)
         raise
 
@@ -347,7 +373,17 @@ def update_config(payload: Dict[str, Any]) -> AppConfig:
         "background": {"intervalMinutes", "mode", "retainDays"},
         "tts": {"voice", "volume"},
         "wifi": {"preferredInterface"},
-        "calendar": {"enabled", "mode", "url", "icsPath", "icsUrl", "maxEvents", "notifyMinutesBefore"},
+        "calendar": {
+            "enabled",
+            "mode",
+            "provider",
+            "url",
+            "icsPath",
+            "icsUrl",
+            "maxEvents",
+            "notifyMinutesBefore",
+            "google",
+        },
         "locale": {"country", "autonomousCommunity", "province", "city"},
         "patron": {"city", "name", "month", "day"},
     }
