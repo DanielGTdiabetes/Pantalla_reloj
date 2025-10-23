@@ -115,26 +115,44 @@ class MQTTClient:
         client.enable_logger(logger)
         client.on_connect = self._on_connect  # type: ignore[assignment]
         client.on_message = self._on_message  # type: ignore[assignment]
-        try:
-            client.connect(self.host, self.port, keepalive=30)
-        except Exception as exc:  # pragma: no cover - conexión fallida
-            logger.error("No se pudo conectar a MQTT %s:%s: %s", self.host, self.port, exc)
-            return
-
-        with self._lock:
-            self._client = client
-
+        backoff = 1.0
         while not self._stop.is_set():
             try:
-                client.loop(timeout=1.0)
+                client.connect(self.host, self.port, keepalive=30)
+            except Exception as exc:  # pragma: no cover - conexión fallida
+                logger.error(
+                    "No se pudo conectar a MQTT %s:%s: %s", self.host, self.port, exc
+                )
+                if self._stop.wait(timeout=backoff):
+                    break
+                backoff = min(backoff * 2, 30.0)
+                continue
+
+            backoff = 1.0
+            with self._lock:
+                self._client = client
+
+            while not self._stop.is_set():
+                try:
+                    client.loop(timeout=1.0)
+                except Exception:  # pragma: no cover - defensivo
+                    logger.debug("Error en loop MQTT", exc_info=True)
+                    break
+
+            with self._lock:
+                self._client = None
+
+            try:
+                client.disconnect()
             except Exception:  # pragma: no cover - defensivo
-                logger.debug("Error en loop MQTT", exc_info=True)
+                logger.debug("Error al desconectar MQTT", exc_info=True)
+
+            if self._stop.is_set():
                 break
 
-        try:
-            client.disconnect()
-        except Exception:  # pragma: no cover - defensivo
-            logger.debug("Error al desconectar MQTT", exc_info=True)
+            if self._stop.wait(timeout=backoff):
+                break
+            backoff = min(backoff * 2, 30.0)
 
     # Callbacks --------------------------------------------------------
     def _on_connect(self, client, userdata, flags, reason_code, properties=None):  # noqa: D401
