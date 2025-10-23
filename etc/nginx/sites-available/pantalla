@@ -21,6 +21,12 @@ server {
     expires 7d;
   }
 
+  location /backgrounds/auto/ {
+    alias /opt/dash/assets/backgrounds/auto/;
+    access_log off;
+    add_header Cache-Control "public, max-age=60";
+  }
+
   location = /healthz {
     default_type text/plain;
     return 200 'ok';

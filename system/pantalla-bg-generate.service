@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-EnvironmentFile=/etc/pantalla-dash/env
+EnvironmentFile=-/etc/pantalla-dash/env
 WorkingDirectory=/opt/dash/scripts
 ExecStart=/usr/bin/python3 /opt/dash/scripts/generate_bg_daily.py
 Environment=PYTHONUNBUFFERED=1

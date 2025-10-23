@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,27 @@ logger = logging.getLogger(__name__)
 CONFIG_DIR = Path(os.environ.get("PANTALLA_CONFIG_DIR", "/etc/pantalla-dash"))
 CONFIG_PATH = CONFIG_DIR / "config.json"
 SECRETS_PATH = CONFIG_DIR / "secrets.json"
+
+
+def _sync_openai_env(api_key: str | None, env_path: Path = Path("/etc/pantalla-dash/env")) -> None:
+    """Ensure the ``OPENAI_API_KEY`` entry in the env file matches ``api_key``."""
+
+    if not api_key:
+        return
+
+    try:
+        env_path.parent.mkdir(parents=True, exist_ok=True)
+        current = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
+        lines = [
+            line
+            for line in current.splitlines()
+            if not re.match(r"^\s*#?\s*OPENAI_API_KEY\s*=", line)
+        ]
+        lines.append(f"OPENAI_API_KEY={api_key}")
+        env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        logger.info("OPENAI_API_KEY sincronizada en %s", env_path)
+    except OSError as exc:  # pragma: no cover - entorno sin permisos
+        logger.warning("No se pudo actualizar %s: %s", env_path, exc)
 
 class SecretPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -311,6 +333,13 @@ def write_secrets_patch(payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
         _write_json(SECRETS_PATH, updated, mode=0o600)
     except OSError as exc:  # pragma: no cover - permisos insuficientes
         raise PermissionError("No se pudo escribir secrets.json") from exc
+
+    try:
+        openai_data = updated.get("openai") if isinstance(updated, dict) else None
+        api_key = openai_data.get("apiKey") if isinstance(openai_data, dict) else None
+        _sync_openai_env(api_key)
+    except Exception as exc:  # pragma: no cover - defensivo
+        logger.warning("No se pudo sincronizar OPENAI_API_KEY: %s", exc)
     return updated, str(SECRETS_PATH)
 
 
