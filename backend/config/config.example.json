@@ -16,7 +16,7 @@
     "city": "Vila-real"
   },
   "wifi": {
-    "preferredInterface": "wlan0"
+    "preferredInterface": "wlan2"
   },
   "theme": {
     "current": "cyberpunkNeon"
