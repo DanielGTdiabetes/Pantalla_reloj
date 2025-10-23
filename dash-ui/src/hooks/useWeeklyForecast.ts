@@ -18,10 +18,10 @@ interface WeeklyForecastResult {
   loading: boolean;
 }
 
-const CACHE_KEY = 'weeklyForecastCache_v1';
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hora
-const FALLBACK_TTL_MS = 15 * 60 * 1000; // 15 minutos si sólo tenemos datos parciales
-const ERROR_RETRY_MS = 15 * 60 * 1000;
+const CACHE_KEY = 'weeklyForecastCache';
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutos
+const FALLBACK_TTL_MS = 5 * 60 * 1000; // caché más corta para datos parciales
+const ERROR_RETRY_MS = 5 * 60 * 1000;
 
 const ICON_MAP: Record<string, string> = {
   sun: '☀️',
@@ -58,7 +58,7 @@ let inflightRequest: Promise<{ data: WeatherDay[]; fallback: boolean }> | null =
 function readCacheFromStorage(): WeeklyCacheRecord | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = window.localStorage.getItem(CACHE_KEY);
+    const raw = window.sessionStorage.getItem(CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<WeeklyCacheRecord>;
     if (!parsed) return null;
@@ -77,10 +77,10 @@ function persistCache(record: WeeklyCacheRecord): void {
   if (typeof window === 'undefined') return;
   try {
     if (!record.timestamp) {
-      window.localStorage.removeItem(CACHE_KEY);
+      window.sessionStorage.removeItem(CACHE_KEY);
       return;
     }
-    window.localStorage.setItem(CACHE_KEY, JSON.stringify(record));
+    window.sessionStorage.setItem(CACHE_KEY, JSON.stringify(record));
   } catch (error) {
     console.warn('No se pudo persistir caché de previsión semanal', error);
   }

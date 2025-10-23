@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RotatingPanelSectionKey } from '../services/config';
 import { useSeasonMonth } from '../hooks/useSeasonMonth';
 import { useCalendarSummary } from '../hooks/useCalendarSummary';
-import { useWeeklyForecast } from '../hooks/useWeeklyForecast';
 import { useLunarPhase } from '../hooks/useLunarPhase';
 
 interface RotatingInfoPanelProps {
@@ -18,7 +17,6 @@ interface PanelItem {
 }
 
 const DEFAULT_INTERVAL_MS = 7000;
-const MIN_INTERVAL_MS = 4000;
 const DEFAULT_HEIGHT = 128;
 const SCROLL_SPEED_PX_PER_SECOND = 60;
 const MIN_SCROLL_DURATION_SECONDS = 12;
@@ -35,6 +33,7 @@ function sanitizeSections(sections: RotatingPanelSectionKey[]): RotatingPanelSec
   const seen = new Set<RotatingPanelSectionKey>();
   const valid: RotatingPanelSectionKey[] = [];
   for (const section of sections) {
+    if (section === 'weekly') continue;
     if (LABELS[section] && !seen.has(section)) {
       seen.add(section);
       valid.push(section);
@@ -45,16 +44,14 @@ function sanitizeSections(sections: RotatingPanelSectionKey[]): RotatingPanelSec
 
 const RotatingInfoPanel = ({
   sections,
-  intervalMs = DEFAULT_INTERVAL_MS,
+  intervalMs: _intervalMs = DEFAULT_INTERVAL_MS,
   height = DEFAULT_HEIGHT,
 }: RotatingInfoPanelProps) => {
   const normalizedSections = useMemo(() => sanitizeSections(sections), [sections]);
-  const effectiveInterval = Math.max(intervalMs, MIN_INTERVAL_MS);
   const panelHeight = Math.max(96, height ?? DEFAULT_HEIGHT);
 
   const { formatted: seasonLine, loading: seasonLoading } = useSeasonMonth();
   const calendar = useCalendarSummary();
-  const weekly = useWeeklyForecast();
   const lunar = useLunarPhase();
 
   const items = useMemo<PanelItem[]>(() => {
@@ -75,14 +72,6 @@ const RotatingInfoPanel = ({
           placeholder: loading,
         };
       }
-      if (section === 'weekly') {
-        const loading = weekly.loading && !weekly.text;
-        return {
-          key: section,
-          text: loading ? 'Cargando…' : weekly.text ?? 'Previsión no disponible',
-          placeholder: loading,
-        };
-      }
       // section === 'lunar'
       const loading = lunar.loading && !lunar.text;
       return {
@@ -91,27 +80,7 @@ const RotatingInfoPanel = ({
         placeholder: loading,
       };
     });
-  }, [calendar.loading, calendar.text, lunar.loading, lunar.text, normalizedSections, seasonLine, seasonLoading, weekly.loading, weekly.text]);
-
-  const [activeIndex, setActiveIndex] = useState(0);
-
-  useEffect(() => {
-    setActiveIndex(0);
-  }, [items.length]);
-
-  useEffect(() => {
-    if (items.length <= 1) return;
-    const timer = window.setInterval(() => {
-      setActiveIndex((prev) => (prev + 1) % items.length);
-    }, effectiveInterval);
-    return () => window.clearInterval(timer);
-  }, [effectiveInterval, items.length]);
-
-  useEffect(() => {
-    if (activeIndex >= items.length) {
-      setActiveIndex(0);
-    }
-  }, [activeIndex, items.length]);
+  }, [calendar.loading, calendar.text, lunar.loading, lunar.text, normalizedSections, seasonLine, seasonLoading]);
 
   if (items.length === 0) {
     return null;
@@ -119,45 +88,45 @@ const RotatingInfoPanel = ({
 
   return (
     <div
-      className="relative w-full overflow-hidden rounded-[24px] border border-white/15 bg-[rgba(20,20,20,0.45)] px-6 py-3 text-white shadow-[0_14px_32px_rgba(0,0,0,0.32)] backdrop-blur-lg backdrop-brightness-[0.88]"
-      style={{ height: panelHeight }}
+      className="relative w-full overflow-hidden rounded-[28px] border border-white/15 bg-[rgba(20,20,20,0.45)] px-6 py-5 text-white shadow-[0_14px_32px_rgba(0,0,0,0.32)] backdrop-blur-lg backdrop-brightness-[0.88] md:px-8 md:py-6"
+      style={{ minHeight: panelHeight }}
     >
-      {items.map((item, index) => (
-        <RotatingInfoSlide
-          key={`${item.key}-${index}`}
-          active={index === activeIndex}
-          text={item.text}
-          placeholder={item.placeholder}
-        />
-      ))}
+      <div className="flex flex-col gap-5">
+        {items.map((item) => (
+          <div key={item.key} className="flex flex-col gap-2 rounded-2xl bg-white/5 px-4 py-3">
+            <span className="text-[0.65rem] uppercase tracking-[0.3em] text-white/55">{LABELS[item.key]}</span>
+            <MarqueeText
+              text={item.text}
+              className={`text-lg font-medium leading-snug ${item.placeholder ? 'text-white/60' : 'text-white/90'}`}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 };
 
-export default RotatingInfoPanel;
-
-interface RotatingInfoSlideProps {
-  active: boolean;
+interface MarqueeTextProps {
   text: string;
-  placeholder: boolean;
+  className?: string;
 }
 
-const RotatingInfoSlide = ({ active, text, placeholder }: RotatingInfoSlideProps) => {
+function MarqueeText({ text, className }: MarqueeTextProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLSpanElement | null>(null);
-  const [shouldScroll, setShouldScroll] = useState(false);
+  const [needsScroll, setNeedsScroll] = useState(false);
   const [durationSeconds, setDurationSeconds] = useState(MIN_SCROLL_DURATION_SECONDS);
 
   const updateScrolling = useCallback(() => {
     const container = containerRef.current;
     const content = contentRef.current;
     if (!container || !content) {
-      setShouldScroll(false);
+      setNeedsScroll(false);
       return;
     }
-    const needsScroll = content.scrollWidth > container.clientWidth + 8;
-    setShouldScroll(needsScroll);
-    if (needsScroll) {
+    const overflow = content.scrollWidth > container.clientWidth + 8;
+    setNeedsScroll(overflow);
+    if (overflow) {
       const distance = content.scrollWidth;
       const estimated = distance / SCROLL_SPEED_PX_PER_SECOND;
       setDurationSeconds(Math.max(estimated, MIN_SCROLL_DURATION_SECONDS));
@@ -166,7 +135,7 @@ const RotatingInfoSlide = ({ active, text, placeholder }: RotatingInfoSlideProps
 
   useEffect(() => {
     updateScrolling();
-  }, [text, active, updateScrolling]);
+  }, [text, updateScrolling]);
 
   useEffect(() => {
     const handleResize = () => updateScrolling();
@@ -174,30 +143,28 @@ const RotatingInfoSlide = ({ active, text, placeholder }: RotatingInfoSlideProps
     return () => window.removeEventListener('resize', handleResize);
   }, [updateScrolling]);
 
-  const textClasses = `text-[24px] font-medium leading-snug ${placeholder ? 'text-white/60' : 'text-white/90'}`;
+  if (!text) {
+    return <span className={className}>—</span>;
+  }
 
   return (
-    <div
-      className={`absolute inset-0 flex items-center transition-opacity duration-600 ease-in-out ${
-        active ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
-      }`}
-    >
-      <div ref={containerRef} className="marquee-container flex-1">
-        {shouldScroll ? (
-          <div className="marquee-track" style={{ animationDuration: `${durationSeconds}s` }}>
-            <span ref={contentRef} className={`marquee-segment ${textClasses}`}>
-              {text}
-            </span>
-            <span className={`marquee-segment ${textClasses}`} aria-hidden>
-              {text}
-            </span>
-          </div>
-        ) : (
-          <span ref={contentRef} className={`block ${textClasses}`}>
+    <div ref={containerRef} className="marquee-container">
+      {needsScroll ? (
+        <div className="marquee-track" style={{ animationDuration: `${durationSeconds}s` }}>
+          <span ref={contentRef} className={`marquee-segment ${className ?? ''}`}>
             {text}
           </span>
-        )}
-      </div>
+          <span className={`marquee-segment ${className ?? ''}`} aria-hidden>
+            {text}
+          </span>
+        </div>
+      ) : (
+        <span ref={contentRef} className={className}>
+          {text}
+        </span>
+      )}
     </div>
   );
-};
+}
+
+export default RotatingInfoPanel;
