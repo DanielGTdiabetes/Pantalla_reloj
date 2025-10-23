@@ -39,7 +39,13 @@ CALENDAR_PEEK_ENDPOINT = f"{API_BASE_URL}/calendar/peek"
 NEGATIVE_PROMPT = "lowres, blurry, text, watermark, logo, deformed, oversaturated, cartoonish"
 IMAGE_MODEL = "gpt-image-1"
 DEFAULT_IMAGE_SIZE = "1536x1024"
-ALLOWED_IMAGE_SIZES = {"1536x1024", "1024x1536", "1024x1024", "auto"}
+ALLOWED_IMAGE_SIZES = {
+    "1536x1024",
+    "1024x1536",
+    "1024x1024",
+    "1920x480",
+    "auto",
+}
 _configured_image_size = os.getenv("PANTALLA_BG_IMAGE_SIZE", DEFAULT_IMAGE_SIZE) or DEFAULT_IMAGE_SIZE
 IMAGE_SIZE = _configured_image_size.strip().lower()
 if IMAGE_SIZE not in ALLOWED_IMAGE_SIZES:
@@ -89,17 +95,34 @@ def setup_logging() -> None:
 
 
 def _determine_fallback_dimensions() -> Tuple[int, int]:
-    if IMAGE_SIZE == "auto":
-        return _parse_image_size(DEFAULT_IMAGE_SIZE)
-    return FALLBACK_CANONICAL_SIZE
+    if IMAGE_SIZE in {"auto", DEFAULT_IMAGE_SIZE}:
+        return FALLBACK_CANONICAL_SIZE
+    width, height = _parse_image_size(IMAGE_SIZE)
+    if width <= 0 or height <= 0:
+        return FALLBACK_CANONICAL_SIZE
+    return width, height
+
+
+def _load_fallback_font(size: int) -> ImageFont.ImageFont:
+    preferred_fonts = (
+        "/usr/share/fonts/truetype/inter/Inter-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    )
+    for font_path in preferred_fonts:
+        try:
+            return ImageFont.truetype(font_path, size=size)
+        except (OSError, IOError):  # pragma: no cover - entorno sin fuente
+            continue
+    return ImageFont.load_default()
 
 
 def _generate_gradient_fallback(path: Path) -> Path:
     width, height = _determine_fallback_dimensions()
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    top_color = (12, 16, 24)
-    bottom_color = (28, 38, 52)
+    top_color = (10, 22, 40)
+    bottom_color = (24, 46, 72)
     image = Image.new("RGB", (width, height))
     draw = ImageDraw.Draw(image)
     for y in range(height):
@@ -120,8 +143,8 @@ def _generate_gradient_fallback(path: Path) -> Path:
     vignette_rgb = Image.merge("RGB", (vignette, vignette, vignette))
     image = Image.blend(image, vignette_rgb, 0.08)
 
-    overlay = Image.new("RGBA", (width, height), (6, 10, 18, int(255 * 0.32)))
-    highlight = Image.new("RGBA", (width, height), (90, 180, 255, int(255 * 0.12)))
+    overlay = Image.new("RGBA", (width, height), (12, 20, 32, int(255 * 0.22)))
+    highlight = Image.new("RGBA", (width, height), (90, 180, 255, int(255 * 0.18)))
     try:
         highlight_mask = Image.linear_gradient("L").rotate(35, expand=False).resize((width, height))
     except AttributeError:  # Pillow < 9.2 fallback
@@ -134,11 +157,30 @@ def _generate_gradient_fallback(path: Path) -> Path:
     combined = Image.alpha_composite(combined, highlight)
     final_image = combined.convert("RGB")
 
-    draw = ImageDraw.Draw(final_image)
-    font = ImageFont.load_default()
-    footer_text = "Pantalla Dash"
-    draw.text((32, 24), footer_text, fill=(210, 225, 245), font=font)
-    draw.text((32, height - 40), "Fallback activo", fill=(180, 195, 215), font=font)
+    title_font = _load_fallback_font(64)
+    subtitle_font = _load_fallback_font(26)
+    title_text = "Pantalla Reloj — Fallback"
+    subtitle_text = "Autogenerado mientras llega el fondo diario"
+
+    text_draw = ImageDraw.Draw(final_image)
+
+    def _center(drawer: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont, y_offset: int) -> Tuple[int, int]:
+        try:
+            bbox = drawer.textbbox((0, 0), text, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+        except AttributeError:  # Pillow < 8.0
+            text_width, text_height = drawer.textsize(text, font=font)
+        return (max(16, (width - text_width) // 2), y_offset - text_height // 2)
+
+    title_position = _center(text_draw, title_text, title_font, height // 2 - 20)
+    subtitle_position = _center(text_draw, subtitle_text, subtitle_font, height // 2 + 44)
+    text_draw.text(title_position, title_text, fill=(232, 240, 248), font=title_font)
+    text_draw.text(subtitle_position, subtitle_text, fill=(190, 205, 222), font=subtitle_font)
+
+    footer_font = _load_fallback_font(20)
+    footer_text = datetime.now().strftime("%d %b %Y · Fallback activo")
+    text_draw.text((24, height - 36), footer_text, fill=(170, 190, 210), font=footer_font)
 
     final_image.save(path, "WEBP", method=6, quality=88)
     os.chmod(path, 0o644)
@@ -197,8 +239,8 @@ def ensure_latest_json(assets_dir: Path) -> None:
         "filename": fallback_path.name,
         "url": f"/backgrounds/auto/{fallback_path.name}",
         "generatedAt": timestamp,
-        "mode": "daily",
-        "prompt": "(auto-created fallback while no latest.json found)",
+        "mode": "fallback",
+        "prompt": "Pantalla Reloj fallback autogenerado (bootstrap)",
         "weatherKey": None,
     }
     tmp_path = latest_path.with_suffix(".tmp")

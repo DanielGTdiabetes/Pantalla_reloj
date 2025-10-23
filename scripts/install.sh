@@ -590,6 +590,10 @@ if [[ -f "$FRONTEND_DIR/package.json" ]]; then
   chmod 755 /var/www/html
   find /var/www/html -mindepth 1 -type d -exec chmod 755 {} +
   find /var/www/html -type f -exec chmod 644 {} +
+
+  if [[ -f /var/www/html/index.html ]] && ! grep -q 'index-.*css?v=transparent-1' /var/www/html/index.html; then
+    sed -i 's|\(/assets/index-[^"]*\.css\)|\1?v=transparent-1|' /var/www/html/index.html || true
+  fi
 else
   warn "dash-ui no encontrado; saltando build"
 fi
@@ -698,6 +702,28 @@ systemctl start "$BG_SYNC_SERVICE"
 # ----- Reinicia backend para cargar endpoints nuevos (config/Wi-Fi si los añadiste) -----
 systemctl restart "${BACKEND_SVC_BASENAME}@$APP_USER" || true
 
+echo "[POST] Reinicio ordenado de servicios…"
+if ! systemctl restart nginx; then
+  warn "No se pudo reiniciar nginx (¿instalado?)"
+fi
+if ! systemctl restart "${BACKEND_SVC_BASENAME}@$APP_USER"; then
+  warn "No se pudo reiniciar ${BACKEND_SVC_BASENAME}@$APP_USER"
+fi
+
+# Refrescar el navegador kiosk para limpiar cachés
+pkill -f 'chrom(e|ium).*--kiosk' || true
+
+echo "[POST] Precargando endpoints para UI (efemérides/side-info)…"
+curl -fsS http://127.0.0.1:8081/api/season/month >/dev/null || true
+curl -fsS http://127.0.0.1:8081/api/news/headlines >/dev/null || true
+curl -fsS http://127.0.0.1:8081/api/weather/today >/dev/null || true
+curl -fsS http://127.0.0.1:8081/api/backgrounds/current >/dev/null || true
+
+echo "[POST] Validaciones rápidas:"
+curl -s http://127.0.0.1:8081/api/health | jq . || true
+curl -s http://127.0.0.1:8081/api/season/month | jq . | head -n 20 || true
+curl -s http://127.0.0.1:8081/api/news/headlines | jq . | head -n 20 || true
+
 # Ajuste de zona horaria (solo si no está ya configurada)
 if ! timedatectl | grep -q "Time zone: ${TZ_DEFAULT}"; then
   log "Configurando zona horaria ${TZ_DEFAULT}..."
@@ -728,6 +754,31 @@ fi
 
 echo "[CHECK] Backend provider:"
 curl -s http://127.0.0.1/api/storms/status | jq '.provider? // .storm?.provider?' || true
+
+echo "== Backend health =="
+curl -s http://127.0.0.1:8081/api/health || true
+
+echo "== Season month =="
+curl -s http://127.0.0.1:8081/api/season/month | jq '.month? // .' || true
+
+echo "== News headlines (top) =="
+curl -s http://127.0.0.1:8081/api/news/headlines | jq '.[0:3]' || true
+
+echo "== Fondo actual =="
+curl -s http://127.0.0.1:8081/api/backgrounds/current | jq . || true
+
+FN=$(curl -s http://127.0.0.1:8081/api/backgrounds/current | jq -r .filename)
+if [[ -n "$FN" && "$FN" != "null" ]]; then
+  echo "== HEAD Nginx bg =="
+  curl -sI "http://127.0.0.1/backgrounds/auto/$FN" | sed -n '1,8p' || true
+  echo "== HEAD Backend bg =="
+  curl -sI "http://127.0.0.1:8081/backgrounds/auto/$FN" | sed -n '1,8p' || true
+else
+  warn "No se pudo resolver filename desde /api/backgrounds/current"
+fi
+
+echo "== Nginx access (últimas peticiones de season/news) =="
+sudo egrep -n 'GET /api/(season/month|news/headlines)' /var/log/nginx/access.log | tail -n 8 || true
 set -e
 
 # genera primer fondo si hay clave
