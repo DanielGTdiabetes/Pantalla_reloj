@@ -184,7 +184,10 @@ const Config = () => {
   const [selectedSsid, setSelectedSsid] = useState<string | null>(null);
   const [wifiPassword, setWifiPassword] = useState('');
   const [openAiInput, setOpenAiInput] = useState('');
-  const [savingSecrets, setSavingSecrets] = useState(false);
+  const [googleClientIdInput, setGoogleClientIdInput] = useState('');
+  const [googleClientSecretInput, setGoogleClientSecretInput] = useState('');
+  const [savingOpenAiSecret, setSavingOpenAiSecret] = useState(false);
+  const [savingGoogleSecrets, setSavingGoogleSecrets] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [calendarStatus, setCalendarStatus] = useState<CalendarStatus | null>(null);
   const [calendarUploadState, setCalendarUploadState] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
@@ -215,6 +218,17 @@ const Config = () => {
     return {
       hasKey: Boolean(openai?.hasKey),
       masked: typeof openai?.masked === 'string' ? openai.masked : null,
+    };
+  }, [envelope?.secrets]);
+
+  const googleSecretDetails = useMemo(() => {
+    const secrets = (envelope?.secrets ?? {}) as Record<string, any>;
+    const google = secrets?.google as
+      | { hasCredentials?: boolean; hasRefreshToken?: boolean }
+      | undefined;
+    return {
+      hasCredentials: Boolean(google?.hasCredentials),
+      hasRefreshToken: Boolean(google?.hasRefreshToken),
     };
   }, [envelope?.secrets]);
 
@@ -931,8 +945,8 @@ const Config = () => {
     }
   };
 
-  const handleSaveSecrets = async () => {
-    setSavingSecrets(true);
+  const handleSaveOpenAiSecret = async () => {
+    setSavingOpenAiSecret(true);
     setNotice(null);
     try {
       const updated = await saveSecretsPatch({ openai: { apiKey: openAiInput || null } });
@@ -946,11 +960,67 @@ const Config = () => {
         text: error instanceof Error ? error.message : 'No se pudo guardar la clave',
       });
     } finally {
-      setSavingSecrets(false);
+      setSavingOpenAiSecret(false);
       try {
         await refreshConfig();
       } catch (error) {
         console.warn('No se pudo refrescar config tras guardar secreto', error);
+      }
+    }
+  };
+
+  const handleSaveGoogleSecrets = async (mode: 'update' | 'clear') => {
+    if (mode === 'update' && !googleClientIdInput.trim() && !googleClientSecretInput.trim()) {
+      setNotice({ type: 'error', text: 'Introduce al menos un valor para guardar.' });
+      return;
+    }
+    setSavingGoogleSecrets(true);
+    setNotice(null);
+    try {
+      const payload: { client_id?: string | null; client_secret?: string | null } = {};
+      if (mode === 'clear') {
+        payload.client_id = null;
+        payload.client_secret = null;
+      } else {
+        if (googleClientIdInput.trim()) {
+          payload.client_id = googleClientIdInput.trim();
+        }
+        if (googleClientSecretInput.trim()) {
+          payload.client_secret = googleClientSecretInput.trim();
+        }
+      }
+      const updated = await saveSecretsPatch({ google: payload });
+      setEnvelope(updated);
+      setGoogleClientIdInput('');
+      setGoogleClientSecretInput('');
+      setNotice({
+        type: 'success',
+        text:
+          mode === 'clear'
+            ? 'Credenciales de Google eliminadas'
+            : 'Credenciales de Google actualizadas',
+      });
+      if (mode === 'clear') {
+        try {
+          await cancelGoogleDeviceFlow();
+          setGoogleStatus(null);
+          setGoogleDeviceInfo(null);
+        } catch (error) {
+          console.warn('No se pudo cancelar el flujo de Google tras limpiar credenciales', error);
+        }
+      }
+    } catch (error) {
+      console.error('Error guardando credenciales de Google', error);
+      setNotice({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'No se pudieron guardar las credenciales',
+      });
+    } finally {
+      setSavingGoogleSecrets(false);
+      try {
+        await refreshConfig();
+      } catch (error) {
+        console.warn('No se pudo refrescar config tras guardar credenciales', error);
       }
     }
   };
@@ -1049,15 +1119,61 @@ const Config = () => {
                     />
                     <button
                       type="button"
-                      onClick={handleSaveSecrets}
+                      onClick={handleSaveOpenAiSecret}
                       className="rounded-lg bg-emerald-500/80 px-3 py-2 text-sm font-medium text-white shadow-md transition hover:bg-emerald-500"
-                      disabled={savingSecrets}
+                      disabled={savingOpenAiSecret}
                     >
-                      {savingSecrets ? 'Guardando…' : openAiDetails.hasKey ? 'Actualizar clave' : 'Guardar clave'}
+                      {savingOpenAiSecret ? 'Guardando…' : openAiDetails.hasKey ? 'Actualizar clave' : 'Guardar clave'}
                     </button>
                   </div>
                   <p className="mt-1 text-xs text-white/45">
                     Estado: {openAiDetails.hasKey ? 'Configurada' : 'Sin configurar'}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs uppercase tracking-wide text-white/50">Credenciales Google Calendar</label>
+                  <p className="mt-1 text-xs text-white/55">
+                    Introduce el <code>client_id</code> y el <code>client_secret</code> del proyecto de Google Cloud para
+                    habilitar la sincronización vía OAuth.
+                  </p>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <input
+                      type="text"
+                      className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
+                      placeholder={googleSecretDetails.hasCredentials ? 'client_id configurado' : 'client_id.apps.googleusercontent.com'}
+                      value={googleClientIdInput}
+                      onChange={(event) => setGoogleClientIdInput(event.target.value)}
+                    />
+                    <input
+                      type="password"
+                      className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
+                      placeholder={googleSecretDetails.hasCredentials ? 'client_secret configurado' : 'client_secret'}
+                      value={googleClientSecretInput}
+                      onChange={(event) => setGoogleClientSecretInput(event.target.value)}
+                    />
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => handleSaveGoogleSecrets('update')}
+                      className="rounded-lg bg-emerald-500/80 px-3 py-2 text-sm font-medium text-white shadow-md transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={savingGoogleSecrets}
+                    >
+                      {savingGoogleSecrets ? 'Guardando…' : googleSecretDetails.hasCredentials ? 'Actualizar credenciales' : 'Guardar credenciales'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSaveGoogleSecrets('clear')}
+                      className="rounded-lg border border-white/25 px-3 py-2 text-sm font-medium text-white transition hover:border-white/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={savingGoogleSecrets || !googleSecretDetails.hasCredentials}
+                    >
+                      {savingGoogleSecrets ? 'Guardando…' : 'Eliminar credenciales'}
+                    </button>
+                  </div>
+                  <p className="mt-1 text-xs text-white/45">
+                    Estado: {googleSecretDetails.hasCredentials ? 'Credenciales configuradas' : 'Sin credenciales'}
+                    {googleSecretDetails.hasRefreshToken ? ' • Cuenta vinculada' : ''}
                   </p>
                 </div>
 
@@ -1232,7 +1348,8 @@ const Config = () => {
                     <div className="mt-3 space-y-3">
                       {googleStatus && googleStatus.has_credentials === false ? (
                         <div className="rounded-md border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-xs text-amber-100">
-                          Configura <code>client_id</code> y <code>client_secret</code> en /etc/pantalla-dash/secrets.json.
+                          Configura el <code>client_id</code> y el <code>client_secret</code> en la sección «APIs y servicios» para
+                          iniciar sesión con Google.
                         </div>
                       ) : null}
                       {googleActionError ? (

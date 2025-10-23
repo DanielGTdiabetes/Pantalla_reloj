@@ -137,6 +137,11 @@ export interface ConfigEnvelope {
 
 export interface SecretsPatch {
   openai?: { apiKey?: string | null };
+  google?: {
+    client_id?: string | null;
+    client_secret?: string | null;
+    refresh_token?: string | null;
+  };
 }
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
