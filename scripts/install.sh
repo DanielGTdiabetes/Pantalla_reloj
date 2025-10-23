@@ -200,6 +200,110 @@ disable_autostart_file() {
   fi
 }
 
+install_blitzortung_client() {
+  local REAL_USER="${SUDO_USER:-$USER}"
+  local REPO_URL="https://github.com/mrk-its/homeassistant-blitzortung.git"
+  local TARGET_BASE="/opt/blitzortung"
+  local TARGET_DIR="$TARGET_BASE/ws_client"
+  local VENV="$TARGET_DIR/.venv"
+  local SERVICE_DIR="/home/${REAL_USER}/.config/systemd/user"
+  local SERVICE_PATH="$SERVICE_DIR/blitz_ws_client.service"
+  local LOG_DIR="/var/log/pantalla"
+
+  echo "[INFO] Blitzortung: asegurando dependencias base…"
+  sudo apt-get update -y
+  sudo apt-get install -y git python3-venv dbus-user-session
+
+  sudo mkdir -p "$TARGET_BASE"
+  sudo install -d -m 0755 -o "$REAL_USER" -g "$REAL_USER" "$LOG_DIR"
+
+  if [[ -d "$TARGET_DIR/.git" ]]; then
+    echo "[INFO] Blitzortung: repo existente, actualizando…"
+    sudo git -C "$TARGET_DIR" fetch --all --quiet || true
+    sudo git -C "$TARGET_DIR" reset --hard origin/master --quiet || true
+  else
+    echo "[INFO] Blitzortung: clonando $REPO_URL en $TARGET_DIR"
+    sudo git clone --depth=1 "$REPO_URL" "$TARGET_DIR"
+  fi
+
+  sudo chown -R "$REAL_USER":"$REAL_USER" "$TARGET_BASE"
+
+  echo "[INFO] Blitzortung: creando venv…"
+  sudo -u "$REAL_USER" python3 -m venv "$VENV"
+  sudo -u "$REAL_USER" "$VENV/bin/pip" install --upgrade pip setuptools wheel
+
+  if [[ -f "$TARGET_DIR/requirements.txt" ]]; then
+    sudo -u "$REAL_USER" "$VENV/bin/pip" install -r "$TARGET_DIR/requirements.txt"
+  else
+    if [[ -f "$REPO_DIR/opt/blitzortung/ws_client/requirements.txt" ]]; then
+      sudo tee "$TARGET_DIR/requirements.txt" >/dev/null <"$REPO_DIR/opt/blitzortung/ws_client/requirements.txt"
+    else
+      printf "paho-mqtt\naiohttp\n" | sudo tee "$TARGET_DIR/requirements.txt" >/dev/null
+    fi
+    sudo chown "$REAL_USER":"$REAL_USER" "$TARGET_DIR/requirements.txt"
+    sudo -u "$REAL_USER" "$VENV/bin/pip" install -r "$TARGET_DIR/requirements.txt"
+  fi
+
+  echo "[INFO] Blitzortung: asegurando dependencias principales…"
+  sudo -u "$REAL_USER" "$VENV/bin/pip" install paho-mqtt aiohttp
+
+  if [[ ! -x "$TARGET_DIR/ws_client.py" ]]; then
+    echo "[WARN] Blitzortung: ws_client.py no encontrado o no ejecutable; instalando wrapper local."
+    if [[ -f "$REPO_DIR/opt/blitzortung/ws_client/ws_client.py" ]]; then
+      sudo tee "$TARGET_DIR/ws_client.py" >/dev/null <"$REPO_DIR/opt/blitzortung/ws_client/ws_client.py"
+    else
+      cat <<'EOF' | sudo tee "$TARGET_DIR/ws_client.py" >/dev/null
+#!/usr/bin/env python3
+import json
+print(json.dumps({"error": "ws_client.py no disponible"}))
+EOF
+    fi
+  fi
+  sudo chown "$REAL_USER":"$REAL_USER" "$TARGET_DIR/ws_client.py"
+  sudo chmod +x "$TARGET_DIR/ws_client.py"
+
+  sudo -u "$REAL_USER" mkdir -p "$SERVICE_DIR"
+
+  local BACKEND_PY="/home/${REAL_USER}/proyectos/Pantalla_reloj/backend/.venv/bin/python3"
+  local EXEC_START
+  if [[ -x "$BACKEND_PY" ]]; then
+    EXEC_START="%h/proyectos/Pantalla_reloj/backend/.venv/bin/python3 /opt/blitzortung/ws_client/ws_client.py"
+  else
+    EXEC_START="/opt/blitzortung/ws_client/.venv/bin/python3 /opt/blitzortung/ws_client/ws_client.py"
+  fi
+
+  cat <<EOF | sudo -u "$REAL_USER" tee "$SERVICE_PATH" >/dev/null
+[Unit]
+Description=Blitzortung WebSocket Client
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+Environment=BLITZ_WS_URL=
+Environment=MQTT_HOST=127.0.0.1
+Environment=MQTT_PORT=1883
+Environment=MQTT_TOPIC=blitzortung/1
+ExecStart=${EXEC_START}
+WorkingDirectory=/opt/blitzortung/ws_client
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/pantalla/blitz_ws_client.log
+StandardError=append:/var/log/pantalla/blitz_ws_client.err
+
+[Install]
+WantedBy=default.target
+EOF
+
+  sudo loginctl enable-linger "$REAL_USER" || true
+  sudo -u "$REAL_USER" --login systemctl --user daemon-reload
+  sudo -u "$REAL_USER" --login systemctl --user enable --now blitz_ws_client.service
+
+  echo "[INFO] Blitzortung: service instalado. Comprobando estado…"
+  sudo -u "$REAL_USER" --login systemctl --user is-active blitz_ws_client.service || true
+  sudo -u "$REAL_USER" --login systemctl --user status blitz_ws_client.service --no-pager -l | tail -n 50 || true
+}
+
 if [[ -d "${APP_HOME}/.config/autostart" ]]; then
   while IFS= read -r -d '' desktop; do
     disable_autostart_file "$desktop"
@@ -466,57 +570,8 @@ sudo systemctl restart mosquitto
 echo "[INFO] Mosquitto activo en loopback."
 systemctl is-active mosquitto && echo "  ✅ OK" || echo "  ❌ ERROR"
 
-if [[ -d /opt/blitzortung/ws_client ]]; then
-  echo "[INFO] Cliente Blitzortung ya presente en /opt/blitzortung/ws_client; omitiendo reinstalación."
-else
-  echo "[INFO] Desplegando cliente Blitzortung (si existe ZIP en home)…"
-  ZIP=$HOME/homeassistant-blitzortung-master.zip
-  if [ -f "$ZIP" ]; then
-    sudo install -d -m 0755 -o dani -g dani /opt/blitzortung/ws_client
-    tmpdir=$(mktemp -d)
-    unzip -q "$ZIP" -d "$tmpdir"
-    SRC=$(find "$tmpdir" -type f -name "ws_client.py" | head -n1 | sed "s|/ws_client\\.py$||")
-    if [ -n "$SRC" ]; then
-      rsync -a --delete "$SRC"/ /opt/blitzortung/ws_client/
-      chown -R dani:dani /opt/blitzortung
-      echo "  ✅ Copiado cliente Blitzortung."
-    else
-      echo "  ⚠️ No se encontró ws_client.py dentro del ZIP."
-    fi
-    rm -rf "$tmpdir"
-  else
-    echo "  ⚠️ No se encontró el ZIP en $ZIP."
-  fi
-fi
-
-# Configuración del servicio de usuario
-sudo -u dani mkdir -p /home/dani/.config/systemd/user /home/dani/.local/share/blitzortung
-sudo -u dani bash -c 'cat > /home/dani/.config/systemd/user/blitz_ws_client.service <<EOF
-[Unit]
-Description=Blitzortung WebSocket client -> MQTT (local)
-After=network-online.target mosquitto.service
-Wants=mosquitto.service
-
-[Service]
-Type=simple
-Environment=PYTHONUNBUFFERED=1
-WorkingDirectory=/opt/blitzortung/ws_client
-ExecStart=/opt/blitzortung/.venv/bin/python /opt/blitzortung/ws_client/ws_client.py --config /opt/blitzortung/ws_client/config.yaml
-Restart=on-failure
-RestartSec=5
-User=dani
-Group=dani
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectSystem=full
-ProtectHome=no
-
-[Install]
-WantedBy=default.target
-EOF'
-sudo loginctl enable-linger dani
-sudo -u dani systemctl --user daemon-reload
-sudo -u dani systemctl --user enable --now blitz_ws_client.service
+echo "[INFO] Instalando cliente Blitzortung desde GitHub…"
+install_blitzortung_client || { echo "[ERR] Falló la instalación de Blitzortung"; exit 1; }
 
 echo "[INFO] Blitzortung listo para integrarse con backend FastAPI."
 
@@ -745,7 +800,8 @@ sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user is-active "$UI_SE
 nmcli -t -f DEVICE device status >/dev/null && echo "  ✅ nmcli OK" || echo "  ❌ nmcli reportó error"
 
 echo "[CHECK] MQTT Blitzortung status:"
-STATUS=$(sudo -u dani systemctl --user --no-pager status blitz_ws_client.service 2>/dev/null || true)
+REAL_USER="${SUDO_USER:-$USER}"
+STATUS=$(sudo -u "$REAL_USER" --login systemctl --user --no-pager status blitz_ws_client.service 2>/dev/null || true)
 if [[ -n "$STATUS" ]]; then
   grep -E "Active|PID" <<<"$STATUS" || true
 else
