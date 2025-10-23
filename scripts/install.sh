@@ -114,7 +114,7 @@ fi
 log "Instalando paquetes base…"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y python3 python3-venv python3-pip nginx curl jq unzip ca-certificates espeak-ng network-manager
+apt-get install -y python3 python3-venv python3-pip nginx curl jq unzip ca-certificates espeak-ng network-manager rsync
 
 log "Asegurando NetworkManager activo…"
 systemctl enable --now NetworkManager || true
@@ -450,6 +450,76 @@ systemctl enable --now "pantalla-xorg@$UI_USER" || true
 sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user start "$OPENBOX_SERVICE_NAME" || true
 sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user start "$UI_SERVICE_NAME" || true
 
+echo "[INFO] Instalando Mosquitto (loopback seguro)…"
+sudo apt install -y mosquitto mosquitto-clients >/dev/null 2>&1 || true
+
+# Configuración loopback limpia
+sudo bash -c 'cat > /etc/mosquitto/conf.d/loopback.conf <<EOF
+listener 1883 127.0.0.1
+allow_anonymous true
+persistence false
+connection_messages false
+EOF'
+sudo systemctl enable mosquitto
+sudo systemctl restart mosquitto
+
+echo "[INFO] Mosquitto activo en loopback."
+systemctl is-active mosquitto && echo "  ✅ OK" || echo "  ❌ ERROR"
+
+if [[ -d /opt/blitzortung/ws_client ]]; then
+  echo "[INFO] Cliente Blitzortung ya presente en /opt/blitzortung/ws_client; omitiendo reinstalación."
+else
+  echo "[INFO] Desplegando cliente Blitzortung (si existe ZIP en home)…"
+  ZIP=$HOME/homeassistant-blitzortung-master.zip
+  if [ -f "$ZIP" ]; then
+    sudo install -d -m 0755 -o dani -g dani /opt/blitzortung/ws_client
+    tmpdir=$(mktemp -d)
+    unzip -q "$ZIP" -d "$tmpdir"
+    SRC=$(find "$tmpdir" -type f -name "ws_client.py" | head -n1 | sed "s|/ws_client\\.py$||")
+    if [ -n "$SRC" ]; then
+      rsync -a --delete "$SRC"/ /opt/blitzortung/ws_client/
+      chown -R dani:dani /opt/blitzortung
+      echo "  ✅ Copiado cliente Blitzortung."
+    else
+      echo "  ⚠️ No se encontró ws_client.py dentro del ZIP."
+    fi
+    rm -rf "$tmpdir"
+  else
+    echo "  ⚠️ No se encontró el ZIP en $ZIP."
+  fi
+fi
+
+# Configuración del servicio de usuario
+sudo -u dani mkdir -p /home/dani/.config/systemd/user /home/dani/.local/share/blitzortung
+sudo -u dani bash -c 'cat > /home/dani/.config/systemd/user/blitz_ws_client.service <<EOF
+[Unit]
+Description=Blitzortung WebSocket client -> MQTT (local)
+After=network-online.target mosquitto.service
+Wants=mosquitto.service
+
+[Service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/opt/blitzortung/ws_client
+ExecStart=/opt/blitzortung/.venv/bin/python /opt/blitzortung/ws_client/ws_client.py --config /opt/blitzortung/ws_client/config.yaml
+Restart=on-failure
+RestartSec=5
+User=dani
+Group=dani
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=no
+
+[Install]
+WantedBy=default.target
+EOF'
+sudo loginctl enable-linger dani
+sudo -u dani systemctl --user daemon-reload
+sudo -u dani systemctl --user enable --now blitz_ws_client.service
+
+echo "[INFO] Blitzortung listo para integrarse con backend FastAPI."
+
 # --- Hardening generador IA: corrige parámetros del script ---
 GEN_SCRIPT="$REPO_DIR/opt/dash/scripts/generate_bg_daily.py"
 if [[ -f "$GEN_SCRIPT" ]]; then
@@ -647,6 +717,17 @@ systemctl is-active --quiet "pantalla-xorg@$UI_USER" && echo "  ✅ Xorg activo"
 sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user is-active "$OPENBOX_SERVICE_NAME" >/dev/null 2>&1 && echo "  ✅ Openbox (usuario) activo" || echo "  ❌ Openbox (usuario) no activo"
 sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user is-active "$UI_SERVICE_NAME" >/dev/null 2>&1 && echo "  ✅ UI Chromium activa" || echo "  ❌ UI Chromium no activa"
 nmcli -t -f DEVICE device status >/dev/null && echo "  ✅ nmcli OK" || echo "  ❌ nmcli reportó error"
+
+echo "[CHECK] MQTT Blitzortung status:"
+STATUS=$(sudo -u dani systemctl --user --no-pager status blitz_ws_client.service 2>/dev/null || true)
+if [[ -n "$STATUS" ]]; then
+  grep -E "Active|PID" <<<"$STATUS" || true
+else
+  echo "  ⚠️ Servicio blitz_ws_client.service no disponible."
+fi
+
+echo "[CHECK] Backend provider:"
+curl -s http://127.0.0.1/api/storms/status | jq '.provider? // .storm?.provider?' || true
 set -e
 
 # genera primer fondo si hay clave
