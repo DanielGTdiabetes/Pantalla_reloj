@@ -203,3 +203,36 @@ body.power-save {
   pointer-events: none;
   mix-blend-mode: screen;
 }
+
+.marquee-container {
+  overflow: hidden;
+  width: 100%;
+}
+
+.marquee-track {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  animation-name: dash-marquee;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.marquee-track:hover {
+  animation-play-state: paused;
+}
+
+.marquee-segment {
+  display: inline-flex;
+  align-items: center;
+  padding-right: 3rem;
+}
+
+@keyframes dash-marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}

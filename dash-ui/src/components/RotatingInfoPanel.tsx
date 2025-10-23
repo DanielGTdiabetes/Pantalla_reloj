@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RotatingPanelSectionKey } from '../services/config';
 import { useSeasonMonth } from '../hooks/useSeasonMonth';
 import { useCalendarSummary } from '../hooks/useCalendarSummary';
@@ -20,6 +20,8 @@ interface PanelItem {
 const DEFAULT_INTERVAL_MS = 7000;
 const MIN_INTERVAL_MS = 4000;
 const DEFAULT_HEIGHT = 128;
+const SCROLL_SPEED_PX_PER_SECOND = 60;
+const MIN_SCROLL_DURATION_SECONDS = 12;
 
 const LABELS: Record<RotatingPanelSectionKey, string> = {
   calendar: 'Calendario',
@@ -121,26 +123,81 @@ const RotatingInfoPanel = ({
       style={{ height: panelHeight }}
     >
       {items.map((item, index) => (
-        <div
+        <RotatingInfoSlide
           key={`${item.key}-${index}`}
-          className={`absolute inset-0 flex items-center gap-4 transition-opacity duration-600 ease-in-out ${
-            index === activeIndex ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
-          }`}
-        >
-          <span className="rounded-full bg-white/10 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white/65">
-            {LABELS[item.key]}
-          </span>
-          <span
-            className={`block flex-1 overflow-hidden text-[24px] font-medium leading-snug ${
-              item.placeholder ? 'text-white/60' : 'text-white/90'
-            }`}
-          >
-            <span className="block overflow-hidden text-ellipsis whitespace-nowrap">{item.text}</span>
-          </span>
-        </div>
+          active={index === activeIndex}
+          text={item.text}
+          placeholder={item.placeholder}
+        />
       ))}
     </div>
   );
 };
 
 export default RotatingInfoPanel;
+
+interface RotatingInfoSlideProps {
+  active: boolean;
+  text: string;
+  placeholder: boolean;
+}
+
+const RotatingInfoSlide = ({ active, text, placeholder }: RotatingInfoSlideProps) => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLSpanElement | null>(null);
+  const [shouldScroll, setShouldScroll] = useState(false);
+  const [durationSeconds, setDurationSeconds] = useState(MIN_SCROLL_DURATION_SECONDS);
+
+  const updateScrolling = useCallback(() => {
+    const container = containerRef.current;
+    const content = contentRef.current;
+    if (!container || !content) {
+      setShouldScroll(false);
+      return;
+    }
+    const needsScroll = content.scrollWidth > container.clientWidth + 8;
+    setShouldScroll(needsScroll);
+    if (needsScroll) {
+      const distance = content.scrollWidth;
+      const estimated = distance / SCROLL_SPEED_PX_PER_SECOND;
+      setDurationSeconds(Math.max(estimated, MIN_SCROLL_DURATION_SECONDS));
+    }
+  }, []);
+
+  useEffect(() => {
+    updateScrolling();
+  }, [text, active, updateScrolling]);
+
+  useEffect(() => {
+    const handleResize = () => updateScrolling();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [updateScrolling]);
+
+  const textClasses = `text-[24px] font-medium leading-snug ${placeholder ? 'text-white/60' : 'text-white/90'}`;
+
+  return (
+    <div
+      className={`absolute inset-0 flex items-center transition-opacity duration-600 ease-in-out ${
+        active ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+      }`}
+    >
+      <div ref={containerRef} className="marquee-container flex-1">
+        {shouldScroll ? (
+          <div className="marquee-track" style={{ animationDuration: `${durationSeconds}s` }}>
+            <span ref={contentRef} className={`marquee-segment ${textClasses}`}>
+              {text}
+            </span>
+            <span className={`marquee-segment ${textClasses}`} aria-hidden>
+              {text}
+            </span>
+          </div>
+        ) : (
+          <span ref={contentRef} className={`block ${textClasses}`}>
+            {text}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+};
