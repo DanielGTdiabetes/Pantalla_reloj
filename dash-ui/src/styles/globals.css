@@ -71,6 +71,54 @@ body {
   color-scheme: light;
 }
 
+html.wallpaper-dark .theme-lightMinimal,
+body.wallpaper-dark .theme-lightMinimal,
+.wallpaper-dark.theme-lightMinimal {
+  --text-primary: #f8fafc;
+  color-scheme: dark;
+}
+
+html.wallpaper-dark .theme-lightMinimal .glass,
+body.wallpaper-dark .theme-lightMinimal .glass,
+.wallpaper-dark.theme-lightMinimal .glass,
+html.wallpaper-dark .theme-lightMinimal .glass-light,
+body.wallpaper-dark .theme-lightMinimal .glass-light,
+.wallpaper-dark.theme-lightMinimal .glass-light,
+html.wallpaper-dark .theme-lightMinimal .glass-panel,
+body.wallpaper-dark .theme-lightMinimal .glass-panel,
+.wallpaper-dark.theme-lightMinimal .glass-panel {
+  background: rgba(15, 23, 42, 0.68) !important;
+  border-color: rgba(148, 163, 184, 0.55);
+  color: #f8fafc;
+}
+
+html.wallpaper-dark .theme-lightMinimal .glass-light input,
+html.wallpaper-dark .theme-lightMinimal .glass-light select,
+html.wallpaper-dark .theme-lightMinimal .glass-light textarea,
+body.wallpaper-dark .theme-lightMinimal .glass-light input,
+body.wallpaper-dark .theme-lightMinimal .glass-light select,
+body.wallpaper-dark .theme-lightMinimal .glass-light textarea,
+.wallpaper-dark.theme-lightMinimal .glass-light input,
+.wallpaper-dark.theme-lightMinimal .glass-light select,
+.wallpaper-dark.theme-lightMinimal .glass-light textarea {
+  background: rgba(15, 23, 42, 0.55);
+  border-color: rgba(148, 163, 184, 0.55);
+  color: #e2e8f0;
+}
+
+html.wallpaper-dark .theme-lightMinimal .glass-light input:focus,
+html.wallpaper-dark .theme-lightMinimal .glass-light select:focus,
+html.wallpaper-dark .theme-lightMinimal .glass-light textarea:focus,
+body.wallpaper-dark .theme-lightMinimal .glass-light input:focus,
+body.wallpaper-dark .theme-lightMinimal .glass-light select:focus,
+body.wallpaper-dark .theme-lightMinimal .glass-light textarea:focus,
+.wallpaper-dark.theme-lightMinimal .glass-light input:focus,
+.wallpaper-dark.theme-lightMinimal .glass-light select:focus,
+.wallpaper-dark.theme-lightMinimal .glass-light textarea:focus {
+  background: rgba(15, 23, 42, 0.65);
+  border-color: rgba(96, 165, 250, 0.6);
+}
+
 .theme-crtRetro .crt-overlay::after,
 .theme-crtRetro .crt-overlay::before {
   content: none !important;
