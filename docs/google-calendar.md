@@ -2,7 +2,7 @@
 
 Esta guía cubre cómo habilitar el proveedor **Google** para el widget de calendario.
 El backend utiliza el flujo OAuth 2.0 *Device Authorization Grant* para evitar que
-la Raspberry Pi tenga que iniciar sesión en un navegador tradicional.
+el mini PC tenga que iniciar sesión en un navegador tradicional.
 
 ## 1. Crear credenciales en Google Cloud
 
@@ -32,7 +32,7 @@ Añade la sección `google` (o edítala desde `/#/config` → pestaña **Credenc
 
 ## 3. Seleccionar proveedor desde la UI
 
-1. Abre la pantalla de configuración en la Raspberry (`/#/config`).
+1. Abre la pantalla de configuración en el mini PC (`/#/config`).
 2. En la tarjeta **Calendario** elige **Google** como proveedor.
 3. Si las credenciales son válidas aparecerá el botón **Conectar con Google**.
 

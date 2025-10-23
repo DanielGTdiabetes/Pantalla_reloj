@@ -1,7 +1,7 @@
 # Guía de despliegue – Backend Pantalla 8.8"
 
 Pasos para dejar operativo el backend FastAPI (clima AEMET, Wi-Fi, setup web) en
-una Raspberry Pi o equipo Linux con NetworkManager.
+un mini PC con Linux y NetworkManager.
 
 ## 1. Usuario y permisos
 

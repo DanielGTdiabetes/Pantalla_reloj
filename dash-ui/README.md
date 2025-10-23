@@ -1,6 +1,6 @@
 # Dash UI Futurista
 
-UI estática diseñada para funcionar en Raspberry Pi 4/5 (Chromium en modo kiosk) sirviendo archivos desde `/opt/dash` con `busybox httpd`.
+UI estática diseñada para funcionar en un mini PC con Linux (Chromium en modo kiosk) sirviendo archivos desde `/opt/dash` con `busybox httpd`.
 
 ## Requisitos
 
@@ -17,10 +17,10 @@ npm run build
 
 `npm run dev` levanta el servidor de desarrollo de Vite en `http://localhost:5173`.
 
-## Despliegue en Raspberry Pi
+## Despliegue en mini PC
 
 1. Ejecuta `npm run build`. El artefacto se generará en `dist/`.
-2. Copia el contenido de `dist/` a `/opt/dash` en la Raspberry Pi (por ejemplo con `rsync` o `scp`).
+2. Copia el contenido de `dist/` a `/opt/dash` en el mini PC (por ejemplo con `rsync` o `scp`).
 3. Sirve la UI con Busybox:
 
    ```bash
@@ -37,7 +37,7 @@ npm run build
 
 ## Power Save
 
-Activa el modo de ahorro ajustando `powerSave` a `true` en `src/services/config.ts`. Esto reduce las animaciones, elimina filtros pesados y prioriza la estabilidad en Raspberry Pi 4.
+Activa el modo de ahorro ajustando `powerSave` a `true` en `src/services/config.ts`. Esto reduce las animaciones, elimina filtros pesados y prioriza la estabilidad en hardware de bajos recursos.
 
 ## Integración con backend
 

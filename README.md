@@ -1,7 +1,7 @@
 # Pantalla Futurista
 
-Dashboard futurista para Raspberry Pi que muestra reloj, clima y controles de
-configuración. La UI (React + Vite) se sirve como estático (Busybox/NGINX) y
+Dashboard futurista para mini PC con Linux que muestra reloj, clima y controles
+de configuración. La UI (React + Vite) se sirve como estático (Busybox/NGINX) y
 usa un backend local mínimo (FastAPI) en `127.0.0.1:8081` para integrar
 OpenWeatherMap, gestión de Wi-Fi y TTS offline.
 
@@ -104,7 +104,7 @@ Endpoints adicionales destacados:
 Consulta `backend/README.md` y `docs/DEPLOY_BACKEND.md` para detalles de
 permisos, systemd y endurecimiento.
 
-## Despliegue en Raspberry Pi
+## Despliegue en mini PC
 
 1. Sigue la guía `docs/DEPLOY_BACKEND.md` para instalar dependencias, crear el
    usuario de servicio (por ejemplo `dani`) y registrar
