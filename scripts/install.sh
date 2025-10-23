@@ -364,7 +364,7 @@ cat > "$ENV_DIR/config.json" <<JSON
   },
   "weather": { "units": "metric", "city": "${CITY_NAME}" },
   "storm": { "threshold": 0.6, "enableExperimentalLightning": false },
-  "wifi": { "preferredInterface": "wlan0" },
+  "wifi": { "preferredInterface": "wlan2" },
   "background": { "intervalMinutes": 60, "mode": "daily", "retainDays": 7 },
   "locale": { "country": "ES", "autonomousCommunity": "Comunitat Valenciana", "province": "Castellón", "city": "${CITY_NAME}" }
 }
