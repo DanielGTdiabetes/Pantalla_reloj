@@ -173,13 +173,16 @@ export function useBackgroundCycle(refreshMinutes = DEFAULT_REFRESH_MINUTES): Ba
 }
 
 export function buildVersionedSrc(slot: BackgroundSlot): string {
-  const base = slot.url.split('?')[0];
   const version = slot.etag ?? slot.generatedAt;
   if (!version) {
-    return base;
+    return slot.url;
   }
-  const separator = slot.url.includes('?') ? '&' : '?';
-  return `${base}${separator}v=${encodeURIComponent(String(version))}`;
+  const hashIndex = slot.url.indexOf('#');
+  const hash = hashIndex >= 0 ? slot.url.slice(hashIndex) : '';
+  const base = hashIndex >= 0 ? slot.url.slice(0, hashIndex) : slot.url;
+  const separator = base.includes('?') ? '&' : '?';
+  const versioned = `${base}${separator}v=${encodeURIComponent(String(version))}`;
+  return `${versioned}${hash}`;
 }
 
 async function preloadImage(slot: BackgroundSlot): Promise<void> {
