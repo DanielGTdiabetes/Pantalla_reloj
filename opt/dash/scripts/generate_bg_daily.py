@@ -75,6 +75,42 @@ def setup_logging() -> None:
     root.addHandler(handler)
 
 
+def ensure_latest_json() -> None:
+    """Garantiza que exista el archivo latest.json para el fondo actual."""
+    latest_path = AUTO_BACKGROUND_DIR / "latest.json"
+    AUTO_BACKGROUND_DIR.mkdir(parents=True, exist_ok=True)
+
+    if latest_path.exists():
+        return
+
+    candidates = sorted(
+        AUTO_BACKGROUND_DIR.glob("*.webp"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    if candidates:
+        newest = candidates[0]
+    else:
+        fallback = AUTO_BACKGROUND_DIR / "autocreated_fallback.webp"
+        img = Image.new("RGB", (512, 320), (12, 18, 20))
+        draw = ImageDraw.Draw(img)
+        draw.text((10, 150), "Pantalla_reloj — Fallback", fill=(180, 255, 220))
+        img.save(fallback, "WEBP")
+        newest = fallback
+
+    data = {
+        "filename": newest.name,
+        "url": f"/backgrounds/auto/{newest.name}",
+        "generatedAt": int(__import__("time").time()),
+        "mode": "daily",
+        "prompt": "(auto-created fallback while no latest.json found)",
+        "weatherKey": None,
+    }
+    with open(latest_path, "w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2)
+    logging.warning("[ensure_latest_json] Generado archivo missing: %s", latest_path)
+
+
 def acquire_lock() -> Optional[int]:
     try:
         LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -480,6 +516,7 @@ def _complete_with_placeholder(reason: str, prompt_info: Dict[str, Any], retain_
 
 def main() -> int:
     setup_logging()
+    ensure_latest_json()
     lock_fd = acquire_lock()
     if lock_fd is None:
         logging.warning("Otro proceso de generación está en curso; se omite ejecución")
