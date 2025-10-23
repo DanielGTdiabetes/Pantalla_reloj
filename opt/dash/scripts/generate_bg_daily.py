@@ -16,11 +16,18 @@ from typing import Any, Dict, Optional, Tuple
 
 import requests
 from openai import OpenAI
-from PIL import Image
+
+try:  # pragma: no cover - compatibilidad con distintas versiones del SDK
+    from openai import OpenAIError  # type: ignore[attr-defined]
+except ImportError:  # pragma: no cover - compatibilidad
+    from openai.error import OpenAIError  # type: ignore
+
+from PIL import Image, ImageDraw, ImageFont
 
 AUTO_BACKGROUND_DIR = Path("/opt/dash/assets/backgrounds/auto")
 CONFIG_PATH = Path("/etc/pantalla-dash/config.json")
 ENV_PATH = Path("/etc/pantalla-dash/env")
+SECRETS_PATH = Path("/etc/pantalla-dash/secrets.json")
 LOG_PATH = Path("/var/log/pantalla-dash/bg.log")
 LOCK_PATH = Path("/tmp/pantalla-bg-generate.lock")
 API_BASE_URL = "http://127.0.0.1:8787/api"
@@ -30,7 +37,7 @@ CALENDAR_PEEK_ENDPOINT = f"{API_BASE_URL}/calendar/peek"
 
 NEGATIVE_PROMPT = "lowres, blurry, text, watermark, logo, deformed, oversaturated, cartoonish"
 IMAGE_MODEL = "gpt-image-1"
-IMAGE_SIZE = "1280x720"
+IMAGE_SIZE = "1536x1024"
 TIMEOUT_SECONDS = 60
 MAX_FILES = 30
 
@@ -308,6 +315,56 @@ def select_prompt(mode: str) -> Dict[str, Any]:
     return build_daily_prompt()
 
 
+def _parse_image_size(size: str) -> Tuple[int, int]:
+    try:
+        width_str, height_str = size.lower().split("x", 1)
+        width = int(width_str)
+        height = int(height_str)
+        return max(1, width), max(1, height)
+    except (ValueError, AttributeError):  # pragma: no cover - defensivo
+        return 1536, 1024
+
+
+def resolve_openai_api_key() -> Optional[str]:
+    env_value = os.getenv("OPENAI_API_KEY")
+    if env_value and env_value.strip():
+        return env_value.strip()
+
+    env = read_env_file(ENV_PATH)
+    key = env.get("OPENAI_API_KEY")
+    if key and key.strip():
+        return key.strip()
+
+    try:
+        if SECRETS_PATH.exists():
+            payload = json.loads(SECRETS_PATH.read_text(encoding="utf-8") or "{}")
+            secret = payload.get("openai") if isinstance(payload, dict) else None
+            if isinstance(secret, dict):
+                candidate = secret.get("apiKey")
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate.strip()
+    except (OSError, json.JSONDecodeError) as exc:
+        logging.warning("No se pudo leer %s: %s", SECRETS_PATH, exc)
+    return None
+
+
+def _is_auth_or_billing_error(exc: Exception) -> bool:
+    status_code = getattr(exc, "status_code", None)
+    if isinstance(status_code, int) and status_code in {401, 403}:
+        return True
+    code = getattr(exc, "code", None)
+    if isinstance(code, str) and code.lower() in {
+        "invalid_api_key",
+        "insufficient_quota",
+        "billing_hard_limit_reached",
+        "permission_denied",
+    }:
+        return True
+    message = str(exc).lower()
+    indicators = ["401", "403", "billing", "hard limit", "insufficient_quota"]
+    return any(token in message for token in indicators)
+
+
 def generate_image_bytes(client: OpenAI, prompt: str, timeout: int) -> bytes:
     logging.info("Solicitando imagen a OpenAI con modelo %s", IMAGE_MODEL)
     result = client.images.generate(
@@ -315,7 +372,7 @@ def generate_image_bytes(client: OpenAI, prompt: str, timeout: int) -> bytes:
         prompt=prompt,
         size=IMAGE_SIZE,
         response_format="b64_json",
-        timeout=timeout
+        timeout=timeout,
     )
     if not result.data:
         raise RuntimeError("Respuesta vacía de OpenAI")
@@ -371,6 +428,33 @@ def write_metadata(path: Path, info: Dict[str, Any]) -> None:
     tmp_path.replace(metadata_path)
 
 
+def write_placeholder(reason: str, prompt_info: Dict[str, Any]) -> Tuple[Path, Dict[str, Any]]:
+    width, height = _parse_image_size(IMAGE_SIZE)
+    AUTO_BACKGROUND_DIR.mkdir(parents=True, exist_ok=True)
+    image = Image.new("RGB", (width, height), color=(18, 22, 26))
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default()
+    text = "Pantalla Dash — Fallback\n" + reason
+    draw.multiline_text((32, 32), text, fill=(210, 210, 210), font=font, spacing=8)
+    timestamp = int(time.time())
+    filename = f"{timestamp}_fallback.webp"
+    target = AUTO_BACKGROUND_DIR / filename
+    image.save(target, format="WEBP", method=6, quality=85)
+    os.chmod(target, 0o644)
+    metadata = {
+        "mode": prompt_info.get("mode", "fallback"),
+        "prompt": prompt_info.get("prompt", f"(fallback: {reason})"),
+        "weatherKey": prompt_info.get("key"),
+        "model": "fallback-local",
+        "fallbackReason": reason,
+    }
+    context = prompt_info.get("context")
+    if context:
+        metadata["context"] = context
+    logging.warning("Se generó placeholder local por: %s", reason)
+    return target, metadata
+
+
 def main() -> int:
     setup_logging()
     lock_fd = acquire_lock()
@@ -379,24 +463,53 @@ def main() -> int:
         return 0
 
     try:
-        env = read_env_file(ENV_PATH)
-        api_key = env.get("OPENAI_API_KEY")
-        if not api_key:
-            logging.error("OPENAI_API_KEY no configurada en %s", ENV_PATH)
-            return 1
-
         config = load_config(CONFIG_PATH)
         mode = resolve_mode(config)
         retain_days = resolve_retain_days(config)
 
         prompt_info = select_prompt(mode)
-        client = OpenAI(api_key=api_key)
+        api_key = resolve_openai_api_key()
+        if not api_key:
+            logging.error("OPENAI_API_KEY no configurada; se usará placeholder")
+            target, metadata = write_placeholder("OPENAI_API_KEY ausente", prompt_info)
+            write_metadata(target, metadata)
+            cleanup_old_files(retain_days)
+            logging.info("Generación finalizada con placeholder por falta de clave")
+            logging.info("== RESUMEN ==")
+            logging.info("- resultado: %s", target)
+            logging.info("- modo: %s", metadata.get("mode"))
+            return 0
+
+        client = OpenAI(api_key=api_key, max_retries=1)
         latency_ms = None
         try:
             started = time.perf_counter()
             image_bytes = generate_image_bytes(client, prompt_info["prompt"], TIMEOUT_SECONDS)
             latency_ms = (time.perf_counter() - started) * 1000.0
+        except OpenAIError as exc:
+            if _is_auth_or_billing_error(exc):
+                logging.error("Fallo de autenticación/billing con OpenAI: %s", exc)
+                target, metadata = write_placeholder("OpenAI 4xx o límite de facturación", prompt_info)
+                write_metadata(target, metadata)
+                cleanup_old_files(retain_days)
+                logging.info("Generación completada con placeholder por error de OpenAI")
+                logging.info("== RESUMEN ==")
+                logging.info("- resultado: %s", target)
+                logging.info("- modo: %s", metadata.get("mode"))
+                return 0
+            logging.exception("Fallo al generar imagen: %s", exc)
+            return 2
         except Exception as exc:  # pylint: disable=broad-except
+            if _is_auth_or_billing_error(exc):
+                logging.error("Fallo de autenticación/billing con OpenAI: %s", exc)
+                target, metadata = write_placeholder("OpenAI 4xx o límite de facturación", prompt_info)
+                write_metadata(target, metadata)
+                cleanup_old_files(retain_days)
+                logging.info("Generación completada con placeholder por error de OpenAI")
+                logging.info("== RESUMEN ==")
+                logging.info("- resultado: %s", target)
+                logging.info("- modo: %s", metadata.get("mode"))
+                return 0
             logging.exception("Fallo al generar imagen: %s", exc)
             return 2
 
@@ -405,14 +518,19 @@ def main() -> int:
             "mode": prompt_info["mode"],
             "prompt": prompt_info["prompt"],
             "weatherKey": prompt_info.get("key"),
+            "model": IMAGE_MODEL,
         }
-        if prompt_info.get("context"):
-            metadata["context"] = prompt_info["context"]
+        context = prompt_info.get("context")
+        if context:
+            metadata["context"] = context
         if latency_ms is not None:
             metadata["openaiLatencyMs"] = round(latency_ms, 2)
         write_metadata(target, metadata)
         cleanup_old_files(retain_days)
         logging.info("Generación completada correctamente")
+        logging.info("== RESUMEN ==")
+        logging.info("- resultado: %s", target)
+        logging.info("- modo: %s", metadata.get("mode"))
         return 0
     finally:
         release_lock(lock_fd)
