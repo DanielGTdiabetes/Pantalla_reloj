@@ -37,7 +37,17 @@ CALENDAR_PEEK_ENDPOINT = f"{API_BASE_URL}/calendar/peek"
 
 NEGATIVE_PROMPT = "lowres, blurry, text, watermark, logo, deformed, oversaturated, cartoonish"
 IMAGE_MODEL = "gpt-image-1"
-IMAGE_SIZE = "1536x1024"
+DEFAULT_IMAGE_SIZE = "1536x1024"
+ALLOWED_IMAGE_SIZES = {"1536x1024", "1024x1536", "1024x1024", "auto"}
+_configured_image_size = os.getenv("PANTALLA_BG_IMAGE_SIZE", DEFAULT_IMAGE_SIZE) or DEFAULT_IMAGE_SIZE
+IMAGE_SIZE = _configured_image_size.strip().lower()
+if IMAGE_SIZE not in ALLOWED_IMAGE_SIZES:
+    logging.getLogger(__name__).warning(
+        "IMAGE_SIZE=%s inválido; se usará %s",
+        IMAGE_SIZE,
+        DEFAULT_IMAGE_SIZE,
+    )
+    IMAGE_SIZE = DEFAULT_IMAGE_SIZE
 TIMEOUT_SECONDS = 60
 MAX_FILES = 30
 
@@ -75,6 +85,43 @@ def setup_logging() -> None:
     root.addHandler(handler)
 
 
+def _ensure_autocreated_fallback(path: Path) -> Path:
+    width, height = _parse_image_size(DEFAULT_IMAGE_SIZE)
+    needs_creation = True
+    if path.exists():
+        try:
+            if path.stat().st_size >= 50_000:
+                needs_creation = False
+        except OSError:
+            needs_creation = True
+    if not needs_creation:
+        return path
+
+    AUTO_BACKGROUND_DIR.mkdir(parents=True, exist_ok=True)
+    top_color = (18, 24, 34)
+    bottom_color = (36, 54, 78)
+    image = Image.new("RGB", (width, height))
+    draw = ImageDraw.Draw(image)
+    for y in range(height):
+        blend = y / max(1, height - 1)
+        color = tuple(
+            int(top + (bottom - top) * blend)
+            for top, bottom in zip(top_color, bottom_color)
+        )
+        draw.line((0, y, width, y), fill=color)
+    noise = Image.effect_noise((width, height), 48).convert("L")
+    noise_rgb = Image.merge("RGB", (noise, noise, noise))
+    image = Image.blend(image, noise_rgb, 0.25)
+    overlay = Image.new("RGBA", (width, height), (0, 0, 0, int(255 * 0.22)))
+    image = Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB")
+    draw = ImageDraw.Draw(image)
+    draw.rounded_rectangle((32, 32, width - 32, height - 32), radius=42, outline=(90, 110, 150), width=3)
+    draw.text((64, 64), "Pantalla Dash", fill=(220, 235, 255))
+    image.save(path, "WEBP", method=6, quality=92)
+    os.chmod(path, 0o644)
+    return path
+
+
 def ensure_latest_json() -> None:
     """Garantiza que exista el archivo latest.json para el fondo actual."""
     latest_path = AUTO_BACKGROUND_DIR / "latest.json"
@@ -83,31 +130,25 @@ def ensure_latest_json() -> None:
     if latest_path.exists():
         return
 
+    fallback = _ensure_autocreated_fallback(AUTO_BACKGROUND_DIR / "autocreated_fallback.webp")
     candidates = sorted(
         AUTO_BACKGROUND_DIR.glob("*.webp"),
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )
-    if candidates:
-        newest = candidates[0]
-    else:
-        fallback = AUTO_BACKGROUND_DIR / "autocreated_fallback.webp"
-        img = Image.new("RGB", (512, 320), (12, 18, 20))
-        draw = ImageDraw.Draw(img)
-        draw.text((10, 150), "Pantalla_reloj — Fallback", fill=(180, 255, 220))
-        img.save(fallback, "WEBP")
-        newest = fallback
+    newest = candidates[0] if candidates else fallback
 
     data = {
         "filename": newest.name,
         "url": f"/backgrounds/auto/{newest.name}",
-        "generatedAt": int(__import__("time").time()),
+        "generatedAt": int(time.time()),
         "mode": "daily",
         "prompt": "(auto-created fallback while no latest.json found)",
         "weatherKey": None,
     }
     with open(latest_path, "w", encoding="utf-8") as handle:
         json.dump(data, handle, indent=2)
+    os.chmod(latest_path, 0o644)
     logging.warning("[ensure_latest_json] Generado archivo missing: %s", latest_path)
 
 
@@ -505,6 +546,7 @@ def write_metadata(path: Path, info: Dict[str, Any]) -> None:
     metadata_path = AUTO_BACKGROUND_DIR / "latest.json"
     payload = {
         "filename": path.name,
+        "url": f"/backgrounds/auto/{path.name}",
         "generatedAt": int(datetime.now().timestamp()),
         **info,
     }
