@@ -137,11 +137,15 @@ def _validate_wifi_interface(interface: str) -> None:
     for line in result.stdout.splitlines():
         if not line:
             continue
-        if line.startswith("TYPE:"):
-            iface_type = line.split(":", 1)[1].strip()
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        normalized_key = key.strip().lower()
+        if normalized_key in {"type", "general.type"}:
+            iface_type = value.strip().lower()
             if iface_type == "wifi":
                 return
-            raise WifiError(f"La interfaz configurada '{interface}' no es Wi-Fi")
+            raise WifiError(f"La interfaz configurada '{interface}' no es Wi-Fi (tipo: {iface_type or 'desconocido'})")
 
     raise WifiError(f"No se pudo determinar el tipo de interfaz '{interface}'")
 
