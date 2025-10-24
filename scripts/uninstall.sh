@@ -110,7 +110,7 @@ systemctl stop "${BACKEND_SVC_BASENAME}@$APP_USER" 2>/dev/null || true
 systemctl disable "${BACKEND_SVC_BASENAME}@$APP_USER" 2>/dev/null || true
 
 # UI service (systemd user service)
-USER_SYSTEMD_DIR="/etc/systemd/user"
+USER_SYSTEMD_DIR="/etc/xdg/systemd/user"
 UI_SERVICE_NAME="pantalla-ui.service"
 if [[ -f "$USER_SYSTEMD_DIR/$UI_SERVICE_NAME" ]]; then
   log "Deshabilitando servicio de UI de usuario..."
@@ -151,6 +151,11 @@ rm -f /etc/logrotate.d/pantalla-bg 2>/dev/null || true
 rm -f "$BACKEND_SVC_TEMPLATE"
 rm -f "$SYSTEMD_DIR/$KIOSK_SERVICE" 2>/dev/null || true
 rm -f "$USER_SYSTEMD_DIR/$UI_SERVICE_NAME" 2>/dev/null || true
+
+echo "[INFO] Eliminando servicio Openbox (Pantalla Dash)…"
+sudo systemctl --user disable --now pantalla-openbox.service 2>/dev/null || true
+sudo rm -f /etc/xdg/systemd/user/pantalla-openbox.service 2>/dev/null || true
+sudo systemctl --user daemon-reload || true
 
 log "Recargando systemd…"
 systemctl daemon-reload
