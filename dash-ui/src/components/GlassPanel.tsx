@@ -6,7 +6,7 @@ interface GlassPanelProps extends PropsWithChildren {
 
 const GlassPanel = ({ children, className }: GlassPanelProps) => (
   <div
-    className={`glass-panel flex h-full w-full flex-col gap-6 rounded-[28px] border border-white/15 bg-transparent p-6 text-white md:p-8 ${className ?? ''}`}
+    className={`glass-panel flex h-full w-full flex-col gap-6 rounded-2xl border border-white/15 bg-transparent px-6 py-6 text-white backdrop-blur-lg md:px-8 md:py-8 ${className ?? ''}`}
   >
     {children}
   </div>

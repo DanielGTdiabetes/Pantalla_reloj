@@ -36,6 +36,31 @@ export interface WifiConfig {
   preferredInterface?: string;
 }
 
+export interface UiWifiConfig {
+  preferredInterface?: string;
+}
+
+export interface UiAppearanceConfig {
+  transparentCards?: boolean;
+}
+
+export interface BlitzMqttConfig {
+  host: string;
+  port: number;
+  ssl: boolean;
+  username?: string | null;
+  password?: string | null;
+  baseTopic: string;
+  geohash?: string | null;
+  radius_km?: number;
+}
+
+export interface BlitzortungUiConfig {
+  enabled: boolean;
+  mode: 'mqtt' | 'ws';
+  mqtt: BlitzMqttConfig;
+}
+
 export interface CalendarConfig {
   enabled?: boolean;
   mode?: 'url' | 'ics';
@@ -103,6 +128,9 @@ export interface SideInfoConfig {
 export interface UIConfig {
   rotatingPanel?: RotatingPanelConfig;
   sideInfo?: SideInfoConfig;
+  wifi?: UiWifiConfig;
+  blitzortung?: BlitzortungUiConfig;
+  appearance?: UiAppearanceConfig;
 }
 
 export interface NewsConfig {
@@ -133,6 +161,7 @@ export interface ConfigEnvelope {
   config: Record<string, unknown>;
   paths: { config: string; secrets: string };
   secrets: Record<string, unknown>;
+  notice?: string;
 }
 
 export interface SecretsPatch {
@@ -191,6 +220,33 @@ export async function saveConfigPatch(payload: ConfigUpdate): Promise<ConfigEnve
     method: 'PUT',
     body: JSON.stringify(payload),
   });
+}
+
+export interface BlitzTestResult {
+  ok: boolean;
+  reason?: string;
+}
+
+export async function testBlitzConnection(payload: BlitzortungUiConfig): Promise<BlitzTestResult> {
+  const { mode, mqtt } = payload;
+  return await apiRequest<BlitzTestResult>('/storms/blitz/test', {
+    method: 'POST',
+    body: JSON.stringify({ mode, mqtt }),
+  });
+}
+
+export interface WifiInterfacesResponse {
+  interfaces: string[];
+}
+
+export async function fetchWifiInterfaces(): Promise<string[]> {
+  try {
+    const result = await apiRequest<WifiInterfacesResponse>('/wifi/interfaces');
+    return Array.isArray(result.interfaces) ? result.interfaces : [];
+  } catch (error) {
+    console.warn('No se pudo obtener lista de interfaces Wi-Fi', error);
+    return [];
+  }
 }
 
 export async function saveSecretsPatch(payload: SecretsPatch): Promise<ConfigEnvelope> {

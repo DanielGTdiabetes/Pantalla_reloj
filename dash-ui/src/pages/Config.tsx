@@ -11,8 +11,11 @@ import Background from '../components/Background';
 import GlassPanel from '../components/GlassPanel';
 import {
   fetchConfigEnvelope,
+  fetchWifiInterfaces,
   saveConfigPatch,
   saveSecretsPatch,
+  testBlitzConnection,
+  type BlitzortungUiConfig,
   type ConfigEnvelope,
   type ConfigUpdate,
   type RotatingPanelSectionKey,
@@ -131,6 +134,18 @@ interface FormState {
   sideInfoNewsEnabled: boolean;
   sideInfoNewsFeeds: string;
   newsServiceEnabled: boolean;
+  uiWifiPreferredInterface: string;
+  uiBlitzEnabled: boolean;
+  uiBlitzMode: 'mqtt' | 'ws';
+  uiBlitzHost: string;
+  uiBlitzPort: string;
+  uiBlitzSsl: boolean;
+  uiBlitzUsername: string;
+  uiBlitzPassword: string;
+  uiBlitzBaseTopic: string;
+  uiBlitzGeohash: string;
+  uiBlitzRadiusKm: string;
+  uiAppearanceTransparentCards: boolean;
 }
 
 const DEFAULT_FORM: FormState = {
@@ -167,6 +182,18 @@ const DEFAULT_FORM: FormState = {
   sideInfoNewsEnabled: true,
   sideInfoNewsFeeds: DEFAULT_NEWS_FEEDS.join('\n'),
   newsServiceEnabled: true,
+  uiWifiPreferredInterface: '',
+  uiBlitzEnabled: false,
+  uiBlitzMode: 'mqtt',
+  uiBlitzHost: '',
+  uiBlitzPort: '8883',
+  uiBlitzSsl: true,
+  uiBlitzUsername: '',
+  uiBlitzPassword: '',
+  uiBlitzBaseTopic: '',
+  uiBlitzGeohash: '',
+  uiBlitzRadiusKm: '100',
+  uiAppearanceTransparentCards: false,
 };
 
 const Config = () => {
@@ -183,6 +210,10 @@ const Config = () => {
   const [connectingWifi, setConnectingWifi] = useState(false);
   const [selectedSsid, setSelectedSsid] = useState<string | null>(null);
   const [wifiPassword, setWifiPassword] = useState('');
+  const [availableWifiInterfaces, setAvailableWifiInterfaces] = useState<string[]>([]);
+  const [hasStoredBlitzPassword, setHasStoredBlitzPassword] = useState(false);
+  const [blitzTestNotice, setBlitzTestNotice] = useState<Notice | null>(null);
+  const [testingBlitz, setTestingBlitz] = useState(false);
   const [openAiInput, setOpenAiInput] = useState('');
   const [googleClientIdInput, setGoogleClientIdInput] = useState('');
   const [googleClientSecretInput, setGoogleClientSecretInput] = useState('');
@@ -240,6 +271,10 @@ const Config = () => {
     const background = (configData.background as Record<string, any> | undefined) ?? {};
     const ui = (configData.ui as Record<string, any> | undefined) ?? {};
     const rotating = (ui.rotatingPanel as Record<string, any> | undefined) ?? {};
+    const uiWifi = (ui.wifi as Record<string, any> | undefined) ?? {};
+    const uiBlitz = (ui.blitzortung as Record<string, any> | undefined) ?? {};
+    const uiBlitzMqtt = (uiBlitz.mqtt as Record<string, any> | undefined) ?? {};
+    const uiAppearance = (ui.appearance as Record<string, any> | undefined) ?? {};
 
     const providerValue = typeof calendar.provider === 'string' ? calendar.provider.toLowerCase() : '';
     let calendarProvider: FormState['calendarProvider'];
@@ -392,19 +427,57 @@ const Config = () => {
         typeof newsConfig.enabled === 'boolean'
           ? newsConfig.enabled
           : DEFAULT_FORM.newsServiceEnabled,
+      uiWifiPreferredInterface:
+        typeof uiWifi.preferredInterface === 'string' && uiWifi.preferredInterface
+          ? uiWifi.preferredInterface
+          : typeof (configData.wifi as Record<string, any> | undefined)?.preferredInterface === 'string'
+          ? (configData.wifi as Record<string, any>).preferredInterface
+          : DEFAULT_FORM.uiWifiPreferredInterface,
+      uiBlitzEnabled: Boolean(uiBlitz.enabled),
+      uiBlitzMode: uiBlitz.mode === 'ws' ? 'ws' : 'mqtt',
+      uiBlitzHost: typeof uiBlitzMqtt.host === 'string' ? uiBlitzMqtt.host : DEFAULT_FORM.uiBlitzHost,
+      uiBlitzPort:
+        typeof uiBlitzMqtt.port === 'number' && Number.isFinite(uiBlitzMqtt.port)
+          ? String(uiBlitzMqtt.port)
+          : DEFAULT_FORM.uiBlitzPort,
+      uiBlitzSsl: typeof uiBlitzMqtt.ssl === 'boolean' ? uiBlitzMqtt.ssl : DEFAULT_FORM.uiBlitzSsl,
+      uiBlitzUsername: typeof uiBlitzMqtt.username === 'string' ? uiBlitzMqtt.username : DEFAULT_FORM.uiBlitzUsername,
+      uiBlitzPassword:
+        typeof uiBlitzMqtt.password === 'string' && uiBlitzMqtt.password
+          ? '*****'
+          : DEFAULT_FORM.uiBlitzPassword,
+      uiBlitzBaseTopic:
+        typeof uiBlitzMqtt.baseTopic === 'string' ? uiBlitzMqtt.baseTopic : DEFAULT_FORM.uiBlitzBaseTopic,
+      uiBlitzGeohash: typeof uiBlitzMqtt.geohash === 'string' ? uiBlitzMqtt.geohash : DEFAULT_FORM.uiBlitzGeohash,
+      uiBlitzRadiusKm:
+        typeof uiBlitzMqtt.radius_km === 'number' && Number.isFinite(uiBlitzMqtt.radius_km)
+          ? String(uiBlitzMqtt.radius_km)
+          : DEFAULT_FORM.uiBlitzRadiusKm,
+      uiAppearanceTransparentCards:
+        typeof uiAppearance.transparentCards === 'boolean'
+          ? uiAppearance.transparentCards
+          : DEFAULT_FORM.uiAppearanceTransparentCards,
     };
   }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [configData, wifiData, calendarData] = await Promise.all([
+      const [configData, wifiData, calendarData, interfaces] = await Promise.all([
         fetchConfigEnvelope(),
         fetchWifiStatus().catch(() => null),
         fetchCalendarStatus().catch(() => null),
+        fetchWifiInterfaces(),
       ]);
       setEnvelope(configData);
       setForm(buildFormFromConfig((configData.config as Record<string, any>) ?? null));
+      setAvailableWifiInterfaces(Array.isArray(interfaces) ? interfaces : []);
+      const blitzPassword =
+        ((((configData.config as Record<string, any>) ?? {}).ui as Record<string, any> | undefined)?.blitzortung as
+          | Record<string, any>
+          | undefined)?.mqtt?.password;
+      setHasStoredBlitzPassword(typeof blitzPassword === 'string' && blitzPassword.trim() !== '');
+      setBlitzTestNotice(null);
       if (wifiData) setWifiStatus(wifiData);
       if (calendarData) setCalendarStatus(calendarData as CalendarStatus);
       setNotice(null);
@@ -447,6 +520,21 @@ const Config = () => {
     const timeout = window.setTimeout(() => setWifiNotice(null), 5000);
     return () => window.clearTimeout(timeout);
   }, [wifiNotice]);
+
+  useEffect(() => {
+    setBlitzTestNotice(null);
+  }, [
+    form.uiBlitzEnabled,
+    form.uiBlitzMode,
+    form.uiBlitzHost,
+    form.uiBlitzPort,
+    form.uiBlitzSsl,
+    form.uiBlitzUsername,
+    form.uiBlitzPassword,
+    form.uiBlitzBaseTopic,
+    form.uiBlitzGeohash,
+    form.uiBlitzRadiusKm,
+  ]);
 
   useEffect(() => {
     if (form.calendarProvider !== 'google' || !form.calendarEnabled) {
@@ -798,6 +886,40 @@ const Config = () => {
     return Math.min(Math.max(value, min), max);
   };
 
+  const buildBlitzPayload = (): BlitzortungUiConfig => {
+    const parsedPort = Number.parseInt(form.uiBlitzPort, 10);
+    const portValue =
+      Number.isFinite(parsedPort) && parsedPort >= 1 && parsedPort <= 65535
+        ? parsedPort
+        : Number.parseInt(DEFAULT_FORM.uiBlitzPort, 10);
+    const parsedRadius = Number.parseInt(form.uiBlitzRadiusKm, 10);
+    const radiusValue =
+      Number.isFinite(parsedRadius) && parsedRadius >= 0
+        ? Math.min(Math.max(parsedRadius, 0), 2000)
+        : undefined;
+    let passwordValue = form.uiBlitzPassword.trim();
+    if (!passwordValue) {
+      passwordValue = hasStoredBlitzPassword ? '*****' : '';
+    } else if (passwordValue === '*****' && !hasStoredBlitzPassword) {
+      passwordValue = '';
+    }
+
+    return {
+      enabled: form.uiBlitzEnabled,
+      mode: form.uiBlitzMode,
+      mqtt: {
+        host: form.uiBlitzHost.trim(),
+        port: portValue,
+        ssl: form.uiBlitzSsl,
+        username: form.uiBlitzUsername.trim() ? form.uiBlitzUsername.trim() : null,
+        password: passwordValue,
+        baseTopic: form.uiBlitzBaseTopic.trim(),
+        geohash: form.uiBlitzGeohash.trim() ? form.uiBlitzGeohash.trim() : null,
+        radius_km: radiusValue,
+      },
+    };
+  };
+
   const handleSaveConfig = async () => {
     setSavingConfig(true);
     setNotice(null);
@@ -827,6 +949,27 @@ const Config = () => {
       });
       setSavingConfig(false);
       return;
+    }
+
+    if (form.uiBlitzEnabled && form.uiBlitzMode === 'mqtt') {
+      const trimmedHost = form.uiBlitzHost.trim();
+      const trimmedTopic = form.uiBlitzBaseTopic.trim();
+      const parsedPort = Number.parseInt(form.uiBlitzPort, 10);
+      if (!trimmedHost) {
+        setNotice({ type: 'error', text: 'Introduce un host para el relay MQTT de Blitzortung.' });
+        setSavingConfig(false);
+        return;
+      }
+      if (!trimmedTopic) {
+        setNotice({ type: 'error', text: 'Introduce un baseTopic para el relay MQTT.' });
+        setSavingConfig(false);
+        return;
+      }
+      if (!Number.isFinite(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
+        setNotice({ type: 'error', text: 'El puerto MQTT debe estar entre 1 y 65535.' });
+        setSavingConfig(false);
+        return;
+      }
     }
 
     const patch: ConfigUpdate = {
@@ -912,9 +1055,17 @@ const Config = () => {
       sideInfoPatch.intervalSeconds = sideInterval;
     }
 
+    const blitzPatch = buildBlitzPayload();
+    const appearancePatch = { transparentCards: form.uiAppearanceTransparentCards };
+
     patch.ui = {
       rotatingPanel: rotatingPanelPatch,
       sideInfo: sideInfoPatch,
+      wifi: {
+        preferredInterface: form.uiWifiPreferredInterface.trim(),
+      },
+      blitzortung: blitzPatch,
+      appearance: appearancePatch,
     };
 
     patch.news = {
@@ -926,6 +1077,13 @@ const Config = () => {
       const updated = await saveConfigPatch(patch);
       setEnvelope(updated);
       setForm(buildFormFromConfig((updated.config as Record<string, any>) ?? null));
+      const updatedBlitzPassword =
+        ((((updated.config as Record<string, any>) ?? {}).ui as Record<string, any> | undefined)?.blitzortung as
+          | Record<string, any>
+          | undefined)?.mqtt?.password;
+      setHasStoredBlitzPassword(
+        typeof updatedBlitzPassword === 'string' && updatedBlitzPassword.trim() !== '',
+      );
       setNotice({ type: 'success', text: 'Configuración guardada' });
       try {
         const status = await fetchCalendarStatus();
@@ -943,6 +1101,43 @@ const Config = () => {
     } finally {
       setSavingConfig(false);
     }
+  };
+
+  const handleTestBlitzConnection = async () => {
+    setTestingBlitz(true);
+    setBlitzTestNotice(null);
+    try {
+      const result = await testBlitzConnection(buildBlitzPayload());
+      if (result.ok) {
+        setBlitzTestNotice({ type: 'success', text: 'Conexión MQTT verificada correctamente.' });
+      } else {
+        setBlitzTestNotice({
+          type: 'error',
+          text: result.reason ?? 'No se pudo conectar con el relay MQTT.',
+        });
+      }
+    } catch (error) {
+      setBlitzTestNotice({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'No se pudo probar la conexión',
+      });
+    } finally {
+      setTestingBlitz(false);
+    }
+  };
+
+  const handleResetForm = () => {
+    if (!envelope?.config) return;
+    setForm(buildFormFromConfig(envelope.config as Record<string, any>));
+    const blitzPassword =
+      ((((envelope.config as Record<string, any>) ?? {}).ui as Record<string, any> | undefined)?.blitzortung as
+        | Record<string, any>
+        | undefined)?.mqtt?.password;
+    setHasStoredBlitzPassword(
+      typeof blitzPassword === 'string' && blitzPassword.trim() !== '',
+    );
+    setNotice(null);
+    setBlitzTestNotice(null);
   };
 
   const handleSaveOpenAiSecret = async () => {
@@ -1456,11 +1651,229 @@ const Config = () => {
                 </div>
               </div>
 
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={handleResetForm}
+                  className="rounded-lg border border-white/25 px-4 py-2 text-sm font-medium text-white transition hover:border-white/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={savingConfig || loading}
+                >
+                  Cancelar
+                </button>
                 <button
                   type="button"
                   onClick={handleSaveConfig}
-                  className="rounded-lg bg-white/15 px-4 py-2 text-sm font-medium text-white shadow-md transition hover:bg-white/25"
+                  className="rounded-lg bg-white/15 px-4 py-2 text-sm font-medium text-white shadow-md transition hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={savingConfig || loading}
+                >
+                  {savingConfig ? 'Guardando…' : 'Guardar cambios'}
+                </button>
+              </div>
+            </GlassPanel>
+
+            <GlassPanel className="gap-6">
+              <div>
+                <h2 className="text-lg font-medium text-white/85">Blitzortung y apariencia</h2>
+                <p className="text-sm text-white/55">
+                  Configura la ingesta de rayos y el acabado visual de las tarjetas de la interfaz.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-5">
+                <label className="flex items-center gap-3 text-sm text-white/75">
+                  <input
+                    type="checkbox"
+                    checked={form.uiBlitzEnabled}
+                    onChange={(event) => handleFormChange('uiBlitzEnabled', event.target.checked)}
+                    className="h-4 w-4 rounded border-white/30 bg-white/10 text-emerald-400 focus:ring-emerald-400"
+                  />
+                  Integración Blitzortung
+                </label>
+
+                <div className="flex flex-wrap items-center gap-4 text-sm text-white/75">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      value="mqtt"
+                      checked={form.uiBlitzMode === 'mqtt'}
+                      onChange={(event) => handleFormChange('uiBlitzMode', event.target.value as 'mqtt' | 'ws')}
+                      className="h-4 w-4 border-white/30 bg-white/10 text-emerald-400 focus:ring-emerald-400"
+                      disabled={!form.uiBlitzEnabled}
+                    />
+                    Relay MQTT
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      value="ws"
+                      checked={form.uiBlitzMode === 'ws'}
+                      onChange={(event) => handleFormChange('uiBlitzMode', event.target.value as 'mqtt' | 'ws')}
+                      className="h-4 w-4 border-white/30 bg-white/10 text-emerald-400 focus:ring-emerald-400"
+                      disabled={!form.uiBlitzEnabled}
+                    />
+                    Websocket (legacy)
+                  </label>
+                </div>
+
+                {form.uiBlitzEnabled && form.uiBlitzMode === 'ws' ? (
+                  <div className="rounded-lg border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-xs text-amber-100">
+                    No recomendado. Usa relay MQTT por estabilidad y cumplimiento.
+                  </div>
+                ) : null}
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="block text-xs uppercase tracking-wide text-white/50">Host</label>
+                    <input
+                      type="text"
+                      className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                      value={form.uiBlitzHost}
+                      onChange={(event) => handleFormChange('uiBlitzHost', event.target.value)}
+                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'mqtt'}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-wide text-white/50">Puerto</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={65535}
+                      className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                      value={form.uiBlitzPort}
+                      onChange={(event) => handleFormChange('uiBlitzPort', event.target.value)}
+                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'mqtt'}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-wide text-white/50">Base topic</label>
+                    <input
+                      type="text"
+                      className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                      value={form.uiBlitzBaseTopic}
+                      onChange={(event) => handleFormChange('uiBlitzBaseTopic', event.target.value)}
+                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'mqtt'}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-wide text-white/50">Geohash</label>
+                    <input
+                      type="text"
+                      className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                      value={form.uiBlitzGeohash}
+                      onChange={(event) => handleFormChange('uiBlitzGeohash', event.target.value)}
+                      placeholder="Opcional"
+                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'mqtt'}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-wide text-white/50">Radio (km)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={2000}
+                      className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                      value={form.uiBlitzRadiusKm}
+                      onChange={(event) => handleFormChange('uiBlitzRadiusKm', event.target.value)}
+                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'mqtt'}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-wide text-white/50">Usuario</label>
+                    <input
+                      type="text"
+                      className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                      value={form.uiBlitzUsername}
+                      onChange={(event) => handleFormChange('uiBlitzUsername', event.target.value)}
+                      placeholder="Opcional"
+                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'mqtt'}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="flex items-center gap-3 text-sm text-white/75">
+                    <input
+                      type="checkbox"
+                      checked={form.uiBlitzSsl}
+                      onChange={(event) => handleFormChange('uiBlitzSsl', event.target.checked)}
+                      className="h-4 w-4 rounded border-white/30 bg-white/10 text-emerald-400 focus:ring-emerald-400"
+                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'mqtt'}
+                    />
+                    TLS activado
+                  </label>
+                  <div>
+                    <label className="block text-xs uppercase tracking-wide text-white/50">Contraseña</label>
+                    <input
+                      type="password"
+                      className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                      value={form.uiBlitzPassword}
+                      onChange={(event) => handleFormChange('uiBlitzPassword', event.target.value)}
+                      placeholder={hasStoredBlitzPassword ? '*****' : 'Opcional'}
+                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'mqtt'}
+                    />
+                    {form.uiBlitzPassword.trim() && form.uiBlitzPassword.trim() !== '*****' ? (
+                      <p className="mt-1 text-xs text-amber-200/80">La contraseña se actualizará al guardar.</p>
+                    ) : hasStoredBlitzPassword ? (
+                      <p className="mt-1 text-xs text-white/45">Deja el campo vacío para mantener la contraseña actual.</p>
+                    ) : null}
+                  </div>
+                </div>
+
+                {blitzTestNotice ? (
+                  <div
+                    className={`rounded-lg border px-3 py-2 text-xs ${
+                      blitzTestNotice.type === 'success'
+                        ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-100'
+                        : blitzTestNotice.type === 'error'
+                        ? 'border-red-400/40 bg-red-500/10 text-red-100'
+                        : 'border-sky-400/40 bg-sky-500/10 text-sky-100'
+                    }`}
+                  >
+                    {blitzTestNotice.text}
+                  </div>
+                ) : null}
+
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={handleTestBlitzConnection}
+                    className="rounded-lg border border-white/20 px-4 py-2 text-sm font-medium text-white transition hover:border-white/35 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'mqtt' || testingBlitz}
+                  >
+                    {testingBlitz ? 'Probando…' : 'Probar conexión'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                <h3 className="text-sm font-medium text-white/85">Tarjetas de la interfaz</h3>
+                <label className="mt-3 flex items-center gap-3 text-sm text-white/75">
+                  <input
+                    type="checkbox"
+                    checked={form.uiAppearanceTransparentCards}
+                    onChange={(event) => handleFormChange('uiAppearanceTransparentCards', event.target.checked)}
+                    className="h-4 w-4 rounded border-white/30 bg-white/10 text-emerald-400 focus:ring-emerald-400"
+                  />
+                  Tarjetas 100% transparentes
+                </label>
+                <p className="mt-1 text-xs text-white/50">
+                  Al activarlo, las tarjetas usan fondo transparente y un leve difuminado para mejorar la lectura.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={handleResetForm}
+                  className="rounded-lg border border-white/25 px-4 py-2 text-sm font-medium text-white transition hover:border-white/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={savingConfig || loading}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveConfig}
+                  className="rounded-lg bg-white/15 px-4 py-2 text-sm font-medium text-white shadow-md transition hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={savingConfig || loading}
                 >
                   {savingConfig ? 'Guardando…' : 'Guardar cambios'}
@@ -1524,6 +1937,46 @@ const Config = () => {
 
               <div className="space-y-4">
                 <h3 className="text-lg font-medium text-white/85">Conectividad Wi-Fi</h3>
+                <div>
+                  <label className="block text-xs uppercase tracking-wide text-white/50">
+                    Interfaz preferida
+                  </label>
+                  {availableWifiInterfaces.length > 0 ? (
+                    <select
+                      className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none"
+                      value={form.uiWifiPreferredInterface}
+                      onChange={(event) =>
+                        handleFormChange('uiWifiPreferredInterface', event.target.value)
+                      }
+                    >
+                      <option value="">Detección automática</option>
+                      {availableWifiInterfaces.map((iface) => (
+                        <option key={iface} value={iface}>
+                          {iface}
+                        </option>
+                      ))}
+                      {form.uiWifiPreferredInterface &&
+                      !availableWifiInterfaces.includes(form.uiWifiPreferredInterface) ? (
+                        <option value={form.uiWifiPreferredInterface}>
+                          {form.uiWifiPreferredInterface}
+                        </option>
+                      ) : null}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none"
+                      value={form.uiWifiPreferredInterface}
+                      onChange={(event) =>
+                        handleFormChange('uiWifiPreferredInterface', event.target.value)
+                      }
+                      placeholder="Auto"
+                    />
+                  )}
+                  <p className="mt-1 text-xs text-white/45">
+                    Si se deja vacío se elegirá automáticamente la interfaz más estable.
+                  </p>
+                </div>
                 {wifiNotice ? (
                   <div
                     className={`rounded-lg border px-3 py-2 text-xs ${
@@ -1750,11 +2203,19 @@ const Config = () => {
                 </div>
               </div>
 
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={handleResetForm}
+                  className="rounded-lg border border-white/25 px-4 py-2 text-sm font-medium text-white transition hover:border-white/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={savingConfig || loading}
+                >
+                  Cancelar
+                </button>
                 <button
                   type="button"
                   onClick={handleSaveConfig}
-                  className="rounded-lg bg-white/15 px-4 py-2 text-sm font-medium text-white shadow-md transition hover:bg-white/25"
+                  className="rounded-lg bg-white/15 px-4 py-2 text-sm font-medium text-white shadow-md transition hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={savingConfig || loading}
                 >
                   {savingConfig ? 'Guardando…' : 'Guardar cambios'}
@@ -1832,11 +2293,19 @@ const Config = () => {
                 </div>
               </div>
 
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={handleResetForm}
+                  className="rounded-lg border border-white/25 px-4 py-2 text-sm font-medium text-white transition hover:border-white/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={savingConfig || loading}
+                >
+                  Cancelar
+                </button>
                 <button
                   type="button"
                   onClick={handleSaveConfig}
-                  className="rounded-lg bg-white/15 px-4 py-2 text-sm font-medium text-white shadow-md transition hover:bg-white/25"
+                  className="rounded-lg bg-white/15 px-4 py-2 text-sm font-medium text-white shadow-md transition hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={savingConfig || loading}
                 >
                   {savingConfig ? 'Guardando…' : 'Guardar cambios'}

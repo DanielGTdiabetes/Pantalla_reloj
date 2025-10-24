@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import ipaddress
 import logging
 import os
@@ -27,9 +28,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 import shutil
 
+from backend.models.config import BlitzMQTT as UiBlitzMQTT
 from backend.services.aemet import MissingApiKeyError
 from backend.services.ai_text import (
     AISummaryError,
@@ -61,15 +63,21 @@ from backend.services.storms import get_radar_image, get_storm_status
 from backend.services.tts import SpeechError, TTSService, TTSUnavailableError
 from backend.services.weather import WeatherService, WeatherServiceError
 from backend.services.config_store import (
+    apply_runtime_changes,
     has_openai_key,
+    load_config,
     mask_secrets,
+    merge_and_extract_secrets,
     read_config as read_store_config,
     read_secrets as read_store_secrets,
+    redact_secrets,
+    save_config,
+    save_secrets,
     secrets_metadata,
     write_config_patch,
     write_secrets_patch,
 )
-from backend.services.wifi import wifi_connect, wifi_scan, wifi_status
+from backend.services.wifi import list_wifi_interfaces, wifi_connect, wifi_scan, wifi_status
 from backend.services.wifi import WifiError, forget as wifi_forget
 from backend.services.offline_state import (
     get_offline_state,
@@ -155,8 +163,27 @@ def _configure_blitzortung_from_config() -> None:
         configure_blitz_consumer(None)
         return
 
-    # Si existe configuración legacy en app_config.mqtt, mantenemos compatibilidad
     blitz_cfg = getattr(app_config, "blitzortung", None)
+    ui_cfg = getattr(app_config, "ui", None)
+    if ui_cfg and getattr(ui_cfg, "blitzortung", None):
+        blitz_from_ui = BlitzortungConfig(
+            enabled=ui_cfg.blitzortung.enabled,
+            mode=ui_cfg.blitzortung.mode,
+            mqtt=BlitzortungMQTTConfig(
+                host=ui_cfg.blitzortung.mqtt.host or "",
+                port=ui_cfg.blitzortung.mqtt.port,
+                ssl=ui_cfg.blitzortung.mqtt.ssl,
+                username=ui_cfg.blitzortung.mqtt.username,
+                password=ui_cfg.blitzortung.mqtt.password,
+                baseTopic=ui_cfg.blitzortung.mqtt.baseTopic or "",
+                geohash=ui_cfg.blitzortung.mqtt.geohash,
+                radius_km=ui_cfg.blitzortung.mqtt.radius_km,
+            ),
+        )
+        blitz_cfg = blitz_from_ui
+        app_config = app_config.model_copy(update={"blitzortung": blitz_from_ui})
+
+    # Si existe configuración legacy en app_config.mqtt, mantenemos compatibilidad
     if blitz_cfg is None and host_value is not None:
         try:
             host_str = str(host_value) if host_value else "127.0.0.1"
@@ -579,6 +606,11 @@ class StormStatusResponse(BaseModel):
     )
 
 
+class BlitzTestRequest(BaseModel):
+    mode: str = Field(default="mqtt")
+    mqtt: UiBlitzMQTT
+
+
 class WifiNetwork(BaseModel):
     ssid: str
     signal: Optional[int] = None
@@ -824,6 +856,50 @@ def storms_blitz_status() -> Dict[str, Any]:
     return blitz_consumer_status()
 
 
+@app.post("/api/storms/blitz/test")
+def blitz_test_endpoint(req: BlitzTestRequest) -> Dict[str, Any]:
+    if req.mode != "mqtt":
+        return JSONResponse({"ok": False, "reason": "Solo test MQTT"}, status_code=400)
+
+    try:
+        import paho.mqtt.client as mqtt  # type: ignore[import-not-found]
+    except Exception as exc:  # pragma: no cover - dependencia opcional
+        return JSONResponse(
+            {"ok": False, "reason": f"paho-mqtt no disponible: {exc}"}, status_code=500
+        )
+
+    client = None
+    try:
+        client = mqtt.Client()
+        if req.mqtt.username:
+            password = req.mqtt.password or ""
+            if password == "*****":
+                stored = load_config().blitzortung.mqtt.password
+                password = stored or ""
+            client.username_pw_set(req.mqtt.username, password)
+        if req.mqtt.ssl:
+            try:
+                client.tls_set()
+            except Exception as exc:  # pragma: no cover - defensivo
+                logger.debug("No se pudo configurar TLS para test MQTT: %s", exc)
+        client.connect(req.mqtt.host or "", int(req.mqtt.port), 10)
+        client.loop_start()
+        client.loop_stop()
+        client.disconnect()
+        return {"ok": True}
+    except Exception as exc:  # pragma: no cover - defensivo
+        if client is not None:
+            try:
+                client.loop_stop()
+            except Exception:
+                pass
+            try:
+                client.disconnect()
+            except Exception:
+                pass
+        return JSONResponse({"ok": False, "reason": str(exc)}, status_code=500)
+
+
 def _radar_binary_response() -> Response:
     radar_data = get_radar_image()
     if not radar_data:
@@ -953,6 +1029,15 @@ def _wifi_status_payload() -> Dict[str, Any]:
 @app.get("/api/wifi/status")
 def wifi_status_endpoint() -> Dict[str, Any]:
     return _wifi_status_payload()
+
+
+@app.get("/api/wifi/interfaces")
+def wifi_interfaces_endpoint() -> Dict[str, Any]:
+    try:
+        interfaces = list_wifi_interfaces()
+    except WifiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"interfaces": interfaces}
 
 
 @app.get("/api/network/status")
@@ -1402,24 +1487,32 @@ def _config_response(
     *,
     config_path: str | None = None,
     secrets_path: str | None = None,
+    notice: str | None = None,
 ) -> Dict[str, Any]:
     if config_path is None:
         _, config_path = read_store_config()
     if secrets_path is None:
         _, secrets_path = read_store_secrets()
-    return {
-        "config": config_data,
+    payload = {
+        "config": redact_secrets(config_data),
         "paths": {"config": config_path, "secrets": secrets_path},
         "secrets": mask_secrets(secrets_data),
     }
+    if notice:
+        payload["notice"] = notice
+    return payload
 
 
 @app.get("/api/config")
 def get_config_endpoint() -> Dict[str, Any]:
     config_data, config_path = read_store_config()
     secrets_data, secrets_path = read_store_secrets()
+    ui_cfg = load_config()
+    payload = copy.deepcopy(config_data) if isinstance(config_data, dict) else {}
+    payload.setdefault("ui", ui_cfg.model_dump())
+    payload["blitzortung"] = ui_cfg.blitzortung.model_dump(exclude={"mqtt": {"password"}})
     return _config_response(
-        config_data or {},
+        payload,
         secrets_data or {},
         config_path=config_path,
         secrets_path=secrets_path,
@@ -1431,21 +1524,67 @@ def update_config_endpoint(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any
     if not isinstance(payload, dict) or not payload:
         raise HTTPException(status_code=400, detail="Payload debe ser un objeto JSON con cambios")
 
-    try:
-        updated_config, config_path = write_config_patch(payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    ui_subset = {"wifi", "blitzortung", "appearance"}
+    ui_payload: Dict[str, Any] | None = None
+    residual_payload: Dict[str, Any] = {}
+
+    if set(payload.keys()).issubset(ui_subset):
+        ui_payload = payload
+    elif "ui" in payload and isinstance(payload["ui"], dict):
+        ui_payload = payload["ui"]
+        residual_payload = {k: v for k, v in payload.items() if k != "ui"}
+    else:
+        residual_payload = payload
+
+    notice: str | None = None
+
+    if ui_payload is not None:
+        current_ui = load_config()
+        try:
+            merged_ui, secret_updates = merge_and_extract_secrets(current_ui, ui_payload)
+        except ValidationError as exc:
+            details = exc.errors()
+            if details:
+                first = details[0]
+                location = ".".join(str(part) for part in first.get("loc", []))
+                message = first.get("msg", str(exc))
+                if location:
+                    raise HTTPException(status_code=400, detail=f"{location}: {message}") from exc
+                raise HTTPException(status_code=400, detail=message) from exc
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        save_config(merged_ui)
+        if secret_updates:
+            save_secrets(secret_updates)
+        notice = apply_runtime_changes(current_ui, merged_ui)
+
+    updated_config: Dict[str, Any] | None = None
+    config_path: str | None = None
+    if residual_payload:
+        try:
+            updated_config, config_path = write_config_patch(residual_payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+    else:
+        config_path = read_store_config()[1]
 
     _configure_blitzortung_from_config()
 
+    config_data, _ = read_store_config()
     secrets_data, secrets_path = read_store_secrets()
+    ui_cfg = load_config()
+    payload_config = copy.deepcopy(config_data) if isinstance(config_data, dict) else {}
+    payload_config.setdefault("ui", ui_cfg.model_dump())
+    payload_config["blitzortung"] = ui_cfg.blitzortung.model_dump(exclude={"mqtt": {"password"}})
+
     return _config_response(
-        updated_config,
+        payload_config,
         secrets_data,
         config_path=config_path,
         secrets_path=secrets_path,
+        notice=notice,
     )
 
 

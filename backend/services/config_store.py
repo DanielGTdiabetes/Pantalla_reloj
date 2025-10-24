@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from .config import AppConfig
+from backend.models.config import UiConfig
+
+from .config import AppConfig, read_config as read_app_config
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +125,189 @@ def _mask_secret(value: str) -> str:
         return "***"
     last4 = masked[-4:]
     return f"***…{last4}"
+
+
+def load_config() -> UiConfig:
+    app_config = read_app_config()
+    ui_cfg = app_config.ui or UiConfig()
+    raw_config, _ = read_config()
+    raw_ui = raw_config.get("ui") if isinstance(raw_config, dict) else None
+    secrets, _ = read_secrets()
+
+    password: str | None = None
+    if isinstance(secrets, dict):
+        blitz_secret = secrets.get("blitzortung")
+        if isinstance(blitz_secret, dict):
+            mqtt_secret = blitz_secret.get("mqtt")
+            if isinstance(mqtt_secret, dict):
+                candidate = mqtt_secret.get("password")
+                if isinstance(candidate, str) and candidate.strip():
+                    password = candidate.strip()
+
+    if password is None and isinstance(raw_ui, dict):
+        blitz = raw_ui.get("blitzortung")
+        if isinstance(blitz, dict):
+            mqtt = blitz.get("mqtt") if isinstance(blitz.get("mqtt"), dict) else None
+            if isinstance(mqtt, dict):
+                candidate = mqtt.get("password")
+                if isinstance(candidate, str) and candidate.strip():
+                    password = candidate.strip()
+
+    if password:
+        ui_cfg = ui_cfg.model_copy(update={"blitzortung": {"mqtt": {"password": password}}})
+
+    return ui_cfg
+
+
+def redact_secrets(cfg: dict[str, Any]) -> dict[str, Any]:
+    clone = copy.deepcopy(cfg)
+
+    def _mask(container: dict[str, Any]) -> None:
+        mqtt = container.get("mqtt")
+        if isinstance(mqtt, dict) and mqtt.get("password"):
+            mqtt["password"] = "*****"
+
+    if isinstance(clone.get("blitzortung"), dict):
+        _mask(clone["blitzortung"])
+    if isinstance(clone.get("ui"), dict):
+        blitz = clone["ui"].get("blitzortung") if isinstance(clone["ui"], dict) else None
+        if isinstance(blitz, dict):
+            _mask(blitz)
+    return clone
+
+
+def merge_and_extract_secrets(current: UiConfig, incoming: dict[str, Any]) -> tuple[UiConfig, dict[str, Any]]:
+    base = current.model_dump()
+    merged_dict = _deep_merge(copy.deepcopy(base), incoming)
+    merged = UiConfig.model_validate(merged_dict)
+
+    secret_updates: dict[str, Any] = {}
+    raw_password = None
+    blitz_payload = incoming.get("blitzortung") if isinstance(incoming, dict) else None
+    if isinstance(blitz_payload, dict):
+        mqtt_payload = blitz_payload.get("mqtt") if isinstance(blitz_payload.get("mqtt"), dict) else None
+        if isinstance(mqtt_payload, dict):
+            raw_password = mqtt_payload.get("password")
+
+    preserved = current.blitzortung.mqtt.password
+    effective_password = preserved
+    if isinstance(raw_password, str):
+        trimmed = raw_password.strip()
+        if trimmed and trimmed != "*****":
+            effective_password = trimmed
+            secret_updates = {"blitzortung": {"mqtt": {"password": trimmed}}}
+        elif trimmed == "":
+            effective_password = preserved
+    elif raw_password is None:
+        effective_password = preserved
+
+    if effective_password:
+        merged = merged.model_copy(update={"blitzortung": {"mqtt": {"password": effective_password}}})
+    else:
+        merged = merged.model_copy(update={"blitzortung": {"mqtt": {"password": None}}})
+
+    return merged, secret_updates
+
+
+def save_config(ui_config: UiConfig) -> dict[str, Any]:
+    config_data, _ = read_config()
+    payload = copy.deepcopy(config_data)
+
+    ui_dump = ui_config.model_dump()
+    blitz_ui = ui_dump.get("blitzortung")
+    if isinstance(blitz_ui, dict):
+        mqtt_ui = blitz_ui.get("mqtt") if isinstance(blitz_ui.get("mqtt"), dict) else None
+        if isinstance(mqtt_ui, dict):
+            mqtt_ui.pop("password", None)
+
+    existing_ui = payload.get("ui") if isinstance(payload.get("ui"), dict) else {}
+    payload["ui"] = _deep_merge(copy.deepcopy(existing_ui), ui_dump)
+
+    wifi_pref = ui_config.wifi.preferredInterface.strip()
+    if wifi_pref:
+        payload.setdefault("wifi", {})
+        if isinstance(payload["wifi"], dict):
+            payload["wifi"]["preferredInterface"] = wifi_pref
+        else:
+            payload["wifi"] = {"preferredInterface": wifi_pref}
+    elif isinstance(payload.get("wifi"), dict):
+        payload["wifi"].pop("preferredInterface", None)
+        if not payload["wifi"]:
+            payload.pop("wifi", None)
+
+    blitz_dump = ui_config.blitzortung.model_dump()
+    if isinstance(blitz_dump.get("mqtt"), dict):
+        blitz_dump["mqtt"].pop("password", None)
+    payload["blitzortung"] = blitz_dump
+
+    try:
+        _write_json(CONFIG_PATH, payload, mode=0o644)
+    except OSError as exc:  # pragma: no cover - permisos insuficientes
+        raise PermissionError("No se pudo escribir config.json") from exc
+
+    return payload
+
+
+def save_secrets(secret_updates: dict[str, Any]) -> dict[str, Any]:
+    if not secret_updates:
+        secrets, _ = read_secrets()
+        return secrets
+
+    secrets, _ = read_secrets()
+    updated = copy.deepcopy(secrets)
+
+    blitz_update = secret_updates.get("blitzortung") if isinstance(secret_updates, dict) else None
+    if isinstance(blitz_update, dict):
+        mqtt_update = blitz_update.get("mqtt") if isinstance(blitz_update.get("mqtt"), dict) else None
+        if isinstance(mqtt_update, dict):
+            password = mqtt_update.get("password")
+            blitz_section = updated.get("blitzortung") if isinstance(updated.get("blitzortung"), dict) else {}
+            mqtt_section = blitz_section.get("mqtt") if isinstance(blitz_section.get("mqtt"), dict) else {}
+            blitz_section = dict(blitz_section) if blitz_section else {}
+            mqtt_section = dict(mqtt_section) if mqtt_section else {}
+            if isinstance(password, str) and password.strip():
+                mqtt_section["password"] = password.strip()
+            else:
+                mqtt_section.pop("password", None)
+            if mqtt_section:
+                blitz_section["mqtt"] = mqtt_section
+                updated["blitzortung"] = blitz_section
+            else:
+                if "blitzortung" in updated:
+                    existing = updated.get("blitzortung")
+                    if isinstance(existing, dict):
+                        existing.pop("mqtt", None)
+                        if not existing:
+                            updated.pop("blitzortung", None)
+
+    _write_json(SECRETS_PATH, updated, mode=0o600)
+    return updated
+
+
+def apply_runtime_changes(previous: UiConfig, updated: UiConfig) -> Optional[str]:
+    notice: Optional[str] = None
+
+    prev_blitz = previous.blitzortung.model_dump(exclude={"mqtt": {"password"}})
+    updated_blitz = updated.blitzortung.model_dump(exclude={"mqtt": {"password"}})
+    password_changed = previous.blitzortung.mqtt.password != updated.blitzortung.mqtt.password
+
+    if prev_blitz != updated_blitz or password_changed:
+        try:
+            from backend.services import blitz_consumer
+
+            blitz_consumer.configure_from_disk()
+        except Exception as exc:  # pragma: no cover - defensivo
+            logger.warning("No se pudo reconfigurar consumer Blitzortung: %s", exc)
+            notice = "Revisa el servicio Blitzortung (no se pudo reiniciar)"
+
+    if previous.wifi.preferredInterface != updated.wifi.preferredInterface:
+        logger.info(
+            "Interfaz Wi-Fi preferida actualizada: %s -> %s",
+            previous.wifi.preferredInterface,
+            updated.wifi.preferredInterface,
+        )
+
+    return notice
 
 
 def _deep_merge(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:

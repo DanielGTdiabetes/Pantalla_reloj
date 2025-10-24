@@ -68,6 +68,12 @@ export const DashboardConfigProvider = ({ children }: Props) => {
     }
   }, []);
 
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const transparent = config?.ui?.appearance?.transparentCards ?? false;
+    document.body.classList.toggle('transparent-cards', Boolean(transparent));
+  }, [config?.ui?.appearance?.transparentCards]);
+
   const value = useMemo(
     () => ({ config, loading, error, refresh, update }),
     [config, loading, error, refresh, update]
