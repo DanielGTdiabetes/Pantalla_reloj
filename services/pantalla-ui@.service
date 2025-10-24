@@ -6,6 +6,7 @@ Wants=graphical.target
 [Service]
 Type=simple
 Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/dani/.Xauthority
 ExecStart=/usr/bin/chromium-browser --kiosk http://127.0.0.1 \
   --noerrdialogs --disable-session-crashed-bubble --incognito --start-fullscreen \
   --disable-pinch --overscroll-history-navigation=0 --no-first-run --fast --fast-start \
