@@ -1,5 +1,5 @@
 [Unit]
-Description=Pantalla Dash Openbox Session (Final)
+Description=Pantalla Dash Openbox Session (Stable 2025)
 After=graphical.target
 Wants=graphical.target
 

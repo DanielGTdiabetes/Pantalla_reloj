@@ -153,15 +153,15 @@ rm -f "$BACKEND_SVC_TEMPLATE"
 rm -f "$SYSTEMD_DIR/$KIOSK_SERVICE" 2>/dev/null || true
 rm -f "$USER_SYSTEMD_DIR/$UI_SERVICE_NAME" 2>/dev/null || true
 
-echo "[INFO] Eliminando Chromium clásico y configuración gráfica…"
-sudo apt purge -y chromium || true
+echo "[INFO] Eliminando ungoogled-chromium y configuración gráfica..."
+sudo apt purge -y ungoogled-chromium || true
 sudo rm -f ~/.config/openbox/autostart 2>/dev/null || true
 if [[ -n "$APP_HOME" ]]; then
   sudo rm -f "$APP_HOME/.config/openbox/autostart" 2>/dev/null || true
 fi
-sudo systemctl --user disable --now pantalla-openbox 2>/dev/null || true
+sudo systemctl --user disable --now pantalla-openbox.service 2>/dev/null || true
 if [[ -n "${APP_USER:-}" ]]; then
-  sudo -u "$APP_USER" systemctl --user disable --now pantalla-openbox 2>/dev/null || true
+  sudo -u "$APP_USER" systemctl --user disable --now pantalla-openbox.service 2>/dev/null || true
 fi
 sudo rm -f /etc/xdg/systemd/user/pantalla-openbox.service 2>/dev/null || true
 sudo systemctl --user daemon-reload || true
