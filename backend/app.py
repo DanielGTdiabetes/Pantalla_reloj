@@ -32,6 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 import shutil
 
 from backend.models.config import BlitzMQTT as UiBlitzMQTT
+from backend.models.config import UiConfig
 from backend.services.aemet import MissingApiKeyError
 from backend.services.ai_text import (
     AISummaryError,
@@ -165,7 +166,9 @@ def _configure_blitzortung_from_config() -> None:
 
     blitz_cfg = getattr(app_config, "blitzortung", None)
     ui_cfg = getattr(app_config, "ui", None)
-    if ui_cfg and getattr(ui_cfg, "blitzortung", None):
+    default_ui_blitz = UiConfig().blitzortung
+    ui_blitz_cfg = getattr(ui_cfg, "blitzortung", None)
+    if ui_blitz_cfg and ui_blitz_cfg.model_dump() != default_ui_blitz.model_dump():
         blitz_from_ui = BlitzortungConfig(
             enabled=ui_cfg.blitzortung.enabled,
             mode=ui_cfg.blitzortung.mode,
