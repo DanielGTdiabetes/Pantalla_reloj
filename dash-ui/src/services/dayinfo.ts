@@ -76,12 +76,12 @@ function normalizeDayInfoPayload(raw: unknown): DayInfoPayload {
 
 function normalizeEfemeride(value: unknown): DayInfoEfemeride | null {
   if (typeof value === 'string') {
-    const text = sanitizeText(value);
+    const text = capitalizeSentence(sanitizeText(value));
     if (text) return { text };
     return null;
   }
   if (!isRecord(value)) return null;
-  const text = sanitizeText(value.text);
+  const text = capitalizeSentence(sanitizeText(value.text));
   if (!text) return null;
   const year = typeof value.year === 'number' ? value.year : null;
   const source = sanitizeText(value.source);
@@ -331,4 +331,15 @@ function normalizeKey(key: string): string {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[^a-z0-9]/g, '');
+}
+
+function capitalizeSentence(text: string): string {
+  if (!text) return text;
+  const match = text.match(/[a-záéíóúüñ]/i);
+  if (!match || match.index === undefined) {
+    return text;
+  }
+  const index = match.index;
+  const upper = match[0].toLocaleUpperCase('es-ES');
+  return `${text.slice(0, index)}${upper}${text.slice(index + 1)}`;
 }

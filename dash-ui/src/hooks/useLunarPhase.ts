@@ -2,13 +2,38 @@ import { useMemo } from 'react';
 import { useDayBrief } from './useDayBrief';
 import type { DayInfoPayload } from '../services/dayinfo';
 
+export type LunarPhaseKey =
+  | 'new'
+  | 'waxing-crescent'
+  | 'first-quarter'
+  | 'waxing-gibbous'
+  | 'full'
+  | 'waning-gibbous'
+  | 'last-quarter'
+  | 'waning-crescent';
+
 interface LunarPhaseResult {
   text: string | null;
   loading: boolean;
+  name: string | null;
+  illumination: number | null;
+  phaseKey: LunarPhaseKey | null;
+  icon: string | null;
 }
 
 const SYNODIC_MONTH = 29.53058867;
 const KNOWN_NEW_MOON = Date.UTC(2000, 0, 6, 18, 14);
+
+const PHASE_ICONS: Record<LunarPhaseKey, string> = {
+  new: '🌑',
+  'waxing-crescent': '🌒',
+  'first-quarter': '🌓',
+  'waxing-gibbous': '🌔',
+  full: '🌕',
+  'waning-gibbous': '🌖',
+  'last-quarter': '🌗',
+  'waning-crescent': '🌘',
+};
 
 export const useLunarPhase = (): LunarPhaseResult => {
   const { data, loading } = useDayBrief();
@@ -16,15 +41,32 @@ export const useLunarPhase = (): LunarPhaseResult => {
   const info = useMemo(() => deriveLunarInfo(data), [data]);
   const effectiveLoading = loading && !info;
 
+  const illuminationValue = info ? Math.round(info.illumination) : null;
+  const illuminationText = illuminationValue !== null ? `${illuminationValue}%` : null;
+  const icon = info ? PHASE_ICONS[info.phaseKey] ?? '🌙' : null;
+
   return {
-    text: info ? `Fase lunar: ${info.name} (iluminación ${Math.round(info.illumination)}%)` : null,
+    text: info
+      ? `Fase lunar: ${info.name}${illuminationText ? ` (iluminacion ${illuminationText})` : ''}`
+      : null,
     loading: effectiveLoading,
+    name: info?.name ?? null,
+    illumination: illuminationValue,
+    phaseKey: info?.phaseKey ?? null,
+    icon,
   };
 };
 
 interface LunarInfo {
   name: string;
   illumination: number;
+  phaseKey: LunarPhaseKey;
+}
+
+interface PartialLunarInfo {
+  name?: string | null;
+  illumination?: number | null;
+  phaseKey?: LunarPhaseKey | null;
 }
 
 function deriveLunarInfo(payload: DayInfoPayload | null): LunarInfo | null {
@@ -35,23 +77,30 @@ function deriveLunarInfo(payload: DayInfoPayload | null): LunarInfo | null {
     return null;
   }
 
-  const name = remote?.name ?? computed?.name;
-  const illumination = normalizeIllumination(remote?.illumination ?? computed?.illumination ?? NaN);
+  const name = remote?.name ?? computed?.name ?? null;
+  const illumination = normalizeIllumination(
+    remote?.illumination ?? computed?.illumination ?? NaN,
+  );
+  const phaseKey =
+    remote?.phaseKey ??
+    (name ? phaseKeyFromName(name) : null) ??
+    computed?.phaseKey ??
+    null;
 
-  if (!name || Number.isNaN(illumination)) {
+  if (!name || Number.isNaN(illumination) || !phaseKey) {
     return null;
   }
 
-  return { name, illumination };
+  return { name, illumination, phaseKey };
 }
 
-function extractRemoteLunarInfo(payload: DayInfoPayload | null): LunarInfo | null {
+function extractRemoteLunarInfo(payload: DayInfoPayload | null): PartialLunarInfo | null {
   if (!payload) return null;
   const candidates = [
-    (payload as any)?.moon,
-    (payload as any)?.lunar,
-    (payload as any)?.moon_phase,
-    (payload as any)?.moonPhase,
+    (payload as Record<string, unknown>)?.moon,
+    (payload as Record<string, unknown>)?.lunar,
+    (payload as Record<string, unknown>)?.moon_phase,
+    (payload as Record<string, unknown>)?.moonPhase,
   ];
 
   for (const candidate of candidates) {
@@ -63,11 +112,11 @@ function extractRemoteLunarInfo(payload: DayInfoPayload | null): LunarInfo | nul
   return null;
 }
 
-function parseLunarCandidate(candidate: unknown): LunarInfo | null {
+function parseLunarCandidate(candidate: unknown): PartialLunarInfo | null {
   if (!candidate) return null;
 
   if (typeof candidate === 'string') {
-    return { name: candidate, illumination: NaN };
+    return { name: candidate };
   }
 
   if (typeof candidate === 'object') {
@@ -84,7 +133,7 @@ function parseLunarCandidate(candidate: unknown): LunarInfo | null {
     );
 
     if (name) {
-      return { name, illumination };
+      return { name, illumination, phaseKey: phaseKeyFromName(name) };
     }
   }
 
@@ -99,8 +148,8 @@ function computeLunarPhase(dateString: string | undefined): LunarInfo | null {
 
   const age = lunarAgeDays(baseDate);
   const illumination = normalizeIllumination(phaseIllumination(age));
-  const name = phaseName(age);
-  return { name, illumination };
+  const { key, label } = phaseFromAge(age);
+  return { name: label, illumination, phaseKey: key };
 }
 
 function lunarAgeDays(date: Date): number {
@@ -118,24 +167,48 @@ function phaseIllumination(age: number): number {
   return illumination * 100;
 }
 
-function phaseName(age: number): string {
-  const phases: Array<{ limit: number; label: string }> = [
-    { limit: 1.84566, label: 'Luna nueva' },
-    { limit: 5.53699, label: 'Luna creciente' },
-    { limit: 9.22831, label: 'Cuarto creciente' },
-    { limit: 12.91963, label: 'Gibosa creciente' },
-    { limit: 16.61096, label: 'Luna llena' },
-    { limit: 20.30228, label: 'Gibosa menguante' },
-    { limit: 23.99361, label: 'Cuarto menguante' },
-    { limit: 27.68493, label: 'Luna menguante' },
-  ];
+const PHASE_TABLE: Array<{ limit: number; key: LunarPhaseKey; label: string }> = [
+  { limit: 1.84566, key: 'new', label: 'Luna nueva' },
+  { limit: 5.53699, key: 'waxing-crescent', label: 'Luna creciente' },
+  { limit: 9.22831, key: 'first-quarter', label: 'Cuarto creciente' },
+  { limit: 12.91963, key: 'waxing-gibbous', label: 'Gibosa creciente' },
+  { limit: 16.61096, key: 'full', label: 'Luna llena' },
+  { limit: 20.30228, key: 'waning-gibbous', label: 'Gibosa menguante' },
+  { limit: 23.99361, key: 'last-quarter', label: 'Cuarto menguante' },
+  { limit: 27.68493, key: 'waning-crescent', label: 'Luna menguante' },
+];
 
-  for (const phase of phases) {
+function phaseFromAge(age: number): { key: LunarPhaseKey; label: string } {
+  for (const phase of PHASE_TABLE) {
     if (age < phase.limit) {
-      return phase.label;
+      return phase;
     }
   }
-  return 'Luna nueva';
+  return PHASE_TABLE[0];
+}
+
+function phaseKeyFromName(name: string): LunarPhaseKey | null {
+  const normalized = normalizePhaseName(name);
+  if (!normalized) return null;
+  if (normalized.includes('nueva')) return 'new';
+  if (normalized.includes('llena')) return 'full';
+  if (normalized.includes('cuarto') && normalized.includes('creciente')) return 'first-quarter';
+  if (normalized.includes('cuarto') && normalized.includes('menguante')) return 'last-quarter';
+  if (normalized.includes('gibosa') && normalized.includes('creciente')) return 'waxing-gibbous';
+  if (normalized.includes('gibosa') && normalized.includes('menguante')) return 'waning-gibbous';
+  if (normalized.includes('creciente')) return 'waxing-crescent';
+  if (normalized.includes('menguante')) return 'waning-crescent';
+  return null;
+}
+
+function normalizePhaseName(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function normalizeIllumination(value: number): number {
@@ -168,4 +241,3 @@ function pickNumber(source: Record<string, unknown>, keys: string[]): number | n
   }
   return null;
 }
-

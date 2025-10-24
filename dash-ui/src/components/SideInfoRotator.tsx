@@ -20,8 +20,8 @@ const LABELS: Record<SideInfoSectionKey, string> = {
   news: 'Noticias',
 };
 
-const BULLET = '•';
-const MAX_NEWS_ITEMS = 5;
+const BULLET = '|';
+const MAX_NEWS_ITEMS = 8;
 const MIN_TICKER_DURATION = 35;
 const MAX_TICKER_DURATION = 60;
 
@@ -68,15 +68,46 @@ type ExtendedNewsHeadline = NewsHeadline & {
 };
 
 function buildNewsSegments(items: NewsHeadline[]): string[] {
-  return items.slice(0, MAX_NEWS_ITEMS).map((item) => {
-    const title = sanitizeText(item.title);
-    const source = sanitizeText(item.source);
-    const extended = item as ExtendedNewsHeadline;
-    const rawDescription = sanitizeText(extended.description) || sanitizeText(extended.summary);
-    const description = rawDescription ? truncate(rawDescription, 140) : '';
+  const prepared = items
+    .map((item) => {
+      const title = sanitizeText(item.title);
+      const source = sanitizeText(item.source);
+      const extended = item as ExtendedNewsHeadline;
+      const rawDescription = sanitizeText(extended.description) || sanitizeText(extended.summary);
+      const description = rawDescription ? truncate(rawDescription, 140) : '';
+      return { item, title, source, description };
+    })
+    .filter((entry) => entry.title.length > 0);
+
+  if (prepared.length === 0) {
+    return [];
+  }
+
+  const prioritized: typeof prepared = [];
+  const seenSources = new Set<string>();
+
+  prepared.forEach((entry) => {
+    const sourceKey = entry.source.toLowerCase();
+    if (!seenSources.has(sourceKey) && prioritized.length < MAX_NEWS_ITEMS) {
+      prioritized.push(entry);
+      if (sourceKey) {
+        seenSources.add(sourceKey);
+      }
+    }
+  });
+
+  prepared.forEach((entry) => {
+    if (prioritized.length >= MAX_NEWS_ITEMS) return;
+    if (!prioritized.includes(entry)) {
+      prioritized.push(entry);
+    }
+  });
+
+  return prioritized.slice(0, MAX_NEWS_ITEMS).map(({ source, title, description }) => {
     const prefix = source ? `[${source}]` : '';
-    const parts = [prefix, title, description ? `— ${description}` : ''].filter((part) => part && part.length > 0);
-    return `🗞️ ${parts.join(' ')}`.trim();
+    const descriptionPart = description ? `- ${description}` : '';
+    const parts = [prefix, title, descriptionPart].filter((part) => part && part.length > 0);
+    return `>> ${parts.join(' ')}`.trim();
   });
 }
 

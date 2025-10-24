@@ -12,8 +12,13 @@ interface RotatingInfoPanelProps {
 
 interface PanelItem {
   key: RotatingPanelSectionKey;
-  text: string;
+  text?: string;
   placeholder: boolean;
+  lunar?: {
+    name: string | null;
+    illumination: number | null;
+    icon: string | null;
+  };
 }
 
 const DEFAULT_INTERVAL_MS = 7000;
@@ -60,7 +65,7 @@ const RotatingInfoPanel = ({
         const loading = seasonLoading && !seasonLine;
         return {
           key: section,
-          text: loading ? 'Cargando…' : seasonLine ?? 'Temporada no disponible',
+          text: loading ? 'Cargando...' : seasonLine ?? 'Temporada no disponible',
           placeholder: loading,
         };
       }
@@ -68,19 +73,33 @@ const RotatingInfoPanel = ({
         const loading = calendar.loading && !calendar.text;
         return {
           key: section,
-          text: loading ? 'Cargando…' : calendar.text ?? 'Sin datos',
+          text: loading ? 'Cargando...' : calendar.text ?? 'Sin datos',
           placeholder: loading,
         };
       }
-      // section === 'lunar'
-      const loading = lunar.loading && !lunar.text;
+      const loading = lunar.loading && !lunar.name;
       return {
         key: section,
-        text: loading ? 'Cargando…' : lunar.text ?? 'Fase lunar no disponible',
+        text: loading ? 'Cargando...' : lunar.name ?? 'Fase lunar no disponible',
         placeholder: loading,
+        lunar: {
+          name: lunar.name,
+          illumination: lunar.illumination,
+          icon: lunar.icon,
+        },
       };
     });
-  }, [calendar.loading, calendar.text, lunar.loading, lunar.text, normalizedSections, seasonLine, seasonLoading]);
+  }, [
+    calendar.loading,
+    calendar.text,
+    lunar.icon,
+    lunar.illumination,
+    lunar.loading,
+    lunar.name,
+    normalizedSections,
+    seasonLine,
+    seasonLoading,
+  ]);
 
   if (items.length === 0) {
     return null;
@@ -92,19 +111,59 @@ const RotatingInfoPanel = ({
       style={{ minHeight: panelHeight }}
     >
       <div className="flex flex-col gap-4">
-        {items.map((item) => (
-          <div key={item.key} className="flex flex-col gap-2 rounded-xl border border-white/15 px-3 py-2">
-            <span className="text-[0.65rem] uppercase tracking-[0.3em] text-white/60">{LABELS[item.key]}</span>
-            <MarqueeText
-              text={item.text}
-              className={`text-base font-medium leading-snug ${item.placeholder ? 'text-white/55' : 'text-white/90'}`}
-            />
-          </div>
-        ))}
+        {items.map((item) => {
+          const isLunar = item.key === 'lunar';
+          return (
+            <div key={item.key} className="flex flex-col gap-2 rounded-xl border border-white/15 px-3 py-2">
+              <span className="text-[0.65rem] uppercase tracking-[0.3em] text-white/60">{LABELS[item.key]}</span>
+              {isLunar ? (
+                <LunarPhaseContent
+                  placeholder={item.placeholder}
+                  name={item.lunar?.name ?? null}
+                  illumination={item.lunar?.illumination ?? null}
+                  icon={item.lunar?.icon ?? null}
+                />
+              ) : (
+                <MarqueeText
+                  text={item.text ?? 'Sin datos'}
+                  className={`text-base font-medium leading-snug ${item.placeholder ? 'text-white/55' : 'text-white/90'}`}
+                />
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 };
+
+interface LunarPhaseContentProps {
+  placeholder: boolean;
+  name: string | null;
+  illumination: number | null;
+  icon: string | null;
+}
+
+function LunarPhaseContent({ placeholder, name, illumination, icon }: LunarPhaseContentProps) {
+  const label = name ?? 'Fase lunar no disponible';
+  const illuminationText = Number.isFinite(illumination ?? NaN)
+    ? `${illumination}% iluminada`
+    : null;
+  const symbol = icon ?? '🌙';
+  const textClass = placeholder ? 'text-white/55' : 'text-white/90';
+
+  return (
+    <div className={`flex items-center gap-4 ${textClass}`}>
+      <span className="text-4xl leading-none" aria-hidden>
+        {symbol}
+      </span>
+      <div className="flex flex-col">
+        <span className="text-base font-semibold leading-tight">{label}</span>
+        {illuminationText ? <span className="text-sm text-white/70">{illuminationText}</span> : null}
+      </div>
+    </div>
+  );
+}
 
 interface MarqueeTextProps {
   text: string;

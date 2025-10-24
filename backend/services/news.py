@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_FEEDS = [
     "https://www.elperiodicomediterraneo.com/rss/section/1002",
+    "https://www.xataka.com/index.xml",
     "https://www.xatakaciencia.com/index.xml",
 ]
 DEFAULT_MAX_ITEMS_PER_FEED = 5
@@ -323,7 +324,10 @@ class NewsService:
                 age_minutes = max(0, int(delta.total_seconds() // 60))
             else:
                 published_iso = None
-                published_ts = None
+                # Algunos feeds (p.ej. Xataka) no incluyen fecha; asignamos una marca de tiempo
+                # sintética para evitar que desaparezcan al ordenar por recencia.
+                fallback_offset = len(headlines) * 60
+                published_ts = now.timestamp() - fallback_offset
                 age_minutes = None
 
             headline = {
