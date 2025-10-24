@@ -123,7 +123,7 @@ fi
 log "Instalando paquetes base…"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y python3 python3-venv python3-pip nginx curl jq unzip ca-certificates espeak-ng network-manager rsync
+apt-get install -y python3 python3-venv python3-pip nginx curl jq unzip ca-certificates espeak-ng network-manager rsync dbus-user-session
 
 log "Asegurando NetworkManager activo…"
 systemctl_safe enable --now NetworkManager || true
