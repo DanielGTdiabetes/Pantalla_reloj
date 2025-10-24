@@ -130,6 +130,8 @@ log "Eliminando unit files systemd…"
 rm -f "$BG_SVC_FILE" "$BG_TIMER_FILE" "$BG_SYNC_SERVICE_FILE" "$BG_SYNC_PATH_FILE"
 rm -rf "$BG_TIMER_OVERRIDE_DIR"
 rm -f "$BG_SYNC_SCRIPT"
+rm -f /opt/dash/scripts/generate_bg_daily.py 2>/dev/null || true
+rm -f /etc/logrotate.d/pantalla-bg 2>/dev/null || true
 rm -f "$BACKEND_SVC_TEMPLATE"
 rm -f "$SYSTEMD_DIR/$KIOSK_SERVICE" 2>/dev/null || true
 rm -f "$USER_SYSTEMD_DIR/$UI_SERVICE_NAME" 2>/dev/null || true

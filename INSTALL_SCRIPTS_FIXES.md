@@ -177,14 +177,6 @@ fi
 if ls -1 "$ASSETS_DIR"/*.webp >/dev/null 2>&1; then
 
 # Después:
-# Verificar que el directorio existe antes de listar
-if [[ -d "$ASSETS_DIR" ]] && ls -1 "$ASSETS_DIR"/*.webp >/dev/null 2>&1; then
-```
-
-**Impacto:** ✅ Previene errores al verificar fondos generados
-
----
-
 ## 🔧 CORRECCIONES EN `scripts/uninstall.sh`
 
 ### 🐛 Bug #1: Servicio de UI No se Detiene
@@ -404,7 +396,7 @@ Ambos scripts han sido validados con `bash -n`:
 - [x] Backend Python (venv + dependencias)
 - [x] Frontend (build + deployment)
 - [x] Nginx (configuración y vhost)
-- [x] Servicios systemd (backend, UI, fondos IA)
+- [x] Servicios systemd (backend y UI)
 - [x] Configuración de permisos
 - [x] Generación inicial de fondo
 

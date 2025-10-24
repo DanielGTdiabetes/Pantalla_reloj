@@ -10,7 +10,7 @@ from typing import Any, Dict, MutableMapping, Optional
 
 from pydantic import AnyUrl, BaseModel, ConfigDict, Field, ValidationError, validator
 
-from backend.models.config import UiConfig
+from backend.models.config import GeoscopeConfig, UiConfig
 
 logger = logging.getLogger(__name__)
 
@@ -269,6 +269,7 @@ class AppConfig(ExtraAllowModel):
     locale: Optional[LocaleConfig] = None
     patron: Optional[PatronConfig] = None
     ui: Optional[UiConfig] = None
+    geoscope: Optional[GeoscopeConfig] = None
 
     def public_view(self) -> Dict[str, Any]:
         return {
@@ -351,10 +352,13 @@ class AppConfig(ExtraAllowModel):
                     },
                     "blitzortung": self.ui.blitzortung.model_dump(by_alias=True, exclude_none=True),
                     "appearance": self.ui.appearance.model_dump(),
+                    "mode": self.ui.mode,
+                    "overlay": self.ui.overlay.model_dump(by_alias=True),
                 }
                 if self.ui
                 else {}
             ),
+            "geoscope": (self.geoscope.dict(by_alias=True) if self.geoscope else {}),
         }
 
 
@@ -589,7 +593,7 @@ def update_config(payload: Dict[str, Any]) -> AppConfig:
         tmp_path = CONFIG_PATH.with_suffix(".tmp")
         with tmp_path.open("w", encoding="utf-8") as f:
             json.dump(serialized, f, indent=2, ensure_ascii=False)
-        os.chmod(tmp_path, 0o600)
+        os.chmod(tmp_path, 0o640)
         tmp_path.replace(CONFIG_PATH)
     else:
         logger.warning("Skipping config write, target path %s missing", CONFIG_PATH)

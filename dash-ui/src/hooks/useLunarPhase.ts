@@ -96,11 +96,12 @@ function deriveLunarInfo(payload: DayInfoPayload | null): LunarInfo | null {
 
 function extractRemoteLunarInfo(payload: DayInfoPayload | null): PartialLunarInfo | null {
   if (!payload) return null;
+  const payloadRecord = payload as unknown as Record<string, unknown>;
   const candidates = [
-    (payload as Record<string, unknown>)?.moon,
-    (payload as Record<string, unknown>)?.lunar,
-    (payload as Record<string, unknown>)?.moon_phase,
-    (payload as Record<string, unknown>)?.moonPhase,
+    payloadRecord?.moon,
+    payloadRecord?.lunar,
+    payloadRecord?.moon_phase,
+    payloadRecord?.moonPhase,
   ];
 
   for (const candidate of candidates) {

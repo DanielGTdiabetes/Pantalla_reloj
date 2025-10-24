@@ -1,7 +1,7 @@
 # Pantalla Futurista – Backend
 
 Este backend en FastAPI sirve a la pantalla 8.8" proporcionando clima AEMET, radar
-meteorológico, gestión Wi-Fi, fondos dinámicos y la mini-web de configuración.
+meteorológico, gestión Wi-Fi y la mini-web de configuración.
 Escucha en `127.0.0.1:8081` y está pensado para ejecutarse como servicio `systemd`.
 
 ## Requisitos
@@ -33,7 +33,7 @@ pip install -r backend/requirements.txt
    - `weather.city` y `weather.units` para mostrar en la UI.
    - `storm.threshold` para el aviso de tormentas (0-1).
    - `wifi.preferredInterface` si no quieres que detecte automáticamente.
-3. Opcional: ajusta secciones `tts`, `background`, `calendar` según necesidades.
+3. Opcional: ajusta secciones `tts`, `background`, `ui` o `calendar` según necesidades.
 
 La variable `PANTALLA_CONFIG_PATH` permite usar otro archivo durante pruebas.
 

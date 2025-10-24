@@ -44,6 +44,28 @@ export interface UiAppearanceConfig {
   transparentCards?: boolean;
 }
 
+export type OverlaySectionKey =
+  | 'weather_now'
+  | 'weather_week'
+  | 'moon'
+  | 'season'
+  | 'ephemeris'
+  | 'news'
+  | 'saints'
+  | 'calendar';
+
+export interface OverlayConfig {
+  enabled?: boolean;
+  opacity?: number;
+  blur_px?: number;
+  corner_radius?: number;
+  position?: 'top' | 'bottom' | 'left' | 'right' | 'center';
+  margin_px?: number;
+  dwell_seconds?: number;
+  transition_ms?: number;
+  order?: OverlaySectionKey[];
+}
+
 export interface BlitzortungConfig {
   enabled: boolean;
   mqtt_host?: string | null;
@@ -118,11 +140,13 @@ export interface SideInfoConfig {
 }
 
 export interface UIConfig {
+  mode?: string;
   rotatingPanel?: RotatingPanelConfig;
   sideInfo?: SideInfoConfig;
   wifi?: UiWifiConfig;
   blitzortung?: BlitzortungConfig;
   appearance?: UiAppearanceConfig;
+  overlay?: OverlayConfig;
 }
 
 export interface BlitzTestPayload {
@@ -136,6 +160,12 @@ export interface NewsConfig {
   feeds?: string[];
   maxItemsPerFeed?: number;
   cacheTtlSeconds?: number;
+}
+
+export interface GeoscopeConfig {
+  enabled?: boolean;
+  rotate?: boolean;
+  fps_cap?: number;
 }
 
 export interface DashboardConfig {
@@ -152,6 +182,7 @@ export interface DashboardConfig {
   patron?: PatronConfig;
   ui?: UIConfig;
   news?: NewsConfig;
+  geoscope?: GeoscopeConfig;
 }
 
 export type ConfigUpdate = Partial<DashboardConfig>;

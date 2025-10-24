@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from backend.models.config import UiConfig
+from backend.models.config import GeoscopeConfig, UiConfig
 
 from .config import AppConfig, read_config as read_app_config
 
@@ -194,7 +194,7 @@ def save_config(ui_config: UiConfig) -> dict[str, Any]:
     payload["blitzortung"] = ui_config.blitzortung.model_dump()
 
     try:
-        _write_json(CONFIG_PATH, payload, mode=0o644)
+        _write_json(CONFIG_PATH, payload, mode=0o640)
     except OSError as exc:  # pragma: no cover - permisos insuficientes
         raise PermissionError("No se pudo escribir config.json") from exc
 
@@ -278,6 +278,26 @@ def _migrate_config(data: dict[str, Any]) -> dict[str, Any]:
     migrated = dict(data)
     needs_write = False
 
+    default_ui = UiConfig().model_dump(by_alias=True)
+    raw_ui = migrated.get("ui")
+    if isinstance(raw_ui, dict):
+        merged_ui = _deep_merge(default_ui, raw_ui)
+    else:
+        merged_ui = default_ui
+    if merged_ui != raw_ui:
+        migrated["ui"] = merged_ui
+        needs_write = True
+
+    default_geoscope = GeoscopeConfig().model_dump(by_alias=True)
+    raw_geoscope = migrated.get("geoscope")
+    if isinstance(raw_geoscope, dict):
+        merged_geoscope = _deep_merge(default_geoscope, raw_geoscope)
+    else:
+        merged_geoscope = default_geoscope
+    if merged_geoscope != raw_geoscope:
+        migrated["geoscope"] = merged_geoscope
+        needs_write = True
+
     background = migrated.get("background")
     if isinstance(background, dict):
         mode = background.get("mode")
@@ -323,7 +343,7 @@ def _migrate_config(data: dict[str, Any]) -> dict[str, Any]:
 
     if needs_write:
         try:
-            _write_json(CONFIG_PATH, migrated, mode=0o644)
+            _write_json(CONFIG_PATH, migrated, mode=0o640)
         except OSError as exc:
             logger.error("No se pudo persistir migración de configuración: %s", exc)
     return migrated
@@ -333,7 +353,7 @@ def read_config() -> tuple[dict[str, Any], str]:
     data = _load_json(CONFIG_PATH)
     if not data and not CONFIG_PATH.exists():
         try:
-            _write_json(CONFIG_PATH, {}, mode=0o644)
+            _write_json(CONFIG_PATH, {}, mode=0o640)
         except OSError as exc:  # pragma: no cover - defensive
             logger.error("No se pudo inicializar config.json: %s", exc)
     migrated = _migrate_config(data)
@@ -377,7 +397,7 @@ def write_config_patch(patch: dict[str, Any]) -> tuple[dict[str, Any], str]:
             raise ValueError(message) from exc
         raise ValueError(str(exc)) from exc
     try:
-        _write_json(CONFIG_PATH, merged, mode=0o644)
+        _write_json(CONFIG_PATH, merged, mode=0o640)
     except OSError as exc:  # pragma: no cover - permisos insuficientes
         raise PermissionError("No se pudo escribir config.json") from exc
     logger.info("config merged")

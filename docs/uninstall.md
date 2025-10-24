@@ -12,8 +12,6 @@ El script **NO borra** datos sensibles por defecto (configs, assets, logs), a me
 
 - Detiene y **deshabilita** los servicios:
   - `pantalla-dash-backend@<usuario>`
-  - `pantalla-bg-generate.service` + `pantalla-bg-generate.timer`
-  - `pantalla-bg-sync.service` + `pantalla-bg-sync.path`
 - Elimina los **unit files** de systemd anteriores (si existen).
 - Elimina el **vhost** de Nginx `pantalla` de `sites-available` y `sites-enabled`.
 - Recarga **systemd** y **Nginx**.
@@ -27,7 +25,7 @@ Nada más se borra a menos que añadas flags `--purge-*`.
 - Config y secretos: `/etc/pantalla-dash/`  
   - `config.json`
   - `env` (contiene `OPENAI_API_KEY=...`)
-- Assets (fondos generados): `/opt/dash/assets/`
+- Assets (otros recursos estáticos): `/opt/dash/assets/`
 - Logs: `/var/log/pantalla-dash/`
 - Web estática (build): `/var/www/html/`
 - Repo (no se toca): `~/proyectos/Pantalla_reloj/`
@@ -53,10 +51,6 @@ Comprobaciones útiles
 Después de desinstalar:
 
 # No debería haber servicios activos
-systemctl status pantalla-bg-generate.service
-systemctl status pantalla-bg-generate.timer
-systemctl status pantalla-bg-sync.service
-systemctl status pantalla-bg-sync.path
 systemctl status "pantalla-dash-backend@$USER"
 
 # Nginx sin el vhost 'pantalla'

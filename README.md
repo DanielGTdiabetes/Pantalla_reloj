@@ -11,15 +11,11 @@ OpenWeatherMap, gestión de Wi-Fi y TTS offline.
 .
 ├── dash-ui/                    # Frontend React
 ├── backend/                    # Backend FastAPI/Uvicorn
-├── opt/dash/scripts/           # Utilidades (generate_bg_daily.py)
-├── opt/dash/assets/backgrounds/auto/
+├── opt/dash/scripts/           # Utilidades
 ├── system/pantalla-dash-backend@.service
-├── system/pantalla-bg-generate.service
-├── system/pantalla-bg-generate.timer
 ├── system/pantalla-xorg@.service
 ├── system/pantalla-ui.service
 ├── system/user/pantalla-openbox.service
-├── system/logrotate.d/pantalla-bg
 └── docs/
     ├── DEPLOY_BACKEND.md      # Guía de despliegue completa
     └── google-calendar.md     # Configuración de OAuth para Google Calendar
@@ -40,10 +36,12 @@ operar offline si el backend no responde.
 
 ### Motor visual y flags de rendimiento
 
-- El hook `useBackgroundCycle` mantiene tres ranuras (anterior, actual, siguiente)
-  con precarga inteligente y transición *crossfade* en ≤16 ms por frame.
-- `SceneEffects` habilita un *overlay* WebGL opcional con grano sutil y aplica
-  desenfoque de profundidad simulado sobre los widgets cuando `VITE_ENABLE_WEBGL=1`.
+- `GeoScopeCanvas` renderiza un degradado animado de referencia para la vista
+  geoespacial mientras se preparan los datos reales.
+- `OverlayPanel` aplica un cristal translúcido configurable (opacidad, desenfoque,
+  radio) sobre el lienzo principal y posiciona la cabecera de reloj.
+- `Rotator` recorre las secciones informativas con transiciones *crossfade*
+  basadas en los parámetros `ui.overlay.{order,dwell_seconds,transition_ms}`.
 - Los iconos meteorológicos usan `lottie-web`; activa o desactiva la animación con
   `VITE_ENABLE_LOTTIE=1|0`.
 - `VITE_ENABLE_FPSMETER=1` muestra un contador de FPS para depurar rendimiento
@@ -56,7 +54,6 @@ Desde la UI puedes:
 - Configurar API key, ciudad y coordenadas de OpenWeatherMap.
 - Gestionar Wi-Fi (escanear, conectar, olvidar y ver estado).
 - Seleccionar voz local y volumen TTS, lanzar prueba de voz.
-- Ajustar intervalo, modo y retención de fondos AI junto al tema (sincronizado con backend).
 - Activar el calendario y elegir si se carga desde una URL ICS o desde un archivo local `.ics`.
 
 ### Calendario (Google, URL o archivo .ics)
@@ -95,9 +92,7 @@ La cache de clima se guarda en `backend/storage/cache/weather_cache.json`.
 
 Endpoints adicionales destacados:
 
-- `GET /api/backgrounds/current` devuelve la imagen más reciente junto a cabeceras
-  `ETag`/`Last-Modified` y dispara generación on-demand si se permite.
-- `GET /api/health/full` expone métricas de CPU, memoria, disco y latencias de AEMET/OpenAI.
+- `GET /api/health/full` expone métricas de CPU, memoria, disco y latencias de servicios externos como AEMET.
 - `GET /api/storms/radar/animation` entrega la lista de frames recientes del radar
   para precargar y animar en la UI.
 
@@ -114,47 +109,6 @@ permisos, systemd y endurecimiento.
 3. Verifica con `curl http://127.0.0.1:8081/api/weather/current` que el backend
    responde antes de lanzar la UI.
 
-### Fondos futuristas generados con IA
-
-- Copia `opt/dash/scripts/generate_bg_daily.py` a `/opt/dash/scripts/` y asegúrate
-  de que sea ejecutable (`chmod +x`).
-- El script requiere `pip install openai requests pillow` y lee `OPENAI_API_KEY`
-  desde `/etc/pantalla-dash/env` (modo `660`, grupo `pantalla`).
-- Configura `/etc/pantalla-dash/config.json` con los campos:
-
-  ```json
-  {
-    "background": {
-      "mode": "daily",          // o "weather"
-      "retainDays": 30,
-      "intervalMinutes": 5
-    }
-  }
-  ```
-
-- Registra los servicios systemd incluidos en `system/` y el script de sincronización:
-
-  ```bash
-  sudo cp system/pantalla-bg-generate.service /etc/systemd/system/
-  sudo cp system/pantalla-bg-generate.timer /etc/systemd/system/
-  sudo cp system/pantalla-bg-sync.service /etc/systemd/system/
-  sudo cp system/pantalla-bg-sync.path /etc/systemd/system/
-  sudo install -Dm755 scripts/pantalla-bg-sync-timer /usr/local/sbin/pantalla-bg-sync-timer
-  sudo mkdir -p /etc/systemd/system/pantalla-bg-generate.timer.d
-  sudo cp system/logrotate.d/pantalla-bg /etc/logrotate.d/
-  sudo systemctl daemon-reload
-  sudo systemctl enable --now pantalla-bg-generate.timer
-  sudo systemctl enable --now pantalla-bg-sync.path
-  sudo systemctl start pantalla-bg-sync.service
-  ```
-
-- El temporizador se sincroniza automáticamente con `config.background.intervalMinutes`
-  (con valores válidos entre 1 y 1440 minutos) y guarda las imágenes (`.webp`, 1280x720)
-  en `/opt/dash/assets/backgrounds/auto/`,
-  manteniendo las últimas 30 o el número de días configurado. El backend expone
-  la última imagen en `/api/backgrounds/current` y la UI actualiza el fondo con
-  transición suave.
-
 ### Ajustes de sistema y red
 
 - `system/pantalla-dash-backend@.service` inicia Uvicorn con 2 *workers* en
@@ -165,14 +119,15 @@ permisos, systemd y endurecimiento.
 - `system/pantalla-ui.service` exporta `PANTALLA_UI_URL=http://127.0.0.1/` y se
   apoya en `/usr/local/bin/pantalla-ui-launch.sh` para localizar Chromium (snap).
 - La plantilla Nginx `system/nginx/pantalla-dash.conf` sirve la SPA desde
-  `/var/www/html` y sólo delega `/assets/backgrounds/auto/` a `/opt/dash/...`.
+  `/var/www/html` sin dependencias externas adicionales.
 
 ## Seguridad
 
 - El backend sólo escucha en `127.0.0.1`.
 - `/etc/pantalla-dash/` se instala con `drwxrws---` (root:pantalla) para que los
   servicios puedan escribir de forma segura, y los ficheros `config.json`,
-  `backend.env`, `env` y `secrets.json` quedan en `660` (`dani:pantalla`).
+  `backend.env`, `env` y `secrets.json` quedan en `640` (salvo `secrets.json`, que
+  se protege con `600`).
 - No se exponen secretos vía endpoints ni logs.
 
 ## Autoinicio UI
@@ -259,22 +214,11 @@ servicio (`sudo systemctl restart pantalla-xorg@dani`).
 ### Nginx & estáticos
 
 - Los bundles generados por `dash-ui` se instalan en `/var/www/html/assets/`.
-- No debe existir un alias global `alias /opt/dash/assets/;` sobre `/assets/`,
-  ya que desviaría los ficheros `index-*.js`, `vendor-*.js` e `index-*.css` del
-  build.
+- No definas alias globales que intercepten `/assets/`, así evitarás que los
+  bundles empacados (por ejemplo `index-*.js`, `vendor-*.js` o `index-*.css`)
+  se resuelvan fuera del `document_root`.
 - La configuración por defecto utiliza `try_files $uri /index.html;` para que la
-  SPA resuelva rutas internas y sólo crea un alias específico para
-  `/assets/backgrounds/auto/`.
-- Si se requieren fondos adicionales, puedes añadir un bloque dedicado en
-  Nginx:
-
-  ```nginx
-  location /assets/backgrounds/auto/ {
-    alias /opt/dash/assets/backgrounds/auto/;
-    access_log off;
-    expires 7d;
-  }
-  ```
+  SPA resuelva rutas internas sin rutas adicionales.
 
 - Tras instalar o actualizar, valida que todo responde con:
 

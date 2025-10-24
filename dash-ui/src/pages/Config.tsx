@@ -7,7 +7,6 @@ import {
   type ChangeEvent,
   type DragEvent,
 } from 'react';
-import Background from '../components/Background';
 import GlassPanel from '../components/GlassPanel';
 import {
   fetchConfigEnvelope,
@@ -221,10 +220,8 @@ const Config = () => {
   const [wifiUnsupportedMessage, setWifiUnsupportedMessage] = useState<string | null>(null);
   const [blitzTestNotice, setBlitzTestNotice] = useState<Notice | null>(null);
   const [testingBlitz, setTestingBlitz] = useState(false);
-  const [openAiInput, setOpenAiInput] = useState('');
   const [googleClientIdInput, setGoogleClientIdInput] = useState('');
   const [googleClientSecretInput, setGoogleClientSecretInput] = useState('');
-  const [savingOpenAiSecret, setSavingOpenAiSecret] = useState(false);
   const [savingGoogleSecrets, setSavingGoogleSecrets] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [calendarStatus, setCalendarStatus] = useState<CalendarStatus | null>(null);
@@ -274,7 +271,8 @@ const Config = () => {
     if (!blitzStatus) return null;
     const pieces: string[] = [];
     if (typeof blitzStatus.blitzCountRecent === 'number') {
-      const windowMinutes = blitzStatus.blitzTimeWindowMin ?? Number.parseInt(form.blitzTimeWindowMin, 10) || 30;
+      const windowMinutes =
+        (blitzStatus.blitzTimeWindowMin ?? Number.parseInt(form.blitzTimeWindowMin, 10)) || 30;
       pieces.push(`Eventos recientes: ${blitzStatus.blitzCountRecent} / ${windowMinutes} min`);
     }
     if (typeof blitzStatus.blitzNearestDistanceKm === 'number') {
@@ -299,15 +297,6 @@ const Config = () => {
     }
     return 'border-amber-400/40 bg-amber-500/10 text-amber-100';
   }, [blitzSource, blitzStatus?.blitzConnected, form.blitzEnabled]);
-
-  const openAiDetails = useMemo(() => {
-    const secrets = (envelope?.secrets ?? {}) as Record<string, any>;
-    const openai = secrets?.openai as { hasKey?: boolean; masked?: string | null } | undefined;
-    return {
-      hasKey: Boolean(openai?.hasKey),
-      masked: typeof openai?.masked === 'string' ? openai.masked : null,
-    };
-  }, [envelope?.secrets]);
 
   const googleSecretDetails = useMemo(() => {
     const secrets = (envelope?.secrets ?? {}) as Record<string, any>;
@@ -1236,30 +1225,6 @@ const Config = () => {
     setBlitzTestNotice(null);
   };
 
-  const handleSaveOpenAiSecret = async () => {
-    setSavingOpenAiSecret(true);
-    setNotice(null);
-    try {
-      const updated = await saveSecretsPatch({ openai: { apiKey: openAiInput || null } });
-      setEnvelope(updated);
-      setOpenAiInput('');
-      setNotice({ type: 'success', text: 'Clave de OpenAI actualizada' });
-    } catch (error) {
-      console.error('Error guardando secreto', error);
-      setNotice({
-        type: 'error',
-        text: error instanceof Error ? error.message : 'No se pudo guardar la clave',
-      });
-    } finally {
-      setSavingOpenAiSecret(false);
-      try {
-        await refreshConfig();
-      } catch (error) {
-        console.warn('No se pudo refrescar config tras guardar secreto', error);
-      }
-    }
-  };
-
   const handleSaveGoogleSecrets = async (mode: 'update' | 'clear') => {
     if (mode === 'update' && !googleClientIdInput.trim() && !googleClientSecretInput.trim()) {
       setNotice({ type: 'error', text: 'Introduce al menos un valor para guardar.' });
@@ -1385,15 +1350,8 @@ const Config = () => {
     }
   };
 
-  const backgroundMinutes = useMemo(() => {
-    const configData = (envelope?.config ?? {}) as Record<string, any>;
-    const background = (configData.background as Record<string, any> | undefined) ?? {};
-    return typeof background.intervalMinutes === 'number' ? background.intervalMinutes : undefined;
-  }, [envelope?.config]);
-
   return (
     <div className="relative flex h-screen w-screen bg-slate-950 text-white">
-      <Background refreshMinutes={backgroundMinutes ?? 60} />
       <div className="relative z-10 flex h-full w-full overflow-y-auto">
         <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-8 px-8 py-10">
           <header className="flex flex-col gap-2">
@@ -1422,35 +1380,11 @@ const Config = () => {
               <div>
                 <h2 className="text-lg font-medium text-white/85">APIs y servicios</h2>
                 <p className="text-sm text-white/55">
-                  Configura las claves y parámetros de acceso para OpenAI, AEMET y Google Calendar.
+                  Configura las claves y parámetros de acceso para AEMET y Google Calendar.
                 </p>
               </div>
 
               <div className="space-y-4">
-                <div>
-                  <label className="block text-xs uppercase tracking-wide text-white/50">Clave OpenAI</label>
-                  <div className="mt-2 grid gap-2 md:grid-cols-[2fr_1fr]">
-                    <input
-                      type="text"
-                      className="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
-                      placeholder={openAiDetails.masked ?? 'sk-••••••'}
-                      value={openAiInput}
-                      onChange={(event) => setOpenAiInput(event.target.value)}
-                    />
-                    <button
-                      type="button"
-                      onClick={handleSaveOpenAiSecret}
-                      className="rounded-lg bg-emerald-500/80 px-3 py-2 text-sm font-medium text-white shadow-md transition hover:bg-emerald-500"
-                      disabled={savingOpenAiSecret}
-                    >
-                      {savingOpenAiSecret ? 'Guardando…' : openAiDetails.hasKey ? 'Actualizar clave' : 'Guardar clave'}
-                    </button>
-                  </div>
-                  <p className="mt-1 text-xs text-white/45">
-                    Estado: {openAiDetails.hasKey ? 'Configurada' : 'Sin configurar'}
-                  </p>
-                </div>
-
                 <div>
                   <label className="block text-xs uppercase tracking-wide text-white/50">Credenciales Google Calendar</label>
                   <p className="mt-1 text-xs text-white/55">
@@ -1964,60 +1898,13 @@ const Config = () => {
 
             <GlassPanel className="gap-6">
               <div>
-                <h2 className="text-lg font-medium text-white/85">Fondo dinámico</h2>
+                <h2 className="text-lg font-medium text-white/85">Conectividad Wi-Fi</h2>
                 <p className="text-sm text-white/55">
-                  Controla el modo de rotación de fondos generados por el backend y su frecuencia.
+                  Gestiona la interfaz preferida y las redes disponibles para mantener la pantalla conectada.
                 </p>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <label className="block text-xs uppercase tracking-wide text-white/50">Modo</label>
-                  <select
-                    className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none"
-                    value={form.backgroundMode}
-                    onChange={(event) =>
-                      handleFormChange('backgroundMode', event.target.value as FormState['backgroundMode'])
-                    }
-                  >
-                    <option value="daily">Diario</option>
-                    <option value="weekly">Semanal</option>
-                    <option value="weather">Según clima</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs uppercase tracking-wide text-white/50">Intervalo (minutos)</label>
-                  {form.backgroundMode === 'weekly' ? (
-                    <p className="mt-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/70">
-                      En modo semanal, la app genera un fondo automáticamente cada 7 días. Cambia a «Diario» si quieres
-                      ajustar un intervalo en minutos.
-                    </p>
-                  ) : (
-                    <input
-                      type="number"
-                      min={1}
-                      max={240}
-                      className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none"
-                      value={form.backgroundIntervalMinutes}
-                      onChange={(event) => handleFormChange('backgroundIntervalMinutes', event.target.value)}
-                    />
-                  )}
-                </div>
-                <div>
-                  <label className="block text-xs uppercase tracking-wide text-white/50">Retención (días)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={90}
-                    className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none"
-                    value={form.backgroundRetainDays}
-                    onChange={(event) => handleFormChange('backgroundRetainDays', event.target.value)}
-                  />
-                </div>
-              </div>
-
               <div className="space-y-4">
-                <h3 className="text-lg font-medium text-white/85">Conectividad Wi-Fi</h3>
                 <div className={wifiSupported ? 'space-y-2 transition-opacity' : 'space-y-2 opacity-60 transition-opacity'}>
                   <label className="block text-xs uppercase tracking-wide text-white/50">
                     Interfaz preferida
