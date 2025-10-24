@@ -288,28 +288,28 @@ servicio (`sudo systemctl restart pantalla-xorg@dani`).
 
 MIT (o la licencia original del repositorio si se define).
 
-## Blitzortung WS Relay
+## Blitzortung (MQTT)
 
-El instalador despliega un relay WebSocket → MQTT real en `/opt/blitzortung/ws_relay/relay.py`
-utilizando un entorno virtual compartido en `/opt/blitzortung/.venv`. El servicio
-`blitz_relay.service` se instala como unidad de usuario (con `loginctl enable-linger`) y
-reenvía strikes desde LightningMaps/Blitzortung hacia Mosquitto (`blitzortung/1.1`).
+El backend consume los rayos de Blitzortung directamente mediante MQTT. Por defecto se conecta
+al proxy público configurado en el panel `/#!/config`, sin desplegar relays WebSocket ni un broker
+local adicional.
 
-### Logs y diagnóstico
+### Configuración rápida
 
-```bash
-journalctl --user -u blitz_relay -n 100 --no-pager
-sudo tail -f /var/log/pantalla/blitz_relay.log
-sudo tail -f /var/log/pantalla/blitz_relay.err
-```
+1. Accede a `/#/config` y abre la tarjeta «Blitzortung y apariencia».
+2. Activa la integración y selecciona el modo **Proxy público (recomendado)**.
+3. Ajusta `geohash` y el radio (km) para delimitar tu zona. Los cambios se aplican en caliente.
 
-### Configuración
+Puedes comprobar el estado actual vía `GET /api/storms/status` o desde la propia interfaz. Si ves
+`enabled=true` pero `connected=false`, revisa la conectividad con el proxy o las credenciales.
 
-El tópico MQTT se controla desde `config.json` (`storm.mqtt_topic`). No es necesario definir
-variables adicionales: el relay publica en `blitzortung/1.1` y el backend consume esa ruta.
+### Broker local opcional
 
-Para verificar actividad:
+Si prefieres publicar en un Mosquitto local, instala con la bandera `--enable-local-mqtt`:
 
 ```bash
-mosquitto_sub -h 127.0.0.1 -t 'blitzortung/#' -v | head -n 20
+sudo ./scripts/install.sh --enable-local-mqtt …
 ```
+
+y cambia el modo a **Broker personalizado (avanzado)** en `/#/config`, indicando host, puerto y
+credenciales.

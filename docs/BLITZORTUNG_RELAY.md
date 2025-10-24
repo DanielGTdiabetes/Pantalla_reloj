@@ -1,24 +1,30 @@
-# Blitzortung MQTT Relay
+# Blitzortung MQTT
 
-Este proyecto utiliza un **relay MQTT** para consumir los rayos de Blitzortung en lugar de conectarse directamente por WebSocket. El backend levanta un consumidor interno que se encarga de recibir los mensajes del broker remoto, almacenarlos para la UI y republicarlos en el Mosquitto local (`127.0.0.1:1883`) bajo el prefijo `blitzortung/relay/#`.
+El backend incorpora un consumidor MQTT nativo que se conecta al proxy público de Blitzortung o a
+un broker personalizado, según la configuración que definas desde la UI (`/#/config`). Ya no es
+necesario desplegar relays WebSocket externos ni republicar datos en Mosquitto salvo que lo
+habilites expresamente.
 
 ## Configuración
 
-El fichero `/etc/pantalla-dash/config.json` (y los ejemplos en `backend/config/`) incorporan la sección `blitzortung`:
+La sección `blitzortung` de `config.json`/`secrets.json` se mapea con el formulario de la UI:
 
 ```json
 "blitzortung": {
-  "mode": "mqtt",
   "enabled": true,
   "mqtt": {
-    "host": "RELLENAR",
-    "port": 8883,
-    "ssl": true,
-    "username": null,
-    "password": null,
-    "baseTopic": "RELLENAR/base",
+    "mode": "public_proxy",
+    "proxy_host": "mqtt.ejemplo.org",
+    "proxy_port": 8883,
+    "proxy_ssl": true,
+    "proxy_baseTopic": "blitzortung",
     "geohash": null,
-    "radius_km": 100
+    "radius_km": 100,
+    "host": null,
+    "port": 1883,
+    "ssl": false,
+    "username": null,
+    "password": null
   }
 }
 ```
@@ -27,65 +33,40 @@ Campos principales:
 
 | Clave | Descripción |
 | --- | --- |
-| `mode` | `mqtt` por defecto. `ws` queda como stub legacy. |
-| `enabled` | Permite desactivar el consumer sin tocar el resto de la configuración. |
-| `mqtt.host` / `mqtt.port` | Broker del relay remoto (por ejemplo el servicio público TLS). |
-| `mqtt.ssl` | Activa TLS al conectar. |
-| `mqtt.username` / `mqtt.password` | Credenciales si el broker lo requiere. |
-| `mqtt.baseTopic` | Prefijo publicado por el relay (según su documentación). |
-| `mqtt.geohash` | Filtra por geohash si el relay organiza los topics por zonas. |
-| `mqtt.radius_km` | Radios admitidos por algunos relays; se expone en el endpoint de estado. |
+| `enabled` | Activa o desactiva el consumidor sin borrar la configuración. |
+| `mqtt.mode` | `public_proxy` usa el proxy TLS recomendado. `custom_broker` apunta a un Mosquitto propio. |
+| `mqtt.proxy_*` | Parámetros del proxy público (host, puerto, TLS y prefijo base). |
+| `mqtt.geohash` / `mqtt.radius_km` | Delimitan la zona de interés según ofrezca el proveedor. |
+| `mqtt.host` / `mqtt.port` | Broker personalizado cuando se selecciona `custom_broker`. |
+| `mqtt.username` / `mqtt.password` | Credenciales opcionales. La contraseña se almacena en `secrets.json` y se oculta en la UI. |
 
-> 💡 La configuración legacy (`storm.provider=blitzortung` + `mqtt.host/port`) sigue funcionando: si no existe la sección `blitzortung`, el backend adapta esos valores automáticamente.
+> ⚙️ Para usar un Mosquitto local, instala el proyecto con `--enable-local-mqtt` y escoge el modo
+> **Broker personalizado** desde la interfaz.
 
-## Estado del consumer
+## Estado del consumidor
 
-El backend expone `GET /api/storms/blitz/status` con información diagnóstica:
+`GET /api/storms/status` combina el estado meteorológico y el diagnóstico del consumidor MQTT. Los
+campos relevantes son:
 
 ```json
 {
-  "mode": "mqtt",
+  "storm_prob": 0.1,
   "enabled": true,
   "connected": true,
-  "subscribed_topics": ["relay/base/#"],
-  "remote_base_topic": "relay/base",
-  "relay_topic": "blitzortung/relay",
-  "last_message_at": 1710000000.0
+  "mode": "public_proxy",
+  "topic": "blitzortung/auto/100",
+  "last_event_at": "2024-03-15T09:21:00+00:00",
+  "counters": {
+    "received": 42,
+    "last_distance_km": 12.3
+  }
 }
 ```
 
-Puedes verificar que Mosquitto recibe los eventos locales con:
+Si `enabled=true` pero `connected=false`, revisa host/puerto/TLS o consulta los logs del backend.
 
-```bash
-mosquitto_sub -h 127.0.0.1 -t 'blitzortung/#' -v
-```
+## Diagnóstico rápido
 
-## Servicio opcional de usuario
-
-El consumidor se arranca automáticamente junto al backend, pero si prefieres desacoplarlo puedes crear la unidad `~/.config/systemd/user/blitz_mqtt_relay.service` y habilitarla con `systemctl --user enable --now blitz_mqtt_relay.service`:
-
-```ini
-[Unit]
-Description=Blitzortung MQTT Relay Consumer
-After=network-online.target
-
-[Service]
-Type=simple
-Environment=PYTHONUNBUFFERED=1
-ExecStart=%h/proyectos/Pantalla_reloj/backend/.venv/bin/python3 -m backend.services.blitz_consumer
-WorkingDirectory=%h/proyectos/Pantalla_reloj/backend
-Restart=always
-RestartSec=5
-StandardOutput=append:/var/log/pantalla/blitz_mqtt_relay.log
-StandardError=append:/var/log/pantalla/blitz_mqtt_relay.err
-
-[Install]
-WantedBy=default.target
-```
-
-## Instalación en dos fases
-
-- `scripts/install.sh` prepara el sistema sin depender de D-Bus (paquetes, venv, Mosquitto en loopback, configuración).
-- `scripts/install_post.sh` se ejecuta con sesión de usuario y se encarga de `loginctl enable-linger`, activar servicios de usuario y esperar a que el backend responda antes de precargar endpoints.
-
-En entornos sin `systemd --user`, el script mostrará avisos y omitirá las acciones correspondientes.
+- `journalctl -u pantalla-dash-backend@<usuario> -n 100 --no-pager`
+- `curl -s http://127.0.0.1:8081/api/storms/status | jq` (si `jq` está disponible)
+- `mosquitto_sub -h <tu-broker> -t 'blitzortung/#' -v` (cuando uses un broker propio)

@@ -604,10 +604,18 @@ class StormStatusResponse(BaseModel):
     strikes_window_minutes: Optional[int] = Field(
         default=None, alias="strikes_window_minutes"
     )
+    enabled: Optional[bool] = None
+    mode: Optional[str] = None
+    connected: Optional[bool] = None
+    last_event_at: Optional[str] = Field(default=None, alias="last_event_at")
+    counters: Optional[Dict[str, Any]] = None
+    topic: Optional[str] = None
+    retry_in: Optional[int] = Field(default=None, alias="retry_in")
+    last_error: Optional[str] = Field(default=None, alias="last_error")
 
 
 class BlitzTestRequest(BaseModel):
-    mode: str = Field(default="mqtt")
+    enabled: bool = Field(default=False)
     mqtt: UiBlitzMQTT
 
 
@@ -848,6 +856,19 @@ async def storms_status():
         payload = get_storm_status()
     except Exception as exc:  # pylint: disable=broad-except
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    consumer = blitz_consumer_status()
+    if isinstance(consumer, dict):
+        merged: Dict[str, Any] = {
+            "enabled": consumer.get("enabled"),
+            "mode": consumer.get("mode"),
+            "connected": consumer.get("connected"),
+            "last_event_at": consumer.get("last_event_at"),
+            "counters": consumer.get("counters"),
+            "topic": consumer.get("topic"),
+            "retry_in": consumer.get("retry_in"),
+            "last_error": consumer.get("last_error"),
+        }
+        payload.update({k: v for k, v in merged.items() if v is not None})
     return StormStatusResponse(**payload)
 
 
@@ -858,9 +879,6 @@ def storms_blitz_status() -> Dict[str, Any]:
 
 @app.post("/api/storms/blitz/test")
 def blitz_test_endpoint(req: BlitzTestRequest) -> Dict[str, Any]:
-    if req.mode != "mqtt":
-        return JSONResponse({"ok": False, "reason": "Solo test MQTT"}, status_code=400)
-
     try:
         import paho.mqtt.client as mqtt  # type: ignore[import-not-found]
     except Exception as exc:  # pragma: no cover - dependencia opcional
@@ -870,19 +888,40 @@ def blitz_test_endpoint(req: BlitzTestRequest) -> Dict[str, Any]:
 
     client = None
     try:
+        mqtt_cfg = req.mqtt
+        mode = getattr(mqtt_cfg, "mode", "public_proxy") or "public_proxy"
+        mode = str(mode).strip().lower()
+        if mode not in {"public_proxy", "custom_broker"}:
+            mode = "public_proxy"
+
+        if mode == "custom_broker":
+            host = (mqtt_cfg.host or "").strip()
+            if not host:
+                return JSONResponse({"ok": False, "reason": "Host requerido en modo custom_broker"}, status_code=400)
+            port = int(mqtt_cfg.port or 1883)
+            use_ssl = bool(mqtt_cfg.ssl)
+        else:
+            host = (mqtt_cfg.proxy_host or mqtt_cfg.host or "mqtt.blitzortung.org").strip()
+            if not host:
+                host = "mqtt.blitzortung.org"
+            port = int(mqtt_cfg.proxy_port or mqtt_cfg.port or 8883)
+            use_ssl = bool(getattr(mqtt_cfg, "proxy_ssl", True))
+
+        username = (mqtt_cfg.username or "").strip() or None
+        password = mqtt_cfg.password or ""
+        if password == "*****":
+            stored = load_config().blitzortung.mqtt.password
+            password = stored or ""
+
         client = mqtt.Client()
-        if req.mqtt.username:
-            password = req.mqtt.password or ""
-            if password == "*****":
-                stored = load_config().blitzortung.mqtt.password
-                password = stored or ""
-            client.username_pw_set(req.mqtt.username, password)
-        if req.mqtt.ssl:
+        if username:
+            client.username_pw_set(username, password)
+        if use_ssl:
             try:
                 client.tls_set()
             except Exception as exc:  # pragma: no cover - defensivo
                 logger.debug("No se pudo configurar TLS para test MQTT: %s", exc)
-        client.connect(req.mqtt.host or "", int(req.mqtt.port), 10)
+        client.connect(host, int(port), 10)
         client.loop_start()
         client.loop_stop()
         client.disconnect()

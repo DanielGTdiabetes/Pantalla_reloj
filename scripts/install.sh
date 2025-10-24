@@ -7,6 +7,13 @@ if ! command -v systemctl >/dev/null 2>&1; then
 elif ! systemctl list-unit-files >/dev/null 2>&1; then
   SYSTEMD_DBUS_AVAILABLE=0
 fi
+if [[ ! -S /run/systemd/system ]]; then
+  SYSTEMD_DBUS_AVAILABLE=0
+elif command -v busctl >/dev/null 2>&1; then
+  if ! busctl status >/dev/null 2>&1; then
+    SYSTEMD_DBUS_AVAILABLE=0
+  fi
+fi
 SYSTEMD_DBUS_MESSAGE_SHOWN=0
 
 # ==========================
@@ -166,6 +173,7 @@ AEMET_KEY="${AEMET_KEY:-}"
 NON_INTERACTIVE="0"
 ENV_FILE=""
 INSTALL_NODE="1"    # instala Node LTS si falta
+ENABLE_LOCAL_MQTT="0"
 
 usage() {
   cat <<EOF
@@ -179,6 +187,7 @@ Uso: sudo ./scripts/install.sh [opciones]
   --city NAME             (por defecto: ${CITY_NAME})
   --env FILE              Cargar variables (.env con OPENAI_KEY=..., AEMET_KEY=...)
   --no-node               No instalar Node LTS
+  --enable-local-mqtt     Instala y configura Mosquitto en loopback
   --non-interactive       Sin preguntas
   -h, --help              Ayuda
 EOF
@@ -195,6 +204,7 @@ while [[ $# -gt 0 ]]; do
     --city) CITY_NAME="$2"; shift 2;;
     --env) ENV_FILE="$2"; shift 2;;
     --no-node) INSTALL_NODE="0"; shift;;
+    --enable-local-mqtt) ENABLE_LOCAL_MQTT="1"; shift;;
     --non-interactive) NON_INTERACTIVE="1"; shift;;
     -h|--help) usage; exit 0;;
     *) die "Opción desconocida: $1";;
@@ -556,33 +566,38 @@ fi
 
 run_sysctl daemon-reload || true
 
-echo "[INFO] Instalando Mosquitto (loopback seguro)…"
-apt-get install -y mosquitto mosquitto-clients
+if [[ "$ENABLE_LOCAL_MQTT" == "1" ]]; then
+  echo "[INFO] Instalando Mosquitto (loopback seguro)…"
+  apt-get install -y mosquitto mosquitto-clients
 
-mkdir -p /etc/mosquitto/conf.d
-cat >/etc/mosquitto/mosquitto.conf <<'EOF'
+  mkdir -p /etc/mosquitto/conf.d
+  cat >/etc/mosquitto/mosquitto.conf <<'EOF'
 allow_anonymous true
 include_dir /etc/mosquitto/conf.d
 EOF
-cat >/etc/mosquitto/conf.d/loopback.conf <<'EOF'
+  cat >/etc/mosquitto/conf.d/loopback.conf <<'EOF'
 listener 1883 127.0.0.1
 allow_anonymous true
 persistence false
 connection_messages false
 EOF
-run_sysctl enable --now mosquitto || true
+  run_sysctl enable --now mosquitto || true
 
-if nc -z 127.0.0.1 1883 2>/dev/null; then
-  echo "[OK] Mosquitto activo en loopback."
+  if nc -z 127.0.0.1 1883 2>/dev/null; then
+    echo "[OK] Mosquitto activo en loopback."
+  else
+    echo "[WARN] Mosquitto no responde en 127.0.0.1:1883 (se verificará tras login)."
+  fi
+
+  log "El backend gestionará el relay Blitzortung vía MQTT local."
+
+  sudo mkdir -p /var/log/mosquitto
+  sudo chown -R mosquitto:mosquitto /var/log/mosquitto
 else
-  echo "[WARN] Mosquitto no responde en 127.0.0.1:1883 (se verificará tras login)."
+  log "Mosquitto no instalado (proxy público por defecto)."
 fi
 
-log "El backend gestionará el relay Blitzortung vía MQTT (sin cliente WS externo)."
-
-# Refrescar permisos de logs tras la instalación del relay
-sudo mkdir -p /var/log/mosquitto /var/log/pantalla
-sudo chown -R mosquitto:mosquitto /var/log/mosquitto
+sudo mkdir -p /var/log/pantalla
 sudo chown -R "${APP_USER}:${APP_USER}" /var/log/pantalla
 
 # --- Hardening generador IA: corrige parámetros del script ---
@@ -791,12 +806,32 @@ pkill -f 'chrom(e|ium).*--kiosk' || true
 
 sleep 5
 BACKEND_READY=0
-if wait_for_http 127.0.0.1 8081 /api/health 45; then
-  BACKEND_READY=1
-  echo "[OK] Backend operativo en http://127.0.0.1:8081"
-else
-  echo "[WARN] Backend no respondió 200 tras el tiempo de espera (se omite precarga)"
-fi
+HEALTH_STATUS_BODY=""
+HEALTH_STATUS_CODE=""
+HEALTH_URL="http://127.0.0.1:8081/api/health"
+HEALTH_START=$(date +%s)
+HEALTH_DELAY=1
+while true; do
+  RESPONSE="$(curl -sS --max-time 2 -w '\n%{http_code}' "$HEALTH_URL" || true)"
+  BODY="${RESPONSE%$'\n'*}"
+  CODE="${RESPONSE##*$'\n'}"
+  if [[ "$CODE" == "200" ]]; then
+    BACKEND_READY=1
+    HEALTH_STATUS_BODY="$BODY"
+    HEALTH_STATUS_CODE="$CODE"
+    echo "[OK] Backend operativo en $HEALTH_URL"
+    break
+  fi
+  NOW=$(date +%s)
+  if (( NOW - HEALTH_START >= 10 )); then
+    echo "[WARN] Backend no respondió 200 en $HEALTH_URL tras 10s (último código: ${CODE:-N/A})"
+    break
+  fi
+  sleep "$HEALTH_DELAY"
+  if (( HEALTH_DELAY < 5 )); then
+    HEALTH_DELAY=$((HEALTH_DELAY * 2))
+  fi
+done
 
 BACKEND_JSON_OK=0
 if (( BACKEND_READY )); then
@@ -807,11 +842,15 @@ if (( BACKEND_READY )); then
   curl -fsS http://127.0.0.1:8081/api/backgrounds/current >/dev/null || true
 
   RESP=$(curl -s http://127.0.0.1:8081/api/config || true)
-  if echo "$RESP" | jq . >/dev/null 2>&1; then
-    echo "[OK] Configuración backend JSON válida."
-    BACKEND_JSON_OK=1
+  if command -v jq >/dev/null 2>&1; then
+    if echo "$RESP" | jq . >/dev/null 2>&1; then
+      echo "[OK] Configuración backend JSON válida."
+      BACKEND_JSON_OK=1
+    else
+      echo "[SKIP] Parseo con jq omitido: backend no devolvió JSON válido."
+    fi
   else
-    echo "[SKIP] Parseo con jq omitido: backend no devolvió JSON válido."
+    echo "[SKIP] jq no disponible; se omite validación JSON."
   fi
 else
   echo "[SKIP] Precarga de endpoints (backend no listo)"
@@ -829,9 +868,11 @@ fi
 # ----- Checks finales -----
 echo
 echo "[POST] Validaciones rápidas:"
-HEALTH_BODY=""
+HEALTH_BODY="$HEALTH_STATUS_BODY"
 if (( BACKEND_READY )); then
-  HEALTH_BODY="$(curl -s http://127.0.0.1:8081/api/health || true)"
+  if [[ -z "$HEALTH_BODY" ]]; then
+    HEALTH_BODY="$(curl -s "$HEALTH_URL" || true)"
+  fi
   if printf '%s' "$HEALTH_BODY" | grep -q "healthy"; then
     echo "  ✅ Backend UP"
   else
@@ -847,11 +888,15 @@ else
   echo "  ⚠️ UI Chromium no detectada"
 fi
 
-if command -v mosquitto_sub >/dev/null 2>&1; then
-  if mosquitto_sub -h 127.0.0.1 -t '$SYS/broker/version' -C 1 -W 2 >/dev/null 2>&1; then
-    echo "  ✅ Mosquitto operativo"
+if [[ "$ENABLE_LOCAL_MQTT" == "1" ]]; then
+  if command -v mosquitto_sub >/dev/null 2>&1; then
+    if mosquitto_sub -h 127.0.0.1 -t '$SYS/broker/version' -C 1 -W 2 >/dev/null 2>&1; then
+      echo "  ✅ Mosquitto operativo"
+    else
+      echo "  ⚠️ Mosquitto no responde (loopback)"
+    fi
   else
-    echo "  ⚠️ Mosquitto no responde (loopback)"
+    echo "  ⚠️ mosquitto_sub no disponible para comprobar el broker"
   fi
 fi
 

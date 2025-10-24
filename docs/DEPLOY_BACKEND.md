@@ -134,6 +134,15 @@ curl -s http://127.0.0.1:8081/api/network/status
 curl -s http://127.0.0.1:8081/api/storms/status
 ```
 
+### Blitzortung
+
+El backend se conecta por defecto al proxy MQTT público de Blitzortung; no es necesario desplegar
+Mosquitto ni relays adicionales. Configura la integración desde `/#/config` → «Blitzortung y
+apariencia».
+
+Si prefieres un broker local, instala el proyecto con `--enable-local-mqtt` y cambia el modo a
+«Broker personalizado» en la UI especificando host, puerto y credenciales.
+
 Desde un cliente conectado al AP visita `http://10.42.0.1:8081/setup` para usar
 la mini-web de configuración (escaneo Wi-Fi y conexión con password).
 

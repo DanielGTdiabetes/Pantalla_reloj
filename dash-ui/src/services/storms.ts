@@ -13,6 +13,14 @@ export interface StormStatus {
   strikesCount?: number;
   strikesWindowMinutes?: number;
   strikesCountKey?: string | null;
+  blitzEnabled?: boolean;
+  blitzConnected?: boolean;
+  blitzMode?: 'public_proxy' | 'custom_broker' | string;
+  blitzTopic?: string | null;
+  blitzLastEventAt?: string | null;
+  blitzCounters?: Record<string, unknown> | null;
+  blitzRetryIn?: number | null;
+  blitzLastError?: string | null;
 }
 
 export interface RadarFrame {
@@ -101,6 +109,20 @@ export async function fetchStormStatus(): Promise<StormStatus> {
       ? null
       : undefined;
 
+  const blitzEnabled = typeof data.enabled === 'boolean' ? data.enabled : undefined;
+  const blitzConnected = typeof data.connected === 'boolean' ? data.connected : undefined;
+  const blitzMode = typeof data.mode === 'string' ? (data.mode as StormStatus['blitzMode']) : undefined;
+  const blitzTopic = typeof data.topic === 'string' ? data.topic : undefined;
+  const blitzLastEventAt =
+    typeof data.last_event_at === 'string'
+      ? data.last_event_at
+      : data.last_event_at === null
+      ? null
+      : undefined;
+  const blitzCounters = typeof data.counters === 'object' && data.counters !== null ? (data.counters as Record<string, unknown>) : null;
+  const blitzRetryIn = typeof data.retry_in === 'number' ? data.retry_in : null;
+  const blitzLastError = typeof data.last_error === 'string' ? data.last_error : null;
+
   return {
     stormProb: data.storm_prob,
     nearActivity: data.near_activity,
@@ -114,6 +136,14 @@ export async function fetchStormStatus(): Promise<StormStatus> {
     strikesCount,
     strikesWindowMinutes,
     strikesCountKey: strikesCountKey ?? undefined,
+    blitzEnabled,
+    blitzConnected,
+    blitzMode,
+    blitzTopic: blitzTopic ?? null,
+    blitzLastEventAt: blitzLastEventAt ?? null,
+    blitzCounters,
+    blitzRetryIn,
+    blitzLastError,
   };
 }
 
