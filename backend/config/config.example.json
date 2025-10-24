@@ -14,18 +14,12 @@
     "radarCacheSeconds": 180
   },
   "blitzortung": {
-    "mode": "mqtt",
     "enabled": true,
-    "mqtt": {
-      "host": "RELLENAR",
-      "port": 8883,
-      "ssl": true,
-      "username": null,
-      "password": null,
-      "baseTopic": "RELLENAR/base",
-      "geohash": null,
-      "radius_km": 100
-    }
+    "mqtt_host": "RELLENAR",
+    "mqtt_port": 8883,
+    "topic_base": "RELLENAR/base",
+    "radius_km": 100,
+    "time_window_min": 30
   },
   "weather": {
     "units": "metric",

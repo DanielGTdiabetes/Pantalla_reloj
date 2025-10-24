@@ -473,6 +473,14 @@ chown "$APP_USER":pantalla "$ENV_DIR/env"
 chmod 660 "$ENV_DIR/env"
 
 log "Escribiendo $ENV_DIR/config.json …"
+WIFI_IFACE="$(nmcli -t -f DEVICE,TYPE device 2>/dev/null | awk -F: '$2=="wifi"{print $1; exit}' || true)"
+if [[ -n "$WIFI_IFACE" ]]; then
+  log "Interfaz Wi-Fi detectada: $WIFI_IFACE"
+  WIFI_PREF_VALUE="\"$WIFI_IFACE\""
+else
+  warn "No se detectó interfaz Wi-Fi; se configurará preferredInterface=null"
+  WIFI_PREF_VALUE="null"
+fi
 cat > "$ENV_DIR/config.json" <<JSON
 {
   "aemet": {
@@ -484,7 +492,7 @@ cat > "$ENV_DIR/config.json" <<JSON
   },
   "weather": { "units": "metric", "city": "${CITY_NAME}" },
   "storm": { "threshold": 0.6, "enableExperimentalLightning": false },
-  "wifi": { "preferredInterface": "wlp2s0" },
+  "wifi": { "preferredInterface": ${WIFI_PREF_VALUE} },
   "background": { "intervalMinutes": 60, "mode": "daily", "retainDays": 7 },
   "locale": { "country": "ES", "autonomousCommunity": "Comunitat Valenciana", "province": "Castellón", "city": "${CITY_NAME}" }
 }
@@ -841,16 +849,22 @@ if (( BACKEND_READY )); then
   curl -fsS http://127.0.0.1:8081/api/weather/today >/dev/null || true
   curl -fsS http://127.0.0.1:8081/api/backgrounds/current >/dev/null || true
 
-  RESP=$(curl -s http://127.0.0.1:8081/api/config || true)
-  if command -v jq >/dev/null 2>&1; then
-    if echo "$RESP" | jq . >/dev/null 2>&1; then
-      echo "[OK] Configuración backend JSON válida."
-      BACKEND_JSON_OK=1
+  RESP_WITH_CODE="$(curl -sS -w '\n%{http_code}' http://127.0.0.1:8081/api/config || true)"
+  RESP_CODE="${RESP_WITH_CODE##*$'\n'}"
+  RESP_BODY="${RESP_WITH_CODE%$'\n'*}"
+  if [[ "$RESP_CODE" == "200" ]]; then
+    if command -v jq >/dev/null 2>&1; then
+      if echo "$RESP_BODY" | jq . >/dev/null 2>&1; then
+        echo "[OK] Configuración backend JSON válida."
+        BACKEND_JSON_OK=1
+      else
+        echo "[WARN] /api/config respondió JSON inválido; se omite validación detallada."
+      fi
     else
-      echo "[SKIP] Parseo con jq omitido: backend no devolvió JSON válido."
+      echo "[SKIP] jq no disponible; se omite validación JSON."
     fi
   else
-    echo "[SKIP] jq no disponible; se omite validación JSON."
+    echo "[SKIP] /api/config devolvió ${RESP_CODE:-N/A}; se omite validación JSON."
   fi
 else
   echo "[SKIP] Precarga de endpoints (backend no listo)"

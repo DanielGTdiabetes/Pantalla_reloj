@@ -74,21 +74,11 @@
       "additionalProperties": false,
       "properties": {
         "enabled": { "type": "boolean" },
-        "mode": { "type": "string", "enum": ["mqtt", "ws"] },
-        "mqtt": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "host": { "type": "string" },
-            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
-            "ssl": { "type": "boolean" },
-            "username": { "type": ["string", "null"] },
-            "password": { "type": ["string", "null"] },
-            "baseTopic": { "type": "string" },
-            "geohash": { "type": ["string", "null"] },
-            "radius_km": { "type": ["integer", "null"], "minimum": 1, "maximum": 2000 }
-          }
-        }
+        "mqtt_host": { "type": ["string", "null"] },
+        "mqtt_port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "topic_base": { "type": "string" },
+        "radius_km": { "type": "integer", "minimum": 0, "maximum": 2000 },
+        "time_window_min": { "type": "integer", "minimum": 1, "maximum": 360 }
       }
     }
   }

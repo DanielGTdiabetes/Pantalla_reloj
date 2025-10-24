@@ -50,7 +50,7 @@ const WeeklyForecast = () => {
         {Array.from({ length: 7 }, (_, index) => (
           <div
             key={`weekly-skeleton-${index}`}
-            className="flex flex-col items-center gap-2 rounded-lg bg-white/5 px-3 py-2"
+            className="flex flex-col items-center gap-2 rounded-lg border border-white/15 px-3 py-2"
           >
             <span className="h-3 w-10 animate-pulse rounded-full bg-white/20" />
             <span className="h-9 w-9 animate-pulse rounded-full bg-white/15" />

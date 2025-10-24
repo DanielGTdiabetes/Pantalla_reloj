@@ -32,6 +32,10 @@ class WifiError(Exception):
         self.code = code
 
 
+class WifiNotSupportedError(WifiError):
+    """Raised when no Wi-Fi capability is available on the device."""
+
+
 def _needs_sudo(stderr: str) -> bool:
     lowered = stderr.lower()
     return any(keyword in lowered for keyword in ["not authorized", "permiso denegado", "permission denied"])
@@ -134,6 +138,8 @@ def list_wifi_interfaces() -> List[str]:
         message = result.stderr.strip() or "No se pudo enumerar interfaces Wi-Fi"
         raise WifiError(message, stderr=result.stderr, code=result.returncode)
     devices = _extract_wifi_devices(result.stdout.splitlines())
+    if not devices:
+        raise WifiNotSupportedError("No hay interfaces Wi-Fi disponibles en el sistema")
     return list(devices.keys())
 
 
@@ -167,7 +173,7 @@ def _autodetect_wifi_interface() -> str:
 
     wifi_devices = _extract_wifi_devices(result.stdout.splitlines())
     if not wifi_devices:
-        raise WifiError("No se encontró interfaz Wi-Fi disponible")
+        raise WifiNotSupportedError("No se encontró interfaz Wi-Fi disponible")
 
     best_device: Optional[str] = None
     best_score = -1
@@ -178,7 +184,7 @@ def _autodetect_wifi_interface() -> str:
             best_score = score
 
     if best_device is None:
-        raise WifiError("No se encontró interfaz Wi-Fi disponible")
+        raise WifiNotSupportedError("No se encontró interfaz Wi-Fi disponible")
     return best_device
 
 
@@ -191,7 +197,7 @@ def get_wifi_iface() -> str:
 
     detected = _autodetect_wifi_interface()
     if not detected:
-        raise WifiError("No se encontró interfaz Wi-Fi disponible")
+        raise WifiNotSupportedError("No se encontró interfaz Wi-Fi disponible")
     return detected
 
 

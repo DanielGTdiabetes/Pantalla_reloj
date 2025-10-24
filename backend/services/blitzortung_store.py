@@ -41,6 +41,13 @@ class BlitzStore:
             self._gc_locked()
             return [(strike.lat, strike.lon) for strike in self._queue]
 
+    def strikes(self) -> List[Strike]:
+        """Return recent strikes including timestamps."""
+
+        with self._lock:
+            self._gc_locked()
+            return list(self._queue)
+
     def _gc_locked(self) -> None:
         cutoff = time() - self.ttl
         while self._queue and self._queue[0].ts < cutoff:

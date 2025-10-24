@@ -87,15 +87,21 @@ if (( BACKEND_READY )); then
   curl -fsS http://127.0.0.1:8081/api/season/month >/dev/null || true
   curl -fsS http://127.0.0.1:8081/api/news/headlines >/dev/null || true
   curl -fsS http://127.0.0.1:8081/api/backgrounds/current >/dev/null || true
-  RESP=$(curl -s http://127.0.0.1:8081/api/config || true)
-  if command -v jq >/dev/null 2>&1; then
-    if echo "$RESP" | jq . >/dev/null 2>&1; then
-      log "Configuración backend accesible"
+  RESP_WITH_CODE="$(curl -sS -w '\n%{http_code}' http://127.0.0.1:8081/api/config || true)"
+  RESP_CODE="${RESP_WITH_CODE##*$'\n'}"
+  RESP_BODY="${RESP_WITH_CODE%$'\n'*}"
+  if [[ "$RESP_CODE" == "200" ]]; then
+    if command -v jq >/dev/null 2>&1; then
+      if echo "$RESP_BODY" | jq . >/dev/null 2>&1; then
+        log "Configuración backend accesible"
+      else
+        warn "Respuesta /api/config no es JSON válido"
+      fi
     else
-      warn "Respuesta /api/config no es JSON válido"
+      warn "jq no disponible; se omite validación de /api/config"
     fi
   else
-    warn "jq no disponible; se omite validación de /api/config"
+    warn "/api/config devolvió ${RESP_CODE:-N/A}; se omite validación JSON"
   fi
 else
   warn "Se omite la precarga de endpoints porque el backend no está listo"

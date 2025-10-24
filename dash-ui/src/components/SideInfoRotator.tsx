@@ -21,7 +21,7 @@ const LABELS: Record<SideInfoSectionKey, string> = {
 };
 
 const BULLET = '•';
-const MAX_NEWS_ITEMS = 10;
+const MAX_NEWS_ITEMS = 5;
 const MIN_TICKER_DURATION = 35;
 const MAX_TICKER_DURATION = 60;
 
@@ -158,9 +158,16 @@ const SideInfoRotator = ({
   const marqueeSegments = useMemo(() => {
     if (newsSegments.length === 0) return [] as string[];
     if (newsSegments.length === 1) {
-      return [newsSegments[0], newsSegments[0]];
+      return [newsSegments[0], newsSegments[0], newsSegments[0]];
     }
-    return [...newsSegments, ...newsSegments];
+    if (newsSegments.length === 2) {
+      return [...newsSegments, ...newsSegments];
+    }
+    const doubled = [...newsSegments, ...newsSegments];
+    if (doubled.length >= 6) {
+      return doubled;
+    }
+    return [...doubled, ...newsSegments.slice(0, 2)];
   }, [newsSegments]);
 
   const tickerDuration = useMemo(() => estimateTickerDuration(newsSegments), [newsSegments]);
@@ -182,10 +189,10 @@ const SideInfoRotator = ({
   }
 
   return (
-    <GlassPanel className="gap-6">
+    <GlassPanel className="gap-5">
       {normalizedSections.includes('efemerides') ? (
-        <section className="flex flex-col gap-3 rounded-2xl border border-white/10 px-4 py-3">
-          <span className="text-xs uppercase tracking-[0.3em] text-white/55">{LABELS.efemerides}</span>
+        <section className="flex flex-col gap-3 rounded-xl border border-white/15 px-4 py-3">
+          <span className="text-xs uppercase tracking-[0.3em] text-white/60">{LABELS.efemerides}</span>
           <div className="flex flex-col gap-2 text-sm leading-relaxed text-white/80">
             <p className="text-base font-medium text-white/90">
               {efemerideText || 'Efemérides no disponibles'}
@@ -199,8 +206,8 @@ const SideInfoRotator = ({
       ) : null}
 
       {normalizedSections.includes('news') ? (
-        <section className="flex flex-col gap-3 rounded-2xl border border-white/10 px-4 py-3">
-          <span className="text-xs uppercase tracking-[0.3em] text-white/55">{LABELS.news}</span>
+        <section className="flex flex-col gap-3 rounded-xl border border-white/15 px-4 py-3">
+          <span className="text-xs uppercase tracking-[0.3em] text-white/60">{LABELS.news}</span>
           {!newsEnabled ? (
             <p className="text-sm text-white/65">{newsDisabledNote ?? 'Noticias desactivadas'}</p>
           ) : newsLoading && newsSegments.length === 0 ? (

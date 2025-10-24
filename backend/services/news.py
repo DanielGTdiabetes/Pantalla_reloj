@@ -62,6 +62,7 @@ class NewsService:
         self._memory_expiry: float = 0.0
         self._memory_signature: tuple[Any, ...] | None = None
         self._lock = asyncio.Lock()
+        self._redirect_cache: dict[str, str] = {}
 
     async def get_headlines(self) -> dict[str, Any]:
         settings = self._load_settings()
@@ -86,15 +87,21 @@ class NewsService:
                 return disk_cached
 
             try:
-                fetched = await self._fetch_all(settings, now)
+                fetched, had_failures = await self._fetch_all(settings, now)
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning("No se pudieron obtener titulares RSS: %s", exc)
-                raise NewsServiceError("Error obteniendo titulares") from exc
+                return {
+                    "items": [],
+                    "updated_at": timestamp,
+                    "error": "fetch_failed",
+                }
 
-            payload = {
+            payload: dict[str, Any] = {
                 "items": fetched,
                 "updated_at": int(datetime.now(tz=timezone.utc).timestamp()),
             }
+            if had_failures and not fetched:
+                payload["error"] = "fetch_failed"
             self._write_disk_cache(payload, settings)
             self._store_memory_cache(payload, settings, now)
             return payload
@@ -181,6 +188,14 @@ class NewsService:
         if signature != list(settings.signature):
             return None
 
+        redirects = data.get("redirects")
+        if isinstance(redirects, dict):
+            self._redirect_cache = {
+                str(key): str(value)
+                for key, value in redirects.items()
+                if isinstance(key, str) and isinstance(value, str) and value.strip()
+            }
+
         payload = {
             "items": data.get("items") or [],
             "updated_at": int(updated_at),
@@ -199,6 +214,8 @@ class NewsService:
 
         data = dict(payload)
         data["signature"] = list(settings.signature)
+        if self._redirect_cache:
+            data["redirects"] = self._redirect_cache
         tmp_path = self._cache_path.with_suffix(self._cache_path.suffix + ".tmp")
         try:
             with tmp_path.open("w", encoding="utf-8") as handle:
@@ -215,22 +232,30 @@ class NewsService:
 
     async def _fetch_all(
         self, settings: NewsSettings, now: datetime
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], bool]:
         feeds = settings.feeds[:]
         if not feeds:
-            return []
+            return [], False
 
-        async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=FETCH_TIMEOUT, follow_redirects=True) as client:
             tasks = [
-                self._fetch_feed(client, url, settings.max_items_per_feed, now)
+                self._fetch_feed(
+                    client,
+                    original_url=url,
+                    request_url=self._redirect_cache.get(url, url),
+                    max_items=settings.max_items_per_feed,
+                    now=now,
+                )
                 for url in feeds
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
         items: list[dict[str, Any]] = []
+        had_failures = False
         for result in results:
             if isinstance(result, Exception):
                 logger.warning("Error al obtener feed RSS: %s", result)
+                had_failures = True
                 continue
             items.extend(result)
 
@@ -241,21 +266,25 @@ class NewsService:
         for item in items:
             item.pop("published_ts", None)
 
-        return items
+        return items, had_failures
 
     async def _fetch_feed(
         self,
         client: httpx.AsyncClient,
-        url: str,
+        original_url: str,
+        request_url: str,
         max_items: int,
         now: datetime,
     ) -> list[dict[str, Any]]:
         last_error: Optional[Exception] = None
         for attempt in range(MAX_RETRIES + 1):
             try:
-                response = await client.get(url)
+                response = await client.get(request_url)
                 response.raise_for_status()
                 content = response.text
+                final_url = str(response.url)
+                if final_url != original_url:
+                    self._redirect_cache[original_url] = final_url
                 break
             except (httpx.HTTPError, httpx.RequestError) as exc:
                 last_error = exc
@@ -269,7 +298,7 @@ class NewsService:
 
         parsed = feedparser.parse(content)
         feed_title = self._sanitize_text(parsed.feed.get("title")) if parsed.feed else None
-        source = feed_title or self._infer_source_from_url(url)
+        source = feed_title or self._infer_source_from_url(str(response.url))
 
         entries = parsed.entries if isinstance(parsed.entries, Iterable) else []
 
@@ -281,7 +310,7 @@ class NewsService:
             if not title:
                 continue
             title = self._truncate(title, 160)
-            link = self._sanitize_link(entry.get("link")) or url
+            link = self._sanitize_link(entry.get("link")) or str(response.url)
             published_dt = self._parse_entry_datetime(entry)
             published_iso: str | None
             age_minutes: int | None

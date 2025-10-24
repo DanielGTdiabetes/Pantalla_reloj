@@ -31,7 +31,6 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 import shutil
 
-from backend.models.config import BlitzMQTT as UiBlitzMQTT
 from backend.services.aemet import MissingApiKeyError
 from backend.services.ai_text import (
     AISummaryError,
@@ -43,12 +42,7 @@ from backend.services.backgrounds import BackgroundAsset, list_backgrounds, late
 from backend.services.calendar import CalendarService, CalendarServiceError
 from backend.services.google_calendar import GoogleCalendarError, GoogleCalendarService
 from backend.services.google_oauth import GoogleOAuthDeviceFlowManager, GoogleOAuthError
-from backend.services.config import (
-    AppConfig,
-    BlitzortungConfig,
-    BlitzortungMQTTConfig,
-    read_config as load_app_config,
-)
+from backend.services.config import AppConfig, BlitzortungConfig, read_config as load_app_config
 from backend.services.dayinfo import get_day_info
 from backend.services.location import set_location
 from backend.services.metrics import get_latency
@@ -77,8 +71,15 @@ from backend.services.config_store import (
     write_config_patch,
     write_secrets_patch,
 )
-from backend.services.wifi import list_wifi_interfaces, wifi_connect, wifi_scan, wifi_status
-from backend.services.wifi import WifiError, forget as wifi_forget
+from backend.services.wifi import (
+    WifiError,
+    WifiNotSupportedError,
+    forget as wifi_forget,
+    list_wifi_interfaces,
+    wifi_connect,
+    wifi_scan,
+    wifi_status,
+)
 from backend.services.offline_state import (
     get_offline_state,
     record_provider_failure,
@@ -166,39 +167,20 @@ def _configure_blitzortung_from_config() -> None:
     blitz_cfg = getattr(app_config, "blitzortung", None)
     ui_cfg = getattr(app_config, "ui", None)
     if ui_cfg and getattr(ui_cfg, "blitzortung", None):
-        blitz_from_ui = BlitzortungConfig(
-            enabled=ui_cfg.blitzortung.enabled,
-            mode=ui_cfg.blitzortung.mode,
-            mqtt=BlitzortungMQTTConfig(
-                host=ui_cfg.blitzortung.mqtt.host or "",
-                port=ui_cfg.blitzortung.mqtt.port,
-                ssl=ui_cfg.blitzortung.mqtt.ssl,
-                username=ui_cfg.blitzortung.mqtt.username,
-                password=ui_cfg.blitzortung.mqtt.password,
-                baseTopic=ui_cfg.blitzortung.mqtt.baseTopic or "",
-                geohash=ui_cfg.blitzortung.mqtt.geohash,
-                radius_km=ui_cfg.blitzortung.mqtt.radius_km,
-            ),
-        )
+        ui_payload = ui_cfg.blitzortung.model_dump(by_alias=True, exclude_none=True)
+        blitz_from_ui = BlitzortungConfig(**ui_payload)
         blitz_cfg = blitz_from_ui
         app_config = app_config.model_copy(update={"blitzortung": blitz_from_ui})
 
-    # Si existe configuración legacy en app_config.mqtt, mantenemos compatibilidad
     if blitz_cfg is None and host_value is not None:
+        host_str = str(host_value).strip() or "127.0.0.1"
         try:
-            host_str = str(host_value) if host_value else "127.0.0.1"
-            try:
-                port_int = int(port_value)
-            except (TypeError, ValueError):
-                port_int = 1883
-            bridge_cfg = BlitzortungConfig(
-                mode="mqtt",
-                enabled=True,
-                mqtt=BlitzortungMQTTConfig(host=host_str, port=port_int),
-            )
-            app_config = app_config.model_copy(update={"blitzortung": bridge_cfg})
-        except Exception:  # pragma: no cover - defensivo
-            logger.debug("No se pudo adaptar configuración legacy de MQTT", exc_info=True)
+            port_int = int(port_value)
+        except (TypeError, ValueError):
+            port_int = 1883
+        bridge_cfg = BlitzortungConfig(enabled=True, mqtt_host=host_str, mqtt_port=port_int)
+        blitz_cfg = bridge_cfg
+        app_config = app_config.model_copy(update={"blitzortung": bridge_cfg})
 
     configure_blitz_consumer(app_config)
 
@@ -604,19 +586,21 @@ class StormStatusResponse(BaseModel):
     strikes_window_minutes: Optional[int] = Field(
         default=None, alias="strikes_window_minutes"
     )
-    enabled: Optional[bool] = None
-    mode: Optional[str] = None
     connected: Optional[bool] = None
-    last_event_at: Optional[str] = Field(default=None, alias="last_event_at")
-    counters: Optional[Dict[str, Any]] = None
     topic: Optional[str] = None
-    retry_in: Optional[int] = Field(default=None, alias="retry_in")
+    nearest_distance_km: Optional[float] = Field(default=None, alias="nearest_distance_km")
+    azimuth_deg: Optional[float] = Field(default=None, alias="azimuth_deg")
+    count_recent: Optional[int] = Field(default=None, alias="count_recent")
+    last_ts: Optional[str] = Field(default=None, alias="last_ts")
+    radius_km: Optional[int] = Field(default=None, alias="radius_km")
+    time_window_min: Optional[int] = Field(default=None, alias="time_window_min")
     last_error: Optional[str] = Field(default=None, alias="last_error")
 
 
 class BlitzTestRequest(BaseModel):
-    enabled: bool = Field(default=False)
-    mqtt: UiBlitzMQTT
+    mqtt_host: Optional[str] = Field(default=None, alias="mqtt_host")
+    mqtt_port: int = Field(default=1883, ge=1, le=65535, alias="mqtt_port")
+    topic_base: Optional[str] = Field(default=None, alias="topic_base")
 
 
 class WifiNetwork(BaseModel):
@@ -858,17 +842,21 @@ async def storms_status():
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     consumer = blitz_consumer_status()
     if isinstance(consumer, dict):
-        merged: Dict[str, Any] = {
-            "enabled": consumer.get("enabled"),
-            "mode": consumer.get("mode"),
-            "connected": consumer.get("connected"),
-            "last_event_at": consumer.get("last_event_at"),
-            "counters": consumer.get("counters"),
-            "topic": consumer.get("topic"),
-            "retry_in": consumer.get("retry_in"),
-            "last_error": consumer.get("last_error"),
-        }
-        payload.update({k: v for k, v in merged.items() if v is not None})
+        if payload.get("provider") == "blitzortung" and consumer.get("source"):
+            payload["source"] = consumer.get("source")
+        for key in (
+            "connected",
+            "topic",
+            "nearest_distance_km",
+            "azimuth_deg",
+            "count_recent",
+            "last_ts",
+            "radius_km",
+            "time_window_min",
+            "last_error",
+        ):
+            if key in consumer:
+                payload[key] = consumer[key]
     return StormStatusResponse(**payload)
 
 
@@ -888,40 +876,13 @@ def blitz_test_endpoint(req: BlitzTestRequest) -> Dict[str, Any]:
 
     client = None
     try:
-        mqtt_cfg = req.mqtt
-        mode = getattr(mqtt_cfg, "mode", "public_proxy") or "public_proxy"
-        mode = str(mode).strip().lower()
-        if mode not in {"public_proxy", "custom_broker"}:
-            mode = "public_proxy"
-
-        if mode == "custom_broker":
-            host = (mqtt_cfg.host or "").strip()
-            if not host:
-                return JSONResponse({"ok": False, "reason": "Host requerido en modo custom_broker"}, status_code=400)
-            port = int(mqtt_cfg.port or 1883)
-            use_ssl = bool(mqtt_cfg.ssl)
-        else:
-            host = (mqtt_cfg.proxy_host or mqtt_cfg.host or "mqtt.blitzortung.org").strip()
-            if not host:
-                host = "mqtt.blitzortung.org"
-            port = int(mqtt_cfg.proxy_port or mqtt_cfg.port or 8883)
-            use_ssl = bool(getattr(mqtt_cfg, "proxy_ssl", True))
-
-        username = (mqtt_cfg.username or "").strip() or None
-        password = mqtt_cfg.password or ""
-        if password == "*****":
-            stored = load_config().blitzortung.mqtt.password
-            password = stored or ""
+        host = (req.mqtt_host or "").strip()
+        if not host:
+            return JSONResponse({"ok": False, "reason": "mqtt_host requerido"}, status_code=400)
+        port = int(req.mqtt_port or 1883)
 
         client = mqtt.Client()
-        if username:
-            client.username_pw_set(username, password)
-        if use_ssl:
-            try:
-                client.tls_set()
-            except Exception as exc:  # pragma: no cover - defensivo
-                logger.debug("No se pudo configurar TLS para test MQTT: %s", exc)
-        client.connect(host, int(port), 10)
+        client.connect(host, port, 10)
         client.loop_start()
         client.loop_stop()
         client.disconnect()
@@ -1022,6 +983,8 @@ def health_full():
 def wifi_scan_endpoint() -> Dict[str, Any]:
     try:
         return wifi_scan()
+    except WifiNotSupportedError as exc:
+        raise HTTPException(status_code=501, detail={"message": str(exc)}) from exc
     except WifiError as exc:
         detail = {"message": str(exc)}
         if exc.stderr:
@@ -1035,6 +998,8 @@ def wifi_scan_endpoint() -> Dict[str, Any]:
 def wifi_connect_endpoint(payload: WifiConnectRequest = Body(...)) -> Dict[str, Any]:
     try:
         return wifi_connect(payload.ssid, payload.psk)
+    except WifiNotSupportedError as exc:
+        raise HTTPException(status_code=501, detail={"message": str(exc)}) from exc
     except WifiError as exc:
         detail = {"message": str(exc)}
         if exc.stderr:
@@ -1048,6 +1013,8 @@ def wifi_connect_endpoint(payload: WifiConnectRequest = Body(...)) -> Dict[str, 
 def wifi_forget_endpoint(payload: WifiForgetRequest = Body(...)):
     try:
         wifi_forget(payload.ssid)
+    except WifiNotSupportedError as exc:
+        raise HTTPException(status_code=501, detail={"message": str(exc)}) from exc
     except WifiError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "ssid": payload.ssid}
@@ -1056,6 +1023,8 @@ def wifi_forget_endpoint(payload: WifiForgetRequest = Body(...)):
 def _wifi_status_payload() -> Dict[str, Any]:
     try:
         return wifi_status()
+    except WifiNotSupportedError as exc:
+        raise HTTPException(status_code=501, detail={"message": str(exc)}) from exc
     except WifiError as exc:
         detail = {"message": str(exc)}
         if exc.stderr:
@@ -1074,6 +1043,8 @@ def wifi_status_endpoint() -> Dict[str, Any]:
 def wifi_interfaces_endpoint() -> Dict[str, Any]:
     try:
         interfaces = list_wifi_interfaces()
+    except WifiNotSupportedError as exc:
+        raise HTTPException(status_code=501, detail={"message": str(exc)}) from exc
     except WifiError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"interfaces": interfaces}

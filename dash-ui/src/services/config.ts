@@ -44,24 +44,13 @@ export interface UiAppearanceConfig {
   transparentCards?: boolean;
 }
 
-export interface BlitzMqttConfig {
-  mode: 'public_proxy' | 'custom_broker';
-  proxy_host: string;
-  proxy_port: number;
-  proxy_ssl: boolean;
-  proxy_baseTopic: string;
-  geohash?: string | null;
-  radius_km?: number | null;
-  host?: string | null;
-  port?: number | null;
-  ssl?: boolean;
-  username?: string | null;
-  password?: string | null;
-}
-
-export interface BlitzortungUiConfig {
+export interface BlitzortungConfig {
   enabled: boolean;
-  mqtt: BlitzMqttConfig;
+  mqtt_host?: string | null;
+  mqtt_port?: number | null;
+  topic_base?: string | null;
+  radius_km?: number | null;
+  time_window_min?: number | null;
 }
 
 export interface CalendarConfig {
@@ -132,8 +121,14 @@ export interface UIConfig {
   rotatingPanel?: RotatingPanelConfig;
   sideInfo?: SideInfoConfig;
   wifi?: UiWifiConfig;
-  blitzortung?: BlitzortungUiConfig;
+  blitzortung?: BlitzortungConfig;
   appearance?: UiAppearanceConfig;
+}
+
+export interface BlitzTestPayload {
+  mqtt_host?: string | null;
+  mqtt_port?: number | null;
+  topic_base?: string | null;
 }
 
 export interface NewsConfig {
@@ -152,6 +147,7 @@ export interface DashboardConfig {
   wifi?: WifiConfig;
   calendar?: CalendarConfig;
   storm?: StormConfig;
+  blitzortung?: BlitzortungConfig;
   locale?: LocaleConfig;
   patron?: PatronConfig;
   ui?: UIConfig;
@@ -230,7 +226,7 @@ export interface BlitzTestResult {
   reason?: string;
 }
 
-export async function testBlitzConnection(payload: BlitzortungUiConfig): Promise<BlitzTestResult> {
+export async function testBlitzConnection(payload: BlitzTestPayload): Promise<BlitzTestResult> {
   return await apiRequest<BlitzTestResult>('/storms/blitz/test', {
     method: 'POST',
     body: JSON.stringify(payload),
