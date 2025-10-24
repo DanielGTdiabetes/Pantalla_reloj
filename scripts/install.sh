@@ -13,14 +13,24 @@ warn(){ printf "\033[1;33m[WARN]\033[0m %s\n" "$*"; }
 err(){ printf "\033[1;31m[ERR ]\033[0m %s\n" "$*" >&2; }
 die(){ err "$*"; exit 1; }
 
-# === Helpers seguros para entornos headless ===
+# === Helpers seguros para entornos sin D-Bus o headless ===
+has_dbus_user() {
+  local target="${1:-$USER}"
+  command -v loginctl >/dev/null 2>&1 || return 1
+  loginctl show-user "$target" >/dev/null 2>&1
+}
+
 run_userctl() {
-  local target_user="$1"
-  shift || true
+  local target="$USER"
   local use_login=0
   local env_args=()
+
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --user)
+        target="$2"
+        shift 2
+        ;;
       --login)
         use_login=1
         shift
@@ -41,10 +51,12 @@ run_userctl() {
         ;;
     esac
   done
+
   local cmd=("$@")
   local cmd_desc="${cmd[*]}"
-  if loginctl show-user "$target_user" >/dev/null 2>&1; then
-    local sudo_cmd=(sudo -u "$target_user")
+
+  if has_dbus_user "$target"; then
+    local sudo_cmd=(sudo -u "$target")
     if (( use_login )); then
       sudo_cmd+=(--login)
     fi
@@ -54,11 +66,11 @@ run_userctl() {
     sudo_cmd+=(systemctl --user)
     sudo_cmd+=("${cmd[@]}")
     if ! "${sudo_cmd[@]}"; then
-      echo "[WARN] Fallo leve: systemctl --user ${cmd_desc} (usuario: ${target_user})"
+      echo "[WARN] Fallo leve: systemctl --user ${cmd_desc} (usuario: ${target})"
       return 1
     fi
   else
-    echo "[SKIP] D-Bus no disponible (instalación en chroot/headless). Omitido: systemctl --user ${cmd_desc} (usuario: ${target_user})"
+    echo "[SKIP] D-Bus no disponible para usuario '${target}'. Omitido: systemctl --user ${cmd_desc}"
   fi
 }
 
@@ -70,7 +82,8 @@ run_sysctl() {
       return 1
     fi
   else
-    echo "[SKIP] D-Bus no disponible (instalación mínima o sin loginctl). Omitido: systemctl ${cmd_desc}"
+    echo "[SKIP] D-Bus de sistema no disponible. Omitido: systemctl ${cmd_desc}"
+    return 2
   fi
 }
 
@@ -175,7 +188,7 @@ fi
 log "Instalando paquetes base…"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y python3 python3-venv python3-pip nginx curl jq unzip ca-certificates espeak-ng network-manager rsync
+apt-get install -y python3 python3-venv python3-pip nginx curl jq unzip ca-certificates espeak-ng network-manager rsync netcat-openbsd
 
 log "Asegurando NetworkManager activo…"
 run_sysctl enable --now NetworkManager || true
@@ -292,8 +305,8 @@ setup_blitzortung_relay() {
   sudo -u "$REAL_USER" install -m 644 "$SERVICE_SRC" "$SERVICE_DST"
 
   sudo loginctl enable-linger "$REAL_USER" >/dev/null 2>&1 || true
-  run_userctl "$REAL_USER" --login -- daemon-reload || true
-  run_userctl "$REAL_USER" --login -- enable --now blitz_relay.service || true
+  run_userctl --user "$REAL_USER" --login -- daemon-reload || true
+  run_userctl --user "$REAL_USER" --login -- enable --now blitz_relay.service || true
 
   echo "[CHECK] MQTT Blitzortung relay:"
   mosquitto_sub -h 127.0.0.1 -t 'blitzortung/#' -C 1 -W 3 | jq . || echo "⚠️ Esperando primeros strikes (puede tardar unos minutos)"
@@ -358,9 +371,9 @@ fi
 
 UI_SYSTEMD_ENV=("XDG_RUNTIME_DIR=$UI_RUNTIME_DIR" "DBUS_SESSION_BUS_ADDRESS=unix:path=$UI_RUNTIME_DIR/bus")
 
-run_userctl "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- daemon-reload || true
-run_userctl "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- enable "$OPENBOX_SERVICE_NAME" || true
-run_userctl "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- enable "$UI_SERVICE_NAME" || true
+run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- daemon-reload || true
+run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- enable "$OPENBOX_SERVICE_NAME" || true
+run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- enable "$UI_SERVICE_NAME" || true
 
 sudo chown -R "${APP_USER}:${APP_USER}" "${APP_HOME}/.config/openbox"
 sudo chmod +x "${APP_HOME}/.config/openbox/autostart"
@@ -546,8 +559,8 @@ fi
 run_sysctl daemon-reload
 run_sysctl enable --now "${BACKEND_SVC_BASENAME}@$APP_USER" || true
 run_sysctl enable --now "pantalla-xorg@$UI_USER" || true
-run_userctl "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- start "$OPENBOX_SERVICE_NAME" || true
-run_userctl "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- start "$UI_SERVICE_NAME" || true
+run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- start "$OPENBOX_SERVICE_NAME" || true
+run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- start "$UI_SERVICE_NAME" || true
 
 echo "[INFO] Instalando Mosquitto (loopback seguro)…"
 sudo apt install -y mosquitto mosquitto-clients >/dev/null 2>&1 || true
@@ -559,18 +572,12 @@ allow_anonymous true
 persistence false
 connection_messages false
 EOF'
-run_sysctl enable mosquitto
-run_sysctl restart mosquitto
+run_sysctl enable --now mosquitto || true
 
-echo "[INFO] Mosquitto activo en loopback."
-if systemctl is-system-running >/dev/null 2>&1; then
-  if run_sysctl is-active mosquitto >/dev/null 2>&1; then
-    echo "  ✅ OK"
-  else
-    echo "  ❌ ERROR"
-  fi
+if nc -z 127.0.0.1 1883 2>/dev/null; then
+  echo "[OK] Mosquitto activo en loopback."
 else
-  warn "D-Bus no disponible para verificar mosquitto."
+  echo "[WARN] Mosquitto no responde en 127.0.0.1:1883 (se verificará tras login)."
 fi
 
 setup_blitzortung_relay || { echo "[ERR] Falló la configuración de Blitzortung"; exit 1; }
@@ -685,12 +692,7 @@ ln -sf "$NGINX_SITE" /etc/nginx/sites-enabled/pantalla
 find /etc/nginx/sites-enabled -maxdepth 1 -type f -name 'pantalla.bak*' -delete 2>/dev/null || true
 rm -f /etc/nginx/sites-enabled/default || true
 nginx -t
-if systemctl is-system-running >/dev/null 2>&1; then
-  if ! run_sysctl reload nginx; then
-    service nginx reload || true
-  fi
-else
-  warn "D-Bus no disponible para recargar nginx vía systemctl."
+if ! run_sysctl reload nginx; then
   service nginx reload || true
 fi
 
@@ -765,26 +767,25 @@ run_sysctl enable --now "$BG_SYNC_PATH"
 run_sysctl start "$BG_SYNC_SERVICE"
 
 # ----- Reinicia backend para cargar endpoints nuevos (config/Wi-Fi si los añadiste) -----
-if systemctl is-system-running >/dev/null 2>&1; then
-  run_sysctl restart "${BACKEND_SVC_BASENAME}@$APP_USER" || true
-else
-  warn "D-Bus no disponible para reiniciar ${BACKEND_SVC_BASENAME}@$APP_USER"
+if ! run_sysctl restart "${BACKEND_SVC_BASENAME}@$APP_USER"; then
+  rc=$?
+  if [[ $rc -ne 2 ]]; then
+    warn "No se pudo reiniciar ${BACKEND_SVC_BASENAME}@$APP_USER"
+  fi
 fi
 
 echo "[POST] Reinicio ordenado de servicios…"
-if systemctl is-system-running >/dev/null 2>&1; then
-  if ! run_sysctl restart nginx; then
+if ! run_sysctl restart nginx; then
+  rc=$?
+  if [[ $rc -ne 2 ]]; then
     warn "No se pudo reiniciar nginx (¿instalado?)"
   fi
-else
-  warn "D-Bus no disponible para reiniciar nginx"
 fi
-if systemctl is-system-running >/dev/null 2>&1; then
-  if ! run_sysctl restart "${BACKEND_SVC_BASENAME}@$APP_USER"; then
+if ! run_sysctl restart "${BACKEND_SVC_BASENAME}@$APP_USER"; then
+  rc=$?
+  if [[ $rc -ne 2 ]]; then
     warn "No se pudo reiniciar ${BACKEND_SVC_BASENAME}@$APP_USER"
   fi
-else
-  warn "D-Bus no disponible para reiniciar ${BACKEND_SVC_BASENAME}@$APP_USER"
 fi
 
 # Refrescar el navegador kiosk para limpiar cachés
@@ -797,38 +798,34 @@ curl -fsS http://127.0.0.1:8081/api/news/headlines >/dev/null || true
 curl -fsS http://127.0.0.1:8081/api/weather/today >/dev/null || true
 curl -fsS http://127.0.0.1:8081/api/backgrounds/current >/dev/null || true
 
-echo "[INFO] Esperando a que el backend responda..."
-BACKEND_READY=0
-for i in {1..10}; do
-  if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8081/api/health | grep -q "200"; then
-    echo "[OK] Backend operativo."
-    BACKEND_READY=1
+echo "[INFO] Verificando estado del backend (${BACKEND_SVC_BASENAME}@$APP_USER)..."
+MAX_WAIT=45
+STEP=3
+elapsed=0
+CODE=""
+while [ $elapsed -lt $MAX_WAIT ]; do
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8081/api/health || true)
+  if [ "$CODE" = "200" ]; then
+    echo "[OK] Backend operativo tras $elapsed s"
     break
-  else
-    echo "[WAIT] Intento $i/10: backend aún no responde, esperando 2s..."
-    sleep 2
   fi
+  sleep $STEP
+  elapsed=$((elapsed + STEP))
 done
-if [[ "$BACKEND_READY" != "1" ]]; then
-  warn "Backend no respondió 200 tras la espera inicial (continuando con precaución)."
+if [ "$CODE" != "200" ]; then
+  echo "[ERROR] Backend no responde tras $MAX_WAIT s — posible demora en uvicorn o fallo de red local."
+  if command -v journalctl >/dev/null 2>&1; then
+    journalctl -u "${BACKEND_SVC_BASENAME}@${APP_USER}" -n 20 --no-pager || true
+  fi
 fi
 
+RESP=$(curl -s http://127.0.0.1:8081/api/config || true)
 BACKEND_JSON_OK=0
-if curl -s http://127.0.0.1:8081/api/config | jq . >/dev/null 2>&1; then
-  echo "[INFO] Backend JSON válido."
+if echo "$RESP" | jq . >/dev/null 2>&1; then
+  echo "[OK] Configuración backend JSON válida."
   BACKEND_JSON_OK=1
 else
-  echo "[WARN] Backend aún no devuelve JSON válido, omitiendo parseo inicial."
-fi
-
-echo "[POST] Validaciones rápidas:"
-if [[ "$BACKEND_JSON_OK" == "1" ]]; then
-  curl -s http://127.0.0.1:8081/api/health | jq . || true
-  curl -s http://127.0.0.1:8081/api/season/month | jq . | head -n 20 || true
-  curl -s http://127.0.0.1:8081/api/news/headlines | jq . | head -n 20 || true
-else
-  curl -s http://127.0.0.1:8081/api/health || true
-  echo "[SKIP] Parseo con jq omitido hasta que el backend devuelva JSON válido."
+  echo "[SKIP] Parseo con jq omitido: backend no devolvió JSON válido."
 fi
 
 # Ajuste de zona horaria (solo si no está ya configurada)
@@ -841,80 +838,62 @@ fi
 
 # ----- Checks finales -----
 echo
-log "Checks finales:"
-set +e
-curl -fsS http://127.0.0.1/api/health >/dev/null && echo "  ✅ Backend responde /api/health" || echo "  ❌ Backend DOWN (journalctl -u ${BACKEND_SVC_BASENAME}@$APP_USER -n 100)"
-curl -fsS "http://127.0.0.1/assets/${INDEX_JS}" >/dev/null && echo "  ✅ Assets JS disponibles" || echo "  ❌ Assets inaccesibles"
-if systemctl is-system-running >/dev/null 2>&1; then
-  if run_sysctl is-active --quiet "${BACKEND_SVC_BASENAME}@$APP_USER" >/dev/null 2>&1; then
-    echo "  ✅ Servicio backend activo"
-  else
-    echo "  ❌ Servicio backend inactivo"
-  fi
-  if run_sysctl is-active --quiet "pantalla-xorg@$UI_USER" >/dev/null 2>&1; then
-    echo "  ✅ Xorg activo"
-  else
-    echo "  ❌ Xorg no está activo"
-  fi
+echo "[POST] Validaciones rápidas:"
+HEALTH_BODY="$(curl -s http://127.0.0.1:8081/api/health || true)"
+if printf '%s' "$HEALTH_BODY" | grep -q "healthy"; then
+  echo "  ✅ Backend UP"
 else
-  echo "  ⚠️ Comprobaciones systemctl omitidas (D-Bus no disponible)"
+  echo "  ❌ Backend DOWN (ver logs con: journalctl -u ${BACKEND_SVC_BASENAME}@$APP_USER -n 50)"
 fi
-if run_userctl "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- is-active "$OPENBOX_SERVICE_NAME" >/dev/null 2>&1; then
-  echo "  ✅ Openbox (usuario) activo"
-else
-  echo "  ❌ Openbox (usuario) no activo"
-fi
-if run_userctl "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- is-active "$UI_SERVICE_NAME" >/dev/null 2>&1; then
+
+if pgrep -f "chromium.*--kiosk" >/dev/null 2>&1; then
   echo "  ✅ UI Chromium activa"
 else
-  echo "  ❌ UI Chromium no activa"
-fi
-nmcli -t -f DEVICE device status >/dev/null && echo "  ✅ nmcli OK" || echo "  ❌ nmcli reportó error"
-
-echo "[CHECK] MQTT Blitzortung status:"
-REAL_USER="${SUDO_USER:-$USER}"
-BLITZ_PRESENT=0
-if run_userctl "$REAL_USER" --login -- list-units --type=service 2>/dev/null | grep -q 'blitz_relay.service'; then
-  BLITZ_PRESENT=1
-  run_userctl "$REAL_USER" --login -- status --no-pager -l blitz_relay.service | grep -E "Active|PID" || true
-else
-  echo "[SKIP] blitz_relay.service no encontrado (instalación parcial o sin red)."
+  echo "  ⚠️ UI Chromium no detectada"
 fi
 
-echo "[CHECK] Backend provider:"
-curl -s http://127.0.0.1/api/storms/status | jq '.provider? // .storm?.provider?' || true
-
-echo "== Backend health =="
-curl -s http://127.0.0.1:8081/api/health || true
-
-echo "== Season month =="
-curl -s http://127.0.0.1:8081/api/season/month | jq '.month? // .' || true
-
-echo "== News headlines (top) =="
-curl -s http://127.0.0.1:8081/api/news/headlines | jq '.[0:3]' || true
-
-echo "== Fondo actual =="
-curl -s http://127.0.0.1:8081/api/backgrounds/current | jq . || true
-
-FN=$(curl -s http://127.0.0.1:8081/api/backgrounds/current | jq -r .filename)
-if [[ -n "$FN" && "$FN" != "null" ]]; then
-  echo "== HEAD Nginx bg =="
-  curl -sI "http://127.0.0.1/backgrounds/auto/$FN" | sed -n '1,8p' || true
-  echo "== HEAD Backend bg =="
-  curl -sI "http://127.0.0.1:8081/backgrounds/auto/$FN" | sed -n '1,8p' || true
-else
-  warn "No se pudo resolver filename desde /api/backgrounds/current"
+if command -v mosquitto_sub >/dev/null 2>&1; then
+  if mosquitto_sub -h 127.0.0.1 -t '$SYS/broker/version' -C 1 -W 2 >/dev/null 2>&1; then
+    echo "  ✅ Mosquitto operativo"
+  else
+    echo "  ⚠️ Mosquitto no responde (loopback)"
+  fi
 fi
 
-echo "== Nginx access (últimas peticiones de season/news) =="
-sudo egrep -n 'GET /api/(season/month|news/headlines)' /var/log/nginx/access.log | tail -n 8 || true
-set -e
-
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8081/api/health || true
-if (( BLITZ_PRESENT )); then
-  run_userctl "$REAL_USER" --login -- status --no-pager -l blitz_relay.service | head -n 10 || true
+if has_dbus_user "$UI_USER"; then
+  if run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- is-active "$OPENBOX_SERVICE_NAME" >/dev/null 2>&1; then
+    echo "  ✅ Openbox (usuario) activo"
+  else
+    echo "  ⚠️ Openbox pendiente de arranque"
+  fi
+  if run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- is-active "$UI_SERVICE_NAME" >/dev/null 2>&1; then
+    echo "  ✅ Servicio UI habilitado"
+  else
+    echo "  ⚠️ Servicio UI pendiente (systemctl --user status $UI_SERVICE_NAME)"
+  fi
 else
-  echo "[SKIP] Estado detallado de blitz_relay.service omitido."
+  echo "  ⚠️ Servicios de usuario diferidos (sin D-Bus)."
+fi
+
+if ! has_dbus_user "$UI_USER"; then
+  echo "[INFO] Instalación headless detectada. Creando tarea post-login para activar servicios de usuario..."
+  UI_HOME="$(getent passwd "$UI_USER" | cut -d: -f6)"
+  if [[ -n "$UI_HOME" ]]; then
+    sudo -u "$UI_USER" mkdir -p "$UI_HOME/.config/autostart"
+    AUTOSTART_FILE="$UI_HOME/.config/autostart/pantalla-postlogin.desktop"
+    POSTLOGIN_CMD="/bin/sh -lc '/usr/bin/systemctl --user daemon-reload && for svc in ${BACKEND_SVC_BASENAME}@${APP_USER} pantalla-openbox.service pantalla-ui.service blitz_relay.service; do /usr/bin/systemctl --user enable --now \"\$svc\" 2>/dev/null || true; done'"
+    cat <<EOF | sudo tee "$AUTOSTART_FILE" >/dev/null
+[Desktop Entry]
+Type=Application
+Name=Pantalla Post-Login
+Exec=$POSTLOGIN_CMD
+X-GNOME-Autostart-enabled=true
+EOF
+    sudo chown "$UI_USER:$UI_USER" "$AUTOSTART_FILE"
+    echo "[OK] Servicios diferidos correctamente: se activarán al iniciar sesión gráfica (usuario: $UI_USER)"
+  else
+    warn "No se pudo determinar el HOME de $UI_USER para registrar autostart post-login."
+  fi
 fi
 
 # genera primer fondo si hay clave
