@@ -153,9 +153,30 @@ rm -f "$SYSTEMD_DIR/$KIOSK_SERVICE" 2>/dev/null || true
 rm -f "$USER_SYSTEMD_DIR/$UI_SERVICE_NAME" 2>/dev/null || true
 
 echo "[INFO] Eliminando servicio Openbox (Pantalla Dash)…"
-sudo systemctl --user disable --now pantalla-openbox.service 2>/dev/null || true
+if [[ -n "${APP_USER:-}" ]]; then
+  UI_UID="$(id -u "$APP_USER" 2>/dev/null)" || true
+  if [[ -n "$UI_UID" ]]; then
+    UI_RUNTIME_DIR="/run/user/$UI_UID"
+    UI_SYSTEMD_ENV=("XDG_RUNTIME_DIR=$UI_RUNTIME_DIR" "DBUS_SESSION_BUS_ADDRESS=unix:path=$UI_RUNTIME_DIR/bus")
+    sudo -u "$APP_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user disable --now pantalla-openbox.service 2>/dev/null || true
+  else
+    sudo -u "$APP_USER" systemctl --user disable --now pantalla-openbox.service 2>/dev/null || true
+  fi
+else
+  sudo systemctl --user disable --now pantalla-openbox.service 2>/dev/null || true
+fi
 sudo rm -f /etc/xdg/systemd/user/pantalla-openbox.service 2>/dev/null || true
-sudo systemctl --user daemon-reload || true
+if [[ -n "${APP_USER:-}" ]]; then
+  if [[ -n "${UI_UID:-}" ]]; then
+    UI_RUNTIME_DIR="/run/user/$UI_UID"
+    UI_SYSTEMD_ENV=("XDG_RUNTIME_DIR=$UI_RUNTIME_DIR" "DBUS_SESSION_BUS_ADDRESS=unix:path=$UI_RUNTIME_DIR/bus")
+    sudo -u "$APP_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user daemon-reload 2>/dev/null || true
+  else
+    sudo -u "$APP_USER" systemctl --user daemon-reload 2>/dev/null || true
+  fi
+else
+  sudo systemctl --user daemon-reload 2>/dev/null || true
+fi
 
 log "Recargando systemd…"
 systemctl daemon-reload
