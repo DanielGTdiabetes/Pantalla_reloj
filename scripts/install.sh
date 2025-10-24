@@ -13,6 +13,15 @@ warn(){ printf "\033[1;33m[WARN]\033[0m %s\n" "$*"; }
 err(){ printf "\033[1;31m[ERR ]\033[0m %s\n" "$*" >&2; }
 die(){ err "$*"; exit 1; }
 
+systemctl_safe(){
+  if systemctl is-system-running >/dev/null 2>&1; then
+    systemctl "$@"
+  else
+    warn "D-Bus no disponible (instalación en chroot o headless). Omitido: systemctl $*"
+    return 0
+  fi
+}
+
 # ----- Paths base (script dentro de /scripts -> raíz es su padre) -----
 APP_USER="${SUDO_USER:-${USER}}"
 REPO_DIR="$(cd "$(dirname "$0")"/.. && pwd)"
@@ -117,7 +126,7 @@ apt-get update -y
 apt-get install -y python3 python3-venv python3-pip nginx curl jq unzip ca-certificates espeak-ng network-manager rsync
 
 log "Asegurando NetworkManager activo…"
-systemctl enable --now NetworkManager || true
+systemctl_safe enable --now NetworkManager || true
 
 # --- X stack mínimo y sesión ligera (idempotente) ---
 log "Instalando Xorg + Openbox en modo mínimo…"
@@ -200,108 +209,42 @@ disable_autostart_file() {
   fi
 }
 
-install_blitzortung_client() {
+setup_blitzortung_relay() {
   local REAL_USER="${SUDO_USER:-$USER}"
-  local REPO_URL="https://github.com/mrk-its/homeassistant-blitzortung.git"
   local TARGET_BASE="/opt/blitzortung"
-  local TARGET_DIR="$TARGET_BASE/ws_client"
-  local VENV="$TARGET_DIR/.venv"
+  local RELAY_DIR="$TARGET_BASE/ws_relay"
+  local VENV="$TARGET_BASE/.venv"
   local SERVICE_DIR="/home/${REAL_USER}/.config/systemd/user"
-  local SERVICE_PATH="$SERVICE_DIR/blitz_ws_client.service"
-  local LOG_DIR="/var/log/pantalla"
+  local SERVICE_DST="$SERVICE_DIR/blitz_relay.service"
+  local RELAY_SRC="$REPO_DIR/backend/extras/blitz_relay.py"
+  local SERVICE_SRC="$REPO_DIR/backend/extras/blitz_relay.service"
 
-  echo "[INFO] Blitzortung: asegurando dependencias base…"
-  sudo apt-get update -y
-  sudo apt-get install -y git python3-venv dbus-user-session
+  echo "[INFO] Configurando Blitzortung (relay WS→MQTT real)..."
 
-  sudo mkdir -p "$TARGET_BASE"
-  sudo install -d -m 0755 -o "$REAL_USER" -g "$REAL_USER" "$LOG_DIR"
+  sudo mkdir -p "$RELAY_DIR" /var/log/pantalla
+  sudo chown -R "$REAL_USER:$REAL_USER" "$TARGET_BASE" /var/log/pantalla
 
-  if [[ -d "$TARGET_DIR/.git" ]]; then
-    echo "[INFO] Blitzortung: repo existente, actualizando…"
-    sudo git -C "$TARGET_DIR" fetch --all --quiet || true
-    sudo git -C "$TARGET_DIR" reset --hard origin/master --quiet || true
+  if [[ ! -d "$VENV" ]]; then
+    echo "[INFO] Creando entorno virtual Blitzortung..."
+    sudo -u "$REAL_USER" python3 -m venv "$VENV"
+    sudo -u "$REAL_USER" "$VENV/bin/pip" install -q --upgrade pip
+    sudo -u "$REAL_USER" "$VENV/bin/pip" install -q aiohttp paho-mqtt
   else
-    echo "[INFO] Blitzortung: clonando $REPO_URL en $TARGET_DIR"
-    sudo git clone --depth=1 "$REPO_URL" "$TARGET_DIR"
+    sudo -u "$REAL_USER" "$VENV/bin/pip" install -q --upgrade aiohttp paho-mqtt || true
   fi
 
-  sudo chown -R "$REAL_USER":"$REAL_USER" "$TARGET_BASE"
-
-  echo "[INFO] Blitzortung: creando venv…"
-  sudo -u "$REAL_USER" python3 -m venv "$VENV"
-  sudo -u "$REAL_USER" "$VENV/bin/pip" install --upgrade pip setuptools wheel
-
-  if [[ -f "$TARGET_DIR/requirements.txt" ]]; then
-    sudo -u "$REAL_USER" "$VENV/bin/pip" install -r "$TARGET_DIR/requirements.txt"
-  else
-    if [[ -f "$REPO_DIR/opt/blitzortung/ws_client/requirements.txt" ]]; then
-      sudo tee "$TARGET_DIR/requirements.txt" >/dev/null <"$REPO_DIR/opt/blitzortung/ws_client/requirements.txt"
-    else
-      printf "paho-mqtt\naiohttp\n" | sudo tee "$TARGET_DIR/requirements.txt" >/dev/null
-    fi
-    sudo chown "$REAL_USER":"$REAL_USER" "$TARGET_DIR/requirements.txt"
-    sudo -u "$REAL_USER" "$VENV/bin/pip" install -r "$TARGET_DIR/requirements.txt"
-  fi
-
-  echo "[INFO] Blitzortung: asegurando dependencias principales…"
-  sudo -u "$REAL_USER" "$VENV/bin/pip" install paho-mqtt aiohttp
-
-  if [[ ! -x "$TARGET_DIR/ws_client.py" ]]; then
-    echo "[WARN] Blitzortung: ws_client.py no encontrado o no ejecutable; instalando wrapper local."
-    if [[ -f "$REPO_DIR/opt/blitzortung/ws_client/ws_client.py" ]]; then
-      sudo tee "$TARGET_DIR/ws_client.py" >/dev/null <"$REPO_DIR/opt/blitzortung/ws_client/ws_client.py"
-    else
-      cat <<'EOF' | sudo tee "$TARGET_DIR/ws_client.py" >/dev/null
-#!/usr/bin/env python3
-import json
-print(json.dumps({"error": "ws_client.py no disponible"}))
-EOF
-    fi
-  fi
-  sudo chown "$REAL_USER":"$REAL_USER" "$TARGET_DIR/ws_client.py"
-  sudo chmod +x "$TARGET_DIR/ws_client.py"
+  install -m 755 "$RELAY_SRC" "$RELAY_DIR/relay.py"
+  sudo chown "$REAL_USER:$REAL_USER" "$RELAY_DIR/relay.py"
 
   sudo -u "$REAL_USER" mkdir -p "$SERVICE_DIR"
+  sudo -u "$REAL_USER" install -m 644 "$SERVICE_SRC" "$SERVICE_DST"
 
-  local BACKEND_PY="/home/${REAL_USER}/proyectos/Pantalla_reloj/backend/.venv/bin/python3"
-  local EXEC_START
-  if [[ -x "$BACKEND_PY" ]]; then
-    EXEC_START="%h/proyectos/Pantalla_reloj/backend/.venv/bin/python3 /opt/blitzortung/ws_client/ws_client.py"
-  else
-    EXEC_START="/opt/blitzortung/ws_client/.venv/bin/python3 /opt/blitzortung/ws_client/ws_client.py"
-  fi
+  sudo loginctl enable-linger "$REAL_USER" >/dev/null 2>&1 || true
+  sudo -u "$REAL_USER" --login systemctl --user daemon-reload || true
+  sudo -u "$REAL_USER" --login systemctl --user enable --now blitz_relay.service || true
 
-  cat <<EOF | sudo -u "$REAL_USER" tee "$SERVICE_PATH" >/dev/null
-[Unit]
-Description=Blitzortung WebSocket Client
-After=network-online.target
-
-[Service]
-Type=simple
-Environment=PYTHONUNBUFFERED=1
-Environment=BLITZ_WS_URL=
-Environment=MQTT_HOST=127.0.0.1
-Environment=MQTT_PORT=1883
-Environment=MQTT_TOPIC=blitzortung/1
-ExecStart=${EXEC_START}
-WorkingDirectory=/opt/blitzortung/ws_client
-Restart=always
-RestartSec=5
-StandardOutput=append:/var/log/pantalla/blitz_ws_client.log
-StandardError=append:/var/log/pantalla/blitz_ws_client.err
-
-[Install]
-WantedBy=default.target
-EOF
-
-  sudo loginctl enable-linger "$REAL_USER" || true
-  sudo -u "$REAL_USER" --login systemctl --user daemon-reload
-  sudo -u "$REAL_USER" --login systemctl --user enable --now blitz_ws_client.service
-
-  echo "[INFO] Blitzortung: service instalado. Comprobando estado…"
-  sudo -u "$REAL_USER" --login systemctl --user is-active blitz_ws_client.service || true
-  sudo -u "$REAL_USER" --login systemctl --user status blitz_ws_client.service --no-pager -l | tail -n 50 || true
+  echo "[CHECK] MQTT Blitzortung relay:"
+  mosquitto_sub -h 127.0.0.1 -t 'blitzortung/#' -C 1 -W 3 | jq . || echo "⚠️ Esperando primeros strikes (puede tardar unos minutos)"
 }
 
 if [[ -d "${APP_HOME}/.config/autostart" ]]; then
@@ -317,8 +260,8 @@ if [[ -d "/etc/xdg/autostart" ]]; then
 fi
 
 log "Desactivando servicios automáticos del snap de Chromium…"
-systemctl stop snap.chromium.daemon.service || true
-systemctl disable snap.chromium.daemon.service || true
+systemctl_safe stop snap.chromium.daemon.service || true
+systemctl_safe disable snap.chromium.daemon.service || true
 if command -v snap >/dev/null 2>&1; then
   snap set chromium daemon.autostart=false || true
 fi
@@ -340,9 +283,9 @@ fi
 
 if [[ -f "$SYSTEMD_DIR/$UI_SERVICE_NAME" ]]; then
   warn "  Detectado servicio de sistema legacy; se deshabilita y elimina."
-  systemctl disable --now "$UI_SERVICE_NAME" || true
+  systemctl_safe disable --now "$UI_SERVICE_NAME" || true
   rm -f "$SYSTEMD_DIR/$UI_SERVICE_NAME"
-  systemctl daemon-reload || true
+  systemctl_safe daemon-reload || true
 fi
 
 # Asegurar que el directorio systemd de usuario existe
@@ -468,7 +411,7 @@ cat > "$ENV_DIR/config.json" <<JSON
   },
   "weather": { "units": "metric", "city": "${CITY_NAME}" },
   "storm": { "threshold": 0.6, "enableExperimentalLightning": false },
-  "wifi": { "preferredInterface": "wlan2" },
+  "wifi": { "preferredInterface": "wlp2s0" },
   "background": { "intervalMinutes": 60, "mode": "daily", "retainDays": 7 },
   "locale": { "country": "ES", "autonomousCommunity": "Comunitat Valenciana", "province": "Castellón", "city": "${CITY_NAME}" }
 }
@@ -548,9 +491,9 @@ if [[ -f "$XORG_SERVICE_SRC" ]]; then
   install -D -m 644 "$XORG_SERVICE_SRC" "$SYSTEMD_DIR/$XORG_SERVICE_NAME"
 fi
 
-systemctl daemon-reload
-systemctl enable --now "${BACKEND_SVC_BASENAME}@$APP_USER" || true
-systemctl enable --now "pantalla-xorg@$UI_USER" || true
+systemctl_safe daemon-reload
+systemctl_safe enable --now "${BACKEND_SVC_BASENAME}@$APP_USER" || true
+systemctl_safe enable --now "pantalla-xorg@$UI_USER" || true
 sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user start "$OPENBOX_SERVICE_NAME" || true
 sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user start "$UI_SERVICE_NAME" || true
 
@@ -564,16 +507,26 @@ allow_anonymous true
 persistence false
 connection_messages false
 EOF'
-sudo systemctl enable mosquitto
-sudo systemctl restart mosquitto
+if systemctl is-system-running >/dev/null 2>&1; then
+  sudo systemctl enable mosquitto
+  sudo systemctl restart mosquitto
+else
+  warn "D-Bus no disponible (instalación en chroot o headless). Omitido: systemctl enable/restart mosquitto"
+fi
 
 echo "[INFO] Mosquitto activo en loopback."
-systemctl is-active mosquitto && echo "  ✅ OK" || echo "  ❌ ERROR"
+if systemctl is-system-running >/dev/null 2>&1; then
+  systemctl is-active mosquitto && echo "  ✅ OK" || echo "  ❌ ERROR"
+else
+  warn "D-Bus no disponible para verificar mosquitto."
+fi
 
-echo "[INFO] Instalando cliente Blitzortung desde GitHub…"
-install_blitzortung_client || { echo "[ERR] Falló la instalación de Blitzortung"; exit 1; }
+setup_blitzortung_relay || { echo "[ERR] Falló la configuración de Blitzortung"; exit 1; }
 
-echo "[INFO] Blitzortung listo para integrarse con backend FastAPI."
+# Refrescar permisos de logs tras la instalación del relay
+sudo mkdir -p /var/log/mosquitto /var/log/pantalla
+sudo chown -R mosquitto:mosquitto /var/log/mosquitto
+sudo chown -R "${APP_USER}:${APP_USER}" /var/log/pantalla
 
 # --- Hardening generador IA: corrige parámetros del script ---
 GEN_SCRIPT="$REPO_DIR/opt/dash/scripts/generate_bg_daily.py"
@@ -680,8 +633,13 @@ ln -sf "$NGINX_SITE" /etc/nginx/sites-enabled/pantalla
 find /etc/nginx/sites-enabled -maxdepth 1 -type f -name 'pantalla.bak*' -delete 2>/dev/null || true
 rm -f /etc/nginx/sites-enabled/default || true
 nginx -t
-if ! systemctl reload nginx; then
-  service nginx reload
+if systemctl is-system-running >/dev/null 2>&1; then
+  if ! systemctl reload nginx; then
+    service nginx reload
+  fi
+else
+  warn "D-Bus no disponible para recargar nginx vía systemctl."
+  service nginx reload || true
 fi
 
 log "Post-checks de Nginx y estáticos…"
@@ -749,25 +707,38 @@ install -Dm755 "$BG_SYNC_SCRIPT_SRC" "$BG_SYNC_SCRIPT_DST"
 install -Dm644 "$REPO_DIR/system/$BG_SYNC_SERVICE" "$SYSTEMD_DIR/$BG_SYNC_SERVICE"
 install -Dm644 "$REPO_DIR/system/$BG_SYNC_PATH" "$SYSTEMD_DIR/$BG_SYNC_PATH"
 
-systemctl daemon-reload
-systemctl enable --now "$BG_TIMER"
-systemctl enable --now "$BG_SYNC_PATH"
-systemctl start "$BG_SYNC_SERVICE"
+systemctl_safe daemon-reload
+systemctl_safe enable --now "$BG_TIMER"
+systemctl_safe enable --now "$BG_SYNC_PATH"
+systemctl_safe start "$BG_SYNC_SERVICE"
 
 # ----- Reinicia backend para cargar endpoints nuevos (config/Wi-Fi si los añadiste) -----
-systemctl restart "${BACKEND_SVC_BASENAME}@$APP_USER" || true
+if systemctl is-system-running >/dev/null 2>&1; then
+  systemctl restart "${BACKEND_SVC_BASENAME}@$APP_USER" || true
+else
+  warn "D-Bus no disponible para reiniciar ${BACKEND_SVC_BASENAME}@$APP_USER"
+fi
 
 echo "[POST] Reinicio ordenado de servicios…"
-if ! systemctl restart nginx; then
-  warn "No se pudo reiniciar nginx (¿instalado?)"
+if systemctl is-system-running >/dev/null 2>&1; then
+  if ! systemctl restart nginx; then
+    warn "No se pudo reiniciar nginx (¿instalado?)"
+  fi
+else
+  warn "D-Bus no disponible para reiniciar nginx"
 fi
-if ! systemctl restart "${BACKEND_SVC_BASENAME}@$APP_USER"; then
-  warn "No se pudo reiniciar ${BACKEND_SVC_BASENAME}@$APP_USER"
+if systemctl is-system-running >/dev/null 2>&1; then
+  if ! systemctl restart "${BACKEND_SVC_BASENAME}@$APP_USER"; then
+    warn "No se pudo reiniciar ${BACKEND_SVC_BASENAME}@$APP_USER"
+  fi
+else
+  warn "D-Bus no disponible para reiniciar ${BACKEND_SVC_BASENAME}@$APP_USER"
 fi
 
 # Refrescar el navegador kiosk para limpiar cachés
 pkill -f 'chrom(e|ium).*--kiosk' || true
 
+sleep 5
 echo "[POST] Precargando endpoints para UI (efemérides/side-info)…"
 curl -fsS http://127.0.0.1:8081/api/season/month >/dev/null || true
 curl -fsS http://127.0.0.1:8081/api/news/headlines >/dev/null || true
@@ -793,19 +764,23 @@ log "Checks finales:"
 set +e
 curl -fsS http://127.0.0.1/api/health >/dev/null && echo "  ✅ Backend responde /api/health" || echo "  ❌ Backend DOWN (journalctl -u ${BACKEND_SVC_BASENAME}@$APP_USER -n 100)"
 curl -fsS "http://127.0.0.1/assets/${INDEX_JS}" >/dev/null && echo "  ✅ Assets JS disponibles" || echo "  ❌ Assets inaccesibles"
-systemctl is-active --quiet "${BACKEND_SVC_BASENAME}@$APP_USER" && echo "  ✅ Servicio backend activo" || echo "  ❌ Servicio backend inactivo"
-systemctl is-active --quiet "pantalla-xorg@$UI_USER" && echo "  ✅ Xorg activo" || echo "  ❌ Xorg no está activo"
+if systemctl is-system-running >/dev/null 2>&1; then
+  systemctl is-active --quiet "${BACKEND_SVC_BASENAME}@$APP_USER" && echo "  ✅ Servicio backend activo" || echo "  ❌ Servicio backend inactivo"
+  systemctl is-active --quiet "pantalla-xorg@$UI_USER" && echo "  ✅ Xorg activo" || echo "  ❌ Xorg no está activo"
+else
+  echo "  ⚠️ Comprobaciones systemctl omitidas (D-Bus no disponible)"
+fi
 sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user is-active "$OPENBOX_SERVICE_NAME" >/dev/null 2>&1 && echo "  ✅ Openbox (usuario) activo" || echo "  ❌ Openbox (usuario) no activo"
 sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user is-active "$UI_SERVICE_NAME" >/dev/null 2>&1 && echo "  ✅ UI Chromium activa" || echo "  ❌ UI Chromium no activa"
 nmcli -t -f DEVICE device status >/dev/null && echo "  ✅ nmcli OK" || echo "  ❌ nmcli reportó error"
 
 echo "[CHECK] MQTT Blitzortung status:"
 REAL_USER="${SUDO_USER:-$USER}"
-STATUS=$(sudo -u "$REAL_USER" --login systemctl --user --no-pager status blitz_ws_client.service 2>/dev/null || true)
+STATUS=$(sudo -u "$REAL_USER" --login systemctl --user --no-pager status blitz_relay.service 2>/dev/null || true)
 if [[ -n "$STATUS" ]]; then
   grep -E "Active|PID" <<<"$STATUS" || true
 else
-  echo "  ⚠️ Servicio blitz_ws_client.service no disponible."
+  echo "  ⚠️ Servicio blitz_relay.service no disponible."
 fi
 
 echo "[CHECK] Backend provider:"
@@ -837,10 +812,13 @@ echo "== Nginx access (últimas peticiones de season/news) =="
 sudo egrep -n 'GET /api/(season/month|news/headlines)' /var/log/nginx/access.log | tail -n 8 || true
 set -e
 
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8081/api/health || true
+sudo -u "$REAL_USER" --login systemctl --user status blitz_relay.service --no-pager -l | head -n 10 || true
+
 # genera primer fondo si hay clave
 if grep -qE '^OPENAI_API_KEY=.+$' "$ENV_DIR/env"; then
   log "Generando primer fondo IA…"
-  systemctl start "$BG_SVC" || true
+  systemctl_safe start "$BG_SVC" || true
   sleep 2
   # Verificar que el directorio existe antes de listar
   if [[ -d "$ASSETS_DIR" ]] && ls -1 "$ASSETS_DIR"/*.webp >/dev/null 2>&1; then

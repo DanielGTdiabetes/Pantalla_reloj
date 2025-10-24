@@ -101,7 +101,7 @@ sudo mkdir -p /etc/systemd/system/pantalla-bg-generate.timer.d
 Opcional: crea `/etc/pantalla-dash/ap.conf` para fijar interfaz del hotspot:
 
 ```
-PREFERRED_IFACE=wlan2
+PREFERRED_IFACE=wlp2s0
 ```
 
 Recarga y habilita servicios:

@@ -7,6 +7,8 @@
     "province": "Castellón"
   },
   "storm": {
+    "provider": "blitzortung",
+    "mqtt_topic": "blitzortung/1.1",
     "threshold": 0.6,
     "enableExperimentalLightning": false,
     "radarCacheSeconds": 180
@@ -16,7 +18,7 @@
     "city": "Vila-real"
   },
   "wifi": {
-    "preferredInterface": "wlan2"
+    "preferredInterface": "wlp2s0"
   },
   "theme": {
     "current": "cyberpunkNeon"
