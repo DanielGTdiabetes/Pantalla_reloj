@@ -28,6 +28,8 @@ warn(){ printf "\033[1;33m[WARN]\033[0m %s\n" "$*"; }
 err(){ printf "\033[1;31m[ERR ]\033[0m %s\n" "$*" >&2; }
 die(){ err "$*"; exit 1; }
 
+export DEBIAN_FRONTEND=noninteractive
+
 run_userctl() {
   local target="$USER"
   local use_login=0
@@ -103,14 +105,15 @@ run_sysctl() {
   fi
 }
 
-echo "[INFO] Eliminando Snap de Chromium y PPAs obsoletos…"
-sudo systemctl disable --now snapd 2>/dev/null || true
-sudo apt purge -y chromium chromium-browser snapd || true
-sudo rm -rf /var/lib/snapd /snap /var/snap /etc/apt/sources.list.d/*snap*.list 2>/dev/null || true
+echo "[INFO] Limpiando entorno previo (sin tocar Snap global)…"
+sudo apt purge -y chromium chromium-browser || true
+sudo rm -f /etc/apt/sources.list.d/*chromium*.list 2>/dev/null || true
+sudo apt autoremove -y
 
-# PPA roto de Chromium (si existe)
-sudo rm -f /etc/apt/sources.list.d/canonical-chromium-builds-ubuntu-stage-noble.sources 2>/dev/null || true
-sudo sed -i '/canonical-chromium-builds\\/stage/d' /etc/apt/sources.list 2>/dev/null || true
+echo "[INFO] Instalando dependencias base del sistema..."
+sudo apt update -y
+sudo apt install -y xorg openbox x11-xserver-utils dbus-x11 fonts-dejavu-core \
+                    python3-pip python3-venv git curl jq nginx software-properties-common
 
 wait_for_http() {
   local host="$1"
@@ -152,7 +155,7 @@ USER_SYSTEMD_DIR="/etc/xdg/systemd/user"
 LEGACY_USER_SYSTEMD_DIR="/etc/systemd/user"
 LEGACY_UI_SERVICE_NAME="pantalla-ui.service"
 OPENBOX_SERVICE_NAME="pantalla-openbox.service"
-OPENBOX_SERVICE_SRC="$REPO_DIR/system/user/$OPENBOX_SERVICE_NAME"
+OPENBOX_SERVICE_SRC="$REPO_DIR/services/$OPENBOX_SERVICE_NAME"
 UI_LAUNCHER_SRC="$REPO_DIR/scripts/pantalla-ui-launch.sh"
 UI_LAUNCHER_DST="/usr/local/bin/pantalla-ui-launch.sh"
 
@@ -229,41 +232,25 @@ if [[ "$NON_INTERACTIVE" != "1" ]]; then
 fi
 
 log "Instalando paquetes base…"
-export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y python3 python3-venv python3-pip nginx curl jq unzip ca-certificates espeak-ng network-manager rsync netcat-openbsd
+apt-get install -y python3 unzip ca-certificates espeak-ng network-manager rsync netcat-openbsd
 
 log "Asegurando NetworkManager activo…"
 run_sysctl enable --now NetworkManager || true
 
 # --- X stack mínimo y sesión ligera (idempotente) ---
-log "Instalando Xorg + Openbox en modo mínimo…"
-apt-get update -y
-apt-get install -y xserver-xorg-core xserver-xorg-video-all xserver-xorg-input-all xinit openbox x11-xserver-utils
-# Opcional para kiosko puro (ocultar cursor); queda comentado en autostart
-apt-get install -y unclutter || true
+log "Instalando utilidades adicionales para sesión gráfica…"
+sudo apt install -y unclutter || true
 
-echo "[INFO] Instalando Chromium clásico (.deb, no Snap)…"
+echo "[INFO] Añadiendo repositorio ungoogled-chromium..."
+sudo add-apt-repository -y ppa:ungoogled-chromium/ppa
 sudo apt update -y
-sudo apt install -y wget gnupg2 software-properties-common
+sudo apt install -y ungoogled-chromium
 
-# Descargar paquete Debian estable
-CHROMIUM_DEB="chromium_121.0.6167.139-1_amd64.deb"
-if [ ! -f "/tmp/${CHROMIUM_DEB}" ]; then
-  wget -q "https://ftp.debian.org/debian/pool/main/c/chromium/${CHROMIUM_DEB}" -O "/tmp/${CHROMIUM_DEB}"
-fi
-
-# Instalar dependencias y paquete
-sudo apt install -y "/tmp/${CHROMIUM_DEB}" || {
-  echo "[WARN] Instalación directa falló, reintentando con --fix-broken…"
-  sudo apt --fix-broken install -y
-}
-
-# Validar instalación
 if command -v chromium >/dev/null 2>&1; then
-  echo "[OK] Chromium clásico instalado en: $(command -v chromium)"
+  echo "[OK] ungoogled-chromium instalado en: $(command -v chromium)"
 else
-  echo "[ERROR] Chromium clásico no se instaló correctamente."
+  echo "[ERROR] No se pudo instalar ungoogled-chromium."
   exit 1
 fi
 
@@ -282,13 +269,13 @@ if [[ -n "$LAN_IP" ]]; then
 fi
 
 # --- Autostart de Openbox con rotación automática si está en vertical (480x1920) ---
-echo "[INFO] Configurando autostart de Openbox para Chromium clásico…"
+echo "[INFO] Configurando autostart de Openbox para ungoogled-chromium…"
 sudo -u "${APP_USER}" mkdir -p "${APP_HOME}/.config/openbox"
 
 AUTOSTART_FILE="${APP_HOME}/.config/openbox/autostart"
 TMP_AUTOSTART="$(mktemp)"
 cat >"$TMP_AUTOSTART" <<'EOF'
-# --- BEGIN Pantalla_reloj AUTOSTART (definitive) ---
+# --- BEGIN Pantalla_reloj AUTOSTART (stable 2025) ---
 xset -dpms
 xset s off
 sleep 2
@@ -297,14 +284,14 @@ chromium --kiosk http://127.0.0.1 \
   --disable-pinch --overscroll-history-navigation=0 --no-first-run \
   --disable-infobars --fast --fast-start --disable-features=TranslateUI \
   --window-size=1920,480 --window-position=0,0 &
-# --- END Pantalla_reloj AUTOSTART (definitive) ---
+# --- END Pantalla_reloj AUTOSTART (stable 2025) ---
 EOF
 
 if [[ -f "$AUTOSTART_FILE" ]]; then
   awk '
     BEGIN { skip=0 }
-    /--- BEGIN Pantalla_reloj AUTOSTART \(definitive\) ---/ { skip=1; next }
-    /--- END Pantalla_reloj AUTOSTART \(definitive\) ---/ { skip=0; next }
+    /--- BEGIN Pantalla_reloj AUTOSTART \(stable 2025\) ---/ { skip=1; next }
+    /--- END Pantalla_reloj AUTOSTART \(stable 2025\) ---/ { skip=0; next }
     skip==0 { print }
   ' "$AUTOSTART_FILE" > "${AUTOSTART_FILE}.clean" || true
   cat "${AUTOSTART_FILE}.clean" "$TMP_AUTOSTART" > "$AUTOSTART_FILE"
@@ -394,6 +381,12 @@ if [[ -f "$OPENBOX_SERVICE_SRC" ]]; then
 fi
 if [[ -f "$LEGACY_USER_SYSTEMD_DIR/$OPENBOX_SERVICE_NAME" ]]; then
   sudo rm -f "$LEGACY_USER_SYSTEMD_DIR/$OPENBOX_SERVICE_NAME"
+fi
+if ! sudo systemctl --user daemon-reload 2>/dev/null; then
+  echo "[INFO] (skip) sudo systemctl --user daemon-reload"
+fi
+if ! sudo systemctl --user enable --now "$OPENBOX_SERVICE_NAME" 2>/dev/null; then
+  echo "[INFO] (skip) sudo systemctl --user enable --now $OPENBOX_SERVICE_NAME"
 fi
 if [[ ${SYSTEMD_DBUS_AVAILABLE:-1} -eq 1 ]]; then
   sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user daemon-reload || true
@@ -783,10 +776,21 @@ else
   warn "Backend no responde 200 en /api/health (obtenido: $API_STATUS_CODE)"
 fi
 
-echo "[CHECK] Comprobando entorno gráfico…"
+echo "[CHECK] Verificando entorno gráfico y navegador..."
+if ! sudo systemctl --user restart pantalla-openbox.service 2>/dev/null; then
+  echo "[INFO] (skip) sudo systemctl --user restart pantalla-openbox.service"
+fi
+if [[ ${SYSTEMD_DBUS_AVAILABLE:-1} -eq 1 ]]; then
+  sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user restart pantalla-openbox || true
+else
+  echo "[INFO] (skip) systemctl --user restart pantalla-openbox"
+fi
+sleep 6
 pgrep Xorg >/dev/null && echo "✅ Xorg activo" || echo "❌ Xorg no activo"
 pgrep openbox >/dev/null && echo "✅ Openbox activo" || echo "❌ Openbox no activo"
-pgrep chromium >/dev/null && echo "✅ Chromium kiosk activo" || echo "⚠️ Chromium aún no visible (ver logs)"
+pgrep chromium >/dev/null && echo "✅ Chromium kiosk activo" || echo "❌ Chromium no detectado"
+curl -s -m 3 -o /dev/null -w "Frontend HTTP: %{http_code}\n" http://127.0.0.1/ || true
+curl -s -m 3 -o /dev/null -w "Backend API: %{http_code}\n" http://127.0.0.1:8081/api/health || true
 
 # ----- Reinicia backend para cargar endpoints nuevos (config/Wi-Fi si los añadiste) -----
 if ! run_sysctl restart "${BACKEND_SVC_BASENAME}@$APP_USER"; then
@@ -871,20 +875,6 @@ else
   echo "[SKIP] Precarga de endpoints (backend no listo)"
   echo "[SKIP] Parseo con jq omitido: backend no listo."
 fi
-
-echo "[CHECK] Verificando entorno gráfico y Chromium clásico…"
-if [[ ${SYSTEMD_DBUS_AVAILABLE:-1} -eq 1 ]]; then
-  run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- restart pantalla-openbox || true
-else
-  echo "[INFO] (skip) systemctl --user restart pantalla-openbox"
-fi
-sleep 6
-pgrep Xorg >/dev/null && echo "✅ Xorg activo" || echo "❌ Xorg no activo"
-pgrep openbox >/dev/null && echo "✅ Openbox activo" || echo "❌ Openbox no activo"
-pgrep chromium >/dev/null && echo "✅ Chromium kiosk activo" || echo "❌ Chromium no detectado"
-
-curl -s -m 3 -o /dev/null -w "Frontend HTTP: %{http_code}\n" http://127.0.0.1/ || true
-curl -s -m 3 -o /dev/null -w "Backend API: %{http_code}\n" http://127.0.0.1:8081/api/health || true
 
 # Ajuste de zona horaria (solo si no está ya configurada)
 if ! timedatectl | grep -q "Time zone: ${TZ_DEFAULT}"; then

@@ -15,7 +15,7 @@ OpenWeatherMap, gestión de Wi-Fi y TTS offline.
 ├── system/pantalla-dash-backend@.service
 ├── system/pantalla-xorg@.service
 ├── system/pantalla-ui.service
-├── system/user/pantalla-openbox.service
+├── services/pantalla-openbox.service
 └── docs/
     ├── DEPLOY_BACKEND.md      # Guía de despliegue completa
     └── google-calendar.md     # Configuración de OAuth para Google Calendar
@@ -114,7 +114,7 @@ permisos, systemd y endurecimiento.
 - `system/pantalla-dash-backend@.service` inicia Uvicorn con 2 *workers* en
   `127.0.0.1:8081` dentro de `/home/<usuario>/proyectos/Pantalla_reloj`.
 - `system/pantalla-xorg@.service` lanza `Xorg :0` en `vt1` y
-  `system/user/pantalla-openbox.service` mantiene `openbox` vivo como sesión de
+  `services/pantalla-openbox.service` mantiene `openbox` vivo como sesión de
   usuario.
 - `system/pantalla-ui.service` exporta `PANTALLA_UI_URL=http://127.0.0.1/` y se
   apoya en `/usr/local/bin/pantalla-ui-launch.sh` para localizar Chromium (snap).
@@ -144,7 +144,7 @@ unidades systemd:
    `openbox` mantiene una sesión X ligera y el servicio de la UI lanza Chromium
    en modo `--app`/`--kiosk` contra `http://127.0.0.1/`.
 
-Los units de usuario se instalan en `/etc/systemd/user/` y requieren
+Los units de usuario se instalan en `/etc/xdg/systemd/user/` y requieren
 `loginctl enable-linger dani` (el instalador ya lo aplica). Operaciones básicas:
 
 - **Habilitar todo el stack**:
