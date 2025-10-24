@@ -13,6 +13,20 @@
     "enableExperimentalLightning": false,
     "radarCacheSeconds": 180
   },
+  "blitzortung": {
+    "mode": "mqtt",
+    "enabled": true,
+    "mqtt": {
+      "host": "RELLENAR",
+      "port": 8883,
+      "ssl": true,
+      "username": null,
+      "password": null,
+      "baseTopic": "RELLENAR/base",
+      "geohash": null,
+      "radius_km": 100
+    }
+  },
   "weather": {
     "units": "metric",
     "city": "Vila-real"

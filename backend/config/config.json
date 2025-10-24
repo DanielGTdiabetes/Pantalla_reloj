@@ -12,6 +12,20 @@
     "threshold": 0.6,
     "enableExperimentalLightning": false
   },
+  "blitzortung": {
+    "mode": "mqtt",
+    "enabled": true,
+    "mqtt": {
+      "host": "127.0.0.1",
+      "port": 1883,
+      "ssl": false,
+      "username": null,
+      "password": null,
+      "baseTopic": "blitzortung/relay",
+      "geohash": null,
+      "radius_km": null
+    }
+  },
   "weather": {
     "units": "metric",
     "city": "Vila-real"

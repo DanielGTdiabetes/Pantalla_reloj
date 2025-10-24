@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import logging
 import math
-import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -16,82 +15,17 @@ import httpx
 
 from .aemet import AemetDecodeError, CacheEntry, _decode_aemet_payload
 from .config import get_api_key, read_config
-from .blitzortung_store import BlitzStore
+from .blitz_consumer import recent_strikes as _recent_strikes
 from .metrics import record_latency
-from .mqtt_client import MQTTClient
 from .offline_state import record_provider_failure, record_provider_success
 from .location import get_location as get_location_override
 
 logger = logging.getLogger(__name__)
 
-BLITZORTUNG_TOPIC_BASE = "blitzortung/1.1"
-_BLITZORTUNG_STORE = BlitzStore()
-_BLITZORTUNG_CLIENT_LOCK = threading.Lock()
-_BLITZORTUNG_CLIENT: Optional[MQTTClient] = None
-
-
-def configure_blitzortung(
-    provider: str,
-    *,
-    host: str = "127.0.0.1",
-    port: int = 1883,
-    topic_base: str = BLITZORTUNG_TOPIC_BASE,
-) -> None:
-    """Configure Blitzortung MQTT bridge according to provider settings."""
-
-    normalized = (provider or "aemet").strip().lower()
-    if normalized != "blitzortung":
-        shutdown_blitzortung()
-        return
-
-    if not MQTTClient.is_supported():
-        logger.warning(
-            "Dependencia paho-mqtt no disponible; Blitzortung no se activará"
-        )
-        return
-
-    actual_host = host or "127.0.0.1"
-    try:
-        actual_port = int(port)
-    except (TypeError, ValueError):
-        actual_port = 1883
-
-    with _BLITZORTUNG_CLIENT_LOCK:
-        global _BLITZORTUNG_CLIENT  # pylint: disable=global-statement
-        if _BLITZORTUNG_CLIENT and _BLITZORTUNG_CLIENT.matches(actual_host, actual_port, topic_base):
-            _BLITZORTUNG_CLIENT.start()
-            return
-
-        if _BLITZORTUNG_CLIENT:
-            _BLITZORTUNG_CLIENT.stop()
-
-        client = MQTTClient(actual_host, actual_port, topic_base, _BLITZORTUNG_STORE.add)
-        client.start()
-        _BLITZORTUNG_CLIENT = client
-        logger.info(
-            "MQTT Blitzortung suscrito a %s:%s (%s)", actual_host, actual_port, topic_base
-        )
-
-
-def shutdown_blitzortung() -> None:
-    """Stop MQTT consumption and clear stored strikes."""
-
-    with _BLITZORTUNG_CLIENT_LOCK:
-        global _BLITZORTUNG_CLIENT  # pylint: disable=global-statement
-        client = _BLITZORTUNG_CLIENT
-        _BLITZORTUNG_CLIENT = None
-    if client:
-        client.stop()
-    _BLITZORTUNG_STORE.clear()
-
-
 def blitzortung_recent(limit: int = 500) -> list[tuple[float, float]]:
     """Return up to ``limit`` most recent strikes."""
 
-    coords = _BLITZORTUNG_STORE.recent()
-    if limit >= 0:
-        return coords[:limit]
-    return coords
+    return _recent_strikes(limit)
 
 CACHE_DIR = Path(__file__).resolve().parents[1] / "storage" / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)

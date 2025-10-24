@@ -12,6 +12,20 @@
       "cooldownMinutes": 30
     }
   },
+  "blitzortung": {
+    "mode": "mqtt",
+    "enabled": true,
+    "mqtt": {
+      "host": "RELLENAR",
+      "port": 8883,
+      "ssl": true,
+      "username": null,
+      "password": null,
+      "baseTopic": "RELLENAR/base",
+      "geohash": null,
+      "radius_km": 100
+    }
+  },
   "mqtt": {
     "host": "127.0.0.1",
     "port": 1883

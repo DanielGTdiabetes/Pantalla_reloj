@@ -41,18 +41,23 @@ from backend.services.backgrounds import BackgroundAsset, list_backgrounds, late
 from backend.services.calendar import CalendarService, CalendarServiceError
 from backend.services.google_calendar import GoogleCalendarError, GoogleCalendarService
 from backend.services.google_oauth import GoogleOAuthDeviceFlowManager, GoogleOAuthError
-from backend.services.config import AppConfig, read_config as load_app_config
+from backend.services.config import (
+    AppConfig,
+    BlitzortungConfig,
+    BlitzortungMQTTConfig,
+    read_config as load_app_config,
+)
 from backend.services.dayinfo import get_day_info
 from backend.services.location import set_location
 from backend.services.metrics import get_latency
 from backend.services.seasonality import build_month_tip, get_current_month_season, get_month_season
 from backend.services.dst import current_time_payload, next_transition_info
-from backend.services.storms import (
-    configure_blitzortung,
-    get_radar_image,
-    get_storm_status,
-    shutdown_blitzortung,
+from backend.services.blitz_consumer import (
+    configure_from_app_config as configure_blitz_consumer,
+    consumer_status as blitz_consumer_status,
+    shutdown as shutdown_blitz_consumer,
 )
+from backend.services.storms import get_radar_image, get_storm_status
 from backend.services.tts import SpeechError, TTSService, TTSUnavailableError
 from backend.services.weather import WeatherService, WeatherServiceError
 from backend.services.config_store import (
@@ -136,7 +141,7 @@ def _configure_blitzortung_from_config() -> None:
         app_config = read_config()
     except Exception as exc:  # pragma: no cover - lectura defensiva
         logger.warning("No se pudo cargar configuración para Blitzortung: %s", exc)
-        configure_blitzortung("aemet")
+        configure_blitz_consumer(None)
         return
 
     storm_cfg = getattr(app_config, "storm", None)
@@ -145,8 +150,30 @@ def _configure_blitzortung_from_config() -> None:
     host_value = getattr(mqtt_cfg, "host", None) if mqtt_cfg else None
     port_value = getattr(mqtt_cfg, "port", 1883) if mqtt_cfg else 1883
 
-    host = str(host_value) if host_value else "127.0.0.1"
-    configure_blitzortung(provider, host=host, port=port_value)
+    normalized = str(provider or "aemet").strip().lower()
+    if normalized != "blitzortung":
+        configure_blitz_consumer(None)
+        return
+
+    # Si existe configuración legacy en app_config.mqtt, mantenemos compatibilidad
+    blitz_cfg = getattr(app_config, "blitzortung", None)
+    if blitz_cfg is None and host_value is not None:
+        try:
+            host_str = str(host_value) if host_value else "127.0.0.1"
+            try:
+                port_int = int(port_value)
+            except (TypeError, ValueError):
+                port_int = 1883
+            bridge_cfg = BlitzortungConfig(
+                mode="mqtt",
+                enabled=True,
+                mqtt=BlitzortungMQTTConfig(host=host_str, port=port_int),
+            )
+            app_config = app_config.model_copy(update={"blitzortung": bridge_cfg})
+        except Exception:  # pragma: no cover - defensivo
+            logger.debug("No se pudo adaptar configuración legacy de MQTT", exc_info=True)
+
+    configure_blitz_consumer(app_config)
 
 
 def _ensure_calendar_log_handler() -> None:
@@ -790,6 +817,11 @@ async def storms_status():
     except Exception as exc:  # pylint: disable=broad-except
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return StormStatusResponse(**payload)
+
+
+@app.get("/api/storms/blitz/status")
+def storms_blitz_status() -> Dict[str, Any]:
+    return blitz_consumer_status()
 
 
 def _radar_binary_response() -> Response:
@@ -1462,7 +1494,7 @@ async def shutdown_event():
         except asyncio.CancelledError:  # pragma: no cover - esperado en apagado
             pass
         _alert_task = None
-    shutdown_blitzortung()
+    shutdown_blitz_consumer()
     await weather_service.close()
     await calendar_service.close()
     await google_calendar_service.close()
