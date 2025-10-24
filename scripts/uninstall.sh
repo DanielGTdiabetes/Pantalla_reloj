@@ -42,6 +42,7 @@ PURGE_LOGS=0
 PURGE_VENV=0
 PURGE_NODE=0
 PURGE_WEBROOT=0
+PURGE_OPENBOX_BLOCK=0
 PURGE_ALL=0
 
 usage() {
@@ -55,6 +56,7 @@ Opciones de borrado (por defecto NO se borran):
   --purge-venv       Borra venv del backend (backend/.venv)
   --purge-node       Borra node_modules del frontend (dash-ui/node_modules)
   --purge-webroot    Vacía /var/www/html
+  --purge-openbox-block  Elimina el bloque gestionado de autostart Openbox
   --purge-all        Hace todo lo anterior
 
 Ayuda:
@@ -75,6 +77,7 @@ while [[ $# -gt 0 ]]; do
     --purge-venv) PURGE_VENV=1; shift;;
     --purge-node) PURGE_NODE=1; shift;;
     --purge-webroot) PURGE_WEBROOT=1; shift;;
+    --purge-openbox-block) PURGE_OPENBOX_BLOCK=1; shift;;
     --purge-all) PURGE_ALL=1; shift;;
     -h|--help) usage; exit 0;;
     *) die "Opción desconocida: $1";;
@@ -88,6 +91,7 @@ if [[ "$PURGE_ALL" -eq 1 ]]; then
   PURGE_VENV=1
   PURGE_NODE=1
   PURGE_WEBROOT=1
+  PURGE_OPENBOX_BLOCK=1
 fi
 
 log "Parando y deshabilitando servicios…"
@@ -119,8 +123,8 @@ if [[ -f "$USER_SYSTEMD_DIR/$UI_SERVICE_NAME" ]]; then
   fi
 fi
 
-echo "[INFO] Deshabilitando UI Chromium kiosk…"
-UI_KIOSK_USER="${APP_USER:-dani}"
+echo "[INFO] Deshabilitando UI por systemd (si existe)…"
+UI_KIOSK_USER="${PANTALLA_UI_USER:-$APP_USER}"
 if [[ "$UI_KIOSK_USER" == "root" ]]; then
   UI_KIOSK_USER="dani"
 fi
@@ -254,6 +258,24 @@ if [[ "$PURGE_CONFIG" -eq 1 ]]; then
         mv "$disabled" "${disabled%.disabled}" 2>/dev/null || true
       done
     fi
+  fi
+fi
+
+if [[ "$PURGE_OPENBOX_BLOCK" -eq 1 ]]; then
+  AUTOSTART_FILE=""
+  if [[ -n "$UI_KIOSK_HOME" ]]; then
+    AUTOSTART_FILE="$UI_KIOSK_HOME/.config/openbox/autostart"
+  fi
+  if [[ -f "$AUTOSTART_FILE" ]]; then
+    awk '
+      BEGIN { skip=0 }
+      /--- BEGIN Pantalla_reloj AUTOSTART \(managed\) ---/ { skip=1; next }
+      /--- END Pantalla_reloj AUTOSTART \(managed\) ---/ { skip=0; next }
+      skip==0 { print }
+    ' "$AUTOSTART_FILE" > "${AUTOSTART_FILE}.clean" && mv -f "${AUTOSTART_FILE}.clean" "$AUTOSTART_FILE"
+    chown "$UI_KIOSK_USER":"$UI_KIOSK_USER" "$AUTOSTART_FILE" 2>/dev/null || true
+    chmod 0755 "$AUTOSTART_FILE" 2>/dev/null || true
+    echo "[INFO] Bloque de autostart purgado."
   fi
 fi
 
