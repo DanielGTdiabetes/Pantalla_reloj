@@ -13,13 +13,6 @@ warn(){ printf "\033[1;33m[WARN]\033[0m %s\n" "$*"; }
 err(){ printf "\033[1;31m[ERR ]\033[0m %s\n" "$*" >&2; }
 die(){ err "$*"; exit 1; }
 
-# === Helpers seguros para entornos sin D-Bus o headless ===
-has_dbus_user() {
-  local target="${1:-$USER}"
-  command -v loginctl >/dev/null 2>&1 || return 1
-  loginctl show-user "$target" >/dev/null 2>&1
-}
-
 run_userctl() {
   local target="$USER"
   local use_login=0
@@ -55,35 +48,26 @@ run_userctl() {
   local cmd=("$@")
   local cmd_desc="${cmd[*]}"
 
-  if has_dbus_user "$target"; then
-    local sudo_cmd=(sudo -u "$target")
-    if (( use_login )); then
-      sudo_cmd+=(--login)
-    fi
-    if ((${#env_args[@]} > 0)); then
-      sudo_cmd+=(env "${env_args[@]}")
-    fi
-    sudo_cmd+=(systemctl --user)
-    sudo_cmd+=("${cmd[@]}")
-    if ! "${sudo_cmd[@]}"; then
-      echo "[WARN] Fallo leve: systemctl --user ${cmd_desc} (usuario: ${target})"
-      return 1
-    fi
-  else
-    echo "[SKIP] D-Bus no disponible para usuario '${target}'. Omitido: systemctl --user ${cmd_desc}"
+  local sudo_cmd=(sudo -u "$target")
+  if (( use_login )); then
+    sudo_cmd+=(--login)
+  fi
+  if ((${#env_args[@]} > 0)); then
+    sudo_cmd+=(env "${env_args[@]}")
+  fi
+  sudo_cmd+=(systemctl --user)
+  sudo_cmd+=("${cmd[@]}")
+  if ! "${sudo_cmd[@]}"; then
+    echo "[WARN] Fallo leve: systemctl --user ${cmd_desc} (usuario: ${target})"
+    return 1
   fi
 }
 
 run_sysctl() {
   local cmd_desc="$*"
-  if systemctl is-system-running >/dev/null 2>&1; then
-    if ! systemctl "$@"; then
-      echo "[WARN] Fallo leve: systemctl ${cmd_desc}"
-      return 1
-    fi
-  else
-    echo "[SKIP] D-Bus de sistema no disponible. Omitido: systemctl ${cmd_desc}"
-    return 2
+  if ! systemctl "$@"; then
+    echo "[WARN] Fallo leve: systemctl ${cmd_desc}"
+    return 1
   fi
 }
 
@@ -274,42 +258,56 @@ disable_autostart_file() {
   fi
 }
 
-setup_blitzortung_relay() {
-  local REAL_USER="${SUDO_USER:-$USER}"
+setup_blitzortung_ws_client() {
   local TARGET_BASE="/opt/blitzortung"
-  local RELAY_DIR="$TARGET_BASE/ws_relay"
+  local CLIENT_DIR="$TARGET_BASE/ws_client"
   local VENV="$TARGET_BASE/.venv"
-  local SERVICE_DIR="/home/${REAL_USER}/.config/systemd/user"
-  local SERVICE_DST="$SERVICE_DIR/blitz_relay.service"
-  local RELAY_SRC="$REPO_DIR/backend/extras/blitz_relay.py"
-  local SERVICE_SRC="$REPO_DIR/backend/extras/blitz_relay.service"
+  local ZIP_SRC="${APP_HOME}/homeassistant-blitzortung-master.zip"
+  local ZIP_DIR="$TARGET_BASE/homeassistant-blitzortung-master"
+  local REPO_CLIENT_DIR="$REPO_DIR/opt/blitzortung/ws_client"
+  local SERVICE_SRC="$REPO_DIR/system/user/blitz_ws_client.service"
+  local SERVICE_DST="/home/dani/.config/systemd/user/blitz_ws_client.service"
 
-  echo "[INFO] Configurando Blitzortung (relay WS→MQTT real)..."
+  log "Configurando Blitzortung WS→MQTT…"
 
-  sudo mkdir -p "$RELAY_DIR" /var/log/pantalla
-  sudo chown -R "$REAL_USER:$REAL_USER" "$TARGET_BASE" /var/log/pantalla
+  mkdir -p "$CLIENT_DIR" /var/log/pantalla
 
   if [[ ! -d "$VENV" ]]; then
-    echo "[INFO] Creando entorno virtual Blitzortung..."
-    sudo -u "$REAL_USER" python3 -m venv "$VENV"
-    sudo -u "$REAL_USER" "$VENV/bin/pip" install -q --upgrade pip
-    sudo -u "$REAL_USER" "$VENV/bin/pip" install -q aiohttp paho-mqtt
-  else
-    sudo -u "$REAL_USER" "$VENV/bin/pip" install -q --upgrade aiohttp paho-mqtt || true
+    log "  Creando entorno virtual en $VENV"
+    python3 -m venv "$VENV"
   fi
 
-  install -m 755 "$RELAY_SRC" "$RELAY_DIR/relay.py"
-  sudo chown "$REAL_USER:$REAL_USER" "$RELAY_DIR/relay.py"
+  "$VENV/bin/pip" install -q --upgrade pip >/dev/null 2>&1 || true
+  "$VENV/bin/pip" install -q aiohttp paho-mqtt
 
-  sudo -u "$REAL_USER" mkdir -p "$SERVICE_DIR"
-  sudo -u "$REAL_USER" install -m 644 "$SERVICE_SRC" "$SERVICE_DST"
+  if [[ -f "$ZIP_SRC" ]]; then
+    log "  Descomprimiendo paquete Blitzortung desde $ZIP_SRC"
+    unzip -oq "$ZIP_SRC" -d "$TARGET_BASE"
+    if [[ -f "$ZIP_DIR/ws_client/ws_client.py" ]]; then
+      install -Dm755 "$ZIP_DIR/ws_client/ws_client.py" "$CLIENT_DIR/ws_client.py"
+    fi
+  fi
 
-  sudo loginctl enable-linger "$REAL_USER" >/dev/null 2>&1 || true
-  run_userctl --user "$REAL_USER" --login -- daemon-reload || true
-  run_userctl --user "$REAL_USER" --login -- enable --now blitz_relay.service || true
+  if [[ ! -f "$CLIENT_DIR/ws_client.py" && -f "$REPO_CLIENT_DIR/ws_client.py" ]]; then
+    log "  Copiando ws_client.py desde el repositorio"
+    install -Dm755 "$REPO_CLIENT_DIR/ws_client.py" "$CLIENT_DIR/ws_client.py"
+  fi
 
-  echo "[CHECK] MQTT Blitzortung relay:"
-  mosquitto_sub -h 127.0.0.1 -t 'blitzortung/#' -C 1 -W 3 | jq . || echo "⚠️ Esperando primeros strikes (puede tardar unos minutos)"
+  if [[ -f "$CLIENT_DIR/ws_client.py" ]]; then
+    chmod +x "$CLIENT_DIR/ws_client.py"
+  fi
+
+  if id dani >/dev/null 2>&1; then
+    chown -R dani:dani "$TARGET_BASE"
+  fi
+
+  if id dani >/dev/null 2>&1; then
+    mkdir -p "$(dirname "$SERVICE_DST")"
+    if [[ -f "$SERVICE_SRC" ]]; then
+      install -m 644 "$SERVICE_SRC" "$SERVICE_DST"
+      chown dani:dani "$SERVICE_DST"
+    fi
+  fi
 }
 
 if [[ -d "${APP_HOME}/.config/autostart" ]]; then
@@ -556,23 +554,19 @@ if [[ -f "$XORG_SERVICE_SRC" ]]; then
   install -D -m 644 "$XORG_SERVICE_SRC" "$SYSTEMD_DIR/$XORG_SERVICE_NAME"
 fi
 
-run_sysctl daemon-reload
-run_sysctl enable --now "${BACKEND_SVC_BASENAME}@$APP_USER" || true
-run_sysctl enable --now "pantalla-xorg@$UI_USER" || true
-run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- start "$OPENBOX_SERVICE_NAME" || true
-run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- start "$UI_SERVICE_NAME" || true
+run_sysctl daemon-reload || true
 
 echo "[INFO] Instalando Mosquitto (loopback seguro)…"
-sudo apt install -y mosquitto mosquitto-clients >/dev/null 2>&1 || true
+apt-get install -y mosquitto mosquitto-clients
 
 # Configuración loopback limpia
-sudo bash -c 'cat > /etc/mosquitto/conf.d/loopback.conf <<EOF
+cat >/etc/mosquitto/conf.d/loopback.conf <<'EOF'
 listener 1883 127.0.0.1
 allow_anonymous true
 persistence false
 connection_messages false
-EOF'
-run_sysctl enable --now mosquitto || true
+EOF
+systemctl enable --now mosquitto || true
 
 if nc -z 127.0.0.1 1883 2>/dev/null; then
   echo "[OK] Mosquitto activo en loopback."
@@ -580,7 +574,7 @@ else
   echo "[WARN] Mosquitto no responde en 127.0.0.1:1883 (se verificará tras login)."
 fi
 
-setup_blitzortung_relay || { echo "[ERR] Falló la configuración de Blitzortung"; exit 1; }
+setup_blitzortung_ws_client || { echo "[ERR] Falló la configuración de Blitzortung"; exit 1; }
 
 # Refrescar permisos de logs tras la instalación del relay
 sudo mkdir -p /var/log/mosquitto /var/log/pantalla
@@ -857,42 +851,6 @@ if command -v mosquitto_sub >/dev/null 2>&1; then
     echo "  ✅ Mosquitto operativo"
   else
     echo "  ⚠️ Mosquitto no responde (loopback)"
-  fi
-fi
-
-if has_dbus_user "$UI_USER"; then
-  if run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- is-active "$OPENBOX_SERVICE_NAME" >/dev/null 2>&1; then
-    echo "  ✅ Openbox (usuario) activo"
-  else
-    echo "  ⚠️ Openbox pendiente de arranque"
-  fi
-  if run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- is-active "$UI_SERVICE_NAME" >/dev/null 2>&1; then
-    echo "  ✅ Servicio UI habilitado"
-  else
-    echo "  ⚠️ Servicio UI pendiente (systemctl --user status $UI_SERVICE_NAME)"
-  fi
-else
-  echo "  ⚠️ Servicios de usuario diferidos (sin D-Bus)."
-fi
-
-if ! has_dbus_user "$UI_USER"; then
-  echo "[INFO] Instalación headless detectada. Creando tarea post-login para activar servicios de usuario..."
-  UI_HOME="$(getent passwd "$UI_USER" | cut -d: -f6)"
-  if [[ -n "$UI_HOME" ]]; then
-    sudo -u "$UI_USER" mkdir -p "$UI_HOME/.config/autostart"
-    AUTOSTART_FILE="$UI_HOME/.config/autostart/pantalla-postlogin.desktop"
-    POSTLOGIN_CMD="/bin/sh -lc '/usr/bin/systemctl --user daemon-reload && for svc in ${BACKEND_SVC_BASENAME}@${APP_USER} pantalla-openbox.service pantalla-ui.service blitz_relay.service; do /usr/bin/systemctl --user enable --now \"\$svc\" 2>/dev/null || true; done'"
-    cat <<EOF | sudo tee "$AUTOSTART_FILE" >/dev/null
-[Desktop Entry]
-Type=Application
-Name=Pantalla Post-Login
-Exec=$POSTLOGIN_CMD
-X-GNOME-Autostart-enabled=true
-EOF
-    sudo chown "$UI_USER:$UI_USER" "$AUTOSTART_FILE"
-    echo "[OK] Servicios diferidos correctamente: se activarán al iniciar sesión gráfica (usuario: $UI_USER)"
-  else
-    warn "No se pudo determinar el HOME de $UI_USER para registrar autostart post-login."
   fi
 fi
 
