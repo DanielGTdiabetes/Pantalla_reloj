@@ -58,5 +58,33 @@
     "name": "Sant Pasqual Baylón",
     "month": 5,
     "day": 17
+  },
+  "ui": {
+    "mode": "geoscope_with_overlay",
+    "overlay": {
+      "enabled": true,
+      "opacity": 0.28,
+      "blur_px": 6,
+      "corner_radius": 20,
+      "position": "bottom",
+      "margin_px": 24,
+      "dwell_seconds": 15,
+      "transition_ms": 450,
+      "order": [
+        "weather_now",
+        "weather_week",
+        "moon",
+        "season",
+        "ephemeris",
+        "news",
+        "saints",
+        "calendar"
+      ]
+    }
+  },
+  "geoscope": {
+    "enabled": true,
+    "rotate": true,
+    "fps_cap": 30
   }
 }

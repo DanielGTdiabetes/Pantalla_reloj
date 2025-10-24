@@ -80,6 +80,50 @@
         "radius_km": { "type": "integer", "minimum": 0, "maximum": 2000 },
         "time_window_min": { "type": "integer", "minimum": 1, "maximum": 360 }
       }
+    },
+    "ui": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "type": "string" },
+        "overlay": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+            "blur_px": { "type": "integer", "minimum": 0, "maximum": 128 },
+            "corner_radius": { "type": "integer", "minimum": 0, "maximum": 200 },
+            "position": { "type": "string", "enum": ["top", "bottom", "left", "right", "center"] },
+            "margin_px": { "type": "integer", "minimum": 0, "maximum": 200 },
+            "dwell_seconds": { "type": "integer", "minimum": 3, "maximum": 180 },
+            "transition_ms": { "type": "integer", "minimum": 100, "maximum": 10000 },
+            "order": {
+              "type": "array",
+              "items": { "type": "string", "enum": [
+                "weather_now",
+                "weather_week",
+                "moon",
+                "season",
+                "ephemeris",
+                "news",
+                "saints",
+                "calendar"
+              ] },
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    },
+    "geoscope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "rotate": { "type": "boolean" },
+        "fps_cap": { "type": "integer", "minimum": 1, "maximum": 120 }
+      }
     }
   }
 }
