@@ -143,8 +143,6 @@ USER_SYSTEMD_DIR="/etc/systemd/user"
 LEGACY_UI_SERVICE_NAME="pantalla-ui.service"
 OPENBOX_SERVICE_NAME="pantalla-openbox.service"
 OPENBOX_SERVICE_SRC="$REPO_DIR/system/user/$OPENBOX_SERVICE_NAME"
-UI_SERVICE_TEMPLATE="pantalla-ui@.service"
-UI_SERVICE_TEMPLATE_SRC="$REPO_DIR/services/$UI_SERVICE_TEMPLATE"
 UI_LAUNCHER_SRC="$REPO_DIR/scripts/pantalla-ui-launch.sh"
 UI_LAUNCHER_DST="/usr/local/bin/pantalla-ui-launch.sh"
 
@@ -273,28 +271,48 @@ if [[ -n "$LAN_IP" ]]; then
 fi
 
 # --- Autostart de Openbox con rotación automática si está en vertical (480x1920) ---
-log "Preparando autostart de Openbox con rotación automática (480x1920 -> horizontal)..."
+log "Configurando Openbox autostart para Chromium kiosk…"
 sudo -u "${APP_USER}" mkdir -p "${APP_HOME}/.config/openbox"
 
-sudo tee "${APP_HOME}/.config/openbox/autostart" >/dev/null <<'EOF'
-#!/bin/bash
-# Rotar Wisecoco 8.8" a horizontal si el servidor X arranca en 480x1920 (portrait)
-OUT="$(xrandr --query | awk '/ connected primary| connected/{print $1; exit}')"
-if xrandr | grep -qE "$OUT[[:space:]]+connected[[:space:]]+480x1920"; then
-  # Cambia "left" por "right" si tu panel concreto invierte el sentido
-  xrandr --output "$OUT" --rotate left
-fi
+AUTOSTART_FILE="${APP_HOME}/.config/openbox/autostart"
+TMP_AUTOSTART="$(mktemp)"
+cat >"$TMP_AUTOSTART" <<'EOF'
 
-# Mantén la pantalla despierta en kiosko
+--- BEGIN Pantalla_reloj AUTOSTART (managed) ---
+# Evita que se apague la pantalla o salte el salvapantallas
 xset -dpms
 xset s off
-xset s noblank
 
-# Ocultar cursor en kiosko (descomenta si quieres):
-# unclutter -idle 0.5 &
+# Pequeña espera para asegurar DISPLAY=:0 listo
+(sleep 2;
+chromium-browser --kiosk http://127.0.0.1 \
+  --noerrdialogs --disable-session-crashed-bubble \
+  --incognito --start-fullscreen \
+  --disable-pinch --overscroll-history-navigation=0 \
+  --no-first-run --fast --fast-start \
+  --disable-translate --disable-infobars \
+  --disable-features=TranslateUI
+) &
 
-# El servicio systemd pantalla-ui.service se encarga de lanzar Chromium en modo kiosko.
+--- END Pantalla_reloj AUTOSTART (managed) ---
+
 EOF
+
+if [[ -f "$AUTOSTART_FILE" ]]; then
+  awk '
+    BEGIN { skip=0 }
+    /--- BEGIN Pantalla_reloj AUTOSTART \(managed\) ---/ { skip=1; next }
+    /--- END Pantalla_reloj AUTOSTART \(managed\) ---/ { skip=0; next }
+    skip==0 { print }
+  ' "$AUTOSTART_FILE" > "${AUTOSTART_FILE}.clean" || true
+  cat "${AUTOSTART_FILE}.clean" "$TMP_AUTOSTART" > "$AUTOSTART_FILE"
+  rm -f "${AUTOSTART_FILE}.clean"
+else
+  cp -f "$TMP_AUTOSTART" "$AUTOSTART_FILE"
+fi
+rm -f "$TMP_AUTOSTART"
+chown "${APP_USER}:${APP_USER}" "$AUTOSTART_FILE"
+chmod 0755 "$AUTOSTART_FILE"
 
 log "Preparando /etc/Xwrapper.config para permitir Xorg sin sesión gráfica…"
 cat >/etc/Xwrapper.config <<'EOF'
@@ -383,17 +401,12 @@ UI_SYSTEMD_ENV=("XDG_RUNTIME_DIR=$UI_RUNTIME_DIR" "DBUS_SESSION_BUS_ADDRESS=unix
 run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- daemon-reload || true
 run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- enable "$OPENBOX_SERVICE_NAME" || true
 
-echo "[INFO] Configurando servicio UI (Chromium kiosk)…"
+echo "[INFO] Deshabilitando UI por systemd (si existe)…"
 UI_HOME="$(getent passwd "$UI_USER" | cut -d: -f6)"
-if [[ -z "$UI_HOME" ]]; then
-  warn "No se pudo determinar el HOME de $UI_USER para instalar la unidad pantalla-ui@.service"
-else
-  sudo -u "$UI_USER" mkdir -p "$UI_HOME/.config/systemd/user"
-  install -m 644 -o "$UI_USER" -g "$UI_USER" "$UI_SERVICE_TEMPLATE_SRC" "$UI_HOME/.config/systemd/user/$UI_SERVICE_TEMPLATE"
+if [[ -n "$UI_HOME" ]]; then
+  run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- disable --now "pantalla-ui@${UI_USER}.service" 2>/dev/null || true
+  rm -f "$UI_HOME/.config/systemd/user/pantalla-ui@.service" 2>/dev/null || true
   run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- daemon-reload || true
-  run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- enable --now "pantalla-ui@${UI_USER}.service" || true
-  sleep 2
-  pgrep -a chromium || echo "[WARN] Chromium kiosk aún no activo, se reintentará en próximo arranque"
 fi
 
 sudo chown -R "${APP_USER}:${APP_USER}" "${APP_HOME}/.config/openbox"
@@ -846,6 +859,26 @@ else
   echo "[SKIP] Precarga de endpoints (backend no listo)"
   echo "[SKIP] Parseo con jq omitido: backend no listo."
 fi
+
+echo "[INFO] Reiniciando sesión Openbox para aplicar autostart…"
+run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- restart pantalla-openbox || true
+sleep 2
+
+echo "[CHECK] Comprobaciones de entorno gráfico:"
+pgrep Xorg     >/dev/null && echo "✅ Xorg activo"     || echo "❌ Xorg no activo"
+pgrep openbox  >/dev/null && echo "✅ Openbox activo"  || echo "❌ Openbox no activo"
+
+# Darle unos segundos a Chromium tras restart
+sleep 3
+if pgrep chromium >/dev/null; then
+  echo "✅ Chromium kiosk activo"
+else
+  echo "⚠️ Chromium no detectado aún. Si la pantalla sigue en negro, reinicia la máquina o revisa ~/.config/openbox/autostart"
+fi
+
+# Comprobación HTTP
+curl -sS -m 5 -o /dev/null -w "Frontend (nginx) HTTP: %{http_code}\n" http://127.0.0.1/ || true
+curl -sS -m 5 -o /dev/null -w "Backend (FastAPI) HTTP: %{http_code}\n" http://127.0.0.1:8081/api/health || true
 
 # Ajuste de zona horaria (solo si no está ya configurada)
 if ! timedatectl | grep -q "Time zone: ${TZ_DEFAULT}"; then
