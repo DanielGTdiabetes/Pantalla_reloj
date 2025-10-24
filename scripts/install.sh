@@ -139,7 +139,8 @@ ENV_DIR="/etc/pantalla-dash"
 LOG_DIR="/var/log/pantalla-dash"
 NGINX_SITE="/etc/nginx/sites-available/pantalla"
 SYSTEMD_DIR="/etc/systemd/system"
-USER_SYSTEMD_DIR="/etc/systemd/user"
+USER_SYSTEMD_DIR="/etc/xdg/systemd/user"
+LEGACY_USER_SYSTEMD_DIR="/etc/systemd/user"
 LEGACY_UI_SERVICE_NAME="pantalla-ui.service"
 OPENBOX_SERVICE_NAME="pantalla-openbox.service"
 OPENBOX_SERVICE_SRC="$REPO_DIR/system/user/$OPENBOX_SERVICE_NAME"
@@ -376,15 +377,9 @@ if [[ -f "$SYSTEMD_DIR/$LEGACY_UI_SERVICE_NAME" ]]; then
   run_sysctl daemon-reload || true
 fi
 
-if [[ -f "$USER_SYSTEMD_DIR/$LEGACY_UI_SERVICE_NAME" ]]; then
+if [[ -f "$LEGACY_USER_SYSTEMD_DIR/$LEGACY_UI_SERVICE_NAME" ]]; then
   warn "  Eliminando unidad de usuario legacy ${LEGACY_UI_SERVICE_NAME}."
-  rm -f "$USER_SYSTEMD_DIR/$LEGACY_UI_SERVICE_NAME"
-fi
-
-# Asegurar que el directorio systemd de usuario existe
-mkdir -p "$USER_SYSTEMD_DIR"
-if [[ -f "$OPENBOX_SERVICE_SRC" ]]; then
-  install -D -m 644 "$OPENBOX_SERVICE_SRC" "$USER_SYSTEMD_DIR/$OPENBOX_SERVICE_NAME"
+  rm -f "$LEGACY_USER_SYSTEMD_DIR/$LEGACY_UI_SERVICE_NAME"
 fi
 
 UI_UID="$(id -u "$UI_USER")"
@@ -398,8 +393,31 @@ fi
 
 UI_SYSTEMD_ENV=("XDG_RUNTIME_DIR=$UI_RUNTIME_DIR" "DBUS_SESSION_BUS_ADDRESS=unix:path=$UI_RUNTIME_DIR/bus")
 
-run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- daemon-reload || true
-run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- enable "$OPENBOX_SERVICE_NAME" || true
+echo "[INFO] Configurando servicio Openbox con entorno D-Bus…"
+sudo mkdir -p "$USER_SYSTEMD_DIR"
+if [[ -f "$OPENBOX_SERVICE_SRC" ]]; then
+  sudo cp -f "$OPENBOX_SERVICE_SRC" "$USER_SYSTEMD_DIR/$OPENBOX_SERVICE_NAME"
+fi
+if [[ -f "$LEGACY_USER_SYSTEMD_DIR/$OPENBOX_SERVICE_NAME" ]]; then
+  sudo rm -f "$LEGACY_USER_SYSTEMD_DIR/$OPENBOX_SERVICE_NAME"
+fi
+if [[ ${SYSTEMD_DBUS_AVAILABLE:-1} -eq 1 ]]; then
+  sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user daemon-reload || true
+  sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user enable --now "$OPENBOX_SERVICE_NAME" || true
+else
+  echo "[INFO] (skip) systemctl --user daemon-reload (systemd D-Bus no disponible)"
+  echo "[INFO] (skip) systemctl --user enable --now $OPENBOX_SERVICE_NAME"
+fi
+sleep 3
+
+echo "[CHECK] Verificando ejecución de autostart…"
+if [[ ${SYSTEMD_DBUS_AVAILABLE:-1} -eq 1 ]]; then
+  sudo -u "$UI_USER" env "${UI_SYSTEMD_ENV[@]}" systemctl --user restart pantalla-openbox || true
+else
+  echo "[INFO] (skip) systemctl --user restart pantalla-openbox"
+fi
+sleep 6
+pgrep chromium >/dev/null && echo "✅ Chromium lanzado desde autostart" || echo "❌ Chromium no lanzado (revisar logs Openbox)"
 
 echo "[INFO] Deshabilitando UI por systemd (si existe)…"
 UI_HOME="$(getent passwd "$UI_USER" | cut -d: -f6)"
