@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
+import ssl
 import threading
 import time
 from dataclasses import dataclass
@@ -26,6 +28,16 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
+class _TLSConfig:
+    enabled: bool
+    ca_certs: Optional[str]
+    certfile: Optional[str]
+    keyfile: Optional[str]
+    insecure: bool
+    version: Optional[str]
+
+
+@dataclass(frozen=True)
 class _RuntimeConfig:
     enabled: bool
     host: str
@@ -34,6 +46,9 @@ class _RuntimeConfig:
     radius_km: int
     window_minutes: int
     location: Optional[Tuple[float, float]]
+    username: Optional[str]
+    password: Optional[str]
+    tls: Optional[_TLSConfig]
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -81,6 +96,273 @@ def _coerce_timestamp(value: Any) -> Optional[float]:
     if not math.isfinite(ts):
         return None
     return ts
+
+
+def _coerce_str(value: Any) -> Optional[str]:
+    if isinstance(value, str):
+        trimmed = value.strip()
+        return trimmed or None
+    return None
+
+
+def _coerce_bool(value: Any) -> Optional[bool]:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on", "enable", "enabled", "require", "required"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off", "disable", "disabled"}:
+            return False
+    return None
+
+
+def _normalize_path(value: Any) -> Optional[str]:
+    candidate = _coerce_str(value)
+    if not candidate:
+        return None
+    expanded = os.path.expandvars(os.path.expanduser(candidate))
+    return expanded or None
+
+
+_USERNAME_KEYS = (
+    "username",
+    "user",
+    "proxy_username",
+    "proxy_user",
+    "auth_username",
+    "authUser",
+    "authUserName",
+    "mqtt_username",
+    "mqtt_user",
+    "mqttUser",
+    "mqttUsername",
+)
+
+
+_PASSWORD_KEYS = (
+    "password",
+    "pass",
+    "proxy_password",
+    "proxy_pass",
+    "auth_password",
+    "authPass",
+    "secret",
+    "mqtt_password",
+    "mqttPassword",
+)
+
+
+def _extract_first(source: Dict[str, Any], keys: Tuple[str, ...]) -> Optional[str]:
+    for key in keys:
+        if key in source:
+            candidate = _coerce_str(source.get(key))
+            if candidate:
+                return candidate
+    return None
+
+
+def _extract_credentials(*payloads: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    username: Optional[str] = None
+    password: Optional[str] = None
+    nested_candidates = ("auth", "credentials", "proxy", "authentication", "secrets", "mqtt", "options")
+
+    for payload in payloads:
+        if not isinstance(payload, dict):
+            continue
+        username = username or _extract_first(payload, _USERNAME_KEYS)
+        password = password or _extract_first(payload, _PASSWORD_KEYS)
+        for nested_key in nested_candidates:
+            nested = payload.get(nested_key)
+            if isinstance(nested, dict):
+                if not username:
+                    username = _extract_first(nested, _USERNAME_KEYS)
+                if not password:
+                    password = _extract_first(nested, _PASSWORD_KEYS)
+        if username and password:
+            break
+
+    return username, password
+
+
+_TLS_SECTION_KEYS = ("tls", "ssl", "tls_config", "tlsOptions", "tls_options", "security", "proxy")
+
+
+def _extract_tls_options(*payloads: Dict[str, Any]) -> Optional[_TLSConfig]:
+    sections: List[Dict[str, Any]] = []
+    explicit_disable = False
+
+    for payload in payloads:
+        if not isinstance(payload, dict):
+            continue
+        sections.append(payload)
+        for key in _TLS_SECTION_KEYS:
+            nested = payload.get(key)
+            if isinstance(nested, dict):
+                sections.append(nested)
+
+    if not sections:
+        return None
+
+    enabled = False
+    insecure = False
+    ca_certs: Optional[str] = None
+    certfile: Optional[str] = None
+    keyfile: Optional[str] = None
+    version: Optional[str] = None
+
+    for section in sections:
+        bool_fields = {
+            "enabled": section.get("enabled"),
+            "use_tls": section.get("use_tls"),
+            "useTls": section.get("useTls"),
+            "require_tls": section.get("require_tls"),
+            "requireTls": section.get("requireTls"),
+            "ssl": section.get("ssl"),
+            "tls": section.get("tls"),
+        }
+        for key, raw_value in bool_fields.items():
+            coerced = _coerce_bool(raw_value)
+            if coerced is None:
+                continue
+            if key == "enabled" and coerced is False:
+                explicit_disable = True
+            elif coerced:
+                enabled = True
+
+        mode_value = section.get("mode")
+        if isinstance(mode_value, str) and mode_value.strip().lower() in {"tls", "ssl", "secure"}:
+            enabled = True
+
+        insecure_candidates = (
+            section.get("insecure"),
+            section.get("allowInsecure"),
+            section.get("tls_insecure"),
+            section.get("skip_verify"),
+            section.get("skipVerify"),
+        )
+        for raw_value in insecure_candidates:
+            coerced = _coerce_bool(raw_value)
+            if coerced is True:
+                insecure = True
+            elif coerced is False and insecure:
+                insecure = False
+
+        if ca_certs is None:
+            ca_certs = _normalize_path(section.get("ca"))
+        if ca_certs is None:
+            ca_certs = _normalize_path(section.get("ca_cert"))
+        if ca_certs is None:
+            ca_certs = _normalize_path(section.get("caCert"))
+        if ca_certs is None:
+            ca_certs = _normalize_path(section.get("ca_file"))
+        if ca_certs is None:
+            ca_certs = _normalize_path(section.get("caFile"))
+        if ca_certs is None:
+            ca_certs = _normalize_path(section.get("ca_path"))
+        if ca_certs is None:
+            ca_certs = _normalize_path(section.get("caPath"))
+        if ca_certs is None:
+            ca_certs = _normalize_path(section.get("cafile"))
+        if ca_certs is None:
+            ca_certs = _normalize_path(section.get("ca_certs"))
+
+        if certfile is None:
+            certfile = _normalize_path(section.get("cert"))
+        if certfile is None:
+            certfile = _normalize_path(section.get("certfile"))
+        if certfile is None:
+            certfile = _normalize_path(section.get("certFile"))
+        if certfile is None:
+            certfile = _normalize_path(section.get("clientCert"))
+        if certfile is None:
+            certfile = _normalize_path(section.get("certificate"))
+        if certfile is None:
+            certfile = _normalize_path(section.get("cert_path"))
+        if certfile is None:
+            certfile = _normalize_path(section.get("certPath"))
+
+        if keyfile is None:
+            keyfile = _normalize_path(section.get("key"))
+        if keyfile is None:
+            keyfile = _normalize_path(section.get("keyfile"))
+        if keyfile is None:
+            keyfile = _normalize_path(section.get("keyFile"))
+        if keyfile is None:
+            keyfile = _normalize_path(section.get("clientKey"))
+        if keyfile is None:
+            keyfile = _normalize_path(section.get("privateKey"))
+        if keyfile is None:
+            keyfile = _normalize_path(section.get("key_path"))
+        if keyfile is None:
+            keyfile = _normalize_path(section.get("keyPath"))
+
+        if version is None:
+            version = _coerce_str(section.get("version"))
+        if version is None:
+            version = _coerce_str(section.get("tls_version"))
+        if version is None:
+            version = _coerce_str(section.get("tlsVersion"))
+        if version is None:
+            version = _coerce_str(section.get("protocol"))
+
+    if explicit_disable:
+        return None
+
+    if not enabled and any(value is not None for value in (ca_certs, certfile, keyfile)):
+        enabled = True
+
+    if not enabled:
+        return None
+
+    return _TLSConfig(
+        enabled=True,
+        ca_certs=ca_certs,
+        certfile=certfile,
+        keyfile=keyfile,
+        insecure=insecure,
+        version=version,
+    )
+
+
+def _resolve_tls_version(version: Optional[str]) -> Optional[int]:
+    candidate = _coerce_str(version)
+    if not candidate:
+        return None
+
+    normalized = candidate.replace(" ", "").replace("-", "")
+    normalized = normalized.upper().replace(".", "_")
+
+    mapping = (
+        ("TLS", "PROTOCOL_TLS"),
+        ("TLS_CLIENT", "PROTOCOL_TLS_CLIENT"),
+        ("TLSV1", "PROTOCOL_TLSv1"),
+        ("TLSV1_1", "PROTOCOL_TLSv1_1"),
+        ("TLSV1_2", "PROTOCOL_TLSv1_2"),
+        ("TLSV1_3", "PROTOCOL_TLSv1_3"),
+    )
+    for key, attr_name in mapping:
+        if normalized == key:
+            attr = getattr(ssl, attr_name, None)
+            if isinstance(attr, int):
+                return attr
+
+    for attr_name in {
+        candidate,
+        normalized,
+        normalized.lower(),
+        f"PROTOCOL_{normalized}",
+        f"PROTOCOL_{normalized.lower()}",
+        normalized.replace("TLSV", "TLSv"),
+        f"PROTOCOL_{normalized.replace('TLSV', 'TLSv')}",
+    }:
+        attr = getattr(ssl, attr_name, None)
+        if isinstance(attr, int):
+            return attr
+
+    return None
 
 
 def _extract_lat(data: Dict[str, Any]) -> Optional[float]:
@@ -169,6 +451,31 @@ def _build_runtime_config(app_config: Optional[AppConfig]) -> Optional[_RuntimeC
     radius = int(raw_radius or 0)
     window = int(raw_window or 30)
     location = _resolve_location(app_config)
+
+    username: Optional[str] = None
+    password: Optional[str] = None
+    tls_config: Optional[_TLSConfig] = None
+
+    if isinstance(extra, dict):
+        extra_username, extra_password = _extract_credentials(extra)
+        if extra_username:
+            username = extra_username
+        if extra_password:
+            password = extra_password
+        tls_candidate = _extract_tls_options(extra)
+        if tls_candidate is not None:
+            tls_config = tls_candidate
+
+    if isinstance(mqtt_extra, dict):
+        mqtt_username, mqtt_password = _extract_credentials(mqtt_extra)
+        if mqtt_username:
+            username = mqtt_username
+        if mqtt_password:
+            password = mqtt_password
+        tls_from_mqtt = _extract_tls_options(mqtt_extra)
+        if tls_from_mqtt is not None:
+            tls_config = tls_from_mqtt
+
     return _RuntimeConfig(
         enabled=True,
         host=host,
@@ -177,6 +484,9 @@ def _build_runtime_config(app_config: Optional[AppConfig]) -> Optional[_RuntimeC
         radius_km=max(0, radius),
         window_minutes=max(1, window),
         location=location,
+        username=username,
+        password=password,
+        tls=tls_config,
     )
 
 
@@ -363,6 +673,40 @@ class BlitzMQTTConsumer:
                 "last_error": None,
             }
         )
+
+        if config.username or config.password:
+            try:
+                client.username_pw_set(config.username or "", config.password)
+            except Exception as exc:
+                raise RuntimeError(f"No se pudo configurar credenciales MQTT: {exc}") from exc
+
+        tls_config = config.tls
+        if tls_config and tls_config.enabled:
+            tls_kwargs: Dict[str, Any] = {}
+            if tls_config.ca_certs:
+                tls_kwargs["ca_certs"] = tls_config.ca_certs
+            if tls_config.certfile:
+                tls_kwargs["certfile"] = tls_config.certfile
+            if tls_config.keyfile:
+                tls_kwargs["keyfile"] = tls_config.keyfile
+            version = _resolve_tls_version(tls_config.version)
+            if tls_config.version and version is None:
+                logger.warning(
+                    "Versión TLS desconocida '%s'; usando predeterminada", tls_config.version
+                )
+            if version is not None:
+                tls_kwargs["tls_version"] = version
+            try:
+                client.tls_set(**tls_kwargs)
+            except Exception as exc:
+                raise RuntimeError(f"No se pudo configurar TLS para MQTT: {exc}") from exc
+            if tls_config.insecure:
+                try:
+                    client.tls_insecure_set(True)
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"No se pudo ajustar verificación TLS MQTT: {exc}"
+                    ) from exc
 
         client.connect(config.host, config.port, keepalive=30)
 
