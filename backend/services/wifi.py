@@ -128,6 +128,15 @@ def _extract_wifi_devices(lines: Sequence[str]) -> Dict[str, Dict[str, Optional[
     return devices
 
 
+def list_wifi_interfaces() -> List[str]:
+    result = _run_nmcli(["-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device"])
+    if result.returncode != 0:
+        message = result.stderr.strip() or "No se pudo enumerar interfaces Wi-Fi"
+        raise WifiError(message, stderr=result.stderr, code=result.returncode)
+    devices = _extract_wifi_devices(result.stdout.splitlines())
+    return list(devices.keys())
+
+
 def _validate_wifi_interface(interface: str) -> None:
     result = _run_nmcli(["-t", "-f", "TYPE", "device", "show", interface])
     if result.returncode != 0:

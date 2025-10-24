@@ -10,6 +10,8 @@ from typing import Any, Dict, MutableMapping, Optional
 
 from pydantic import AnyUrl, BaseModel, ConfigDict, Field, ValidationError, validator
 
+from backend.models.config import UiConfig
+
 logger = logging.getLogger(__name__)
 
 JWT_API_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]+={0,2}\.[A-Za-z0-9_-]+={0,2}\.[A-Za-z0-9_-]+={0,2}$")
@@ -286,6 +288,7 @@ class AppConfig(ExtraAllowModel):
     calendar: Optional[CalendarConfig] = None
     locale: Optional[LocaleConfig] = None
     patron: Optional[PatronConfig] = None
+    ui: Optional[UiConfig] = None
 
     def public_view(self) -> Dict[str, Any]:
         return {
@@ -373,6 +376,34 @@ class AppConfig(ExtraAllowModel):
                 if self.patron
                 else {}
             ),
+            "ui": (
+                {
+                    "wifi": {
+                        "preferredInterface": self.ui.wifi.preferredInterface
+                    },
+                    "blitzortung": {
+                        "enabled": self.ui.blitzortung.enabled,
+                        "mode": self.ui.blitzortung.mode,
+                        "mqtt": {
+                            key: value
+                            for key, value in self.ui.blitzortung.mqtt.model_dump().items()
+                            if key
+                            in {
+                                "host",
+                                "port",
+                                "ssl",
+                                "username",
+                                "baseTopic",
+                                "geohash",
+                                "radius_km",
+                            }
+                        },
+                    },
+                    "appearance": self.ui.appearance.model_dump(),
+                }
+                if self.ui
+                else {}
+            ),
         }
 
 
@@ -417,7 +448,7 @@ def read_config() -> AppConfig:
             data.pop("aemet", None)
 
     try:
-        return AppConfig.model_validate(data)
+        config = AppConfig.model_validate(data)
     except ValidationError as exc:
         if using_example:
             logger.warning(
@@ -426,6 +457,52 @@ def read_config() -> AppConfig:
             return AppConfig()
         logger.error("Invalid configuration: %s", exc)
         raise
+
+    default_ui = UiConfig()
+    ui_config = config.ui or default_ui
+
+    wifi_pref = None
+    if config.wifi and config.wifi.preferredInterface:
+        wifi_pref = config.wifi.preferredInterface.strip()
+    raw_ui = data.get("ui") if isinstance(data, dict) else None
+    if isinstance(raw_ui, dict):
+        wifi_data = raw_ui.get("wifi")
+        if isinstance(wifi_data, dict):
+            candidate = str(wifi_data.get("preferredInterface") or "").strip()
+            if candidate:
+                wifi_pref = candidate
+
+    if wifi_pref:
+        if not ui_config.wifi.preferredInterface or ui_config.wifi.preferredInterface == default_ui.wifi.preferredInterface:
+            ui_config = ui_config.model_copy(update={"wifi": {"preferredInterface": wifi_pref}})
+
+    blitz_source = None
+    if isinstance(raw_ui, dict) and isinstance(raw_ui.get("blitzortung"), dict):
+        blitz_source = raw_ui.get("blitzortung")
+    elif config.blitzortung is not None:
+        blitz_source = config.blitzortung.dict(by_alias=True)
+
+    if isinstance(blitz_source, dict):
+        mqtt_source = blitz_source.get("mqtt") if isinstance(blitz_source.get("mqtt"), dict) else {}
+        blitz_update: dict[str, object] = {
+            "enabled": bool(blitz_source.get("enabled", ui_config.blitzortung.enabled)),
+            "mode": str(blitz_source.get("mode") or ui_config.blitzortung.mode or "mqtt"),
+            "mqtt": {
+                "host": str(mqtt_source.get("host") or ui_config.blitzortung.mqtt.host or ""),
+                "port": mqtt_source.get("port", ui_config.blitzortung.mqtt.port),
+                "ssl": bool(mqtt_source.get("ssl", ui_config.blitzortung.mqtt.ssl)),
+                "username": mqtt_source.get("username", ui_config.blitzortung.mqtt.username),
+                "baseTopic": str(mqtt_source.get("baseTopic") or ui_config.blitzortung.mqtt.baseTopic or ""),
+                "geohash": mqtt_source.get("geohash", ui_config.blitzortung.mqtt.geohash),
+                "radius_km": mqtt_source.get("radius_km", ui_config.blitzortung.mqtt.radius_km),
+            },
+        }
+        ui_config = ui_config.model_copy(update={"blitzortung": blitz_update})
+
+    if config.ui != ui_config:
+        config = config.model_copy(update={"ui": ui_config})
+
+    return config
 
 
 def _deep_merge(original: MutableMapping[str, Any], updates: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
@@ -560,4 +637,6 @@ def get_api_key() -> Optional[str]:
 
 def get_wifi_interface(config: Optional[AppConfig] = None) -> Optional[str]:
     cfg = config or read_config()
+    if cfg.ui and cfg.ui.wifi and cfg.ui.wifi.preferredInterface:
+        return cfg.ui.wifi.preferredInterface
     return cfg.wifi.preferredInterface if cfg.wifi else None
