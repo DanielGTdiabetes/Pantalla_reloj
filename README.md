@@ -288,45 +288,28 @@ servicio (`sudo systemctl restart pantalla-xorg@dani`).
 
 MIT (o la licencia original del repositorio si se define).
 
-## Blitzortung WS Client
+## Blitzortung WS Relay
 
-El instalador clona `mrk-its/homeassistant-blitzortung` en `/opt/blitzortung/ws_client` y crea
-un entorno virtual aislado en `/opt/blitzortung/ws_client/.venv`. El servicio
-`blitz_ws_client.service` se ejecuta como unidad de usuario y arranca incluso sin
-sesión gráfica gracias a `loginctl enable-linger`.
+El instalador despliega un relay WebSocket → MQTT real en `/opt/blitzortung/ws_relay/relay.py`
+utilizando un entorno virtual compartido en `/opt/blitzortung/.venv`. El servicio
+`blitz_relay.service` se instala como unidad de usuario (con `loginctl enable-linger`) y
+reenvía strikes desde LightningMaps/Blitzortung hacia Mosquitto (`blitzortung/1.1`).
 
 ### Logs y diagnóstico
 
 ```bash
-journalctl --user -u blitz_ws_client -n 100 --no-pager
-sudo tail -f /var/log/pantalla/blitz_ws_client.log
-sudo tail -f /var/log/pantalla/blitz_ws_client.err
+journalctl --user -u blitz_relay -n 100 --no-pager
+sudo tail -f /var/log/pantalla/blitz_relay.log
+sudo tail -f /var/log/pantalla/blitz_relay.err
 ```
 
 ### Configuración
 
-Las variables de entorno que expone la unidad systemd pueden sobrescribirse en el
-propio servicio o desde `/etc/pantalla-dash/config.json`:
+El tópico MQTT se controla desde `config.json` (`storm.mqtt_topic`). No es necesario definir
+variables adicionales: el relay publica en `blitzortung/1.1` y el backend consume esa ruta.
 
-- `BLITZ_WS_URL` (por defecto vacío, se usa la URL del config o la oficial `wss://ws.blitzortung.org:3000`).
-- `MQTT_HOST` (por defecto `127.0.0.1`).
-- `MQTT_PORT` (por defecto `1883`).
-- `MQTT_TOPIC` (por defecto `blitzortung/1`).
+Para verificar actividad:
 
-Ejemplo mínimo en `config.json`:
-
-```json
-{
-  "blitzortung": {
-    "ws_url": "wss://ws.blitzortung.org:3000"
-  },
-  "mqtt": {
-    "host": "127.0.0.1",
-    "port": 1883,
-    "topic": "blitzortung/1"
-  }
-}
+```bash
+mosquitto_sub -h 127.0.0.1 -t 'blitzortung/#' -v | head -n 20
 ```
-
-Al reiniciar el servicio (`systemctl --user restart blitz_ws_client.service`) los
-cambios se aplican al instante.

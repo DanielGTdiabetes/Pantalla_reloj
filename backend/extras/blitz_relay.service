@@ -1,0 +1,15 @@
+[Unit]
+Description=Blitzortung Relay WS→MQTT
+After=network-online.target mosquitto.service
+
+[Service]
+Type=simple
+ExecStart=/opt/blitzortung/.venv/bin/python3 /opt/blitzortung/ws_relay/relay.py
+WorkingDirectory=/opt/blitzortung/ws_relay
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/pantalla/blitz_relay.log
+StandardError=append:/var/log/pantalla/blitz_relay.err
+
+[Install]
+WantedBy=default.target
