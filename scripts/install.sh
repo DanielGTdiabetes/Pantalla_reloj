@@ -83,7 +83,8 @@ run_sysctl() {
     fi
   else
     echo "[SKIP] D-Bus de sistema no disponible. Omitido: systemctl ${cmd_desc}"
-    return 2
+    # Devuelve éxito para no abortar bajo `set -e` cuando simplemente se omite systemctl.
+    return 0
   fi
 }
 
