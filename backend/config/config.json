@@ -13,18 +13,12 @@
     "enableExperimentalLightning": false
   },
   "blitzortung": {
-    "mode": "mqtt",
     "enabled": true,
-    "mqtt": {
-      "host": "127.0.0.1",
-      "port": 1883,
-      "ssl": false,
-      "username": null,
-      "password": null,
-      "baseTopic": "blitzortung/relay",
-      "geohash": null,
-      "radius_km": null
-    }
+    "mqtt_host": "127.0.0.1",
+    "mqtt_port": 1883,
+    "topic_base": "blitzortung/relay",
+    "radius_km": 100,
+    "time_window_min": 30
   },
   "weather": {
     "units": "metric",

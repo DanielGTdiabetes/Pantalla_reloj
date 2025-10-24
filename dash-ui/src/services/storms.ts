@@ -13,13 +13,14 @@ export interface StormStatus {
   strikesCount?: number;
   strikesWindowMinutes?: number;
   strikesCountKey?: string | null;
-  blitzEnabled?: boolean;
-  blitzConnected?: boolean;
-  blitzMode?: 'public_proxy' | 'custom_broker' | string;
-  blitzTopic?: string | null;
-  blitzLastEventAt?: string | null;
-  blitzCounters?: Record<string, unknown> | null;
-  blitzRetryIn?: number | null;
+  blitzSource?: string | null;
+  blitzConnected?: boolean | null;
+  blitzNearestDistanceKm?: number | null;
+  blitzAzimuthDeg?: number | null;
+  blitzCountRecent?: number;
+  blitzLastTimestamp?: string | null;
+  blitzRadiusKm?: number | null;
+  blitzTimeWindowMin?: number | null;
   blitzLastError?: string | null;
 }
 
@@ -41,6 +42,13 @@ interface StormStatusResponse {
   strikes_window_minutes?: number | null;
   cached_at?: number | null;
   source?: string;
+  connected?: boolean;
+  nearest_distance_km?: number | null;
+  azimuth_deg?: number | null;
+  count_recent?: number | null;
+  last_ts?: string | null;
+  radius_km?: number | null;
+  time_window_min?: number | null;
   [key: string]: unknown;
 }
 
@@ -109,18 +117,47 @@ export async function fetchStormStatus(): Promise<StormStatus> {
       ? null
       : undefined;
 
-  const blitzEnabled = typeof data.enabled === 'boolean' ? data.enabled : undefined;
-  const blitzConnected = typeof data.connected === 'boolean' ? data.connected : undefined;
-  const blitzMode = typeof data.mode === 'string' ? (data.mode as StormStatus['blitzMode']) : undefined;
-  const blitzTopic = typeof data.topic === 'string' ? data.topic : undefined;
-  const blitzLastEventAt =
-    typeof data.last_event_at === 'string'
-      ? data.last_event_at
-      : data.last_event_at === null
+  const blitzSource = typeof data.source === 'string' ? data.source : null;
+  const blitzConnected =
+    typeof data.connected === 'boolean'
+      ? data.connected
+      : data.connected === null
       ? null
       : undefined;
-  const blitzCounters = typeof data.counters === 'object' && data.counters !== null ? (data.counters as Record<string, unknown>) : null;
-  const blitzRetryIn = typeof data.retry_in === 'number' ? data.retry_in : null;
+  const blitzNearestDistance =
+    typeof data.nearest_distance_km === 'number'
+      ? data.nearest_distance_km
+      : data.nearest_distance_km === null
+      ? null
+      : undefined;
+  const blitzAzimuth =
+    typeof data.azimuth_deg === 'number'
+      ? data.azimuth_deg
+      : data.azimuth_deg === null
+      ? null
+      : undefined;
+  const blitzCountRecent =
+    typeof data.count_recent === 'number' && Number.isFinite(data.count_recent)
+      ? Math.max(0, Math.round(data.count_recent))
+      : undefined;
+  const blitzLastTimestamp =
+    typeof data.last_ts === 'string'
+      ? data.last_ts
+      : data.last_ts === null
+      ? null
+      : undefined;
+  const blitzRadius =
+    typeof data.radius_km === 'number'
+      ? data.radius_km
+      : data.radius_km === null
+      ? null
+      : undefined;
+  const blitzWindow =
+    typeof data.time_window_min === 'number'
+      ? data.time_window_min
+      : data.time_window_min === null
+      ? null
+      : undefined;
   const blitzLastError = typeof data.last_error === 'string' ? data.last_error : null;
 
   return {
@@ -136,13 +173,14 @@ export async function fetchStormStatus(): Promise<StormStatus> {
     strikesCount,
     strikesWindowMinutes,
     strikesCountKey: strikesCountKey ?? undefined,
-    blitzEnabled,
     blitzConnected,
-    blitzMode,
-    blitzTopic: blitzTopic ?? null,
-    blitzLastEventAt: blitzLastEventAt ?? null,
-    blitzCounters,
-    blitzRetryIn,
+    blitzSource,
+    blitzNearestDistanceKm: blitzNearestDistance ?? null,
+    blitzAzimuthDeg: blitzAzimuth ?? null,
+    blitzCountRecent: blitzCountRecent ?? 0,
+    blitzLastTimestamp: blitzLastTimestamp ?? null,
+    blitzRadiusKm: blitzRadius ?? null,
+    blitzTimeWindowMin: blitzWindow ?? null,
     blitzLastError,
   };
 }

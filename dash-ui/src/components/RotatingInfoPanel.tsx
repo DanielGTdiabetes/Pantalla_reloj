@@ -88,16 +88,16 @@ const RotatingInfoPanel = ({
 
   return (
     <div
-      className="relative w-full overflow-hidden rounded-[28px] border border-white/15 bg-[rgba(20,20,20,0.45)] px-6 py-5 text-white shadow-[0_14px_32px_rgba(0,0,0,0.32)] backdrop-blur-lg backdrop-brightness-[0.88] md:px-8 md:py-6"
+      className="relative w-full overflow-hidden rounded-2xl border border-white/15 bg-white/0 px-4 py-3 text-white backdrop-blur-md md:px-6 md:py-5"
       style={{ minHeight: panelHeight }}
     >
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-4">
         {items.map((item) => (
-          <div key={item.key} className="flex flex-col gap-2 rounded-2xl bg-white/5 px-4 py-3">
-            <span className="text-[0.65rem] uppercase tracking-[0.3em] text-white/55">{LABELS[item.key]}</span>
+          <div key={item.key} className="flex flex-col gap-2 rounded-xl border border-white/15 px-3 py-2">
+            <span className="text-[0.65rem] uppercase tracking-[0.3em] text-white/60">{LABELS[item.key]}</span>
             <MarqueeText
               text={item.text}
-              className={`text-lg font-medium leading-snug ${item.placeholder ? 'text-white/60' : 'text-white/90'}`}
+              className={`text-base font-medium leading-snug ${item.placeholder ? 'text-white/55' : 'text-white/90'}`}
             />
           </div>
         ))}

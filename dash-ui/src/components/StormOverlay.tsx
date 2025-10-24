@@ -24,15 +24,63 @@ const StormOverlay = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [canvasSize, setCanvasSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
 
+  const blitzSource = status?.blitzSource ?? null;
+  const blitzConnected = status?.blitzConnected ?? null;
+  const blitzCount = status?.blitzCountRecent ?? 0;
+  const blitzWindow = status?.blitzTimeWindowMin ?? null;
+  const blitzRadius = status?.blitzRadiusKm ?? null;
+  const overlayActive =
+    status?.provider === 'blitzortung' && blitzSource === 'mqtt' && (blitzCount ?? 0) > 0;
+
+  const distanceFormatter = useMemo(
+    () => new Intl.NumberFormat('es-ES', { maximumFractionDigits: 1 }),
+    [],
+  );
+  const countFormatter = useMemo(() => new Intl.NumberFormat('es-ES'), []);
+  const nearestDistance =
+    typeof status?.blitzNearestDistanceKm === 'number'
+      ? status.blitzNearestDistanceKm
+      : status?.blitzNearestDistanceKm === null
+      ? null
+      : undefined;
+  const azimuth =
+    typeof status?.blitzAzimuthDeg === 'number'
+      ? status.blitzAzimuthDeg
+      : status?.blitzAzimuthDeg === null
+      ? null
+      : undefined;
+  const lastIso = status?.blitzLastTimestamp ?? null;
+  const lastClock = useMemo(() => formatClockFromIso(lastIso), [lastIso]);
+  const lastRelative = useMemo(() => formatRelativeFromIso(lastIso), [lastIso]);
+  const directionLabel = azimuth != null ? resolveDirectionLabel(azimuth) : null;
+  const nearestText =
+    nearestDistance != null ? `${distanceFormatter.format(nearestDistance)} km` : null;
+  const countText =
+    blitzCount > 0 && blitzWindow
+      ? `${countFormatter.format(blitzCount)} en ${countFormatter.format(blitzWindow)} min`
+      : blitzCount > 0
+      ? `${countFormatter.format(blitzCount)} descargas recientes`
+      : null;
+  const radiusText =
+    typeof blitzRadius === 'number' && blitzRadius > 0
+      ? `${distanceFormatter.format(blitzRadius)} km`
+      : null;
+  const connectionText =
+    blitzConnected === false
+      ? 'Sin conexión con el broker MQTT.'
+      : blitzConnected === true
+      ? 'Fuente Blitzortung en tiempo real.'
+      : null;
+
   const strikeCoords = useMemo(() => {
-    if (!status || status.provider !== 'blitzortung') {
+    if (!overlayActive || !status) {
       return [];
     }
     return status.strikeCoords;
-  }, [status]);
+  }, [overlayActive, status]);
 
   useEffect(() => {
-    if (!status?.nearActivity) {
+    if (!overlayActive) {
       setFrames([]);
       setRadarError(null);
       return;
@@ -66,7 +114,7 @@ const StormOverlay = () => {
         window.clearInterval(timer);
       }
     };
-  }, [status?.nearActivity, status?.updatedAt]);
+  }, [overlayActive, status?.updatedAt]);
 
   useEffect(() => {
     if (!frames.length) return undefined;
@@ -143,7 +191,7 @@ const StormOverlay = () => {
     drawLightningOverlay(context, width, height, strikeCoords);
   }, [canvasSize, strikeCoords]);
 
-  if (!status?.nearActivity) {
+  if (!overlayActive || !status) {
     return null;
   }
 
@@ -179,6 +227,28 @@ const StormOverlay = () => {
       ) : (
         <p className="mt-3 text-xs text-amber-100/70">{radarError ?? error ?? 'Sin radar disponible en este momento.'}</p>
       )}
+      <div className="mt-3 space-y-1 text-xs text-amber-100/80">
+        {connectionText ? <p>{connectionText}</p> : null}
+        {countText ? <p>Descargas recientes: {countText}</p> : null}
+        {nearestText ? (
+          <p>
+            Impacto más cercano: {nearestText}
+            {directionLabel ? ` (${directionLabel}${azimuth != null ? ` · ${azimuth.toFixed(0)}°` : ''})` : ''}
+          </p>
+        ) : null}
+        {lastClock ? (
+          <p>
+            Último rayo: {lastClock}
+            {lastRelative ? ` (${lastRelative})` : ''}
+          </p>
+        ) : null}
+        {radiusText && blitzWindow ? (
+          <p>
+            Ventana analizada: radio {radiusText}
+            {` · ${countFormatter.format(blitzWindow)} min`}
+          </p>
+        ) : null}
+      </div>
       <p className="mt-3 text-xs text-amber-100/80">
         Probabilidad estimada: {(status.stormProb * 100).toFixed(0)}%
       </p>
@@ -202,6 +272,49 @@ async function preloadImage(url: string): Promise<void> {
     image.onerror = () => reject(new Error(`No se pudo precargar ${url}`));
     image.src = url;
   });
+}
+
+function formatClockFromIso(iso: string | null): string | null {
+  if (!iso) {
+    return null;
+  }
+  const timestamp = Date.parse(iso);
+  if (Number.isNaN(timestamp)) {
+    return null;
+  }
+  return new Date(timestamp).toLocaleTimeString('es-ES', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatRelativeFromIso(iso: string | null): string | null {
+  if (!iso) {
+    return null;
+  }
+  const timestamp = Date.parse(iso);
+  if (Number.isNaN(timestamp)) {
+    return null;
+  }
+  const diffMs = Date.now() - timestamp;
+  const diffMinutes = Math.round(Math.abs(diffMs) / 60000);
+  if (diffMinutes <= 1) {
+    return diffMs >= 0 ? 'hace instantes' : 'en instantes';
+  }
+  if (diffMinutes < 60) {
+    return diffMs >= 0 ? `hace ${diffMinutes} min` : `en ${diffMinutes} min`;
+  }
+  const diffHours = Math.round(diffMinutes / 60);
+  return diffMs >= 0 ? `hace ${diffHours} h` : `en ${diffHours} h`;
+}
+
+function resolveDirectionLabel(azimuth: number): string {
+  if (!Number.isFinite(azimuth)) {
+    return '';
+  }
+  const directions = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
+  const index = Math.round(azimuth / 45) % directions.length;
+  return directions[index];
 }
 
 function drawLightningOverlay(

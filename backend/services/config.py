@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any, Dict, MutableMapping, Optional
 
 from pydantic import AnyUrl, BaseModel, ConfigDict, Field, ValidationError, validator
-from pydantic.functional_validators import model_validator
 
 from backend.models.config import UiConfig
 
@@ -120,110 +119,38 @@ class MQTTConfig(ExtraAllowModel):
         return normalized or "127.0.0.1"
 
 
-class BlitzortungMQTTConfig(ExtraAllowModel):
-    mode: str = Field(default="public_proxy", alias="mode")
-    proxy_host: str = Field(default="mqtt.blitzortung.org", alias="proxy_host")
-    proxy_port: int = Field(default=8883, ge=1, le=65535, alias="proxy_port")
-    proxy_ssl: bool = Field(default=True, alias="proxy_ssl")
-    proxy_baseTopic: str = Field(default="blitzortung", alias="proxy_baseTopic")
-    geohash: Optional[str] = None
-    radius_km: Optional[int] = Field(default=100, ge=0, le=2000, alias="radius_km")
-    host: Optional[str] = Field(default=None, alias="host")
-    port: Optional[int] = Field(default=1883, ge=1, le=65535, alias="port")
-    ssl: bool = Field(default=False, alias="ssl")
-    username: Optional[str] = Field(default=None, alias="username")
-    password: Optional[str] = Field(default=None, alias="password")
-
-    @validator("mode")
-    def normalize_mode(cls, value: str) -> str:  # type: ignore[override]
-        normalized = (value or "public_proxy").strip().lower()
-        if normalized not in {"public_proxy", "custom_broker"}:
-            return "public_proxy"
-        return normalized
-
-    @validator("proxy_host")
-    def normalize_proxy_host(cls, value: str) -> str:  # type: ignore[override]
-        normalized = (value or "").strip()
-        return normalized or "mqtt.blitzortung.org"
-
-    @validator("proxy_baseTopic")
-    def normalize_proxy_base_topic(cls, value: str) -> str:  # type: ignore[override]
-        normalized = (value or "").strip().strip("/")
-        return normalized or "blitzortung"
-
-    @validator("geohash")
-    def normalize_geohash(cls, value: Optional[str]) -> Optional[str]:  # type: ignore[override]
-        if value is None:
-            return None
-        normalized = value.strip().strip("/")
-        return normalized or None
-
-    @validator("host")
-    def normalize_host(cls, value: Optional[str]) -> Optional[str]:  # type: ignore[override]
-        if value is None:
-            return None
-        normalized = value.strip()
-        return normalized or None
-
-    @validator("username")
-    def normalize_username(cls, value: Optional[str]) -> Optional[str]:  # type: ignore[override]
-        if value is None:
-            return None
-        normalized = value.strip()
-        return normalized or None
-
-    @validator("password")
-    def normalize_password(cls, value: Optional[str]) -> Optional[str]:  # type: ignore[override]
-        if value is None:
-            return None
-        stripped = value.strip()
-        return stripped or None
-
-    @validator("radius_km")
-    def normalize_radius(cls, value: Optional[int]) -> Optional[int]:  # type: ignore[override]
-        if value is None:
-            return None
-        return max(0, int(value))
-
-    @validator("port")
-    def normalize_port(cls, value: Optional[int]) -> Optional[int]:  # type: ignore[override]
-        if value is None:
-            return None
-        return int(value)
-
-    @root_validator
-    def ensure_custom_broker_host(cls, values: Dict[str, Any]) -> Dict[str, Any]:  # type: ignore[override]
-        mode = values.get("mode")
-        host = values.get("host")
-        if (mode or "") == "custom_broker" and not host:
-            raise ValueError("host es obligatorio en modo custom_broker")
-        return values
-
-
 class BlitzortungConfig(ExtraAllowModel):
     enabled: bool = False
-    mqtt: BlitzortungMQTTConfig = Field(default_factory=BlitzortungMQTTConfig)
+    mqtt_host: Optional[str] = Field(default=None, alias="mqtt_host")
+    mqtt_port: int = Field(default=1883, ge=1, le=65535, alias="mqtt_port")
+    topic_base: str = Field(default="blitzortung/", alias="topic_base")
+    radius_km: int = Field(default=100, ge=0, le=2000, alias="radius_km")
+    time_window_min: int = Field(default=30, ge=1, le=360, alias="time_window_min")
 
-    @property
-    def mode(self) -> str:
-        return self.mqtt.mode
+    @validator("mqtt_host")
+    def normalize_mqtt_host(cls, value: Optional[str]) -> Optional[str]:  # type: ignore[override]
+        if value is None:
+            return None
+        trimmed = value.strip()
+        return trimmed or None
 
-    @model_validator(mode="before")
-    @classmethod
-    def merge_legacy_mode(cls, value: Any):
-        if isinstance(value, MutableMapping):
-            payload = dict(value)
-            mode = payload.get("mode")
-            mqtt_payload = payload.get("mqtt")
-            if isinstance(mqtt_payload, MutableMapping):
-                merged = dict(mqtt_payload)
-                if mode is not None and "mode" not in merged:
-                    merged["mode"] = mode
-                payload["mqtt"] = merged
-            elif mode is not None and "mqtt" not in payload:
-                payload["mqtt"] = {"mode": mode}
-            return payload
-        return value
+    @validator("topic_base")
+    def normalize_topic_base(cls, value: str) -> str:  # type: ignore[override]
+        normalized = (value or "blitzortung/").strip()
+        if not normalized:
+            normalized = "blitzortung/"
+        normalized = normalized.replace("#", "").lstrip("/")
+        if not normalized.endswith("/"):
+            normalized = f"{normalized}/"
+        return normalized
+
+    @validator("radius_km")
+    def clamp_radius(cls, value: int) -> int:  # type: ignore[override]
+        return max(0, min(2000, int(value)))
+
+    @validator("time_window_min")
+    def clamp_window(cls, value: int) -> int:  # type: ignore[override]
+        return max(1, min(360, int(value)))
 
 class CalendarGoogleConfig(ExtraAllowModel):
     calendarId: str = Field(default="primary", alias="calendarId", min_length=1)
@@ -364,32 +291,7 @@ class AppConfig(ExtraAllowModel):
                 }
             },
             "blitzortung": (
-                {
-                    "mode": self.blitzortung.mode,
-                    "enabled": self.blitzortung.enabled,
-                    "mqtt": {
-                        key: value
-                        for key, value in (
-                            self.blitzortung.mqtt.dict(by_alias=True)
-                            if self.blitzortung and self.blitzortung.mqtt
-                            else {}
-                        ).items()
-                        if key
-                        in {
-                            "mode",
-                            "proxy_host",
-                            "proxy_port",
-                            "proxy_ssl",
-                            "proxy_baseTopic",
-                            "geohash",
-                            "radius_km",
-                            "host",
-                            "port",
-                            "ssl",
-                            "username",
-                        }
-                    },
-                }
+                self.blitzortung.dict(by_alias=True, exclude_none=True)
                 if self.blitzortung
                 else {}
             ),
@@ -447,28 +349,7 @@ class AppConfig(ExtraAllowModel):
                     "wifi": {
                         "preferredInterface": self.ui.wifi.preferredInterface
                     },
-                    "blitzortung": {
-                        "enabled": self.ui.blitzortung.enabled,
-                        "mode": self.ui.blitzortung.mode,
-                        "mqtt": {
-                            key: value
-                            for key, value in self.ui.blitzortung.mqtt.model_dump().items()
-                            if key
-                            in {
-                                "mode",
-                                "proxy_host",
-                                "proxy_port",
-                                "proxy_ssl",
-                                "proxy_baseTopic",
-                                "geohash",
-                                "radius_km",
-                                "host",
-                                "port",
-                                "ssl",
-                                "username",
-                            }
-                        },
-                    },
+                    "blitzortung": self.ui.blitzortung.model_dump(by_alias=True, exclude_none=True),
                     "appearance": self.ui.appearance.model_dump(),
                 }
                 if self.ui
@@ -553,76 +434,35 @@ def read_config() -> AppConfig:
         blitz_source = config.blitzortung.dict(by_alias=True)
 
     if isinstance(blitz_source, dict):
-        mqtt_source = blitz_source.get("mqtt") if isinstance(blitz_source.get("mqtt"), dict) else {}
-        default_mqtt = ui_config.blitzortung.mqtt
-        mode_value = str(
-            blitz_source.get("mode")
-            or (mqtt_source.get("mode") if isinstance(mqtt_source, dict) else None)
-            or default_mqtt.mode
-            or "public_proxy"
-        )
+        source = dict(blitz_source)
+        mqtt_payload = source.pop("mqtt", None)
+        if isinstance(mqtt_payload, dict):
+            source.setdefault("mqtt_host", mqtt_payload.get("host") or mqtt_payload.get("proxy_host"))
+            source.setdefault("mqtt_port", mqtt_payload.get("port") or mqtt_payload.get("proxy_port"))
+            base_topic = (
+                mqtt_payload.get("proxy_baseTopic")
+                or mqtt_payload.get("baseTopic")
+                or mqtt_payload.get("topic_base")
+            )
+            if base_topic is not None:
+                source.setdefault("topic_base", base_topic)
+            if "radius_km" not in source and mqtt_payload.get("radius_km") is not None:
+                source["radius_km"] = mqtt_payload.get("radius_km")
+        # Legacy flat keys
+        if "baseTopic" in source and "topic_base" not in source:
+            source["topic_base"] = source.pop("baseTopic")
+        if "topic" in source and "topic_base" not in source:
+            source["topic_base"] = source.pop("topic")
+        default_blitz = ui_config.blitzortung
         blitz_update: dict[str, Any] = {
-            "enabled": bool(blitz_source.get("enabled", ui_config.blitzortung.enabled)),
-            "mode": mode_value,
-            "mqtt": {
-                "mode": str(mqtt_source.get("mode", mode_value)) if isinstance(mqtt_source, dict) else mode_value,
-                "proxy_host": str(
-                    (mqtt_source.get("proxy_host") if isinstance(mqtt_source, dict) else None)
-                    or (mqtt_source.get("host") if isinstance(mqtt_source, dict) else None)
-                    or default_mqtt.proxy_host
-                    or ""
-                ),
-                "proxy_port": int(
-                    (mqtt_source.get("proxy_port") if isinstance(mqtt_source, dict) else None)
-                    or (mqtt_source.get("port") if isinstance(mqtt_source, dict) else None)
-                    or default_mqtt.proxy_port
-                ),
-                "proxy_ssl": bool(
-                    (mqtt_source.get("proxy_ssl") if isinstance(mqtt_source, dict) else None)
-                    if isinstance(mqtt_source, dict) and mqtt_source.get("proxy_ssl") is not None
-                    else (
-                        (mqtt_source.get("ssl") if isinstance(mqtt_source, dict) else None)
-                        if isinstance(mqtt_source, dict) and mqtt_source.get("ssl") is not None
-                        else default_mqtt.proxy_ssl
-                    )
-                ),
-                "proxy_baseTopic": str(
-                    (mqtt_source.get("proxy_baseTopic") if isinstance(mqtt_source, dict) else None)
-                    or (mqtt_source.get("baseTopic") if isinstance(mqtt_source, dict) else None)
-                    or default_mqtt.proxy_baseTopic
-                    or ""
-                ),
-                "geohash": (
-                    mqtt_source.get("geohash", default_mqtt.geohash)
-                    if isinstance(mqtt_source, dict)
-                    else default_mqtt.geohash
-                ),
-                "radius_km": (
-                    mqtt_source.get("radius_km", default_mqtt.radius_km)
-                    if isinstance(mqtt_source, dict)
-                    else default_mqtt.radius_km
-                ),
-                "host": (
-                    mqtt_source.get("host", default_mqtt.host)
-                    if isinstance(mqtt_source, dict)
-                    else default_mqtt.host
-                ),
-                "port": (
-                    mqtt_source.get("port", default_mqtt.port)
-                    if isinstance(mqtt_source, dict)
-                    else default_mqtt.port
-                ),
-                "ssl": (
-                    bool(mqtt_source.get("ssl", default_mqtt.ssl))
-                    if isinstance(mqtt_source, dict)
-                    else default_mqtt.ssl
-                ),
-                "username": (
-                    mqtt_source.get("username", default_mqtt.username)
-                    if isinstance(mqtt_source, dict)
-                    else default_mqtt.username
-                ),
-            },
+            "enabled": bool(source.get("enabled", default_blitz.enabled)),
+            "mqtt_host": (source.get("mqtt_host") or source.get("host") or default_blitz.mqtt_host or "").strip() or None,
+            "mqtt_port": int(
+                source.get("mqtt_port", source.get("port", default_blitz.mqtt_port)) or default_blitz.mqtt_port
+            ),
+            "topic_base": source.get("topic_base", default_blitz.topic_base),
+            "radius_km": int(source.get("radius_km", default_blitz.radius_km or 0)),
+            "time_window_min": int(source.get("time_window_min", default_blitz.time_window_min or 30)),
         }
         ui_config = ui_config.model_copy(update={"blitzortung": blitz_update})
 
