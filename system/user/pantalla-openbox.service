@@ -1,5 +1,5 @@
 [Unit]
-Description=Pantalla Dash Openbox Session (with D-Bus)
+Description=Pantalla Dash Openbox Session (Final)
 After=graphical.target
 Wants=graphical.target
 
@@ -7,8 +7,7 @@ Wants=graphical.target
 Type=simple
 Environment=DISPLAY=:0
 Environment=XDG_RUNTIME_DIR=/run/user/%U
-Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
-ExecStartPre=/usr/bin/dbus-launch --exit-with-session true
+ExecStartPre=/usr/bin/xsetroot -solid black
 ExecStart=/usr/bin/openbox-session
 Restart=always
 RestartSec=2

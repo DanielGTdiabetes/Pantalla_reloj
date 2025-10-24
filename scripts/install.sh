@@ -103,6 +103,15 @@ run_sysctl() {
   fi
 }
 
+echo "[INFO] Eliminando Snap de Chromium y PPAs obsoletos…"
+sudo systemctl disable --now snapd 2>/dev/null || true
+sudo apt purge -y chromium chromium-browser snapd || true
+sudo rm -rf /var/lib/snapd /snap /var/snap /etc/apt/sources.list.d/*snap*.list 2>/dev/null || true
+
+# PPA roto de Chromium (si existe)
+sudo rm -f /etc/apt/sources.list.d/canonical-chromium-builds-ubuntu-stage-noble.sources 2>/dev/null || true
+sudo sed -i '/canonical-chromium-builds\\/stage/d' /etc/apt/sources.list 2>/dev/null || true
+
 wait_for_http() {
   local host="$1"
   local port="$2"
@@ -234,27 +243,28 @@ apt-get install -y xserver-xorg-core xserver-xorg-video-all xserver-xorg-input-a
 # Opcional para kiosko puro (ocultar cursor); queda comentado en autostart
 apt-get install -y unclutter || true
 
-log "Verificando disponibilidad de Chromium (apt/snap)…"
-if ! command -v chromium-browser >/dev/null 2>&1; then
-  log "Intentando instalar chromium-browser (apt)…"
-  if ! apt-get install -y chromium-browser; then
-    warn "Instalación apt de chromium-browser falló; intentando con snap…"
-    if command -v snap >/dev/null 2>&1; then
-      if snap install chromium; then
-        log "Chromium (snap) instalado."
-      else
-        warn "No se pudo instalar Chromium vía snap automáticamente."
-      fi
-    else
-      warn "snapd no está disponible; instala Chromium manualmente para el modo kiosko."
-    fi
-  fi
-else
-  log "chromium-browser ya está disponible."
+echo "[INFO] Instalando Chromium clásico (.deb, no Snap)…"
+sudo apt update -y
+sudo apt install -y wget gnupg2 software-properties-common
+
+# Descargar paquete Debian estable
+CHROMIUM_DEB="chromium_121.0.6167.139-1_amd64.deb"
+if [ ! -f "/tmp/${CHROMIUM_DEB}" ]; then
+  wget -q "https://ftp.debian.org/debian/pool/main/c/chromium/${CHROMIUM_DEB}" -O "/tmp/${CHROMIUM_DEB}"
 fi
 
-if [[ ! -x /usr/bin/chromium-browser && -x /snap/bin/chromium ]]; then
-  ln -sf /snap/bin/chromium /usr/bin/chromium-browser
+# Instalar dependencias y paquete
+sudo apt install -y "/tmp/${CHROMIUM_DEB}" || {
+  echo "[WARN] Instalación directa falló, reintentando con --fix-broken…"
+  sudo apt --fix-broken install -y
+}
+
+# Validar instalación
+if command -v chromium >/dev/null 2>&1; then
+  echo "[OK] Chromium clásico instalado en: $(command -v chromium)"
+else
+  echo "[ERROR] Chromium clásico no se instaló correctamente."
+  exit 1
 fi
 
 # APP_USER ya está definido en línea 17, no redefinir
@@ -272,38 +282,29 @@ if [[ -n "$LAN_IP" ]]; then
 fi
 
 # --- Autostart de Openbox con rotación automática si está en vertical (480x1920) ---
-log "Configurando Openbox autostart para Chromium kiosk…"
+echo "[INFO] Configurando autostart de Openbox para Chromium clásico…"
 sudo -u "${APP_USER}" mkdir -p "${APP_HOME}/.config/openbox"
 
 AUTOSTART_FILE="${APP_HOME}/.config/openbox/autostart"
 TMP_AUTOSTART="$(mktemp)"
 cat >"$TMP_AUTOSTART" <<'EOF'
-
---- BEGIN Pantalla_reloj AUTOSTART (managed) ---
-# Evita que se apague la pantalla o salte el salvapantallas
+# --- BEGIN Pantalla_reloj AUTOSTART (definitive) ---
 xset -dpms
 xset s off
-
-# Pequeña espera para asegurar DISPLAY=:0 listo
-(sleep 2;
-chromium-browser --kiosk http://127.0.0.1 \
-  --noerrdialogs --disable-session-crashed-bubble \
-  --incognito --start-fullscreen \
-  --disable-pinch --overscroll-history-navigation=0 \
-  --no-first-run --fast --fast-start \
-  --disable-translate --disable-infobars \
-  --disable-features=TranslateUI
-) &
-
---- END Pantalla_reloj AUTOSTART (managed) ---
-
+sleep 2
+chromium --kiosk http://127.0.0.1 \
+  --noerrdialogs --disable-session-crashed-bubble --incognito --start-fullscreen \
+  --disable-pinch --overscroll-history-navigation=0 --no-first-run \
+  --disable-infobars --fast --fast-start --disable-features=TranslateUI \
+  --window-size=1920,480 --window-position=0,0 &
+# --- END Pantalla_reloj AUTOSTART (definitive) ---
 EOF
 
 if [[ -f "$AUTOSTART_FILE" ]]; then
   awk '
     BEGIN { skip=0 }
-    /--- BEGIN Pantalla_reloj AUTOSTART \(managed\) ---/ { skip=1; next }
-    /--- END Pantalla_reloj AUTOSTART \(managed\) ---/ { skip=0; next }
+    /--- BEGIN Pantalla_reloj AUTOSTART \(definitive\) ---/ { skip=1; next }
+    /--- END Pantalla_reloj AUTOSTART \(definitive\) ---/ { skip=0; next }
     skip==0 { print }
   ' "$AUTOSTART_FILE" > "${AUTOSTART_FILE}.clean" || true
   cat "${AUTOSTART_FILE}.clean" "$TMP_AUTOSTART" > "$AUTOSTART_FILE"
@@ -346,13 +347,6 @@ if [[ -d "/etc/xdg/autostart" ]]; then
   while IFS= read -r -d '' desktop; do
     disable_autostart_file "$desktop"
   done < <(find /etc/xdg/autostart -maxdepth 1 -type f -name '*.desktop' -print0)
-fi
-
-log "Desactivando servicios automáticos del snap de Chromium…"
-run_sysctl stop snap.chromium.daemon.service || true
-run_sysctl disable snap.chromium.daemon.service || true
-if command -v snap >/dev/null 2>&1; then
-  snap set chromium daemon.autostart=false || true
 fi
 
 log "Instalando lanzador de Chromium para systemd (${UI_LAUNCHER_DST})…"
@@ -878,25 +872,19 @@ else
   echo "[SKIP] Parseo con jq omitido: backend no listo."
 fi
 
-echo "[INFO] Reiniciando sesión Openbox para aplicar autostart…"
-run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- restart pantalla-openbox || true
-sleep 2
-
-echo "[CHECK] Comprobaciones de entorno gráfico:"
-pgrep Xorg     >/dev/null && echo "✅ Xorg activo"     || echo "❌ Xorg no activo"
-pgrep openbox  >/dev/null && echo "✅ Openbox activo"  || echo "❌ Openbox no activo"
-
-# Darle unos segundos a Chromium tras restart
-sleep 3
-if pgrep chromium >/dev/null; then
-  echo "✅ Chromium kiosk activo"
+echo "[CHECK] Verificando entorno gráfico y Chromium clásico…"
+if [[ ${SYSTEMD_DBUS_AVAILABLE:-1} -eq 1 ]]; then
+  run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- restart pantalla-openbox || true
 else
-  echo "⚠️ Chromium no detectado aún. Si la pantalla sigue en negro, reinicia la máquina o revisa ~/.config/openbox/autostart"
+  echo "[INFO] (skip) systemctl --user restart pantalla-openbox"
 fi
+sleep 6
+pgrep Xorg >/dev/null && echo "✅ Xorg activo" || echo "❌ Xorg no activo"
+pgrep openbox >/dev/null && echo "✅ Openbox activo" || echo "❌ Openbox no activo"
+pgrep chromium >/dev/null && echo "✅ Chromium kiosk activo" || echo "❌ Chromium no detectado"
 
-# Comprobación HTTP
-curl -sS -m 5 -o /dev/null -w "Frontend (nginx) HTTP: %{http_code}\n" http://127.0.0.1/ || true
-curl -sS -m 5 -o /dev/null -w "Backend (FastAPI) HTTP: %{http_code}\n" http://127.0.0.1:8081/api/health || true
+curl -s -m 3 -o /dev/null -w "Frontend HTTP: %{http_code}\n" http://127.0.0.1/ || true
+curl -s -m 3 -o /dev/null -w "Backend API: %{http_code}\n" http://127.0.0.1:8081/api/health || true
 
 # Ajuste de zona horaria (solo si no está ya configurada)
 if ! timedatectl | grep -q "Time zone: ${TZ_DEFAULT}"; then
