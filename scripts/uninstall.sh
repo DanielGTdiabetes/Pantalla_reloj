@@ -119,6 +119,18 @@ if [[ -f "$USER_SYSTEMD_DIR/$UI_SERVICE_NAME" ]]; then
   fi
 fi
 
+echo "[INFO] Deshabilitando UI Chromium kiosk…"
+UI_KIOSK_USER="${APP_USER:-dani}"
+if [[ "$UI_KIOSK_USER" == "root" ]]; then
+  UI_KIOSK_USER="dani"
+fi
+UI_KIOSK_HOME="$(getent passwd "$UI_KIOSK_USER" | cut -d: -f6)"
+if [[ -n "$UI_KIOSK_HOME" ]]; then
+  sudo -u "$UI_KIOSK_USER" systemctl --user disable --now "pantalla-ui@${UI_KIOSK_USER}.service" 2>/dev/null || true
+  rm -f "$UI_KIOSK_HOME/.config/systemd/user/pantalla-ui@.service" 2>/dev/null || true
+  sudo -u "$UI_KIOSK_USER" systemctl --user daemon-reload 2>/dev/null || true
+fi
+
 # Kiosk service (legacy system service si existe)
 KIOSK_SERVICE="pantalla-kiosk.service"
 if [[ -f "$SYSTEMD_DIR/$KIOSK_SERVICE" ]]; then

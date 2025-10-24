@@ -140,10 +140,11 @@ LOG_DIR="/var/log/pantalla-dash"
 NGINX_SITE="/etc/nginx/sites-available/pantalla"
 SYSTEMD_DIR="/etc/systemd/system"
 USER_SYSTEMD_DIR="/etc/systemd/user"
-UI_SERVICE_NAME="pantalla-ui.service"
-UI_SERVICE_SRC="$REPO_DIR/system/$UI_SERVICE_NAME"
+LEGACY_UI_SERVICE_NAME="pantalla-ui.service"
 OPENBOX_SERVICE_NAME="pantalla-openbox.service"
 OPENBOX_SERVICE_SRC="$REPO_DIR/system/user/$OPENBOX_SERVICE_NAME"
+UI_SERVICE_TEMPLATE="pantalla-ui@.service"
+UI_SERVICE_TEMPLATE_SRC="$REPO_DIR/services/$UI_SERVICE_TEMPLATE"
 UI_LAUNCHER_SRC="$REPO_DIR/scripts/pantalla-ui-launch.sh"
 UI_LAUNCHER_DST="/usr/local/bin/pantalla-ui-launch.sh"
 
@@ -234,19 +235,27 @@ apt-get install -y xserver-xorg-core xserver-xorg-video-all xserver-xorg-input-a
 # Opcional para kiosko puro (ocultar cursor); queda comentado en autostart
 apt-get install -y unclutter || true
 
-log "Verificando disponibilidad de Chromium (snap)…"
-if [[ ! -x /snap/bin/chromium ]]; then
-  if command -v snap >/dev/null 2>&1; then
-    if snap install chromium; then
-      log "Chromium (snap) instalado."
+log "Verificando disponibilidad de Chromium (apt/snap)…"
+if ! command -v chromium-browser >/dev/null 2>&1; then
+  log "Intentando instalar chromium-browser (apt)…"
+  if ! apt-get install -y chromium-browser; then
+    warn "Instalación apt de chromium-browser falló; intentando con snap…"
+    if command -v snap >/dev/null 2>&1; then
+      if snap install chromium; then
+        log "Chromium (snap) instalado."
+      else
+        warn "No se pudo instalar Chromium vía snap automáticamente."
+      fi
     else
-      warn "No se pudo instalar Chromium vía snap automáticamente."
+      warn "snapd no está disponible; instala Chromium manualmente para el modo kiosko."
     fi
-  else
-    warn "snapd no está disponible; instala Chromium manualmente para el modo kiosko."
   fi
 else
-  log "Chromium snap detectado."
+  log "chromium-browser ya está disponible."
+fi
+
+if [[ ! -x /usr/bin/chromium-browser && -x /snap/bin/chromium ]]; then
+  ln -sf /snap/bin/chromium /usr/bin/chromium-browser
 fi
 
 # APP_USER ya está definido en línea 17, no redefinir
@@ -330,7 +339,7 @@ fi
 log "Instalando lanzador de Chromium para systemd (${UI_LAUNCHER_DST})…"
 install -m 755 "$UI_LAUNCHER_SRC" "$UI_LAUNCHER_DST"
 
-log "Instalando servicio systemd de usuario ${UI_SERVICE_NAME}…"
+log "Instalando servicio systemd de usuario ${OPENBOX_SERVICE_NAME}…"
 # Asegurar que UI_USER esté correctamente definido
 if [[ -n "${PANTALLA_UI_USER:-}" ]]; then
   UI_USER="$PANTALLA_UI_USER"
@@ -342,16 +351,20 @@ if ! id "$UI_USER" >/dev/null 2>&1; then
   die "El usuario $UI_USER no existe; ajusta PANTALLA_UI_USER antes de continuar"
 fi
 
-if [[ -f "$SYSTEMD_DIR/$UI_SERVICE_NAME" ]]; then
+if [[ -f "$SYSTEMD_DIR/$LEGACY_UI_SERVICE_NAME" ]]; then
   warn "  Detectado servicio de sistema legacy; se deshabilita y elimina."
-  run_sysctl disable --now "$UI_SERVICE_NAME" || true
-  rm -f "$SYSTEMD_DIR/$UI_SERVICE_NAME"
+  run_sysctl disable --now "$LEGACY_UI_SERVICE_NAME" || true
+  rm -f "$SYSTEMD_DIR/$LEGACY_UI_SERVICE_NAME"
   run_sysctl daemon-reload || true
+fi
+
+if [[ -f "$USER_SYSTEMD_DIR/$LEGACY_UI_SERVICE_NAME" ]]; then
+  warn "  Eliminando unidad de usuario legacy ${LEGACY_UI_SERVICE_NAME}."
+  rm -f "$USER_SYSTEMD_DIR/$LEGACY_UI_SERVICE_NAME"
 fi
 
 # Asegurar que el directorio systemd de usuario existe
 mkdir -p "$USER_SYSTEMD_DIR"
-install -D -m 644 "$UI_SERVICE_SRC" "$USER_SYSTEMD_DIR/$UI_SERVICE_NAME"
 if [[ -f "$OPENBOX_SERVICE_SRC" ]]; then
   install -D -m 644 "$OPENBOX_SERVICE_SRC" "$USER_SYSTEMD_DIR/$OPENBOX_SERVICE_NAME"
 fi
@@ -369,7 +382,19 @@ UI_SYSTEMD_ENV=("XDG_RUNTIME_DIR=$UI_RUNTIME_DIR" "DBUS_SESSION_BUS_ADDRESS=unix
 
 run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- daemon-reload || true
 run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- enable "$OPENBOX_SERVICE_NAME" || true
-run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- enable "$UI_SERVICE_NAME" || true
+
+echo "[INFO] Configurando servicio UI (Chromium kiosk)…"
+UI_HOME="$(getent passwd "$UI_USER" | cut -d: -f6)"
+if [[ -z "$UI_HOME" ]]; then
+  warn "No se pudo determinar el HOME de $UI_USER para instalar la unidad pantalla-ui@.service"
+else
+  sudo -u "$UI_USER" mkdir -p "$UI_HOME/.config/systemd/user"
+  install -m 644 -o "$UI_USER" -g "$UI_USER" "$UI_SERVICE_TEMPLATE_SRC" "$UI_HOME/.config/systemd/user/$UI_SERVICE_TEMPLATE"
+  run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- daemon-reload || true
+  run_userctl --user "$UI_USER" --env "${UI_SYSTEMD_ENV[@]}" -- enable --now "pantalla-ui@${UI_USER}.service" || true
+  sleep 2
+  pgrep -a chromium || echo "[WARN] Chromium kiosk aún no activo, se reintentará en próximo arranque"
+fi
 
 sudo chown -R "${APP_USER}:${APP_USER}" "${APP_HOME}/.config/openbox"
 sudo chmod +x "${APP_HOME}/.config/openbox/autostart"
@@ -733,6 +758,11 @@ else
   warn "Backend no responde 200 en /api/health (obtenido: $API_STATUS_CODE)"
 fi
 
+echo "[CHECK] Comprobando entorno gráfico…"
+pgrep Xorg >/dev/null && echo "✅ Xorg activo" || echo "❌ Xorg no activo"
+pgrep openbox >/dev/null && echo "✅ Openbox activo" || echo "❌ Openbox no activo"
+pgrep chromium >/dev/null && echo "✅ Chromium kiosk activo" || echo "⚠️ Chromium aún no visible (ver logs)"
+
 # ----- Reinicia backend para cargar endpoints nuevos (config/Wi-Fi si los añadiste) -----
 if ! run_sysctl restart "${BACKEND_SVC_BASENAME}@$APP_USER"; then
   rc=$?
@@ -824,6 +854,9 @@ if ! timedatectl | grep -q "Time zone: ${TZ_DEFAULT}"; then
 else
   log "Zona horaria ya configurada: ${TZ_DEFAULT}"
 fi
+
+chown dani:dani backend/config/config.json 2>/dev/null || true
+chmod 0640 backend/config/config.json 2>/dev/null || true
 
 # ----- Checks finales -----
 echo
