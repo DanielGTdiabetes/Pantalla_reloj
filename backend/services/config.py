@@ -117,6 +117,59 @@ class MQTTConfig(ExtraAllowModel):
         return normalized or "127.0.0.1"
 
 
+class BlitzortungMQTTConfig(ExtraAllowModel):
+    host: str = Field(default="127.0.0.1")
+    port: int = Field(default=1883, ge=1, le=65535)
+    ssl: bool = False
+    username: Optional[str] = None
+    password: Optional[str] = None
+    baseTopic: str = Field(default="blitzortung/1.1", alias="baseTopic")
+    geohash: Optional[str] = None
+    radius_km: Optional[int] = Field(default=None, ge=1, le=2000)
+
+    @validator("host")
+    def normalize_host(cls, value: str) -> str:  # type: ignore[override]
+        normalized = (value or "").strip()
+        return normalized or "127.0.0.1"
+
+    @validator("baseTopic")
+    def normalize_base_topic(cls, value: str) -> str:  # type: ignore[override]
+        normalized = (value or "").strip()
+        return normalized or "blitzortung/1.1"
+
+    @validator("username")
+    def normalize_username(cls, value: Optional[str]) -> Optional[str]:  # type: ignore[override]
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @validator("password")
+    def normalize_password(cls, value: Optional[str]) -> Optional[str]:  # type: ignore[override]
+        if value is None:
+            return None
+        return value.strip() or None
+
+    @validator("geohash")
+    def normalize_geohash(cls, value: Optional[str]) -> Optional[str]:  # type: ignore[override]
+        if value is None:
+            return None
+        normalized = value.strip().strip("/")
+        return normalized or None
+
+
+class BlitzortungConfig(ExtraAllowModel):
+    enabled: bool = True
+    mode: str = Field(default="mqtt")
+    mqtt: BlitzortungMQTTConfig = Field(default_factory=BlitzortungMQTTConfig)
+
+    @validator("mode")
+    def normalize_mode(cls, value: str) -> str:  # type: ignore[override]
+        normalized = (value or "mqtt").strip().lower()
+        if normalized not in {"mqtt", "ws"}:
+            return "mqtt"
+        return normalized
+
 class CalendarGoogleConfig(ExtraAllowModel):
     calendarId: str = Field(default="primary", alias="calendarId", min_length=1)
 
@@ -224,6 +277,7 @@ class AppConfig(ExtraAllowModel):
     aemet: Optional[AemetConfig] = None
     weather: Optional[WeatherConfig] = None
     storm: Optional[StormConfig] = None
+    blitzortung: Optional[BlitzortungConfig] = None
     theme: Optional[ThemeConfig] = None
     background: Optional[BackgroundConfig] = None
     tts: Optional[TTSConfig] = None
@@ -253,6 +307,23 @@ class AppConfig(ExtraAllowModel):
                     "alert",
                 }
             },
+            "blitzortung": (
+                {
+                    "mode": self.blitzortung.mode,
+                    "enabled": self.blitzortung.enabled,
+                    "mqtt": {
+                        key: value
+                        for key, value in (
+                            self.blitzortung.mqtt.dict(by_alias=True)
+                            if self.blitzortung and self.blitzortung.mqtt
+                            else {}
+                        ).items()
+                        if key in {"host", "port", "ssl", "baseTopic", "geohash", "radius_km"}
+                    },
+                }
+                if self.blitzortung
+                else {}
+            ),
             "theme": (self.theme.dict() if self.theme else {}),
             "background": (self.background.dict() if self.background else {}),
             "tts": {

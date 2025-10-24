@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SYSTEMD_DBUS_AVAILABLE=1
+if ! command -v systemctl >/dev/null 2>&1; then
+  SYSTEMD_DBUS_AVAILABLE=0
+elif ! systemctl list-unit-files >/dev/null 2>&1; then
+  SYSTEMD_DBUS_AVAILABLE=0
+fi
+SYSTEMD_DBUS_MESSAGE_SHOWN=0
+
 # ==========================
 # Pantalla Futurista - Installer (hardened)
 # Ejecutar desde: Pantalla_reloj/scripts/install.sh
@@ -48,6 +56,15 @@ run_userctl() {
   local cmd=("$@")
   local cmd_desc="${cmd[*]}"
 
+  if [[ ${SYSTEMD_DBUS_AVAILABLE:-1} -ne 1 ]]; then
+    if [[ ${SYSTEMD_DBUS_MESSAGE_SHOWN:-0} -eq 0 ]]; then
+      warn "systemd D-Bus no disponible; omitiendo operaciones systemctl --user"
+      SYSTEMD_DBUS_MESSAGE_SHOWN=1
+    fi
+    echo "[INFO] (skip) systemctl --user ${cmd_desc}"
+    return 0
+  fi
+
   local sudo_cmd=(sudo -u "$target")
   if (( use_login )); then
     sudo_cmd+=(--login)
@@ -65,10 +82,45 @@ run_userctl() {
 
 run_sysctl() {
   local cmd_desc="$*"
+  if [[ ${SYSTEMD_DBUS_AVAILABLE:-1} -ne 1 ]]; then
+    if [[ ${SYSTEMD_DBUS_MESSAGE_SHOWN:-0} -eq 0 ]]; then
+      warn "systemd D-Bus no disponible; omitiendo operaciones systemctl"
+      SYSTEMD_DBUS_MESSAGE_SHOWN=1
+    fi
+    echo "[INFO] (skip) systemctl ${cmd_desc}"
+    return 0
+  fi
   if ! systemctl "$@"; then
     echo "[WARN] Fallo leve: systemctl ${cmd_desc}"
     return 1
   fi
+}
+
+wait_for_http() {
+  local host="$1"
+  local port="$2"
+  local path="$3"
+  local timeout="${4:-30}"
+  local start
+  start=$(date +%s)
+  local delay=2
+  local code=""
+  while true; do
+    code=$(curl -s -o /dev/null -w "%{http_code}" "http://${host}:${port}${path}" || true)
+    if [[ "$code" == "200" ]]; then
+      return 0
+    fi
+    local now
+    now=$(date +%s)
+    if (( now - start >= timeout )); then
+      warn "No se obtuvo 200 en http://${host}:${port}${path} tras ${timeout}s (último código: ${code:-N/A})"
+      return 1
+    fi
+    sleep "$delay"
+    if (( delay < 5 )); then
+      delay=$((delay + 1))
+    fi
+  done
 }
 
 # ----- Paths base (script dentro de /scripts -> raíz es su padre) -----
@@ -254,58 +306,6 @@ disable_autostart_file() {
         mv "$file" "$file.disabled"
         log "  Movido $file -> $file.disabled"
       fi
-    fi
-  fi
-}
-
-setup_blitzortung_ws_client() {
-  local TARGET_BASE="/opt/blitzortung"
-  local CLIENT_DIR="$TARGET_BASE/ws_client"
-  local VENV="$TARGET_BASE/.venv"
-  local ZIP_SRC="${APP_HOME}/homeassistant-blitzortung-master.zip"
-  local ZIP_DIR="$TARGET_BASE/homeassistant-blitzortung-master"
-  local REPO_CLIENT_DIR="$REPO_DIR/opt/blitzortung/ws_client"
-  local SERVICE_SRC="$REPO_DIR/system/user/blitz_ws_client.service"
-  local SERVICE_DST="/home/dani/.config/systemd/user/blitz_ws_client.service"
-
-  log "Configurando Blitzortung WS→MQTT…"
-
-  mkdir -p "$CLIENT_DIR" /var/log/pantalla
-
-  if [[ ! -d "$VENV" ]]; then
-    log "  Creando entorno virtual en $VENV"
-    python3 -m venv "$VENV"
-  fi
-
-  "$VENV/bin/pip" install -q --upgrade pip >/dev/null 2>&1 || true
-  "$VENV/bin/pip" install -q aiohttp paho-mqtt
-
-  if [[ -f "$ZIP_SRC" ]]; then
-    log "  Descomprimiendo paquete Blitzortung desde $ZIP_SRC"
-    unzip -oq "$ZIP_SRC" -d "$TARGET_BASE"
-    if [[ -f "$ZIP_DIR/ws_client/ws_client.py" ]]; then
-      install -Dm755 "$ZIP_DIR/ws_client/ws_client.py" "$CLIENT_DIR/ws_client.py"
-    fi
-  fi
-
-  if [[ ! -f "$CLIENT_DIR/ws_client.py" && -f "$REPO_CLIENT_DIR/ws_client.py" ]]; then
-    log "  Copiando ws_client.py desde el repositorio"
-    install -Dm755 "$REPO_CLIENT_DIR/ws_client.py" "$CLIENT_DIR/ws_client.py"
-  fi
-
-  if [[ -f "$CLIENT_DIR/ws_client.py" ]]; then
-    chmod +x "$CLIENT_DIR/ws_client.py"
-  fi
-
-  if id dani >/dev/null 2>&1; then
-    chown -R dani:dani "$TARGET_BASE"
-  fi
-
-  if id dani >/dev/null 2>&1; then
-    mkdir -p "$(dirname "$SERVICE_DST")"
-    if [[ -f "$SERVICE_SRC" ]]; then
-      install -m 644 "$SERVICE_SRC" "$SERVICE_DST"
-      chown dani:dani "$SERVICE_DST"
     fi
   fi
 }
@@ -559,14 +559,18 @@ run_sysctl daemon-reload || true
 echo "[INFO] Instalando Mosquitto (loopback seguro)…"
 apt-get install -y mosquitto mosquitto-clients
 
-# Configuración loopback limpia
+mkdir -p /etc/mosquitto/conf.d
+cat >/etc/mosquitto/mosquitto.conf <<'EOF'
+allow_anonymous true
+include_dir /etc/mosquitto/conf.d
+EOF
 cat >/etc/mosquitto/conf.d/loopback.conf <<'EOF'
 listener 1883 127.0.0.1
 allow_anonymous true
 persistence false
 connection_messages false
 EOF
-systemctl enable --now mosquitto || true
+run_sysctl enable --now mosquitto || true
 
 if nc -z 127.0.0.1 1883 2>/dev/null; then
   echo "[OK] Mosquitto activo en loopback."
@@ -574,7 +578,7 @@ else
   echo "[WARN] Mosquitto no responde en 127.0.0.1:1883 (se verificará tras login)."
 fi
 
-setup_blitzortung_ws_client || { echo "[ERR] Falló la configuración de Blitzortung"; exit 1; }
+log "El backend gestionará el relay Blitzortung vía MQTT (sin cliente WS externo)."
 
 # Refrescar permisos de logs tras la instalación del relay
 sudo mkdir -p /var/log/mosquitto /var/log/pantalla
@@ -786,40 +790,32 @@ fi
 pkill -f 'chrom(e|ium).*--kiosk' || true
 
 sleep 5
-echo "[POST] Precargando endpoints para UI (efemérides/side-info)…"
-curl -fsS http://127.0.0.1:8081/api/season/month >/dev/null || true
-curl -fsS http://127.0.0.1:8081/api/news/headlines >/dev/null || true
-curl -fsS http://127.0.0.1:8081/api/weather/today >/dev/null || true
-curl -fsS http://127.0.0.1:8081/api/backgrounds/current >/dev/null || true
-
-echo "[INFO] Verificando estado del backend (${BACKEND_SVC_BASENAME}@$APP_USER)..."
-MAX_WAIT=45
-STEP=3
-elapsed=0
-CODE=""
-while [ $elapsed -lt $MAX_WAIT ]; do
-  CODE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8081/api/health || true)
-  if [ "$CODE" = "200" ]; then
-    echo "[OK] Backend operativo tras $elapsed s"
-    break
-  fi
-  sleep $STEP
-  elapsed=$((elapsed + STEP))
-done
-if [ "$CODE" != "200" ]; then
-  echo "[ERROR] Backend no responde tras $MAX_WAIT s — posible demora en uvicorn o fallo de red local."
-  if command -v journalctl >/dev/null 2>&1; then
-    journalctl -u "${BACKEND_SVC_BASENAME}@${APP_USER}" -n 20 --no-pager || true
-  fi
+BACKEND_READY=0
+if wait_for_http 127.0.0.1 8081 /api/health 45; then
+  BACKEND_READY=1
+  echo "[OK] Backend operativo en http://127.0.0.1:8081"
+else
+  echo "[WARN] Backend no respondió 200 tras el tiempo de espera (se omite precarga)"
 fi
 
-RESP=$(curl -s http://127.0.0.1:8081/api/config || true)
 BACKEND_JSON_OK=0
-if echo "$RESP" | jq . >/dev/null 2>&1; then
-  echo "[OK] Configuración backend JSON válida."
-  BACKEND_JSON_OK=1
+if (( BACKEND_READY )); then
+  echo "[POST] Precargando endpoints para UI (efemérides/side-info)…"
+  curl -fsS http://127.0.0.1:8081/api/season/month >/dev/null || true
+  curl -fsS http://127.0.0.1:8081/api/news/headlines >/dev/null || true
+  curl -fsS http://127.0.0.1:8081/api/weather/today >/dev/null || true
+  curl -fsS http://127.0.0.1:8081/api/backgrounds/current >/dev/null || true
+
+  RESP=$(curl -s http://127.0.0.1:8081/api/config || true)
+  if echo "$RESP" | jq . >/dev/null 2>&1; then
+    echo "[OK] Configuración backend JSON válida."
+    BACKEND_JSON_OK=1
+  else
+    echo "[SKIP] Parseo con jq omitido: backend no devolvió JSON válido."
+  fi
 else
-  echo "[SKIP] Parseo con jq omitido: backend no devolvió JSON válido."
+  echo "[SKIP] Precarga de endpoints (backend no listo)"
+  echo "[SKIP] Parseo con jq omitido: backend no listo."
 fi
 
 # Ajuste de zona horaria (solo si no está ya configurada)
@@ -833,11 +829,16 @@ fi
 # ----- Checks finales -----
 echo
 echo "[POST] Validaciones rápidas:"
-HEALTH_BODY="$(curl -s http://127.0.0.1:8081/api/health || true)"
-if printf '%s' "$HEALTH_BODY" | grep -q "healthy"; then
-  echo "  ✅ Backend UP"
+HEALTH_BODY=""
+if (( BACKEND_READY )); then
+  HEALTH_BODY="$(curl -s http://127.0.0.1:8081/api/health || true)"
+  if printf '%s' "$HEALTH_BODY" | grep -q "healthy"; then
+    echo "  ✅ Backend UP"
+  else
+    echo "  ❌ Backend responde pero no está healthy (ver logs con: journalctl -u ${BACKEND_SVC_BASENAME}@$APP_USER -n 50)"
+  fi
 else
-  echo "  ❌ Backend DOWN (ver logs con: journalctl -u ${BACKEND_SVC_BASENAME}@$APP_USER -n 50)"
+  echo "  ⚠️ Backend no verificado (se omitió la comprobación de salud)"
 fi
 
 if pgrep -f "chromium.*--kiosk" >/dev/null 2>&1; then
@@ -871,6 +872,7 @@ fi
 
 echo
 log "Instalación completada."
+log "Si aún no lo has hecho, ejecuta ./scripts/install_post.sh tras iniciar sesión de usuario para activar servicios y validar el backend."
 echo "  UI:       http://localhost/"
 echo "  Backend:  http://127.0.0.1:8081"
 echo "  Config:   $ENV_DIR/config.json ($APP_USER:pantalla 640)"
