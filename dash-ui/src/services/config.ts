@@ -45,19 +45,22 @@ export interface UiAppearanceConfig {
 }
 
 export interface BlitzMqttConfig {
-  host: string;
-  port: number;
-  ssl: boolean;
+  mode: 'public_proxy' | 'custom_broker';
+  proxy_host: string;
+  proxy_port: number;
+  proxy_ssl: boolean;
+  proxy_baseTopic: string;
+  geohash?: string | null;
+  radius_km?: number | null;
+  host?: string | null;
+  port?: number | null;
+  ssl?: boolean;
   username?: string | null;
   password?: string | null;
-  baseTopic: string;
-  geohash?: string | null;
-  radius_km?: number;
 }
 
 export interface BlitzortungUiConfig {
   enabled: boolean;
-  mode: 'mqtt' | 'ws';
   mqtt: BlitzMqttConfig;
 }
 
@@ -228,10 +231,9 @@ export interface BlitzTestResult {
 }
 
 export async function testBlitzConnection(payload: BlitzortungUiConfig): Promise<BlitzTestResult> {
-  const { mode, mqtt } = payload;
   return await apiRequest<BlitzTestResult>('/storms/blitz/test', {
     method: 'POST',
-    body: JSON.stringify({ mode, mqtt }),
+    body: JSON.stringify(payload),
   });
 }
 

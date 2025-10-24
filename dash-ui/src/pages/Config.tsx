@@ -15,6 +15,7 @@ import {
   saveConfigPatch,
   saveSecretsPatch,
   testBlitzConnection,
+  type BlitzMqttConfig,
   type BlitzortungUiConfig,
   type ConfigEnvelope,
   type ConfigUpdate,
@@ -36,6 +37,7 @@ import {
 } from '../services/calendar';
 import { connectNetwork, fetchWifiStatus, scanNetworks, type WifiNetwork, type WifiStatus } from '../services/wifi';
 import { useDashboardConfig } from '../context/DashboardConfigContext';
+import { useStormStatus } from '../context/StormStatusContext';
 
 const MAX_CALENDAR_FILE_BYTES = 5 * 1024 * 1024;
 const ACCEPTED_CALENDAR_TYPES = ['text/calendar', 'text/plain', 'application/octet-stream'];
@@ -136,15 +138,18 @@ interface FormState {
   newsServiceEnabled: boolean;
   uiWifiPreferredInterface: string;
   uiBlitzEnabled: boolean;
-  uiBlitzMode: 'mqtt' | 'ws';
+  uiBlitzMode: 'public_proxy' | 'custom_broker';
+  uiBlitzProxyHost: string;
+  uiBlitzProxyPort: string;
+  uiBlitzProxySsl: boolean;
+  uiBlitzProxyBaseTopic: string;
+  uiBlitzGeohash: string;
+  uiBlitzRadiusKm: string;
   uiBlitzHost: string;
   uiBlitzPort: string;
   uiBlitzSsl: boolean;
   uiBlitzUsername: string;
   uiBlitzPassword: string;
-  uiBlitzBaseTopic: string;
-  uiBlitzGeohash: string;
-  uiBlitzRadiusKm: string;
   uiAppearanceTransparentCards: boolean;
 }
 
@@ -184,20 +189,24 @@ const DEFAULT_FORM: FormState = {
   newsServiceEnabled: true,
   uiWifiPreferredInterface: '',
   uiBlitzEnabled: false,
-  uiBlitzMode: 'mqtt',
-  uiBlitzHost: '',
-  uiBlitzPort: '8883',
-  uiBlitzSsl: true,
-  uiBlitzUsername: '',
-  uiBlitzPassword: '',
-  uiBlitzBaseTopic: '',
+  uiBlitzMode: 'public_proxy',
+  uiBlitzProxyHost: 'mqtt.blitzortung.org',
+  uiBlitzProxyPort: '8883',
+  uiBlitzProxySsl: true,
+  uiBlitzProxyBaseTopic: 'blitzortung',
   uiBlitzGeohash: '',
   uiBlitzRadiusKm: '100',
+  uiBlitzHost: '',
+  uiBlitzPort: '1883',
+  uiBlitzSsl: false,
+  uiBlitzUsername: '',
+  uiBlitzPassword: '',
   uiAppearanceTransparentCards: false,
 };
 
 const Config = () => {
   const { refresh: refreshConfig } = useDashboardConfig();
+  const { status: stormStatus } = useStormStatus();
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
   const [envelope, setEnvelope] = useState<ConfigEnvelope | null>(null);
   const [loading, setLoading] = useState(true);
@@ -242,6 +251,17 @@ const Config = () => {
     const size = typeof calendarStatus.size === 'number' ? formatBytes(calendarStatus.size) : null;
     return { updated, size };
   }, [calendarStatus]);
+
+  const blitzLastEventFormatted = useMemo(() => {
+    if (!stormStatus?.blitzLastEventAt) {
+      return null;
+    }
+    const timestamp = Date.parse(stormStatus.blitzLastEventAt);
+    if (Number.isNaN(timestamp)) {
+      return null;
+    }
+    return new Intl.DateTimeFormat('es-ES', { dateStyle: 'short', timeStyle: 'short' }).format(timestamp);
+  }, [stormStatus?.blitzLastEventAt]);
 
   const openAiDetails = useMemo(() => {
     const secrets = (envelope?.secrets ?? {}) as Record<string, any>;
@@ -434,7 +454,37 @@ const Config = () => {
           ? (configData.wifi as Record<string, any>).preferredInterface
           : DEFAULT_FORM.uiWifiPreferredInterface,
       uiBlitzEnabled: Boolean(uiBlitz.enabled),
-      uiBlitzMode: uiBlitz.mode === 'ws' ? 'ws' : 'mqtt',
+      uiBlitzMode:
+        uiBlitzMqtt.mode === 'custom_broker' ? 'custom_broker' : DEFAULT_FORM.uiBlitzMode,
+      uiBlitzProxyHost:
+        typeof uiBlitzMqtt.proxy_host === 'string' && uiBlitzMqtt.proxy_host
+          ? uiBlitzMqtt.proxy_host
+          : typeof uiBlitzMqtt.host === 'string' && uiBlitzMqtt.host
+          ? uiBlitzMqtt.host
+          : DEFAULT_FORM.uiBlitzProxyHost,
+      uiBlitzProxyPort:
+        typeof uiBlitzMqtt.proxy_port === 'number' && Number.isFinite(uiBlitzMqtt.proxy_port)
+          ? String(uiBlitzMqtt.proxy_port)
+          : typeof uiBlitzMqtt.port === 'number' && Number.isFinite(uiBlitzMqtt.port)
+          ? String(uiBlitzMqtt.port)
+          : DEFAULT_FORM.uiBlitzProxyPort,
+      uiBlitzProxySsl:
+        typeof uiBlitzMqtt.proxy_ssl === 'boolean'
+          ? uiBlitzMqtt.proxy_ssl
+          : typeof uiBlitzMqtt.ssl === 'boolean'
+          ? uiBlitzMqtt.ssl
+          : DEFAULT_FORM.uiBlitzProxySsl,
+      uiBlitzProxyBaseTopic:
+        typeof uiBlitzMqtt.proxy_baseTopic === 'string' && uiBlitzMqtt.proxy_baseTopic
+          ? uiBlitzMqtt.proxy_baseTopic
+          : typeof uiBlitzMqtt.baseTopic === 'string' && uiBlitzMqtt.baseTopic
+          ? uiBlitzMqtt.baseTopic
+          : DEFAULT_FORM.uiBlitzProxyBaseTopic,
+      uiBlitzGeohash: typeof uiBlitzMqtt.geohash === 'string' ? uiBlitzMqtt.geohash : DEFAULT_FORM.uiBlitzGeohash,
+      uiBlitzRadiusKm:
+        typeof uiBlitzMqtt.radius_km === 'number' && Number.isFinite(uiBlitzMqtt.radius_km)
+          ? String(uiBlitzMqtt.radius_km)
+          : DEFAULT_FORM.uiBlitzRadiusKm,
       uiBlitzHost: typeof uiBlitzMqtt.host === 'string' ? uiBlitzMqtt.host : DEFAULT_FORM.uiBlitzHost,
       uiBlitzPort:
         typeof uiBlitzMqtt.port === 'number' && Number.isFinite(uiBlitzMqtt.port)
@@ -446,13 +496,6 @@ const Config = () => {
         typeof uiBlitzMqtt.password === 'string' && uiBlitzMqtt.password
           ? '*****'
           : DEFAULT_FORM.uiBlitzPassword,
-      uiBlitzBaseTopic:
-        typeof uiBlitzMqtt.baseTopic === 'string' ? uiBlitzMqtt.baseTopic : DEFAULT_FORM.uiBlitzBaseTopic,
-      uiBlitzGeohash: typeof uiBlitzMqtt.geohash === 'string' ? uiBlitzMqtt.geohash : DEFAULT_FORM.uiBlitzGeohash,
-      uiBlitzRadiusKm:
-        typeof uiBlitzMqtt.radius_km === 'number' && Number.isFinite(uiBlitzMqtt.radius_km)
-          ? String(uiBlitzMqtt.radius_km)
-          : DEFAULT_FORM.uiBlitzRadiusKm,
       uiAppearanceTransparentCards:
         typeof uiAppearance.transparentCards === 'boolean'
           ? uiAppearance.transparentCards
@@ -526,14 +569,17 @@ const Config = () => {
   }, [
     form.uiBlitzEnabled,
     form.uiBlitzMode,
+    form.uiBlitzProxyHost,
+    form.uiBlitzProxyPort,
+    form.uiBlitzProxySsl,
+    form.uiBlitzProxyBaseTopic,
+    form.uiBlitzGeohash,
+    form.uiBlitzRadiusKm,
     form.uiBlitzHost,
     form.uiBlitzPort,
     form.uiBlitzSsl,
     form.uiBlitzUsername,
     form.uiBlitzPassword,
-    form.uiBlitzBaseTopic,
-    form.uiBlitzGeohash,
-    form.uiBlitzRadiusKm,
   ]);
 
   useEffect(() => {
@@ -887,16 +933,37 @@ const Config = () => {
   };
 
   const buildBlitzPayload = (): BlitzortungUiConfig => {
-    const parsedPort = Number.parseInt(form.uiBlitzPort, 10);
-    const portValue =
-      Number.isFinite(parsedPort) && parsedPort >= 1 && parsedPort <= 65535
-        ? parsedPort
-        : Number.parseInt(DEFAULT_FORM.uiBlitzPort, 10);
+    const proxyPort = Number.parseInt(form.uiBlitzProxyPort, 10);
+    const proxyPortValue =
+      Number.isFinite(proxyPort) && proxyPort >= 1 && proxyPort <= 65535
+        ? proxyPort
+        : Number.parseInt(DEFAULT_FORM.uiBlitzProxyPort, 10);
     const parsedRadius = Number.parseInt(form.uiBlitzRadiusKm, 10);
     const radiusValue =
       Number.isFinite(parsedRadius) && parsedRadius >= 0
         ? Math.min(Math.max(parsedRadius, 0), 2000)
         : undefined;
+    const trimmedGeohash = form.uiBlitzGeohash.trim();
+    const trimmedProxyBase = form.uiBlitzProxyBaseTopic.trim();
+    const trimmedProxyHost = form.uiBlitzProxyHost.trim();
+
+    const mqtt: BlitzMqttConfig = {
+      mode: form.uiBlitzMode,
+      proxy_host: trimmedProxyHost || DEFAULT_FORM.uiBlitzProxyHost,
+      proxy_port: proxyPortValue,
+      proxy_ssl: form.uiBlitzProxySsl,
+      proxy_baseTopic: trimmedProxyBase || DEFAULT_FORM.uiBlitzProxyBaseTopic,
+      geohash: trimmedGeohash ? trimmedGeohash : null,
+      radius_km: typeof radiusValue === 'number' ? radiusValue : null,
+    };
+
+    const trimmedHost = form.uiBlitzHost.trim();
+    const customPort = Number.parseInt(form.uiBlitzPort, 10);
+    const customPortValue =
+      Number.isFinite(customPort) && customPort >= 1 && customPort <= 65535
+        ? customPort
+        : Number.parseInt(DEFAULT_FORM.uiBlitzPort, 10);
+    const trimmedUsername = form.uiBlitzUsername.trim();
     let passwordValue = form.uiBlitzPassword.trim();
     if (!passwordValue) {
       passwordValue = hasStoredBlitzPassword ? '*****' : '';
@@ -904,19 +971,27 @@ const Config = () => {
       passwordValue = '';
     }
 
+    if (form.uiBlitzMode === 'custom_broker') {
+      mqtt.host = trimmedHost;
+      mqtt.port = customPortValue;
+      mqtt.ssl = form.uiBlitzSsl;
+      mqtt.username = trimmedUsername ? trimmedUsername : null;
+      mqtt.password = passwordValue;
+    } else {
+      if (trimmedHost) {
+        mqtt.host = trimmedHost;
+      }
+      if (Number.isFinite(customPort) && customPort >= 1 && customPort <= 65535) {
+        mqtt.port = customPort;
+      }
+      mqtt.ssl = form.uiBlitzSsl;
+      mqtt.username = trimmedUsername ? trimmedUsername : null;
+      mqtt.password = passwordValue;
+    }
+
     return {
       enabled: form.uiBlitzEnabled,
-      mode: form.uiBlitzMode,
-      mqtt: {
-        host: form.uiBlitzHost.trim(),
-        port: portValue,
-        ssl: form.uiBlitzSsl,
-        username: form.uiBlitzUsername.trim() ? form.uiBlitzUsername.trim() : null,
-        password: passwordValue,
-        baseTopic: form.uiBlitzBaseTopic.trim(),
-        geohash: form.uiBlitzGeohash.trim() ? form.uiBlitzGeohash.trim() : null,
-        radius_km: radiusValue,
-      },
+      mqtt,
     };
   };
 
@@ -951,24 +1026,45 @@ const Config = () => {
       return;
     }
 
-    if (form.uiBlitzEnabled && form.uiBlitzMode === 'mqtt') {
-      const trimmedHost = form.uiBlitzHost.trim();
-      const trimmedTopic = form.uiBlitzBaseTopic.trim();
-      const parsedPort = Number.parseInt(form.uiBlitzPort, 10);
-      if (!trimmedHost) {
-        setNotice({ type: 'error', text: 'Introduce un host para el relay MQTT de Blitzortung.' });
+    if (form.uiBlitzEnabled) {
+      const proxyHost = form.uiBlitzProxyHost.trim();
+      const proxyBase = form.uiBlitzProxyBaseTopic.trim();
+      const proxyPort = Number.parseInt(form.uiBlitzProxyPort, 10);
+      const radiusValue = Number.parseInt(form.uiBlitzRadiusKm, 10);
+
+      if (!proxyHost) {
+        setNotice({ type: 'error', text: 'Introduce un host para el proxy público de Blitzortung.' });
         setSavingConfig(false);
         return;
       }
-      if (!trimmedTopic) {
-        setNotice({ type: 'error', text: 'Introduce un baseTopic para el relay MQTT.' });
+      if (!proxyBase) {
+        setNotice({ type: 'error', text: 'Introduce un prefijo base para el proxy MQTT.' });
         setSavingConfig(false);
         return;
       }
-      if (!Number.isFinite(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
-        setNotice({ type: 'error', text: 'El puerto MQTT debe estar entre 1 y 65535.' });
+      if (!Number.isFinite(proxyPort) || proxyPort < 1 || proxyPort > 65535) {
+        setNotice({ type: 'error', text: 'El puerto del proxy debe estar entre 1 y 65535.' });
         setSavingConfig(false);
         return;
+      }
+      if (Number.isNaN(radiusValue) || radiusValue < 0) {
+        setNotice({ type: 'error', text: 'El radio debe ser un número mayor o igual que 0.' });
+        setSavingConfig(false);
+        return;
+      }
+      if (form.uiBlitzMode === 'custom_broker') {
+        const customHost = form.uiBlitzHost.trim();
+        const customPort = Number.parseInt(form.uiBlitzPort, 10);
+        if (!customHost) {
+          setNotice({ type: 'error', text: 'Introduce un host para el broker MQTT personalizado.' });
+          setSavingConfig(false);
+          return;
+        }
+        if (!Number.isFinite(customPort) || customPort < 1 || customPort > 65535) {
+          setNotice({ type: 'error', text: 'El puerto del broker personalizado debe estar entre 1 y 65535.' });
+          setSavingConfig(false);
+          return;
+        }
       }
     }
 
@@ -1694,54 +1790,81 @@ const Config = () => {
                   <label className="flex items-center gap-2">
                     <input
                       type="radio"
-                      value="mqtt"
-                      checked={form.uiBlitzMode === 'mqtt'}
-                      onChange={(event) => handleFormChange('uiBlitzMode', event.target.value as 'mqtt' | 'ws')}
+                      value="public_proxy"
+                      checked={form.uiBlitzMode === 'public_proxy'}
+                      onChange={(event) =>
+                        handleFormChange('uiBlitzMode', event.target.value as 'public_proxy' | 'custom_broker')
+                      }
                       className="h-4 w-4 border-white/30 bg-white/10 text-emerald-400 focus:ring-emerald-400"
                       disabled={!form.uiBlitzEnabled}
                     />
-                    Relay MQTT
+                    Proxy público (recomendado)
                   </label>
                   <label className="flex items-center gap-2">
                     <input
                       type="radio"
-                      value="ws"
-                      checked={form.uiBlitzMode === 'ws'}
-                      onChange={(event) => handleFormChange('uiBlitzMode', event.target.value as 'mqtt' | 'ws')}
+                      value="custom_broker"
+                      checked={form.uiBlitzMode === 'custom_broker'}
+                      onChange={(event) =>
+                        handleFormChange('uiBlitzMode', event.target.value as 'public_proxy' | 'custom_broker')
+                      }
                       className="h-4 w-4 border-white/30 bg-white/10 text-emerald-400 focus:ring-emerald-400"
                       disabled={!form.uiBlitzEnabled}
                     />
-                    Websocket (legacy)
+                    Broker personalizado (avanzado)
                   </label>
                 </div>
 
-                {form.uiBlitzEnabled && form.uiBlitzMode === 'ws' ? (
+                {form.uiBlitzEnabled && form.uiBlitzMode === 'custom_broker' ? (
                   <div className="rounded-lg border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-xs text-amber-100">
-                    No recomendado. Usa relay MQTT por estabilidad y cumplimiento.
+                    Asegúrate de tener un broker local accesible y habilita la opción <code>--enable-local-mqtt</code> en la
+                    instalación si lo necesitas.
+                  </div>
+                ) : null}
+
+                {form.uiBlitzEnabled && stormStatus?.blitzEnabled ? (
+                  <div
+                    className={`rounded-lg border px-3 py-2 text-xs ${
+                      stormStatus.blitzConnected
+                        ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-100'
+                        : 'border-amber-400/40 bg-amber-500/10 text-amber-100'
+                    }`}
+                  >
+                    {stormStatus.blitzConnected ? (
+                      <span>
+                        Conectado al {stormStatus.blitzMode === 'custom_broker' ? 'broker personalizado' : 'proxy público'}
+                        {blitzLastEventFormatted ? ` • último evento ${blitzLastEventFormatted}` : ''}.
+                      </span>
+                    ) : (
+                      <span>Sin conexión con el broker configurado. Revisa los parámetros o el estado del servicio.</span>
+                    )}
+                    {!stormStatus.blitzConnected && stormStatus.blitzLastError ? (
+                      <span className="mt-1 block text-amber-200/80">{stormStatus.blitzLastError}</span>
+                    ) : null}
                   </div>
                 ) : null}
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
-                    <label className="block text-xs uppercase tracking-wide text-white/50">Host</label>
+                    <label className="block text-xs uppercase tracking-wide text-white/50">Proxy host</label>
                     <input
                       type="text"
                       className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                      value={form.uiBlitzHost}
-                      onChange={(event) => handleFormChange('uiBlitzHost', event.target.value)}
-                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'mqtt'}
+                      value={form.uiBlitzProxyHost}
+                      onChange={(event) => handleFormChange('uiBlitzProxyHost', event.target.value)}
+                      disabled={!form.uiBlitzEnabled}
                     />
                   </div>
                   <div>
-                    <label className="block text-xs uppercase tracking-wide text-white/50">Puerto</label>
+                    <label className="block text-xs uppercase tracking-wide text-white/50">Proxy puerto</label>
                     <input
                       type="number"
                       min={1}
                       max={65535}
                       className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                      value={form.uiBlitzPort}
-                      onChange={(event) => handleFormChange('uiBlitzPort', event.target.value)}
-                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'mqtt'}
+                      value={form.uiBlitzProxyPort}
+                      onChange={(event) => handleFormChange('uiBlitzProxyPort', event.target.value)}
+                      disabled={!form.uiBlitzEnabled}
                     />
                   </div>
                   <div>
@@ -1749,9 +1872,9 @@ const Config = () => {
                     <input
                       type="text"
                       className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                      value={form.uiBlitzBaseTopic}
-                      onChange={(event) => handleFormChange('uiBlitzBaseTopic', event.target.value)}
-                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'mqtt'}
+                      value={form.uiBlitzProxyBaseTopic}
+                      onChange={(event) => handleFormChange('uiBlitzProxyBaseTopic', event.target.value)}
+                      disabled={!form.uiBlitzEnabled}
                     />
                   </div>
                   <div>
@@ -1762,7 +1885,7 @@ const Config = () => {
                       value={form.uiBlitzGeohash}
                       onChange={(event) => handleFormChange('uiBlitzGeohash', event.target.value)}
                       placeholder="Opcional"
-                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'mqtt'}
+                      disabled={!form.uiBlitzEnabled}
                     />
                   </div>
                   <div>
@@ -1774,9 +1897,54 @@ const Config = () => {
                       className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                       value={form.uiBlitzRadiusKm}
                       onChange={(event) => handleFormChange('uiBlitzRadiusKm', event.target.value)}
-                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'mqtt'}
+                      disabled={!form.uiBlitzEnabled}
                     />
                   </div>
+                  <label className="flex items-center gap-3 text-sm text-white/75 md:col-span-2">
+                    <input
+                      type="checkbox"
+                      checked={form.uiBlitzProxySsl}
+                      onChange={(event) => handleFormChange('uiBlitzProxySsl', event.target.checked)}
+                      className="h-4 w-4 rounded border-white/30 bg-white/10 text-emerald-400 focus:ring-emerald-400"
+                      disabled={!form.uiBlitzEnabled}
+                    />
+                    TLS del proxy activado
+                  </label>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="block text-xs uppercase tracking-wide text-white/50">Host personalizado</label>
+                    <input
+                      type="text"
+                      className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                      value={form.uiBlitzHost}
+                      onChange={(event) => handleFormChange('uiBlitzHost', event.target.value)}
+                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'custom_broker'}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-wide text-white/50">Puerto personalizado</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={65535}
+                      className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                      value={form.uiBlitzPort}
+                      onChange={(event) => handleFormChange('uiBlitzPort', event.target.value)}
+                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'custom_broker'}
+                    />
+                  </div>
+                  <label className="flex items-center gap-3 text-sm text-white/75">
+                    <input
+                      type="checkbox"
+                      checked={form.uiBlitzSsl}
+                      onChange={(event) => handleFormChange('uiBlitzSsl', event.target.checked)}
+                      className="h-4 w-4 rounded border-white/30 bg-white/10 text-emerald-400 focus:ring-emerald-400"
+                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'custom_broker'}
+                    />
+                    TLS del broker personalizado
+                  </label>
                   <div>
                     <label className="block text-xs uppercase tracking-wide text-white/50">Usuario</label>
                     <input
@@ -1785,22 +1953,9 @@ const Config = () => {
                       value={form.uiBlitzUsername}
                       onChange={(event) => handleFormChange('uiBlitzUsername', event.target.value)}
                       placeholder="Opcional"
-                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'mqtt'}
+                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'custom_broker'}
                     />
                   </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <label className="flex items-center gap-3 text-sm text-white/75">
-                    <input
-                      type="checkbox"
-                      checked={form.uiBlitzSsl}
-                      onChange={(event) => handleFormChange('uiBlitzSsl', event.target.checked)}
-                      className="h-4 w-4 rounded border-white/30 bg-white/10 text-emerald-400 focus:ring-emerald-400"
-                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'mqtt'}
-                    />
-                    TLS activado
-                  </label>
                   <div>
                     <label className="block text-xs uppercase tracking-wide text-white/50">Contraseña</label>
                     <input
@@ -1809,7 +1964,7 @@ const Config = () => {
                       value={form.uiBlitzPassword}
                       onChange={(event) => handleFormChange('uiBlitzPassword', event.target.value)}
                       placeholder={hasStoredBlitzPassword ? '*****' : 'Opcional'}
-                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'mqtt'}
+                      disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'custom_broker'}
                     />
                     {form.uiBlitzPassword.trim() && form.uiBlitzPassword.trim() !== '*****' ? (
                       <p className="mt-1 text-xs text-amber-200/80">La contraseña se actualizará al guardar.</p>
@@ -1838,7 +1993,7 @@ const Config = () => {
                     type="button"
                     onClick={handleTestBlitzConnection}
                     className="rounded-lg border border-white/20 px-4 py-2 text-sm font-medium text-white transition hover:border-white/35 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!form.uiBlitzEnabled || form.uiBlitzMode !== 'mqtt' || testingBlitz}
+                    disabled={!form.uiBlitzEnabled || testingBlitz}
                   >
                     {testingBlitz ? 'Probando…' : 'Probar conexión'}
                   </button>
