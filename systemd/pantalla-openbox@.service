@@ -1,17 +1,16 @@
 [Unit]
-Description=Pantalla_reloj Openbox session for %i (DISPLAY=:0)
-After=network-online.target nginx.service pantalla-dash-backend@%i.service pantalla-xorg.service
+Description=Pantalla reloj Openbox session (%i)
+After=pantalla-xorg.service
 Requires=pantalla-xorg.service
-PartOf=pantalla-session.target
 
 [Service]
+Type=simple
 User=%i
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/%i/.Xauthority
-PAMName=login
 ExecStart=/usr/bin/openbox-session
 Restart=always
-RestartSec=2
+RestartSec=5
 
 [Install]
-WantedBy=pantalla-session.target
+WantedBy=multi-user.target

@@ -1,20 +1,19 @@
-import { Routes, Route } from 'react-router-dom';
-import { DashboardConfigProvider } from './context/DashboardConfigContext';
-import { StormStatusProvider } from './context/StormStatusContext';
-import Display from './pages/Display';
-import Config from './pages/Config';
+import React from "react";
+import { Route, Routes } from "react-router-dom";
 
-const App = () => (
-  <DashboardConfigProvider>
-    <StormStatusProvider>
-      <div className="h-full w-full">
-        <Routes>
-          <Route path="/" element={<Display />} />
-          <Route path="/config" element={<Config />} />
-        </Routes>
-      </div>
-    </StormStatusProvider>
-  </DashboardConfigProvider>
-);
+import { ConfigProvider } from "./context/ConfigContext";
+import { ConfigPage } from "./pages/ConfigPage";
+import { DashboardPage } from "./pages/DashboardPage";
+
+const App: React.FC = () => {
+  return (
+    <ConfigProvider>
+      <Routes>
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/config" element={<ConfigPage />} />
+      </Routes>
+    </ConfigProvider>
+  );
+};
 
 export default App;
