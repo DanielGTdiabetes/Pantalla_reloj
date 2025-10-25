@@ -55,10 +55,6 @@ STATE_DIR=/var/lib/pantalla-reloj
 STATE_RUNTIME="${STATE_DIR}/state"
 LOG_DIR=/var/log/pantalla-reloj
 WEB_ROOT=/var/www/html
-NGINX_SITE=/etc/nginx/sites-available/pantalla-reloj.conf
-NGINX_SITE_LINK=/etc/nginx/sites-enabled/pantalla-reloj.conf
-NGINX_DEFAULT_LINK=/etc/nginx/sites-enabled/default
-NGINX_DEFAULT_STATE="${STATE_RUNTIME}/nginx-default-enabled"
 WEBROOT_MANIFEST="${STATE_RUNTIME}/webroot-manifest"
 KIOSK_BIN_SRC="${REPO_ROOT}/usr/local/bin/pantalla-kiosk"
 KIOSK_BIN_DST=/usr/local/bin/pantalla-kiosk
@@ -205,32 +201,134 @@ chown -R "$USER_NAME:$USER_NAME" "$PANTALLA_PREFIX" "$STATE_DIR" "$LOG_DIR"
 touch "$LOG_DIR/backend.log"
 chown "$USER_NAME:$USER_NAME" "$LOG_DIR/backend.log"
 
-setup_nginx() {
+write_pantalla_vhost() {
+  local target="$1"
+  tee "$target" >/dev/null <<'NG'
+server {
+  listen 80;
+  listen [::]:80;
+  server_name _;
+
+  root /var/www/html;
+  index index.html;
+
+  location /api/ {
+    proxy_pass http://127.0.0.1:8081/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  location / {
+    try_files $uri /index.html;
+  }
+}
+NG
+}
+
+configure_nginx() {
+  set -euo pipefail
+  log_info "Configurando Nginx"
+
+  local sa="/etc/nginx/sites-available"
+  local se="/etc/nginx/sites-enabled"
+  local vhost="$sa/pantalla-reloj.conf"
+
   if ! command -v nginx >/dev/null 2>&1; then
-    log_warn "nginx not installed; skipping web server setup"
+    log_warn "nginx no está instalado; se omite la configuración del servidor web"
     return
   fi
 
-  install -m 0644 "$REPO_ROOT/etc/nginx/sites-available/pantalla-reloj.conf" "$NGINX_SITE"
-  ln -sfn "$NGINX_SITE" "$NGINX_SITE_LINK"
+  mkdir -p "$sa" "$se"
 
-  if [[ -L "$NGINX_DEFAULT_LINK" || -e "$NGINX_DEFAULT_LINK" ]]; then
-    echo "enabled" >"$NGINX_DEFAULT_STATE"
-    rm -f "$NGINX_DEFAULT_LINK"
-  else
-    echo "disabled" >"$NGINX_DEFAULT_STATE"
+  write_pantalla_vhost "$vhost"
+
+  ln -sfn "$vhost" "$se/pantalla-reloj.conf"
+
+  local nginx_test_output
+  if ! nginx_test_output=$(nginx -t 2>&1); then
+    printf '%s\n' "$nginx_test_output"
+    if [[ "$nginx_test_output" == *"duplicate default server"* ]]; then
+      log_warn "nginx -t falló por default_server duplicado. Ejecutando diagnóstico…"
+
+      log_info "---- default_server refs ----"
+      local default_refs
+      default_refs="$(grep -nR "default_server" /etc/nginx/sites-enabled /etc/nginx/sites-available 2>/dev/null || true)"
+      if [[ -n "$default_refs" ]]; then
+        printf '%s\n' "$default_refs"
+      else
+        log_info "(sin coincidencias)"
+      fi
+
+      log_info "---- listen :80 refs ----"
+      local listen_refs
+      listen_refs="$(grep -nR "listen .*80" /etc/nginx/sites-enabled /etc/nginx/sites-available 2>/dev/null || true)"
+      if [[ -n "$listen_refs" ]]; then
+        printf '%s\n' "$listen_refs"
+      else
+        log_info "(sin coincidencias)"
+      fi
+
+      if grep -Eq 'listen[[:space:]]+80[[:space:]]+default_server;' "$vhost" || \
+         grep -Eq 'listen[[:space:]]+\[::\]:80[[:space:]]+default_server;' "$vhost"; then
+        log_warn "Nuestro vhost contenía default_server; reescribiéndolo sin el flag."
+        write_pantalla_vhost "$vhost"
+        ln -sfn "$vhost" "$se/pantalla-reloj.conf"
+      fi
+
+      default_refs="$(grep -nR "default_server" /etc/nginx/sites-enabled /etc/nginx/sites-available 2>/dev/null || true)"
+
+      if ! nginx_test_output=$(nginx -t 2>&1); then
+        printf '%s\n' "$nginx_test_output"
+        if [[ "$nginx_test_output" == *"duplicate default server"* ]]; then
+          local conflict_file
+          conflict_file="$(printf '%s\n' "$default_refs" | awk -F: '$1 !~ /pantalla-reloj\.conf/ && $1 != "" {print $1; exit}')"
+          if [[ -z "$conflict_file" ]]; then
+            conflict_file="otro archivo en /etc/nginx/sites-enabled"
+          fi
+          log_error "Nginx sigue detectando un default_server duplicado en: $conflict_file"
+          log_error "Deshabilítelo manualmente (por ejemplo: sudo rm /etc/nginx/sites-enabled/default) y vuelva a ejecutar el instalador."
+        else
+          log_error "nginx -t sigue fallando: $nginx_test_output"
+        fi
+        exit 1
+      fi
+    else
+      log_error "nginx -t falló: $nginx_test_output"
+      exit 1
+    fi
   fi
 
-  if ! nginx -t; then
-    log_error "nginx -t failed"
-    exit 1
-  fi
   systemctl enable --now nginx >/dev/null 2>&1 || true
-  systemctl restart nginx
+  systemctl reload nginx
+  log_info "Nginx recargado correctamente"
+
+  local front_status
+  front_status="$(curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1/ || true)"
+  front_status="${front_status:-000}"
+  echo "FRONT:${front_status}"
+
+  local api_status
+  api_status="$(curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1/api/health || true)"
+  api_status="${api_status:-000}"
+  echo "API:${api_status}"
+
+  if [[ "$front_status" != "200" ]]; then
+    log_warn "Frontend aún no responde correctamente (HTTP $front_status)"
+  else
+    log_info "Frontend OK (HTTP 200)"
+  fi
+
+  if [[ "$api_status" != "200" ]]; then
+    log_warn "Backend aún no responde (HTTP $api_status); se levantará vía systemd."
+  else
+    log_info "Backend OK (HTTP 200)"
+  fi
 }
 
-log_info "Configuring nginx"
-setup_nginx
+configure_nginx
 
 log_info "Installing systemd units"
 install -m 0644 "$REPO_ROOT/systemd/pantalla-xorg.service" /etc/systemd/system/pantalla-xorg.service
