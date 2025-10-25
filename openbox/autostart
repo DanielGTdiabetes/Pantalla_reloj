@@ -1,23 +1,2 @@
-#!/bin/sh
-
-LOG_FILE=/var/log/pantalla-reloj/openbox-autostart.log
-mkdir -p "$(dirname "$LOG_FILE")"
-exec >>"$LOG_FILE" 2>&1
-echo "[autostart] $(date -Is) starting"
-
-if command -v dbus-update-activation-environment >/dev/null 2>&1; then
-  dbus-update-activation-environment --systemd DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority || true
-fi
-
-# Desactivar ahorro de energía y salvapantallas
-xset -dpms || true
-xset s off || true
-xset s noblank || true
-
-# Rotar la pantalla principal 90° a la izquierda
-XR_OUT="$(xrandr --query 2>/dev/null | awk '/ connected/{print $1; exit}')"
-if [ -n "$XR_OUT" ]; then
-  xrandr --output "$XR_OUT" --rotate left --primary || true
-fi
-
-echo "[autostart] $(date -Is) done"
+#!/usr/bin/env bash
+exec /opt/pantalla/openbox/autostart "$@"

@@ -50,6 +50,7 @@ fi
 USER_HOME="/home/${USER_NAME}"
 
 PANTALLA_PREFIX=/opt/pantalla-reloj
+SESSION_PREFIX=/opt/pantalla
 BACKEND_DEST="${PANTALLA_PREFIX}/backend"
 STATE_DIR=/var/lib/pantalla-reloj
 STATE_RUNTIME="${STATE_DIR}/state"
@@ -60,9 +61,10 @@ KIOSK_BIN_SRC="${REPO_ROOT}/usr/local/bin/pantalla-kiosk"
 KIOSK_BIN_DST=/usr/local/bin/pantalla-kiosk
 UDEV_RULE=/etc/udev/rules.d/70-pantalla-render.rules
 
-install -d -m 0755 "$PANTALLA_PREFIX" "$LOG_DIR"
+install -d -m 0755 "$PANTALLA_PREFIX" "$LOG_DIR" "$SESSION_PREFIX"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_RUNTIME"
+install -d -m 0755 "$SESSION_PREFIX/bin" "$SESSION_PREFIX/openbox"
 
 log_info "Installing base packages"
 APT_PACKAGES=(
@@ -160,6 +162,9 @@ if [[ -f "$AUTO_FILE" && ! -f "$AUTO_BACKUP" ]]; then
   cp -p "$AUTO_FILE" "$AUTO_BACKUP"
 fi
 install -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$REPO_ROOT/openbox/autostart" "$AUTO_FILE"
+
+install -m 0755 "$REPO_ROOT/opt/pantalla/bin/xorg-openbox-env.sh" "$SESSION_PREFIX/bin/xorg-openbox-env.sh"
+install -m 0755 "$REPO_ROOT/opt/pantalla/openbox/autostart" "$SESSION_PREFIX/openbox/autostart"
 
 install -m 0755 "$KIOSK_BIN_SRC" "$KIOSK_BIN_DST"
 install -d -m 0755 /usr/lib/pantalla-reloj
@@ -358,19 +363,16 @@ else
 fi
 
 log_info "Enabling services"
-for svc in \
-  pantalla-xorg.service \
-  pantalla-dash-backend@${USER_NAME}.service \
-  pantalla-openbox@${USER_NAME}.service \
-  pantalla-kiosk@${USER_NAME}.service
-  do
-    systemctl enable "$svc"
-  done
+systemctl enable pantalla-xorg.service
+systemctl enable pantalla-dash-backend@${USER_NAME}.service
+systemctl enable pantalla-openbox@${USER_NAME}.service
+systemctl enable pantalla-kiosk@${USER_NAME}.service
 
 log_info "Restarting Pantalla services"
 systemctl restart pantalla-xorg.service
-systemctl restart pantalla-dash-backend@${USER_NAME}.service
+systemctl enable --now pantalla-openbox@${USER_NAME}.service
 systemctl restart pantalla-openbox@${USER_NAME}.service
+systemctl restart pantalla-dash-backend@${USER_NAME}.service
 systemctl restart pantalla-kiosk@${USER_NAME}.service
 
 log_info "Running quick health checks"
