@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Pantalla_reloj — autostart minimalista kiosk (1920x480)
+
+# Desactivar blank/DPMS
+xset -dpms
+xset s off
+xset s noblank
+
+# Ocultar cursor
+unclutter -idle 0.1 -root &
+
+# Pequeña espera para que Nginx/Backend estén listos (defensivo)
+sleep 2
+
+# Lanzar Firefox en kiosk apuntando al frontend local
+# Si cambias la URL, hazlo en install.sh y aquí mantén coherencia.
+firefox --no-remote --kiosk http://127.0.0.1 & disown
