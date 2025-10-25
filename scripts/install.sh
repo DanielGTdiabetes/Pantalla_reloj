@@ -205,8 +205,8 @@ write_pantalla_vhost() {
   local target="$1"
   tee "$target" >/dev/null <<'NG'
 server {
-  listen 80;
-  listen [::]:80;
+  listen 80 default_server;
+  listen [::]:80 default_server;
   server_name _;
 
   root /var/www/html;
@@ -243,6 +243,11 @@ configure_nginx() {
 
   mkdir -p "$sa" "$se"
 
+  if [[ -e "$se/default" ]]; then
+    log_info "Disabling nginx default site"
+    rm -f "$se/default"
+  fi
+
   write_pantalla_vhost "$vhost"
 
   ln -sfn "$vhost" "$se/pantalla-reloj.conf"
@@ -270,15 +275,6 @@ configure_nginx() {
       else
         log_info "(sin coincidencias)"
       fi
-
-      if grep -Eq 'listen[[:space:]]+80[[:space:]]+default_server;' "$vhost" || \
-         grep -Eq 'listen[[:space:]]+\[::\]:80[[:space:]]+default_server;' "$vhost"; then
-        log_warn "Nuestro vhost contenía default_server; reescribiéndolo sin el flag."
-        write_pantalla_vhost "$vhost"
-        ln -sfn "$vhost" "$se/pantalla-reloj.conf"
-      fi
-
-      default_refs="$(grep -nR "default_server" /etc/nginx/sites-enabled /etc/nginx/sites-available 2>/dev/null || true)"
 
       if ! nginx_test_output=$(nginx -t 2>&1); then
         printf '%s\n' "$nginx_test_output"
