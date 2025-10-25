@@ -17,6 +17,7 @@ rm -f /etc/systemd/system/pantalla-dash-backend@.service
 rm -f /etc/systemd/system/pantalla-xorg.service
 systemctl daemon-reload
 systemctl reset-failed || true
+systemctl unmask display-manager.service 2>/dev/null || true
 
 rm -f /etc/nginx/sites-enabled/pantalla-reloj.conf
 rm -f /etc/nginx/sites-available/pantalla-reloj.conf
