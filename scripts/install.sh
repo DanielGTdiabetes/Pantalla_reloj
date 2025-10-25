@@ -27,155 +27,274 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-log() {
-  printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1"
+log_info() {
+  printf '[INFO] %s\n' "$*"
 }
 
+log_ok() {
+  printf '[OK] %s\n' "$*"
+}
+
+log_error() {
+  printf '[ERROR] %s\n' "$*" >&2
+}
+
+USER_NAME="dani"
+USER_HOME="/home/${USER_NAME}"
 PANTALLA_ROOT=/opt/pantalla
-BACKEND_DIR="$PANTALLA_ROOT/backend"
+BACKEND_DEST="$PANTALLA_ROOT/backend"
 CONFIG_DIR="$PANTALLA_ROOT/config"
 CACHE_DIR="$PANTALLA_ROOT/cache"
 LOG_DIR=/var/log/pantalla
 WEB_ROOT=/var/www/html
 FIREFOX_URL="https://download.mozilla.org/?product=firefox-latest&os=linux64&lang=es-ES"
 FIREFOX_DEST=/opt/firefox
+SYSTEMD_DIR=/etc/systemd/system
+NGINX_SITE=/etc/nginx/sites-available/pantalla-reloj.conf
+NGINX_SITE_LINK=/etc/nginx/sites-enabled/pantalla-reloj.conf
 
-log "Deteniendo servicios previos si existen"
-systemctl stop pantalla-xorg.service pantalla-openbox@dani.service pantalla-dash-backend@dani.service 2>/dev/null || true
+log_info "Desactivando display managers en conflicto"
 systemctl disable --now lightdm gdm sddm display-manager.service 2>/dev/null || true
+systemctl mask display-manager.service 2>/dev/null || true
 
-log "Limpiando estructura previa"
-rm -rf "$PANTALLA_ROOT" "$LOG_DIR" "$WEB_ROOT"/*
-mkdir -p "$BACKEND_DIR" "$CONFIG_DIR" "$CACHE_DIR" "$LOG_DIR" "$WEB_ROOT"
-
-log "Actualizando paquetes"
+log_info "Actualizando lista de paquetes"
 apt-get update -y
-DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  python3-venv python3-pip python3-dev \
-  nginx xorg openbox x11-xserver-utils wmctrl xdotool dbus-x11 \
-  curl unzip jq rsync file
+
+APT_PACKAGES=(
+  python3-venv
+  python3-pip
+  python3-dev
+  nginx
+  xorg
+  openbox
+  x11-xserver-utils
+  wmctrl
+  xdotool
+  dbus-x11
+  curl
+  unzip
+  jq
+  rsync
+  file
+)
+log_info "Instalando dependencias base con APT"
+DEBIAN_FRONTEND=noninteractive apt-get install -y "${APT_PACKAGES[@]}"
 
 if ! command -v node >/dev/null 2>&1; then
-  log "Node.js no encontrado. Instalando Node.js 20 LTS desde NodeSource"
+  log_info "Node.js no encontrado. Instalando Node.js 20.x desde NodeSource"
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
   apt-get update -y
   DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
 else
-  log "Node.js detectado ($(node -v)). Se omite instalación."
+  log_info "Node.js detectado ($(node -v)). Se omite instalación."
 fi
+
+if ! command -v corepack >/dev/null 2>&1; then
+  log_error "Node.js 20.x debería incluir Corepack. Verifique la instalación de Node."
+  exit 1
+fi
+
+log_info "Habilitando Corepack y npm latest"
+corepack enable >/dev/null 2>&1 || true
+corepack prepare npm@latest --activate
 
 if ! command -v npm >/dev/null 2>&1; then
-  echo "[ERROR] npm no está disponible tras instalar Node.js" >&2
-  echo "        Por favor verifique la instalación de Node.js" >&2
+  log_error "npm no está disponible después de activar Corepack"
   exit 1
 fi
 
-log "Instalando Firefox en modo kiosk"
-rm -rf "$FIREFOX_DEST"
-mkdir -p /opt
-TEMP_ARCHIVE="$(mktemp /tmp/firefox.XXXXXX)"
-if ! curl -fL --retry 3 --retry-delay 5 --retry-connrefused "$FIREFOX_URL" -o "$TEMP_ARCHIVE"; then
-  echo "[ERROR] No se pudo descargar Firefox desde $FIREFOX_URL" >&2
-  exit 1
-fi
-
-MIME_TYPE="$(file -b --mime-type "$TEMP_ARCHIVE")"
-case "$MIME_TYPE" in
-  application/x-bzip2)
-    TAR_COMPRESS_FLAG="j"
-    ;;
-  application/x-xz)
-    TAR_COMPRESS_FLAG="J"
-    ;;
-  *)
-    echo "[ERROR] El archivo descargado de Firefox no es un tar comprimido válido (tipo: $MIME_TYPE)" >&2
-    echo "        Verifique la conectividad de red o vuelva a intentar la instalación" >&2
-    rm -f "$TEMP_ARCHIVE"
+install_firefox() {
+  log_info "Descargando Firefox"
+  mkdir -p /opt
+  local temp_archive
+  temp_archive="$(mktemp /tmp/firefox.XXXXXX.tar)"
+  if ! curl -fsSL "$FIREFOX_URL" -o "$temp_archive"; then
+    rm -f "$temp_archive"
+    log_error "No se pudo descargar Firefox desde $FIREFOX_URL"
     exit 1
-    ;;
-esac
+  fi
 
-if ! tar -t${TAR_COMPRESS_FLAG}f "$TEMP_ARCHIVE" >/dev/null 2>&1; then
-  echo "[ERROR] El archivo descargado de Firefox está corrupto o no se pudo leer" >&2
-  rm -f "$TEMP_ARCHIVE"
-  exit 1
+  local mime_type
+  mime_type="$(file -b --mime-type "$temp_archive")"
+  local tar_flag
+  case "$mime_type" in
+    application/x-bzip2)
+      tar_flag="j"
+      ;;
+    application/x-xz)
+      tar_flag="J"
+      ;;
+    application/gzip|application/x-gzip)
+      tar_flag="z"
+      ;;
+    *)
+      rm -f "$temp_archive"
+      log_error "El archivo descargado de Firefox no es un tar comprimido válido (tipo: $mime_type)"
+      exit 1
+      ;;
+  esac
+
+  if ! tar -t"${tar_flag}"f "$temp_archive" >/dev/null 2>&1; then
+    rm -f "$temp_archive"
+    log_error "El archivo descargado de Firefox está corrupto o no se pudo leer"
+    exit 1
+  fi
+
+  local temp_dir
+  temp_dir="$(mktemp -d /tmp/firefox.XXXXXX)"
+  tar -x"${tar_flag}"f "$temp_archive" -C "$temp_dir"
+  local extracted_dir
+  extracted_dir="$(find "$temp_dir" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+  if [[ -z "$extracted_dir" ]]; then
+    rm -rf "$temp_dir" "$temp_archive"
+    log_error "No se pudo determinar el directorio de Firefox extraído"
+    exit 1
+  fi
+
+  rm -rf "$FIREFOX_DEST"
+  mv "$extracted_dir" "$FIREFOX_DEST"
+  rm -rf "$temp_dir" "$temp_archive"
+  ln -sfn "$FIREFOX_DEST/firefox" /usr/local/bin/firefox
+  chmod 755 -R "$FIREFOX_DEST"
+  log_info "Firefox instalado en $FIREFOX_DEST"
+}
+
+install_firefox
+
+log_info "Preparando estructura en $PANTALLA_ROOT"
+install -d -m 0755 "$PANTALLA_ROOT" "$BACKEND_DEST" "$CONFIG_DIR" "$CACHE_DIR"
+install -d -m 0755 "$LOG_DIR"
+
+log_info "Sincronizando backend"
+rsync -a --delete --exclude '.venv/' "$REPO_ROOT/backend/" "$BACKEND_DEST/"
+
+log_info "Creando entorno virtual del backend"
+rm -rf "$BACKEND_DEST/.venv"
+python3 -m venv "$BACKEND_DEST/.venv"
+"$BACKEND_DEST/.venv/bin/pip" install --upgrade pip wheel
+if [[ -f "$BACKEND_DEST/requirements.txt" ]]; then
+  "$BACKEND_DEST/.venv/bin/pip" install -r "$BACKEND_DEST/requirements.txt"
+else
+  "$BACKEND_DEST/.venv/bin/pip" install fastapi uvicorn[standard]
 fi
 
-EXTRACTED_DIR="$(tar -t${TAR_COMPRESS_FLAG}f "$TEMP_ARCHIVE" | head -n1 | cut -d/ -f1)"
-if [[ -z "$EXTRACTED_DIR" ]]; then
-  echo "[ERROR] No se pudo determinar el directorio de Firefox" >&2
-  rm -f "$TEMP_ARCHIVE"
-  exit 1
+if [[ ! -f "$CONFIG_DIR/config.json" ]]; then
+  log_info "Instalando configuración por defecto"
+  install -m 0644 "$REPO_ROOT/backend/default_config.json" "$CONFIG_DIR/config.json"
 fi
 
-tar -x${TAR_COMPRESS_FLAG}f "$TEMP_ARCHIVE" -C /opt
-mv "/opt/${EXTRACTED_DIR}" "$FIREFOX_DEST"
-rm -f "$TEMP_ARCHIVE"
-ln -sf "$FIREFOX_DEST/firefox" /usr/local/bin/firefox
-
-log "Copiando backend"
-rsync -a --delete "$REPO_ROOT/backend/" "$BACKEND_DIR/"
-python3 -m venv "$BACKEND_DIR/.venv"
-source "$BACKEND_DIR/.venv/bin/activate"
-pip install --upgrade pip
-pip install -r "$BACKEND_DIR/requirements.txt"
-deactivate
-
-log "Copiando configuración base"
-install -m 0644 "$REPO_ROOT/backend/default_config.json" "$CONFIG_DIR/config.json"
-
-log "Preparando cache y logs"
-chmod 755 "$PANTALLA_ROOT" "$CACHE_DIR"
 touch "$LOG_DIR/backend.log"
-chown -R dani:dani "$PANTALLA_ROOT" || true
-chown -R dani:dani "$LOG_DIR" || true
+chown -R "$USER_NAME:$USER_NAME" "$PANTALLA_ROOT" "$LOG_DIR" || true
 
-log "Construyendo frontend"
-cd "$REPO_ROOT/dash-ui"
-npm install
+log_info "Instalando autostart de Openbox"
+if [[ ! -d "$USER_HOME" ]]; then
+  log_error "El usuario $USER_NAME no existe o no tiene HOME en $USER_HOME"
+  exit 1
+fi
+install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$USER_HOME/.config/openbox"
+install -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$REPO_ROOT/openbox/autostart" "$USER_HOME/.config/openbox/autostart"
+
+log_info "Construyendo frontend"
+pushd "$REPO_ROOT/dash-ui" >/dev/null
+if [[ -f package-lock.json ]]; then
+  npm ci --no-audit --no-fund
+else
+  npm install --no-audit --no-fund
+fi
 npm run build
-rm -rf "$WEB_ROOT"/*
-cp -r dist/* "$WEB_ROOT/"
-chown -R www-data:www-data "$WEB_ROOT"
-cd "$REPO_ROOT"
+popd >/dev/null
 
-log "Configurando Nginx"
-install -m 0644 "$REPO_ROOT/etc/nginx/sites-available/pantalla-reloj.conf" /etc/nginx/sites-available/pantalla-reloj.conf
-ln -sf /etc/nginx/sites-available/pantalla-reloj.conf /etc/nginx/sites-enabled/pantalla-reloj.conf
+log_info "Publicando frontend en $WEB_ROOT"
+install -d -m 0755 "$WEB_ROOT"
+rsync -a --delete "$REPO_ROOT/dash-ui/dist/" "$WEB_ROOT/"
+chown -R www-data:www-data "$WEB_ROOT"
+
+log_info "Configurando Nginx"
+install -m 0644 "$REPO_ROOT/etc/nginx/sites-available/pantalla-reloj.conf" "$NGINX_SITE"
+ln -sfn "$NGINX_SITE" "$NGINX_SITE_LINK"
 rm -f /etc/nginx/sites-enabled/default
+nginx -t
+systemctl enable --now nginx
 systemctl reload nginx
 
-log "Instalando unidades systemd"
-install -m 0644 "$REPO_ROOT/systemd/pantalla-xorg.service" /etc/systemd/system/pantalla-xorg.service
-install -m 0644 "$REPO_ROOT/systemd/pantalla-openbox@.service" /etc/systemd/system/pantalla-openbox@.service
-install -m 0644 "$REPO_ROOT/systemd/pantalla-dash-backend@.service" /etc/systemd/system/pantalla-dash-backend@.service
+log_info "Instalando unidades systemd"
+install -m 0644 "$REPO_ROOT/systemd/pantalla-xorg.service" "$SYSTEMD_DIR/pantalla-xorg.service"
+install -m 0644 "$REPO_ROOT/systemd/pantalla-openbox@.service" "$SYSTEMD_DIR/pantalla-openbox@.service"
+install -m 0644 "$REPO_ROOT/systemd/pantalla-dash-backend@.service" "$SYSTEMD_DIR/pantalla-dash-backend@.service"
 systemctl daemon-reload
-systemctl enable pantalla-xorg.service pantalla-openbox@dani.service pantalla-dash-backend@dani.service
-systemctl restart pantalla-xorg.service pantalla-openbox@dani.service pantalla-dash-backend@dani.service
 
-log "Forzando rotación de pantalla"
-DISPLAY=:0 xrandr --output HDMI-1 --rotate left --primary || true
+for svc in pantalla-xorg.service pantalla-openbox@${USER_NAME}.service pantalla-dash-backend@${USER_NAME}.service; do
+  systemctl enable "$svc"
+  systemctl restart "$svc"
+done
 
-log "Validando servicios"
-SERVICE_STATUS_LOG="$LOG_DIR/services_status.log"
-INSTALL_HTML="$LOG_DIR/install_report.html"
-mkdir -p "$LOG_DIR"
+log_info "Validando estado del backend"
+HEALTH_STATUS=""
+for attempt in $(seq 1 15); do
+  HEALTH_STATUS="$(curl -sS -o /tmp/api_health.json -w '%{http_code}' http://127.0.0.1:8081/api/health || true)"
+  if [[ "$HEALTH_STATUS" == "200" ]]; then
+    break
+  fi
+  sleep 1
+done
 
-systemctl --no-pager --full status pantalla-xorg.service pantalla-openbox@dani.service pantalla-dash-backend@dani.service > "$SERVICE_STATUS_LOG" 2>&1 || true
-if ! curl -sS -o /tmp/api_health.json http://127.0.0.1:8081/api/health; then
-  echo '{"status":"fail"}' > /tmp/api_health.json
+XORG_ACTIVE=0
+OPENBOX_ACTIVE=0
+BACKEND_ACTIVE=0
+NGINX_ACTIVE=0
+FAILED=0
+
+if [[ -x /usr/local/bin/firefox ]]; then
+  FIREFOX_VERSION="$(/usr/local/bin/firefox --version 2>/dev/null | head -n1 || echo 'desconocida')"
+  log_info "Firefox: OK (${FIREFOX_VERSION})"
+else
+  log_error "Firefox: no instalado"
+  FAILED=1
 fi
 
-{
-  echo "<html><head><meta charset='UTF-8'><title>Pantalla_reloj - Estado instalación</title></head>"
-  echo "<body style='font-family:monospace;background:#111;color:#0f0;'>"
-  echo "<h2>Informe de instalación Pantalla_reloj</h2>"
-  echo "<pre>"
-  cat "$SERVICE_STATUS_LOG"
-  echo "</pre><hr><h3>API /health:</h3><pre>"
-  cat /tmp/api_health.json
-  echo "</pre><hr><p>Fecha: $(date)</p></body></html>"
-} > "$INSTALL_HTML"
+if [[ "$HEALTH_STATUS" == "200" ]]; then
+  log_info "Backend: OK (/api/health 200)"
+else
+  log_error "Backend: fallo health check (HTTP ${HEALTH_STATUS:-desconocido})"
+  FAILED=1
+fi
 
-log "Informe generado en $INSTALL_HTML"
-log "Instalación completada"
+if [[ -f "$WEB_ROOT/index.html" ]]; then
+  log_info "Frontend: OK (dist publicado en $WEB_ROOT)"
+else
+  log_error "Frontend: no se encontró index.html en $WEB_ROOT"
+  FAILED=1
+fi
+
+if systemctl is-active --quiet nginx; then
+  NGINX_ACTIVE=1
+  log_info "Nginx: OK"
+else
+  log_error "Nginx no está activo"
+  FAILED=1
+fi
+
+if systemctl is-active --quiet pantalla-xorg.service; then
+  XORG_ACTIVE=1
+fi
+if systemctl is-active --quiet pantalla-openbox@${USER_NAME}.service; then
+  OPENBOX_ACTIVE=1
+fi
+if systemctl is-active --quiet pantalla-dash-backend@${USER_NAME}.service; then
+  BACKEND_ACTIVE=1
+fi
+
+if [[ $XORG_ACTIVE -eq 1 && $OPENBOX_ACTIVE -eq 1 && $BACKEND_ACTIVE -eq 1 ]]; then
+  log_info "Systemd: Xorg/Openbox/Backend activos"
+else
+  log_error "Systemd: Servicios no activos (Xorg=$XORG_ACTIVE, Openbox=$OPENBOX_ACTIVE, Backend=$BACKEND_ACTIVE)"
+  FAILED=1
+fi
+
+if [[ $FAILED -eq 0 ]]; then
+  log_ok "Instalación completada"
+  exit 0
+else
+  log_error "Instalación con errores"
+  exit 1
+fi
