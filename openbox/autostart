@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
-# Pantalla_reloj — autostart fijo para kiosk Firefox
+# Pantalla_reloj Openbox autostart script
 
-xset -dpms; xset s off; xset s noblank
-xrandr --output HDMI-1 --rotate left --primary
-sleep 2
-setsid -f /usr/local/bin/firefox --no-remote --kiosk http://127.0.0.1 &
+xset -dpms
+xset s off
+xset s noblank
+
+export DISPLAY=:0
+export XAUTHORITY=/home/dani/.Xauthority
+
+XR_OUT="$(xrandr --query | awk '/ connected/{print $1; exit}')"
+if [ -n "$XR_OUT" ]; then
+  xrandr --output "$XR_OUT" --rotate left --primary || true
+fi
+sleep 3
+setsid -f /opt/firefox/firefox --no-remote --kiosk http://127.0.0.1 &

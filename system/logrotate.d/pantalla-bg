@@ -1,9 +1,0 @@
-/var/log/pantalla-dash/bg.log {
-  weekly
-  rotate 6
-  missingok
-  notifempty
-  compress
-  delaycompress
-  create 0640 root adm
-}

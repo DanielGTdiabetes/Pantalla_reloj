@@ -1,0 +1,18 @@
+[Unit]
+Description=Pantalla reloj FastAPI backend (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/opt/pantalla/backend
+Environment=PATH=/opt/pantalla/backend/.venv/bin:/usr/bin
+ExecStart=/opt/pantalla/backend/.venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8081
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/pantalla/backend.log
+StandardError=append:/var/log/pantalla/backend.log
+
+[Install]
+WantedBy=multi-user.target
