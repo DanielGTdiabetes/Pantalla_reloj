@@ -164,6 +164,7 @@ fi
 install -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$REPO_ROOT/openbox/autostart" "$AUTO_FILE"
 
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/xorg-openbox-env.sh" "$SESSION_PREFIX/bin/xorg-openbox-env.sh"
+install -m 0755 "$REPO_ROOT/opt/pantalla/bin/wait-x.sh" "$SESSION_PREFIX/bin/wait-x.sh"
 install -m 0755 "$REPO_ROOT/opt/pantalla/openbox/autostart" "$SESSION_PREFIX/openbox/autostart"
 
 install -m 0755 "$KIOSK_BIN_SRC" "$KIOSK_BIN_DST"
@@ -370,7 +371,6 @@ systemctl enable pantalla-kiosk@${USER_NAME}.service
 
 log_info "Restarting Pantalla services"
 systemctl restart pantalla-xorg.service
-systemctl enable --now pantalla-openbox@${USER_NAME}.service
 systemctl restart pantalla-openbox@${USER_NAME}.service
 systemctl restart pantalla-dash-backend@${USER_NAME}.service
 systemctl restart pantalla-kiosk@${USER_NAME}.service
