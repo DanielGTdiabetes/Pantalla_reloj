@@ -1,5 +1,5 @@
 [Unit]
-Description=Pantalla_reloj Kiosk (Chromium) for user %i
+Description=Pantalla_reloj Kiosk (Epiphany) for user %i
 After=pantalla-openbox@%i.service
 Requires=pantalla-openbox@%i.service
 
