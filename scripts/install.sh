@@ -65,6 +65,7 @@ BACKEND_LAUNCHER_SRC="${REPO_ROOT}/usr/local/bin/pantalla-backend-launch"
 BACKEND_LAUNCHER_DST=/usr/local/bin/pantalla-backend-launch
 UDEV_RULE=/etc/udev/rules.d/70-pantalla-render.rules
 
+install -d -m 0755 /var/log/pantalla /var/lib/pantalla
 install -d -m 0755 "$PANTALLA_PREFIX" "$LOG_DIR" "$SESSION_PREFIX"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_RUNTIME"
@@ -169,6 +170,9 @@ if [[ -f "$AUTO_FILE" && ! -f "$AUTO_BACKUP" ]]; then
   cp -p "$AUTO_FILE" "$AUTO_BACKUP"
 fi
 install -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$REPO_ROOT/openbox/autostart" "$AUTO_FILE"
+
+ln -sfn /var/lib/pantalla-reloj/.Xauthority "$USER_HOME/.Xauthority"
+chown -h "$USER_NAME:$USER_NAME" "$USER_HOME/.Xauthority"
 
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/xorg-openbox-env.sh" "$SESSION_PREFIX/bin/xorg-openbox-env.sh"
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/wait-x.sh" "$SESSION_PREFIX/bin/wait-x.sh"

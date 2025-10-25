@@ -1,21 +1,15 @@
 [Unit]
 Description=Pantalla reloj FastAPI backend (%i)
-After=network-online.target
-Wants=network-online.target
+After=network.target
 
 [Service]
-Type=simple
 User=%i
-WorkingDirectory=/opt/pantalla-reloj/backend
-Environment="PANTALLA_STATE_DIR=/var/lib/pantalla-reloj"
-Environment="PANTALLA_CONFIG_FILE=/var/lib/pantalla-reloj/config.json"
-Environment="PANTALLA_DEFAULT_CONFIG_FILE=/opt/pantalla-reloj/backend/default_config.json"
-ExecStartPre=/bin/test -x /usr/local/bin/pantalla-backend-launch
+Group=%i
 ExecStart=/usr/local/bin/pantalla-backend-launch
+WorkingDirectory=/opt/pantalla-reloj
 Restart=always
-RestartSec=1s
-StandardOutput=append:/var/log/pantalla-reloj/backend.log
-StandardError=append:/var/log/pantalla-reloj/backend.log
+RestartSec=2
+Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=multi-user.target
