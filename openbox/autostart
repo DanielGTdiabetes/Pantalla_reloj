@@ -1,57 +1,30 @@
-#!/usr/bin/env bash
-# Autostart Pantalla_reloj — robusto (singleton + healthchecks)
-exec >>/tmp/openbox-autostart.log 2>&1
-set -euo pipefail
+#!/bin/sh
+xset -dpms || true
+xset s off || true
+xset s noblank || true
 
-# --- X env ---
-export DISPLAY=:0
-export XAUTHORITY=/home/dani/.Xauthority
+if command -v unclutter >/dev/null 2>&1; then
+  unclutter --fork --hide-on-touch || true
+fi
 
-# --- Rotación + no-blank ---
+LOG_FILE=/tmp/openbox-autostart.log
+{
+  printf '\n[%s] openbox-autostart start (pid=%s user=%s)\n' "$(date -Is)" "$$" "$(id -un 2>/dev/null || echo '?')"
+  printf 'DISPLAY=%s\n' "${DISPLAY:-}"
+  env | sort | sed 's/^/ENV: /'
+} >>"$LOG_FILE" 2>&1
+
 XR_OUT="$(xrandr --query | awk '/ connected/{print $1; exit}')"
-if [ -n "${XR_OUT:-}" ]; then
+if [ -n "$XR_OUT" ]; then
   xrandr --output "$XR_OUT" --rotate left --primary || true
 fi
-xset -dpms
-xset s off
-xset s noblank
 
-# --- Workarounds gráficos (evitar negro por DRM/EGL) ---
-export GDK_BACKEND=x11
-export GDK_GL=disable
-export LIBGL_ALWAYS_SOFTWARE=1
-export WEBKIT_DISABLE_DMABUF_RENDERER=1
-export GTK_USE_PORTAL=0
+echo "[$(date -Is)] XR_OUT=${XR_OUT:-<none>}" >>"$LOG_FILE"
 
-# --- Esperar a Nginx y Backend (máx 30s) ---
-for i in $(seq 1 30); do
-  CURL_OPTS="--silent --fail --max-time 0.7"
-  if curl $CURL_OPTS http://127.0.0.1/ >/dev/null 2>&1 && \
-     curl $CURL_OPTS http://127.0.0.1/api/health >/dev/null 2>&1; then
-    break
-  fi
-  sleep 1
-done
+sleep 1
 
-# --- Singleton con flock ---
-LOCK="/tmp/kiosk.lock"
-(
-  flock -n 9 || exit 0
+/usr/local/bin/kiosk-launch &
+KIOSK_PID=$!
 
-  # Cierra instancias previas
-  pkill -9 -f 'epiphany-browser' 2>/dev/null || true
-  pkill -9 -f 'firefox' 2>/dev/null || true
-  sleep 0.3
-
-  # Lanzar SOLO Epiphany (más ligero/fiable en este setup)
-  setsid -f epiphany-browser --new-window "http://127.0.0.1/?v=$(date +%s)" \
-    >/tmp/epi.out 2>/tmp/epi.err || true
-
-  # Si algún día se vuelve a Firefox, comentar Epiphany y descomentar:
-  # export MOZ_ENABLE_WAYLAND=0
-  # export MOZ_WEBRENDER=0
-  # export MOZ_DISABLE_GPU_SANDBOX=1
-  # setsid -f /usr/local/bin/firefox --no-remote --kiosk "http://127.0.0.1/?v=$(date +%s)" \
-  #   >/tmp/kiosk.out 2>/tmp/kiosk.err || true
-
-) 9>"$LOCK"
+echo "[$(date -Is)] kiosk-launch pid=$KIOSK_PID" >>"$LOG_FILE"
+echo "[$(date -Is)] openbox-autostart end" >>"$LOG_FILE"

@@ -101,6 +101,7 @@ APT_PACKAGES=(
   wmctrl
   xdotool
   dbus-x11
+  unclutter
   curl
   unzip
   jq
@@ -211,6 +212,19 @@ if ! id -nG "$USER_NAME" | grep -qw video; then
   GROUPS_CHANGED=1
 fi
 
+if [[ $GROUPS_CHANGED -eq 1 ]]; then
+  log_info "El usuario $USER_NAME fue añadido a los grupos render/video"
+fi
+
+log_info "Aplicando reglas udev para acceso a GPU"
+install -d -m 0755 /etc/udev/rules.d
+cat <<'RULE' >/etc/udev/rules.d/70-pantalla-render.rules
+KERNEL=="renderD*", GROUP="render", MODE="0660"
+KERNEL=="card[0-9]*", GROUP="video", MODE="0660"
+RULE
+udevadm control --reload
+udevadm trigger
+
 log_info "Sincronizando backend"
 rsync -a --delete --exclude '.venv/' "$REPO_ROOT/backend/" "$BACKEND_DEST/"
 
@@ -238,7 +252,16 @@ if [[ ! -d "$USER_HOME" ]]; then
   exit 1
 fi
 install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$USER_HOME/.config/openbox"
-install -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$REPO_ROOT/openbox/autostart" "$USER_HOME/.config/openbox/autostart"
+AUTO_FILE="$USER_HOME/.config/openbox/autostart"
+AUTO_BACKUP="${AUTO_FILE}.pantalla-reloj.bak"
+if [[ -f "$AUTO_FILE" && ! -f "$AUTO_BACKUP" ]]; then
+  log_info "Respaldando autostart existente en $AUTO_BACKUP"
+  cp -p "$AUTO_FILE" "$AUTO_BACKUP"
+fi
+install -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$REPO_ROOT/openbox/autostart" "$AUTO_FILE"
+
+log_info "Instalando singleton kiosk-launch"
+install -m 0755 "$REPO_ROOT/scripts/kiosk-launch" /usr/local/bin/kiosk-launch
 
 log_info "Construyendo frontend"
 pushd "$REPO_ROOT/dash-ui" >/dev/null
@@ -275,7 +298,7 @@ install -m 0644 "$REPO_ROOT/systemd/pantalla-dash-backend@.service" "$SYSTEMD_DI
 systemctl daemon-reload
 
 for svc in pantalla-xorg.service pantalla-dash-backend@${USER_NAME}.service pantalla-openbox@${USER_NAME}.service; do
-  systemctl enable "$svc"
+  systemctl enable --now "$svc"
   systemctl restart "$svc"
 done
 
@@ -374,7 +397,8 @@ fi
 if [[ $FAILED -eq 0 ]]; then
   log_ok "Instalación completada"
   if [[ $GROUPS_CHANGED -eq 1 ]]; then
-    echo "Se requiere reinicio para aplicar grupos"
+    printf 'reboot required\n'
+    log_info "Se requiere reinicio para aplicar grupos"
     if [[ $AUTO_REBOOT -eq 1 ]]; then
       if [[ $NON_INTERACTIVE -eq 1 ]]; then
         echo "reiniciar ahora"

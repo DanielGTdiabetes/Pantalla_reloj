@@ -1,0 +1,93 @@
+#!/bin/sh
+set -eu
+
+LOG_FILE=/tmp/kiosk-launch.log
+{
+  printf '\n[%s] kiosk-launch invoked (pid=%s)\n' "$(date -Is)" "$$"
+} >>"$LOG_FILE"
+exec >>"$LOG_FILE" 2>&1
+
+export DISPLAY=:0
+export XAUTHORITY=/home/dani/.Xauthority
+export WEBKIT_DISABLE_DMABUF_RENDERER=1
+export LIBGL_ALWAYS_SOFTWARE=1
+printf '[%s] Environment prepared: DISPLAY=%s XAUTHORITY=%s\n' "$(date -Is)" "$DISPLAY" "$XAUTHORITY"
+
+LOCK_FILE=/tmp/kiosk.lock
+PID_FILE=/tmp/kiosk.pid
+
+(
+  if ! command -v flock >/dev/null 2>&1; then
+    echo "flock command not available" >&2
+    exit 1
+  fi
+
+  flock -n 9 || {
+    printf '[%s] Another kiosk-launch instance is running\n' "$(date -Is)"
+    exit 0
+  }
+
+  if command -v wmctrl >/dev/null 2>&1; then
+    if wmctrl -l 2>/dev/null | grep -qi 'Epiphany'; then
+      printf '[%s] Epiphany window already present, exiting\n' "$(date -Is)"
+      exit 0
+    fi
+  fi
+
+  FRONT_OK=0
+  API_OK=0
+  for attempt in $(seq 1 30); do
+    if [ $FRONT_OK -eq 0 ]; then
+      if curl -sf --max-time 1 http://127.0.0.1/ >/dev/null 2>&1; then
+        FRONT_OK=1
+        printf '[%s] Frontend reachable on attempt %s\n' "$(date -Is)" "$attempt"
+      fi
+    fi
+    if [ $API_OK -eq 0 ]; then
+      if curl -sf --max-time 1 http://127.0.0.1:8081/api/health >/dev/null 2>&1; then
+        API_OK=1
+        printf '[%s] Backend reachable on attempt %s\n' "$(date -Is)" "$attempt"
+      fi
+    fi
+    if [ $FRONT_OK -eq 1 ] && [ $API_OK -eq 1 ]; then
+      break
+    fi
+    sleep 1
+  done
+  printf '[%s] Launching Epiphany (FRONT_OK=%s API_OK=%s)\n' "$(date -Is)" "$FRONT_OK" "$API_OK"
+
+  if ! dbus-run-session sh -c 'setsid -f epiphany-browser --new-window http://127.0.0.1 > /tmp/epi.out 2>/tmp/epi.err'; then
+    printf '[%s] Epiphany launch command failed\n' "$(date -Is)"
+  fi
+
+  sleep 3
+
+  WINDOW_ID=""
+  if command -v xdotool >/dev/null 2>&1; then
+    WINDOW_ID="$(xdotool search --class Epiphany 2>/dev/null | head -n1 || true)"
+  fi
+  if [ -n "$WINDOW_ID" ]; then
+    printf '[%s] Adjusting window %s\n' "$(date -Is)" "$WINDOW_ID"
+    wmctrl -ir "$WINDOW_ID" -b remove,maximized_vert -b remove,maximized_horz 2>/dev/null || true
+    wmctrl -ir "$WINDOW_ID" -b add,fullscreen 2>/dev/null || true
+    wmctrl -ir "$WINDOW_ID" -e 0,0,0,1920,480 2>/dev/null || true
+    xdotool windowsize "$WINDOW_ID" 1920 480 2>/dev/null || true
+    xdotool windowmove "$WINDOW_ID" 0 0 2>/dev/null || true
+    xdotool windowactivate "$WINDOW_ID" 2>/dev/null || true
+  else
+    printf '[%s] Could not locate Epiphany window\n' "$(date -Is)"
+  fi
+
+  EPIPHANY_PID="$(pgrep -n -f 'epiphany-browser --new-window http://127.0.0.1' || true)"
+  if [ -z "$EPIPHANY_PID" ]; then
+    EPIPHANY_PID="$(pgrep -n epiphany-browser || true)"
+  fi
+  if [ -n "$EPIPHANY_PID" ]; then
+    printf '%s\n' "$EPIPHANY_PID" >"$PID_FILE"
+    printf '[%s] Recorded Epiphany PID %s\n' "$(date -Is)" "$EPIPHANY_PID"
+  else
+    printf '[%s] Unable to determine Epiphany PID\n' "$(date -Is)"
+  fi
+
+  printf '[%s] kiosk-launch done\n' "$(date -Is)"
+) 9>"$LOCK_FILE"
