@@ -123,18 +123,15 @@ if (( need_download )); then
   chmod -R 0755 /opt/firefox
 fi
 
-wrapper_tmp="${TMP_ROOT}/firefox-wrapper"
-cat <<'WRAPPER' > "$wrapper_tmp"
-#!/usr/bin/env bash
-exec /opt/firefox/firefox "$@"
-WRAPPER
-
-if ! cmp -s "$wrapper_tmp" /usr/local/bin/firefox 2>/dev/null; then
-  log "Actualizando wrapper de Firefox en /usr/local/bin/firefox"
-  install -D -m 0755 "$wrapper_tmp" /usr/local/bin/firefox
+if [ -x /opt/firefox/firefox ]; then
+  if [ ! -L /usr/local/bin/firefox ] || [ "$(readlink -f /usr/local/bin/firefox 2>/dev/null)" != "/opt/firefox/firefox" ]; then
+    ln -sf /opt/firefox/firefox /usr/local/bin/firefox
+    echo "[INFO] Symlink firefox -> /opt/firefox/firefox creado en /usr/local/bin"
+  fi
+  log "Firefox operativo: $(/opt/firefox/firefox --version 2>&1)"
+else
+  warn "Firefox no se encontró en /opt/firefox"
 fi
-
-log "Firefox operativo: $(/usr/local/bin/firefox --version 2>&1)"
 
 # ---------------------------------------------------------------------------
 # 4) Units de systemd
@@ -144,8 +141,22 @@ xorg_unit_tmp="${TMP_ROOT}/pantalla-xorg.service"
 sed "s/__KIOSK_USER__/${KIOSK_USER}/g" "$REPO_DIR/systemd/pantalla-xorg.service" > "$xorg_unit_tmp"
 install -D -m 0644 "$xorg_unit_tmp" /etc/systemd/system/pantalla-xorg.service
 install -D -m 0644 "$REPO_DIR/systemd/pantalla-openbox@.service" /etc/systemd/system/pantalla-openbox@.service
-install -D -m 0644 "$REPO_DIR/system/pantalla-dash-backend@.service" /etc/systemd/system/pantalla-dash-backend@.service
-systemctl daemon-reload
+
+backend_service_template="$REPO_DIR/system/pantalla-dash-backend@.service"
+backend_service_target="/etc/systemd/system/pantalla-dash-backend@.service"
+if [[ ! -f "$backend_service_target" ]]; then
+  install -D -m 0644 "$backend_service_template" "$backend_service_target"
+fi
+
+if grep -q "__REPO_DIR__" "$backend_service_target" 2>/dev/null; then
+  sed "s#__REPO_DIR__#${REPO_DIR}#g" "$backend_service_template" | \
+    tee "$backend_service_target" >/dev/null
+  systemctl daemon-reload
+  echo "[INFO] Actualizado pantalla-dash-backend@.service con REPO_DIR=${REPO_DIR}"
+else
+  systemctl daemon-reload
+fi
+
 systemctl enable pantalla-xorg.service "pantalla-openbox@${KIOSK_USER}.service"
 
 # ---------------------------------------------------------------------------
@@ -169,20 +180,18 @@ fi
 log "Creando directorios de runtime"
 groupadd -f pantalla
 install -d -o "${KIOSK_USER}" -g pantalla -m 0775 /opt/dash
+install -d -o "${KIOSK_USER}" -g pantalla -m 0775 /etc/pantalla-dash || true
 install -d -o "${KIOSK_USER}" -g pantalla -m 0775 /var/cache/pantalla-dash /var/cache/pantalla-dash/radar
 
 log "Provisionando entorno Python del backend"
-VENV_DIR="${REPO_DIR}/backend/.venv"
-if [[ ! -d "${VENV_DIR}" ]]; then
-  log "Creando entorno virtual en ${VENV_DIR}"
-  python3 -m venv "$VENV_DIR"
-fi
-if [[ ! -x "${VENV_DIR}/bin/pip" ]]; then
-  err "pip no disponible en ${VENV_DIR}"
-  exit 1
-fi
-"${VENV_DIR}/bin/pip" install --upgrade pip wheel
-"${VENV_DIR}/bin/pip" install -r "${REPO_DIR}/backend/requirements.txt"
+(
+  cd "$REPO_DIR/backend"
+  python3 -m venv .venv 2>/dev/null || true
+  # shellcheck disable=SC1091
+  . .venv/bin/activate
+  pip install -U pip >/dev/null
+  pip install -r requirements.txt
+)
 
 log "Configurando backend y nginx"
 systemctl enable "pantalla-dash-backend@${KIOSK_USER}.service" nginx
@@ -194,120 +203,52 @@ log "Estableciendo arranque en graphical.target"
 systemctl set-default graphical.target
 
 log "Configurando sitio de nginx"
-install -D -m 0644 "$REPO_DIR/system/nginx/pantalla-dash.conf" /etc/nginx/sites-available/pantalla
+install -D -m 0644 "$REPO_DIR/etc/nginx/sites-available/pantalla" /etc/nginx/sites-available/pantalla
 ln -sf /etc/nginx/sites-available/pantalla /etc/nginx/sites-enabled/pantalla
 if [[ -f /etc/nginx/sites-enabled/default ]]; then
   rm -f /etc/nginx/sites-enabled/default
 fi
 
-WEB_ROOT=/var/www/html
-install -d -m 0755 "$WEB_ROOT"
-frontend_deployed=0
-if [[ -d "$REPO_DIR/dash-ui/dist" ]]; then
-  log "Publicando frontend precompilado en ${WEB_ROOT}"
-  rsync -a --delete --omit-dir-times "$REPO_DIR/dash-ui/dist/" "$WEB_ROOT/"
-  frontend_deployed=1
+if ! command -v npm >/dev/null 2>&1; then
+  err "npm no está disponible en PATH; instale Node.js/npm antes de continuar"
+  exit 1
+fi
+
+log "Construyendo frontend (dash-ui)"
+(
+  cd "$REPO_DIR/dash-ui"
+  npm ci --no-audit --no-fund
+  npm run build
+)
+
+log "Publicando frontend en /var/www/html"
+if [[ ! -d "$REPO_DIR/dash-ui/dist" ]]; then
+  err "La build del frontend no generó el directorio dist/"
+  exit 1
+fi
+install -d -m 0755 /var/www/html
+rsync -a --delete "$REPO_DIR/dash-ui/dist/" /var/www/html/
+
+log "Verificando configuración de nginx"
+nginx -t
+systemctl reload nginx
+
+systemctl enable "pantalla-dash-backend@${KIOSK_USER}.service" >/dev/null 2>&1 || true
+systemctl restart "pantalla-dash-backend@${KIOSK_USER}.service"
+
+sleep 2
+FRONT_CODE="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1 || true)"
+API_CODE_DIRECT="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/api/health || true)"
+API_CODE_NGX="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1/api/health || true)"
+
+echo "[CHECK] Frontend       http://127.0.0.1         => ${FRONT_CODE}"
+echo "[CHECK] Backend direct http://127.0.0.1:8081    => ${API_CODE_DIRECT}"
+echo "[CHECK] Backend via NG http://127.0.0.1/api/... => ${API_CODE_NGX}"
+
+if [[ "$FRONT_CODE" == "200" && "$API_CODE_DIRECT" == "200" && "$API_CODE_NGX" == "200" ]]; then
+  echo "[OK] Instalación completada con éxito."
+  exit 0
 else
-  if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
-    node_version_raw=$(node -v 2>/dev/null | sed 's/^v//')
-    node_major=${node_version_raw%%.*}
-    if [[ -n "$node_major" && "$node_major" =~ ^[0-9]+$ ]]; then
-      if (( node_major >= 20 )); then
-        log "Compilando frontend desde fuentes (dash-ui)"
-        (cd "$REPO_DIR/dash-ui" && npm ci && npm run build)
-        rsync -a --delete --omit-dir-times "$REPO_DIR/dash-ui/dist/" "$WEB_ROOT/"
-        frontend_deployed=1
-      else
-        warn "Node.js < 20 detectado; se omite compilación del frontend"
-      fi
-    else
-      warn "No se pudo determinar la versión de Node.js; se omite compilación del frontend"
-    fi
-  else
-    warn "Node.js/npm no disponibles; se omite compilación del frontend"
-  fi
-fi
-
-if [[ "$frontend_deployed" -ne 1 ]]; then
-  log "Creando placeholder HTML mínimo en ${WEB_ROOT}"
-  cat <<'HTML' > "${WEB_ROOT}/index.html"
-<!DOCTYPE html>
-<html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Pantalla Dash</title>
-    <style>
-      body { font-family: sans-serif; background: #111; color: #eee; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-      main { text-align: center; }
-      h1 { font-size: 2rem; margin-bottom: 0.5rem; }
-      p { color: #aaa; }
-    </style>
-  </head>
-  <body>
-    <main>
-      <h1>Pantalla Dash</h1>
-      <p>Frontend pendiente de despliegue.</p>
-    </main>
-  </body>
-</html>
-HTML
-fi
-
-log "Reiniciando servicios principales"
-systemctl restart nginx "pantalla-dash-backend@${KIOSK_USER}.service"
-systemctl restart pantalla-xorg.service
-sleep 6
-
-log "Verificando nginx vía curl"
-if [[ $(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1 || true) != "200" ]]; then
-  err "nginx no respondió con 200 tras el despliegue"
-  journalctl -u nginx.service --no-pager -n 120 2>/dev/null || true
+  echo "[WARN] Instalación terminada con incidencias (ver códigos arriba)."
   exit 1
 fi
-
-# ---------------------------------------------------------------------------
-# 8) Comprobaciones finales
-# ---------------------------------------------------------------------------
-log "Realizando comprobaciones finales"
-HTTP_ROOT=$(curl -sS -m 10 -o /dev/null -w '%{http_code}' http://127.0.0.1 || true)
-HTTP_API=$(curl -sS -m 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/api/health || true)
-XORG_OK=FAIL
-OPENBOX_OK=FAIL
-FIREFOX_OK=FAIL
-if pgrep -x Xorg >/dev/null 2>&1; then
-  XORG_OK=OK
-fi
-if pgrep -x openbox >/dev/null 2>&1; then
-  OPENBOX_OK=OK
-fi
-if pgrep -f 'firefox.*--kiosk' >/dev/null 2>&1; then
-  FIREFOX_OK=OK
-fi
-
-errors=()
-if [[ "${HTTP_ROOT}" != "200" ]]; then
-  errors+=("Frontend HTTP=${HTTP_ROOT}")
-fi
-if [[ "${HTTP_API}" != "200" ]]; then
-  errors+=("API HTTP=${HTTP_API}")
-fi
-if [[ "${XORG_OK}" != "OK" ]]; then
-  errors+=("Xorg no encontrado")
-fi
-if [[ "${OPENBOX_OK}" != "OK" ]]; then
-  errors+=("Openbox no encontrado")
-fi
-if [[ "${FIREFOX_OK}" != "OK" ]]; then
-  errors+=("Firefox kiosk no encontrado")
-fi
-
-if (( ${#errors[@]} )); then
-  err "Fallaron las comprobaciones finales: ${errors[*]}"
-  if command -v journalctl >/dev/null 2>&1; then
-    journalctl -u pantalla-xorg.service -u "pantalla-openbox@${KIOSK_USER}.service" -u "pantalla-dash-backend@${KIOSK_USER}.service" -u nginx.service --no-pager -n 120 2>/dev/null || true
-  fi
-  exit 1
-fi
-
-printf '\033[32m[OK] Front=%s | API=%s | Xorg=%s | Openbox=%s | Firefox=%s\033[0m\n' "$HTTP_ROOT" "$HTTP_API" "$XORG_OK" "$OPENBOX_OK" "$FIREFOX_OK"
-printf 'Reboot recommended: sudo reboot\n'
