@@ -6,11 +6,20 @@ xset s off
 xset s noblank
 
 export DISPLAY=:0
-export XAUTHORITY=/home/dani/.Xauthority
+export XAUTHORITY="${XAUTHORITY:-/home/dani/.Xauthority}"
 
-XR_OUT="$(xrandr --query | awk '/ connected/{print $1; exit}')"
-if [ -n "$XR_OUT" ]; then
-  xrandr --output "$XR_OUT" --rotate left --primary || true
+XR_OUTPUT="$(xrandr --query 2>/dev/null | awk '/ connected/{print $1; exit}')"
+if [[ -n "$XR_OUTPUT" ]]; then
+  xrandr --output "$XR_OUTPUT" --rotate left --primary || true
 fi
-sleep 3
-setsid -f /opt/firefox/firefox --no-remote --kiosk http://127.0.0.1 &
+
+sleep 2
+
+FIREFOX_BIN="/usr/local/bin/firefox"
+if [[ ! -x "$FIREFOX_BIN" ]]; then
+  FIREFOX_BIN="$(command -v firefox 2>/dev/null || true)"
+fi
+
+if [[ -n "$FIREFOX_BIN" ]]; then
+  setsid -f "$FIREFOX_BIN" --no-remote --kiosk http://127.0.0.1 >/dev/null 2>&1 &
+fi

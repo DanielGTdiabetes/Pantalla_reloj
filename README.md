@@ -21,7 +21,7 @@ Pantalla_reloj/
   `/api/astronomy`, `/api/calendar`, `/api/storm_mode` (GET/POST).
 - Persistencia de configuración en `/opt/pantalla/config/config.json`.
 - Cache JSON en `/opt/pantalla/cache/` y logs en `/var/log/pantalla/backend.log`.
-- Se ejecuta bajo `uvicorn backend.main:app --host 127.0.0.1 --port 8081` dentro de un
+- Se ejecuta bajo `uvicorn main:app --host 127.0.0.1 --port 8081` dentro de un
   entorno virtual local (`/opt/pantalla/backend/.venv`).
 
 ### Frontend (React/Vite)
@@ -41,18 +41,39 @@ Pantalla_reloj/
 
 ## Instalación
 
-> **Requisitos**: ejecutar como `root` en Ubuntu 24.04 minimal, con usuario
-> `dani` ya creado.
+### Requisitos previos
+
+- Ubuntu 24.04 LTS con usuario **dani** creado y sudo disponible.
+- Paquetes base: `sudo apt-get install -y git curl ca-certificates`.
+- Node.js 20.x instalado desde NodeSource u otra fuente compatible (incluye
+  Corepack y npm; **no** instales `npm` con `apt`).
+- Acceso a Internet para descargar dependencias del backend/frontend y el
+  tarball oficial de Firefox.
+
+### Instalación automatizada
 
 ```bash
 sudo bash scripts/install.sh --non-interactive
 ```
 
-El instalador es idempotente. Instala dependencias APT, descarga Firefox tarball,
-compila la UI, crea la estructura `/opt/pantalla`, copia el backend y activa los
-servicios systemd. Al finalizar genera un reporte en
-`/var/log/pantalla/install_report.html` con el estado de los servicios y la salida de
-`/api/health`.
+El instalador es idempotente: puedes ejecutarlo varias veces y dejará el sistema
+en un estado consistente. Durante la instalación:
+
+- Se validan e instalan las dependencias APT requeridas.
+- Se habilita Corepack con `npm` actualizado sin usar `apt install npm`.
+- Se descarga y despliega Firefox en `/opt/firefox` y se crea el symlink
+  `/usr/local/bin/firefox`.
+- Se prepara el backend (venv + `requirements.txt`) sirviendo en
+  `http://127.0.0.1:8081`.
+- Se construye el frontend (`dash-ui`) con npm y se publica en `/var/www/html`.
+- Se configura Nginx como reverse proxy (`/api/` → backend) y servidor estático.
+- Se instalan y activan las unidades systemd (`pantalla-xorg.service`,
+  `pantalla-openbox@dani.service`, `pantalla-dash-backend@dani.service`).
+- Se asegura la rotación de la pantalla a horizontal y se lanza Firefox en modo
+  kiosk apuntando a `http://127.0.0.1`.
+
+Al finalizar verás un resumen con el estado del backend, frontend, Nginx y los
+servicios systemd.
 
 ## Desinstalación
 
@@ -61,7 +82,20 @@ sudo bash scripts/uninstall.sh
 ```
 
 Detiene y elimina los servicios, borra `/opt/pantalla`, `/var/log/pantalla`,
-`/var/www/html` y elimina el symlink de Firefox si apunta a `/opt/firefox`.
+`/var/www/html` (contenido) y elimina el symlink de Firefox si apunta a
+`/opt/firefox`. También desinstala las unidades systemd y deshace el `mask` del
+display manager.
+
+## Health check y troubleshooting
+
+- Verificar backend: `curl -sf http://127.0.0.1:8081/api/health` (debe devolver
+  HTTP 200 con `{"status": "ok"}`).
+- Verificar Nginx: `sudo systemctl is-active nginx`.
+- Verificar servicios gráficos: `sudo systemctl is-active pantalla-xorg.service`,
+  `sudo systemctl is-active pantalla-openbox@dani.service`.
+- Verificar backend por systemd: `sudo systemctl status pantalla-dash-backend@dani.service`.
+- Logs del backend: `/var/log/pantalla/backend.log`.
+- Errores de Nginx: `/var/log/nginx/pantalla-reloj.error.log`.
 
 ## Corrección de permisos
 
@@ -74,7 +108,7 @@ Por defecto ajusta permisos para `dani:dani` y vuelve a asignar `/var/www/html` 
 
 ## Desarrollo local
 
-- Backend: `cd backend && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && uvicorn backend.main:app --reload`
+- Backend: `cd backend && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && uvicorn main:app --reload`
 - Frontend: `cd dash-ui && npm install && npm run dev`
 
 Puedes sobreescribir rutas del backend exportando `PANTALLA_ROOT` o

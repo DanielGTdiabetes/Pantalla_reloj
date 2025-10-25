@@ -7,10 +7,10 @@ Wants=network-online.target
 Type=simple
 User=%i
 WorkingDirectory=/opt/pantalla/backend
-Environment=PATH=/opt/pantalla/backend/.venv/bin:/usr/bin
-ExecStart=/opt/pantalla/backend/.venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8081
+Environment="PATH=/opt/pantalla/backend/.venv/bin"
+ExecStart=/opt/pantalla/backend/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8081 --proxy-headers
 Restart=always
-RestartSec=5
+RestartSec=2
 StandardOutput=append:/var/log/pantalla/backend.log
 StandardError=append:/var/log/pantalla/backend.log
 
