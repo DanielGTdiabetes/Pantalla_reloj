@@ -60,7 +60,9 @@ KIOSK_BIN_SRC="${REPO_ROOT}/usr/local/bin/pantalla-kiosk"
 KIOSK_BIN_DST=/usr/local/bin/pantalla-kiosk
 UDEV_RULE=/etc/udev/rules.d/70-pantalla-render.rules
 
-install -d -m 0755 "$PANTALLA_PREFIX" "$STATE_DIR" "$STATE_RUNTIME" "$LOG_DIR"
+install -d -m 0755 "$PANTALLA_PREFIX" "$LOG_DIR"
+install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
+install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_RUNTIME"
 
 log_info "Installing base packages"
 APT_PACKAGES=(
@@ -334,11 +336,26 @@ configure_nginx() {
 configure_nginx
 
 log_info "Installing systemd units"
-install -m 0644 "$REPO_ROOT/systemd/pantalla-xorg.service" /etc/systemd/system/pantalla-xorg.service
-install -m 0644 "$REPO_ROOT/systemd/pantalla-openbox@.service" /etc/systemd/system/pantalla-openbox@.service
-install -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk@.service" /etc/systemd/system/pantalla-kiosk@.service
-install -m 0644 "$REPO_ROOT/systemd/pantalla-dash-backend@.service" /etc/systemd/system/pantalla-dash-backend@.service
-systemctl daemon-reload
+units_changed=0
+deploy_unit() {
+  local src="$1" dest="$2"
+  if [[ ! -f "$dest" ]] || ! cmp -s "$src" "$dest"; then
+    install -m 0644 "$src" "$dest"
+    units_changed=1
+  fi
+}
+
+deploy_unit "$REPO_ROOT/systemd/pantalla-xorg.service" /etc/systemd/system/pantalla-xorg.service
+deploy_unit "$REPO_ROOT/systemd/pantalla-openbox@.service" /etc/systemd/system/pantalla-openbox@.service
+deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk@.service" /etc/systemd/system/pantalla-kiosk@.service
+deploy_unit "$REPO_ROOT/systemd/pantalla-dash-backend@.service" /etc/systemd/system/pantalla-dash-backend@.service
+
+if [[ $units_changed -eq 1 ]]; then
+  log_info "Reloading systemd daemon"
+  systemctl daemon-reload
+else
+  log_info "Systemd units unchanged; skipping daemon-reload"
+fi
 
 log_info "Enabling services"
 for svc in \
@@ -347,8 +364,14 @@ for svc in \
   pantalla-openbox@${USER_NAME}.service \
   pantalla-kiosk@${USER_NAME}.service
   do
-    systemctl enable --now "$svc"
+    systemctl enable "$svc"
   done
+
+log_info "Restarting Pantalla services"
+systemctl restart pantalla-xorg.service
+systemctl restart pantalla-dash-backend@${USER_NAME}.service
+systemctl restart pantalla-openbox@${USER_NAME}.service
+systemctl restart pantalla-kiosk@${USER_NAME}.service
 
 log_info "Running quick health checks"
 if curl -sS -m 1 http://127.0.0.1:8081/healthz >/dev/null 2>&1; then

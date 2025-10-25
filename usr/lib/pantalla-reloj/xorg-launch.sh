@@ -10,7 +10,7 @@ log() {
   printf '[xorg-launch] %s\n' "$*"
 }
 
-install -d -m 0755 "$STATE_DIR"
+install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
 
 # Serialise concurrent regeneration attempts
 exec 9>"$LOCK_FILE"
@@ -23,7 +23,7 @@ fi
 if [ -f "$AUTH_FILE" ]; then
   : >"$AUTH_FILE"
 else
-  touch "$AUTH_FILE"
+  install -m 0600 -o "$USER_NAME" -g "$USER_NAME" /dev/null "$AUTH_FILE"
 fi
 
 chown "$USER_NAME:$USER_NAME" "$AUTH_FILE"
@@ -36,5 +36,24 @@ if [ -z "$COOKIE" ]; then
 fi
 
 xauth -f "$AUTH_FILE" add :0 . "$COOKIE"
+
+HOME_AUTH="/home/${USER_NAME}/.Xauthority"
+HOME_AUTH_BACKUP="${HOME_AUTH}.bak"
+
+if [ -e "$HOME_AUTH" ] && [ ! -L "$HOME_AUTH" ]; then
+  if [ ! -e "$HOME_AUTH_BACKUP" ]; then
+    log "Creando backup de ${HOME_AUTH} en ${HOME_AUTH_BACKUP}"
+    cp -p "$HOME_AUTH" "$HOME_AUTH_BACKUP"
+  fi
+  rm -f "$HOME_AUTH"
+fi
+
+ln -sfn "$AUTH_FILE" "$HOME_AUTH"
+
+if chown -h "$USER_NAME:$USER_NAME" "$HOME_AUTH" 2>/dev/null; then
+  :
+else
+  log "No se pudo ajustar propietario del symlink ${HOME_AUTH}; continuando"
+fi
 
 exec /usr/lib/xorg/Xorg :0 -verbose 3 -nolisten tcp -background none vt7 -auth "$AUTH_FILE"
