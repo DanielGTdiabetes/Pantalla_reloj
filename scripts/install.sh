@@ -61,6 +61,8 @@ WEB_ROOT=/var/www/html
 WEBROOT_MANIFEST="${STATE_RUNTIME}/webroot-manifest"
 KIOSK_BIN_SRC="${REPO_ROOT}/usr/local/bin/pantalla-kiosk"
 KIOSK_BIN_DST=/usr/local/bin/pantalla-kiosk
+BACKEND_LAUNCHER_SRC="${REPO_ROOT}/usr/local/bin/pantalla-backend-launch"
+BACKEND_LAUNCHER_DST=/usr/local/bin/pantalla-backend-launch
 UDEV_RULE=/etc/udev/rules.d/70-pantalla-render.rules
 
 install -d -m 0755 "$PANTALLA_PREFIX" "$LOG_DIR" "$SESSION_PREFIX"
@@ -174,6 +176,8 @@ install -m 0755 "$REPO_ROOT/opt/pantalla/openbox/autostart" "$SESSION_PREFIX/ope
 
 install -D -m 0755 "$KIOSK_BIN_SRC" "$KIOSK_BIN_DST"
 SUMMARY+=("[install] launcher de kiosk instalado en ${KIOSK_BIN_DST}")
+install -D -m 0755 "$BACKEND_LAUNCHER_SRC" "$BACKEND_LAUNCHER_DST"
+SUMMARY+=("[install] launcher de backend instalado en ${BACKEND_LAUNCHER_DST}")
 install -d -m 0755 /usr/lib/pantalla-reloj
 install -m 0755 "$REPO_ROOT/usr/lib/pantalla-reloj/xorg-launch.sh" /usr/lib/pantalla-reloj/xorg-launch.sh
 
@@ -405,12 +409,17 @@ else
   SUMMARY+=('[install] proceso epiphany-browser no detectado')
 fi
 
-if WMCTRL_OUT=$(wmctrl -lG 2>&1); then
-  log_ok "wmctrl -lG output:\n${WMCTRL_OUT}"
-  SUMMARY+=('[install] wmctrl -lG ejecutado con éxito')
+if [[ -n ${DISPLAY:-} ]] && command -v wmctrl >/dev/null 2>&1; then
+  if WMCTRL_OUT=$(wmctrl -lG 2>&1); then
+    log_ok "wmctrl -lG output:\n${WMCTRL_OUT}"
+    SUMMARY+=('[install] wmctrl -lG ejecutado con éxito')
+  else
+    log_warn "wmctrl failed: ${WMCTRL_OUT:-no output}"
+    SUMMARY+=('[install] wmctrl -lG falló')
+  fi
 else
-  log_warn "wmctrl failed: ${WMCTRL_OUT:-no output}"
-  SUMMARY+=('[install] wmctrl -lG falló')
+  log_warn "wmctrl omitido: DISPLAY no definido o binario ausente"
+  SUMMARY+=('[install] wmctrl omitido (sin DISPLAY/binario)')
 fi
 
 log_ok "Installation completed"
