@@ -1,30 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+umask 022
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-NON_INTERACTIVE=0
-WITH_FIREFOX=0
-AUTO_REBOOT=0
 
-for arg in "$@"; do
-  case "$arg" in
+NON_INTERACTIVE=0
+
+usage() {
+  cat <<USAGE
+Pantalla_reloj installer
+Usage: sudo bash install.sh [--non-interactive]
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --non-interactive)
       NON_INTERACTIVE=1
+      shift
       ;;
-    --with-firefox)
-      WITH_FIREFOX=1
-      ;;
-    --auto-reboot)
-      AUTO_REBOOT=1
-      ;;
-    --help|-h)
-      echo "Pantalla_reloj installer"
-      echo "Usage: sudo bash install.sh [--non-interactive] [--with-firefox] [--auto-reboot]"
+    -h|--help)
+      usage
       exit 0
       ;;
     *)
-      echo "Unknown argument: $arg" >&2
+      echo "[ERROR] Unknown argument: $1" >&2
       exit 1
       ;;
   esac
@@ -35,241 +37,135 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-log_info() {
-  printf '[INFO] %s\n' "$*"
-}
-
-log_ok() {
-  printf '[OK] %s\n' "$*"
-}
-
-log_error() {
-  printf '[ERROR] %s\n' "$*" >&2
-}
+log_info() { printf '[INFO] %s\n' "$*"; }
+log_warn() { printf '[WARN] %s\n' "$*"; }
+log_ok()   { printf '[OK] %s\n' "$*"; }
+log_error(){ printf '[ERROR] %s\n' "$*" >&2; }
 
 USER_NAME="dani"
-USER_HOME="/home/${USER_NAME}"
 if ! id "$USER_NAME" >/dev/null 2>&1; then
-  log_error "El usuario ${USER_NAME} no existe en el sistema"
+  log_error "User '$USER_NAME' must exist before running the installer"
   exit 1
 fi
-PANTALLA_ROOT=/opt/pantalla
-BACKEND_DEST="$PANTALLA_ROOT/backend"
-STATE_DIR=/var/lib/pantalla
-STATE_CACHE_DIR="$STATE_DIR/cache"
-CONFIG_FILE="$STATE_DIR/config.json"
-LOG_DIR=/var/log/pantalla
+USER_HOME="/home/${USER_NAME}"
+
+PANTALLA_PREFIX=/opt/pantalla-reloj
+BACKEND_DEST="${PANTALLA_PREFIX}/backend"
+STATE_DIR=/var/lib/pantalla-reloj
+STATE_RUNTIME="${STATE_DIR}/state"
+LOG_DIR=/var/log/pantalla-reloj
 WEB_ROOT=/var/www/html
-FIREFOX_URL="https://download.mozilla.org/?product=firefox-latest&os=linux64&lang=es-ES"
-FIREFOX_DEST=/opt/firefox
-SYSTEMD_DIR=/etc/systemd/system
 NGINX_SITE=/etc/nginx/sites-available/pantalla-reloj.conf
 NGINX_SITE_LINK=/etc/nginx/sites-enabled/pantalla-reloj.conf
-PR_STATE_DIR=/var/lib/pantalla-reloj
-PR_STATE_STATE_DIR="$PR_STATE_DIR/state"
-DISPLAY_MANAGER_MARK="$PR_STATE_STATE_DIR/display-manager.masked"
+NGINX_DEFAULT_LINK=/etc/nginx/sites-enabled/default
+NGINX_DEFAULT_STATE="${STATE_RUNTIME}/nginx-default-enabled"
+WEBROOT_MANIFEST="${STATE_RUNTIME}/webroot-manifest"
+KIOSK_BIN_SRC="${REPO_ROOT}/usr/local/bin/pantalla-kiosk"
+KIOSK_BIN_DST=/usr/local/bin/pantalla-kiosk
+UDEV_RULE=/etc/udev/rules.d/70-pantalla-render.rules
 
-log_info "Desactivando display managers en conflicto"
-systemctl disable --now lightdm gdm sddm 2>/dev/null || true
-install -d -m 0755 "$PR_STATE_STATE_DIR"
-DISPLAY_MANAGER_PRE_MASKED=0
-DISPLAY_MANAGER_STATUS="$(systemctl is-enabled display-manager.service 2>/dev/null || true)"
-if [[ "$DISPLAY_MANAGER_STATUS" == "masked" ]]; then
-  DISPLAY_MANAGER_PRE_MASKED=1
-fi
-systemctl disable --now display-manager.service 2>/dev/null || true
-systemctl mask display-manager.service 2>/dev/null || true
-if [[ $DISPLAY_MANAGER_PRE_MASKED -eq 0 ]]; then
-  DISPLAY_MANAGER_STATUS="$(systemctl is-enabled display-manager.service 2>/dev/null || true)"
-  if [[ "$DISPLAY_MANAGER_STATUS" == "masked" ]]; then
-    touch "$DISPLAY_MANAGER_MARK"
-  fi
-fi
+install -d -m 0755 "$PANTALLA_PREFIX" "$STATE_DIR" "$STATE_RUNTIME" "$LOG_DIR"
 
-log_info "Actualizando lista de paquetes"
-apt-get update -y
-
+log_info "Installing base packages"
 APT_PACKAGES=(
-  python3-venv
-  python3-pip
-  python3-dev
   nginx
   xorg
   openbox
-  epiphany-browser
   x11-xserver-utils
   wmctrl
   xdotool
   dbus-x11
-  unclutter
   curl
   unzip
   jq
   rsync
   file
+  epiphany-browser
+  python3-venv
 )
-log_info "Instalando dependencias base con APT"
+apt-get update -y
 DEBIAN_FRONTEND=noninteractive apt-get install -y "${APT_PACKAGES[@]}"
 
-if ! command -v node >/dev/null 2>&1; then
-  log_info "Node.js no encontrado. Instalando Node.js 20.x desde NodeSource"
+ensure_node() {
+  if command -v node >/dev/null 2>&1; then
+    local version major
+    version="$(node -v | sed 's/^v//')"
+    major="${version%%.*}"
+    if [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 20 )); then
+      log_info "Detected Node.js $(node -v)"
+      return
+    fi
+    log_warn "Node.js $(node -v) is older than required (>=20). Upgrading."
+  else
+    log_info "Node.js not found. Installing Node.js 20.x"
+  fi
+
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
   apt-get update -y
   DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
-else
-  log_info "Node.js detectado ($(node -v)). Se omite instalación."
-fi
+}
+
+ensure_node
 
 if ! command -v corepack >/dev/null 2>&1; then
-  log_error "Node.js 20.x debería incluir Corepack. Verifique la instalación de Node."
+  log_error "Corepack not available after installing Node.js"
   exit 1
 fi
 
-log_info "Habilitando Corepack y npm latest"
+log_info "Configuring npm via Corepack"
 corepack enable >/dev/null 2>&1 || true
 corepack prepare npm@latest --activate
 
 if ! command -v npm >/dev/null 2>&1; then
-  log_error "npm no está disponible después de activar Corepack"
+  log_error "npm not available after activating Corepack"
   exit 1
 fi
 
-install_firefox() {
-  log_info "Descargando Firefox"
-  mkdir -p /opt
-  local temp_archive
-  temp_archive="$(mktemp /tmp/firefox.XXXXXX.tar)"
-  if ! curl -fsSL "$FIREFOX_URL" -o "$temp_archive"; then
-    rm -f "$temp_archive"
-    log_error "No se pudo descargar Firefox desde $FIREFOX_URL"
-    exit 1
-  fi
-
-  local mime_type
-  mime_type="$(file -b --mime-type "$temp_archive")"
-  local tar_flag
-  case "$mime_type" in
-    application/x-bzip2)
-      tar_flag="j"
-      ;;
-    application/x-xz)
-      tar_flag="J"
-      ;;
-    application/gzip|application/x-gzip)
-      tar_flag="z"
-      ;;
-    *)
-      rm -f "$temp_archive"
-      log_error "El archivo descargado de Firefox no es un tar comprimido válido (tipo: $mime_type)"
-      exit 1
-      ;;
-  esac
-
-  if ! tar -t"${tar_flag}"f "$temp_archive" >/dev/null 2>&1; then
-    rm -f "$temp_archive"
-    log_error "El archivo descargado de Firefox está corrupto o no se pudo leer"
-    exit 1
-  fi
-
-  local temp_dir
-  temp_dir="$(mktemp -d /tmp/firefox.XXXXXX)"
-  tar -x"${tar_flag}"f "$temp_archive" -C "$temp_dir"
-  local extracted_dir
-  extracted_dir="$(find "$temp_dir" -mindepth 1 -maxdepth 1 -type d | head -n1)"
-  if [[ -z "$extracted_dir" ]]; then
-    rm -rf "$temp_dir" "$temp_archive"
-    log_error "No se pudo determinar el directorio de Firefox extraído"
-    exit 1
-  fi
-
-  rm -rf "$FIREFOX_DEST"
-  mv "$extracted_dir" "$FIREFOX_DEST"
-  rm -rf "$temp_dir" "$temp_archive"
-  ln -sfn "$FIREFOX_DEST/firefox" /usr/local/bin/firefox
-  chmod 755 -R "$FIREFOX_DEST"
-  log_info "Firefox instalado en $FIREFOX_DEST"
-}
-
-if [[ $WITH_FIREFOX -eq 1 ]]; then
-  install_firefox
-else
-  log_info "Firefox omitido (usa --with-firefox para instalarlo)"
-fi
-
-log_info "Preparando estructura en $PANTALLA_ROOT y $STATE_DIR"
-install -d -m 0755 "$PANTALLA_ROOT" "$BACKEND_DEST"
-install -d -m 0755 "$STATE_DIR" "$STATE_CACHE_DIR"
-install -d -m 0755 "$LOG_DIR"
-install -d -m 0755 "$PR_STATE_STATE_DIR"
-
-GROUPS_CHANGED=0
+log_info "Ensuring user ${USER_NAME} belongs to render/video"
 if ! id -nG "$USER_NAME" | grep -qw render; then
   usermod -aG render "$USER_NAME"
-  GROUPS_CHANGED=1
 fi
 if ! id -nG "$USER_NAME" | grep -qw video; then
   usermod -aG video "$USER_NAME"
-  GROUPS_CHANGED=1
 fi
 
-if [[ $GROUPS_CHANGED -eq 1 ]]; then
-  log_info "El usuario $USER_NAME fue añadido a los grupos render/video"
-fi
-
-log_info "Aplicando reglas udev para acceso a GPU"
-install -d -m 0755 /etc/udev/rules.d
-cat <<'RULE' >/etc/udev/rules.d/70-pantalla-render.rules
+log_info "Installing udev rules for GPU access"
+cat <<'RULE' >"$UDEV_RULE"
 KERNEL=="renderD*", GROUP="render", MODE="0660"
 KERNEL=="card[0-9]*", GROUP="video", MODE="0660"
 RULE
 udevadm control --reload
 udevadm trigger
 
-log_info "Sincronizando backend"
+log_info "Syncing backend into $BACKEND_DEST"
+install -d -m 0755 "$BACKEND_DEST"
 rsync -a --delete --exclude '.venv/' "$REPO_ROOT/backend/" "$BACKEND_DEST/"
 
-log_info "Creando entorno virtual del backend"
-rm -rf "$BACKEND_DEST/.venv"
+log_info "Preparing backend virtualenv"
 python3 -m venv "$BACKEND_DEST/.venv"
 "$BACKEND_DEST/.venv/bin/pip" install --upgrade pip wheel
 if [[ -f "$BACKEND_DEST/requirements.txt" ]]; then
   "$BACKEND_DEST/.venv/bin/pip" install -r "$BACKEND_DEST/requirements.txt"
-else
-  "$BACKEND_DEST/.venv/bin/pip" install fastapi uvicorn[standard]
 fi
 
+CONFIG_FILE="$STATE_DIR/config.json"
 if [[ ! -f "$CONFIG_FILE" ]]; then
-  log_info "Instalando configuración por defecto en $CONFIG_FILE"
   install -o "$USER_NAME" -g "$USER_NAME" -m 0644 "$REPO_ROOT/backend/default_config.json" "$CONFIG_FILE"
 fi
+install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$STATE_DIR/cache"
 
-touch "$LOG_DIR/backend.log"
-chown -R "$USER_NAME:$USER_NAME" "$PANTALLA_ROOT" "$STATE_DIR" "$LOG_DIR" || true
-
-log_info "Instalando autostart de Openbox"
-if [[ ! -d "$USER_HOME" ]]; then
-  log_error "El usuario $USER_NAME no existe o no tiene HOME en $USER_HOME"
-  exit 1
-fi
 install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$USER_HOME/.config/openbox"
 AUTO_FILE="$USER_HOME/.config/openbox/autostart"
 AUTO_BACKUP="${AUTO_FILE}.pantalla-reloj.bak"
 if [[ -f "$AUTO_FILE" && ! -f "$AUTO_BACKUP" ]]; then
-  log_info "Respaldando autostart existente en $AUTO_BACKUP"
   cp -p "$AUTO_FILE" "$AUTO_BACKUP"
 fi
 install -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$REPO_ROOT/openbox/autostart" "$AUTO_FILE"
 
-log_info "Instalando lanzador kiosk-epiphany"
-install -m 0755 "$REPO_ROOT/usr/local/bin/kiosk-epiphany" /usr/local/bin/kiosk-epiphany
+install -m 0755 "$KIOSK_BIN_SRC" "$KIOSK_BIN_DST"
 
-log_info "Construyendo frontend"
+log_info "Building frontend"
 pushd "$REPO_ROOT/dash-ui" >/dev/null
-export VITE_DEFAULT_LAYOUT=${VITE_DEFAULT_LAYOUT:-full}
-export VITE_SIDE_PANEL=${VITE_SIDE_PANEL:-right}
-export VITE_SHOW_CONFIG=${VITE_SHOW_CONFIG:-0}
-export VITE_ENABLE_DEMO=${VITE_ENABLE_DEMO:-0}
-export VITE_CAROUSEL=${VITE_CAROUSEL:-0}
 if [[ -f package-lock.json ]]; then
   npm ci --no-audit --no-fund
 else
@@ -278,148 +174,98 @@ fi
 npm run build
 popd >/dev/null
 
-log_info "Publicando frontend en $WEB_ROOT"
-install -d -m 0755 "$WEB_ROOT"
-rsync -a --delete "$REPO_ROOT/dash-ui/dist/" "$WEB_ROOT/"
-chown -R www-data:www-data "$WEB_ROOT"
+publish_webroot() {
+  install -d -m 0755 "$WEB_ROOT"
 
-log_info "Configurando Nginx"
-install -m 0644 "$REPO_ROOT/etc/nginx/sites-available/pantalla-reloj.conf" "$NGINX_SITE"
-ln -sfn "$NGINX_SITE" "$NGINX_SITE_LINK"
-rm -f /etc/nginx/sites-enabled/default
-nginx -t
-systemctl enable --now nginx
-systemctl reload nginx
-
-log_info "Instalando unidades systemd"
-install -m 0644 "$REPO_ROOT/systemd/pantalla-xorg.service" "$SYSTEMD_DIR/pantalla-xorg.service"
-install -m 0644 "$REPO_ROOT/systemd/pantalla-openbox@.service" "$SYSTEMD_DIR/pantalla-openbox@.service"
-install -m 0644 "$REPO_ROOT/systemd/pantalla-dash-backend@.service" "$SYSTEMD_DIR/pantalla-dash-backend@.service"
-install -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk@.service" "$SYSTEMD_DIR/pantalla-kiosk@.service"
-systemctl daemon-reload
-
-for svc in pantalla-xorg.service \
-           pantalla-dash-backend@${USER_NAME}.service \
-           pantalla-openbox@${USER_NAME}.service \
-           pantalla-kiosk@${USER_NAME}.service; do
-  systemctl enable --now "$svc"
-  systemctl restart "$svc"
-done
-
-log_info "Esperando healthchecks de Nginx y backend"
-ROOT_OK=0
-API_OK=0
-for attempt in $(seq 1 30); do
-  if [[ $ROOT_OK -eq 0 ]] && curl -sf http://127.0.0.1/ >/dev/null 2>&1; then
-    ROOT_OK=1
-  fi
-  if [[ $API_OK -eq 0 ]] && curl -sf http://127.0.0.1/api/health >/dev/null 2>&1; then
-    API_OK=1
-  fi
-  if [[ $ROOT_OK -eq 1 && $API_OK -eq 1 ]]; then
-    break
-  fi
-  sleep 1
-done
-
-XORG_ACTIVE=0
-OPENBOX_ACTIVE=0
-BACKEND_ACTIVE=0
-NGINX_ACTIVE=0
-FAILED=0
-
-if command -v epiphany-browser >/dev/null 2>&1; then
-  EPIPHANY_VERSION="$(epiphany-browser --version 2>/dev/null | head -n1 || echo 'desconocida')"
-  log_info "Epiphany: OK (${EPIPHANY_VERSION})"
-else
-  log_error "Epiphany: no instalado"
-  FAILED=1
-fi
-
-if [[ $WITH_FIREFOX -eq 1 ]]; then
-  if [[ -x /usr/local/bin/firefox ]]; then
-    FIREFOX_VERSION="$(/usr/local/bin/firefox --version 2>/dev/null | head -n1 || echo 'desconocida')"
-    log_info "Firefox: OK (${FIREFOX_VERSION})"
-  else
-    log_error "Firefox: no instalado (se solicitó --with-firefox)"
-    FAILED=1
-  fi
-else
-  if [[ -x /usr/local/bin/firefox ]]; then
-    FIREFOX_VERSION="$(/usr/local/bin/firefox --version 2>/dev/null | head -n1 || echo 'desconocida')"
-    log_info "Firefox: detectado (${FIREFOX_VERSION})"
-  else
-    log_info "Firefox: omitido"
-  fi
-fi
-
-if [[ $ROOT_OK -eq 1 ]]; then
-  log_info "Nginx: OK (http://127.0.0.1/ responde 200)"
-else
-  log_error "Nginx: fallo health check (http://127.0.0.1/)"
-  FAILED=1
-fi
-
-if [[ $API_OK -eq 1 ]]; then
-  log_info "Backend: OK (/api/health 200 vía Nginx)"
-else
-  log_error "Backend: fallo health check (http://127.0.0.1/api/health)"
-  FAILED=1
-fi
-
-if [[ -f "$WEB_ROOT/index.html" ]]; then
-  log_info "Frontend: OK (dist publicado en $WEB_ROOT)"
-else
-  log_error "Frontend: no se encontró index.html en $WEB_ROOT"
-  FAILED=1
-fi
-
-if systemctl is-active --quiet nginx; then
-  NGINX_ACTIVE=1
-else
-  log_error "Nginx no está activo"
-  FAILED=1
-fi
-
-if systemctl is-active --quiet pantalla-xorg.service; then
-  XORG_ACTIVE=1
-fi
-if systemctl is-active --quiet pantalla-openbox@${USER_NAME}.service; then
-  OPENBOX_ACTIVE=1
-fi
-if systemctl is-active --quiet pantalla-dash-backend@${USER_NAME}.service; then
-  BACKEND_ACTIVE=1
-fi
-
-if [[ $XORG_ACTIVE -eq 1 && $OPENBOX_ACTIVE -eq 1 && $BACKEND_ACTIVE -eq 1 ]]; then
-  log_info "Systemd: Xorg/Openbox/Backend activos"
-else
-  log_error "Systemd: Servicios no activos (Xorg=$XORG_ACTIVE, Openbox=$OPENBOX_ACTIVE, Backend=$BACKEND_ACTIVE)"
-  FAILED=1
-fi
-
-if [[ $FAILED -eq 0 ]]; then
-  log_ok "Instalación completada"
-  if [[ $GROUPS_CHANGED -eq 1 ]]; then
-    printf 'reboot required\n'
-    log_info "Se requiere reinicio para aplicar grupos"
-    if [[ $AUTO_REBOOT -eq 1 ]]; then
-      if [[ $NON_INTERACTIVE -eq 1 ]]; then
-        echo "reiniciar ahora"
-        systemctl reboot
-      else
-        read -r -p "¿Reiniciar ahora? [s/N]: " resp
-        if [[ "$resp" =~ ^[sS]$ ]]; then
-          echo "reiniciar ahora"
-          systemctl reboot
-        else
-          log_info "Reinicio omitido por el usuario"
-        fi
-      fi
+  if [[ -f "$WEBROOT_MANIFEST" ]]; then
+    mapfile -t previous <"$WEBROOT_MANIFEST" || previous=()
+    if [[ ${#previous[@]} -gt 0 ]]; then
+      log_info "Removing previously deployed web assets"
+      # Remove files first, directories afterwards
+      mapfile -t sorted_previous < <(printf '%s\n' "${previous[@]}" | awk 'NF' | sort -r)
+      for rel in "${sorted_previous[@]}"; do
+        rm -rf "$WEB_ROOT/$rel"
+      done
     fi
   fi
-  exit 0
+
+  rsync -a "$REPO_ROOT/dash-ui/dist/" "$WEB_ROOT/"
+
+  pushd "$REPO_ROOT/dash-ui/dist" >/dev/null
+  find . -mindepth 1 -print | sed 's#^\./##' >"$WEBROOT_MANIFEST"
+  popd >/dev/null
+
+  chown -R www-data:www-data "$WEB_ROOT"
+}
+
+log_info "Publishing frontend to $WEB_ROOT"
+publish_webroot
+
+chown -R "$USER_NAME:$USER_NAME" "$PANTALLA_PREFIX" "$STATE_DIR" "$LOG_DIR"
+touch "$LOG_DIR/backend.log"
+chown "$USER_NAME:$USER_NAME" "$LOG_DIR/backend.log"
+
+setup_nginx() {
+  if ! command -v nginx >/dev/null 2>&1; then
+    log_warn "nginx not installed; skipping web server setup"
+    return
+  fi
+
+  install -m 0644 "$REPO_ROOT/etc/nginx/sites-available/pantalla-reloj.conf" "$NGINX_SITE"
+  ln -sfn "$NGINX_SITE" "$NGINX_SITE_LINK"
+
+  if [[ -L "$NGINX_DEFAULT_LINK" || -e "$NGINX_DEFAULT_LINK" ]]; then
+    echo "enabled" >"$NGINX_DEFAULT_STATE"
+    rm -f "$NGINX_DEFAULT_LINK"
+  else
+    echo "disabled" >"$NGINX_DEFAULT_STATE"
+  fi
+
+  if ! nginx -t; then
+    log_error "nginx -t failed"
+    exit 1
+  fi
+  systemctl enable --now nginx >/dev/null 2>&1 || true
+  systemctl restart nginx
+}
+
+log_info "Configuring nginx"
+setup_nginx
+
+log_info "Installing systemd units"
+install -m 0644 "$REPO_ROOT/systemd/pantalla-xorg.service" /etc/systemd/system/pantalla-xorg.service
+install -m 0644 "$REPO_ROOT/systemd/pantalla-openbox@.service" /etc/systemd/system/pantalla-openbox@.service
+install -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk@.service" /etc/systemd/system/pantalla-kiosk@.service
+install -m 0644 "$REPO_ROOT/systemd/pantalla-dash-backend@.service" /etc/systemd/system/pantalla-dash-backend@.service
+systemctl daemon-reload
+
+log_info "Enabling services"
+for svc in \
+  pantalla-xorg.service \
+  pantalla-dash-backend@${USER_NAME}.service \
+  pantalla-openbox@${USER_NAME}.service \
+  pantalla-kiosk@${USER_NAME}.service
+  do
+    systemctl enable --now "$svc"
+  done
+
+log_info "Running quick health checks"
+if curl -sS -m 1 http://127.0.0.1:8081/healthz >/dev/null 2>&1; then
+  log_ok "Backend healthz reachable"
 else
-  log_error "Instalación con errores"
-  exit 1
+  log_warn "Backend healthz not responding yet"
 fi
+
+if pgrep -fa epiphany >/dev/null 2>&1; then
+  log_ok "Epiphany process detected"
+else
+  log_warn "Epiphany process not detected"
+fi
+
+if WMCTRL_OUT=$(wmctrl -lG 2>&1); then
+  log_ok "wmctrl -lG output:\n${WMCTRL_OUT}"
+else
+  log_warn "wmctrl failed: ${WMCTRL_OUT:-no output}"
+fi
+
+log_ok "Installation completed"

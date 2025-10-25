@@ -1,6 +1,6 @@
 [Unit]
 Description=Pantalla_reloj Kiosk (Epiphany) for user %i
-After=pantalla-xorg.service pantalla-openbox@%i.service
+After=pantalla-openbox@%i.service
 Requires=pantalla-openbox@%i.service
 PartOf=pantalla-openbox@%i.service
 
@@ -8,8 +8,14 @@ PartOf=pantalla-openbox@%i.service
 Type=simple
 User=%i
 Environment=DISPLAY=:0
-ExecStart=/usr/local/bin/kiosk-epiphany
-Restart=on-failure
+Environment=XAUTHORITY=/home/%i/.Xauthority
+Environment=WEBKIT_DISABLE_DMABUF_RENDERER=1
+Environment=WEBKIT_DISABLE_COMPOSITING_MODE=1
+Environment=GSK_RENDERER=cairo
+Environment=LIBGL_ALWAYS_SOFTWARE=1
+Environment=GTK_USE_PORTAL=0
+ExecStart=/usr/local/bin/pantalla-kiosk http://127.0.0.1
+Restart=always
 RestartSec=3
 StartLimitIntervalSec=0
 

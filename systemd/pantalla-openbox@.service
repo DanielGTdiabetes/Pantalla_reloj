@@ -1,8 +1,8 @@
 [Unit]
 Description=Pantalla_reloj Openbox session for %i (DISPLAY=:0)
-After=systemd-user-sessions.service getty@tty7.service pantalla-xorg.service pantalla-dash-backend@%i.service nginx.service
+After=pantalla-xorg.service
 Requires=pantalla-xorg.service
-Wants=pantalla-dash-backend@%i.service nginx.service
+Wants=pantalla-dash-backend@%i.service
 
 [Service]
 User=%i

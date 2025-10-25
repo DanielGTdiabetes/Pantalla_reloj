@@ -6,14 +6,17 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=%i
-WorkingDirectory=/opt/pantalla/backend
-Environment="PATH=/opt/pantalla/backend/.venv/bin"
-Environment="PYTHONPATH=/opt/pantalla"
-ExecStart=/opt/pantalla/backend/.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8081 --proxy-headers --timeout-keep-alive 30
+WorkingDirectory=/opt/pantalla-reloj/backend
+Environment="PATH=/opt/pantalla-reloj/backend/.venv/bin"
+Environment="PYTHONPATH=/opt/pantalla-reloj"
+Environment="PANTALLA_STATE_DIR=/var/lib/pantalla-reloj"
+Environment="PANTALLA_CONFIG_FILE=/var/lib/pantalla-reloj/config.json"
+Environment="PANTALLA_DEFAULT_CONFIG_FILE=/opt/pantalla-reloj/backend/default_config.json"
+ExecStart=/opt/pantalla-reloj/backend/.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8081 --proxy-headers --timeout-keep-alive 30
 Restart=always
 RestartSec=1s
-StandardOutput=append:/var/log/pantalla/backend.log
-StandardError=append:/var/log/pantalla/backend.log
+StandardOutput=append:/var/log/pantalla-reloj/backend.log
+StandardError=append:/var/log/pantalla-reloj/backend.log
 
 [Install]
 WantedBy=multi-user.target

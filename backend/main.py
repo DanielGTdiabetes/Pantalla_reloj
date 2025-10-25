@@ -73,15 +73,27 @@ def _load_or_default(endpoint: str) -> Dict[str, Any]:
     return default_payload
 
 
-@app.get("/api/health")
-def healthcheck() -> Dict[str, Any]:
+def _health_payload() -> Dict[str, Any]:
     uptime = datetime.now(timezone.utc) - APP_START
-    logger.debug("Health check requested")
-    return {
+    payload = {
         "status": "ok",
         "uptime_seconds": int(uptime.total_seconds()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+    cache_store.store("health", payload)
+    return payload
+
+
+@app.get("/healthz")
+def healthcheck_root() -> Dict[str, Any]:
+    logger.debug("Healthz probe requested")
+    return _health_payload()
+
+
+@app.get("/api/health")
+def healthcheck() -> Dict[str, Any]:
+    logger.debug("Health check requested")
+    return _health_payload()
 
 
 @app.get("/api/config", response_model=AppConfig)
