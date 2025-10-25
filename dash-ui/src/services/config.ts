@@ -55,12 +55,10 @@ export type OverlaySectionKey =
   | 'calendar';
 
 export interface OverlayConfig {
-  enabled?: boolean;
+  position?: 'left' | 'right';
+  width_px?: number;
   opacity?: number;
   blur_px?: number;
-  corner_radius?: number;
-  position?: 'top' | 'bottom' | 'left' | 'right' | 'center';
-  margin_px?: number;
   dwell_seconds?: number;
   transition_ms?: number;
   order?: OverlaySectionKey[];

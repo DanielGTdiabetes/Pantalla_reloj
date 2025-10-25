@@ -135,6 +135,10 @@ interface FormState {
   backgroundMode: 'daily' | 'weekly' | 'weather';
   backgroundIntervalMinutes: string;
   backgroundRetainDays: string;
+  overlayPosition: 'left' | 'right';
+  overlayWidthPx: number;
+  overlayOpacity: number;
+  overlayBlurPx: number;
   rotatingPanelEnabled: boolean;
   rotatingPanelIntervalSeconds: string;
   rotatingPanelSections: Record<RotatingPanelSectionKey, boolean>;
@@ -171,6 +175,10 @@ const DEFAULT_FORM: FormState = {
   backgroundMode: 'daily',
   backgroundIntervalMinutes: '60',
   backgroundRetainDays: '7',
+  overlayPosition: 'right',
+  overlayWidthPx: 420,
+  overlayOpacity: 0.85,
+  overlayBlurPx: 6,
   rotatingPanelEnabled: true,
   rotatingPanelIntervalSeconds: '7',
   rotatingPanelSections: {
@@ -317,6 +325,7 @@ const Config = () => {
     const background = (configData.background as Record<string, any> | undefined) ?? {};
     const ui = (configData.ui as Record<string, any> | undefined) ?? {};
     const rotating = (ui.rotatingPanel as Record<string, any> | undefined) ?? {};
+    const overlay = (ui.overlay as Record<string, any> | undefined) ?? {};
     const uiWifi = (ui.wifi as Record<string, any> | undefined) ?? {};
     const uiBlitz = (ui.blitzortung as Record<string, any> | undefined) ?? {};
     const rootBlitz = (configData.blitzortung as Record<string, any> | undefined) ?? {};
@@ -385,6 +394,20 @@ const Config = () => {
     const hasFeedsField =
       newsConfig && typeof newsConfig === 'object' && Object.prototype.hasOwnProperty.call(newsConfig, 'feeds');
 
+    const overlayPosition = overlay.position === 'left' ? 'left' : 'right';
+    const overlayWidth =
+      typeof overlay.width_px === 'number' && Number.isFinite(overlay.width_px)
+        ? Math.min(Math.max(Math.round(overlay.width_px), 280), 640)
+        : DEFAULT_FORM.overlayWidthPx;
+    const overlayOpacity =
+      typeof overlay.opacity === 'number' && Number.isFinite(overlay.opacity)
+        ? Math.min(Math.max(overlay.opacity, 0.3), 1)
+        : DEFAULT_FORM.overlayOpacity;
+    const overlayBlur =
+      typeof overlay.blur_px === 'number' && Number.isFinite(overlay.blur_px)
+        ? Math.min(Math.max(Math.round(overlay.blur_px), 0), 10)
+        : DEFAULT_FORM.overlayBlurPx;
+
     return {
       aemetApiKey: typeof aemet.apiKey === 'string' ? aemet.apiKey : '',
       aemetMunicipioId: typeof aemet.municipioId === 'string' ? aemet.municipioId : '',
@@ -420,6 +443,10 @@ const Config = () => {
         typeof background.retainDays === 'number'
           ? String(background.retainDays)
           : DEFAULT_FORM.backgroundRetainDays,
+      overlayPosition,
+      overlayWidthPx: overlayWidth,
+      overlayOpacity,
+      overlayBlurPx: overlayBlur,
       rotatingPanelEnabled:
         typeof rotating.enabled === 'boolean'
           ? rotating.enabled
@@ -1154,6 +1181,15 @@ const Config = () => {
 
     const blitzPatch = buildBlitzPayload();
     const appearancePatch = { transparentCards: form.uiAppearanceTransparentCards };
+    const overlayWidth = clampNumber(form.overlayWidthPx, 280, 640) ?? DEFAULT_FORM.overlayWidthPx;
+    const overlayBlur = clampNumber(form.overlayBlurPx, 0, 10) ?? DEFAULT_FORM.overlayBlurPx;
+    const overlayOpacity = Math.min(Math.max(form.overlayOpacity, 0.3), 1);
+    const overlayPatch = {
+      position: form.overlayPosition,
+      width_px: Math.round(overlayWidth),
+      opacity: Math.round(overlayOpacity * 100) / 100,
+      blur_px: Math.round(overlayBlur),
+    };
 
     patch.blitzortung = blitzPatch;
 
@@ -1165,6 +1201,7 @@ const Config = () => {
       },
       blitzortung: blitzPatch,
       appearance: appearancePatch,
+      overlay: overlayPatch,
     };
 
     patch.news = {
@@ -1857,6 +1894,76 @@ const Config = () => {
                   >
                     {testingBlitz ? 'Probando…' : 'Probar conexión'}
                   </button>
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-white/15 px-4 py-3">
+                <h3 className="text-sm font-medium text-white/85">Overlay lateral</h3>
+                <p className="mt-1 text-xs text-white/55">
+                  Ajusta la posición, ancho y translucidez del panel que acompaña al mapa.
+                </p>
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="block text-xs uppercase tracking-wide text-white/50">Posición</label>
+                    <select
+                      className="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none"
+                      value={form.overlayPosition}
+                      onChange={(event) =>
+                        handleFormChange('overlayPosition', event.target.value as FormState['overlayPosition'])
+                      }
+                    >
+                      <option value="right">Derecha</option>
+                      <option value="left">Izquierda</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-wide text-white/50">Ancho (px)</label>
+                    <div className="mt-3 flex items-center gap-3">
+                      <input
+                        type="range"
+                        min={280}
+                        max={640}
+                        step={10}
+                        className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/10"
+                        value={form.overlayWidthPx}
+                        onChange={(event) => handleFormChange('overlayWidthPx', Number(event.target.value))}
+                      />
+                      <span className="w-16 text-right text-sm text-white/70">{form.overlayWidthPx} px</span>
+                    </div>
+                    <p className="mt-1 text-xs text-white/45">Rango disponible: 280-640 px.</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-wide text-white/50">Opacidad</label>
+                    <div className="mt-3 flex items-center gap-3">
+                      <input
+                        type="range"
+                        min={0.3}
+                        max={1}
+                        step={0.01}
+                        className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/10"
+                        value={form.overlayOpacity}
+                        onChange={(event) => handleFormChange('overlayOpacity', Number(event.target.value))}
+                      />
+                      <span className="w-16 text-right text-sm text-white/70">{form.overlayOpacity.toFixed(2)}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-white/45">Valores recomendados: 0.30–1.00.</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-wide text-white/50">Desenfoque (px)</label>
+                    <div className="mt-3 flex items-center gap-3">
+                      <input
+                        type="range"
+                        min={0}
+                        max={10}
+                        step={1}
+                        className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/10"
+                        value={form.overlayBlurPx}
+                        onChange={(event) => handleFormChange('overlayBlurPx', Number(event.target.value))}
+                      />
+                      <span className="w-16 text-right text-sm text-white/70">{form.overlayBlurPx} px</span>
+                    </div>
+                    <p className="mt-1 text-xs text-white/45">Aplicado como filtro de fondo.</p>
+                  </div>
                 </div>
               </section>
 

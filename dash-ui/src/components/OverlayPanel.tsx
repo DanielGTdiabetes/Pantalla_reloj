@@ -1,31 +1,41 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { useMemo, useState, useEffect } from 'react';
-import { useDashboardConfig } from '../context/DashboardConfigContext';
-import type { OverlayConfig } from '../services/config';
+import { useEffect, useMemo, useState } from 'react';
+import type { OverlayConfig, OverlaySectionKey } from '../services/config';
+
+export interface ResolvedOverlayConfig {
+  position: 'left' | 'right';
+  width_px: number;
+  opacity: number;
+  blur_px: number;
+  dwell_seconds: number;
+  transition_ms: number;
+  order: OverlaySectionKey[];
+}
 
 interface OverlayPanelProps {
+  settings: ResolvedOverlayConfig;
   children: ReactNode;
 }
 
-export const DEFAULT_OVERLAY: Required<OverlayConfig> = {
-  enabled: true,
-  opacity: 0.28,
+const DEFAULT_ORDER: OverlaySectionKey[] = [
+  'weather_now',
+  'weather_week',
+  'moon',
+  'season',
+  'ephemeris',
+  'news',
+  'saints',
+  'calendar',
+];
+
+export const DEFAULT_OVERLAY: ResolvedOverlayConfig = {
+  position: 'right',
+  width_px: 420,
+  opacity: 0.85,
   blur_px: 6,
-  corner_radius: 20,
-  position: 'bottom',
-  margin_px: 24,
   dwell_seconds: 15,
   transition_ms: 450,
-  order: [
-    'weather_now',
-    'weather_week',
-    'moon',
-    'season',
-    'ephemeris',
-    'news',
-    'saints',
-    'calendar',
-  ],
+  order: DEFAULT_ORDER,
 };
 
 function clampWithFallback(value: number | undefined, min: number, max: number, fallback: number): number {
@@ -33,32 +43,48 @@ function clampWithFallback(value: number | undefined, min: number, max: number, 
   return Math.min(Math.max(value, min), max);
 }
 
-export function resolveOverlay(config: OverlayConfig | undefined): Required<OverlayConfig> {
-  if (!config) return DEFAULT_OVERLAY;
-  const order = Array.isArray(config.order) && config.order.length > 0 ? config.order : DEFAULT_OVERLAY.order;
-  return {
-    enabled: config.enabled ?? DEFAULT_OVERLAY.enabled,
-    opacity: clampWithFallback(config.opacity, 0, 1, DEFAULT_OVERLAY.opacity),
-    blur_px: clampWithFallback(config.blur_px, 0, 128, DEFAULT_OVERLAY.blur_px),
-    corner_radius: clampWithFallback(config.corner_radius, 0, 200, DEFAULT_OVERLAY.corner_radius),
-    position:
-      config.position && ['top', 'bottom', 'left', 'right', 'center'].includes(config.position)
-        ? config.position
-        : DEFAULT_OVERLAY.position,
-    margin_px: clampWithFallback(config.margin_px, 0, 200, DEFAULT_OVERLAY.margin_px),
-    dwell_seconds: clampWithFallback(config.dwell_seconds, 3, 180, DEFAULT_OVERLAY.dwell_seconds),
-    transition_ms: clampWithFallback(config.transition_ms, 100, 10_000, DEFAULT_OVERLAY.transition_ms),
-    order,
-  };
+function sanitizeOrder(order: OverlaySectionKey[] | undefined): OverlaySectionKey[] {
+  if (!Array.isArray(order) || order.length === 0) {
+    return DEFAULT_ORDER;
+  }
+  const seen = new Set<OverlaySectionKey>();
+  const normalized: OverlaySectionKey[] = [];
+  order.forEach((key) => {
+    if (!DEFAULT_ORDER.includes(key)) return;
+    if (seen.has(key)) return;
+    seen.add(key);
+    normalized.push(key);
+  });
+  return normalized.length > 0 ? normalized : DEFAULT_ORDER;
 }
 
-const positionStyles: Record<Required<OverlayConfig>['position'], CSSProperties> = {
-  top: { top: 0, left: '50%', transform: 'translate(-50%, 0)' },
-  bottom: { bottom: 0, left: '50%', transform: 'translate(-50%, 0)' },
-  left: { left: 0, top: '50%', transform: 'translate(0, -50%)' },
-  right: { right: 0, top: '50%', transform: 'translate(0, -50%)' },
-  center: { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' },
-};
+export function resolveOverlay(config: OverlayConfig | undefined): ResolvedOverlayConfig {
+  if (!config) {
+    return { ...DEFAULT_OVERLAY, order: [...DEFAULT_OVERLAY.order] };
+  }
+
+  const position = config.position === 'left' ? 'left' : 'right';
+  const width_px = clampWithFallback(config.width_px, 280, 640, DEFAULT_OVERLAY.width_px);
+  const opacity = clampWithFallback(config.opacity, 0.3, 1, DEFAULT_OVERLAY.opacity);
+  const blur_px = clampWithFallback(config.blur_px, 0, 10, DEFAULT_OVERLAY.blur_px);
+  const dwell_seconds = clampWithFallback(config.dwell_seconds, 3, 180, DEFAULT_OVERLAY.dwell_seconds);
+  const transition_ms = clampWithFallback(
+    config.transition_ms,
+    100,
+    10_000,
+    DEFAULT_OVERLAY.transition_ms,
+  );
+
+  return {
+    position,
+    width_px,
+    opacity,
+    blur_px,
+    dwell_seconds,
+    transition_ms,
+    order: sanitizeOrder(config.order),
+  };
+}
 
 const ClockHeader = () => {
   const [now, setNow] = useState(() => new Date());
@@ -92,78 +118,45 @@ const ClockHeader = () => {
 
   return (
     <div className="flex flex-col gap-1 text-left">
-      <span className="text-6xl font-semibold leading-none tracking-tight text-white drop-shadow">{timeFormatter.format(now)}</span>
-      <span className="text-lg font-medium capitalize text-white/75 drop-shadow">
+      <span className="text-3xl font-semibold leading-none tracking-tight text-white drop-shadow">
+        {timeFormatter.format(now)}
+      </span>
+      <span className="text-sm font-medium capitalize text-white/70 drop-shadow">
         {dateFormatter.format(now)}
       </span>
     </div>
   );
 };
 
-const OverlayPanel = ({ children }: OverlayPanelProps) => {
-  const { config } = useDashboardConfig();
-
-  const overlay = useMemo(() => resolveOverlay(config?.ui?.overlay), [config?.ui?.overlay]);
-
-  if (!overlay.enabled) {
-    return null;
-  }
-
-  const baseStyle: CSSProperties = {
-    position: 'absolute',
-    inset: 0,
-    pointerEvents: 'none',
-  };
-
+const OverlayPanel = ({ settings, children }: OverlayPanelProps) => {
+  const anchorStyle: CSSProperties = settings.position === 'left' ? { left: 0 } : { right: 0 };
   const panelStyle: CSSProperties = {
-    pointerEvents: 'auto',
-    backgroundColor: `rgba(0, 0, 0, ${overlay.opacity})`,
-    borderRadius: `${overlay.corner_radius}px`,
-    backdropFilter: `blur(${overlay.blur_px}px)`,
-    WebkitBackdropFilter: `blur(${overlay.blur_px}px)`,
-    boxShadow: '0 25px 60px rgba(0, 0, 0, 0.35)',
-    padding: '32px',
-    minWidth: 'min(90vw, 780px)',
-    maxWidth: 'min(90vw, 820px)',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '28px',
+    ...anchorStyle,
+    position: 'absolute',
+    top: 0,
+    width: settings.width_px,
+    height: '100%',
+    pointerEvents: 'none',
+    backgroundColor: `rgba(8, 11, 25, ${settings.opacity})`,
+    backdropFilter: `blur(${settings.blur_px}px)`,
+    WebkitBackdropFilter: `blur(${settings.blur_px}px)`,
+    boxShadow: '0 20px 45px rgba(0, 0, 0, 0.35)',
+    zIndex: 20,
   };
-
-  const offsetStyle = positionStyles[overlay.position];
-  const positionStyle: CSSProperties = {
-    ...offsetStyle,
-  };
-
-  positionStyle.transform = offsetStyle.transform;
-  if (overlay.position === 'top' || overlay.position === 'bottom') {
-    positionStyle.left = '50%';
-  }
-  if (overlay.position === 'left' || overlay.position === 'right') {
-    positionStyle.top = '50%';
-  }
-  if (overlay.position === 'top') {
-    positionStyle.top = overlay.margin_px;
-  }
-  if (overlay.position === 'bottom') {
-    positionStyle.bottom = overlay.margin_px;
-  }
-  if (overlay.position === 'left') {
-    positionStyle.left = overlay.margin_px;
-  }
-  if (overlay.position === 'right') {
-    positionStyle.right = overlay.margin_px;
-  }
 
   return (
-    <div style={baseStyle}>
-      <div className="absolute" style={positionStyle}>
-        <div style={panelStyle} className="text-white">
-          <ClockHeader />
+    <aside
+      id="overlay-panel"
+      className="pointer-events-none flex h-full flex-col items-stretch px-7 py-8 text-white"
+      style={panelStyle}
+    >
+      <ClockHeader />
+      <div className="relative mt-6 flex-1 overflow-hidden">
+        <div className="pointer-events-none flex h-full flex-col">
           {children}
         </div>
       </div>
-    </div>
+    </aside>
   );
 };
 
