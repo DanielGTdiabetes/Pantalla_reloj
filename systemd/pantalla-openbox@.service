@@ -14,7 +14,6 @@ WorkingDirectory=/home/%i
 ExecStartPre=/usr/bin/install -d -m 0700 -o %i -g %i "$XDG_RUNTIME_DIR"
 ExecStartPre=/bin/sh -c 'test -r "$XAUTHORITY" || { echo "pantalla-openbox@: missing XAUTHORITY at $XAUTHORITY" >&2; exit 1; }'
 ExecStartPre=/bin/sh -c 'DISPLAY=:0 XAUTHORITY="$XAUTHORITY" /opt/pantalla/bin/wait-x.sh'
-ExecStartPre=/usr/bin/install -m 0755 /opt/pantalla/openbox/autostart /opt/pantalla/openbox/autostart
 ExecStart=/usr/bin/openbox --startup /opt/pantalla/openbox/autostart
 Restart=always
 RestartSec=2
