@@ -82,7 +82,7 @@ APT_PACKAGES=(
   rsync
   file
   xauth
-  epiphany-browser
+  chromium
   python3-venv
 )
 apt-get update -y
@@ -168,7 +168,7 @@ install -m 0755 "$REPO_ROOT/opt/pantalla/bin/xorg-openbox-env.sh" "$SESSION_PREF
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/wait-x.sh" "$SESSION_PREFIX/bin/wait-x.sh"
 install -m 0755 "$REPO_ROOT/opt/pantalla/openbox/autostart" "$SESSION_PREFIX/openbox/autostart"
 
-install -m 0755 "$KIOSK_BIN_SRC" "$KIOSK_BIN_DST"
+install -D -m 0755 "$KIOSK_BIN_SRC" "$KIOSK_BIN_DST"
 install -d -m 0755 /usr/lib/pantalla-reloj
 install -m 0755 "$REPO_ROOT/usr/lib/pantalla-reloj/xorg-launch.sh" /usr/lib/pantalla-reloj/xorg-launch.sh
 
@@ -347,7 +347,7 @@ units_changed=0
 deploy_unit() {
   local src="$1" dest="$2"
   if [[ ! -f "$dest" ]] || ! cmp -s "$src" "$dest"; then
-    install -m 0644 "$src" "$dest"
+    install -D -m 0644 "$src" "$dest"
     units_changed=1
   fi
 }
@@ -380,8 +380,8 @@ else
   printf '[install] stat failed for /var/lib/pantalla-reloj/.Xauthority\n' >> "$INSTALL_LOG"
 fi
 systemctl restart pantalla-openbox@${USER_NAME}.service
-systemctl restart pantalla-dash-backend@${USER_NAME}.service
 systemctl restart pantalla-kiosk@${USER_NAME}.service
+systemctl restart pantalla-dash-backend@${USER_NAME}.service
 
 log_info "Running quick health checks"
 if curl -sS -m 1 http://127.0.0.1:8081/healthz >/dev/null 2>&1; then
@@ -390,10 +390,10 @@ else
   log_warn "Backend healthz not responding yet"
 fi
 
-if pgrep -fa epiphany >/dev/null 2>&1; then
-  log_ok "Epiphany process detected"
+if pgrep -fa 'chromium|chromium-browser|google-chrome' >/dev/null 2>&1; then
+  log_ok "Chromium-based browser process detected"
 else
-  log_warn "Epiphany process not detected"
+  log_warn "Chromium-based browser process not detected"
 fi
 
 if WMCTRL_OUT=$(wmctrl -lG 2>&1); then
