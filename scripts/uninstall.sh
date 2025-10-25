@@ -187,6 +187,7 @@ if [[ $PURGE_ASSETS -eq 1 ]]; then
 fi
 
 rm -f "$SESSION_PREFIX/bin/xorg-openbox-env.sh"
+rm -f "$SESSION_PREFIX/bin/wait-x.sh"
 rm -f "$SESSION_PREFIX/openbox/autostart"
 if [[ -d "$SESSION_PREFIX/bin" ]]; then
   rmdir --ignore-fail-on-non-empty "$SESSION_PREFIX/bin" || true

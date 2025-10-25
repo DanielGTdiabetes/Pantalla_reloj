@@ -3,13 +3,6 @@ set -euxo pipefail
 
 LOG_FILE=/tmp/openbox-autostart.log
 {
-  printf '%s Starting Openbox autostart\n' "$(date -Is)"
-
-  printf '%s Disabling DPMS and screen blanking\n' "$(date -Is)"
-  xset -dpms s off s noblank || true
-
-  printf '%s Setting HDMI-1 as primary rotated left\n' "$(date -Is)"
   xrandr --output HDMI-1 --rotate left --primary || true
-
-  printf '%s Autostart sequence completed\n' "$(date -Is)"
+  xset -dpms s off s noblank || true
 } >>"$LOG_FILE" 2>&1
