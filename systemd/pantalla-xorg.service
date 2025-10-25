@@ -1,7 +1,7 @@
 [Unit]
 Description=Pantalla_reloj Xorg server (:0, vt7)
 After=systemd-user-sessions.service
-Wants=pantalla-openbox@dani.service
+Wants=pantalla-openbox@__KIOSK_USER__.service
 
 [Service]
 Type=simple
