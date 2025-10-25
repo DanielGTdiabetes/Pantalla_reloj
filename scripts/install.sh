@@ -55,124 +55,25 @@ apt install -y --no-install-recommends \
 # ---------------------------------------------------------------------------
 # 3) Firefox clásico desde tarball oficial
 # ---------------------------------------------------------------------------
-log "Verificando instalación de Firefox clásico"
-installed_firefox_version=""
-if [[ -f /opt/firefox/application.ini ]]; then
-  installed_firefox_version=$(grep -E '^Version=' /opt/firefox/application.ini | head -n1 | cut -d= -f2- 2>/dev/null || true)
-fi
-
-resolved_url=$(curl -fsI -o /dev/null -w '%{url_effective}' -L "$FIREFOX_URL" || true)
-if [[ -n "$resolved_url" ]]; then
-  log "Firefox URL resuelto: ${resolved_url}"
-else
-  warn "No se pudo resolver URL final de Firefox; usando valor original"
-  resolved_url="$FIREFOX_URL"
-fi
-
-resolved_version=""
-if [[ -n "$resolved_url" ]]; then
-  resolved_file=${resolved_url##*/}
-  resolved_file=${resolved_file%.tar.xz}
-  resolved_version=${resolved_file#firefox-}
-fi
-
-firefox_tar="${TMP_ROOT}/firefox.tar.xz"
-need_download=1
-if [[ -x /opt/firefox/firefox && -n "$installed_firefox_version" && -n "$resolved_version" && "$installed_firefox_version" == "$resolved_version" ]]; then
-  need_download=0
-  log "Firefox ${installed_firefox_version} ya instalado; no se requiere descarga"
-fi
-
-new_firefox_version="$installed_firefox_version"
-if (( need_download )); then
-  log "Descargando Firefox desde Mozilla (${FIREFOX_LANG})"
-  if ! curl -fsSL -o "$firefox_tar" "$resolved_url"; then
-    err "No se pudo descargar Firefox desde ${resolved_url}"
-    exit 1
-  fi
-  if [[ ! -s "$firefox_tar" ]]; then
-    err "Descarga de Firefox vacía"
-    exit 1
-  fi
-
-  log "Extrayendo Firefox en entorno temporal"
-  if ! tar -xJf "$firefox_tar" -C "$TMP_ROOT"; then
-    err "Fallo al extraer el tarball de Firefox"
-    exit 1
-  fi
-  if [[ ! -d "${TMP_ROOT}/firefox" ]]; then
-    err "No se encontró directorio firefox tras la extracción"
-    exit 1
-  fi
-  if [[ -f "${TMP_ROOT}/firefox/application.ini" ]]; then
-    new_firefox_version=$(grep -E '^Version=' "${TMP_ROOT}/firefox/application.ini" | head -n1 | cut -d= -f2- 2>/dev/null || true)
-  fi
-  if [[ -z "$new_firefox_version" ]]; then
-    new_firefox_version=$(${TMP_ROOT}/firefox/firefox --version 2>/dev/null || true)
-  fi
-  if [[ -z "$new_firefox_version" ]]; then
-    err "No se pudo obtener la versión de Firefox descargada"
-    exit 1
-  fi
-
-  log "Instalando Firefox (${new_firefox_version}) en /opt/firefox"
-  rm -rf /opt/firefox
-  mkdir -p /opt
-  mv "${TMP_ROOT}/firefox" /opt/firefox
-  chown -R root:root /opt/firefox
-  chmod -R 0755 /opt/firefox
-fi
-
-if [ -x /opt/firefox/firefox ]; then
-  if [ ! -L /usr/local/bin/firefox ] || [ "$(readlink -f /usr/local/bin/firefox 2>/dev/null)" != "/opt/firefox/firefox" ]; then
-    ln -sf /opt/firefox/firefox /usr/local/bin/firefox
-    echo "[INFO] Symlink firefox -> /opt/firefox/firefox creado en /usr/local/bin"
-  fi
-  log "Firefox operativo: $(/opt/firefox/firefox --version 2>&1)"
-else
-  warn "Firefox no se encontró en /opt/firefox"
-fi
+log "Instalando/Reparando Firefox (script dedicado)"
+FIREFOX_LANG="$FIREFOX_LANG" FIREFOX_URL="$FIREFOX_URL" \
+  "$REPO_DIR/scripts/install_firefox.sh"
 
 # ---------------------------------------------------------------------------
 # 4) Units de systemd
 # ---------------------------------------------------------------------------
-log "Instalando unidades systemd"
-xorg_unit_tmp="${TMP_ROOT}/pantalla-xorg.service"
-sed "s/__KIOSK_USER__/${KIOSK_USER}/g" "$REPO_DIR/systemd/pantalla-xorg.service" > "$xorg_unit_tmp"
-install -D -m 0644 "$xorg_unit_tmp" /etc/systemd/system/pantalla-xorg.service
-install -D -m 0644 "$REPO_DIR/systemd/pantalla-openbox@.service" /etc/systemd/system/pantalla-openbox@.service
-
+log "Instalando unidad pantalla-dash-backend@.service"
 backend_service_template="$REPO_DIR/system/pantalla-dash-backend@.service"
 backend_service_target="/etc/systemd/system/pantalla-dash-backend@.service"
-if [[ ! -f "$backend_service_target" ]]; then
-  install -D -m 0644 "$backend_service_template" "$backend_service_target"
-fi
-
-if grep -q "__REPO_DIR__" "$backend_service_target" 2>/dev/null; then
-  sed "s#__REPO_DIR__#${REPO_DIR}#g" "$backend_service_template" | \
-    tee "$backend_service_target" >/dev/null
-  systemctl daemon-reload
-  echo "[INFO] Actualizado pantalla-dash-backend@.service con REPO_DIR=${REPO_DIR}"
-else
-  systemctl daemon-reload
-fi
-
-systemctl enable pantalla-xorg.service "pantalla-openbox@${KIOSK_USER}.service"
+sed "s#__REPO_DIR__#${REPO_DIR}#g" "$backend_service_template" > "$backend_service_target"
+chmod 0644 "$backend_service_target"
+systemctl daemon-reload
 
 # ---------------------------------------------------------------------------
-# 5) Autostart de Openbox para el usuario kiosk
+# 5) Reparación del entorno kiosk (target/autostart/permisos)
 # ---------------------------------------------------------------------------
-USER_HOME=$(getent passwd "$KIOSK_USER" | cut -d: -f6)
-if [[ -z "$USER_HOME" ]]; then
-  err "El usuario ${KIOSK_USER} no existe"
-  exit 1
-fi
-log "Configurando autostart de Openbox para ${KIOSK_USER}"
-install -d -m 0755 -o "$KIOSK_USER" -g "$KIOSK_USER" "$USER_HOME/.config/openbox"
-autostart_dest="$USER_HOME/.config/openbox/autostart"
-if ! cmp -s "$REPO_DIR/openbox/autostart" "$autostart_dest" 2>/dev/null; then
-  install -m 0644 -o "$KIOSK_USER" -g "$KIOSK_USER" "$REPO_DIR/openbox/autostart" "$autostart_dest"
-fi
+log "Aplicando scripts/fix_kiosk_env.sh"
+KIOSK_USER="$KIOSK_USER" "$REPO_DIR/scripts/fix_kiosk_env.sh"
 
 # ---------------------------------------------------------------------------
 # 6) Servicios de backend y nginx

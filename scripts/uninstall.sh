@@ -29,16 +29,17 @@ log "Iniciando uninstall.sh (kiosk)"
 
 log "Deteniendo servicios pantalla-xorg y pantalla-openbox"
 systemctl stop "pantalla-openbox@${KIOSK_USER}.service" pantalla-xorg.service 2>/dev/null || true
-systemctl disable "pantalla-openbox@${KIOSK_USER}.service" pantalla-xorg.service 2>/dev/null || true
+systemctl disable "pantalla-openbox@${KIOSK_USER}.service" pantalla-xorg.service pantalla-session.target 2>/dev/null || true
 
 log "Eliminando unidades systemd"
 rm -f /etc/systemd/system/pantalla-openbox@.service
 rm -f /etc/systemd/system/pantalla-xorg.service
+rm -f /etc/systemd/system/pantalla-session.target
 systemctl daemon-reload
 
 log "Eliminando Firefox clásico"
 rm -f /usr/local/bin/firefox
-rm -rf /opt/firefox
+rm -rf /opt/firefox-mozilla
 
 if [[ $PURGE_USER_AUTOSTART -eq 1 ]]; then
   USER_HOME=$(getent passwd "$KIOSK_USER" | cut -d: -f6)
@@ -51,4 +52,4 @@ if [[ $PURGE_USER_AUTOSTART -eq 1 ]]; then
 fi
 
 log "Desinstalación completada"
-echo "[SUCCESS] Kiosk uninstalled. You can remove /opt/firefox and /var/www/html if desired."
+echo "[SUCCESS] Kiosk uninstalled. You can remove /opt/firefox-mozilla and /var/www/html if desired."

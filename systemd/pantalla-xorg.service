@@ -2,6 +2,7 @@
 Description=Pantalla_reloj Xorg server (:0, vt7)
 After=systemd-user-sessions.service
 Wants=pantalla-openbox@__KIOSK_USER__.service
+PartOf=pantalla-session.target
 
 [Service]
 Type=simple
@@ -11,4 +12,4 @@ Restart=always
 RestartSec=2
 
 [Install]
-WantedBy=graphical.target
+WantedBy=pantalla-session.target

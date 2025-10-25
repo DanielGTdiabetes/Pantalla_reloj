@@ -1,7 +1,8 @@
 [Unit]
 Description=Pantalla_reloj Openbox session for %i (DISPLAY=:0)
-After=network-online.target nginx.service pantalla-dash-backend@%i.service pantalla-xorg.service
+After=network-online.target nginx.service pantalla-dash-backend@%i.service pantalla-xorg.service pantalla-session.target
 Requires=pantalla-xorg.service
+PartOf=pantalla-session.target
 
 [Service]
 User=%i
@@ -13,4 +14,4 @@ Restart=always
 RestartSec=2
 
 [Install]
-WantedBy=graphical.target
+WantedBy=pantalla-session.target
