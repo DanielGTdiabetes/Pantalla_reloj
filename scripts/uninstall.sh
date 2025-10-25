@@ -28,16 +28,36 @@ fi
 
 rm -rf /opt/pantalla
 rm -rf /opt/firefox
+rm -rf /var/lib/pantalla
 rm -rf /var/log/pantalla
 if [[ -d /var/www/html ]]; then
   rm -rf /var/www/html/*
+else
+  mkdir -p /var/www/html
 fi
+
+if [[ -f /usr/share/nginx/html/index.html ]]; then
+  cp /usr/share/nginx/html/index.html /var/www/html/index.html
+else
+  cat <<'HTML' >/var/www/html/index.html
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Nginx</title>
+  </head>
+  <body>
+    <h1>Servidor Nginx listo</h1>
+    <p>Contenido restaurado por pantalla_reloj/uninstall.sh.</p>
+  </body>
+</html>
+HTML
+fi
+chown -R www-data:www-data /var/www/html 2>/dev/null || true
 
 AUTO_FILE="/home/dani/.config/openbox/autostart"
 if [[ -f "$AUTO_FILE" ]] && grep -q "Pantalla_reloj" "$AUTO_FILE"; then
   rm -f "$AUTO_FILE"
 fi
-
-systemctl unmask display-manager.service 2>/dev/null || true
 
 echo "[OK] Pantalla_reloj desinstalado completamente."

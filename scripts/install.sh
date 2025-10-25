@@ -4,15 +4,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 NON_INTERACTIVE=0
+WITH_FIREFOX=0
 
 for arg in "$@"; do
   case "$arg" in
     --non-interactive)
       NON_INTERACTIVE=1
       ;;
+    --with-firefox)
+      WITH_FIREFOX=1
+      ;;
     --help|-h)
       echo "Pantalla_reloj installer"
-      echo "Usage: sudo bash install.sh [--non-interactive]"
+      echo "Usage: sudo bash install.sh [--non-interactive] [--with-firefox]"
       exit 0
       ;;
     *)
@@ -43,8 +47,9 @@ USER_NAME="dani"
 USER_HOME="/home/${USER_NAME}"
 PANTALLA_ROOT=/opt/pantalla
 BACKEND_DEST="$PANTALLA_ROOT/backend"
-CONFIG_DIR="$PANTALLA_ROOT/config"
-CACHE_DIR="$PANTALLA_ROOT/cache"
+STATE_DIR=/var/lib/pantalla
+STATE_CACHE_DIR="$STATE_DIR/cache"
+CONFIG_FILE="$STATE_DIR/config.json"
 LOG_DIR=/var/log/pantalla
 WEB_ROOT=/var/www/html
 FIREFOX_URL="https://download.mozilla.org/?product=firefox-latest&os=linux64&lang=es-ES"
@@ -67,6 +72,7 @@ APT_PACKAGES=(
   nginx
   xorg
   openbox
+  epiphany-browser
   x11-xserver-utils
   wmctrl
   xdotool
@@ -159,10 +165,15 @@ install_firefox() {
   log_info "Firefox instalado en $FIREFOX_DEST"
 }
 
-install_firefox
+if [[ $WITH_FIREFOX -eq 1 ]]; then
+  install_firefox
+else
+  log_info "Firefox omitido (usa --with-firefox para instalarlo)"
+fi
 
-log_info "Preparando estructura en $PANTALLA_ROOT"
-install -d -m 0755 "$PANTALLA_ROOT" "$BACKEND_DEST" "$CONFIG_DIR" "$CACHE_DIR"
+log_info "Preparando estructura en $PANTALLA_ROOT y $STATE_DIR"
+install -d -m 0755 "$PANTALLA_ROOT" "$BACKEND_DEST"
+install -d -m 0755 "$STATE_DIR" "$STATE_CACHE_DIR"
 install -d -m 0755 "$LOG_DIR"
 
 log_info "Sincronizando backend"
@@ -178,13 +189,13 @@ else
   "$BACKEND_DEST/.venv/bin/pip" install fastapi uvicorn[standard]
 fi
 
-if [[ ! -f "$CONFIG_DIR/config.json" ]]; then
-  log_info "Instalando configuración por defecto"
-  install -m 0644 "$REPO_ROOT/backend/default_config.json" "$CONFIG_DIR/config.json"
+if [[ ! -f "$CONFIG_FILE" ]]; then
+  log_info "Instalando configuración por defecto en $CONFIG_FILE"
+  install -o "$USER_NAME" -g "$USER_NAME" -m 0644 "$REPO_ROOT/backend/default_config.json" "$CONFIG_FILE"
 fi
 
 touch "$LOG_DIR/backend.log"
-chown -R "$USER_NAME:$USER_NAME" "$PANTALLA_ROOT" "$LOG_DIR" || true
+chown -R "$USER_NAME:$USER_NAME" "$PANTALLA_ROOT" "$STATE_DIR" "$LOG_DIR" || true
 
 log_info "Instalando autostart de Openbox"
 if [[ ! -d "$USER_HOME" ]]; then
@@ -196,6 +207,11 @@ install -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$REPO_ROOT/openbox/autostart" "
 
 log_info "Construyendo frontend"
 pushd "$REPO_ROOT/dash-ui" >/dev/null
+export VITE_DEFAULT_LAYOUT=${VITE_DEFAULT_LAYOUT:-full}
+export VITE_SIDE_PANEL=${VITE_SIDE_PANEL:-right}
+export VITE_SHOW_CONFIG=${VITE_SHOW_CONFIG:-0}
+export VITE_ENABLE_DEMO=${VITE_ENABLE_DEMO:-0}
+export VITE_CAROUSEL=${VITE_CAROUSEL:-0}
 if [[ -f package-lock.json ]]; then
   npm ci --no-audit --no-fund
 else
@@ -244,12 +260,29 @@ BACKEND_ACTIVE=0
 NGINX_ACTIVE=0
 FAILED=0
 
-if [[ -x /usr/local/bin/firefox ]]; then
-  FIREFOX_VERSION="$(/usr/local/bin/firefox --version 2>/dev/null | head -n1 || echo 'desconocida')"
-  log_info "Firefox: OK (${FIREFOX_VERSION})"
+if command -v epiphany-browser >/dev/null 2>&1; then
+  EPIPHANY_VERSION="$(epiphany-browser --version 2>/dev/null | head -n1 || echo 'desconocida')"
+  log_info "Epiphany: OK (${EPIPHANY_VERSION})"
 else
-  log_error "Firefox: no instalado"
+  log_error "Epiphany: no instalado"
   FAILED=1
+fi
+
+if [[ $WITH_FIREFOX -eq 1 ]]; then
+  if [[ -x /usr/local/bin/firefox ]]; then
+    FIREFOX_VERSION="$(/usr/local/bin/firefox --version 2>/dev/null | head -n1 || echo 'desconocida')"
+    log_info "Firefox: OK (${FIREFOX_VERSION})"
+  else
+    log_error "Firefox: no instalado (se solicitó --with-firefox)"
+    FAILED=1
+  fi
+else
+  if [[ -x /usr/local/bin/firefox ]]; then
+    FIREFOX_VERSION="$(/usr/local/bin/firefox --version 2>/dev/null | head -n1 || echo 'desconocida')"
+    log_info "Firefox: detectado (${FIREFOX_VERSION})"
+  else
+    log_info "Firefox: omitido"
+  fi
 fi
 
 if [[ "$HEALTH_STATUS" == "200" ]]; then

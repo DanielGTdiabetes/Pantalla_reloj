@@ -1,8 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import { api } from "../services/api";
+import { withConfigDefaults } from "../config/defaults";
 import type { AppConfig } from "../types/config";
-import { DEFAULT_CONFIG } from "../types/config";
 
 type ConfigContextValue = {
   config: AppConfig;
@@ -15,7 +15,7 @@ type ConfigContextValue = {
 const ConfigContext = createContext<ConfigContextValue | undefined>(undefined);
 
 export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
+  const [config, setConfig] = useState<AppConfig>(withConfigDefaults());
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,7 +24,7 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setError(null);
     try {
       const payload = await api.fetchConfig();
-      setConfig(payload);
+      setConfig(withConfigDefaults(payload));
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -37,7 +37,7 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setError(null);
     try {
       const updated = await api.updateConfig(payload);
-      setConfig(updated);
+      setConfig(withConfigDefaults(updated));
     } catch (err) {
       setError((err as Error).message);
       throw err;

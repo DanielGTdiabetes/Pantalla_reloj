@@ -15,7 +15,7 @@ uvicorn backend.main:app --reload --port 8081
 
 Environment variables allow overriding deployment paths when testing locally:
 
-- `PANTALLA_ROOT`: Base directory for configuration/cache. Defaults to `/opt/pantalla`.
+- `PANTALLA_STATE_DIR`: Base directory for configuration/cache. Defaults to `/var/lib/pantalla`.
 - `PANTALLA_CONFIG_FILE`: Specific path to the configuration file.
 - `PANTALLA_CACHE_DIR`: Location for cached JSON payloads.
 - `PANTALLA_BACKEND_LOG`: Location for the backend log file.
@@ -23,7 +23,7 @@ Environment variables allow overriding deployment paths when testing locally:
 ## Endpoints
 
 - `GET /api/health`
-- `GET|POST /api/config`
+- `GET|PATCH /api/config`
 - `GET /api/weather`
 - `GET /api/news`
 - `GET /api/astronomy`

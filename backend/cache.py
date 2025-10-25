@@ -10,12 +10,12 @@ from .models import CachedPayload
 
 
 class CacheStore:
-    """Simple JSON cache backed by files in /opt/pantalla/cache."""
+    """Simple JSON cache backed by files in /var/lib/pantalla/cache."""
 
     def __init__(self, cache_dir: Path | None = None) -> None:
-        root_path = Path(os.getenv("PANTALLA_ROOT", "/opt/pantalla"))
+        state_path = Path(os.getenv("PANTALLA_STATE_DIR", "/var/lib/pantalla"))
         self.cache_dir = cache_dir or Path(
-            os.getenv("PANTALLA_CACHE_DIR", root_path / "cache")
+            os.getenv("PANTALLA_CACHE_DIR", state_path / "cache")
         )
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 

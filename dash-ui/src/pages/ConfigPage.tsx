@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useConfig } from "../context/ConfigContext";
-import type { AppConfig } from "../types/config";
+import type { AppConfig, UISettings } from "../types/config";
 
 const rotationOptions = [
   { value: "left", label: "Izquierda" },
@@ -10,8 +10,27 @@ const rotationOptions = [
   { value: "right", label: "Derecha" }
 ];
 
-export const ConfigPage: React.FC = () => {
-  const navigate = useNavigate();
+const layoutOptions = [
+  { value: "full", label: "Panel completo" },
+  { value: "widgets", label: "Rotación de módulos" }
+];
+
+const sidePanelOptions = [
+  { value: "left", label: "Izquierda" },
+  { value: "right", label: "Derecha" }
+];
+
+const booleanOptions = [
+  { value: "true", label: "Sí" },
+  { value: "false", label: "No" }
+];
+
+export type ConfigFormProps = {
+  mode: "page" | "overlay";
+  onClose?: () => void;
+};
+
+export const ConfigForm: React.FC<ConfigFormProps> = ({ mode, onClose }) => {
   const { config, save, loading, error } = useConfig();
   const [form, setForm] = useState<AppConfig>(config);
   const [saving, setSaving] = useState(false);
@@ -21,9 +40,9 @@ export const ConfigPage: React.FC = () => {
     setForm(config);
   }, [config]);
 
-  const update = <K extends keyof AppConfig>(section: K, value: AppConfig[K]) => {
+  const update = useCallback(<K extends keyof AppConfig>(section: K, value: AppConfig[K]) => {
     setForm((prev) => ({ ...prev, [section]: value }));
-  };
+  }, []);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -39,12 +58,18 @@ export const ConfigPage: React.FC = () => {
     }
   };
 
+  const handleClose = () => {
+    if (onClose) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="config-wrapper">
+    <div className={`config-wrapper${mode === "overlay" ? " config-wrapper--overlay" : ""}`}>
       <div>
         <h1>Configuración de Pantalla</h1>
         <p style={{ color: "rgba(173,203,239,0.7)" }}>
-          Ajusta la rotación, credenciales y conectividad de la pantalla de información.
+          Ajusta la rotación, el diseño del panel y la conectividad de la pantalla de información.
         </p>
       </div>
       <form id="config-form" className="config-form" onSubmit={handleSubmit}>
@@ -80,6 +105,73 @@ export const ConfigPage: React.FC = () => {
               update("display", { ...form.display, module_cycle_seconds: Number(event.target.value) })
             }
           />
+        </label>
+        <label>
+          Diseño predeterminado
+          <select
+            value={form.ui.layout}
+            onChange={(event) => update("ui", { ...form.ui, layout: event.target.value as UISettings["layout"] })}
+          >
+            {layoutOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Panel lateral
+          <select
+            value={form.ui.side_panel}
+            onChange={(event) =>
+              update("ui", { ...form.ui, side_panel: event.target.value as UISettings["side_panel"] })
+            }
+          >
+            {sidePanelOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Mostrar overlay en dashboard
+          <select
+            value={form.ui.show_config ? "true" : "false"}
+            onChange={(event) => update("ui", { ...form.ui, show_config: event.target.value === "true" })}
+          >
+            {booleanOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Activar modo demo
+          <select
+            value={form.ui.enable_demo ? "true" : "false"}
+            onChange={(event) => update("ui", { ...form.ui, enable_demo: event.target.value === "true" })}
+          >
+            {booleanOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Rotar módulos (carousel)
+          <select
+            value={form.ui.carousel ? "true" : "false"}
+            onChange={(event) => update("ui", { ...form.ui, carousel: event.target.value === "true" })}
+          >
+            {booleanOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </label>
         <label>
           API Clima
@@ -119,8 +211,11 @@ export const ConfigPage: React.FC = () => {
             value={form.mqtt.enabled ? "true" : "false"}
             onChange={(event) => update("mqtt", { ...form.mqtt, enabled: event.target.value === "true" })}
           >
-            <option value="true">Sí</option>
-            <option value="false">No</option>
+            {booleanOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
         </label>
         <label>
@@ -192,8 +287,8 @@ export const ConfigPage: React.FC = () => {
         <button className="primary" type="submit" form="config-form" disabled={saving}>
           {saving ? "Guardando…" : "Guardar"}
         </button>
-        <button className="secondary" type="button" onClick={() => navigate("/")}>
-          Volver
+        <button className="secondary" type="button" onClick={handleClose}>
+          {mode === "overlay" ? "Cerrar" : "Volver"}
         </button>
       </div>
       {(error || message) && (
@@ -202,4 +297,10 @@ export const ConfigPage: React.FC = () => {
       {loading && <div style={{ color: "rgba(173,203,239,0.65)" }}>Sincronizando…</div>}
     </div>
   );
+};
+
+export const ConfigPage: React.FC = () => {
+  const navigate = useNavigate();
+  const handleClose = useCallback(() => navigate("/"), [navigate]);
+  return <ConfigForm mode="page" onClose={handleClose} />;
 };

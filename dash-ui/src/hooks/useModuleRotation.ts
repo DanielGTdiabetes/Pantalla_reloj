@@ -2,16 +2,32 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { DisplayModule } from "../types/config";
 
-export const useModuleRotation = (modules: DisplayModule[], cycleSeconds: number) => {
+type RotationOptions = {
+  enabled?: boolean;
+};
+
+const shouldRotate = (enabledModules: DisplayModule[], options?: RotationOptions) => {
+  if (options?.enabled === false) {
+    return false;
+  }
+  return enabledModules.length > 1;
+};
+
+export const useModuleRotation = (
+  modules: DisplayModule[],
+  cycleSeconds: number,
+  options?: RotationOptions
+) => {
   const enabledModules = useMemo(
     () => modules.filter((module) => module.enabled),
     [modules]
   );
 
   const [index, setIndex] = useState(0);
+  const rotationActive = shouldRotate(enabledModules, options);
 
   useEffect(() => {
-    if (enabledModules.length === 0) {
+    if (!rotationActive || enabledModules.length === 0) {
       return;
     }
 
@@ -21,15 +37,16 @@ export const useModuleRotation = (modules: DisplayModule[], cycleSeconds: number
     }, duration);
 
     return () => window.clearInterval(timer);
-  }, [enabledModules, cycleSeconds]);
+  }, [enabledModules, cycleSeconds, rotationActive]);
 
   useEffect(() => {
     setIndex(0);
-  }, [enabledModules.length]);
+  }, [enabledModules.length, rotationActive]);
 
   return {
     modules: enabledModules,
-    active: enabledModules[index] ?? null,
-    index,
+    active: rotationActive ? enabledModules[index] ?? null : enabledModules[0] ?? null,
+    index: rotationActive ? index : 0,
+    rotating: rotationActive,
   };
 };

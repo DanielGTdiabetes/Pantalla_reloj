@@ -23,10 +23,23 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function patch<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Request failed for ${path}`);
+  }
+  return response.json() as Promise<T>;
+}
+
 export const api = {
   fetchHealth: () => get<{ status: string; uptime_seconds: number; timestamp: string }>("/api/health"),
   fetchConfig: () => get<AppConfig>("/api/config"),
-  updateConfig: (payload: Partial<AppConfig>) => post<AppConfig>("/api/config", payload),
+  updateConfig: (payload: Partial<AppConfig>) => patch<AppConfig>("/api/config", payload),
   fetchWeather: () => get<Record<string, unknown>>("/api/weather"),
   fetchNews: () => get<Record<string, unknown>>("/api/news"),
   fetchAstronomy: () => get<Record<string, unknown>>("/api/astronomy"),
