@@ -62,6 +62,7 @@ USER_NAME="dani"
 PANTALLA_PREFIX=/opt/pantalla-reloj
 BACKEND_DEST="${PANTALLA_PREFIX}/backend"
 STATE_DIR=/var/lib/pantalla-reloj
+AUTH_FILE="${STATE_DIR}/.Xauthority"
 STATE_RUNTIME="${STATE_DIR}/state"
 LOG_DIR=/var/log/pantalla-reloj
 WEB_ROOT=/var/www/html
@@ -192,6 +193,20 @@ if [[ $PURGE_CONFIG -eq 1 ]]; then
 else
   # Keep state but remove runtime markers
   rm -rf "$STATE_RUNTIME"
+fi
+
+HOME_AUTH="/home/${USER_NAME}/.Xauthority"
+HOME_AUTH_BACKUP="${HOME_AUTH}.bak"
+
+if [[ -L "$HOME_AUTH" ]]; then
+  link_target="$(readlink "$HOME_AUTH")"
+  if [[ "$link_target" == "$AUTH_FILE" ]] || [[ "$(readlink -f "$HOME_AUTH" 2>/dev/null || true)" == "$AUTH_FILE" ]]; then
+    rm -f "$HOME_AUTH"
+  fi
+fi
+
+if [[ ! -e "$HOME_AUTH" && -f "$HOME_AUTH_BACKUP" ]]; then
+  mv -f "$HOME_AUTH_BACKUP" "$HOME_AUTH"
 fi
 
 AUTO_FILE="/home/${USER_NAME}/.config/openbox/autostart"

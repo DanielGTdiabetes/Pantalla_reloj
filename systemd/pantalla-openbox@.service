@@ -8,11 +8,13 @@ Wants=pantalla-dash-backend@%i.service
 User=%i
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority
+Environment=XDG_RUNTIME_DIR=/run/user/%U
 PAMName=login
 TTYPath=/dev/tty7
 TTYReset=yes
 TTYVHangup=yes
 TTYVTDisallocate=yes
+ExecStartPre=/usr/bin/test -r /var/lib/pantalla-reloj/.Xauthority
 ExecStart=/usr/bin/openbox --startup "/usr/lib/x86_64-linux-gnu/openbox-autostart OPENBOX"
 Restart=always
 RestartSec=2s
