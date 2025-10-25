@@ -1,2 +1,6 @@
 node_modules/
 .env
+dash-ui/dist/
+dash-ui/tsconfig*.tsbuildinfo
+dash-ui/vite.config.js
+dash-ui/vite.config.d.ts

@@ -1,13 +1,14 @@
 import React from "react";
+import { coerceToDisplayString } from "../utils/text";
 
 type Props = {
   data: Record<string, unknown>;
 };
 
 export const AstronomyModule: React.FC<Props> = ({ data }) => {
-  const moonPhase = data.moon_phase ?? data.moonPhase ?? "--";
-  const sunrise = data.sunrise ?? "--";
-  const sunset = data.sunset ?? "--";
+  const moonPhase = coerceToDisplayString(data.moon_phase ?? data.moonPhase);
+  const sunrise = coerceToDisplayString(data.sunrise);
+  const sunset = coerceToDisplayString(data.sunset);
 
   return (
     <div className="module-wrapper">
