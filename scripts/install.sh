@@ -7,6 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 NON_INTERACTIVE=0
+SUMMARY=()
 
 usage() {
   cat <<USAGE
@@ -74,6 +75,7 @@ APT_PACKAGES=(
   openbox
   x11-xserver-utils
   wmctrl
+  epiphany-browser
   xdotool
   dbus-x11
   curl
@@ -82,11 +84,11 @@ APT_PACKAGES=(
   rsync
   file
   xauth
-  chromium
   python3-venv
 )
 apt-get update -y
 DEBIAN_FRONTEND=noninteractive apt-get install -y "${APT_PACKAGES[@]}"
+SUMMARY+=("[install] paquetes asegurados: ${APT_PACKAGES[*]}")
 
 ensure_node() {
   if command -v node >/dev/null 2>&1; then
@@ -108,6 +110,7 @@ ensure_node() {
 }
 
 ensure_node
+SUMMARY+=('[install] entorno Node.js 20+ disponible')
 
 if ! command -v corepack >/dev/null 2>&1; then
   log_error "Corepack not available after installing Node.js"
@@ -142,6 +145,7 @@ udevadm trigger
 log_info "Syncing backend into $BACKEND_DEST"
 install -d -m 0755 "$BACKEND_DEST"
 rsync -a --delete --exclude '.venv/' "$REPO_ROOT/backend/" "$BACKEND_DEST/"
+SUMMARY+=("[install] backend sincronizado en ${BACKEND_DEST}")
 
 log_info "Preparing backend virtualenv"
 python3 -m venv "$BACKEND_DEST/.venv"
@@ -169,6 +173,7 @@ install -m 0755 "$REPO_ROOT/opt/pantalla/bin/wait-x.sh" "$SESSION_PREFIX/bin/wai
 install -m 0755 "$REPO_ROOT/opt/pantalla/openbox/autostart" "$SESSION_PREFIX/openbox/autostart"
 
 install -D -m 0755 "$KIOSK_BIN_SRC" "$KIOSK_BIN_DST"
+SUMMARY+=("[install] launcher de kiosk instalado en ${KIOSK_BIN_DST}")
 install -d -m 0755 /usr/lib/pantalla-reloj
 install -m 0755 "$REPO_ROOT/usr/lib/pantalla-reloj/xorg-launch.sh" /usr/lib/pantalla-reloj/xorg-launch.sh
 
@@ -375,9 +380,9 @@ systemctl enable pantalla-kiosk@${USER_NAME}.service
 log_info "Restarting Pantalla services"
 systemctl restart pantalla-xorg.service
 if stat_output=$(stat -c '%U:%G %a %n' /var/lib/pantalla-reloj/.Xauthority 2>/dev/null); then
-  printf '%s\n' "$stat_output" >> "$INSTALL_LOG"
+  SUMMARY+=("[install] permisos XAUTHORITY: ${stat_output}")
 else
-  printf '[install] stat failed for /var/lib/pantalla-reloj/.Xauthority\n' >> "$INSTALL_LOG"
+  SUMMARY+=('[install] permisos XAUTHORITY: no disponible')
 fi
 systemctl restart pantalla-openbox@${USER_NAME}.service
 systemctl restart pantalla-kiosk@${USER_NAME}.service
@@ -386,20 +391,33 @@ systemctl restart pantalla-dash-backend@${USER_NAME}.service
 log_info "Running quick health checks"
 if curl -sS -m 1 http://127.0.0.1:8081/healthz >/dev/null 2>&1; then
   log_ok "Backend healthz reachable"
+  SUMMARY+=('[install] backend healthz responde')
 else
   log_warn "Backend healthz not responding yet"
+  SUMMARY+=('[install] backend healthz no responde')
 fi
 
-if pgrep -fa 'chromium|chromium-browser|google-chrome' >/dev/null 2>&1; then
-  log_ok "Chromium-based browser process detected"
+if pgrep -fa 'epiphany-browser' >/dev/null 2>&1; then
+  log_ok "epiphany-browser process detected"
+  SUMMARY+=('[install] proceso epiphany-browser detectado')
 else
-  log_warn "Chromium-based browser process not detected"
+  log_warn "epiphany-browser process not detected"
+  SUMMARY+=('[install] proceso epiphany-browser no detectado')
 fi
 
 if WMCTRL_OUT=$(wmctrl -lG 2>&1); then
   log_ok "wmctrl -lG output:\n${WMCTRL_OUT}"
+  SUMMARY+=('[install] wmctrl -lG ejecutado con éxito')
 else
   log_warn "wmctrl failed: ${WMCTRL_OUT:-no output}"
+  SUMMARY+=('[install] wmctrl -lG falló')
 fi
 
 log_ok "Installation completed"
+
+{
+  echo "[install] $(date -Is) resumen"
+  for entry in "${SUMMARY[@]}"; do
+    echo "$entry"
+  done
+} >"$INSTALL_LOG"
