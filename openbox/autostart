@@ -1,30 +1,21 @@
 #!/bin/sh
-xset -dpms || true
-xset s off || true
-xset s noblank || true
-
-if command -v unclutter >/dev/null 2>&1; then
-  unclutter --fork --hide-on-touch || true
-fi
 
 LOG_FILE=/tmp/openbox-autostart.log
 {
-  printf '\n[%s] openbox-autostart start (pid=%s user=%s)\n' "$(date -Is)" "$$" "$(id -un 2>/dev/null || echo '?')"
-  printf 'DISPLAY=%s\n' "${DISPLAY:-}"
-  env | sort | sed 's/^/ENV: /'
+  printf '===== %s openbox-autostart start =====\n' "$(date -Is)"
 } >>"$LOG_FILE" 2>&1
+
+xset -dpms || true
+xset s off || true
+xset s noblank || true
+xsetroot -solid '#111623' || true
 
 XR_OUT="$(xrandr --query | awk '/ connected/{print $1; exit}')"
 if [ -n "$XR_OUT" ]; then
   xrandr --output "$XR_OUT" --rotate left --primary || true
 fi
 
-echo "[$(date -Is)] XR_OUT=${XR_OUT:-<none>}" >>"$LOG_FILE"
-
-sleep 1
-
-/usr/local/bin/kiosk-launch &
-KIOSK_PID=$!
-
-echo "[$(date -Is)] kiosk-launch pid=$KIOSK_PID" >>"$LOG_FILE"
-echo "[$(date -Is)] openbox-autostart end" >>"$LOG_FILE"
+echo "XR_OUT=${XR_OUT:-<none>}" >>"$LOG_FILE" 2>&1
+{
+  printf '===== %s openbox-autostart end =====\n' "$(date -Is)"
+} >>"$LOG_FILE" 2>&1

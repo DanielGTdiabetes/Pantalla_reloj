@@ -260,8 +260,8 @@ if [[ -f "$AUTO_FILE" && ! -f "$AUTO_BACKUP" ]]; then
 fi
 install -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$REPO_ROOT/openbox/autostart" "$AUTO_FILE"
 
-log_info "Instalando singleton kiosk-launch"
-install -m 0755 "$REPO_ROOT/scripts/kiosk-launch" /usr/local/bin/kiosk-launch
+log_info "Instalando lanzador kiosk-epiphany"
+install -m 0755 "$REPO_ROOT/usr/local/bin/kiosk-epiphany" /usr/local/bin/kiosk-epiphany
 
 log_info "Construyendo frontend"
 pushd "$REPO_ROOT/dash-ui" >/dev/null
@@ -295,9 +295,13 @@ log_info "Instalando unidades systemd"
 install -m 0644 "$REPO_ROOT/systemd/pantalla-xorg.service" "$SYSTEMD_DIR/pantalla-xorg.service"
 install -m 0644 "$REPO_ROOT/systemd/pantalla-openbox@.service" "$SYSTEMD_DIR/pantalla-openbox@.service"
 install -m 0644 "$REPO_ROOT/systemd/pantalla-dash-backend@.service" "$SYSTEMD_DIR/pantalla-dash-backend@.service"
+install -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk@.service" "$SYSTEMD_DIR/pantalla-kiosk@.service"
 systemctl daemon-reload
 
-for svc in pantalla-xorg.service pantalla-dash-backend@${USER_NAME}.service pantalla-openbox@${USER_NAME}.service; do
+for svc in pantalla-xorg.service \
+           pantalla-dash-backend@${USER_NAME}.service \
+           pantalla-openbox@${USER_NAME}.service \
+           pantalla-kiosk@${USER_NAME}.service; do
   systemctl enable --now "$svc"
   systemctl restart "$svc"
 done

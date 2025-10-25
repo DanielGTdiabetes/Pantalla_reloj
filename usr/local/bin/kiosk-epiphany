@@ -1,0 +1,68 @@
+#!/bin/sh
+set -eu
+
+LOG=/tmp/kiosk-launch.log
+exec 1>>"$LOG" 2>&1
+echo "===== $(date -Is) kiosk-epiphany start ====="
+
+# Entorno X
+export DISPLAY=:0
+export XAUTHORITY=/home/dani/.Xauthority
+export XDG_RUNTIME_DIR="/run/user/1000"
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR" || true
+
+# Suavizar problemas GL/DRM en hardware raro
+export WEBKIT_DISABLE_DMABUF_RENDERER=1
+export LIBGL_ALWAYS_SOFTWARE=1
+export GDK_BACKEND=x11
+
+# Singleton por lock
+LOCK=/tmp/kiosk.lock
+exec 9>"$LOCK" || true
+if ! flock -n 9; then
+  echo "otro kiosk ya activo"
+  exit 0
+fi
+
+URL="http://127.0.0.1"
+
+# Espera best-effort hasta 35s a que estén front y back
+deadline=$(( $(date +%s) + 35 ))
+while :; do
+  ok_front=0
+  ok_api=0
+  curl -sf "$URL" >/dev/null 2>&1 && ok_front=1 || true
+  curl -sf "$URL:8081/api/health" >/dev/null 2>&1 && ok_api=1 || true
+  [ $ok_front -eq 1 ] && [ $ok_api -eq 1 ] && break
+  [ $(date +%s) -ge $deadline ] && break
+  sleep 1
+done
+
+# Evitar duplicados si quedó algo zombie
+pkill -9 -f epiphany-browser || true
+
+# Lanzar con bus propio y sin flags exóticos
+rm -f /tmp/epi.out /tmp/epi.err
+dbus-run-session sh -c \
+  "setsid -f epiphany-browser --new-window '$URL' >/tmp/epi.out 2>/tmp/epi.err"
+
+# Dar tiempo a crear la ventana y maximizar/fullscreen
+for i in 1 2 3 4 5; do
+  WIN="$(xdotool search --class Epiphany 2>/dev/null | head -n1 || true)"
+  [ -n "$WIN" ] && break
+  sleep 1
+done
+
+if [ -n "${WIN:-}" ]; then
+  # Forzar posición/tamaño del panel 1920x480 y fullscreen
+  wmctrl -ir "$WIN" -e 0,0,0,1920,480 || true
+  wmctrl -ir "$WIN" -b add,fullscreen || true
+  xdotool windowactivate "$WIN" 2>/dev/null || true
+  xdotool windowraise "$WIN" 2>/dev/null || true
+  echo "ventana $WIN lista"
+else
+  echo "no se encontró ventana Epiphany"
+fi
+
+echo "===== $(date -Is) kiosk-epiphany done ====="
