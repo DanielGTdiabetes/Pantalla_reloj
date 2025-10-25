@@ -38,10 +38,10 @@ operar offline si el backend no responde.
 
 - `GeoScopeCanvas` renderiza un degradado animado de referencia para la vista
   geoespacial mientras se preparan los datos reales.
-- `OverlayPanel` aplica un cristal translúcido configurable (opacidad, desenfoque,
-  radio) sobre el lienzo principal y posiciona la cabecera de reloj.
-- `Rotator` recorre las secciones informativas con transiciones *crossfade*
-  basadas en los parámetros `ui.overlay.{order,dwell_seconds,transition_ms}`.
+- `OverlayPanel` ancla un panel lateral translúcido configurable (posición, ancho,
+  opacidad y desenfoque) sobre el lienzo principal sin bloquear el mapa.
+- `Rotator` recorre las secciones informativas con transiciones *crossfade*,
+  controladas por `ui.overlay.{order,dwell_seconds,transition_ms}`.
 - Los iconos meteorológicos usan `lottie-web`; activa o desactiva la animación con
   `VITE_ENABLE_LOTTIE=1|0`.
 - `VITE_ENABLE_FPSMETER=1` muestra un contador de FPS para depurar rendimiento

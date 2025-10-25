@@ -5,6 +5,7 @@ interface RotatorProps {
   order?: OverlaySectionKey[];
   dwellSeconds?: number;
   transitionMs?: number;
+  className?: string;
 }
 
 interface PlaceholderItem {
@@ -49,7 +50,7 @@ const MAX_DWELL_MS = 120_000;
 const MIN_TRANSITION_MS = 150;
 const MAX_TRANSITION_MS = 10_000;
 
-export const Rotator = ({ order, dwellSeconds, transitionMs }: RotatorProps) => {
+export const Rotator = ({ order, dwellSeconds, transitionMs, className }: RotatorProps) => {
   const sanitizedOrder = useMemo(() => sanitizeOrder(order), [order]);
   const [index, setIndex] = useState(0);
   const [visible, setVisible] = useState(true);
@@ -101,14 +102,20 @@ export const Rotator = ({ order, dwellSeconds, transitionMs }: RotatorProps) => 
   const currentKey = sanitizedOrder[index % sanitizedOrder.length];
   const currentItem = PLACEHOLDERS.find((item) => item.key === currentKey) ?? PLACEHOLDERS[0];
 
+  const rootClassName = ['relative min-h-[180px] w-full overflow-hidden', className]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <div className="relative min-h-[180px] w-full overflow-hidden">
+    <div className={rootClassName}>
       <div
         className="absolute inset-0 flex flex-col justify-center gap-3 transition-opacity duration-500 ease-in-out"
         style={{ opacity: visible ? 1 : 0, transitionDuration: `${fadeMs}ms` }}
       >
-        <div className="text-sm uppercase tracking-[0.35em] text-white/60">{currentItem.title}</div>
-        <div className="text-3xl font-semibold text-white drop-shadow-lg">{currentItem.subtitle}</div>
+        <div className="text-xs uppercase tracking-[0.35em] text-white/60">{currentItem.title}</div>
+        <div className="text-xl font-semibold leading-snug text-white drop-shadow-lg">
+          {currentItem.subtitle}
+        </div>
       </div>
     </div>
   );

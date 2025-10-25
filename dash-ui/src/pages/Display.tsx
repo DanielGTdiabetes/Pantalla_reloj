@@ -12,8 +12,9 @@ const Display = () => {
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-black text-white">
       <GeoScopeCanvas />
-      <OverlayPanel>
+      <OverlayPanel settings={overlaySettings}>
         <Rotator
+          className="h-full"
           order={overlaySettings.order}
           dwellSeconds={overlaySettings.dwell_seconds}
           transitionMs={overlaySettings.transition_ms}
