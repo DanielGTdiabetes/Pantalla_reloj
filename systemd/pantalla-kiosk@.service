@@ -2,6 +2,7 @@
 Description=Pantalla_reloj Kiosk (Chromium) for user %i
 After=pantalla-openbox@%i.service
 Requires=pantalla-openbox@%i.service
+PartOf=pantalla-openbox@%i.service
 
 [Service]
 Type=simple
