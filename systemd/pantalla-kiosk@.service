@@ -1,6 +1,6 @@
 [Unit]
 Description=Pantalla_reloj Kiosk (Epiphany) for user %i
-After=graphical.target pantallaxorg.target
+After=graphical.target pantalla-xorg.service
 Wants=default.target
 
 [Service]
