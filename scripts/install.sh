@@ -127,8 +127,13 @@ log "Firefox operativo: $(/usr/local/bin/firefox --version)"
 # 4) Units de systemd
 # ---------------------------------------------------------------------------
 log "Instalando unidades systemd"
-install -D -m 0644 "$REPO_DIR/systemd/pantalla-xorg.service" /etc/systemd/system/pantalla-xorg.service
+xorg_unit_tmp="${TMP_ROOT}/pantalla-xorg.service"
+sed "s|__KIOSK_USER__|${KIOSK_USER}|g" "$REPO_DIR/systemd/pantalla-xorg.service" > "$xorg_unit_tmp"
+install -D -m 0644 "$xorg_unit_tmp" /etc/systemd/system/pantalla-xorg.service
 install -D -m 0644 "$REPO_DIR/systemd/pantalla-openbox@.service" /etc/systemd/system/pantalla-openbox@.service
+backend_unit_tmp="${TMP_ROOT}/pantalla-dash-backend@.service"
+sed "s|__REPO_DIR__|${REPO_DIR}|g" "$REPO_DIR/system/pantalla-dash-backend@.service" > "$backend_unit_tmp"
+install -D -m 0644 "$backend_unit_tmp" /etc/systemd/system/pantalla-dash-backend@.service
 systemctl daemon-reload
 systemctl enable pantalla-xorg.service "pantalla-openbox@${KIOSK_USER}.service"
 
