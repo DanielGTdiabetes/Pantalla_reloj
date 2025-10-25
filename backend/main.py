@@ -19,9 +19,20 @@ config_manager = ConfigManager()
 cache_store = CacheStore()
 
 app = FastAPI(title="Pantalla Reloj Backend", version="2025.10.0")
+
+allowed_origins_env = os.getenv("PANTALLA_ALLOWED_ORIGINS")
+if allowed_origins_env:
+    allowed_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
+else:
+    allowed_origins = [
+        "http://localhost",
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
