@@ -10,6 +10,21 @@ xset s off || true
 xset s noblank || true
 xsetroot -solid '#111623' || true
 
+{
+  printf '===== %s launching kiosk-epiphany =====\n' "$(date -Is)"
+} >>"$LOG_FILE" 2>&1
+
+if command -v /usr/local/bin/kiosk-epiphany >/dev/null 2>&1; then
+  {
+    printf '===== %s kiosk-epiphany found, starting detached =====\n' "$(date -Is)"
+  } >>"$LOG_FILE" 2>&1
+  setsid -f /usr/local/bin/kiosk-epiphany >/dev/null 2>&1 || true
+else
+  {
+    printf '===== %s kiosk-epiphany missing in /usr/local/bin =====\n' "$(date -Is)"
+  } >>"$LOG_FILE" 2>&1
+fi
+
 XR_OUT="$(xrandr --query | awk '/ connected/{print $1; exit}')"
 if [ -n "$XR_OUT" ]; then
   xrandr --output "$XR_OUT" --rotate left --primary || true

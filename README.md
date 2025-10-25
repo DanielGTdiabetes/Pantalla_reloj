@@ -137,6 +137,22 @@ sudo bash scripts/fix_permissions.sh [usuario] [grupo]
 Por defecto ajusta permisos para `dani:dani` y vuelve a asignar `/var/www/html` a
 `www-data`.
 
+## Reparación del entorno kiosk
+
+Si Firefox, Xorg u Openbox quedaron en un estado inconsistente (por ejemplo, un
+symlink roto en `/usr/local/bin/firefox` o permisos erróneos en
+`/run/user/1000`), ejecuta:
+
+```bash
+sudo KIOSK_USER=dani scripts/fix_kiosk_env.sh --with-firefox
+```
+
+El script reinstala el navegador desde Mozilla (opcional con
+`--with-firefox`), restablece `~/.mozilla/pantalla-kiosk`, `.Xauthority`,
+copias actualizadas de los servicios `pantalla-*.service` y reactiva
+automáticamente `pantalla-xorg`, `pantalla-openbox@dani`,
+`pantalla-dash-backend@dani` y `pantalla-kiosk@dani`.
+
 ## Desarrollo local
 
 - Backend: `cd backend && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && uvicorn main:app --reload`
