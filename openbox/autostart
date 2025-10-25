@@ -1,36 +1,12 @@
 #!/bin/sh
 
-LOG_FILE=/tmp/openbox-autostart.log
-{
-  printf '===== %s openbox-autostart start =====\n' "$(date -Is)"
-} >>"$LOG_FILE" 2>&1
-
+# Desactivar ahorro de energía y salvapantallas
 xset -dpms || true
 xset s off || true
 xset s noblank || true
-xsetroot -solid '#111623' || true
 
-{
-  printf '===== %s launching kiosk-epiphany =====\n' "$(date -Is)"
-} >>"$LOG_FILE" 2>&1
-
-if command -v /usr/local/bin/kiosk-epiphany >/dev/null 2>&1; then
-  {
-    printf '===== %s kiosk-epiphany found, starting detached =====\n' "$(date -Is)"
-  } >>"$LOG_FILE" 2>&1
-  setsid -f /usr/local/bin/kiosk-epiphany >/dev/null 2>&1 || true
-else
-  {
-    printf '===== %s kiosk-epiphany missing in /usr/local/bin =====\n' "$(date -Is)"
-  } >>"$LOG_FILE" 2>&1
-fi
-
-XR_OUT="$(xrandr --query | awk '/ connected/{print $1; exit}')"
+# Rotar la pantalla principal 90° a la izquierda
+XR_OUT="$(xrandr --query 2>/dev/null | awk '/ connected/{print $1; exit}')"
 if [ -n "$XR_OUT" ]; then
   xrandr --output "$XR_OUT" --rotate left --primary || true
 fi
-
-echo "XR_OUT=${XR_OUT:-<none>}" >>"$LOG_FILE" 2>&1
-{
-  printf '===== %s openbox-autostart end =====\n' "$(date -Is)"
-} >>"$LOG_FILE" 2>&1
