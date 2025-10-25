@@ -7,13 +7,15 @@ echo "[backend] $(date -Is) start"
 APP_DIR="/opt/pantalla-reloj/backend"
 PY="$APP_DIR/.venv/bin/python"
 
-if [[ ! -x "$PY" ]]; then
-  echo "[backend] python no encontrado en $PY" >&2
-  exit 1
+if [[ ! -d "$APP_DIR" ]]; then
+  echo "[backend] ERROR: APP_DIR no existe: $APP_DIR" >&2
+  exit 2
 fi
 
-install -d -m 0755 /var/log/pantalla
-install -d -m 0755 /var/lib/pantalla
+if [[ ! -x "$PY" ]]; then
+  echo "[backend] ERROR: venv no existe: $PY" >&2
+  exit 2
+fi
 
 cd "$APP_DIR"
 export PYTHONPATH="$APP_DIR"

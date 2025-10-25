@@ -8,7 +8,7 @@ Group=%i
 ExecStart=/usr/local/bin/pantalla-backend-launch
 WorkingDirectory=/opt/pantalla-reloj
 Restart=always
-RestartSec=2
+RestartSec=1
 Environment=PYTHONUNBUFFERED=1
 
 [Install]
