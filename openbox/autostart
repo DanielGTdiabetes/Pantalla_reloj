@@ -6,12 +6,22 @@ xset -dpms
 xset s off
 xset s noblank
 
-# Ocultar cursor
-unclutter -idle 0.1 -root &
+# Ocultar cursor (opcional)
+command -v unclutter >/dev/null 2>&1 && unclutter -idle 0.1 -root &
 
-# Pequeña espera para que Nginx/Backend estén listos (defensivo)
+# Variables X
+export DISPLAY=:0
+export XAUTHORITY=/home/dani/.Xauthority
+
+# Rotación de la pantalla: detecta la salida conectada y rota a horizontal (left)
+XR_OUT="$(xrandr --query | awk '/ connected/{print $1; exit}')"
+if [ -n "$XR_OUT" ]; then
+  xrandr --output "$XR_OUT" --rotate left --primary || true
+fi
+
+# Pequeña espera para que Nginx/Backend estén listos
 sleep 2
 
 # Lanzar Firefox en kiosk apuntando al frontend local
-# Si cambias la URL, hazlo en install.sh y aquí mantén coherencia.
-firefox --no-remote --kiosk http://127.0.0.1 & disown
+# (usar /usr/local/bin/firefox, que debe ser un symlink a /opt/firefox/firefox)
+setsid -f /usr/local/bin/firefox --no-remote --kiosk http://127.0.0.1 &
