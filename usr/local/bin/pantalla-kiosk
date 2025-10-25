@@ -9,32 +9,37 @@ LOG=/tmp/kiosk-launch.log
 exec >>"$LOG" 2>&1
 echo "[kiosk] $(date -Is) start user=$(id -un) DISPLAY=$DISPLAY URL=$URL"
 
-/opt/pantalla/bin/wait-x.sh
+STATE_DIR=/var/lib/pantalla-reloj/state
+PROFILE_DIR="$STATE_DIR/org.gnome.Epiphany.WebApp_PantallaReloj"
+LOCK="$STATE_DIR/kiosk.lock"
+OWNER="${KIOSK_USER:-${USER:-$(id -un)}}"
 
-skip_snap() {
-  local b="$1"; local r
-  r="$(readlink -f "$b" 2>/dev/null || echo "$b")"
-  [[ "$b" == /snap/bin/* || "$r" == /snap/* ]]
-}
+if ! install -d -m 0755 "$STATE_DIR" "$PROFILE_DIR" 2>/dev/null; then
+  if [[ ! -d "$PROFILE_DIR" ]]; then
+    echo "[kiosk] no se pudo preparar el perfil: $PROFILE_DIR" >&2
+    exit 1
+  fi
+fi
+chown -R "$OWNER:$OWNER" "$STATE_DIR" || true
+
+exec 9>"$LOCK"
+if ! flock -n 9; then
+  echo "[kiosk] otro proceso en ejecución; saliendo"
+  exit 0
+fi
+
+DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" /opt/pantalla/bin/wait-x.sh
 
 EPIPHANY_BIN="$(command -v epiphany-browser || true)"
 if [[ -z "$EPIPHANY_BIN" ]]; then
   echo "[kiosk] epiphany-browser no encontrado" >&2
   exit 1
 fi
-if skip_snap "$EPIPHANY_BIN"; then
-  echo "[kiosk] epiphany-browser proviene de snap y no se puede usar" >&2
-  exit 1
-fi
 
-curl -fsS -m 1 "$URL" >/dev/null && echo "[kiosk] FRONT OK $URL" || echo "[kiosk] FRONT FAIL $URL"
-(check_http(){ curl -fsS -m 1 "$1" >/dev/null && echo "[kiosk] API OK $1" || echo "[kiosk] API FAIL $1"; }; check_http http://127.0.0.1:8081/healthz) &
+export GIO_USE_PORTALS=0
+export GTK_USE_PORTAL=0
 
-PROFILE_DIR=/var/lib/pantalla-reloj/state/org.gnome.Epiphany.WebApp_PantallaReloj
-install -d -m 0755 "$PROFILE_DIR"
-
-export GIO_USE_PORTALS=0 GTK_USE_PORTAL=0
 exec env -i DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
-  HOME="/home/$(id -un)" PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+  HOME="/home/$OWNER" PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
   GIO_USE_PORTALS=0 GTK_USE_PORTAL=0 \
   "$EPIPHANY_BIN" --application-mode --profile="$PROFILE_DIR" --new-window "$URL"

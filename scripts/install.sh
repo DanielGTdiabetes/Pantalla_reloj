@@ -65,8 +65,10 @@ BACKEND_LAUNCHER_SRC="${REPO_ROOT}/usr/local/bin/pantalla-backend-launch"
 BACKEND_LAUNCHER_DST=/usr/local/bin/pantalla-backend-launch
 UDEV_RULE=/etc/udev/rules.d/70-pantalla-render.rules
 
-install -d -m 0755 /var/log/pantalla /var/lib/pantalla
-install -d -m 0755 "$PANTALLA_PREFIX" "$LOG_DIR" "$SESSION_PREFIX"
+install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$USER_HOME"
+install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" /var/lib/pantalla /var/log/pantalla
+install -d -m 0755 "$PANTALLA_PREFIX" "$SESSION_PREFIX"
+install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$LOG_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_RUNTIME"
 install -d -m 0755 "$SESSION_PREFIX/bin" "$SESSION_PREFIX/openbox"
@@ -171,8 +173,8 @@ if [[ -f "$AUTO_FILE" && ! -f "$AUTO_BACKUP" ]]; then
 fi
 install -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$REPO_ROOT/openbox/autostart" "$AUTO_FILE"
 
-ln -sfn /var/lib/pantalla-reloj/.Xauthority "$USER_HOME/.Xauthority"
-chown -h "$USER_NAME:$USER_NAME" "$USER_HOME/.Xauthority"
+ln -sfn /var/lib/pantalla-reloj/.Xauthority "$USER_HOME/.Xauthority" || true
+chown -h "$USER_NAME:$USER_NAME" "$USER_HOME/.Xauthority" || true
 
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/xorg-openbox-env.sh" "$SESSION_PREFIX/bin/xorg-openbox-env.sh"
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/wait-x.sh" "$SESSION_PREFIX/bin/wait-x.sh"
@@ -380,10 +382,10 @@ log_info "Reloading systemd daemon"
 systemctl daemon-reload
 
 log_info "Enabling services"
-systemctl enable pantalla-xorg.service
-systemctl enable pantalla-dash-backend@${USER_NAME}.service
-systemctl enable pantalla-openbox@${USER_NAME}.service
-systemctl enable pantalla-kiosk@${USER_NAME}.service
+systemctl enable pantalla-xorg.service || true
+systemctl enable pantalla-dash-backend@${USER_NAME}.service || true
+systemctl enable pantalla-openbox@${USER_NAME}.service || true
+systemctl enable pantalla-kiosk@${USER_NAME}.service || true
 
 log_info "Restarting Pantalla services"
 systemctl restart pantalla-xorg.service
@@ -393,11 +395,22 @@ else
   SUMMARY+=('[install] permisos XAUTHORITY: no disponible')
 fi
 systemctl restart pantalla-openbox@${USER_NAME}.service
-systemctl restart pantalla-kiosk@${USER_NAME}.service
-systemctl restart pantalla-dash-backend@${USER_NAME}.service
+sleep 1
 
-log_info "Running quick health checks"
-if curl -sS -m 1 http://127.0.0.1:8081/healthz >/dev/null 2>&1; then
+log_info "Running post-install checks"
+
+if DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xset q >/dev/null 2>&1; then
+  log_ok "Servidor X activo (xset q)"
+  SUMMARY+=('[install] xset q ejecutado correctamente')
+else
+  log_warn "xset q falló"
+  SUMMARY+=('[install] xset q falló')
+fi
+
+systemctl restart pantalla-dash-backend@${USER_NAME}.service
+sleep 1
+
+if curl -fsS -m 2 http://127.0.0.1:8081/healthz >/dev/null 2>&1; then
   log_ok "Backend healthz reachable"
   SUMMARY+=('[install] backend healthz responde')
 else
@@ -405,25 +418,23 @@ else
   SUMMARY+=('[install] backend healthz no responde')
 fi
 
-if pgrep -fa 'epiphany-browser' >/dev/null 2>&1; then
-  log_ok "epiphany-browser process detected"
-  SUMMARY+=('[install] proceso epiphany-browser detectado')
+systemctl restart pantalla-kiosk@${USER_NAME}.service
+sleep 2
+
+if DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority wmctrl -lx | grep -q 'epiphany\.epiphany'; then
+  log_ok "Ventana de Epiphany detectada"
+  SUMMARY+=('[install] ventana de Epiphany detectada')
 else
-  log_warn "epiphany-browser process not detected"
-  SUMMARY+=('[install] proceso epiphany-browser no detectado')
+  log_warn "No se detectó ventana de Epiphany"
+  SUMMARY+=('[install] ventana de Epiphany no detectada')
 fi
 
-if [[ -n ${DISPLAY:-} ]] && command -v wmctrl >/dev/null 2>&1; then
-  if WMCTRL_OUT=$(wmctrl -lG 2>&1); then
-    log_ok "wmctrl -lG output:\n${WMCTRL_OUT}"
-    SUMMARY+=('[install] wmctrl -lG ejecutado con éxito')
-  else
-    log_warn "wmctrl failed: ${WMCTRL_OUT:-no output}"
-    SUMMARY+=('[install] wmctrl -lG falló')
-  fi
+if DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xprop -root _NET_ACTIVE_WINDOW >/dev/null 2>&1; then
+  log_ok "xprop _NET_ACTIVE_WINDOW ejecutado"
+  SUMMARY+=('[install] xprop activo ejecutado')
 else
-  log_warn "wmctrl omitido: DISPLAY no definido o binario ausente"
-  SUMMARY+=('[install] wmctrl omitido (sin DISPLAY/binario)')
+  log_warn "xprop _NET_ACTIVE_WINDOW falló"
+  SUMMARY+=('[install] xprop activo falló')
 fi
 
 log_ok "Installation completed"
