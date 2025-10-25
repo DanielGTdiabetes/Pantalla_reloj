@@ -13,7 +13,7 @@ sleep_interval=0.5
 last_error=""
 
 for ((i=1; i<=attempts; i++)); do
-  if output=$(xdpyinfo 2>&1); then
+  if output=$(xset q 2>&1); then
     log "DISPLAY ${DISPLAY} is ready (attempt ${i})"
     exit 0
   fi
