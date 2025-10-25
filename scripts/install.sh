@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -euxo pipefail
 
 umask 022
 
@@ -55,6 +55,7 @@ BACKEND_DEST="${PANTALLA_PREFIX}/backend"
 STATE_DIR=/var/lib/pantalla-reloj
 STATE_RUNTIME="${STATE_DIR}/state"
 LOG_DIR=/var/log/pantalla-reloj
+INSTALL_LOG=/tmp/install.log
 WEB_ROOT=/var/www/html
 WEBROOT_MANIFEST="${STATE_RUNTIME}/webroot-manifest"
 KIOSK_BIN_SRC="${REPO_ROOT}/usr/local/bin/pantalla-kiosk"
@@ -240,7 +241,7 @@ NG
 }
 
 configure_nginx() {
-  set -euo pipefail
+  set -euxo pipefail
   log_info "Configurando Nginx"
 
   local sa="/etc/nginx/sites-available"
@@ -357,11 +358,13 @@ deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk@.service" /etc/systemd/system/pan
 deploy_unit "$REPO_ROOT/systemd/pantalla-dash-backend@.service" /etc/systemd/system/pantalla-dash-backend@.service
 
 if [[ $units_changed -eq 1 ]]; then
-  log_info "Reloading systemd daemon"
-  systemctl daemon-reload
+  log_info "Systemd units updated"
 else
-  log_info "Systemd units unchanged; skipping daemon-reload"
+  log_info "Systemd units unchanged"
 fi
+
+log_info "Reloading systemd daemon"
+systemctl daemon-reload
 
 log_info "Enabling services"
 systemctl enable pantalla-xorg.service
@@ -371,6 +374,11 @@ systemctl enable pantalla-kiosk@${USER_NAME}.service
 
 log_info "Restarting Pantalla services"
 systemctl restart pantalla-xorg.service
+if stat_output=$(stat -c '%U:%G %a %n' /var/lib/pantalla-reloj/.Xauthority 2>/dev/null); then
+  printf '%s\n' "$stat_output" >> "$INSTALL_LOG"
+else
+  printf '[install] stat failed for /var/lib/pantalla-reloj/.Xauthority\n' >> "$INSTALL_LOG"
+fi
 systemctl restart pantalla-openbox@${USER_NAME}.service
 systemctl restart pantalla-dash-backend@${USER_NAME}.service
 systemctl restart pantalla-kiosk@${USER_NAME}.service
