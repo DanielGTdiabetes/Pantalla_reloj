@@ -1,14 +1,15 @@
 [Unit]
 Description=Pantalla_reloj Kiosk (Epiphany) for user %i
-After=pantalla-openbox@%i.service
+After=pantalla-openbox@%i.service nginx.service pantalla-dash-backend@%i.service
 Requires=pantalla-openbox@%i.service
+Wants=nginx.service pantalla-dash-backend@%i.service
 PartOf=pantalla-openbox@%i.service
 
 [Service]
 Type=simple
 User=%i
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/home/%i/.Xauthority
+Environment=XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority
 Environment=WEBKIT_DISABLE_DMABUF_RENDERER=1
 Environment=WEBKIT_DISABLE_COMPOSITING_MODE=1
 Environment=GSK_RENDERER=cairo

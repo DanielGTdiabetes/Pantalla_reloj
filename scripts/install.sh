@@ -76,6 +76,7 @@ APT_PACKAGES=(
   jq
   rsync
   file
+  xauth
   epiphany-browser
   python3-venv
 )
@@ -159,6 +160,8 @@ fi
 install -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$REPO_ROOT/openbox/autostart" "$AUTO_FILE"
 
 install -m 0755 "$KIOSK_BIN_SRC" "$KIOSK_BIN_DST"
+install -d -m 0755 /usr/lib/pantalla-reloj
+install -m 0755 "$REPO_ROOT/usr/lib/pantalla-reloj/xorg-launch.sh" /usr/lib/pantalla-reloj/xorg-launch.sh
 
 log_info "Building frontend"
 pushd "$REPO_ROOT/dash-ui" >/dev/null

@@ -46,10 +46,18 @@ Pantalla_reloj/
 
 ## Arranque estable (boot hardening)
 
-- **Openbox autostart robusto** (`openbox/autostart`): usa `flock` para garantizar una
-  sola instancia de Epiphany, espera hasta 30s a que Nginx y el backend respondan en
-  `http://127.0.0.1/` y `http://127.0.0.1/api/health`, rota la pantalla, deshabilita el
-  blanking y fuerza renderizado por software para evitar la “pantalla negra”.
+- **Openbox autostart robusto** (`openbox/autostart`): deja trazas en
+  `/var/log/pantalla-reloj/openbox-autostart.log`, deshabilita DPMS, actualiza el
+  entorno de DBus y rota la pantalla antes de ceder el control al servicio del
+  navegador.
+- **Sesión X autenticada**: `pantalla-xorg.service` delega en
+  `/usr/lib/pantalla-reloj/xorg-launch.sh`, que genera de forma determinista la
+  cookie `MIT-MAGIC-COOKIE-1` en `/var/lib/pantalla-reloj/.Xauthority` (propiedad de
+  `dani`) y la reutiliza para Openbox y el navegador.
+- **Lanzador de navegador resiliente**: `usr/local/bin/pantalla-kiosk` espera hasta 60
+  intentos a que el backend (`/api/health`) y el frontend (`/`) respondan con HTTP 200
+  antes de abrir Epiphany, utiliza `flock` para evitar ejecuciones simultáneas y
+  registra la actividad en `/var/log/pantalla-reloj/kiosk.log`.
 - **Orden de arranque garantizado**: `pantalla-openbox@dani.service` depende de
   `pantalla-xorg.service`, del backend y de Nginx (`After=`/`Wants=`) con reinicio
   automático (`Restart=always`). `pantalla-xorg.service` se engancha a
