@@ -1,16 +1,21 @@
 [Unit]
-Description=Pantalla reloj Openbox session (%i)
-After=pantalla-xorg.service
-Requires=pantalla-xorg.service
+Description=Pantalla_reloj Openbox session for %i (DISPLAY=:0)
+After=systemd-user-sessions.service getty@tty7.service
+After=pantalla-xorg.service pantalla-dash-backend@%i.service nginx.service
+Wants=pantalla-dash-backend@%i.service nginx.service
 
 [Service]
-Type=simple
 User=%i
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/%i/.Xauthority
+PAMName=login
+TTYPath=/dev/tty7
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
 ExecStart=/usr/bin/openbox --startup "/usr/lib/x86_64-linux-gnu/openbox-autostart OPENBOX"
 Restart=always
 RestartSec=2
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=graphical.target

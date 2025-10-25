@@ -10,6 +10,8 @@ SERVICES=(
 for svc in "${SERVICES[@]}"; do
   systemctl disable --now "$svc" 2>/dev/null || true
   rm -f "/etc/systemd/system/${svc}"
+  rm -f "/etc/systemd/system/graphical.target.wants/${svc}"
+  rm -f "/etc/systemd/system/multi-user.target.wants/${svc}"
 done
 
 rm -f /etc/systemd/system/pantalla-openbox@.service
@@ -17,7 +19,15 @@ rm -f /etc/systemd/system/pantalla-dash-backend@.service
 rm -f /etc/systemd/system/pantalla-xorg.service
 systemctl daemon-reload
 systemctl reset-failed || true
-systemctl unmask display-manager.service 2>/dev/null || true
+
+PR_STATE_DIR=/var/lib/pantalla-reloj
+PR_STATE_STATE_DIR="$PR_STATE_DIR/state"
+DISPLAY_MANAGER_MARK="$PR_STATE_STATE_DIR/display-manager.masked"
+
+if [[ -f "$DISPLAY_MANAGER_MARK" ]]; then
+  systemctl unmask display-manager.service 2>/dev/null || true
+  rm -f "$DISPLAY_MANAGER_MARK"
+fi
 
 rm -f /etc/nginx/sites-enabled/pantalla-reloj.conf
 rm -f /etc/nginx/sites-available/pantalla-reloj.conf
@@ -31,6 +41,7 @@ rm -rf /opt/pantalla
 rm -rf /opt/firefox
 rm -rf /var/lib/pantalla
 rm -rf /var/log/pantalla
+rm -rf "$PR_STATE_DIR"
 if [[ -d /var/www/html ]]; then
   rm -rf /var/www/html/*
 else

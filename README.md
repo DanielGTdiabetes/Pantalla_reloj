@@ -44,6 +44,27 @@ Pantalla_reloj/
   `--with-firefox`).
 - `pantalla-dash-backend@dani.service`: ejecuta el backend FastAPI como usuario `dani`.
 
+## Arranque estable (boot hardening)
+
+- **Openbox autostart robusto** (`openbox/autostart`): usa `flock` para garantizar una
+  sola instancia de Epiphany, espera hasta 30s a que Nginx y el backend respondan en
+  `http://127.0.0.1/` y `http://127.0.0.1/api/health`, rota la pantalla, deshabilita el
+  blanking y fuerza renderizado por software para evitar la “pantalla negra”.
+- **Orden de arranque garantizado**: `pantalla-openbox@dani.service` depende de
+  `pantalla-xorg.service`, del backend y de Nginx (`After=`/`Wants=`) con reinicio
+  automático (`Restart=always`). `pantalla-xorg.service` se engancha a
+  `graphical.target`, levanta `Xorg :0` en `vt7` y también se reinicia ante fallos.
+- **Healthchecks previos al navegador**: el script de autostart espera a que Nginx y
+  el backend respondan antes de lanzar la ventana kiosk, evitando popups de “la página
+  no responde”.
+- **Grupos del sistema**: durante la instalación `install.sh` añade a `dani` a los
+  grupos `render` y `video`, informando si se requiere reinicio (con opción
+  `--auto-reboot` para reiniciar automáticamente).
+- **Display manager controlado**: el instalador enmascara `display-manager.service`
+  (registrándolo en `/var/lib/pantalla-reloj/state`) y el desinstalador solo lo
+  deshace si lo enmascaramos nosotros, evitando interferencias con sesiones gráficas
+  ajenas.
+
 ## Instalación
 
 ### Requisitos previos
