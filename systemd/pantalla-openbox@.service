@@ -7,7 +7,7 @@ Wants=pantalla-dash-backend@%i.service
 [Service]
 User=%i
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/home/%i/.Xauthority
+Environment=XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority
 PAMName=login
 TTYPath=/dev/tty7
 TTYReset=yes

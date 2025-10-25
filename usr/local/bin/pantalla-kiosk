@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LOG_FILE=/tmp/kiosk-launch.log
+LOG_FILE=/var/log/pantalla-reloj/kiosk.log
+mkdir -p "$(dirname "$LOG_FILE")"
 exec >>"$LOG_FILE" 2>&1
 printf '\n[%s] pantalla-kiosk starting (pid=%s, url=%s)\n' "$(date -Is)" "$$" "${1:-http://127.0.0.1}"
 
@@ -9,24 +10,38 @@ URL="${1:-http://127.0.0.1}"
 PROFILE_DIR="${PANTALLA_KIOSK_PROFILE:-$HOME/.config/epiphany-pantalla}"
 mkdir -p "$PROFILE_DIR"
 
-# Espera con reintentos al backend antes de abrir el navegador
-health_url="http://127.0.0.1:8081/healthz"
-max_attempts=30
-attempt=1
-while [ $attempt -le $max_attempts ]; do
-  if curl -fsS --max-time 1 "$health_url" >/dev/null 2>&1; then
-    printf '[%s] backend disponible en %s (intento %s)\n' "$(date -Is)" "$health_url" "$attempt"
-    break
-  fi
-  sleep 1
-  attempt=$((attempt + 1))
-done
-
-if [ $attempt -gt $max_attempts ]; then
-  printf '[%s] backend no respondió en %s intentos, continuando\n' "$(date -Is)" "$max_attempts"
+LOCK_FD=200
+LOCK_FILE=/tmp/pantalla-kiosk.lock
+exec {LOCK_FD}>"$LOCK_FILE"
+if ! flock -n "$LOCK_FD"; then
+  printf '[%s] waiting for kiosk lock %s\n' "$(date -Is)" "$LOCK_FILE"
+  flock "$LOCK_FD"
 fi
 
-# Evitar procesos residuales previos
+wait_for_url() {
+  local name="$1" url="$2" attempts="$3" delay="$4"
+  local i=1 status
+  while [ "$i" -le "$attempts" ]; do
+    status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 2 "$url" || printf '000')
+    if [ "$status" = "200" ]; then
+      printf '[%s] %s OK (%s) intento %s/%s\n' "$(date -Is)" "$name" "$url" "$i" "$attempts"
+      return 0
+    fi
+    printf '[%s] %s KO (%s -> %s) intento %s/%s\n' "$(date -Is)" "$name" "$url" "$status" "$i" "$attempts"
+    sleep "$delay"
+    i=$((i + 1))
+  done
+  return 1
+}
+
+if ! wait_for_url "backend" "http://127.0.0.1:8081/healthz" 60 1; then
+  printf '[%s] backend no respondió, continuando para permitir reconexión automática\n' "$(date -Is)"
+fi
+
+if ! wait_for_url "frontend" "$URL" 60 1; then
+  printf '[%s] frontend no respondió, lanzando navegador igualmente\n' "$(date -Is)"
+fi
+
 if pgrep -x epiphany >/dev/null 2>&1; then
   printf '[%s] cerrando instancias anteriores de epiphany\n' "$(date -Is)"
   pkill -TERM -x epiphany || true
