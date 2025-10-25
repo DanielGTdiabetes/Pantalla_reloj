@@ -2,6 +2,7 @@
 set -euo pipefail
 
 BACKEND_DIR=/opt/pantalla-reloj/backend
+BACKEND_ROOT=$(dirname "$BACKEND_DIR")
 PYTHON_BIN="$BACKEND_DIR/.venv/bin/python"
 
 if [[ ! -x "$PYTHON_BIN" ]]; then
@@ -10,7 +11,11 @@ if [[ ! -x "$PYTHON_BIN" ]]; then
 fi
 
 cd "$BACKEND_DIR"
-export PYTHONPATH="$BACKEND_DIR"
+if [[ -n "${PYTHONPATH:-}" ]]; then
+  export PYTHONPATH="$BACKEND_ROOT:$PYTHONPATH"
+else
+  export PYTHONPATH="$BACKEND_ROOT"
+fi
 exec "$PYTHON_BIN" -m uvicorn backend.main:app \
   --host 127.0.0.1 \
   --port 8081 \
