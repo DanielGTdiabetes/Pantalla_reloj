@@ -1,29 +1,12 @@
 #!/usr/bin/env bash
 set -euxo pipefail
-
-: "${DISPLAY:?DISPLAY must be set}"
-: "${XAUTHORITY:?XAUTHORITY must be set}"
-
-log() {
-  printf '%(%H:%M:%S)T wait-x: %s\n' -1 "$*"
-}
-
-attempts=30
-sleep_interval=0.5
-last_error=""
-
-for ((i=1; i<=attempts; i++)); do
-  if output=$(xdpyinfo 2>&1); then
-    log "DISPLAY ${DISPLAY} is ready (attempt ${i})"
+: "${DISPLAY:?}"; : "${XAUTHORITY:?}"
+for i in $(seq 1 30); do
+  if DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xset q >/dev/null 2>&1; then
     exit 0
   fi
-  last_error="$output"
-  log "Attempt ${i} failed; retrying after ${sleep_interval}s"
-  sleep "${sleep_interval}"
+  printf '[wait-x] %(%H:%M:%S)T intento %d/30\n' -1 "$i"
+  sleep 0.5
 done
-
-log "Failed to reach DISPLAY ${DISPLAY} after ${attempts} attempts"
-if [[ -n "${last_error}" ]]; then
-  printf '%s\n' "${last_error}" >&2
-fi
+echo "[wait-x] timeout esperando DISPLAY=$DISPLAY"
 exit 1
