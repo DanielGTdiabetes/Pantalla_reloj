@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SERVICES=(
+  pantalla-kiosk@dani.service
   pantalla-openbox@dani.service
   pantalla-dash-backend@dani.service
   pantalla-xorg.service
@@ -17,7 +18,10 @@ done
 rm -f /etc/systemd/system/pantalla-openbox@.service
 rm -f /etc/systemd/system/pantalla-dash-backend@.service
 rm -f /etc/systemd/system/pantalla-xorg.service
-systemctl daemon-reload
+systemctl disable --now pantalla-kiosk@dani.service 2>/dev/null || true
+rm -f /usr/local/bin/kiosk-epiphany || true
+rm -f /etc/systemd/system/pantalla-kiosk@.service || true
+systemctl daemon-reload || true
 systemctl reset-failed || true
 
 PR_STATE_DIR=/var/lib/pantalla-reloj

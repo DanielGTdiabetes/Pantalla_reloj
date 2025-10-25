@@ -1,0 +1,16 @@
+[Unit]
+Description=Pantalla_reloj Kiosk (Epiphany) for user %i
+After=graphical.target pantallaxorg.target
+Wants=default.target
+
+[Service]
+Type=simple
+User=%i
+Environment=DISPLAY=:0
+ExecStart=/usr/local/bin/kiosk-epiphany
+Restart=on-failure
+RestartSec=3
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=default.target
