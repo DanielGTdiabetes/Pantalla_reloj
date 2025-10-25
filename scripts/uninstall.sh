@@ -51,3 +51,4 @@ if [[ $PURGE_USER_AUTOSTART -eq 1 ]]; then
 fi
 
 log "Desinstalación completada"
+echo "[SUCCESS] Kiosk uninstalled. You can remove /opt/firefox and /var/www/html if desired."
