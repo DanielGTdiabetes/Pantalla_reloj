@@ -38,49 +38,19 @@ export type StormMode = {
   last_triggered: string | null;
 };
 
+export type UISettings = {
+  layout: "full" | "widgets";
+  side_panel: "left" | "right";
+  show_config: boolean;
+  enable_demo: boolean;
+  carousel: boolean;
+};
+
 export type AppConfig = {
   display: DisplaySettings;
   api_keys: APIKeys;
   mqtt: MQTTSettings;
   wifi: WiFiSettings;
   storm_mode: StormMode;
-};
-
-export const DEFAULT_CONFIG: AppConfig = {
-  display: {
-    timezone: "Europe/Madrid",
-    rotation: "left",
-    module_cycle_seconds: 20,
-    modules: [
-      { name: "clock", enabled: true, duration_seconds: 20 },
-      { name: "weather", enabled: true, duration_seconds: 20 },
-      { name: "moon", enabled: true, duration_seconds: 20 },
-      { name: "news", enabled: true, duration_seconds: 20 },
-      { name: "events", enabled: true, duration_seconds: 20 },
-      { name: "calendar", enabled: true, duration_seconds: 20 }
-    ]
-  },
-  api_keys: {
-    weather: null,
-    news: null,
-    astronomy: null,
-    calendar: null
-  },
-  mqtt: {
-    enabled: false,
-    host: "localhost",
-    port: 1883,
-    topic: "pantalla/reloj",
-    username: null,
-    password: null
-  },
-  wifi: {
-    interface: "wlan2",
-    ssid: null,
-    psk: null
-  },
-  storm_mode: {
-    enabled: false,
-    last_triggered: null
-  }
+  ui: UISettings;
 };

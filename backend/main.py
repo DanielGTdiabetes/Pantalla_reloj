@@ -90,7 +90,7 @@ def get_config() -> AppConfig:
     return config_manager.read()
 
 
-@app.post("/api/config", response_model=AppConfig)
+@app.patch("/api/config", response_model=AppConfig)
 def update_config(payload: Dict[str, Any]) -> AppConfig:
     try:
         updated = config_manager.update(payload)
@@ -151,6 +151,14 @@ def on_startup() -> None:
     config = config_manager.read()
     logger.info("Pantalla backend started with rotation '%s'", config.display.rotation)
     cache_store.store("health", {"started_at": APP_START.isoformat()})
-    root = Path(os.getenv("PANTALLA_ROOT", "/opt/pantalla"))
+    logger.info(
+        "Configuration path %s (defaults: layout=%s, side_panel=%s, demo=%s, carousel=%s)",
+        config_manager.config_file,
+        config.ui.layout,
+        config.ui.side_panel,
+        config.ui.enable_demo,
+        config.ui.carousel,
+    )
+    root = Path(os.getenv("PANTALLA_STATE_DIR", "/var/lib/pantalla"))
     for child in (root / "cache").glob("*.json"):
         child.touch(exist_ok=True)

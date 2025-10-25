@@ -34,5 +34,12 @@
   "storm_mode": {
     "enabled": false,
     "last_triggered": null
+  },
+  "ui": {
+    "layout": "full",
+    "side_panel": "right",
+    "show_config": false,
+    "enable_demo": false,
+    "carousel": false
   }
 }

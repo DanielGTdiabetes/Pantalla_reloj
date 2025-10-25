@@ -15,11 +15,14 @@ fi
 
 sleep 2
 
-FIREFOX_BIN="/usr/local/bin/firefox"
-if [[ ! -x "$FIREFOX_BIN" ]]; then
+EPIPHANY_BIN="$(command -v epiphany-browser 2>/dev/null || true)"
+if [[ -n "$EPIPHANY_BIN" ]]; then
+  if ! pgrep -x epiphany-browser >/dev/null 2>&1; then
+    setsid -f "$EPIPHANY_BIN" --new-window http://127.0.0.1/ >/dev/null 2>&1 &
+  fi
+else
   FIREFOX_BIN="$(command -v firefox 2>/dev/null || true)"
-fi
-
-if [[ -n "$FIREFOX_BIN" ]]; then
-  setsid -f "$FIREFOX_BIN" --no-remote --kiosk http://127.0.0.1 >/dev/null 2>&1 &
+  if [[ -n "$FIREFOX_BIN" ]] && ! pgrep -x firefox >/dev/null 2>&1; then
+    setsid -f "$FIREFOX_BIN" --no-remote --kiosk http://127.0.0.1/ >/dev/null 2>&1 &
+  fi
 fi
