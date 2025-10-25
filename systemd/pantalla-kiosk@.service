@@ -1,7 +1,8 @@
 [Unit]
 Description=Pantalla_reloj Kiosk (Epiphany) for user %i
-After=graphical.target pantallaxorg.target
-Wants=default.target
+After=pantalla-xorg.service pantalla-openbox@%i.service
+Requires=pantalla-openbox@%i.service
+PartOf=pantalla-openbox@%i.service
 
 [Service]
 Type=simple
@@ -13,4 +14,4 @@ RestartSec=3
 StartLimitIntervalSec=0
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical.target
