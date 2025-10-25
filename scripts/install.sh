@@ -65,11 +65,11 @@ resolved_url=$(curl -fsI -o /dev/null -w '%{url_effective}' -L "$FIREFOX_URL" ||
 resolved_version=""
 if [[ -n "$resolved_url" ]]; then
   resolved_file=${resolved_url##*/}
-  resolved_file=${resolved_file%.tar.bz2}
+  resolved_file=${resolved_file%.tar.xz}
   resolved_version=${resolved_file#firefox-}
 fi
 
-firefox_tar="${TMP_ROOT}/firefox.tar.bz2"
+firefox_tar="${TMP_ROOT}/firefox.tar.xz"
 need_download=1
 if [[ -x /opt/firefox/firefox && -n "$installed_firefox_version" && -n "$resolved_version" && "$installed_firefox_version" == "$resolved_version" ]]; then
   need_download=0
@@ -86,7 +86,7 @@ if (( need_download )); then
   fi
 
   log "Extrayendo Firefox en entorno temporal"
-  tar -xjf "$firefox_tar" -C "$TMP_ROOT"
+  tar -xJf "$firefox_tar" -C "$TMP_ROOT"
   if [[ ! -d "${TMP_ROOT}/firefox" ]]; then
     err "No se encontró directorio firefox tras la extracción"
     exit 1
