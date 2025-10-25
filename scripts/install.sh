@@ -53,7 +53,7 @@ apt-get update -y
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
   python3-venv python3-pip python3-dev \
   nginx xorg openbox x11-xserver-utils wmctrl xdotool dbus-x11 \
-  curl unzip jq rsync
+  curl unzip jq rsync file
 
 if ! command -v node >/dev/null 2>&1; then
   log "Node.js no encontrado. Instalando Node.js 20 LTS desde NodeSource"
@@ -73,14 +73,42 @@ fi
 log "Instalando Firefox en modo kiosk"
 rm -rf "$FIREFOX_DEST"
 mkdir -p /opt
-TEMP_ARCHIVE="$(mktemp /tmp/firefox.XXXXXX.tar.bz2)"
-curl -L "$FIREFOX_URL" -o "$TEMP_ARCHIVE"
-tar -xjf "$TEMP_ARCHIVE" -C /opt
-EXTRACTED_DIR="$(tar -tjf "$TEMP_ARCHIVE" | head -n1 | cut -d/ -f1)"
-if [[ -z "$EXTRACTED_DIR" ]]; then
-  echo "[ERROR] No se pudo determinar el directorio de Firefox" >&2
+TEMP_ARCHIVE="$(mktemp /tmp/firefox.XXXXXX)"
+if ! curl -fL --retry 3 --retry-delay 5 --retry-connrefused "$FIREFOX_URL" -o "$TEMP_ARCHIVE"; then
+  echo "[ERROR] No se pudo descargar Firefox desde $FIREFOX_URL" >&2
   exit 1
 fi
+
+MIME_TYPE="$(file -b --mime-type "$TEMP_ARCHIVE")"
+case "$MIME_TYPE" in
+  application/x-bzip2)
+    TAR_COMPRESS_FLAG="j"
+    ;;
+  application/x-xz)
+    TAR_COMPRESS_FLAG="J"
+    ;;
+  *)
+    echo "[ERROR] El archivo descargado de Firefox no es un tar comprimido válido (tipo: $MIME_TYPE)" >&2
+    echo "        Verifique la conectividad de red o vuelva a intentar la instalación" >&2
+    rm -f "$TEMP_ARCHIVE"
+    exit 1
+    ;;
+esac
+
+if ! tar -t${TAR_COMPRESS_FLAG}f "$TEMP_ARCHIVE" >/dev/null 2>&1; then
+  echo "[ERROR] El archivo descargado de Firefox está corrupto o no se pudo leer" >&2
+  rm -f "$TEMP_ARCHIVE"
+  exit 1
+fi
+
+EXTRACTED_DIR="$(tar -t${TAR_COMPRESS_FLAG}f "$TEMP_ARCHIVE" | head -n1 | cut -d/ -f1)"
+if [[ -z "$EXTRACTED_DIR" ]]; then
+  echo "[ERROR] No se pudo determinar el directorio de Firefox" >&2
+  rm -f "$TEMP_ARCHIVE"
+  exit 1
+fi
+
+tar -x${TAR_COMPRESS_FLAG}f "$TEMP_ARCHIVE" -C /opt
 mv "/opt/${EXTRACTED_DIR}" "$FIREFOX_DEST"
 rm -f "$TEMP_ARCHIVE"
 ln -sf "$FIREFOX_DEST/firefox" /usr/local/bin/firefox
