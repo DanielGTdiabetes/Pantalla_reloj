@@ -53,7 +53,22 @@ apt-get update -y
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
   python3-venv python3-pip python3-dev \
   nginx xorg openbox x11-xserver-utils wmctrl xdotool dbus-x11 \
-  curl unzip jq nodejs npm rsync
+  curl unzip jq rsync
+
+if ! command -v node >/dev/null 2>&1; then
+  log "Node.js no encontrado. Instalando Node.js 20 LTS desde NodeSource"
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  apt-get update -y
+  DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
+else
+  log "Node.js detectado ($(node -v)). Se omite instalación."
+fi
+
+if ! command -v npm >/dev/null 2>&1; then
+  echo "[ERROR] npm no está disponible tras instalar Node.js" >&2
+  echo "        Por favor verifique la instalación de Node.js" >&2
+  exit 1
+fi
 
 log "Instalando Firefox en modo kiosk"
 rm -rf "$FIREFOX_DEST"
