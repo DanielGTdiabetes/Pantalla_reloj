@@ -3,7 +3,10 @@ set -euxo pipefail
 LOG_FILE=/tmp/openbox-autostart.log
 {
   echo "[openbox] $(date -Is) configuring display"
-  (sleep 0.3; DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xrandr --output HDMI-1 --rotate left --primary || true) &
+  DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xrandr --output HDMI-1 --panning 0x0 || true
+  DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xrandr --output HDMI-1 --mode 480x1920 --rotate left || true
+  DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xrandr --fb 1920x480 || true
+  DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xrandr --output HDMI-1 --pos 0x0 || true
   (sleep 0.5; DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xset -dpms s off s noblank || true) &
   wait
   echo "[openbox] $(date -Is) configuration done"

@@ -1,18 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
+LOG=/tmp/backend-launch.log
+exec >>"$LOG" 2>&1
+echo "[backend] $(date -Is) start"
 
-BACKEND_DIR=/opt/pantalla-reloj/backend
-PYTHON_BIN="$BACKEND_DIR/.venv/bin/python"
+APP_DIR="/opt/pantalla-reloj/backend"
+PY="$APP_DIR/.venv/bin/python"
 
-if [[ ! -x "$PYTHON_BIN" ]]; then
-  echo "[backend-launch] python executable not found: $PYTHON_BIN" >&2
+if [[ ! -x "$PY" ]]; then
+  echo "[backend] python no encontrado en $PY" >&2
   exit 1
 fi
 
-cd "$BACKEND_DIR"
-export PYTHONPATH="$BACKEND_DIR"
-exec "$PYTHON_BIN" -m uvicorn backend.main:app \
-  --host 127.0.0.1 \
-  --port 8081 \
-  --proxy-headers \
-  --timeout-keep-alive 30
+install -d -m 0755 /var/log/pantalla
+install -d -m 0755 /var/lib/pantalla
+
+cd "$APP_DIR"
+export PYTHONPATH="$APP_DIR"
+
+"$PY" - <<'PYCODE'
+import importlib, sys
+try:
+    m = importlib.import_module("backend.main")
+    print("[backend] import OK:", m.__name__)
+except Exception as e:
+    print("[backend] import FAIL:", repr(e))
+    sys.exit(3)
+PYCODE
+
+exec "$PY" -m uvicorn backend.main:app \
+  --host 127.0.0.1 --port 8081 \
+  --proxy-headers --timeout-keep-alive 30

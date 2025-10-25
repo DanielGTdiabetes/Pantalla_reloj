@@ -1,95 +1,40 @@
 #!/usr/bin/env bash
-set -euo pipefail
-
+set -euxo pipefail
 URL="${1:-http://127.0.0.1}"
-LOG=/tmp/kiosk-launch.log
-exec >>"$LOG"
-exec 2>&1
-
-echo "[kiosk] $(date -Is) start user=$(id -un) DISPLAY=${DISPLAY:-} XAUTHORITY=${XAUTHORITY:-} URL=$URL"
-
 : "${DISPLAY:=:0}"
 : "${XAUTHORITY:?XAUTHORITY must be set}"
 : "${XDG_RUNTIME_DIR:=/run/user/1000}"
 
-STATE_DIR=/var/lib/pantalla-reloj/state
-PROFILE_DIR="$STATE_DIR/org.gnome.Epiphany.WebApp_PantallaReloj"
-LOCK="$STATE_DIR/kiosk.lock"
-OWNER="${KIOSK_USER:-${USER:-$(id -un)}}"
+LOG=/tmp/kiosk-launch.log
+exec >>"$LOG" 2>&1
+echo "[kiosk] $(date -Is) start user=$(id -un) DISPLAY=$DISPLAY URL=$URL"
 
-install -d -m 0755 "$STATE_DIR"
-install -d -m 0755 "$PROFILE_DIR"
-chown -R "$OWNER:$OWNER" "$STATE_DIR" || true
+/opt/pantalla/bin/wait-x.sh
 
-exec 9>"$LOCK"
-if ! flock -n 9; then
-  echo "[kiosk] lock activo, no se lanza otra instancia"
-  exit 0
-fi
-
-if pgrep -fa 'epiphany-browser.*--application-mode' >/dev/null 2>&1; then
-  echo "[kiosk] epiphany-browser ya en ejecución (modo aplicación)"
-  exit 0
-fi
-
-echo "[kiosk] esperando X con /opt/pantalla/bin/wait-x.sh"
-DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" /opt/pantalla/bin/wait-x.sh
-
-check_http() {
-  local name="$1" url="$2"
-  if curl -fsS -m 1 "$url" >/dev/null; then
-    echo "[kiosk] $name OK $url"
-  else
-    echo "[kiosk] $name fallo $url"
-  fi
+skip_snap() {
+  local b="$1"; local r
+  r="$(readlink -f "$b" 2>/dev/null || echo "$b")"
+  [[ "$b" == /snap/bin/* || "$r" == /snap/* ]]
 }
 
-check_http FRONT "$URL"
-(check_http API "http://127.0.0.1:8081/healthz") &
-
-# detectar navegadores disponibles
-chromium_snap_logged=0
-chromium_bin=""
-for candidate in chromium-browser chromium google-chrome-stable google-chrome; do
-  if command -v "$candidate" >/dev/null 2>&1; then
-    bin_path="$(command -v "$candidate")"
-    resolved="$(readlink -f "$bin_path" 2>/dev/null || printf '%s' "$bin_path")"
-    if [[ "$bin_path" == /snap/bin/* || "$resolved" == /snap/* ]]; then
-      if [[ "$chromium_snap_logged" -eq 0 ]]; then
-        echo "[kiosk] Chromium (snap) no soportado: confinamiento bloquea X11/XAUTHORITY"
-        chromium_snap_logged=1
-      fi
-      continue
-    fi
-    chromium_bin="$bin_path"
-    break
-  fi
-done
-
-if command -v epiphany-browser >/dev/null 2>&1; then
-  browser="epiphany-browser"
-  browser_cmd=("$(command -v epiphany-browser)" --application-mode "--profile=$PROFILE_DIR" --new-window "$URL")
-  browser_desc="epiphany-browser"
-elif [[ -n "$chromium_bin" ]]; then
-  browser="$chromium_bin"
-  browser_cmd=("$chromium_bin" --kiosk --no-first-run --no-default-browser-check "$URL")
-  browser_desc="$(basename "$chromium_bin")"
-else
-  echo "[kiosk] no se encontró un navegador compatible"
+EPIPHANY_BIN="$(command -v epiphany-browser || true)"
+if [[ -z "$EPIPHANY_BIN" ]]; then
+  echo "[kiosk] epiphany-browser no encontrado" >&2
+  exit 1
+fi
+if skip_snap "$EPIPHANY_BIN"; then
+  echo "[kiosk] epiphany-browser proviene de snap y no se puede usar" >&2
   exit 1
 fi
 
-export GIO_USE_PORTALS=0
-export GTK_USE_PORTAL=0
+curl -fsS -m 1 "$URL" >/dev/null && echo "[kiosk] FRONT OK $URL" || echo "[kiosk] FRONT FAIL $URL"
+(check_http(){ curl -fsS -m 1 "$1" >/dev/null && echo "[kiosk] API OK $1" || echo "[kiosk] API FAIL $1"; }; check_http http://127.0.0.1:8081/healthz) &
 
-echo "[kiosk] lanzando $browser_desc: ${browser_cmd[*]}"
+PROFILE_DIR=/var/lib/pantalla-reloj/state/org.gnome.Epiphany.WebApp_PantallaReloj
+install -d -m 0755 "$PROFILE_DIR"
 
-exec env -i \
-  DISPLAY="$DISPLAY" \
-  XAUTHORITY="$XAUTHORITY" \
-  XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
-  HOME="${HOME:-/home/$OWNER}" \
-  PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-  GIO_USE_PORTALS="$GIO_USE_PORTALS" \
-  GTK_USE_PORTAL="$GTK_USE_PORTAL" \
-  "${browser_cmd[@]}"
+export GIO_USE_PORTALS=0 GTK_USE_PORTAL=0
+exec env -i DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
+  HOME="/home/$(id -un)" PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+  GIO_USE_PORTALS=0 GTK_USE_PORTAL=0 \
+  "$EPIPHANY_BIN" --application-mode --profile="$PROFILE_DIR" --new-window "$URL"

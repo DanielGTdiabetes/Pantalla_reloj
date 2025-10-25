@@ -21,10 +21,13 @@ Pantalla_reloj/
 - Endpoints: `/api/health`, `/api/config` (GET/PATCH), `/api/weather`, `/api/news`,
   `/api/astronomy`, `/api/calendar`, `/api/storm_mode` (GET/POST).
 - Persistencia de configuración en `/var/lib/pantalla/config.json` (se crea con
-  valores por defecto si no existe).
-- Cache JSON en `/var/lib/pantalla/cache/` y logs en `/var/log/pantalla/backend.log`.
-- Se ejecuta bajo `uvicorn main:app --host 127.0.0.1 --port 8081` dentro de un
-  entorno virtual local (`/opt/pantalla/backend/.venv`).
+  valores por defecto si no existe) y caché JSON en `/var/lib/pantalla/cache/`.
+- El lanzador `usr/local/bin/pantalla-backend-launch` garantiza que existan
+  `/var/log/pantalla` y `/var/lib/pantalla`, verifica que `import backend.main`
+  funcione (fallando con código 3 si no) y envía stdout/stderr a
+  `/tmp/backend-launch.log` antes de delegar en `uvicorn main:app --host
+  127.0.0.1 --port 8081` dentro de un entorno virtual local
+  (`/opt/pantalla/backend/.venv`).
 
 ### Frontend (React/Vite)
 - Dashboard por defecto en modo `full`: mapa principal con tarjetas de noticias y
@@ -39,25 +42,29 @@ Pantalla_reloj/
 
 ### Servicios systemd
 - `pantalla-xorg.service`: levanta `Xorg :0` sin display manager ni TCP.
-- `pantalla-openbox@dani.service`: sesión gráfica minimalista con autostart que rota
-  HDMI-1 y abre Epiphany en `http://127.0.0.1/` (Firefox solo si se instala con
-  `--with-firefox`).
-- `pantalla-dash-backend@dani.service`: ejecuta el backend FastAPI como usuario `dani`.
+- `pantalla-openbox@dani.service`: sesión gráfica minimalista con autostart que aplica
+  la geometría fija descrita arriba y prepara el entorno antes de lanzar el kiosk.
+- `pantalla-dash-backend@dani.service`: ejecuta el backend FastAPI como usuario `dani`
+  vía `pantalla-backend-launch`, que valida imports y crea las rutas necesarias.
+- `pantalla-kiosk@dani.service`: depende de Openbox y del backend para abrir Epiphany
+  en modo WebApp con el perfil correcto y sin navegadores confinados por snap.
 
 ## Arranque estable (boot hardening)
 
 - **Openbox autostart robusto** (`openbox/autostart`): deja trazas en
-  `/var/log/pantalla-reloj/openbox-autostart.log`, deshabilita DPMS, actualiza el
-  entorno de DBus y rota la pantalla antes de ceder el control al servicio del
-  navegador.
+  `/var/log/pantalla-reloj/openbox-autostart.log`, deshabilita DPMS, aplica la
+  geometría estable (`xrandr --output HDMI-1 --panning 0x0`,
+  `--mode 480x1920 --rotate left`, `--fb 1920x480`, `--pos 0x0`) antes de ceder
+  el control al servicio del navegador.
 - **Sesión X autenticada**: `pantalla-xorg.service` delega en
   `/usr/lib/pantalla-reloj/xorg-launch.sh`, que genera de forma determinista la
   cookie `MIT-MAGIC-COOKIE-1` en `/var/lib/pantalla-reloj/.Xauthority` (propiedad de
   `dani`) y la reutiliza para Openbox y el navegador.
-- **Lanzador de navegador resiliente**: `usr/local/bin/pantalla-kiosk` espera hasta 60
-  intentos a que el backend (`/api/health`) y el frontend (`/`) respondan con HTTP 200
-  antes de abrir Epiphany, utiliza `flock` para evitar ejecuciones simultáneas y
-  registra la actividad en `/var/log/pantalla-reloj/kiosk.log`.
+- **Lanzador de navegador resiliente**: `usr/local/bin/pantalla-kiosk` espera a que
+  el servidor X esté listo, valida el frontend y la API (`/healthz`) con `curl`,
+  rechaza binarios confinados por snap, fuerza un perfil válido de WebApp
+  (`org.gnome.Epiphany.WebApp_PantallaReloj`) y registra la actividad en
+  `/tmp/kiosk-launch.log` sin emplear `--incognito`.
 - **Orden de arranque garantizado**: `pantalla-openbox@dani.service` depende de
   `pantalla-xorg.service`, del backend y de Nginx (`After=`/`Wants=`) con reinicio
   automático (`Restart=always`). `pantalla-xorg.service` se engancha a
@@ -110,6 +117,9 @@ en un estado consistente. Durante la instalación:
   `pantalla-openbox@dani.service`, `pantalla-dash-backend@dani.service`).
 - Se asegura la rotación de la pantalla a horizontal y se lanza Epiphany en modo
   kiosk apuntando a `http://127.0.0.1` (Firefox solo si se solicitó).
+- Crea `/var/log/pantalla`, `/var/lib/pantalla` y `/var/lib/pantalla-reloj/state`,
+  además de enlazar `/var/lib/pantalla-reloj/.Xauthority` a `~/.Xauthority` para el
+  usuario `dani`.
 
 Al finalizar verás un resumen con el estado del backend, frontend, Nginx y los
 servicios systemd.
@@ -133,8 +143,46 @@ También desinstala las unidades systemd sin reactivar ningún display manager.
 - Verificar servicios gráficos: `sudo systemctl is-active pantalla-xorg.service`,
   `sudo systemctl is-active pantalla-openbox@dani.service`.
 - Verificar backend por systemd: `sudo systemctl status pantalla-dash-backend@dani.service`.
-- Logs del backend: `/var/log/pantalla/backend.log`.
+- Logs del backend: `/tmp/backend-launch.log`.
 - Errores de Nginx: `/var/log/nginx/pantalla-reloj.error.log`.
+
+### Runbook: pantalla negra + puntero
+
+1. Revisar servicios clave:
+   ```bash
+   sudo systemctl status pantalla-xorg.service pantalla-openbox@dani.service \
+     pantalla-dash-backend@dani.service pantalla-kiosk@dani.service
+   ```
+2. Si el backend falló, inspeccionar `/tmp/backend-launch.log`; para reiniciar:
+   ```bash
+   sudo systemctl restart pantalla-dash-backend@dani.service
+   curl -sS http://127.0.0.1:8081/healthz
+   ```
+3. Confirmar que se esté usando Epiphany (no Chromium snap y sin `--incognito`).
+   Revisar `/tmp/kiosk-launch.log` y relanzar con
+   `sudo systemctl restart pantalla-kiosk@dani.service` si fuera necesario.
+4. Si aparece el diálogo "La página no responde" y queda oculto:
+   ```bash
+   DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xdotool key Return
+   ```
+5. Diagnosticar ventanas activas:
+   ```bash
+   DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority wmctrl -lx
+   DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xprop -root _NET_CLIENT_LIST _NET_ACTIVE_WINDOW
+   ```
+6. Forzar modo fullscreen de Epiphany si quedó en segundo plano:
+   ```bash
+   wid=$(DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority wmctrl -lx | awk '/epiphany\.epiphany/ {print $1; exit}')
+   DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority wmctrl -ir "$wid" -b add,fullscreen,above
+   ```
+7. Reaplicar geometría conocida si reaparecen fondos negros o ventanas fuera de
+   foco:
+   ```bash
+   DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xrandr --output HDMI-1 --panning 0x0
+   DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xrandr --output HDMI-1 --mode 480x1920 --rotate left
+   DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xrandr --fb 1920x480
+   DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xrandr --output HDMI-1 --pos 0x0
+   ```
 
 ## Corrección de permisos
 
