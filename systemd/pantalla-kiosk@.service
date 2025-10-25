@@ -1,26 +1,22 @@
 [Unit]
-Description=Pantalla_reloj Kiosk (Epiphany) for user %i
-After=pantalla-openbox@%i.service nginx.service pantalla-dash-backend@%i.service
+Description=Pantalla_reloj Kiosk (Chromium) for user %i
+After=pantalla-openbox@%i.service
 Requires=pantalla-openbox@%i.service
-Wants=nginx.service pantalla-dash-backend@%i.service
-PartOf=pantalla-openbox@%i.service
 
 [Service]
 Type=simple
 User=%i
+Group=%i
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority
-Environment=XDG_RUNTIME_DIR=/run/user/%U
-Environment=WEBKIT_DISABLE_DMABUF_RENDERER=1
-Environment=WEBKIT_DISABLE_COMPOSITING_MODE=1
-Environment=GSK_RENDERER=cairo
-Environment=LIBGL_ALWAYS_SOFTWARE=1
-Environment=GTK_USE_PORTAL=0
-ExecStartPre=/usr/bin/test -r /var/lib/pantalla-reloj/.Xauthority
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+WorkingDirectory=/home/%i
+ExecStartPre=/bin/sh -c 'test -r "$XAUTHORITY" || { echo "kiosk@: missing $XAUTHORITY" >&2; exit 1; }'
+ExecStartPre=/bin/sh -c 'DISPLAY=:0 XAUTHORITY="$XAUTHORITY" /opt/pantalla/bin/wait-x.sh'
 ExecStart=/usr/local/bin/pantalla-kiosk http://127.0.0.1
 Restart=always
-RestartSec=3
-StartLimitIntervalSec=0
+RestartSec=2
+TimeoutStartSec=30
 
 [Install]
 WantedBy=graphical.target

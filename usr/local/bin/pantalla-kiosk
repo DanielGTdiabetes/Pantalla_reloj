@@ -1,51 +1,85 @@
 #!/usr/bin/env bash
-set -euo pipefail
-
-LOG_FILE=/var/log/pantalla-reloj/kiosk.log
-mkdir -p "$(dirname "$LOG_FILE")"
-exec >>"$LOG_FILE" 2>&1
-printf '\n[%s] pantalla-kiosk starting (pid=%s, url=%s)\n' "$(date -Is)" "$$" "${1:-http://127.0.0.1}"
+set -euxo pipefail
 
 URL="${1:-http://127.0.0.1}"
-PROFILE_DIR="${PANTALLA_KIOSK_PROFILE:-$HOME/.config/epiphany-pantalla}"
-mkdir -p "$PROFILE_DIR"
+LOG=/tmp/kiosk-launch.log
+ERR=/tmp/browser.err
 
-LOCK_FD=200
-LOCK_FILE=/tmp/pantalla-kiosk.lock
-exec {LOCK_FD}>"$LOCK_FILE"
-if ! flock -n "$LOCK_FD"; then
-  printf '[%s] waiting for kiosk lock %s\n' "$(date -Is)" "$LOCK_FILE"
-  flock "$LOCK_FD"
-fi
+: "${DISPLAY:=:0}"
+: "${XAUTHORITY:?XAUTHORITY must be set}"
+: "${XDG_RUNTIME_DIR:=/run/user/1000}"
 
-wait_for_url() {
-  local name="$1" url="$2" attempts="$3" delay="$4"
-  local i=1 status
-  while [ "$i" -le "$attempts" ]; do
-    status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 2 "$url" || printf '000')
-    if [ "$status" = "200" ]; then
-      printf '[%s] %s OK (%s) intento %s/%s\n' "$(date -Is)" "$name" "$url" "$i" "$attempts"
+STATE_DIR=/var/lib/pantalla-reloj/state
+PROFILE_DIR="$STATE_DIR/chromium-profile"
+LOCK="$STATE_DIR/kiosk.lock"
+
+OWNER="${KIOSK_USER:-${USER:-$(id -un)}}"
+
+install -d -m 0755 "$STATE_DIR" "$PROFILE_DIR"
+chown -R "$OWNER:$OWNER" "$STATE_DIR" "$PROFILE_DIR" || true
+
+{
+  echo "[kiosk] $(date -Is) start user=$(id -un) DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY URL=$URL"
+} >>"$LOG"
+
+# única instancia
+exec 9>"$LOCK"
+flock -n 9 || { echo "[kiosk] already running" >>"$LOG"; exit 0; }
+
+# esperar X usable
+DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" /opt/pantalla/bin/wait-x.sh >>"$LOG" 2>&1
+
+# esperar HTTP (front/api) sin bloquear el arranque si fallan
+wait_http() {
+  local name="$1" url="$2" max="$3"
+  for i in $(seq 1 "$max"); do
+    if curl -fsS -m 1 "$url" >/dev/null; then
+      echo "[kiosk] $name OK $url" >>"$LOG"
       return 0
     fi
-    printf '[%s] %s KO (%s -> %s) intento %s/%s\n' "$(date -Is)" "$name" "$url" "$status" "$i" "$attempts"
-    sleep "$delay"
-    i=$((i + 1))
+    echo "[kiosk] $name not ready $url ($i/$max)" >>"$LOG"
+    sleep 1
   done
   return 1
 }
+wait_http FRONT http://127.0.0.1 10 || true
+wait_http API   http://127.0.0.1:8081/healthz 10 || true
 
-if ! wait_for_url "backend" "http://127.0.0.1:8081/healthz" 60 1; then
-  printf '[%s] backend no respondió, continuando para permitir reconexión automática\n' "$(date -Is)"
-fi
+# detectar chromium
+CHROMIUM_BIN=""
+for c in chromium chromium-browser google-chrome-stable google-chrome; do
+  command -v "$c" >/dev/null 2>&1 && { CHROMIUM_BIN="$(command -v "$c")"; break; }
+done
+[ -n "$CHROMIUM_BIN" ] || { echo "[kiosk] chromium not found" >>"$LOG"; exit 1; }
 
-if ! wait_for_url "frontend" "$URL" 60 1; then
-  printf '[%s] frontend no respondió, lanzando navegador igualmente\n' "$(date -Is)"
-fi
+# evitar portals/diálogos
+export GTK_USE_PORTAL=0
+export XDG_DESKTOP_PORTAL_DIR=/nonexistent
 
-if pgrep -x epiphany >/dev/null 2>&1; then
-  printf '[%s] cerrando instancias anteriores de epiphany\n' "$(date -Is)"
-  pkill -TERM -x epiphany || true
-  sleep 2
-fi
+COMMON_FLAGS=(
+  --no-first-run
+  --no-default-browser-check
+  --kiosk
+  --app="$URL"
+  --new-window
+  --incognito
+  --disable-features=Translate,AutofillServerCommunication,Printing,MediaRouter,DownloadBubble,TabHoverCardImages
+  --disable-extensions
+  --disable-sync
+  --disable-session-crashed-bubble
+  --disable-infobars
+  --disable-logging
+  --enable-logging=stderr
+  --password-store=basic
+  --overscroll-history-navigation=0
+  --user-data-dir="$PROFILE_DIR"
+)
 
-exec /usr/bin/epiphany --new-window --application-mode --profile="${PROFILE_DIR}" "$URL"
+# matar instancias viejas del mismo profile (suave)
+pkill -TERM -f "$CHROMIUM_BIN.*--user-data-dir=$PROFILE_DIR" || true
+sleep 0.2
+
+# lanzar
+exec env -i DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
+  GTK_USE_PORTAL="$GTK_USE_PORTAL" XDG_DESKTOP_PORTAL_DIR="$XDG_DESKTOP_PORTAL_DIR" \
+  "$CHROMIUM_BIN" "${COMMON_FLAGS[@]}" >>"$LOG" 2>>"$ERR"
