@@ -60,6 +60,7 @@ log_ok()   { printf '[OK] %s\n' "$*"; }
 
 USER_NAME="dani"
 PANTALLA_PREFIX=/opt/pantalla-reloj
+SESSION_PREFIX=/opt/pantalla
 BACKEND_DEST="${PANTALLA_PREFIX}/backend"
 STATE_DIR=/var/lib/pantalla-reloj
 AUTH_FILE="${STATE_DIR}/.Xauthority"
@@ -183,6 +184,18 @@ if [[ $PURGE_ASSETS -eq 1 ]]; then
     log_info "Removing assets under $PANTALLA_PREFIX"
     find "$PANTALLA_PREFIX" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
   fi
+fi
+
+rm -f "$SESSION_PREFIX/bin/xorg-openbox-env.sh"
+rm -f "$SESSION_PREFIX/openbox/autostart"
+if [[ -d "$SESSION_PREFIX/bin" ]]; then
+  rmdir --ignore-fail-on-non-empty "$SESSION_PREFIX/bin" || true
+fi
+if [[ -d "$SESSION_PREFIX/openbox" ]]; then
+  rmdir --ignore-fail-on-non-empty "$SESSION_PREFIX/openbox" || true
+fi
+if [[ -d "$SESSION_PREFIX" ]]; then
+  rmdir --ignore-fail-on-non-empty "$SESSION_PREFIX" || true
 fi
 
 if [[ $PURGE_CONFIG -eq 1 ]]; then
