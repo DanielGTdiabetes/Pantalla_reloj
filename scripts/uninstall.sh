@@ -24,8 +24,9 @@ PR_STATE_DIR=/var/lib/pantalla-reloj
 PR_STATE_STATE_DIR="$PR_STATE_DIR/state"
 DISPLAY_MANAGER_MARK="$PR_STATE_STATE_DIR/display-manager.masked"
 
+systemctl unmask display-manager.service 2>/dev/null || true
+
 if [[ -f "$DISPLAY_MANAGER_MARK" ]]; then
-  systemctl unmask display-manager.service 2>/dev/null || true
   rm -f "$DISPLAY_MANAGER_MARK"
 fi
 
@@ -67,8 +68,17 @@ HTML
 fi
 chown -R www-data:www-data /var/www/html 2>/dev/null || true
 
+rm -f /usr/local/bin/kiosk-launch
+
+rm -f /etc/udev/rules.d/70-pantalla-render.rules
+udevadm control --reload 2>/dev/null || true
+udevadm trigger 2>/dev/null || true
+
 AUTO_FILE="/home/dani/.config/openbox/autostart"
-if [[ -f "$AUTO_FILE" ]] && grep -q "Pantalla_reloj" "$AUTO_FILE"; then
+AUTO_BACKUP="${AUTO_FILE}.pantalla-reloj.bak"
+if [[ -f "$AUTO_BACKUP" ]]; then
+  mv -f "$AUTO_BACKUP" "$AUTO_FILE"
+elif [[ -f "$AUTO_FILE" ]]; then
   rm -f "$AUTO_FILE"
 fi
 

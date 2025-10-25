@@ -1,7 +1,7 @@
 [Unit]
 Description=Pantalla_reloj Openbox session for %i (DISPLAY=:0)
-After=systemd-user-sessions.service getty@tty7.service
-After=pantalla-xorg.service pantalla-dash-backend@%i.service nginx.service
+After=systemd-user-sessions.service getty@tty7.service pantalla-xorg.service pantalla-dash-backend@%i.service nginx.service
+Requires=pantalla-xorg.service
 Wants=pantalla-dash-backend@%i.service nginx.service
 
 [Service]
@@ -15,7 +15,7 @@ TTYVHangup=yes
 TTYVTDisallocate=yes
 ExecStart=/usr/bin/openbox --startup "/usr/lib/x86_64-linux-gnu/openbox-autostart OPENBOX"
 Restart=always
-RestartSec=2
+RestartSec=2s
 
 [Install]
 WantedBy=graphical.target

@@ -9,9 +9,9 @@ User=%i
 WorkingDirectory=/opt/pantalla/backend
 Environment="PATH=/opt/pantalla/backend/.venv/bin"
 Environment="PYTHONPATH=/opt/pantalla"
-ExecStart=/opt/pantalla/backend/.venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8081 --proxy-headers
+ExecStart=/opt/pantalla/backend/.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8081 --proxy-headers --timeout-keep-alive 30
 Restart=always
-RestartSec=2
+RestartSec=1s
 StandardOutput=append:/var/log/pantalla/backend.log
 StandardError=append:/var/log/pantalla/backend.log
 
