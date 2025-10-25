@@ -26,9 +26,6 @@ else
   install -m 0600 -o "$USER_NAME" -g "$USER_NAME" /dev/null "$AUTH_FILE"
 fi
 
-chown "$USER_NAME:$USER_NAME" "$AUTH_FILE"
-chmod 0600 "$AUTH_FILE"
-
 COOKIE=$(mcookie)
 if [ -z "$COOKIE" ]; then
   log "No se pudo generar mcookie"
@@ -36,6 +33,15 @@ if [ -z "$COOKIE" ]; then
 fi
 
 xauth -f "$AUTH_FILE" add :0 . "$COOKIE"
+
+chown "$USER_NAME:$USER_NAME" "$AUTH_FILE"
+chmod 0600 "$AUTH_FILE"
+
+if auth_stat=$(stat -c '%U:%G %a' "$AUTH_FILE" 2>/dev/null); then
+  log "AUTH_FILE=$AUTH_FILE -> $auth_stat"
+else
+  log "No se pudo obtener stat de $AUTH_FILE"
+fi
 
 HOME_AUTH="/home/${USER_NAME}/.Xauthority"
 HOME_AUTH_BACKUP="${HOME_AUTH}.bak"
