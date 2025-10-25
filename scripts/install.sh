@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 NON_INTERACTIVE=0
 WITH_FIREFOX=0
+AUTO_REBOOT=0
 
 for arg in "$@"; do
   case "$arg" in
@@ -14,9 +15,12 @@ for arg in "$@"; do
     --with-firefox)
       WITH_FIREFOX=1
       ;;
+    --auto-reboot)
+      AUTO_REBOOT=1
+      ;;
     --help|-h)
       echo "Pantalla_reloj installer"
-      echo "Usage: sudo bash install.sh [--non-interactive] [--with-firefox]"
+      echo "Usage: sudo bash install.sh [--non-interactive] [--with-firefox] [--auto-reboot]"
       exit 0
       ;;
     *)
@@ -45,6 +49,10 @@ log_error() {
 
 USER_NAME="dani"
 USER_HOME="/home/${USER_NAME}"
+if ! id "$USER_NAME" >/dev/null 2>&1; then
+  log_error "El usuario ${USER_NAME} no existe en el sistema"
+  exit 1
+fi
 PANTALLA_ROOT=/opt/pantalla
 BACKEND_DEST="$PANTALLA_ROOT/backend"
 STATE_DIR=/var/lib/pantalla
@@ -57,10 +65,26 @@ FIREFOX_DEST=/opt/firefox
 SYSTEMD_DIR=/etc/systemd/system
 NGINX_SITE=/etc/nginx/sites-available/pantalla-reloj.conf
 NGINX_SITE_LINK=/etc/nginx/sites-enabled/pantalla-reloj.conf
+PR_STATE_DIR=/var/lib/pantalla-reloj
+PR_STATE_STATE_DIR="$PR_STATE_DIR/state"
+DISPLAY_MANAGER_MARK="$PR_STATE_STATE_DIR/display-manager.masked"
 
 log_info "Desactivando display managers en conflicto"
-systemctl disable --now lightdm gdm sddm display-manager.service 2>/dev/null || true
+systemctl disable --now lightdm gdm sddm 2>/dev/null || true
+install -d -m 0755 "$PR_STATE_STATE_DIR"
+DISPLAY_MANAGER_PRE_MASKED=0
+DISPLAY_MANAGER_STATUS="$(systemctl is-enabled display-manager.service 2>/dev/null || true)"
+if [[ "$DISPLAY_MANAGER_STATUS" == "masked" ]]; then
+  DISPLAY_MANAGER_PRE_MASKED=1
+fi
+systemctl disable --now display-manager.service 2>/dev/null || true
 systemctl mask display-manager.service 2>/dev/null || true
+if [[ $DISPLAY_MANAGER_PRE_MASKED -eq 0 ]]; then
+  DISPLAY_MANAGER_STATUS="$(systemctl is-enabled display-manager.service 2>/dev/null || true)"
+  if [[ "$DISPLAY_MANAGER_STATUS" == "masked" ]]; then
+    touch "$DISPLAY_MANAGER_MARK"
+  fi
+fi
 
 log_info "Actualizando lista de paquetes"
 apt-get update -y
@@ -175,6 +199,17 @@ log_info "Preparando estructura en $PANTALLA_ROOT y $STATE_DIR"
 install -d -m 0755 "$PANTALLA_ROOT" "$BACKEND_DEST"
 install -d -m 0755 "$STATE_DIR" "$STATE_CACHE_DIR"
 install -d -m 0755 "$LOG_DIR"
+install -d -m 0755 "$PR_STATE_STATE_DIR"
+
+GROUPS_CHANGED=0
+if ! id -nG "$USER_NAME" | grep -qw render; then
+  usermod -aG render "$USER_NAME"
+  GROUPS_CHANGED=1
+fi
+if ! id -nG "$USER_NAME" | grep -qw video; then
+  usermod -aG video "$USER_NAME"
+  GROUPS_CHANGED=1
+fi
 
 log_info "Sincronizando backend"
 rsync -a --delete --exclude '.venv/' "$REPO_ROOT/backend/" "$BACKEND_DEST/"
@@ -239,16 +274,22 @@ install -m 0644 "$REPO_ROOT/systemd/pantalla-openbox@.service" "$SYSTEMD_DIR/pan
 install -m 0644 "$REPO_ROOT/systemd/pantalla-dash-backend@.service" "$SYSTEMD_DIR/pantalla-dash-backend@.service"
 systemctl daemon-reload
 
-for svc in pantalla-xorg.service pantalla-openbox@${USER_NAME}.service pantalla-dash-backend@${USER_NAME}.service; do
+for svc in pantalla-xorg.service pantalla-dash-backend@${USER_NAME}.service pantalla-openbox@${USER_NAME}.service; do
   systemctl enable "$svc"
   systemctl restart "$svc"
 done
 
-log_info "Validando estado del backend"
-HEALTH_STATUS=""
-for attempt in $(seq 1 15); do
-  HEALTH_STATUS="$(curl -sS -o /tmp/api_health.json -w '%{http_code}' http://127.0.0.1:8081/api/health || true)"
-  if [[ "$HEALTH_STATUS" == "200" ]]; then
+log_info "Esperando healthchecks de Nginx y backend"
+ROOT_OK=0
+API_OK=0
+for attempt in $(seq 1 30); do
+  if [[ $ROOT_OK -eq 0 ]] && curl -sf http://127.0.0.1/ >/dev/null 2>&1; then
+    ROOT_OK=1
+  fi
+  if [[ $API_OK -eq 0 ]] && curl -sf http://127.0.0.1/api/health >/dev/null 2>&1; then
+    API_OK=1
+  fi
+  if [[ $ROOT_OK -eq 1 && $API_OK -eq 1 ]]; then
     break
   fi
   sleep 1
@@ -285,10 +326,17 @@ else
   fi
 fi
 
-if [[ "$HEALTH_STATUS" == "200" ]]; then
-  log_info "Backend: OK (/api/health 200)"
+if [[ $ROOT_OK -eq 1 ]]; then
+  log_info "Nginx: OK (http://127.0.0.1/ responde 200)"
 else
-  log_error "Backend: fallo health check (HTTP ${HEALTH_STATUS:-desconocido})"
+  log_error "Nginx: fallo health check (http://127.0.0.1/)"
+  FAILED=1
+fi
+
+if [[ $API_OK -eq 1 ]]; then
+  log_info "Backend: OK (/api/health 200 vía Nginx)"
+else
+  log_error "Backend: fallo health check (http://127.0.0.1/api/health)"
   FAILED=1
 fi
 
@@ -301,7 +349,6 @@ fi
 
 if systemctl is-active --quiet nginx; then
   NGINX_ACTIVE=1
-  log_info "Nginx: OK"
 else
   log_error "Nginx no está activo"
   FAILED=1
@@ -326,6 +373,23 @@ fi
 
 if [[ $FAILED -eq 0 ]]; then
   log_ok "Instalación completada"
+  if [[ $GROUPS_CHANGED -eq 1 ]]; then
+    echo "Se requiere reinicio para aplicar grupos"
+    if [[ $AUTO_REBOOT -eq 1 ]]; then
+      if [[ $NON_INTERACTIVE -eq 1 ]]; then
+        echo "reiniciar ahora"
+        systemctl reboot
+      else
+        read -r -p "¿Reiniciar ahora? [s/N]: " resp
+        if [[ "$resp" =~ ^[sS]$ ]]; then
+          echo "reiniciar ahora"
+          systemctl reboot
+        else
+          log_info "Reinicio omitido por el usuario"
+        fi
+      fi
+    fi
+  fi
   exit 0
 else
   log_error "Instalación con errores"
