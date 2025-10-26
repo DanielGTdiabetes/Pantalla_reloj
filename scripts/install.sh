@@ -43,7 +43,13 @@ log_warn() { printf '[WARN] %s\n' "$*"; }
 log_ok()   { printf '[OK] %s\n' "$*"; }
 log_error(){ printf '[ERROR] %s\n' "$*" >&2; }
 
-USER_NAME="dani"
+USERNAME="${USERNAME:-${SUDO_USER:-$USER}}"
+if [[ -z "${USERNAME:-}" ]]; then
+  log_error "Unable to determine target user"
+  exit 1
+fi
+
+USER_NAME="$USERNAME"
 if ! id "$USER_NAME" >/dev/null 2>&1; then
   log_error "User '$USER_NAME' must exist before running the installer"
   exit 1
@@ -73,7 +79,7 @@ PROFILE_DIR_DST="${STATE_RUNTIME}/${APP_ID}"
 
 install -d -m 0755 "$REPO_ROOT/home/dani/.local/share/applications" >/dev/null 2>&1 || true
 
-install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$USER_HOME"
+install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$USER_HOME"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" /run/user/1000
 install -d -m 0755 "$PANTALLA_PREFIX" "$SESSION_PREFIX"
 install -d -m 0755 "$SESSION_PREFIX/bin" "$SESSION_PREFIX/openbox"
@@ -198,7 +204,9 @@ if [[ ! -f "${STATE_DIR}/.Xauthority" ]]; then
   install -m 0600 -o "$USER_NAME" -g "$USER_NAME" /dev/null "${STATE_DIR}/.Xauthority"
 fi
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$USER_HOME"
-install -m 0600 -o "$USER_NAME" -g "$USER_NAME" "${STATE_DIR}/.Xauthority" "$USER_HOME/.Xauthority"
+if [[ -f "${STATE_DIR}/.Xauthority" ]]; then
+  install -m 0600 -o "$USER_NAME" -g "$USER_NAME" "${STATE_DIR}/.Xauthority" "$USER_HOME/.Xauthority"
+fi
 
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/xorg-openbox-env.sh" "$SESSION_PREFIX/bin/xorg-openbox-env.sh"
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/wait-x.sh" "$SESSION_PREFIX/bin/wait-x.sh"
@@ -207,6 +215,9 @@ install -m 0755 "$REPO_ROOT/opt/pantalla/bin/pantalla-kiosk-sanitize.sh" "$SESSI
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/pantalla-kiosk-watchdog.sh" "$SESSION_PREFIX/bin/pantalla-kiosk-watchdog.sh"
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/pantalla-portal-launch.sh" "$SESSION_PREFIX/bin/pantalla-portal-launch.sh"
 install -m 0755 "$REPO_ROOT/opt/pantalla/openbox/autostart" "$SESSION_PREFIX/openbox/autostart"
+if ! grep -q 'xsetroot -solid black' "$SESSION_PREFIX/openbox/autostart" 2>/dev/null; then
+  echo 'xsetroot -solid black' >>"$SESSION_PREFIX/openbox/autostart"
+fi
 
 install -D -m 0755 "$KIOSK_BIN_SRC" "$KIOSK_BIN_DST"
 install -D -m 0755 "$CHROMIUM_KIOSK_BIN_SRC" "$CHROMIUM_KIOSK_BIN_DST"
@@ -438,8 +449,37 @@ install -D -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk@.service.d/10-sanitize-rol
 install -D -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk-watchdog@.service.d/10-rollback.conf" \
   /etc/systemd/system/pantalla-kiosk-watchdog@.service.d/10-rollback.conf
 
-install -D -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk-chromium@dani.service.d/override.conf" \
-  "/etc/systemd/system/pantalla-kiosk-chromium@${USER_NAME}.service.d/override.conf"
+DROPIN_DIR="/etc/systemd/system/pantalla-kiosk-chromium@${USER_NAME}.service.d"
+install -d -m 0755 "$DROPIN_DIR"
+cat >"${DROPIN_DIR}/override.conf" <<'EOF'
+[Service]
+Environment=
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/%i/.Xauthority
+Environment=GTK_USE_PORTAL=0
+Environment=GIO_USE_PORTALS=0
+Environment=GDK_BACKEND=x11
+Environment=CHROMIUM_SCALE=0.84
+
+ExecStart=
+ExecStart=/bin/sh -lc "chromium-browser \
+  --class=pantalla-kiosk \
+  --kiosk --start-fullscreen \
+  --app=http://127.0.0.1 \
+  --no-first-run --no-default-browser-check \
+  --disable-translate --disable-infobars \
+  --disable-session-crashed-bubble --noerrdialogs \
+  --disable-features=CalculateNativeWinOcclusion,InfiniteSessionRestore,Translate,HardwareMediaKeyHandling \
+  --disable-renderer-backgrounding --disable-background-timer-throttling --disable-backgrounding-occluded-windows \
+  --hide-scrollbars --overscroll-history-navigation=0 \
+  --password-store=basic \
+  --test-type \
+  --ozone-platform=x11 \
+  --disable-gpu \
+  --force-device-scale-factor=${CHROMIUM_SCALE} \
+  --disk-cache-dir=/var/lib/pantalla-reloj/cache/chromium \
+  --user-data-dir=/var/lib/pantalla-reloj/state/chromium"
+EOF
 
 if [[ $units_changed -eq 1 ]]; then
   log_info "Systemd units updated"
@@ -450,11 +490,18 @@ fi
 log_info "Reloading systemd daemon"
 systemctl daemon-reload
 
+log_info "Disabling portal service"
+systemctl disable --now "pantalla-portal@${USER_NAME}.service" 2>/dev/null || true
+systemctl mask "pantalla-portal@${USER_NAME}.service" 2>/dev/null || true
+
 log_info "Enabling services"
-systemctl enable pantalla-xorg.service || true
-systemctl enable pantalla-dash-backend@${USER_NAME}.service || true
-systemctl enable pantalla-openbox@${USER_NAME}.service || true
-systemctl enable pantalla-kiosk-chromium@${USER_NAME}.service || true
+systemctl enable --now pantalla-xorg.service || true
+systemctl enable --now pantalla-dash-backend@${USER_NAME}.service || true
+systemctl enable --now "pantalla-openbox@${USER_NAME}.service" || true
+systemctl enable --now "pantalla-kiosk-chromium@${USER_NAME}.service" || true
+
+log_info "Ensuring watchdog disabled"
+systemctl disable --now "pantalla-kiosk-watchdog@${USER_NAME}.timer" "pantalla-kiosk-watchdog@${USER_NAME}.service" 2>/dev/null || true
 
 log_info "Restarting Pantalla services"
 systemctl restart pantalla-xorg.service
