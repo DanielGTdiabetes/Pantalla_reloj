@@ -36,10 +36,28 @@
     "last_triggered": null
   },
   "ui": {
-    "layout": "full",
-    "side_panel": "right",
-    "show_config": false,
-    "enable_demo": false,
-    "carousel": false
+    "rotation": {
+      "enabled": true,
+      "duration_sec": 10,
+      "panels": ["news", "ephemerides", "moon", "forecast", "calendar"]
+    },
+    "fixed": {
+      "clock": { "format": "HH:mm" },
+      "temperature": { "unit": "C" }
+    },
+    "map": {
+      "provider": "osm",
+      "center": [0, 0],
+      "zoom": 2,
+      "interactive": false,
+      "controls": false
+    },
+    "text": {
+      "scroll": {
+        "news": { "enabled": true, "direction": "left", "speed": "normal", "gap_px": 48 },
+        "ephemerides": { "enabled": true, "direction": "up", "speed": "slow", "gap_px": 24 },
+        "forecast": { "enabled": true, "direction": "up", "speed": "slow", "gap_px": 24 }
+      }
+    }
   }
 }
