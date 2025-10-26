@@ -11,6 +11,11 @@ Environment=XDG_RUNTIME_DIR=/run/user/%U
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority
 EnvironmentFile=-/var/lib/pantalla-reloj/state/session.env
+ExecStartPre=/usr/bin/test -x /usr/libexec/xdg-desktop-portal-gtk
+ExecStartPre=/usr/bin/test -x /usr/libexec/xdg-desktop-portal
+ExecStartPre=/bin/sh -c 'test -d /var/log/pantalla && test -w /var/log/pantalla'
+ExecStartPre=/bin/sh -c 'pkill -u %U -f "xdg-desktop-portal" >/dev/null 2>&1 || true'
+ExecStartPre=/bin/sh -c 'pkill -u %U -f "xdg-desktop-portal-gtk" >/dev/null 2>&1 || true'
 ExecStart=/opt/pantalla/bin/pantalla-portal-launch.sh
 Restart=on-failure
 RestartSec=2

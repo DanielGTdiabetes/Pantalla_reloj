@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Pantalla Reloj
+Type=Application
+NoDisplay=true
+Terminal=false
+DBusActivatable=true
+X-GNOME-Application-ID=org.gnome.Epiphany.WebApp_PantallaReloj
+StartupWMClass=org.gnome.Epiphany.WebApp_PantallaReloj
+Exec=/usr/bin/epiphany-browser --application-mode --profile=/var/lib/pantalla-reloj/state/org.gnome.Epiphany.WebApp_PantallaReloj --new-window http://127.0.0.1

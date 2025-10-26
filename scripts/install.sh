@@ -212,6 +212,9 @@ install -D -m 0644 "$REPO_ROOT/usr/local/share/applications/${APP_ID}.desktop" \
 install -D -o "$USER_NAME" -g "$USER_NAME" -m 0644 \
   "$REPO_ROOT/home/dani/.local/share/applications/${APP_ID}.desktop" \
   "$USER_HOME/.local/share/applications/${APP_ID}.desktop"
+install -D -o "$USER_NAME" -g "$USER_NAME" -m 0644 \
+  "$REPO_ROOT/home/dani/.local/share/xdg-desktop-portal/applications/${APP_ID}.desktop" \
+  "$USER_HOME/.local/share/xdg-desktop-portal/applications/${APP_ID}.desktop"
 SUMMARY+=("[install] desktop file ${APP_ID} instalado")
 install -D -m 0755 "$REPO_ROOT/usr/local/bin/pantalla-kiosk-verify" /usr/local/bin/pantalla-kiosk-verify
 SUMMARY+=("[install] verificador de kiosk instalado en /usr/local/bin/pantalla-kiosk-verify")
@@ -219,6 +222,7 @@ SUMMARY+=("[install] verificador de kiosk instalado en /usr/local/bin/pantalla-k
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database /usr/local/share/applications || true
   runuser -u "$USER_NAME" -- update-desktop-database "$USER_HOME/.local/share/applications" || true
+  runuser -u "$USER_NAME" -- update-desktop-database "$USER_HOME/.local/share/xdg-desktop-portal/applications" || true
   SUMMARY+=("[install] update-desktop-database ejecutado")
 else
   SUMMARY+=("[install] update-desktop-database no disponible")
