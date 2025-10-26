@@ -63,8 +63,7 @@ export const GeoScopeMap = ({ className, center, zoom = 1.6 }: GeoScopeMapProps)
           zoom,
           bearing: 0,
           pitch: 0,
-          interactive: false,
-          attributionControl: false
+          interactive: false
         });
 
         mapRef.current = map;
