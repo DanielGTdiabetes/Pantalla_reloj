@@ -826,6 +826,38 @@ main {
   color: var(--success);
 }
 
+.config-status-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  font-size: 0.95rem;
+  border: 1px solid transparent;
+}
+
+.config-status-bar__label {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.config-status-bar__hint {
+  font-weight: 500;
+}
+
+.config-status-bar.is-online {
+  background: rgba(70, 199, 94, 0.1);
+  border-color: rgba(70, 199, 94, 0.35);
+  color: var(--success);
+}
+
+.config-status-bar.is-offline {
+  background: rgba(224, 71, 71, 0.1);
+  border-color: rgba(224, 71, 71, 0.4);
+  color: var(--danger);
+}
+
 @media (max-width: 1200px) {
   .dashboard-alt {
     grid-template-columns: 1fr;

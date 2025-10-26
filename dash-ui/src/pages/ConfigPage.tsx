@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { UI_DEFAULTS } from "../config/defaults";
-import { useConfig } from "../context/ConfigContext";
+import { UI_DEFAULTS, withConfigDefaults } from "../config/defaults";
+import { apiGet, apiPing, apiPut } from "../lib/api";
+import { parseErr } from "../lib/errors";
+import { useConfig } from "../lib/useConfig";
 import type { AppConfig, UIScrollSettings } from "../types/config";
 
 const booleanOptions = [
@@ -54,16 +56,56 @@ const tabs: { id: ConfigTab; label: string }[] = [
 
 export const ConfigPage: React.FC = () => {
   const navigate = useNavigate();
-  const { config, save, loading, error } = useConfig();
+  const { data, loading, error, reload } = useConfig();
 
-  const [form, setForm] = useState<AppConfig>(config);
+  const [form, setForm] = useState<AppConfig>(withConfigDefaults());
   const [activeTab, setActiveTab] = useState<ConfigTab>("wifi");
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+  const [apiStatus, setApiStatus] = useState<"online" | "offline">("offline");
 
   useEffect(() => {
-    setForm(config);
-  }, [config]);
+    if (data) {
+      setForm(data);
+    }
+  }, [data]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const checkApi = async () => {
+      const ok = await apiPing();
+      if (cancelled) {
+        return;
+      }
+      setApiStatus(ok ? "online" : "offline");
+      if (!ok) {
+        setBanner({ kind: "error", text: "No se pudo contactar con el backend. Revisa el proxy /api." });
+        return;
+      }
+      try {
+        const cfg = await apiGet<AppConfig>("/config");
+        if (!cancelled) {
+          setForm(withConfigDefaults(cfg));
+          setBanner(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          const message = parseErr(err);
+          setBanner({ kind: "error", text: message });
+          if (message.includes("No se pudo contactar")) {
+            setApiStatus("offline");
+          }
+        }
+      }
+    };
+
+    void checkApi();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const update = useCallback(<K extends keyof AppConfig>(section: K, value: AppConfig[K]) => {
     setForm((prev) => ({ ...prev, [section]: value }));
@@ -102,11 +144,16 @@ export const ConfigPage: React.FC = () => {
     setSaving(true);
     setBanner(null);
     try {
-      await save(form);
+      await apiPut("/config", form);
+      await reload();
+      setApiStatus("online");
       setBanner({ kind: "success", text: "Configuración guardada correctamente" });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "No se pudo guardar la configuración";
+      const message = parseErr(err);
       setBanner({ kind: "error", text: message });
+      if (message.includes("No se pudo contactar")) {
+        setApiStatus("offline");
+      }
     } finally {
       setSaving(false);
     }
@@ -562,6 +609,14 @@ export const ConfigPage: React.FC = () => {
   return (
     <div className="config-page">
       <form className="config-page__container" onSubmit={handleSubmit}>
+        <div className={`config-status-bar${apiStatus === "online" ? " is-online" : " is-offline"}`}>
+          <span className="config-status-bar__label">API: {apiStatus === "online" ? "ONLINE" : "OFFLINE"}</span>
+          <span className="config-status-bar__hint">
+            {apiStatus === "online"
+              ? "Conectado al backend."
+              : "No se pudo contactar con el backend. Revisa el proxy /api."}
+          </span>
+        </div>
         <header className="config-page__header">
           <h1>Configuración del sistema</h1>
           <p>Gestiona la pantalla desde una red segura. Todas las opciones residen en esta consola.</p>
