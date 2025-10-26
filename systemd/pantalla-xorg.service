@@ -5,8 +5,9 @@ After=systemd-user-sessions.service
 [Service]
 Type=simple
 User=root
+ExecStartPre=/usr/bin/install -d -m 0755 -o root -g root /var/log/pantalla
 ExecStartPre=/usr/lib/pantalla-reloj/xorg-launch.sh --prepare-only
-ExecStart=/usr/lib/xorg/Xorg :0 -verbose 3 -nolisten tcp -background none vt7 -auth /var/lib/pantalla-reloj/.Xauthority
+ExecStart=/usr/lib/xorg/Xorg :0 -verbose 3 -nolisten tcp -background none vt7 -auth /var/lib/pantalla-reloj/.Xauthority -logfile /var/log/pantalla/xorg.log
 Restart=on-failure
 
 [Install]
