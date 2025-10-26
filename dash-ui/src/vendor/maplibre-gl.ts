@@ -10,10 +10,7 @@ const ensureStylesheet = () => {
     return;
   }
 
-  const existingLink = document.querySelector<HTMLLinkElement>(
-    'link[data-maplibre-stylesheet="true"]'
-  );
-
+  const existingLink = document.querySelector<HTMLLinkElement>('link[data-maplibre-stylesheet="true"]');
   if (existingLink) {
     return;
   }
@@ -25,9 +22,9 @@ const ensureStylesheet = () => {
   document.head.appendChild(link);
 };
 
-export const loadMapLibre = (): Promise<MapLibreGL> => {
+const loadMapLibre = (): Promise<MapLibreGL> => {
   if (typeof window === "undefined") {
-    return Promise.reject(new Error("MapLibre can only be loaded in a browser environment"));
+    return Promise.reject(new Error("MapLibre solo está disponible en navegadores"));
   }
 
   if (window.maplibregl) {
@@ -49,11 +46,11 @@ export const loadMapLibre = (): Promise<MapLibreGL> => {
           return;
         }
 
-        reject(new Error("MapLibre script loaded but window.maplibregl is undefined"));
+        reject(new Error("MapLibre se cargó pero no está disponible en ventana"));
       });
 
       script.addEventListener("error", () => {
-        reject(new Error("No se pudo cargar la librería de mapas (MapLibre)"));
+        reject(new Error("No se pudo cargar la librería de MapLibre"));
       });
 
       document.head.appendChild(script);
@@ -63,6 +60,4 @@ export const loadMapLibre = (): Promise<MapLibreGL> => {
   return loaderPromise;
 };
 
-export const resetMapLibreLoaderForTests = () => {
-  loaderPromise = null;
-};
+export default loadMapLibre;

@@ -79,14 +79,6 @@ export const RotatingCard = ({ cards }: RotatingCardProps): JSX.Element => {
       <div className={`rotating-card__content${isTransitioning ? " rotating-card__content--hidden" : ""}`}>
         {CurrentCard ? <CurrentCard /> : null}
       </div>
-      <div className="rotating-card__indicators" aria-hidden="true">
-        {fallbackCards.map((card, index) => (
-          <span
-            key={`${card.id}-${index}`}
-            className={`rotating-card__indicator${index === activeIndex ? " is-active" : ""}`}
-          />
-        ))}
-      </div>
     </div>
   );
 };

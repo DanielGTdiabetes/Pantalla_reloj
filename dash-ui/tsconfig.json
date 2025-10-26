@@ -11,6 +11,10 @@
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
     "moduleResolution": "Node",
+    "baseUrl": "./",
+    "paths": {
+      "maplibre-gl": ["src/vendor/maplibre-gl"]
+    },
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,

@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-import { UI_DEFAULTS } from "../config/defaults";
 import { GeoScopeMap } from "../components/GeoScopeMap";
-import { RotatingCard, type RotatingCardItem } from "../components/RotatingCard";
+import { OverlayRotator } from "../components/OverlayRotator";
 import { TimeCard } from "../components/dashboard/cards/TimeCard";
 import { WeatherCard } from "../components/dashboard/cards/WeatherCard";
 import { CalendarCard } from "../components/dashboard/cards/CalendarCard";
@@ -15,6 +14,7 @@ import { useConfig } from "../context/ConfigContext";
 import { api } from "../services/api";
 import { ensurePlainText, sanitizeRichText } from "../utils/sanitize";
 import { dayjs } from "../utils/dayjs";
+import type { RotatingCardItem } from "../components/RotatingCard";
 
 type DashboardPayload = {
   weather?: Record<string, unknown>;
@@ -140,7 +140,7 @@ export const DashboardPage: React.FC = () => {
   const news = (payload.news ?? {}) as Record<string, unknown>;
   const calendar = (payload.calendar ?? {}) as Record<string, unknown>;
 
-  const targetUnit = config.ui.fixed.temperature.unit ?? UI_DEFAULTS.fixed.temperature.unit;
+  const targetUnit = config.ui.fixed.temperature.unit || "C";
   const rawTemperature = typeof weather.temperature === "number" ? weather.temperature : null;
   const rawUnit = ensurePlainText(weather.unit) || "C";
   const temperature = formatTemperature(rawTemperature, rawUnit, targetUnit);
@@ -157,8 +157,6 @@ export const DashboardPage: React.FC = () => {
       ? (weather.wind as number)
       : null;
   const condition = sanitizeRichText(weather.summary) || sanitizeRichText(weather.condition) || null;
-  const location = ensurePlainText(weather.location) || "Ubicación desconocida";
-
   const sunrise = sanitizeRichText(astronomy.sunrise) || null;
   const sunset = sanitizeRichText(astronomy.sunset) || null;
   const moonPhase = sanitizeRichText(astronomy.moon_phase) || null;
@@ -272,66 +270,18 @@ export const DashboardPage: React.FC = () => {
     ]
   );
 
-  const mapChips = [
-    {
-      id: "weather",
-      label: location,
-      value: `${temperature.value}${temperature.unit}`,
-      hint: condition ?? ""
-    },
-    {
-      id: "sun",
-      label: "Amanecer",
-      value: sunrise ?? "--:--",
-      hint: sunset ? `Atardecer ${sunset}` : ""
-    },
-    {
-      id: "moon",
-      label: "Fase lunar",
-      value: moonPhase ?? "Sin datos",
-      hint: moonIllumination !== null ? `${Math.round(moonIllumination)}% iluminación` : ""
-    }
-  ];
-
   const lastUpdatedLabel = lastUpdatedAt
     ? dayjs(lastUpdatedAt).tz(config.display.timezone).format("HH:mm:ss")
     : null;
 
+  const overlayStatus = lastUpdatedLabel ? `Actualizado ${lastUpdatedLabel}` : "datos no disponibles";
+
   return (
     <main className="dashboard-alt" aria-busy={loading}>
       <section className="dashboard-alt__map" aria-label="Mapa global">
-        <GeoScopeMap
-          center={config.ui.map?.center ?? UI_DEFAULTS.map.center}
-          zoom={config.ui.map?.zoom ?? UI_DEFAULTS.map.zoom}
-        />
-        <div className="dashboard-alt__map-header">
-          <div className="map-chip map-chip--title">
-            <span className="map-chip__label">Pantalla reloj</span>
-            <span className="map-chip__value">{location}</span>
-            <span className="map-chip__hint">Zona horaria: {config.display.timezone}</span>
-          </div>
-          <div className="dashboard-alt__chips">
-            {mapChips.map((chip) => (
-              <article key={chip.id} className="map-chip">
-                <span className="map-chip__label">{chip.label}</span>
-                <span className="map-chip__value">{chip.value}</span>
-                {chip.hint ? <span className="map-chip__hint">{chip.hint}</span> : null}
-              </article>
-            ))}
-          </div>
-        </div>
-        <div className="dashboard-alt__map-footer">
-          <span>{lastUpdatedLabel ? `Actualizado ${lastUpdatedLabel}` : "Sincronizando datos…"}</span>
-        </div>
+        <GeoScopeMap />
+        <OverlayRotator cards={rotatingCards} status={overlayStatus} isLoading={loading && !lastUpdatedAt} />
       </section>
-
-      <aside className="dashboard-alt__sidebar" aria-label="Panel de información">
-        <RotatingCard cards={rotatingCards} />
-        <div className="dashboard-alt__sidebar-footer">
-          <span>Paneles activos: {rotatingCards.length}</span>
-          <span>{lastUpdatedLabel ? `Última actualización ${lastUpdatedLabel}` : "Esperando datos…"}</span>
-        </div>
-      </aside>
     </main>
   );
 };

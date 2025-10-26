@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { MapInstance, StyleSpecification } from "../types/maplibre-gl";
-import { loadMapLibre } from "../utils/loadMapLibre";
+
+import loadMapLibre, { type MapInstance, type StyleSpecification } from "maplibre-gl";
 
 type GeoScopeMapProps = {
   className?: string;
