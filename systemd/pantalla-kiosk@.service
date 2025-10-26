@@ -1,3 +1,4 @@
+# Deprecated in favor of pantalla-kiosk-chromium@.service
 [Unit]
 Description=Pantalla_reloj Kiosk (Epiphany) for user %i
 After=pantalla-openbox@%i.service pantalla-dash-backend@%i.service

@@ -2,8 +2,8 @@
 
 Sistema reproducible para mini-PC Ubuntu 24.04 LTS con pantalla HDMI 8.8" orientada
 verticalmente. La solución combina **FastAPI** (backend), **React + Vite**
-(frontend) y un stack gráfico mínimo **Xorg + Openbox + Epiphany en modo kiosk**
-(Firefox queda como opción adicional).
+(frontend) y un stack gráfico mínimo **Xorg + Openbox + Chromium en modo kiosk**
+(Epiphany queda como opción secundaria).
 
 ## Arquitectura
 
@@ -46,27 +46,24 @@ Pantalla_reloj/
   la geometría fija descrita arriba y prepara el entorno antes de lanzar el kiosk.
 - `pantalla-dash-backend@dani.service`: ejecuta el backend FastAPI como usuario `dani`
   vía `pantalla-backend-launch`, que valida imports y crea las rutas necesarias.
-- `pantalla-kiosk@dani.service`: depende de Openbox y del backend para abrir Epiphany
-  en modo WebApp con el perfil correcto y sin navegadores confinados por snap.
-- `pantalla-kiosk-chromium@dani.service`: alternativa basada en Chromium con
-  geometría 480×1920 rotada a la izquierda y sin portals.
+- `pantalla-kiosk@dani.service`: (obsoleto) mantiene la integración con Epiphany para
+  instalaciones que aún no migran.
+- `pantalla-kiosk-chromium@dani.service`: navegador recomendado basado en Chromium
+  (paquete deb o snap) con rotación estable 480×1920, DPMS deshabilitado y sin portals.
 
 ## Arranque estable (boot hardening)
 
 - **Openbox autostart robusto** (`openbox/autostart`): deja trazas en
-  `/var/log/pantalla-reloj/openbox-autostart.log`, deshabilita DPMS, aplica la
-  geometría estable (`xrandr --output HDMI-1 --panning 0x0`,
-  `--mode 480x1920 --rotate left`, `--fb 1920x480`, `--pos 0x0`) antes de ceder
-  el control al servicio del navegador.
+  `/var/log/pantalla-reloj/openbox-autostart.log`, deshabilita DPMS y entrega el
+  control al servicio Chromium para que aplique la geometría conocida.
 - **Sesión X autenticada**: `pantalla-xorg.service` delega en
   `/usr/lib/pantalla-reloj/xorg-launch.sh`, que genera de forma determinista la
-  cookie `MIT-MAGIC-COOKIE-1` en `/var/lib/pantalla-reloj/.Xauthority` (propiedad de
-  `dani`) y la reutiliza para Openbox y el navegador.
-- **Lanzador de navegador resiliente**: `usr/local/bin/pantalla-kiosk` espera a que
-  el servidor X esté listo, valida el frontend y la API (`/healthz`) con `curl`,
-  rechaza binarios confinados por snap, fuerza un perfil válido de WebApp
-  (`org.gnome.Epiphany.WebApp_PantallaReloj`) y registra la actividad en
-  `/tmp/kiosk-launch.log` sin emplear `--incognito`.
+  cookie `MIT-MAGIC-COOKIE-1` en `/home/dani/.Xauthority` y la reutiliza para
+  Openbox y el navegador.
+- **Lanzador de navegador resiliente**: `pantalla-kiosk-chromium@dani.service`
+  arranca `chromium-browser` con `--ozone-platform=x11`, `--disable-gpu` y un
+  `user-data-dir` persistente en `/var/lib/pantalla-reloj/state/chromium`, tras
+  ejecutar únicamente la secuencia mínima y estable de `xrandr` para 480×1920.
 - **Orden de arranque garantizado**: `pantalla-openbox@dani.service` depende de
   `pantalla-xorg.service`, del backend y de Nginx (`After=`/`Wants=`) con reinicio
   automático (`Restart=always`). `pantalla-xorg.service` se engancha a
@@ -81,6 +78,42 @@ Pantalla_reloj/
   (registrándolo en `/var/lib/pantalla-reloj/state`) y el desinstalador solo lo
   deshace si lo enmascaramos nosotros, evitando interferencias con sesiones gráficas
   ajenas.
+
+## Kiosk (Chromium) — Opción A (Recomendada)
+
+Habilita los tres servicios gráficos y el navegador Chromium con:
+
+```bash
+sudo systemctl enable --now pantalla-xorg.service
+sudo systemctl enable --now pantalla-openbox@dani.service
+sudo systemctl enable --now pantalla-kiosk-chromium@dani.service
+```
+
+### Troubleshooting específico de Chromium
+
+- **BadMatch (RANDR RRSetCrtcConfig)**: asegúrate de ejecutar únicamente:
+  ```bash
+  xrandr --fb 1920x1920
+  xrandr --output HDMI-1 --mode 480x1920 --primary --pos 0x0 --rotate left
+  ```
+  Elimina cualquier `--fb 480x1920` previo.
+- **"Authorization required" / "Missing X server or $DISPLAY"**: confirma que
+  exista `/home/dani/.Xauthority` (no debe ser un symlink), con permisos
+  `-rw------- dani:dani`.
+- **Verificación rápida de modos**:
+  ```bash
+  DISPLAY=:0 xrandr --query
+  ```
+  Debe mostrar `HDMI-1 connected 480x1920+0+0 left (normal left inverted right x axis y axis)`.
+
+### Diagnóstico rápido
+
+```bash
+sudo systemctl status pantalla-xorg.service pantalla-openbox@dani.service \
+  pantalla-kiosk-chromium@dani.service
+DISPLAY=:0 xrandr --query
+DISPLAY=:0 wmctrl -lx
+```
 
 ## Instalación
 
@@ -107,9 +140,10 @@ en un estado consistente. Durante la instalación:
 
 - Se validan e instalan las dependencias APT requeridas.
 - Se habilita Corepack con `npm` actualizado sin usar `apt install npm`.
-- Se instala Epiphany como navegador kiosk por defecto (Firefox se descarga solo
-  si se ejecuta con `--with-firefox`). Para migrar a Chromium en modo kiosk, usa
-  `scripts/setup_chromium_kiosk.sh` tras la instalación.
+- Se instala Epiphany como navegador histórico (Firefox se descarga solo si se
+  ejecuta con `--with-firefox`). Para operar en modo soportado, habilita
+  `pantalla-kiosk-chromium@dani.service` tras la instalación (ver sección
+  "Kiosk (Chromium) — Opción A").
 - Se prepara el backend (venv + `requirements.txt`) sirviendo en
   `http://127.0.0.1:8081` y se crea `/var/lib/pantalla/config.json` con el layout
   `full`, panel derecho y overlay oculto.
@@ -121,8 +155,8 @@ en un estado consistente. Durante la instalación:
 - Se asegura la rotación de la pantalla a horizontal y se lanza Epiphany en modo
   kiosk apuntando a `http://127.0.0.1` (Firefox solo si se solicitó).
 - Crea `/var/log/pantalla`, `/var/lib/pantalla` y `/var/lib/pantalla-reloj/state`,
-  además de enlazar `/var/lib/pantalla-reloj/.Xauthority` a `~/.Xauthority` para el
-  usuario `dani`.
+  asegurando que la cookie `~/.Xauthority` exista con permisos correctos para
+  `dani`.
 
 Al finalizar verás un resumen con el estado del backend, frontend, Nginx y los
 servicios systemd.
@@ -154,37 +188,33 @@ También desinstala las unidades systemd sin reactivar ningún display manager.
 1. Revisar servicios clave:
    ```bash
    sudo systemctl status pantalla-xorg.service pantalla-openbox@dani.service \
-     pantalla-dash-backend@dani.service pantalla-kiosk@dani.service
+     pantalla-dash-backend@dani.service pantalla-kiosk-chromium@dani.service
    ```
 2. Si el backend falló, inspeccionar `/tmp/backend-launch.log`; para reiniciar:
    ```bash
    sudo systemctl restart pantalla-dash-backend@dani.service
    curl -sS http://127.0.0.1:8081/healthz
    ```
-3. Confirmar que se esté usando Epiphany (no Chromium snap y sin `--incognito`).
-   Revisar `/tmp/kiosk-launch.log` y relanzar con
-   `sudo systemctl restart pantalla-kiosk@dani.service` si fuera necesario.
-4. Si aparece el diálogo "La página no responde" y queda oculto:
+3. Validar que Chromium tenga acceso a DISPLAY=:0:
    ```bash
-   DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xdotool key Return
+   sudo -u dani env DISPLAY=:0 XAUTHORITY=/home/dani/.Xauthority \
+     chromium-browser --version
    ```
-5. Diagnosticar ventanas activas:
+   Si falla con "Authorization required", revisa permisos de `~/.Xauthority`.
+4. Diagnosticar geometría activa y ventanas:
    ```bash
-   DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority wmctrl -lx
-   DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xprop -root _NET_CLIENT_LIST _NET_ACTIVE_WINDOW
+   DISPLAY=:0 XAUTHORITY=/home/dani/.Xauthority xrandr --query
+   DISPLAY=:0 XAUTHORITY=/home/dani/.Xauthority wmctrl -lx
    ```
-6. Forzar modo fullscreen de Epiphany si quedó en segundo plano:
+5. Reaplicar la secuencia mínima de `xrandr` si aparece `BadMatch`:
    ```bash
-   wid=$(DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority wmctrl -lx | awk '/epiphany\.epiphany/ {print $1; exit}')
-   DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority wmctrl -ir "$wid" -b add,fullscreen,above
+   DISPLAY=:0 XAUTHORITY=/home/dani/.Xauthority xrandr --fb 1920x1920
+   DISPLAY=:0 XAUTHORITY=/home/dani/.Xauthority \
+     xrandr --output HDMI-1 --mode 480x1920 --primary --pos 0x0 --rotate left
    ```
-7. Reaplicar geometría conocida si reaparecen fondos negros o ventanas fuera de
-   foco:
+6. Si persiste la pantalla negra, revisa el journal del servicio Chromium:
    ```bash
-   DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xrandr --output HDMI-1 --panning 0x0
-   DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xrandr --output HDMI-1 --mode 480x1920 --rotate left
-   DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xrandr --fb 1920x480
-   DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xrandr --output HDMI-1 --pos 0x0
+   journalctl -u pantalla-kiosk-chromium@dani.service -n 120 --no-pager -l
    ```
 
 ## Corrección de permisos
@@ -210,7 +240,9 @@ El script reinstala el navegador desde Mozilla (opcional con
 `--with-firefox`), restablece `~/.mozilla/pantalla-kiosk`, `.Xauthority`,
 copias actualizadas de los servicios `pantalla-*.service` y reactiva
 automáticamente `pantalla-xorg`, `pantalla-openbox@dani`,
-`pantalla-dash-backend@dani` y `pantalla-kiosk@dani`.
+`pantalla-dash-backend@dani` y `pantalla-kiosk@dani`. Tras su ejecución,
+habilita manualmente `pantalla-kiosk-chromium@dani.service` si deseas volver al
+modo recomendado con Chromium.
 
 ## Desarrollo local
 
