@@ -24,6 +24,49 @@ type DashboardPayload = {
 };
 
 const REFRESH_INTERVAL_MS = 60_000;
+const FALLBACK_PANEL_ORDER = [
+  "time",
+  "weather",
+  "calendar",
+  "moon",
+  "harvest",
+  "saints",
+  "news",
+  "ephemerides"
+];
+const SUPPORTED_PANELS = new Set(FALLBACK_PANEL_ORDER);
+const PANEL_ALIAS_MAP: Record<string, string> = {
+  clock: "time",
+  time: "time",
+  weather: "weather",
+  forecast: "weather",
+  calendar: "calendar",
+  events: "calendar",
+  moon: "moon",
+  harvest: "harvest",
+  saints: "saints",
+  news: "news",
+  ephemerides: "ephemerides"
+};
+const MODULE_ALIASES: Record<string, string[]> = {
+  time: ["time", "clock"],
+  weather: ["weather", "forecast"],
+  calendar: ["calendar", "events"],
+  moon: ["moon"],
+  harvest: ["harvest"],
+  saints: ["saints"],
+  news: ["news"],
+  ephemerides: ["ephemerides"]
+};
+
+const normalizePanelId = (panel: string | null | undefined): string | null => {
+  if (!panel) {
+    return null;
+  }
+  const normalized = panel.trim().toLowerCase();
+  const canonical = PANEL_ALIAS_MAP[normalized] ?? normalized;
+  return SUPPORTED_PANELS.has(canonical) ? canonical : null;
+};
 
 const temperatureToUnit = (value: number, from: string, to: string): number => {
   const normalize = (unit: string) => unit.replace("°", "").trim().toUpperCase();
@@ -194,85 +237,142 @@ export const DashboardPage: React.FC = () => {
     return [...fromSaints, ...fromNamedays];
   }, [calendar.saints, calendar.namedays]);
 
+  const rotationSettings = config.ui.rotation ?? UI_DEFAULTS.rotation;
+  const moduleSettings = Array.isArray(config.display.modules) ? config.display.modules : [];
+
+  const panelOrder = useMemo(() => {
+    const rawPanels = rotationSettings.panels?.length
+      ? rotationSettings.panels
+      : moduleSettings.map((module) => module.name);
+
+    const normalizedPanels = rawPanels
+      .map((panel) => normalizePanelId(panel))
+      .filter((panel): panel is string => Boolean(panel));
+
+    const seen = new Set<string>();
+    const ordered = normalizedPanels.filter((panel) => {
+      if (seen.has(panel)) {
+        return false;
+      }
+      seen.add(panel);
+      return true;
+    });
+
+    if (ordered.length > 0) {
+      return ordered;
+    }
+
+    return FALLBACK_PANEL_ORDER;
+  }, [moduleSettings, rotationSettings.panels]);
+
+  const baseDurationMs = Math.max(
+    rotationSettings.duration_sec ?? UI_DEFAULTS.rotation.duration_sec,
+    3
+  ) * 1000;
+
   const mapboxToken = (config.ui.mapbox_token ?? "").trim() || null;
 
-  const rotatingCards = useMemo<RotatingCardItem[]>(
-    () => [
-      {
-        id: "time",
-        duration: 8000,
-        render: () => <TimeCard timezone={config.display.timezone} />
-      },
-      {
-        id: "weather",
-        duration: 10000,
-        render: () => (
-          <WeatherCard
-            temperatureLabel={`${temperature.value}${temperature.unit}`}
-            feelsLikeLabel={feelsLikeValue ? `${feelsLikeValue.value}${feelsLikeValue.unit}` : null}
-            condition={condition}
-            humidity={humidity}
-            wind={wind}
-            unit={temperature.unit}
-          />
-        )
-      },
-      {
-        id: "calendar",
-        duration: 10000,
-        render: () => <CalendarCard events={calendarEvents} timezone={config.display.timezone} />
-      },
-      {
-        id: "moon",
-        duration: 10000,
-        render: () => <MoonCard moonPhase={moonPhase} illumination={moonIllumination} />
-      },
-      {
-        id: "harvest",
-        duration: 12000,
-        render: () => <HarvestCard items={harvestItems} />
-      },
-      {
-        id: "saints",
-        duration: 12000,
-        render: () => <SaintsCard saints={saintsEntries} />
-      },
-      {
-        id: "news",
-        duration: 20000,
-        render: () => <NewsCard items={newsItems} />
-      },
-      {
-        id: "ephemerides",
-        duration: 20000,
-        render: () => (
-          <EphemeridesCard
-            sunrise={sunrise}
-            sunset={sunset}
-            moonPhase={moonPhase}
-            events={ephemeridesEvents}
-          />
-        )
+  const rotatingCards = useMemo<RotatingCardItem[]>(() => {
+    const modulesMap = new Map<string, (typeof moduleSettings)[number]>();
+    moduleSettings.forEach((module) => {
+      modulesMap.set(module.name, module);
+    });
+
+    const resolveModule = (panelId: string) => {
+      const aliases = MODULE_ALIASES[panelId] ?? [panelId];
+      for (const alias of aliases) {
+        const moduleConfig = modulesMap.get(alias);
+        if (moduleConfig) {
+          return moduleConfig;
+        }
       }
-    ], [
-      calendarEvents,
-      condition,
-      config.display.timezone,
-      ephemeridesEvents,
-      feelsLikeValue,
-      harvestItems,
-      humidity,
-      moonIllumination,
-      moonPhase,
-      newsItems,
-      saintsEntries,
-      sunrise,
-      sunset,
-      temperature.unit,
-      temperature.value,
-      wind
-    ]
-  );
+      return null;
+    };
+
+    const createCard = (
+      panelId: (typeof FALLBACK_PANEL_ORDER)[number],
+      render: () => JSX.Element
+    ): RotatingCardItem | null => {
+      const moduleConfig = resolveModule(panelId);
+      if (moduleConfig && moduleConfig.enabled === false) {
+        return null;
+      }
+
+      const duration =
+        moduleConfig && Number.isFinite(moduleConfig.duration_seconds) && moduleConfig.duration_seconds > 0
+          ? moduleConfig.duration_seconds * 1000
+          : baseDurationMs;
+
+      return {
+        id: panelId,
+        duration,
+        render
+      };
+    };
+
+    const availableCards: Record<string, RotatingCardItem | null> = {
+      time: createCard("time", () => <TimeCard timezone={config.display.timezone} />),
+      weather: createCard("weather", () => (
+        <WeatherCard
+          temperatureLabel={`${temperature.value}${temperature.unit}`}
+          feelsLikeLabel={feelsLikeValue ? `${feelsLikeValue.value}${feelsLikeValue.unit}` : null}
+          condition={condition}
+          humidity={humidity}
+          wind={wind}
+          unit={temperature.unit}
+        />
+      )),
+      calendar: createCard("calendar", () => (
+        <CalendarCard events={calendarEvents} timezone={config.display.timezone} />
+      )),
+      moon: createCard("moon", () => (
+        <MoonCard moonPhase={moonPhase} illumination={moonIllumination} />
+      )),
+      harvest: createCard("harvest", () => <HarvestCard items={harvestItems} />),
+      saints: createCard("saints", () => <SaintsCard saints={saintsEntries} />),
+      news: createCard("news", () => <NewsCard items={newsItems} />),
+      ephemerides: createCard("ephemerides", () => (
+        <EphemeridesCard
+          sunrise={sunrise}
+          sunset={sunset}
+          moonPhase={moonPhase}
+          events={ephemeridesEvents}
+        />
+      ))
+    };
+
+    const cards = panelOrder
+      .map((panelId) => availableCards[panelId] ?? null)
+      .filter((card): card is RotatingCardItem => Boolean(card));
+
+    if (cards.length > 0) {
+      return cards;
+    }
+
+    return FALLBACK_PANEL_ORDER.map((panelId) => availableCards[panelId] ?? null).filter(
+      (card): card is RotatingCardItem => Boolean(card)
+    );
+  }, [
+    baseDurationMs,
+    calendarEvents,
+    condition,
+    config.display.timezone,
+    ephemeridesEvents,
+    feelsLikeValue,
+    harvestItems,
+    humidity,
+    moduleSettings,
+    moonIllumination,
+    moonPhase,
+    newsItems,
+    panelOrder,
+    saintsEntries,
+    sunrise,
+    sunset,
+    temperature.unit,
+    temperature.value,
+    wind
+  ]);
 
   const mapChips = [
     {
@@ -326,7 +426,7 @@ export const DashboardPage: React.FC = () => {
       </section>
 
       <aside className="dashboard-alt__sidebar" aria-label="Panel de información">
-        <RotatingCard cards={rotatingCards} />
+        <RotatingCard cards={rotatingCards} rotationEnabled={rotationSettings.enabled !== false} />
         <div className="dashboard-alt__sidebar-footer">
           <span>Paneles activos: {rotatingCards.length}</span>
           <span>{lastUpdatedLabel ? `Última actualización ${lastUpdatedLabel}` : "Esperando datos…"}</span>

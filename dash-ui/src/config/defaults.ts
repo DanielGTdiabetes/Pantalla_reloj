@@ -7,12 +7,14 @@ import type {
 } from "../types/config";
 
 const createDefaultModules = (): DisplayModule[] => [
-  { name: "clock", enabled: true, duration_seconds: 20 },
-  { name: "weather", enabled: true, duration_seconds: 20 },
-  { name: "moon", enabled: true, duration_seconds: 20 },
+  { name: "time", enabled: true, duration_seconds: 8 },
+  { name: "weather", enabled: true, duration_seconds: 10 },
+  { name: "calendar", enabled: true, duration_seconds: 12 },
+  { name: "moon", enabled: true, duration_seconds: 10 },
+  { name: "harvest", enabled: true, duration_seconds: 12 },
+  { name: "saints", enabled: true, duration_seconds: 12 },
   { name: "news", enabled: true, duration_seconds: 20 },
-  { name: "events", enabled: true, duration_seconds: 20 },
-  { name: "calendar", enabled: true, duration_seconds: 20 }
+  { name: "ephemerides", enabled: true, duration_seconds: 20 }
 ];
 
 const createScrollDefaults = (): Record<string, UIScrollSettings> => ({
@@ -24,8 +26,8 @@ const createScrollDefaults = (): Record<string, UIScrollSettings> => ({
 export const UI_DEFAULTS: UISettings = {
   rotation: {
     enabled: true,
-    duration_sec: 10,
-    panels: ["news", "ephemerides", "moon", "forecast", "calendar"]
+    duration_sec: 12,
+    panels: ["time", "weather", "calendar", "moon", "harvest", "saints", "news", "ephemerides"]
   },
   fixed: {
     clock: { format: "HH:mm" },

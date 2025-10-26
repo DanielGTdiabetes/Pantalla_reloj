@@ -8,12 +8,13 @@ export type RotatingCardItem = {
 
 type RotatingCardProps = {
   cards: RotatingCardItem[];
+  rotationEnabled?: boolean;
 };
 
 const MIN_DURATION = 4000;
 const TRANSITION_DURATION = 400;
 
-export const RotatingCard = ({ cards }: RotatingCardProps): JSX.Element => {
+export const RotatingCard = ({ cards, rotationEnabled = true }: RotatingCardProps): JSX.Element => {
   const fallbackCards = useMemo<RotatingCardItem[]>(() => {
     if (cards.length > 0) {
       return cards;
@@ -38,10 +39,10 @@ export const RotatingCard = ({ cards }: RotatingCardProps): JSX.Element => {
 
   useEffect(() => {
     setActiveIndex(0);
-  }, [fallbackCards]);
+  }, [fallbackCards, rotationEnabled]);
 
   useEffect(() => {
-    if (fallbackCards.length === 0) {
+    if (fallbackCards.length === 0 || !rotationEnabled || fallbackCards.length <= 1) {
       return undefined;
     }
 
@@ -62,7 +63,7 @@ export const RotatingCard = ({ cards }: RotatingCardProps): JSX.Element => {
         timeoutRef.current = null;
       }
     };
-  }, [activeIndex, fallbackCards]);
+  }, [activeIndex, fallbackCards, rotationEnabled]);
 
   useEffect(() => {
     return () => {
