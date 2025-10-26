@@ -59,25 +59,32 @@ export default function GeoScopeMap() {
       );
     }
 
-    map.on("load", fitWorld);
+    function onStyleReady(cb: () => void) {
+      if (map.isStyleLoaded()) cb();
+      else map.once("load", cb);
+    }
 
-    const registry = new LayerRegistry(map);
-    registryRef.current = registry;
-    registry.add(new WeatherLayer({ enabled: false }));
-    registry.add(new CyclonesLayer({ enabled: false }));
-    registry.add(new ShipsLayer({ enabled: false }));
-    registry.add(new AircraftLayer({ enabled: false }));
-    registry.add(new LightningLayer({ enabled: true }));
-
-    roRef.current = new ResizeObserver(() => {
-      map.resize();
+    onStyleReady(() => {
       fitWorld();
+
+      const registry = new LayerRegistry(map);
+      registryRef.current = registry;
+      registry.add(new WeatherLayer({ enabled: false }));
+      registry.add(new CyclonesLayer({ enabled: false }));
+      registry.add(new ShipsLayer({ enabled: false }));
+      registry.add(new AircraftLayer({ enabled: false }));
+      registry.add(new LightningLayer({ enabled: true }));
+
+      roRef.current = new ResizeObserver(() => {
+        map.resize();
+        fitWorld();
+      });
+      roRef.current.observe(hostRef.current!);
     });
-    roRef.current.observe(hostRef.current);
 
     return () => {
       roRef.current?.disconnect();
-      registry.destroy();
+      registryRef.current?.destroy();
       map.remove();
     };
   }, []);
