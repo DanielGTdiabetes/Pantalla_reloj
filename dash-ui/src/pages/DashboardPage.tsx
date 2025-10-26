@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import { UI_DEFAULTS } from "../config/defaults";
-import { WorldMap } from "../components/WorldMap";
+import { GeoScopeMap } from "../components/GeoScopeMap";
 import { RotatingCard, type RotatingCardItem } from "../components/RotatingCard";
 import { TimeCard } from "../components/dashboard/cards/TimeCard";
 import { WeatherCard } from "../components/dashboard/cards/WeatherCard";
@@ -194,8 +194,6 @@ export const DashboardPage: React.FC = () => {
     return [...fromSaints, ...fromNamedays];
   }, [calendar.saints, calendar.namedays]);
 
-  const mapboxToken = (config.ui.mapbox_token ?? "").trim() || null;
-
   const rotatingCards = useMemo<RotatingCardItem[]>(
     () => [
       {
@@ -302,7 +300,10 @@ export const DashboardPage: React.FC = () => {
   return (
     <main className="dashboard-alt" aria-busy={loading}>
       <section className="dashboard-alt__map" aria-label="Mapa global">
-        <WorldMap token={mapboxToken} />
+        <GeoScopeMap
+          center={config.ui.map?.center ?? UI_DEFAULTS.map.center}
+          zoom={config.ui.map?.zoom ?? UI_DEFAULTS.map.zoom}
+        />
         <div className="dashboard-alt__map-header">
           <div className="map-chip map-chip--title">
             <span className="map-chip__label">Pantalla reloj</span>
@@ -321,7 +322,6 @@ export const DashboardPage: React.FC = () => {
         </div>
         <div className="dashboard-alt__map-footer">
           <span>{lastUpdatedLabel ? `Actualizado ${lastUpdatedLabel}` : "Sincronizando datos…"}</span>
-          {!mapboxToken ? <span>Configura tu token de Mapbox en /config</span> : null}
         </div>
       </section>
 

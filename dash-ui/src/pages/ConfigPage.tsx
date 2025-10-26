@@ -282,14 +282,6 @@ export const ConfigPage: React.FC = () => {
           />
         </div>
         <div className="config-field">
-          <label>Mapbox token</label>
-          <input
-            type="text"
-            value={form.ui.mapbox_token ?? ""}
-            onChange={(event) => update("ui", { ...form.ui, mapbox_token: event.target.value })}
-          />
-        </div>
-        <div className="config-field">
           <label>Centro (latitud)</label>
           <input
             type="number"
