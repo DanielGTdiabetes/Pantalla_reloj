@@ -1,5 +1,5 @@
 [Unit]
-Description=Pantalla_reloj XDG desktop portal for user %i
+Description=Pantalla_reloj XDG desktop portal for user %i (optional)
 After=pantalla-openbox@%i.service
 
 [Service]
@@ -7,7 +7,7 @@ User=%i
 PermissionsStartOnly=yes
 Environment=XDG_RUNTIME_DIR=/run/user/%U
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority
+Environment=XAUTHORITY=/home/%i/.Xauthority
 EnvironmentFile=-/var/lib/pantalla-reloj/state/session.env
 ExecStartPre=/usr/bin/test -x /usr/libexec/xdg-desktop-portal-gtk
 ExecStartPre=/usr/bin/test -x /usr/libexec/xdg-desktop-portal
@@ -18,5 +18,4 @@ ExecStart=/opt/pantalla/bin/pantalla-portal-launch.sh
 Restart=on-failure
 RestartSec=2
 
-[Install]
-WantedBy=multi-user.target
+# No [Install] section: the unit is optional and disabled by default

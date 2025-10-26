@@ -2,15 +2,14 @@
 set -euo pipefail
 
 export DISPLAY="${DISPLAY:-:0}"
-export XAUTHORITY="${XAUTHORITY:-/var/lib/pantalla-reloj/.Xauthority}"
+export XAUTHORITY="${XAUTHORITY:-${HOME:-/home/dani}/.Xauthority}"
+
+# El navegador se lanza desde systemd (pantalla-kiosk-chromium@); no iniciar nada aquí.
 
 STATE_DIR=/var/lib/pantalla-reloj/state
 SESSION_FILE="${STATE_DIR}/session.env"
 LOG_DIR=/var/log/pantalla
 SESSION_LOG="${LOG_DIR}/session.env.log"
-GEOMETRY_LOG="${LOG_DIR}/geometry.log"
-GEOMETRY_SCRIPT=/opt/pantalla/bin/pantalla-geometry.sh
-WAIT_X=/opt/pantalla/bin/wait-x.sh
 
 mkdir -p "$LOG_DIR" >/dev/null 2>&1 || true
 install -d -m 0700 "$STATE_DIR" >/dev/null 2>&1 || true
@@ -83,7 +82,7 @@ ensure_dbus
 propagate_environment
 write_session_state
 
-log_session "geometry-hook-start"
+log_session "xset-hook-start"
 if command -v xset >/dev/null 2>&1; then
   if DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xset -dpms >/dev/null 2>&1; then
     log_session "xset-dpms-off"
@@ -104,11 +103,6 @@ else
   log_session "xset-missing"
 fi
 
-if [[ -x "$GEOMETRY_SCRIPT" ]]; then
-  DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" "$GEOMETRY_SCRIPT" --wait >/dev/null 2>&1 || true
-else
-  log_session "geometry-script-missing path=$GEOMETRY_SCRIPT"
-fi
-log_session "geometry-hook-finished"
+log_session "xset-hook-finished"
 
 sleep 0.5 2>/dev/null || sleep 1
