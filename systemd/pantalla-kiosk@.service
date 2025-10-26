@@ -26,4 +26,5 @@ ExecStartPost=/usr/local/bin/pantalla-kiosk-verify
 Restart=on-failure
 RestartSec=2
 
-# No [Install] section on purpose: this unit is not enabled by default.
+[Install]
+WantedBy=multi-user.target
