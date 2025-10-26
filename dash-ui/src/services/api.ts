@@ -75,7 +75,7 @@ const request = async <T>(path: string, options: RequestOptions = {}): Promise<T
 export const api = {
   fetchHealth: () => request<{ status: string; uptime_seconds: number; timestamp: string }>("/health"),
   fetchConfig: () => request<AppConfig>("/config"),
-  updateConfig: (payload: AppConfig) => request<AppConfig>("/config", { method: "PUT", body: payload }),
+  updateConfig: (payload: AppConfig) => request<AppConfig>("/config", { method: "PATCH", body: payload }),
   fetchWeather: () => request<Record<string, unknown>>("/weather"),
   fetchNews: () => request<Record<string, unknown>>("/news"),
   fetchAstronomy: () => request<Record<string, unknown>>("/astronomy"),
