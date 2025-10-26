@@ -1,103 +1,121 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+import { useEffect, useRef } from "react";
 
-const VOYAGER_TILE_URL = "https://a.basemaps.cartocdn.com/rastertiles/voyager/0/0/0.png";
-const OSM_TILE_URL = "https://tile.openstreetmap.org/0/0/0.png";
-const FALLBACK_TIMEOUT = 8000;
+const VOYAGER = {
+  version: 8,
+  sources: {
+    carto: {
+      type: "raster" as const,
+      tiles: [
+        "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+        "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+        "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+      ],
+      tileSize: 256,
+      attribution:
+        '© OpenStreetMap contributors, © <a href="https://carto.com/attributions">CARTO</a>',
+    },
+  },
+  layers: [{ id: "carto", type: "raster" as const, source: "carto" }],
+};
 
-function GeoScopeMap(): JSX.Element {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+const OSM_FALLBACK = {
+  version: 8,
+  sources: {
+    osm: {
+      type: "raster" as const,
+      tiles: [
+        "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      ],
+      tileSize: 256,
+      attribution: "© OpenStreetMap contributors",
+    },
+  },
+  layers: [{ id: "osm", type: "raster" as const, source: "osm" }],
+};
+
+export default function GeoScopeMap(): JSX.Element {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
-  const fallbackTimerRef = useRef<number | null>(null);
-  const [paddingRight, setPaddingRight] = useState(0);
-  const [imageSrc, setImageSrc] = useState<string>(VOYAGER_TILE_URL);
-
-  const clearFallbackTimer = useCallback(() => {
-    if (fallbackTimerRef.current !== null) {
-      window.clearTimeout(fallbackTimerRef.current);
-      fallbackTimerRef.current = null;
-    }
-  }, []);
-
-  const updatePadding = useCallback(() => {
-    const aside = document.querySelector("aside");
-    const padRight = aside instanceof HTMLElement ? aside.offsetWidth : 0;
-    setPaddingRight(padRight);
-  }, []);
 
   useEffect(() => {
+    if (!hostRef.current) {
+      return;
+    }
+
+    let fallbackApplied = false;
+    const map = new maplibregl.Map({
+      container: hostRef.current,
+      style: VOYAGER,
+      center: [0, 20],
+      zoom: 2.2,
+      bearing: 0,
+      pitch: 0,
+      interactive: false,
+      renderWorldCopies: true,
+      preserveDrawingBuffer: false,
+    });
+
+    mapRef.current = map;
+
+    map.on("error", () => {
+      if (!fallbackApplied) {
+        fallbackApplied = true;
+        map.setStyle(OSM_FALLBACK);
+      }
+    });
+
+    const updatePadding = () => {
+      const aside = document.querySelector("aside");
+      const padRight = aside instanceof HTMLElement ? aside.offsetWidth : 0;
+      map.setPadding({ top: 0, left: 0, bottom: 0, right: padRight });
+    };
+
     updatePadding();
+
+    map.once("load", () => {
+      const canvas = map.getCanvas();
+      canvas.style.transformOrigin = "center center";
+      canvas.style.transform = "scaleX(1.8)";
+    });
 
     const handleResize = () => {
       updatePadding();
+      map.resize();
+
+      const ratio = window.innerWidth / window.innerHeight;
+      if (ratio > 3.5) {
+        map.setZoom(2.3);
+      } else {
+        map.setZoom(2.0);
+      }
     };
 
-    if (typeof ResizeObserver !== "undefined" && containerRef.current) {
+    if (typeof ResizeObserver !== "undefined" && hostRef.current) {
       resizeObserverRef.current = new ResizeObserver(handleResize);
-      resizeObserverRef.current.observe(containerRef.current);
+      resizeObserverRef.current.observe(hostRef.current);
     } else {
       window.addEventListener("resize", handleResize);
     }
 
     return () => {
-      if (resizeObserverRef.current) {
-        resizeObserverRef.current.disconnect();
-        resizeObserverRef.current = null;
-      } else {
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
+      if (typeof ResizeObserver === "undefined") {
         window.removeEventListener("resize", handleResize);
       }
+      map.remove();
+      mapRef.current = null;
     };
-  }, [updatePadding]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const preload = new Image();
-    preload.onload = () => {
-      if (!cancelled) {
-        setImageSrc(VOYAGER_TILE_URL);
-        clearFallbackTimer();
-      }
-    };
-    preload.onerror = () => {
-      if (!cancelled) {
-        setImageSrc(OSM_TILE_URL);
-        clearFallbackTimer();
-      }
-    };
-    preload.src = VOYAGER_TILE_URL;
-
-    fallbackTimerRef.current = window.setTimeout(() => {
-      if (!cancelled) {
-        setImageSrc(OSM_TILE_URL);
-      }
-    }, FALLBACK_TIMEOUT);
-
-    return () => {
-      cancelled = true;
-      clearFallbackTimer();
-    };
-  }, [clearFallbackTimer]);
-
-  const handleImageError = useCallback(() => {
-    setImageSrc((current) => (current === OSM_TILE_URL ? current : OSM_TILE_URL));
-    clearFallbackTimer();
-  }, [clearFallbackTimer]);
+  }, []);
 
   return (
-    <div className="absolute inset-0">
-      <div
-        ref={containerRef}
-        className="relative h-full w-full overflow-hidden"
-        style={{ paddingRight: `${paddingRight}px` }}
-      >
-        <img
-          src={imageSrc}
-          alt="Mapa mundial"
-          className="pointer-events-none h-full w-full select-none object-cover brightness-[0.75]"
-          onError={handleImageError}
-          draggable={false}
-        />
-      </div>
+    <div className="absolute inset-0 overflow-hidden">
+      <div ref={hostRef} className="w-full h-full" />
       <div className="pointer-events-none absolute bottom-1 left-2 text-[10px] text-white/50">
         © OpenStreetMap contributors · © CARTO
       </div>
@@ -106,4 +124,3 @@ function GeoScopeMap(): JSX.Element {
 }
 
 export { GeoScopeMap };
-export default GeoScopeMap;
