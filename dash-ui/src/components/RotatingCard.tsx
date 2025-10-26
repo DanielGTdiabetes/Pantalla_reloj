@@ -18,11 +18,23 @@ export type RotatingCardProps = {
   panels: RotatingPanel[];
   rotationEnabled: boolean;
   durationSeconds: number;
+  containerClassName?: string;
+  panelClassName?: string;
+  titleClassName?: string;
+  bodyClassName?: string;
 };
 
 const MIN_DURATION = 4;
 
-export const RotatingCard: React.FC<RotatingCardProps> = ({ panels, rotationEnabled, durationSeconds }) => {
+export const RotatingCard: React.FC<RotatingCardProps> = ({
+  panels,
+  rotationEnabled,
+  durationSeconds,
+  containerClassName,
+  panelClassName,
+  titleClassName,
+  bodyClassName
+}) => {
   const safePanels = useMemo<RotatingPanel[]>(() => {
     if (panels.length > 0) {
       return panels;
@@ -56,20 +68,33 @@ export const RotatingCard: React.FC<RotatingCardProps> = ({ panels, rotationEnab
     return () => window.clearInterval(interval);
   }, [rotationEnabled, durationSeconds, safePanels.length]);
 
+  const containerClasses = useMemo(
+    () => ["rotating-card", containerClassName].filter(Boolean).join(" "),
+    [containerClassName]
+  );
+  const titleClasses = useMemo(
+    () => ["rotating-card__title", titleClassName].filter(Boolean).join(" "),
+    [titleClassName]
+  );
+  const bodyClasses = useMemo(
+    () => ["rotating-card__body", bodyClassName].filter(Boolean).join(" "),
+    [bodyClassName]
+  );
+
   return (
-    <div className="rotating-card" role="region" aria-live="polite">
+    <div className={containerClasses} role="region" aria-live="polite">
       {safePanels.map((panel, index) => {
         const isActive = index === activeIndex;
         return (
           <article
             key={`${panel.id}-${index}`}
-            className={`rotating-card__panel${isActive ? " is-active" : ""}`}
+            className={["rotating-card__panel", panelClassName, isActive ? "is-active" : ""].filter(Boolean).join(" ")}
             aria-hidden={isActive ? undefined : true}
           >
             <header className="rotating-card__header">
-              <h2>{panel.title}</h2>
+              <h2 className={titleClasses}>{panel.title}</h2>
             </header>
-            <div className="rotating-card__body">
+            <div className={bodyClasses}>
               <AutoScrollText
                 content={panel.content}
                 direction={panel.direction}

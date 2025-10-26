@@ -37,9 +37,9 @@ const MAP_CONTAINER_ID = "map";
 const MAP_STYLE_URL = "http://127.0.0.1:8081/static/style.json";
 const MAPLIBRE_SCRIPT = "https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js";
 const MAPLIBRE_STYLES = "https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css";
-const SOUTH_WEST: [number, number] = [-170, -60];
-const NORTH_EAST: [number, number] = [170, 75];
-const PORTRAIT_PADDING: MapPadding = { top: 40, bottom: 40, left: 8, right: 8 };
+const SOUTH_WEST: [number, number] = [-178, -58];
+const NORTH_EAST: [number, number] = [178, 75];
+const WORLD_PADDING: MapPadding = { top: 28, bottom: 28, left: 4, right: 4 };
 
 let mapLibrePromise: Promise<MapLibreModule> | null = null;
 
@@ -95,13 +95,14 @@ export const WorldMap = ({ className }: WorldMapProps): JSX.Element => {
     let cancelled = false;
     let mapInstance: MapInstance | null = null;
     let resizeListener: (() => void) | undefined;
+    let pendingResizeTimeout: number | undefined;
 
     const fitWorldBounds = () => {
       if (cancelled) {
         return;
       }
       mapInstance?.fitBounds([SOUTH_WEST, NORTH_EAST], {
-        padding: PORTRAIT_PADDING,
+        padding: WORLD_PADDING,
         duration: 0,
       });
     };
@@ -123,10 +124,24 @@ export const WorldMap = ({ className }: WorldMapProps): JSX.Element => {
           dragRotate: false,
         });
 
-        if (mapInstance.isStyleLoaded()) {
+        const handleLoad = () => {
+          if (cancelled) {
+            return;
+          }
+          mapInstance?.resize();
+          pendingResizeTimeout = window.setTimeout(() => {
+            if (!cancelled) {
+              mapInstance?.resize();
+              fitWorldBounds();
+            }
+          }, 80);
           fitWorldBounds();
+        };
+
+        if (mapInstance.isStyleLoaded()) {
+          handleLoad();
         } else {
-          mapInstance.once("load", fitWorldBounds);
+          mapInstance.once("load", handleLoad);
         }
 
         resizeListener = () => {
@@ -146,6 +161,9 @@ export const WorldMap = ({ className }: WorldMapProps): JSX.Element => {
       cancelled = true;
       if (resizeListener) {
         window.removeEventListener("resize", resizeListener);
+      }
+      if (pendingResizeTimeout !== undefined) {
+        window.clearTimeout(pendingResizeTimeout);
       }
       if (mapInstance) {
         mapInstance.remove();

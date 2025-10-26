@@ -11,9 +11,18 @@ dayjs.locale("es");
 type ClockDisplayProps = {
   timezone: string;
   format: string;
+  className?: string;
+  timeClassName?: string;
+  dateClassName?: string;
 };
 
-export const ClockDisplay: React.FC<ClockDisplayProps> = ({ timezone, format }) => {
+export const ClockDisplay: React.FC<ClockDisplayProps> = ({
+  timezone,
+  format,
+  className,
+  timeClassName,
+  dateClassName
+}) => {
   const [now, setNow] = useState(() => dayjs().tz(timezone));
 
   useEffect(() => {
@@ -24,10 +33,14 @@ export const ClockDisplay: React.FC<ClockDisplayProps> = ({ timezone, format }) 
     return () => window.clearInterval(timer);
   }, [timezone]);
 
+  const containerClass = className ?? "public-clock";
+  const timeClass = timeClassName ?? "public-clock__time";
+  const dateClass = dateClassName ?? "public-clock__date";
+
   return (
-    <div className="public-clock" aria-live="polite">
-      <div className="public-clock__time">{now.format(format)}</div>
-      <div className="public-clock__date">{now.format("dddd, D [de] MMMM YYYY")}</div>
+    <div className={containerClass} aria-live="polite">
+      <div className={timeClass}>{now.format(format)}</div>
+      <div className={dateClass}>{now.format("dddd, D [de] MMMM YYYY")}</div>
     </div>
   );
 };
