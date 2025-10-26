@@ -1,184 +1,106 @@
 import { useEffect, useRef } from "react";
 
-type MapPadding = {
-  top: number;
-  bottom: number;
-  left: number;
-  right: number;
-};
-
-type MapOptions = {
-  container: HTMLDivElement;
-  style: string;
-  renderWorldCopies: boolean;
-  interactive: boolean;
-  attributionControl: boolean;
-  pitchWithRotate: boolean;
-  dragRotate: boolean;
-};
-
-type MapInstance = {
-  fitBounds: (bounds: [[number, number], [number, number]], options?: { padding?: MapPadding; duration?: number }) => void;
-  isStyleLoaded: () => boolean;
-  once: (event: string, handler: () => void) => void;
-  resize: () => void;
-  remove: () => void;
-};
-
-type MapLibreModule = {
-  Map: new (options: MapOptions) => MapInstance;
-};
+import mapboxgl from "mapbox-gl";
+import "mapbox-gl/dist/mapbox-gl.css";
 
 type WorldMapProps = {
+  token?: string | null;
   className?: string;
 };
 
-const MAP_CONTAINER_ID = "map";
-const MAP_STYLE_URL = "http://127.0.0.1:8081/static/style.json";
-const MAPLIBRE_SCRIPT = "https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js";
-const MAPLIBRE_STYLES = "https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css";
-const SOUTH_WEST: [number, number] = [-178, -58];
-const NORTH_EAST: [number, number] = [178, 75];
-const WORLD_PADDING: MapPadding = { top: 28, bottom: 28, left: 4, right: 4 };
+const MAP_STYLE = "mapbox://styles/mapbox/dark-v11";
+const ROTATION_SECONDS = 120;
 
-let mapLibrePromise: Promise<MapLibreModule> | null = null;
-
-const ensureMapLibre = (): Promise<MapLibreModule> => {
-  if (mapLibrePromise) {
-    return mapLibrePromise;
-  }
-
-  mapLibrePromise = new Promise((resolve, reject) => {
-    if (typeof window === "undefined") {
-      reject(new Error("MapLibre requires a browser environment"));
-      return;
-    }
-
-    const existing = (window as unknown as { maplibregl?: MapLibreModule }).maplibregl;
-    if (existing) {
-      resolve(existing);
-      return;
-    }
-
-    if (!document.querySelector("link[data-maplibre]") && !document.getElementById("maplibre-gl-css")) {
-      const link = document.createElement("link");
-      link.rel = "stylesheet";
-      link.href = MAPLIBRE_STYLES;
-      link.id = "maplibre-gl-css";
-      link.setAttribute("data-maplibre", "true");
-      document.head.appendChild(link);
-    }
-
-    const script = document.createElement("script");
-    script.src = MAPLIBRE_SCRIPT;
-    script.async = true;
-    script.setAttribute("data-maplibre", "true");
-    script.onload = () => {
-      const globalMapLibre = (window as unknown as { maplibregl?: MapLibreModule }).maplibregl;
-      if (globalMapLibre) {
-        resolve(globalMapLibre);
-      } else {
-        reject(new Error("MapLibre script loaded but global maplibregl is undefined"));
-      }
-    };
-    script.onerror = () => reject(new Error("No se pudo cargar MapLibre"));
-    document.head.appendChild(script);
-  });
-
-  return mapLibrePromise;
-};
-
-export const WorldMap = ({ className }: WorldMapProps): JSX.Element => {
+export const WorldMap = ({ token, className }: WorldMapProps): JSX.Element => {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
+  const spinRef = useRef<number | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    let mapInstance: MapInstance | null = null;
-    let resizeListener: (() => void) | undefined;
-    let pendingResizeTimeout: number | undefined;
+    if (!containerRef.current || !token) {
+      return undefined;
+    }
 
-    const fitWorldBounds = () => {
-      if (cancelled) {
+    mapboxgl.accessToken = token;
+
+    const mapInstance = new mapboxgl.Map({
+      container: containerRef.current,
+      style: MAP_STYLE,
+      center: [0, 20],
+      zoom: 1.2,
+      pitch: 0,
+      projection: { name: "globe" },
+      interactive: false,
+      attributionControl: false,
+      scrollZoom: false,
+      dragRotate: false,
+      touchZoomRotate: false,
+      doubleClickZoom: false,
+      keyboard: false
+    });
+
+    mapRef.current = mapInstance;
+
+    const applyFog = () => {
+      if (!mapRef.current) {
         return;
       }
-      mapInstance?.fitBounds([SOUTH_WEST, NORTH_EAST], {
-        padding: WORLD_PADDING,
-        duration: 0,
+      mapRef.current.setFog({
+        color: "hsl(225, 30%, 8%)",
+        "high-color": "hsl(225, 40%, 15%)",
+        "horizon-blend": 0.1,
+        "space-color": "hsl(225, 30%, 5%)",
+        "star-intensity": 0.3
       });
     };
 
-    const mount = async () => {
-      try {
-        const maplibre = await ensureMapLibre();
-        if (cancelled || !containerRef.current) {
-          return;
-        }
+    mapInstance.on("style.load", applyFog);
 
-        mapInstance = new maplibre.Map({
-          container: containerRef.current,
-          style: MAP_STYLE_URL,
-          renderWorldCopies: false,
-          interactive: false,
-          attributionControl: false,
-          pitchWithRotate: false,
-          dragRotate: false,
-        });
-
-        const handleLoad = () => {
-          if (cancelled) {
-            return;
-          }
-          mapInstance?.resize();
-          pendingResizeTimeout = window.setTimeout(() => {
-            if (!cancelled) {
-              mapInstance?.resize();
-              fitWorldBounds();
-            }
-          }, 80);
-          fitWorldBounds();
-        };
-
-        if (mapInstance.isStyleLoaded()) {
-          handleLoad();
-        } else {
-          mapInstance.once("load", handleLoad);
-        }
-
-        resizeListener = () => {
-          mapInstance?.resize();
-          fitWorldBounds();
-        };
-
-        window.addEventListener("resize", resizeListener);
-      } catch (error) {
-        console.error(error);
+    const spinGlobe = () => {
+      if (!mapRef.current) {
+        return;
       }
+      const map = mapRef.current;
+      const zoom = map.getZoom();
+      if (zoom >= 3) {
+        return;
+      }
+      const distancePerSecond = 360 / ROTATION_SECONDS;
+      const center = map.getCenter();
+      center.lng -= distancePerSecond / 60;
+      map.easeTo({
+        center,
+        duration: 1000,
+        easing: (n) => n,
+        essential: true
+      });
     };
 
-    void mount();
+    spinRef.current = window.setInterval(spinGlobe, 1000);
 
     return () => {
-      cancelled = true;
-      if (resizeListener) {
-        window.removeEventListener("resize", resizeListener);
+      if (spinRef.current) {
+        window.clearInterval(spinRef.current);
+        spinRef.current = null;
       }
-      if (pendingResizeTimeout !== undefined) {
-        window.clearTimeout(pendingResizeTimeout);
-      }
-      if (mapInstance) {
-        mapInstance.remove();
-        mapInstance = null;
-      }
+      mapInstance.off("style.load", applyFog);
+      mapInstance.remove();
+      mapRef.current = null;
     };
-  }, []);
+  }, [token]);
 
   return (
-    <div
-      ref={containerRef}
-      id={MAP_CONTAINER_ID}
-      className={`map-container${className ? ` ${className}` : ""}`}
-      role="presentation"
-    />
+    <div className={["world-map", className].filter(Boolean).join(" ")}> 
+      <div ref={containerRef} className="world-map__canvas" />
+      {!token && (
+        <div className="world-map__overlay">
+          <div className="world-map__overlay-card">
+            <p>Para mostrar el globo necesitas definir un token de Mapbox.</p>
+            <p className="world-map__overlay-hint">Ve a <strong>/config</strong> y añade tu token en la sección de interfaz.</p>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 

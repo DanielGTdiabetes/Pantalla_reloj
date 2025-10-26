@@ -58,6 +58,7 @@
         "ephemerides": { "enabled": true, "direction": "up", "speed": "slow", "gap_px": 24 },
         "forecast": { "enabled": true, "direction": "up", "speed": "slow", "gap_px": 24 }
       }
-    }
+    },
+    "mapbox_token": null
   }
 }

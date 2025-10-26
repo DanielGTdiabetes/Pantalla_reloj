@@ -1,125 +1,94 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { UIScrollSpeed } from "../types/config";
-
-import { AutoScrollText } from "./AutoScrollText";
-
-export type RotatingPanel = {
+export type RotatingCardItem = {
   id: string;
-  title: string;
-  content: string;
-  direction: "left" | "up";
-  enableScroll: boolean;
-  speed: UIScrollSpeed;
-  gap: number;
+  duration: number;
+  render: () => JSX.Element;
 };
 
-export type RotatingCardProps = {
-  panels: RotatingPanel[];
-  rotationEnabled: boolean;
-  durationSeconds: number;
-  containerClassName?: string;
-  panelClassName?: string;
-  titleClassName?: string;
-  bodyClassName?: string;
-  showIndicators?: boolean;
+type RotatingCardProps = {
+  cards: RotatingCardItem[];
 };
 
-const MIN_DURATION = 4;
+const MIN_DURATION = 4000;
+const TRANSITION_DURATION = 400;
 
-export const RotatingCard: React.FC<RotatingCardProps> = ({
-  panels,
-  rotationEnabled,
-  durationSeconds,
-  containerClassName,
-  panelClassName,
-  titleClassName,
-  bodyClassName,
-  showIndicators = false
-}) => {
-  const safePanels = useMemo<RotatingPanel[]>(() => {
-    if (panels.length > 0) {
-      return panels;
+export const RotatingCard = ({ cards }: RotatingCardProps): JSX.Element => {
+  const fallbackCards = useMemo<RotatingCardItem[]>(() => {
+    if (cards.length > 0) {
+      return cards;
     }
     return [
       {
         id: "placeholder",
-        title: "Panel informativo",
-        content: "Sin contenido disponible",
-        direction: "left",
-        enableScroll: false,
-        speed: "normal",
-        gap: 48
+        duration: 6000,
+        render: () => (
+          <div className="card card--placeholder">
+            <h2>Sin módulos configurados</h2>
+            <p>Revisa /config para activar los paneles que quieras mostrar.</p>
+          </div>
+        )
       }
     ];
-  }, [panels]);
+  }, [cards]);
 
   const [activeIndex, setActiveIndex] = useState(0);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const timeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     setActiveIndex(0);
-  }, [safePanels]);
+  }, [fallbackCards]);
 
   useEffect(() => {
-    if (!rotationEnabled || safePanels.length <= 1) {
+    if (fallbackCards.length === 0) {
       return undefined;
     }
-    const interval = window.setInterval(() => {
-      setActiveIndex((index) => (index + 1) % safePanels.length);
-    }, Math.max(durationSeconds, MIN_DURATION) * 1000);
-    return () => window.clearInterval(interval);
-  }, [rotationEnabled, durationSeconds, safePanels.length]);
 
-  const containerClasses = useMemo(
-    () => ["rotating-card", containerClassName].filter(Boolean).join(" "),
-    [containerClassName]
-  );
-  const titleClasses = useMemo(
-    () => ["rotating-card__title", titleClassName].filter(Boolean).join(" "),
-    [titleClassName]
-  );
-  const bodyClasses = useMemo(
-    () => ["rotating-card__body", bodyClassName].filter(Boolean).join(" "),
-    [bodyClassName]
-  );
+    const current = fallbackCards[activeIndex];
+    const duration = Math.max(current.duration, MIN_DURATION);
+
+    timeoutRef.current = window.setTimeout(() => {
+      setIsTransitioning(true);
+      window.setTimeout(() => {
+        setActiveIndex((prev) => (prev + 1) % fallbackCards.length);
+        setIsTransitioning(false);
+      }, TRANSITION_DURATION);
+    }, duration);
+
+    return () => {
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, [activeIndex, fallbackCards]);
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+
+  const CurrentCard = fallbackCards[activeIndex]?.render;
 
   return (
-    <div className={containerClasses} role="region" aria-live="polite">
-      {safePanels.map((panel, index) => {
-        const isActive = index === activeIndex;
-        return (
-          <article
-            key={`${panel.id}-${index}`}
-            className={["rotating-card__panel", panelClassName, isActive ? "is-active" : ""].filter(Boolean).join(" ")}
-            aria-hidden={isActive ? undefined : true}
-          >
-            <header className="rotating-card__header">
-              <h2 className={titleClasses}>{panel.title}</h2>
-            </header>
-            <div className={bodyClasses}>
-              <AutoScrollText
-                content={panel.content}
-                direction={panel.direction}
-                enabled={panel.enableScroll}
-                speed={panel.speed}
-                gap={panel.gap}
-              />
-            </div>
-          </article>
-        );
-      })}
-      {showIndicators ? (
-        <div className="rotating-card__indicators" aria-hidden="true">
-          {safePanels.map((panel, index) => (
-            <span
-              key={`${panel.id}-indicator`}
-              className={["rotating-card__indicator", index === activeIndex ? "is-active" : ""]
-                .filter(Boolean)
-                .join(" ")}
-            />
-          ))}
-        </div>
-      ) : null}
+    <div className="rotating-card" role="region" aria-live="polite">
+      <div className={`rotating-card__content${isTransitioning ? " rotating-card__content--hidden" : ""}`}>
+        {CurrentCard ? <CurrentCard /> : null}
+      </div>
+      <div className="rotating-card__indicators" aria-hidden="true">
+        {fallbackCards.map((card, index) => (
+          <span
+            key={`${card.id}-${index}`}
+            className={`rotating-card__indicator${index === activeIndex ? " is-active" : ""}`}
+          />
+        ))}
+      </div>
     </div>
   );
 };
+
+export default RotatingCard;

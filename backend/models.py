@@ -115,6 +115,7 @@ class UISettings(BaseModel):
     fixed: UIFixedSettings = Field(default_factory=UIFixedSettings)
     map: UIMapSettings = Field(default_factory=UIMapSettings)
     text: UITextSettings = Field(default_factory=UITextSettings)
+    mapbox_token: Optional[str] = None
 
 
 class AppConfig(BaseModel):
