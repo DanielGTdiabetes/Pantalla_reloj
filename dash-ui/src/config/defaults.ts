@@ -40,8 +40,7 @@ export const UI_DEFAULTS: UISettings = {
   },
   text: {
     scroll: createScrollDefaults()
-  },
-  mapbox_token: null
+  }
 };
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -159,7 +158,6 @@ export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
         ...(payload.ui?.map ?? {})
       },
       text: mergedScroll,
-      mapbox_token: payload.ui?.mapbox_token ?? null,
       layout: payload.ui?.layout,
       side_panel: payload.ui?.side_panel,
       show_config: payload.ui?.show_config,

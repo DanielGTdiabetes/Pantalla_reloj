@@ -80,7 +80,6 @@ export type UISettings = {
   show_config?: boolean;
   enable_demo?: boolean;
   carousel?: boolean;
-  mapbox_token?: string | null;
 };
 
 export type AppConfig = {
