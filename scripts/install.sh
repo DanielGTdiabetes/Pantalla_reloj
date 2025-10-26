@@ -66,12 +66,15 @@ BACKEND_LAUNCHER_DST=/usr/local/bin/pantalla-backend-launch
 UDEV_RULE=/etc/udev/rules.d/70-pantalla-render.rules
 
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$USER_HOME"
-install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" /var/lib/pantalla /var/log/pantalla
+install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" /run/user/1000
 install -d -m 0755 "$PANTALLA_PREFIX" "$SESSION_PREFIX"
-install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$LOG_DIR"
-install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
-install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_RUNTIME"
 install -d -m 0755 "$SESSION_PREFIX/bin" "$SESSION_PREFIX/openbox"
+install -d -m 0755 -o root -g root /var/lib/pantalla
+install -d -m 0755 -o root -g root /var/log/pantalla
+install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$LOG_DIR"
+install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
+install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_RUNTIME"
+chown -R "$USER_NAME:$USER_NAME" "$STATE_DIR"
 
 log_info "Installing base packages"
 APT_PACKAGES=(
@@ -407,10 +410,18 @@ else
   SUMMARY+=('[install] xset q falló')
 fi
 
+if DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xrandr --query | grep -Eq 'HDMI-1 .* 480x1920\+0\+0 left'; then
+  log_ok "Geometría HDMI-1 480x1920 left configurada"
+  SUMMARY+=('[install] geometría HDMI-1 480x1920 left OK')
+else
+  log_warn "Geometría HDMI-1 esperada no detectada"
+  SUMMARY+=('[install] geometría HDMI-1 no detectada')
+fi
+
 systemctl restart pantalla-dash-backend@${USER_NAME}.service
 sleep 1
 
-if curl -fsS -m 2 http://127.0.0.1:8081/healthz >/dev/null 2>&1; then
+if curl -fsS -m 2 http://127.0.0.1:8081/healthz | grep -q '"status":"ok"'; then
   log_ok "Backend healthz reachable"
   SUMMARY+=('[install] backend healthz responde')
 else

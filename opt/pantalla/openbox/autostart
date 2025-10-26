@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
-set -euxo pipefail
-LOG_FILE=/tmp/openbox-autostart.log
-{
-  echo "[openbox] $(date -Is) configuring display"
-  DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority \
-    xrandr --output HDMI-1 --rotate left --mode 480x1920 || true
-  (sleep 0.5; DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xset -dpms s off s noblank || true) &
-  wait || true
-  echo "[openbox] $(date -Is) configuration done"
-} >>"$LOG_FILE" 2>&1
+set -euo pipefail
+
+export DISPLAY=:0
+export XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority
+
+# Disable DPMS and screen blanking to avoid black screen with pointer
+xset -dpms
+xset s off
+xset s noblank
+
+# Fixed geometry without panning: 480x1920 rotated left
+xrandr --output HDMI-1 --rotate left --mode 480x1920 --fb 480x1920 --pos 0x0
+
+# Small delay to keep ordering predictable
+sleep 0.5

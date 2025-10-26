@@ -7,11 +7,17 @@ AUTH_FILE="${STATE_DIR}/.Xauthority"
 LOCK_FILE="${STATE_DIR}/.Xauthority.lock"
 LOG_FILE=/tmp/xorg-launch.log
 
+prepare_only=0
+if [[ "${1:-}" == "--prepare-only" ]]; then
+  prepare_only=1
+  shift || true
+fi
+
 log() {
   printf '[xorg-launch] %s\n' "$*"
 }
 
-install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
+install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
 
 # Serialise concurrent regeneration attempts
 exec 9>"$LOCK_FILE"
@@ -66,6 +72,10 @@ if chown -h "$USER_NAME:$USER_NAME" "$HOME_AUTH" 2>/dev/null; then
   :
 else
   log "No se pudo ajustar propietario del symlink ${HOME_AUTH}; continuando"
+fi
+
+if (( prepare_only )); then
+  exit 0
 fi
 
 exec /usr/lib/xorg/Xorg :0 -verbose 3 -nolisten tcp -background none vt7 -auth "$AUTH_FILE"
