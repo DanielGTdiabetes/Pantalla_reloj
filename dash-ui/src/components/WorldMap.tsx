@@ -1,7 +1,22 @@
 import React, { useEffect, useRef } from "react";
 
+type LatLngTuple = [number, number];
+type BoundsTuple = [LatLngTuple, LatLngTuple];
+
+type FitBoundsOptions = {
+  padding?: {
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+  };
+  duration?: number;
+};
+
 type LeafletMap = {
-  setView: (center: [number, number], zoom: number) => LeafletMap;
+  setView: (center: LatLngTuple, zoom: number) => LeafletMap;
+  fitBounds: (bounds: BoundsTuple, options?: FitBoundsOptions) => LeafletMap;
+  setMaxBounds: (bounds: BoundsTuple) => LeafletMap;
   remove: () => void;
   invalidateSize: () => LeafletMap;
 };
@@ -31,6 +46,32 @@ const TILE_PROVIDERS: Record<string, string> = {
 const DEFAULT_PROVIDER = "osm";
 const LEAFLET_SCRIPT = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
 const LEAFLET_STYLES = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+
+const WORLD_BOUNDS: BoundsTuple = [
+  [-85, -180],
+  [85, 180]
+];
+
+const PORTRAIT_BOUNDS: BoundsTuple = [
+  [-60, -170],
+  [75, 170]
+];
+
+const PORTRAIT_PADDING: NonNullable<FitBoundsOptions["padding"]> = {
+  top: 40,
+  bottom: 40,
+  left: 8,
+  right: 8
+};
+
+const TILE_LAYER_OPTIONS: Record<string, unknown> = {
+  minZoom: 1,
+  maxZoom: 18,
+  detectRetina: true,
+  crossOrigin: true,
+  noWrap: true,
+  bounds: WORLD_BOUNDS
+};
 
 let leafletPromise: Promise<LeafletModule> | null = null;
 
@@ -76,7 +117,7 @@ const ensureLeaflet = (): Promise<LeafletModule> => {
   return leafletPromise;
 };
 
-export const WorldMap: React.FC<WorldMapProps> = ({ center, zoom, provider = DEFAULT_PROVIDER, className }) => {
+export const WorldMap: React.FC<WorldMapProps> = ({ provider = DEFAULT_PROVIDER, className }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const layerRef = useRef<LeafletTileLayer | null>(null);
@@ -100,21 +141,21 @@ export const WorldMap: React.FC<WorldMapProps> = ({ center, zoom, provider = DEF
           touchZoom: false,
           boxZoom: false,
           keyboard: false,
-          attributionControl: false
+          attributionControl: false,
+          maxBoundsViscosity: 1
         });
         mapRef.current = map;
 
         const tileUrl = TILE_PROVIDERS[provider] ?? TILE_PROVIDERS[DEFAULT_PROVIDER];
-        const layer = leaflet.tileLayer(tileUrl, {
-          minZoom: 1,
-          maxZoom: 18,
-          detectRetina: true,
-          crossOrigin: true
-        });
+        const layer = leaflet.tileLayer(tileUrl, TILE_LAYER_OPTIONS);
         layer.addTo(map);
         layerRef.current = layer;
 
-        map.setView(center, zoom);
+        map.setMaxBounds(WORLD_BOUNDS);
+        map.fitBounds(PORTRAIT_BOUNDS, {
+          padding: PORTRAIT_PADDING,
+          duration: 0
+        });
         window.setTimeout(() => map.invalidateSize(), 0);
       } catch (error) {
         console.error(error);
@@ -133,14 +174,6 @@ export const WorldMap: React.FC<WorldMapProps> = ({ center, zoom, provider = DEF
   }, []);
 
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) {
-      return;
-    }
-    map.setView(center, zoom);
-  }, [center, zoom]);
-
-  useEffect(() => {
     const leaflet = moduleRef.current;
     const map = mapRef.current;
     if (!leaflet || !map) {
@@ -148,12 +181,7 @@ export const WorldMap: React.FC<WorldMapProps> = ({ center, zoom, provider = DEF
     }
     const tileUrl = TILE_PROVIDERS[provider] ?? TILE_PROVIDERS[DEFAULT_PROVIDER];
     if (!layerRef.current) {
-      const layer = leaflet.tileLayer(tileUrl, {
-        minZoom: 1,
-        maxZoom: 18,
-        detectRetina: true,
-        crossOrigin: true
-      });
+      const layer = leaflet.tileLayer(tileUrl, TILE_LAYER_OPTIONS);
       layer.addTo(map);
       layerRef.current = layer;
       return;
