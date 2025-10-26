@@ -1,7 +1,8 @@
 [Unit]
 Description=Pantalla_reloj Kiosk (Epiphany) for user %i
-After=pantalla-openbox@%i.service pantalla-dash-backend@%i.service
-Wants=pantalla-openbox@%i.service pantalla-dash-backend@%i.service
+After=pantalla-openbox@%i.service pantalla-portal@%i.service
+Requires=pantalla-openbox@%i.service pantalla-portal@%i.service
+Wants=pantalla-dash-backend@%i.service
 
 [Service]
 User=%i
@@ -13,6 +14,13 @@ Environment=EPHY_PROFILE=/var/lib/pantalla-reloj/state/org.gnome.Epiphany.WebApp
 EnvironmentFile=-/var/lib/pantalla-reloj/state/session.env
 ExecStartPre=/bin/sh -c 'test -r "$XAUTHORITY"'
 ExecStartPre=/bin/sh -c 'DISPLAY=:0 XAUTHORITY="$XAUTHORITY" /opt/pantalla/bin/wait-x.sh'
+ExecStartPre=/bin/sh -c 'for f in \
+  /usr/local/share/applications/org.gnome.Epiphany.WebApp_PantallaReloj.desktop \
+  /home/%i/.local/share/applications/org.gnome.Epiphany.WebApp_PantallaReloj.desktop \
+  /home/%i/.local/share/xdg-desktop-portal/applications/org.gnome.Epiphany.WebApp_PantallaReloj.desktop \
+  /var/lib/pantalla-reloj/state/org.gnome.Epiphany.WebApp_PantallaReloj/app-id \
+  /var/lib/pantalla-reloj/state/org.gnome.Epiphany.WebApp_PantallaReloj/desktop-id; do test -r "$f" || exit 3; done'
+ExecStartPre=/bin/sh -c 'pkill -u %U -f "epiphany-browser" >/dev/null 2>&1 || true'
 ExecStart=/usr/local/bin/pantalla-kiosk http://127.0.0.1
 Restart=on-failure
 RestartSec=2

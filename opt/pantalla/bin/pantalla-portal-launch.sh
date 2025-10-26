@@ -11,6 +11,21 @@ BACKEND_BIN=${BACKEND_BIN:-/usr/libexec/xdg-desktop-portal-gtk}
 DEFAULT_DISPLAY=":0"
 DEFAULT_XAUTH="/var/lib/pantalla-reloj/.Xauthority"
 
+cleanup_existing_processes() {
+  local uid
+  uid="$(id -u)"
+
+  if command -v pkill >/dev/null 2>&1; then
+    for pattern in xdg-desktop-portal-gtk xdg-desktop-portal; do
+      if pgrep -u "$uid" -f "$pattern" >/dev/null 2>&1; then
+        pkill -u "$uid" -f "$pattern" >/dev/null 2>&1 && \
+          log INFO "killed leftover ${pattern}" || \
+          log WARN "failed-kill ${pattern}"
+      fi
+    done
+  fi
+}
+
 log() {
   local level="$1" message="$2"
   local ts
@@ -73,12 +88,20 @@ ensure_backend() {
   fi
   log INFO "starting backend: $BACKEND_BIN"
   env -i \
-    XDG_RUNTIME_DIR="$RUNTIME_DIR" \
-    DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}" \
     DISPLAY="${DISPLAY:-$DEFAULT_DISPLAY}" \
     XAUTHORITY="${XAUTHORITY:-$DEFAULT_XAUTH}" \
-    GTK_USE_PORTAL=1 GIO_USE_PORTALS=1 \
+    XDG_RUNTIME_DIR="$RUNTIME_DIR" \
+    DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}" \
+    XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-Openbox}" \
     "$BACKEND_BIN" >>"$LOG_FILE" 2>&1 &
+}
+
+snapshot_processes() {
+  local user
+  user="$(id -un)"
+  while IFS= read -r line; do
+    log INFO "ps ${line}"
+  done < <(ps -ef | awk -v user="$user" '$1 == user && /xdg-desktop-portal(-gtk)?/' )
 }
 
 main() {
@@ -99,7 +122,11 @@ main() {
     exit 1
   fi
 
+  cleanup_existing_processes
+
   ensure_backend
+
+  ( sleep 1.5; snapshot_processes ) &
 
   log INFO "launching portal: $PORTAL_BIN"
   exec env -i \
@@ -108,8 +135,7 @@ main() {
     XDG_RUNTIME_DIR="$RUNTIME_DIR" \
     DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}" \
     XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-Openbox}" \
-    GTK_USE_PORTAL=1 GIO_USE_PORTALS=1 \
-    "$PORTAL_BIN" --watch >>"$LOG_FILE" 2>&1
+    "$PORTAL_BIN" >>"$LOG_FILE" 2>&1
 }
 
 main "$@"

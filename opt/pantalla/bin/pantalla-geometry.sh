@@ -115,28 +115,31 @@ log "geometry-start output=$OUTPUT mode=$MODE fb=$FRAMEBUFFER rotate=$ROTATE"
 
 retry_due_to_size=0
 
-if ! out=$(run_xrandr set-mode --output "$OUTPUT" --mode "$MODE"); then
-  [[ "$out" == *"screen not large enough"* ]] && retry_due_to_size=1
-fi
+apply_sequence() {
+  local prefix="$1"
 
-if ! out=$(run_xrandr set-fb --fb "$FRAMEBUFFER"); then
-  [[ "$out" == *"screen not large enough"* ]] && retry_due_to_size=1
-fi
+  if ! out=$(run_xrandr "${prefix}fb" --fb "$FRAMEBUFFER"); then
+    [[ "$out" == *"screen not large enough"* ]] && retry_due_to_size=1
+  fi
 
-if ! out=$(run_xrandr set-rotate --output "$OUTPUT" --rotate "$ROTATE"); then
-  [[ "$out" == *"screen not large enough"* ]] && retry_due_to_size=1
-fi
+  if ! out=$(run_xrandr "${prefix}mode" --output "$OUTPUT" --mode "$MODE"); then
+    [[ "$out" == *"screen not large enough"* ]] && retry_due_to_size=1
+  fi
 
-run_xrandr set-primary --output "$OUTPUT" --primary || true
-run_xrandr set-position --output "$OUTPUT" --pos 0x0 || true
+  if ! out=$(run_xrandr "${prefix}rotate" --output "$OUTPUT" --rotate "$ROTATE"); then
+    [[ "$out" == *"screen not large enough"* ]] && retry_due_to_size=1
+  fi
+
+  run_xrandr "${prefix}primary" --output "$OUTPUT" --primary || true
+  run_xrandr "${prefix}position" --output "$OUTPUT" --pos 0x0 || true
+}
+
+apply_sequence set-
 
 if (( retry_due_to_size )); then
   log "geometry-retry reason=screen-not-large-enough"
-  run_xrandr retry-fb --fb "$FRAMEBUFFER" || true
-  run_xrandr retry-mode --output "$OUTPUT" --mode "$MODE" || true
-  run_xrandr retry-rotate --output "$OUTPUT" --rotate "$ROTATE" || true
-  run_xrandr retry-primary --output "$OUTPUT" --primary || true
-  run_xrandr retry-position --output "$OUTPUT" --pos 0x0 || true
+  retry_due_to_size=0
+  apply_sequence retry-
 fi
 
 if (( DISABLE_DPMS )); then
@@ -155,6 +158,14 @@ if (( DISABLE_DPMS )); then
   else
     log "screensaver-error action=noblank"
   fi
+fi
+
+if xrandr_state=$(DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xrandr --query 2>/dev/null); then
+  while IFS= read -r line; do
+    log "xrandr-query ${line}"
+  done <<<"$xrandr_state"
+else
+  log "xrandr-query-error"
 fi
 
 log "geometry-complete"
