@@ -91,7 +91,6 @@ export const GeoScopeMap = ({ className, center, zoom = 1.6 }: GeoScopeMapProps)
       window.removeEventListener("resize", handleResize);
       mapRef.current?.remove();
       mapRef.current = null;
-      map?.remove();
       map = null;
     };
   }, [lat, lng, zoom]);
