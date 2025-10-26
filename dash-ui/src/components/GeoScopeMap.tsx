@@ -1,109 +1,118 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import maplibregl, { type Map as MapInstance, type StyleSpecification } from "maplibre-gl";
-import "maplibre-gl/dist/maplibre-gl.css";
-
 type GeoScopeMapProps = {
   className?: string;
   center?: [number, number];
   zoom?: number;
 };
 
-const STYLE: StyleSpecification = {
-  version: 8,
-  sources: {
-    osm: {
-      type: "raster",
-      tiles: [
-        "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      ],
-      tileSize: 256,
-      attribution: "© OpenStreetMap contributors"
-    }
-  },
-  layers: [
-    {
-      id: "osm",
-      type: "raster",
-      source: "osm"
-    }
-  ]
+const STATIC_MAP_BASE_URL = "https://staticmap.openstreetmap.de/staticmap.php";
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 18;
+const MIN_LAT = -85;
+const MAX_LAT = 85;
+const MIN_LNG = -180;
+const MAX_LNG = 180;
+const MAX_DIMENSION = 1280;
+
+const clamp = (value: number, min: number, max: number): number => {
+  return Math.min(Math.max(value, min), max);
 };
 
 export const GeoScopeMap = ({ className, center, zoom = 1.6 }: GeoScopeMapProps): JSX.Element => {
-  const mapContainer = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<MapInstance | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 600, height: 900 });
 
   const [lng, lat] = useMemo(() => {
     const [cx, cy] = center ?? [0, 20];
-    return [cx, cy];
+    const safeLng = clamp(cx, MIN_LNG, MAX_LNG);
+    const safeLat = clamp(cy, MIN_LAT, MAX_LAT);
+    return [safeLng, safeLat];
   }, [center?.[0], center?.[1]]);
 
   useEffect(() => {
-    const container = mapContainer.current;
+    const container = containerRef.current;
     if (!container) {
       return undefined;
     }
 
-    setError(null);
-    setIsReady(false);
+    const updateSize = (rect: DOMRectReadOnly | DOMRect) => {
+      const { width, height } = rect;
+      if (width === 0 || height === 0) {
+        return;
+      }
 
-    let disposed = false;
-    const map = new maplibregl.Map({
-      container,
-      style: STYLE,
-      center: [lng, lat],
-      zoom,
-      bearing: 0,
-      pitch: 0,
-      interactive: false,
-      attributionControl: false
+      setDimensions((prev) => {
+        const nextWidth = clamp(Math.round(width), 200, MAX_DIMENSION);
+        const nextHeight = clamp(Math.round(height), 200, MAX_DIMENSION);
+        if (prev.width === nextWidth && prev.height === nextHeight) {
+          return prev;
+        }
+
+        return { width: nextWidth, height: nextHeight };
+      });
+    };
+
+    updateSize(container.getBoundingClientRect());
+
+    if (typeof ResizeObserver === "undefined") {
+      return undefined;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) {
+        return;
+      }
+
+      updateSize(entry.contentRect);
     });
 
-    mapRef.current = map;
-
-    const handleLoad = () => {
-      if (!disposed) {
-        setIsReady(true);
-        map.setRenderWorldCopies(false);
-      }
-    };
-
-    const handleError = (event: unknown) => {
-      if (!disposed) {
-        const message = event instanceof Error ? event.message : "No se pudo cargar el mapa";
-        setError(message);
-      }
-    };
-
-    map.once("load", handleLoad);
-    map.on("error", handleError);
-
-    const handleResize = () => {
-      mapRef.current?.resize();
-    };
-
-    window.addEventListener("resize", handleResize);
+    observer.observe(container);
 
     return () => {
-      disposed = true;
-      window.removeEventListener("resize", handleResize);
-      map.off("error", handleError);
-      map.remove();
-      mapRef.current = null;
+      observer.disconnect();
     };
-  }, [lat, lng, zoom]);
+  }, []);
+
+  useEffect(() => {
+    setError(null);
+    setIsReady(false);
+  }, [lat, lng, zoom, dimensions.width, dimensions.height]);
+
+  const staticMapUrl = useMemo(() => {
+    const zoomLevel = clamp(Math.round(zoom), MIN_ZOOM, MAX_ZOOM);
+    const { width, height } = dimensions;
+    const sizeParam = `${width}x${height}`;
+    const markerParam = `${lat},${lng},lightblue1`;
+
+    const query = new URLSearchParams({
+      center: `${lat},${lng}`,
+      zoom: String(zoomLevel),
+      size: sizeParam,
+      maptype: "mapnik",
+      markers: markerParam
+    });
+
+    return `${STATIC_MAP_BASE_URL}?${query.toString()}`;
+  }, [dimensions, lat, lng, zoom]);
+
+  const handleImageLoad = () => {
+    setIsReady(true);
+  };
+
+  const handleImageError = () => {
+    setError("No se pudo cargar el mapa");
+  };
 
   const classes = useMemo(() => {
     return ["geo-scope-map", className].filter(Boolean).join(" ");
   }, [className]);
 
   return (
-    <div className={classes}>
+    <div ref={containerRef} className={classes}>
       {error ? (
         <div className="geo-scope-map__fallback" role="alert">
           <p>No se pudo cargar el mapa global.</p>
@@ -111,7 +120,15 @@ export const GeoScopeMap = ({ className, center, zoom = 1.6 }: GeoScopeMapProps)
         </div>
       ) : (
         <>
-          <div ref={mapContainer} className="geo-scope-map__canvas" aria-hidden={!isReady} />
+          <img
+            key={staticMapUrl}
+            src={staticMapUrl}
+            alt="Mapa global con la posición seleccionada"
+            className="geo-scope-map__image"
+            onLoad={handleImageLoad}
+            onError={handleImageError}
+            aria-hidden={!isReady}
+          />
           <div className="geo-scope-map__attribution">© OpenStreetMap contributors</div>
         </>
       )}
