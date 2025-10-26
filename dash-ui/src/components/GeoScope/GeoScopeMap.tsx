@@ -47,16 +47,57 @@ export default function GeoScopeMap() {
     mapRef.current = map;
 
     function fitWorld() {
+      const host = hostRef.current;
+      if (!host) return;
+
       const aside = document.querySelector("aside") as HTMLElement | null;
-      const rightPad = aside ? aside.offsetWidth : 0;
-      map.setPadding({ top: 10, left: 10, bottom: 10, right: rightPad + 10 });
-      map.fitBounds(
-        [
-          [-180, -60],
-          [180, 85]
-        ],
-        { animate: false }
-      );
+      const rect = host.getBoundingClientRect();
+
+      const width = Math.max(0, rect.width);
+      const height = Math.max(0, rect.height);
+
+      const basePad = 10;
+      const rightAside = aside ? aside.offsetWidth : 0;
+
+      const maxHorizontalPad = Math.max(0, width - 60);
+      const maxVerticalPad = Math.max(0, height - 60);
+
+      const padLeft = Math.min(basePad, maxHorizontalPad);
+      const padRight = Math.min(rightAside + basePad, Math.max(0, maxHorizontalPad - padLeft));
+      const padTop = Math.min(basePad, maxVerticalPad);
+      const padBottom = Math.min(basePad, Math.max(0, maxVerticalPad - padTop));
+
+      const paddingWidth = padLeft + padRight;
+      const paddingHeight = padTop + padBottom;
+      const tooSmall =
+        width < 120 ||
+        height < 120 ||
+        paddingWidth >= width ||
+        paddingHeight >= height;
+
+      const resetView = () => {
+        map.setPadding({ top: 0, left: 0, bottom: 0, right: 0 });
+        map.jumpTo({ center: [0, 0], zoom: 1 });
+      };
+
+      if (tooSmall) {
+        resetView();
+        return;
+      }
+
+      map.setPadding({ top: padTop, left: padLeft, bottom: padBottom, right: padRight });
+
+      const world: [[number, number], [number, number]] = [
+        [-180, -60],
+        [180, 85]
+      ];
+
+      try {
+        map.fitBounds(world, { animate: false });
+      } catch (error) {
+        console.warn("[GeoScopeMap] fitBounds failed, falling back to jumpTo", error);
+        resetView();
+      }
     }
 
     function onStyleReady(cb: () => void) {
@@ -79,7 +120,9 @@ export default function GeoScopeMap() {
         map.resize();
         fitWorld();
       });
-      roRef.current.observe(hostRef.current!);
+      if (hostRef.current) {
+        roRef.current.observe(hostRef.current);
+      }
     });
 
     return () => {

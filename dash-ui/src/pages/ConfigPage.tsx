@@ -611,7 +611,8 @@ export const ConfigPage: React.FC = () => {
     }
   };
 
-  const apiStatusLabel = apiOnline === null ? "COMPROBANDO" : apiOnline ? "ONLINE" : "OFFLINE";
+  const apiStatusLabel =
+    apiOnline === null ? "API CHECKING" : apiOnline ? "API ONLINE" : "API OFFLINE";
   const apiStatusClass =
     apiOnline === null ? " is-pending" : apiOnline ? " is-online" : " is-offline";
   const apiHint =
@@ -625,7 +626,7 @@ export const ConfigPage: React.FC = () => {
     <div className="config-page">
       <form className="config-page__container" onSubmit={handleSubmit}>
         <div className={`config-status-bar${apiStatusClass}`}>
-          <span className="config-status-bar__label">API: {apiStatusLabel}</span>
+          <span className="config-status-bar__label">{apiStatusLabel}</span>
           <span className="config-status-bar__hint">{apiHint}</span>
         </div>
         <header className="config-page__header">
