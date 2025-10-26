@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import loadMapLibre, { type MapInstance, type StyleSpecification } from "maplibre-gl";
+import maplibregl, { type Map as MapInstance, type StyleSpecification } from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
 
 type GeoScopeMapProps = {
   className?: string;
@@ -8,7 +9,7 @@ type GeoScopeMapProps = {
   zoom?: number;
 };
 
-const CDN_STYLE: StyleSpecification = {
+const STYLE: StyleSpecification = {
   version: 8,
   sources: {
     osm: {
@@ -23,7 +24,11 @@ const CDN_STYLE: StyleSpecification = {
     }
   },
   layers: [
-    { id: "osm", type: "raster", source: "osm" }
+    {
+      id: "osm",
+      type: "raster",
+      source: "osm"
+    }
   ]
 };
 
@@ -33,61 +38,50 @@ export const GeoScopeMap = ({ className, center, zoom = 1.6 }: GeoScopeMapProps)
   const [error, setError] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
 
-  const [lng, lat] = useMemo(() => center ?? [0, 20], [center]);
+  const [lng, lat] = useMemo(() => {
+    const [cx, cy] = center ?? [0, 20];
+    return [cx, cy];
+  }, [center?.[0], center?.[1]]);
 
   useEffect(() => {
     const container = mapContainer.current;
     if (!container) {
-      return () => {
-        /* noop */
-      };
+      return undefined;
     }
 
-    let disposed = false;
-    let map: MapInstance | null = null;
-    let disableWorldCopies: (() => void) | null = null;
-
-    setIsReady(false);
     setError(null);
+    setIsReady(false);
 
-    const initialize = async () => {
-      try {
-        const maplibre = await loadMapLibre();
-        if (disposed || !mapContainer.current) {
-          return;
-        }
+    let disposed = false;
+    const map = new maplibregl.Map({
+      container,
+      style: STYLE,
+      center: [lng, lat],
+      zoom,
+      bearing: 0,
+      pitch: 0,
+      interactive: false,
+      attributionControl: false
+    });
 
-        map = new maplibre.Map({
-          container: mapContainer.current,
-          style: CDN_STYLE,
-          center: [lng, lat],
-          zoom,
-          bearing: 0,
-          pitch: 0,
-          interactive: false,
-          attributionControl: false
-        });
+    mapRef.current = map;
 
-        mapRef.current = map;
-        const mapWithRenderCopies = map as MapInstance & {
-          setRenderWorldCopies?: (value: boolean) => MapInstance;
-        };
-        disableWorldCopies = () => {
-          mapWithRenderCopies.setRenderWorldCopies?.(false);
-        };
-        map.once?.("load", disableWorldCopies);
-        map.on?.("styledata", disableWorldCopies);
+    const handleLoad = () => {
+      if (!disposed) {
         setIsReady(true);
-        setError(null);
-      } catch (err) {
-        console.error(err);
-        if (!disposed) {
-          setError(err instanceof Error ? err.message : "No se pudo cargar el mapa");
-        }
+        map.setRenderWorldCopies(false);
       }
     };
 
-    initialize();
+    const handleError = (event: unknown) => {
+      if (!disposed) {
+        const message = event instanceof Error ? event.message : "No se pudo cargar el mapa";
+        setError(message);
+      }
+    };
+
+    map.once("load", handleLoad);
+    map.on("error", handleError);
 
     const handleResize = () => {
       mapRef.current?.resize();
@@ -98,13 +92,9 @@ export const GeoScopeMap = ({ className, center, zoom = 1.6 }: GeoScopeMapProps)
     return () => {
       disposed = true;
       window.removeEventListener("resize", handleResize);
-      if (disableWorldCopies) {
-        map?.off?.("styledata", disableWorldCopies);
-      }
-      mapRef.current?.remove();
+      map.off("error", handleError);
+      map.remove();
       mapRef.current = null;
-      map?.remove();
-      map = null;
     };
   }, [lat, lng, zoom]);
 
@@ -120,12 +110,10 @@ export const GeoScopeMap = ({ className, center, zoom = 1.6 }: GeoScopeMapProps)
           <p className="geo-scope-map__hint">{error}</p>
         </div>
       ) : (
-        <div
-          ref={mapContainer}
-          className="geo-scope-map__canvas"
-          aria-hidden={!isReady}
-          data-ready={isReady}
-        />
+        <>
+          <div ref={mapContainer} className="geo-scope-map__canvas" aria-hidden={!isReady} />
+          <div className="geo-scope-map__attribution">© OpenStreetMap contributors</div>
+        </>
       )}
     </div>
   );
