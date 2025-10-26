@@ -86,9 +86,12 @@ main {
   align-items: stretch;
 }
 
-.geo-scope-map__canvas {
+.geo-scope-map__image {
   width: 100%;
   height: 100%;
+  object-fit: cover;
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
 .geo-scope-map__attribution {
