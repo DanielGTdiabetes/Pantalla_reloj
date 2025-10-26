@@ -3,13 +3,13 @@ import { Route, Routes } from "react-router-dom";
 
 import { ConfigProvider } from "./context/ConfigContext";
 import { ConfigPage } from "./pages/ConfigPage";
-import { DashboardPage } from "./pages/DashboardPage";
+import Index from "./pages/Index";
 
 const App: React.FC = () => {
   return (
     <ConfigProvider>
       <Routes>
-        <Route path="/" element={<DashboardPage />} />
+        <Route path="/" element={<Index />} />
         <Route path="/config" element={<ConfigPage />} />
       </Routes>
     </ConfigProvider>

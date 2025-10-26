@@ -96,28 +96,25 @@ export const GeoScopeMap = ({ className, center, zoom = 1.6 }: GeoScopeMapProps)
     };
   }, [lat, lng, zoom]);
 
+  const classes = useMemo(() => {
+    return ["geo-scope-map", className].filter(Boolean).join(" ");
+  }, [className]);
+
   return (
-    <div className={["world-map", className].filter(Boolean).join(" ")}> 
-      <div ref={mapContainer} className="world-map__canvas" aria-hidden="true" />
-      <div className="absolute bottom-1 right-2 text-[10px] text-white/50">
-        © OpenStreetMap contributors
-      </div>
+    <div className={classes}>
       {error ? (
-        <div className="world-map__overlay" role="alert">
-          <div className="world-map__overlay-card">
-            <p>No se pudo cargar el mapa global.</p>
-            <p className="world-map__overlay-hint">{error}</p>
-          </div>
+        <div className="geo-scope-map__fallback" role="alert">
+          <p>No se pudo cargar el mapa global.</p>
+          <p className="geo-scope-map__hint">{error}</p>
         </div>
-      ) : null}
-      {!error && !isReady ? (
-        <div className="world-map__overlay" aria-live="polite">
-          <div className="world-map__overlay-card">
-            <p>Cargando el mapa global…</p>
-            <p className="world-map__overlay-hint">Conectando con MapLibre</p>
-          </div>
-        </div>
-      ) : null}
+      ) : (
+        <div
+          ref={mapContainer}
+          className="geo-scope-map__canvas"
+          aria-hidden={!isReady}
+          data-ready={isReady}
+        />
+      )}
     </div>
   );
 };

@@ -19,10 +19,18 @@ export const OverlayRotator: React.FC<OverlayRotatorProps> = ({ cards, status, i
     return "datos no disponibles";
   }, [isLoading, status]);
 
+  const hasCards = cards.length > 0;
+
   return (
     <div className="overlay-rotator" role="complementary" aria-live="polite">
-      <div className="overlay-rotator__panel">
-        <RotatingCard cards={cards} />
+      <div className="overlay-rotator__content">
+        {hasCards ? (
+          <RotatingCard cards={cards} />
+        ) : (
+          <div className="overlay-rotator__fallback" role="status">
+            <p>Datos no disponibles</p>
+          </div>
+        )}
         <p className="overlay-rotator__status">{label}</p>
       </div>
     </div>
