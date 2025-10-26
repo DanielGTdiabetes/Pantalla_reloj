@@ -29,30 +29,43 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-STATIC_DIR = Path("/opt/pantalla-reloj/frontend/static")
-STATIC_DIR.mkdir(parents=True, exist_ok=True)
+STATIC_ROOT = Path(os.environ.get("PANTALLA_STATIC_DIR", "/opt/pantalla-reloj/frontend/static"))
 
-STYLE_PATH = STATIC_DIR / "style.json"
-if not STYLE_PATH.exists():
-    style = {
-        "version": 8,
-        "name": "OSM Basic Raster",
-        "sources": {
-            "osm": {
-                "type": "raster",
-                "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-                "tileSize": 256,
-                "attribution": "© OpenStreetMap contributors",
-            }
-        },
-        "layers": [
-            {"id": "osm", "type": "raster", "source": "osm"},
-        ],
-        "glyphs": "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
-    }
-    STYLE_PATH.write_text(json.dumps(style))
+STYLE_TEMPLATE = {
+    "version": 8,
+    "name": "OSM Basic Raster",
+    "sources": {
+        "osm": {
+            "type": "raster",
+            "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+            "tileSize": 256,
+            "attribution": "© OpenStreetMap contributors",
+        }
+    },
+    "layers": [
+        {"id": "osm", "type": "raster", "source": "osm"},
+    ],
+    "glyphs": "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+}
 
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+def _ensure_static_assets() -> Path:
+    target_dir = STATIC_ROOT
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        fallback_dir = Path(__file__).resolve().parent / "static"
+        logger.warning(
+            "Unable to create static directory %s, falling back to %s", target_dir, fallback_dir
+        )
+        fallback_dir.mkdir(parents=True, exist_ok=True)
+        target_dir = fallback_dir
+
+    style_path = target_dir / "style.json"
+    if not style_path.exists():
+        style_path.write_text(json.dumps(STYLE_TEMPLATE))
+
+    return target_dir
 
 
 def _default_payload(endpoint: str) -> Dict[str, Any]:
@@ -187,6 +200,12 @@ def update_storm_mode(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 @app.on_event("startup")
 def on_startup() -> None:
+    static_dir = _ensure_static_assets()
+    if not getattr(app.state, "static_mounted", False):
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+        app.state.static_mounted = True
+        logger.info("Static assets served from %s", static_dir)
+
     config = config_manager.read()
     logger.info("Pantalla backend started with rotation '%s'", config.display.rotation)
     cache_store.store("health", {"started_at": APP_START.isoformat()})

@@ -1,6 +1,6 @@
 import type { AppConfig } from "../types/config";
 
-const API_BASE = import.meta.env.VITE_BACKEND_URL ?? "http://127.0.0.1:8081";
+export const API_BASE = import.meta.env.VITE_BACKEND_URL ?? "http://127.0.0.1:8081";
 
 async function get<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`);
