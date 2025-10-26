@@ -69,8 +69,8 @@ install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$USER_HOME"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" /run/user/1000
 install -d -m 0755 "$PANTALLA_PREFIX" "$SESSION_PREFIX"
 install -d -m 0755 "$SESSION_PREFIX/bin" "$SESSION_PREFIX/openbox"
-install -d -m 0755 -o root -g root /var/lib/pantalla
-install -d -m 0755 -o root -g root /var/log/pantalla
+install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" /var/lib/pantalla
+install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" /var/log/pantalla
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$LOG_DIR"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_RUNTIME"

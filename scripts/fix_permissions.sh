@@ -18,10 +18,10 @@ fi
 
 install -d -m 0700 -o "$USER" -g "$GROUP" "$STATE_ROOT"
 install -d -m 0755 -o "$USER" -g "$GROUP" "$STATE_RUNTIME"
-install -d -m 0755 -o root -g root "$CONFIG_ROOT" "$LOG_ROOT"
+install -d -m 0755 -o "$USER" -g "$GROUP" "$CONFIG_ROOT" "$LOG_ROOT"
 install -d -m 0755 -o "$USER" -g "$GROUP" "$APP_LOG_DIR" 2>/dev/null || true
 
-chown -R "$USER:$GROUP" "$PANTALLA_ROOT" "$STATE_ROOT" "$APP_LOG_DIR" 2>/dev/null || true
+chown -R "$USER:$GROUP" "$PANTALLA_ROOT" "$STATE_ROOT" "$CONFIG_ROOT" "$LOG_ROOT" "$APP_LOG_DIR" 2>/dev/null || true
 chown -R www-data:www-data "$WEB_ROOT" 2>/dev/null || true
 
 chmod 755 "$PANTALLA_ROOT" 2>/dev/null || true
