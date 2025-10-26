@@ -48,6 +48,8 @@ Pantalla_reloj/
   vía `pantalla-backend-launch`, que valida imports y crea las rutas necesarias.
 - `pantalla-kiosk@dani.service`: depende de Openbox y del backend para abrir Epiphany
   en modo WebApp con el perfil correcto y sin navegadores confinados por snap.
+- `pantalla-kiosk-chromium@dani.service`: alternativa basada en Chromium con
+  geometría 480×1920 rotada a la izquierda y sin portals.
 
 ## Arranque estable (boot hardening)
 
@@ -106,7 +108,8 @@ en un estado consistente. Durante la instalación:
 - Se validan e instalan las dependencias APT requeridas.
 - Se habilita Corepack con `npm` actualizado sin usar `apt install npm`.
 - Se instala Epiphany como navegador kiosk por defecto (Firefox se descarga solo
-  si se ejecuta con `--with-firefox`).
+  si se ejecuta con `--with-firefox`). Para migrar a Chromium en modo kiosk, usa
+  `scripts/setup_chromium_kiosk.sh` tras la instalación.
 - Se prepara el backend (venv + `requirements.txt`) sirviendo en
   `http://127.0.0.1:8081` y se crea `/var/lib/pantalla/config.json` con el layout
   `full`, panel derecho y overlay oculto.

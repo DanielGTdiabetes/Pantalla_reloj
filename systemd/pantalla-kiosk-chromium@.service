@@ -1,0 +1,35 @@
+[Unit]
+Description=Pantalla_reloj Kiosk (Chromium) for user %i
+After=pantalla-openbox@%i.service
+Wants=pantalla-openbox@%i.service
+
+[Service]
+User=%i
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority
+Environment=GDK_BACKEND=x11
+Environment=GTK_USE_PORTAL=0
+Environment=GIO_USE_PORTALS=0
+Environment=CHROMIUM_USER_DATA_DIR=/var/lib/pantalla-reloj/state/chromium
+Environment=CHROMIUM_CACHE_DIR=/var/lib/pantalla-reloj/cache/chromium
+Environment=KIOSK_URL=http://127.0.0.1
+
+# --- Geometría estable 480x1920 rotada a la izquierda ---
+ExecStartPre=/bin/sh -lc 'xset -dpms; xset s off; xset s noblank || true'
+ExecStartPre=/bin/sh -lc 'xrandr --fb 1920x1920 || true; sleep 0.2'
+ExecStartPre=/bin/sh -lc 'xrandr --output HDMI-1 --rotate normal || true; sleep 0.2'
+ExecStartPre=/bin/sh -lc 'xrandr --output HDMI-1 --mode 480x1920 --primary --pos 0x0 || true; sleep 0.2'
+ExecStartPre=/bin/sh -lc 'xrandr --output HDMI-1 --rotate left || true; sleep 0.2'
+ExecStartPre=/bin/sh -lc 'xrandr --fb 480x1920 || true; sleep 0.2'
+ExecStartPre=/bin/sh -lc 'xrandr --output HDMI-1 --mode 480x1920 --rotate left --primary --pos 0x0 || true; sleep 0.2'
+ExecStartPre=/bin/sh -lc 'xrandr --output HDMI-1 --mode 480x1920 --rotate left --primary --pos 0x0 || true'
+ExecStartPre=/bin/sh -lc 'pkill -u %U -x chromium-browser 2>/dev/null || true'
+ExecStartPre=/bin/sh -lc 'pkill -u %U -f "/snap/chromium/.*/chromium.*" 2>/dev/null || true'
+
+ExecStart=/usr/local/bin/pantalla-kiosk-chromium
+
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
