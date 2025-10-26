@@ -108,6 +108,14 @@ else
   log_session "xset-missing"
 fi
 
+if command -v unclutter >/dev/null 2>&1; then
+  DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" \
+    unclutter -idle 0 -root -noevents -grab >/dev/null 2>&1 &
+  log_session "unclutter-started"
+else
+  log_session "unclutter-missing"
+fi
+
 log_session "xset-hook-finished"
 
 sleep 0.5 2>/dev/null || sleep 1

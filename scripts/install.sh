@@ -83,6 +83,7 @@ install -d -m 0755 "$REPO_ROOT/home/dani/.local/share/applications" >/dev/null 2
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$USER_HOME"
 install -d -m 0755 "$PANTALLA_PREFIX" "$SESSION_PREFIX"
 install -d -m 0755 "$SESSION_PREFIX/bin" "$SESSION_PREFIX/openbox"
+install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" /opt/pantalla-reloj/frontend/static
 install -d -m 0755 -o root -g root /var/lib/pantalla
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$KIOSK_LOG_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$LOG_DIR"
@@ -117,6 +118,7 @@ APT_PACKAGES=(
   file
   xauth
   python3-venv
+  unclutter-xfixes
 )
 apt-get update -y
 DEBIAN_FRONTEND=noninteractive apt-get install -y "${APT_PACKAGES[@]}"
