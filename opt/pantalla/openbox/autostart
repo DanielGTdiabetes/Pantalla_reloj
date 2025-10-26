@@ -4,6 +4,11 @@ set -euo pipefail
 export DISPLAY="${DISPLAY:-:0}"
 export XAUTHORITY="${XAUTHORITY:-${HOME:-/home/dani}/.Xauthority}"
 
+# Fondo negro para evitar flash blanco en el arranque.
+if command -v xsetroot >/dev/null 2>&1; then
+  DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xsetroot -solid black >/dev/null 2>&1 || true
+fi
+
 # El navegador se lanza desde systemd (pantalla-kiosk-chromium@); no iniciar nada aquí.
 
 STATE_DIR=/var/lib/pantalla-reloj/state

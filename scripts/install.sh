@@ -194,8 +194,11 @@ if [[ -f "$AUTO_FILE" && ! -f "$AUTO_BACKUP" ]]; then
 fi
 install -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$REPO_ROOT/openbox/autostart" "$AUTO_FILE"
 
-ln -sfn /var/lib/pantalla-reloj/.Xauthority "$USER_HOME/.Xauthority" || true
-chown -h "$USER_NAME:$USER_NAME" "$USER_HOME/.Xauthority" || true
+if [[ ! -f "${STATE_DIR}/.Xauthority" ]]; then
+  install -m 0600 -o "$USER_NAME" -g "$USER_NAME" /dev/null "${STATE_DIR}/.Xauthority"
+fi
+install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$USER_HOME"
+install -m 0600 -o "$USER_NAME" -g "$USER_NAME" "${STATE_DIR}/.Xauthority" "$USER_HOME/.Xauthority"
 
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/xorg-openbox-env.sh" "$SESSION_PREFIX/bin/xorg-openbox-env.sh"
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/wait-x.sh" "$SESSION_PREFIX/bin/wait-x.sh"
@@ -435,6 +438,9 @@ install -D -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk@.service.d/10-sanitize-rol
 install -D -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk-watchdog@.service.d/10-rollback.conf" \
   /etc/systemd/system/pantalla-kiosk-watchdog@.service.d/10-rollback.conf
 
+install -D -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk-chromium@dani.service.d/override.conf" \
+  "/etc/systemd/system/pantalla-kiosk-chromium@${USER_NAME}.service.d/override.conf"
+
 if [[ $units_changed -eq 1 ]]; then
   log_info "Systemd units updated"
 else
@@ -448,9 +454,7 @@ log_info "Enabling services"
 systemctl enable pantalla-xorg.service || true
 systemctl enable pantalla-dash-backend@${USER_NAME}.service || true
 systemctl enable pantalla-openbox@${USER_NAME}.service || true
-systemctl enable pantalla-portal@${USER_NAME}.service || true
-systemctl enable pantalla-kiosk@${USER_NAME}.service || true
-systemctl enable --now pantalla-kiosk-watchdog@${USER_NAME}.timer || true
+systemctl enable pantalla-kiosk-chromium@${USER_NAME}.service || true
 
 log_info "Restarting Pantalla services"
 systemctl restart pantalla-xorg.service
@@ -461,12 +465,12 @@ else
 fi
 systemctl restart pantalla-openbox@${USER_NAME}.service
 sleep 1
-systemctl restart pantalla-portal@${USER_NAME}.service
-sleep 1
+systemctl restart pantalla-kiosk-chromium@${USER_NAME}.service
+sleep 2
 
 log_info "Running post-install checks"
 
-if DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xset q >/dev/null 2>&1; then
+if DISPLAY=:0 XAUTHORITY=/home/${USER_NAME}/.Xauthority xset q >/dev/null 2>&1; then
   log_ok "Servidor X activo (xset q)"
   SUMMARY+=('[install] xset q ejecutado correctamente')
 else
@@ -474,8 +478,8 @@ else
   SUMMARY+=('[install] xset q falló')
 fi
 
-if DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xrandr --query | grep -q 'HDMI-1 connected primary 480x1920+0+0'; then
-  if DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xrandr --verbose --output HDMI-1 | grep -q 'Rotation: left'; then
+if DISPLAY=:0 XAUTHORITY=/home/${USER_NAME}/.Xauthority xrandr --query | grep -q 'HDMI-1 connected primary 480x1920+0+0'; then
+  if DISPLAY=:0 XAUTHORITY=/home/${USER_NAME}/.Xauthority xrandr --verbose --output HDMI-1 | grep -q 'Rotation: left'; then
     log_ok "Geometría HDMI-1 480x1920 left configurada"
     SUMMARY+=('[install] geometría HDMI-1 480x1920 left OK')
   else
@@ -490,26 +494,23 @@ fi
 systemctl restart pantalla-dash-backend@${USER_NAME}.service
 sleep 1
 
-if curl -fsS -m 2 http://127.0.0.1:8081/healthz | grep -q '"status":"ok"'; then
-  log_ok "Backend healthz reachable"
-  SUMMARY+=('[install] backend healthz responde')
+if curl -fsS -m 2 http://127.0.0.1:8081/api/health | grep -q '"status":"ok"'; then
+  log_ok "Backend health responde (/api/health)"
+  SUMMARY+=('[install] backend /api/health responde')
 else
-  log_warn "Backend healthz not responding yet"
-  SUMMARY+=('[install] backend healthz no responde')
+  log_warn "Backend /api/health not responding yet"
+  SUMMARY+=('[install] backend /api/health no responde')
 fi
 
-systemctl restart pantalla-kiosk@${USER_NAME}.service
-sleep 2
-
-if DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority wmctrl -lx | grep -q 'epiphany\.epiphany'; then
-  log_ok "Ventana de Epiphany detectada"
-  SUMMARY+=('[install] ventana de Epiphany detectada')
+if DISPLAY=:0 XAUTHORITY=/home/${USER_NAME}/.Xauthority wmctrl -lx | grep -q 'chromium-browser\.pantalla-kiosk'; then
+  log_ok "Ventana de Chromium detectada"
+  SUMMARY+=('[install] ventana de Chromium detectada')
 else
-  log_warn "No se detectó ventana de Epiphany"
-  SUMMARY+=('[install] ventana de Epiphany no detectada')
+  log_warn "No se detectó ventana de Chromium"
+  SUMMARY+=('[install] ventana de Chromium no detectada')
 fi
 
-if DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xprop -root _NET_ACTIVE_WINDOW >/dev/null 2>&1; then
+if DISPLAY=:0 XAUTHORITY=/home/${USER_NAME}/.Xauthority xprop -root _NET_ACTIVE_WINDOW >/dev/null 2>&1; then
   log_ok "xprop _NET_ACTIVE_WINDOW ejecutado"
   SUMMARY+=('[install] xprop activo ejecutado')
 else
