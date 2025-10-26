@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -7,6 +8,7 @@ from typing import Any, Dict
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .cache import CacheStore
 from .config_manager import ConfigManager
@@ -26,6 +28,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+STATIC_DIR = Path("/opt/pantalla-reloj/frontend/static")
+STATIC_DIR.mkdir(parents=True, exist_ok=True)
+
+STYLE_PATH = STATIC_DIR / "style.json"
+if not STYLE_PATH.exists():
+    style = {
+        "version": 8,
+        "name": "OSM Basic Raster",
+        "sources": {
+            "osm": {
+                "type": "raster",
+                "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+                "tileSize": 256,
+                "attribution": "© OpenStreetMap contributors",
+            }
+        },
+        "layers": [
+            {"id": "osm", "type": "raster", "source": "osm"},
+        ],
+        "glyphs": "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+    }
+    STYLE_PATH.write_text(json.dumps(style))
+
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 def _default_payload(endpoint: str) -> Dict[str, Any]:

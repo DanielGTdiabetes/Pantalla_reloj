@@ -343,17 +343,10 @@ export const DashboardPage: React.FC = () => {
     weather
   ]);
 
-  const mapSettings = config.ui.map ?? UI_DEFAULTS.map;
-  const mapCenter = Array.isArray(mapSettings.center)
-    ? ([Number(mapSettings.center[0]) || 0, Number(mapSettings.center[1]) || 0] as [number, number])
-    : (UI_DEFAULTS.map.center as [number, number]);
-  const mapZoom = typeof mapSettings.zoom === "number" ? mapSettings.zoom : UI_DEFAULTS.map.zoom;
-  const mapProvider = mapSettings.provider || UI_DEFAULTS.map.provider;
-
   return (
     <div className="public-dashboard" aria-busy={loading}>
       <div className="public-dashboard__map">
-        <WorldMap center={mapCenter} zoom={mapZoom} provider={mapProvider} />
+        <WorldMap />
         <div className="public-dashboard__map-overlay">
           <span className="public-dashboard__map-location">{location}</span>
           <span className="public-dashboard__map-temp">

@@ -1,162 +1,140 @@
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 
-type LatLngTuple = [number, number];
-type BoundsTuple = [LatLngTuple, LatLngTuple];
-
-type FitBoundsOptions = {
-  padding?: {
-    top: number;
-    bottom: number;
-    left: number;
-    right: number;
-  };
-  duration?: number;
+type MapPadding = {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
 };
 
-type LeafletMap = {
-  setView: (center: LatLngTuple, zoom: number) => LeafletMap;
-  fitBounds: (bounds: BoundsTuple, options?: FitBoundsOptions) => LeafletMap;
-  setMaxBounds: (bounds: BoundsTuple) => LeafletMap;
+type MapOptions = {
+  container: HTMLDivElement;
+  style: string;
+  renderWorldCopies: boolean;
+  interactive: boolean;
+  attributionControl: boolean;
+  pitchWithRotate: boolean;
+  dragRotate: boolean;
+};
+
+type MapInstance = {
+  fitBounds: (bounds: [[number, number], [number, number]], options?: { padding?: MapPadding; duration?: number }) => void;
+  isStyleLoaded: () => boolean;
+  once: (event: string, handler: () => void) => void;
+  resize: () => void;
   remove: () => void;
-  invalidateSize: () => LeafletMap;
 };
 
-type LeafletTileLayer = {
-  addTo: (map: LeafletMap) => LeafletTileLayer;
-  remove: () => void;
-  setUrl: (url: string) => LeafletTileLayer;
-};
-
-type LeafletModule = {
-  map: (container: HTMLDivElement, options: Record<string, unknown>) => LeafletMap;
-  tileLayer: (url: string, options?: Record<string, unknown>) => LeafletTileLayer;
+type MapLibreModule = {
+  Map: new (options: MapOptions) => MapInstance;
 };
 
 type WorldMapProps = {
-  center: [number, number];
-  zoom: number;
-  provider?: string;
   className?: string;
 };
 
-const TILE_PROVIDERS: Record<string, string> = {
-  osm: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-};
+const MAP_CONTAINER_ID = "map";
+const MAP_STYLE_URL = "http://127.0.0.1:8081/static/style.json";
+const MAPLIBRE_SCRIPT = "https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js";
+const MAPLIBRE_STYLES = "https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css";
+const SOUTH_WEST: [number, number] = [-170, -60];
+const NORTH_EAST: [number, number] = [170, 75];
+const PORTRAIT_PADDING: MapPadding = { top: 40, bottom: 40, left: 8, right: 8 };
 
-const DEFAULT_PROVIDER = "osm";
-const LEAFLET_SCRIPT = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-const LEAFLET_STYLES = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+let mapLibrePromise: Promise<MapLibreModule> | null = null;
 
-const WORLD_BOUNDS: BoundsTuple = [
-  [-85, -180],
-  [85, 180]
-];
-
-const PORTRAIT_BOUNDS: BoundsTuple = [
-  [-60, -170],
-  [75, 170]
-];
-
-const PORTRAIT_PADDING: NonNullable<FitBoundsOptions["padding"]> = {
-  top: 40,
-  bottom: 40,
-  left: 8,
-  right: 8
-};
-
-const TILE_LAYER_OPTIONS: Record<string, unknown> = {
-  minZoom: 1,
-  maxZoom: 18,
-  detectRetina: true,
-  crossOrigin: true,
-  noWrap: true,
-  bounds: WORLD_BOUNDS
-};
-
-let leafletPromise: Promise<LeafletModule> | null = null;
-
-const ensureLeaflet = (): Promise<LeafletModule> => {
-  if (leafletPromise) {
-    return leafletPromise;
+const ensureMapLibre = (): Promise<MapLibreModule> => {
+  if (mapLibrePromise) {
+    return mapLibrePromise;
   }
-  leafletPromise = new Promise((resolve, reject) => {
+
+  mapLibrePromise = new Promise((resolve, reject) => {
     if (typeof window === "undefined") {
-      reject(new Error("Leaflet requires a browser environment"));
+      reject(new Error("MapLibre requires a browser environment"));
       return;
     }
 
-    const existing = (window as unknown as { L?: LeafletModule }).L;
+    const existing = (window as unknown as { maplibregl?: MapLibreModule }).maplibregl;
     if (existing) {
       resolve(existing);
       return;
     }
 
-    if (!document.querySelector("link[data-leaflet]")) {
+    if (!document.querySelector("link[data-maplibre]") && !document.getElementById("maplibre-gl-css")) {
       const link = document.createElement("link");
       link.rel = "stylesheet";
-      link.href = LEAFLET_STYLES;
-      link.setAttribute("data-leaflet", "true");
+      link.href = MAPLIBRE_STYLES;
+      link.id = "maplibre-gl-css";
+      link.setAttribute("data-maplibre", "true");
       document.head.appendChild(link);
     }
 
     const script = document.createElement("script");
-    script.src = LEAFLET_SCRIPT;
+    script.src = MAPLIBRE_SCRIPT;
     script.async = true;
+    script.setAttribute("data-maplibre", "true");
     script.onload = () => {
-      const globalLeaflet = (window as unknown as { L?: LeafletModule }).L;
-      if (globalLeaflet) {
-        resolve(globalLeaflet);
+      const globalMapLibre = (window as unknown as { maplibregl?: MapLibreModule }).maplibregl;
+      if (globalMapLibre) {
+        resolve(globalMapLibre);
       } else {
-        reject(new Error("Leaflet script loaded but global L is undefined"));
+        reject(new Error("MapLibre script loaded but global maplibregl is undefined"));
       }
     };
-    script.onerror = () => reject(new Error("No se pudo cargar Leaflet"));
+    script.onerror = () => reject(new Error("No se pudo cargar MapLibre"));
     document.head.appendChild(script);
   });
 
-  return leafletPromise;
+  return mapLibrePromise;
 };
 
-export const WorldMap: React.FC<WorldMapProps> = ({ provider = DEFAULT_PROVIDER, className }) => {
+export const WorldMap = ({ className }: WorldMapProps): JSX.Element => {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<LeafletMap | null>(null);
-  const layerRef = useRef<LeafletTileLayer | null>(null);
-  const moduleRef = useRef<LeafletModule | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    let mapInstance: MapInstance | null = null;
+    let resizeListener: (() => void) | undefined;
+
+    const fitWorldBounds = () => {
+      if (cancelled) {
+        return;
+      }
+      mapInstance?.fitBounds([SOUTH_WEST, NORTH_EAST], {
+        padding: PORTRAIT_PADDING,
+        duration: 0,
+      });
+    };
 
     const mount = async () => {
       try {
-        const leaflet = await ensureLeaflet();
-        if (cancelled || mapRef.current || !containerRef.current) {
+        const maplibre = await ensureMapLibre();
+        if (cancelled || !containerRef.current) {
           return;
         }
-        moduleRef.current = leaflet;
-        const map = leaflet.map(containerRef.current, {
-          zoomControl: false,
-          dragging: false,
-          scrollWheelZoom: false,
-          doubleClickZoom: false,
-          touchZoom: false,
-          boxZoom: false,
-          keyboard: false,
+
+        mapInstance = new maplibre.Map({
+          container: containerRef.current,
+          style: MAP_STYLE_URL,
+          renderWorldCopies: false,
+          interactive: false,
           attributionControl: false,
-          maxBoundsViscosity: 1
+          pitchWithRotate: false,
+          dragRotate: false,
         });
-        mapRef.current = map;
 
-        const tileUrl = TILE_PROVIDERS[provider] ?? TILE_PROVIDERS[DEFAULT_PROVIDER];
-        const layer = leaflet.tileLayer(tileUrl, TILE_LAYER_OPTIONS);
-        layer.addTo(map);
-        layerRef.current = layer;
+        if (mapInstance.isStyleLoaded()) {
+          fitWorldBounds();
+        } else {
+          mapInstance.once("load", fitWorldBounds);
+        }
 
-        map.setMaxBounds(WORLD_BOUNDS);
-        map.fitBounds(PORTRAIT_BOUNDS, {
-          padding: PORTRAIT_PADDING,
-          duration: 0
-        });
-        window.setTimeout(() => map.invalidateSize(), 0);
+        resizeListener = () => {
+          mapInstance?.resize();
+          fitWorldBounds();
+        };
+
+        window.addEventListener("resize", resizeListener);
       } catch (error) {
         console.error(error);
       }
@@ -166,28 +144,24 @@ export const WorldMap: React.FC<WorldMapProps> = ({ provider = DEFAULT_PROVIDER,
 
     return () => {
       cancelled = true;
-      layerRef.current?.remove();
-      layerRef.current = null;
-      mapRef.current?.remove();
-      mapRef.current = null;
+      if (resizeListener) {
+        window.removeEventListener("resize", resizeListener);
+      }
+      if (mapInstance) {
+        mapInstance.remove();
+        mapInstance = null;
+      }
     };
   }, []);
 
-  useEffect(() => {
-    const leaflet = moduleRef.current;
-    const map = mapRef.current;
-    if (!leaflet || !map) {
-      return;
-    }
-    const tileUrl = TILE_PROVIDERS[provider] ?? TILE_PROVIDERS[DEFAULT_PROVIDER];
-    if (!layerRef.current) {
-      const layer = leaflet.tileLayer(tileUrl, TILE_LAYER_OPTIONS);
-      layer.addTo(map);
-      layerRef.current = layer;
-      return;
-    }
-    layerRef.current.setUrl(tileUrl);
-  }, [provider]);
-
-  return <div ref={containerRef} className={`map-container${className ? ` ${className}` : ""}`} />;
+  return (
+    <div
+      ref={containerRef}
+      id={MAP_CONTAINER_ID}
+      className={`map-container${className ? ` ${className}` : ""}`}
+      role="presentation"
+    />
+  );
 };
+
+export default WorldMap;
