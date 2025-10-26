@@ -1,22 +1,20 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-import { ClockDisplay } from "../components/ClockDisplay";
-import { RotatingCard, type RotatingPanel } from "../components/RotatingCard";
-import { WorldMap } from "../components/WorldMap";
 import { UI_DEFAULTS } from "../config/defaults";
+import { WorldMap } from "../components/WorldMap";
+import { RotatingCard, type RotatingCardItem } from "../components/RotatingCard";
+import { TimeCard } from "../components/dashboard/cards/TimeCard";
+import { WeatherCard } from "../components/dashboard/cards/WeatherCard";
+import { CalendarCard } from "../components/dashboard/cards/CalendarCard";
+import { MoonCard } from "../components/dashboard/cards/MoonCard";
+import { HarvestCard } from "../components/dashboard/cards/HarvestCard";
+import { SaintsCard } from "../components/dashboard/cards/SaintsCard";
+import { NewsCard } from "../components/dashboard/cards/NewsCard";
+import { EphemeridesCard } from "../components/dashboard/cards/EphemeridesCard";
 import { useConfig } from "../context/ConfigContext";
 import { api } from "../services/api";
-import type { UIScrollSettings } from "../types/config";
 import { ensurePlainText, sanitizeRichText } from "../utils/sanitize";
-
-import dayjs from "dayjs";
-import "dayjs/locale/es";
-import utc from "dayjs/plugin/utc";
-import timezone from "dayjs/plugin/timezone";
-
-dayjs.extend(utc);
-dayjs.extend(timezone);
-dayjs.locale("es");
+import { dayjs } from "../utils/dayjs";
 
 type DashboardPayload = {
   weather?: Record<string, unknown>;
@@ -26,23 +24,6 @@ type DashboardPayload = {
 };
 
 const REFRESH_INTERVAL_MS = 60_000;
-
-const normalizeScroll = (
-  scroll: Record<string, UIScrollSettings>,
-  panel: string,
-  fallback: UIScrollSettings
-): UIScrollSettings => {
-  const settings = scroll[panel];
-  if (!settings) {
-    return fallback;
-  }
-  return {
-    enabled: settings.enabled ?? fallback.enabled,
-    direction: (settings.direction as "left" | "up") ?? fallback.direction,
-    speed: settings.speed ?? fallback.speed,
-    gap_px: typeof settings.gap_px === "number" ? settings.gap_px : fallback.gap_px
-  };
-};
 
 const temperatureToUnit = (value: number, from: string, to: string): number => {
   const normalize = (unit: string) => unit.replace("°", "").trim().toUpperCase();
@@ -99,8 +80,23 @@ const formatTemperature = (
   return { value: `${rounded}`, unit: unitLabel };
 };
 
-const joinWithBreaks = (lines: string[], double = false): string => {
-  return lines.filter(Boolean).join(double ? "<br /><br />" : "<br />");
+const safeArray = (value: unknown): Record<string, unknown>[] => {
+  return Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
+};
+
+const extractStrings = (value: unknown): string[] => {
+  if (!value) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => (typeof entry === "string" ? entry : sanitizeRichText(entry)))
+      .filter((entry): entry is string => Boolean(entry));
+  }
+  if (typeof value === "string") {
+    return [value];
+  }
+  return [];
 };
 
 export const DashboardPage: React.FC = () => {
@@ -144,271 +140,159 @@ export const DashboardPage: React.FC = () => {
   const news = (payload.news ?? {}) as Record<string, unknown>;
   const calendar = (payload.calendar ?? {}) as Record<string, unknown>;
 
-  const rawTemperature = typeof weather.temperature === "number" ? weather.temperature : null;
-  const rawUnit = ensurePlainText(weather.unit);
   const targetUnit = config.ui.fixed.temperature.unit ?? UI_DEFAULTS.fixed.temperature.unit;
+  const rawTemperature = typeof weather.temperature === "number" ? weather.temperature : null;
+  const rawUnit = ensurePlainText(weather.unit) || "C";
+  const temperature = formatTemperature(rawTemperature, rawUnit, targetUnit);
+
+  const feelsLikeValue =
+    typeof weather.feels_like === "number"
+      ? formatTemperature(weather.feels_like as number, rawUnit, targetUnit)
+      : null;
+
+  const humidity = typeof weather.humidity === "number" ? (weather.humidity as number) : null;
+  const wind = typeof weather.wind_speed === "number"
+    ? (weather.wind_speed as number)
+    : typeof weather.wind === "number"
+      ? (weather.wind as number)
+      : null;
+  const condition = sanitizeRichText(weather.summary) || sanitizeRichText(weather.condition) || null;
   const location = ensurePlainText(weather.location) || "Ubicación desconocida";
-  const condition = ensurePlainText(weather.condition) || "Sin datos";
 
-  const { value: temperatureValue, unit: temperatureUnit } = formatTemperature(
-    rawTemperature,
-    rawUnit || "C",
-    targetUnit
-  );
+  const sunrise = sanitizeRichText(astronomy.sunrise) || null;
+  const sunset = sanitizeRichText(astronomy.sunset) || null;
+  const moonPhase = sanitizeRichText(astronomy.moon_phase) || null;
+  const moonIllumination = typeof astronomy.moon_illumination === "number"
+    ? (astronomy.moon_illumination as number)
+    : typeof astronomy.illumination === "number"
+      ? (astronomy.illumination as number)
+      : null;
 
-  const scrollSettings = config.ui.text?.scroll ?? UI_DEFAULTS.text.scroll;
+  const ephemeridesEvents = safeArray(astronomy.events)
+    .map((entry) => sanitizeRichText(entry?.description ?? entry?.title ?? ""))
+    .filter((value): value is string => Boolean(value));
 
-  const newsScroll = normalizeScroll(scrollSettings, "news", UI_DEFAULTS.text.scroll.news);
-  const ephemeridesScroll = normalizeScroll(
-    scrollSettings,
-    "ephemerides",
-    UI_DEFAULTS.text.scroll.ephemerides
-  );
-  const forecastScroll = normalizeScroll(scrollSettings, "forecast", UI_DEFAULTS.text.scroll.forecast);
+  const newsItems = safeArray(news.items).map((item) => ({
+    title: sanitizeRichText(item.title) || "Titular", 
+    summary: sanitizeRichText(item.summary) || sanitizeRichText(item.description) || undefined,
+    source: sanitizeRichText(item.source) || undefined
+  }));
 
-  const rotationSettings = config.ui.rotation ?? UI_DEFAULTS.rotation;
+  const calendarEvents = safeArray(calendar.upcoming).map((event) => ({
+    title: sanitizeRichText(event.title) || "Evento",
+    start: ensurePlainText(event.start) || ensurePlainText(event.when) || null
+  }));
 
-  const panels = useMemo<RotatingPanel[]>(() => {
-    const selectedPanels = rotationSettings.panels?.length
-      ? rotationSettings.panels
-      : UI_DEFAULTS.rotation.panels;
+  const harvestItems = safeArray(calendar.harvest).map((item) => ({
+    name: sanitizeRichText(item.name) || sanitizeRichText(item.crop) || "Actividad",
+    status: sanitizeRichText(item.status) || sanitizeRichText(item.detail) || null
+  }));
 
-    const buildNewsPanel = (): RotatingPanel => {
-      const items = Array.isArray(news.items) ? (news.items as Record<string, unknown>[]) : [];
-      if (items.length === 0) {
-        return {
-          id: "news",
-          title: "Noticias",
-          content: "Sin titulares disponibles",
-          direction: newsScroll.direction,
-          enableScroll: newsScroll.enabled,
-          speed: newsScroll.speed,
-          gap: newsScroll.gap_px
-        };
-      }
-      const segments = items
-        .map((item) => {
-          const title = sanitizeRichText(item?.title);
-          const source = sanitizeRichText(item?.source);
-          if (title && source) {
-            return `${title} — ${source}`;
-          }
-          return title || source;
-        })
-        .filter(Boolean);
-      return {
-        id: "news",
-        title: "Noticias",
-        content: segments.length > 0 ? segments.join(" • ") : "Sin titulares disponibles",
-        direction: newsScroll.direction,
-        enableScroll: newsScroll.enabled,
-        speed: newsScroll.speed,
-        gap: newsScroll.gap_px
-      };
-    };
+  const saintsEntries = useMemo(() => {
+    const fromSaints = extractStrings(calendar.saints);
+    const fromNamedays = extractStrings(calendar.namedays);
+    return [...fromSaints, ...fromNamedays];
+  }, [calendar.saints, calendar.namedays]);
 
-    const buildEphemeridesPanel = (): RotatingPanel => {
-      const sunrise = sanitizeRichText(astronomy.sunrise);
-      const sunset = sanitizeRichText(astronomy.sunset);
-      const moonPhase = sanitizeRichText(astronomy.moon_phase);
-      const lines = [
-        sunrise ? `Amanecer: ${sunrise}` : "",
-        sunset ? `Anochecer: ${sunset}` : "",
-        moonPhase ? `Fase lunar: ${moonPhase}` : ""
-      ].filter(Boolean);
-      return {
-        id: "ephemerides",
-        title: "Efemérides",
-        content: lines.length > 0 ? joinWithBreaks(lines, true) : "Sin efemérides disponibles",
-        direction: ephemeridesScroll.direction,
-        enableScroll: ephemeridesScroll.enabled,
-        speed: ephemeridesScroll.speed,
-        gap: ephemeridesScroll.gap_px
-      };
-    };
+  const mapboxToken = (config.ui.mapbox_token ?? "").trim() || null;
 
-    const buildMoonPanel = (): RotatingPanel => {
-      const moonPhase = sanitizeRichText(astronomy.moon_phase) || "Sin datos";
-      return {
-        id: "moon",
-        title: "Fase lunar",
-        content: moonPhase,
-        direction: ephemeridesScroll.direction,
-        enableScroll: ephemeridesScroll.enabled,
-        speed: ephemeridesScroll.speed,
-        gap: ephemeridesScroll.gap_px
-      };
-    };
-
-    const buildWeatherPanel = (): RotatingPanel => {
-      const summary = sanitizeRichText(weather.summary) || sanitizeRichText(weather.condition);
-      const segments: string[] = [];
-      const formattedTemperature = temperatureValue !== "--" ? `${temperatureValue}${temperatureUnit}` : "";
-
-      if (formattedTemperature) {
-        segments.push(formattedTemperature);
-      }
-      if (summary) {
-        segments.push(summary);
-      }
-      if (location) {
-        segments.push(location);
-      }
-
-      return {
+  const rotatingCards = useMemo<RotatingCardItem[]>(
+    () => [
+      {
+        id: "time",
+        duration: 8000,
+        render: () => <TimeCard timezone={config.display.timezone} />
+      },
+      {
         id: "weather",
-        title: "Clima actual",
-        content: segments.length > 0 ? joinWithBreaks(segments, true) : "Sin datos meteorológicos",
-        direction: forecastScroll.direction,
-        enableScroll: forecastScroll.enabled,
-        speed: forecastScroll.speed,
-        gap: forecastScroll.gap_px
-      };
-    };
-
-    const buildForecastPanel = (): RotatingPanel => {
-      const forecastItems = Array.isArray(weather.forecast)
-        ? (weather.forecast as Record<string, unknown>[])
-        : [];
-      if (forecastItems.length === 0) {
-        const summary = sanitizeRichText(weather.summary) || sanitizeRichText(weather.condition);
-        const fallback = summary || "Sin previsión disponible";
-        return {
-          id: "forecast",
-          title: "Pronóstico",
-          content: fallback,
-          direction: forecastScroll.direction,
-          enableScroll: forecastScroll.enabled,
-          speed: forecastScroll.speed,
-          gap: forecastScroll.gap_px
-        };
-      }
-      const lines = forecastItems
-        .map((entry) => {
-          const label = sanitizeRichText(entry.period ?? entry.label ?? "");
-          const detail = sanitizeRichText(entry.summary ?? entry.condition ?? "");
-          if (label && detail) {
-            return `${label}: ${detail}`;
-          }
-          return label || detail;
-        })
-        .filter(Boolean);
-      return {
-        id: "forecast",
-        title: "Pronóstico",
-        content: lines.length > 0 ? joinWithBreaks(lines, true) : "Sin previsión disponible",
-        direction: forecastScroll.direction,
-        enableScroll: forecastScroll.enabled,
-        speed: forecastScroll.speed,
-        gap: forecastScroll.gap_px
-      };
-    };
-
-    const buildCalendarPanel = (): RotatingPanel => {
-      const entries = Array.isArray(calendar.upcoming)
-        ? (calendar.upcoming as Record<string, unknown>[])
-        : [];
-      if (entries.length === 0) {
-        return {
-          id: "calendar",
-          title: "Agenda",
-          content: "Sin eventos próximos",
-          direction: ephemeridesScroll.direction,
-          enableScroll: ephemeridesScroll.enabled,
-          speed: ephemeridesScroll.speed,
-          gap: ephemeridesScroll.gap_px
-        };
-      }
-      const lines = entries.slice(0, 5).map((entry) => {
-        const title = sanitizeRichText(entry.title);
-        const start = ensurePlainText(entry.start);
-        if (start) {
-          const localized = dayjs(start).tz(config.display.timezone).format("ddd D MMM, HH:mm");
-          return `${title || "Evento"} — ${localized}`;
-        }
-        return title || "Evento";
-      });
-      return {
+        duration: 10000,
+        render: () => (
+          <WeatherCard
+            temperatureLabel={`${temperature.value}${temperature.unit}`}
+            feelsLikeLabel={feelsLikeValue ? `${feelsLikeValue.value}${feelsLikeValue.unit}` : null}
+            condition={condition}
+            humidity={humidity}
+            wind={wind}
+            unit={temperature.unit}
+          />
+        )
+      },
+      {
         id: "calendar",
-        title: "Agenda",
-        content: lines.length > 0 ? joinWithBreaks(lines, true) : "Sin eventos próximos",
-        direction: ephemeridesScroll.direction,
-        enableScroll: ephemeridesScroll.enabled,
-        speed: ephemeridesScroll.speed,
-        gap: ephemeridesScroll.gap_px
-      };
-    };
+        duration: 10000,
+        render: () => <CalendarCard events={calendarEvents} timezone={config.display.timezone} />
+      },
+      {
+        id: "moon",
+        duration: 10000,
+        render: () => <MoonCard moonPhase={moonPhase} illumination={moonIllumination} />
+      },
+      {
+        id: "harvest",
+        duration: 12000,
+        render: () => <HarvestCard items={harvestItems} />
+      },
+      {
+        id: "saints",
+        duration: 12000,
+        render: () => <SaintsCard saints={saintsEntries} />
+      },
+      {
+        id: "news",
+        duration: 20000,
+        render: () => <NewsCard items={newsItems} />
+      },
+      {
+        id: "ephemerides",
+        duration: 20000,
+        render: () => (
+          <EphemeridesCard
+            sunrise={sunrise}
+            sunset={sunset}
+            moonPhase={moonPhase}
+            events={ephemeridesEvents}
+          />
+        )
+      }
+    ], [
+      calendarEvents,
+      condition,
+      config.display.timezone,
+      ephemeridesEvents,
+      feelsLikeValue,
+      harvestItems,
+      humidity,
+      moonIllumination,
+      moonPhase,
+      newsItems,
+      saintsEntries,
+      sunrise,
+      sunset,
+      temperature.unit,
+      temperature.value,
+      wind
+    ]
+  );
 
-    const builders: Record<string, () => RotatingPanel> = {
-      news: buildNewsPanel,
-      ephemerides: buildEphemeridesPanel,
-      moon: buildMoonPanel,
-      weather: buildWeatherPanel,
-      forecast: buildForecastPanel,
-      calendar: buildCalendarPanel
-    };
-
-    return selectedPanels
-      .map((panel) => builders[panel]?.())
-      .filter((panel): panel is RotatingPanel => Boolean(panel));
-  }, [
-    astronomy,
-    calendar,
-    config.display.timezone,
-    ephemeridesScroll.direction,
-    ephemeridesScroll.enabled,
-    ephemeridesScroll.gap_px,
-    ephemeridesScroll.speed,
-    forecastScroll.direction,
-    forecastScroll.enabled,
-    forecastScroll.gap_px,
-    forecastScroll.speed,
-    news,
-    newsScroll.direction,
-    newsScroll.enabled,
-    newsScroll.gap_px,
-    newsScroll.speed,
-    rotationSettings.panels,
-    weather,
-    condition,
-    location,
-    temperatureUnit,
-    temperatureValue
-  ]);
-
-  const sunriseValue = sanitizeRichText(astronomy.sunrise) || "--:--";
-  const sunsetValue = sanitizeRichText(astronomy.sunset) || "--:--";
-  const moonPhaseValue = sanitizeRichText(astronomy.moon_phase) || "Sin datos";
-
-  const mapBadges = [
+  const mapChips = [
     {
       id: "weather",
       label: location,
-      value: temperatureValue !== "--" ? `${temperatureValue}${temperatureUnit}` : "--",
-      hint: condition !== "Sin datos" ? condition : ""
+      value: `${temperature.value}${temperature.unit}`,
+      hint: condition ?? ""
     },
     {
       id: "sun",
       label: "Amanecer",
-      value: sunriseValue,
-      hint: sunsetValue !== "--:--" ? `Atardecer ${sunsetValue}` : ""
+      value: sunrise ?? "--:--",
+      hint: sunset ? `Atardecer ${sunset}` : ""
     },
     {
       id: "moon",
       label: "Fase lunar",
-      value: moonPhaseValue,
-      hint: dayjs().tz(config.display.timezone).format("ddd D MMM")
+      value: moonPhase ?? "Sin datos",
+      hint: moonIllumination !== null ? `${Math.round(moonIllumination)}% iluminación` : ""
     }
-  ];
-
-  const newsCount = Array.isArray(news.items) ? news.items.length : 0;
-  const eventsCount = Array.isArray(calendar.upcoming) ? calendar.upcoming.length : 0;
-  const forecastCount = Array.isArray(weather.forecast) ? weather.forecast.length : 0;
-
-  const sidebarMetrics = [
-    { id: "news", label: "Titulares", value: newsCount },
-    { id: "events", label: "Eventos", value: eventsCount },
-    { id: "forecast", label: "Pronósticos", value: forecastCount || panels.length }
   ];
 
   const lastUpdatedLabel = lastUpdatedAt
@@ -416,70 +300,40 @@ export const DashboardPage: React.FC = () => {
     : null;
 
   return (
-    <main className="dashboard" aria-busy={loading}>
-      <div className="dashboard__grid">
-        <section className="dashboard__map-panel" aria-label="Mapa global con datos en tiempo real">
-          <div className="map-panel__canvas">
-            <WorldMap className="map-panel__globe" />
-            <div className="map-panel__decor" aria-hidden="true">
-              <span className="map-panel__ring map-panel__ring--outer" />
-              <span className="map-panel__ring map-panel__ring--inner" />
-              <span className="map-panel__pulse" />
-            </div>
+    <main className="dashboard-alt" aria-busy={loading}>
+      <section className="dashboard-alt__map" aria-label="Mapa global">
+        <WorldMap token={mapboxToken} />
+        <div className="dashboard-alt__map-header">
+          <div className="map-chip map-chip--title">
+            <span className="map-chip__label">Pantalla reloj</span>
+            <span className="map-chip__value">{location}</span>
+            <span className="map-chip__hint">Zona horaria: {config.display.timezone}</span>
           </div>
-
-          <div className="map-panel__header">
-            <ClockDisplay
-              timezone={config.display.timezone}
-              format={config.ui.fixed.clock.format}
-              className="hero-clock"
-              timeClassName="hero-clock__time"
-              dateClassName="hero-clock__date"
-            />
-            <p className="hero-clock__location">{location}</p>
-          </div>
-
-          <div className="map-panel__badges">
-            {mapBadges.map((badge) => (
-              <article key={badge.id} className="map-chip">
-                <span className="map-chip__label">{badge.label}</span>
-                <span className="map-chip__value">{badge.value}</span>
-                {badge.hint ? <span className="map-chip__hint">{badge.hint}</span> : null}
+          <div className="dashboard-alt__chips">
+            {mapChips.map((chip) => (
+              <article key={chip.id} className="map-chip">
+                <span className="map-chip__label">{chip.label}</span>
+                <span className="map-chip__value">{chip.value}</span>
+                {chip.hint ? <span className="map-chip__hint">{chip.hint}</span> : null}
               </article>
             ))}
           </div>
-        </section>
+        </div>
+        <div className="dashboard-alt__map-footer">
+          <span>{lastUpdatedLabel ? `Actualizado ${lastUpdatedLabel}` : "Sincronizando datos…"}</span>
+          {!mapboxToken ? <span>Configura tu token de Mapbox en /config</span> : null}
+        </div>
+      </section>
 
-        <aside className="dashboard__sidebar" aria-label="Panel rotatorio de módulos">
-          <div className="sidebar__metrics">
-            {sidebarMetrics.map((metric) => (
-              <article key={metric.id} className="sidebar-metric">
-                <span className="sidebar-metric__label">{metric.label}</span>
-                <span className="sidebar-metric__value">
-                  {metric.value.toString().padStart(2, "0")}
-                </span>
-              </article>
-            ))}
-          </div>
-
-          <div className="sidebar__rotator">
-            <RotatingCard
-              panels={panels}
-              rotationEnabled={rotationSettings.enabled}
-              durationSeconds={rotationSettings.duration_sec ?? UI_DEFAULTS.rotation.duration_sec}
-              containerClassName="rotator rotator--glow"
-              titleClassName="title"
-              bodyClassName="card-body"
-              showIndicators
-            />
-          </div>
-
-          <div className="sidebar__footer">
-            <span>Paneles activos: {panels.length}</span>
-            <span>{lastUpdatedLabel ? `Actualizado ${lastUpdatedLabel}` : "Sincronizando datos…"}</span>
-          </div>
-        </aside>
-      </div>
+      <aside className="dashboard-alt__sidebar" aria-label="Panel de información">
+        <RotatingCard cards={rotatingCards} />
+        <div className="dashboard-alt__sidebar-footer">
+          <span>Paneles activos: {rotatingCards.length}</span>
+          <span>{lastUpdatedLabel ? `Última actualización ${lastUpdatedLabel}` : "Esperando datos…"}</span>
+        </div>
+      </aside>
     </main>
   );
 };
+
+export default DashboardPage;

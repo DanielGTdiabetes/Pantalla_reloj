@@ -43,14 +43,21 @@ const parsePanelsInput = (value: string): string[] => {
     .filter(Boolean);
 };
 
-export type ConfigFormProps = {
-  mode: "page" | "overlay";
-  onClose?: () => void;
-};
+type ConfigTab = "wifi" | "api" | "ui" | "system";
 
-export const ConfigForm: React.FC<ConfigFormProps> = ({ mode, onClose }) => {
+const tabs: { id: ConfigTab; label: string }[] = [
+  { id: "wifi", label: "Wi-Fi" },
+  { id: "api", label: "APIs" },
+  { id: "ui", label: "Interfaz" },
+  { id: "system", label: "Sistema" }
+];
+
+export const ConfigPage: React.FC = () => {
+  const navigate = useNavigate();
   const { config, save, loading, error } = useConfig();
+
   const [form, setForm] = useState<AppConfig>(config);
+  const [activeTab, setActiveTab] = useState<ConfigTab>("wifi");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -66,8 +73,6 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({ mode, onClose }) => {
     const keys = new Set<string>([...Object.keys(UI_DEFAULTS.text.scroll), ...Object.keys(form.ui.text.scroll)]);
     return Array.from(keys);
   }, [form.ui.text.scroll]);
-
-  const rotationEnabled = form.ui.rotation.enabled;
 
   const handleScrollChange = useCallback(
     (panel: string, partial: Partial<UIScrollSettings>) => {
@@ -100,23 +105,102 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({ mode, onClose }) => {
     }
   };
 
-  const handleClose = () => {
-    if (onClose) {
-      onClose();
-    }
-  };
-
-  return (
-    <div className={`config-wrapper${mode === "overlay" ? " config-wrapper--overlay" : ""}`}>
+  const renderWiFiTab = () => (
+    <div className="config-card">
       <div>
-        <h1>Configuración de Pantalla</h1>
-        <p style={{ color: "rgba(173,203,239,0.7)" }}>
-          Ajusta la rotación pública, el mapa, el scroll de texto y la conectividad del dispositivo.
-        </p>
+        <h2>Red Wi-Fi</h2>
+        <p>Gestiona la conectividad inalámbrica del dispositivo.</p>
       </div>
-      <form id="config-form" className="config-form" onSubmit={handleSubmit}>
-        <label>
-          Rotación de módulos (legacy)
+      <div className="config-grid">
+        <div className="config-field">
+          <label>Interfaz</label>
+          <input
+            type="text"
+            value={form.wifi.interface}
+            onChange={(event) => update("wifi", { ...form.wifi, interface: event.target.value })}
+          />
+        </div>
+        <div className="config-field">
+          <label>SSID</label>
+          <input
+            type="text"
+            value={form.wifi.ssid ?? ""}
+            onChange={(event) => update("wifi", { ...form.wifi, ssid: event.target.value })}
+          />
+        </div>
+        <div className="config-field">
+          <label>Contraseña</label>
+          <input
+            type="password"
+            value={form.wifi.psk ?? ""}
+            onChange={(event) => update("wifi", { ...form.wifi, psk: event.target.value })}
+          />
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderAPITab = () => (
+    <div className="config-card">
+      <div>
+        <h2>Claves de API</h2>
+        <p>Define las credenciales necesarias para recuperar datos externos.</p>
+      </div>
+      <div className="config-grid">
+        <div className="config-field">
+          <label>API Clima</label>
+          <input
+            type="text"
+            value={form.api_keys.weather ?? ""}
+            onChange={(event) => update("api_keys", { ...form.api_keys, weather: event.target.value })}
+          />
+        </div>
+        <div className="config-field">
+          <label>API Noticias</label>
+          <input
+            type="text"
+            value={form.api_keys.news ?? ""}
+            onChange={(event) => update("api_keys", { ...form.api_keys, news: event.target.value })}
+          />
+        </div>
+        <div className="config-field">
+          <label>API Astronomía</label>
+          <input
+            type="text"
+            value={form.api_keys.astronomy ?? ""}
+            onChange={(event) => update("api_keys", { ...form.api_keys, astronomy: event.target.value })}
+          />
+        </div>
+        <div className="config-field">
+          <label>API Calendario</label>
+          <input
+            type="text"
+            value={form.api_keys.calendar ?? ""}
+            onChange={(event) => update("api_keys", { ...form.api_keys, calendar: event.target.value })}
+          />
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderUITab = () => (
+    <div className="config-card">
+      <div>
+        <h2>Interfaz y datos</h2>
+        <p>Controla la rotación de módulos, el mapa y el formato de la pantalla.</p>
+      </div>
+
+      <section className="config-grid">
+        <div className="config-field">
+          <label>Zona horaria</label>
+          <input
+            type="text"
+            value={form.display.timezone}
+            onChange={(event) => update("display", { ...form.display, timezone: event.target.value })}
+          />
+        </div>
+        <div className="config-field">
+          <label>Rotación (legacy)</label>
           <select
             value={form.display.rotation}
             onChange={(event) => update("display", { ...form.display, rotation: event.target.value })}
@@ -125,17 +209,9 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({ mode, onClose }) => {
             <option value="normal">Normal</option>
             <option value="right">Derecha</option>
           </select>
-        </label>
-        <label>
-          Zona horaria
-          <input
-            type="text"
-            value={form.display.timezone}
-            onChange={(event) => update("display", { ...form.display, timezone: event.target.value })}
-          />
-        </label>
-        <label>
-          Segundos por módulo (legacy)
+        </div>
+        <div className="config-field">
+          <label>Segundos por módulo (legacy)</label>
           <input
             type="number"
             min={5}
@@ -145,13 +221,14 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({ mode, onClose }) => {
               update("display", { ...form.display, module_cycle_seconds: Number(event.target.value) })
             }
           />
-        </label>
+        </div>
+      </section>
 
-        <h2>Rotación de tarjeta</h2>
-        <label>
-          Rotación habilitada
+      <section className="config-grid">
+        <div className="config-field">
+          <label>Rotación de tarjetas</label>
           <select
-            value={rotationEnabled ? "true" : "false"}
+            value={form.ui.rotation.enabled ? "true" : "false"}
             onChange={(event) =>
               update("ui", {
                 ...form.ui,
@@ -165,9 +242,9 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({ mode, onClose }) => {
               </option>
             ))}
           </select>
-        </label>
-        <label>
-          Duración por panel (segundos)
+        </div>
+        <div className="config-field">
+          <label>Duración por panel (segundos)</label>
           <input
             type="number"
             min={3}
@@ -180,11 +257,10 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({ mode, onClose }) => {
               })
             }
           />
-        </label>
-        <label>
-          Paneles en rotación (uno por línea)
+        </div>
+        <div className="config-field" style={{ gridColumn: "1 / -1" }}>
+          <label>Paneles en rotación (uno por línea)</label>
           <textarea
-            rows={5}
             value={form.ui.rotation.panels.join("\n")}
             onChange={(event) =>
               update("ui", {
@@ -193,19 +269,28 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({ mode, onClose }) => {
               })
             }
           />
-        </label>
+        </div>
+      </section>
 
-        <h2>Mapa mundial</h2>
-        <label>
-          Proveedor de mapas
+      <section className="config-grid">
+        <div className="config-field">
+          <label>Proveedor de mapas</label>
           <input
             type="text"
             value={form.ui.map.provider}
             onChange={(event) => update("ui", { ...form.ui, map: { ...form.ui.map, provider: event.target.value } })}
           />
-        </label>
-        <label>
-          Centro (latitud)
+        </div>
+        <div className="config-field">
+          <label>Mapbox token</label>
+          <input
+            type="text"
+            value={form.ui.mapbox_token ?? ""}
+            onChange={(event) => update("ui", { ...form.ui, mapbox_token: event.target.value })}
+          />
+        </div>
+        <div className="config-field">
+          <label>Centro (latitud)</label>
           <input
             type="number"
             value={form.ui.map.center[0]}
@@ -216,9 +301,9 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({ mode, onClose }) => {
               })
             }
           />
-        </label>
-        <label>
-          Centro (longitud)
+        </div>
+        <div className="config-field">
+          <label>Centro (longitud)</label>
           <input
             type="number"
             value={form.ui.map.center[1]}
@@ -229,9 +314,9 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({ mode, onClose }) => {
               })
             }
           />
-        </label>
-        <label>
-          Zoom
+        </div>
+        <div className="config-field">
+          <label>Zoom</label>
           <input
             type="number"
             min={0}
@@ -239,9 +324,9 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({ mode, onClose }) => {
             value={form.ui.map.zoom}
             onChange={(event) => update("ui", { ...form.ui, map: { ...form.ui.map, zoom: Number(event.target.value) } })}
           />
-        </label>
-        <label>
-          Permitir interacción
+        </div>
+        <div className="config-field">
+          <label>Interacción</label>
           <select
             value={form.ui.map.interactive ? "true" : "false"}
             onChange={(event) =>
@@ -257,16 +342,13 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({ mode, onClose }) => {
               </option>
             ))}
           </select>
-        </label>
-        <label>
-          Mostrar controles
+        </div>
+        <div className="config-field">
+          <label>Controles</label>
           <select
             value={form.ui.map.controls ? "true" : "false"}
             onChange={(event) =>
-              update("ui", {
-                ...form.ui,
-                map: { ...form.ui.map, controls: event.target.value === "true" }
-              })
+              update("ui", { ...form.ui, map: { ...form.ui.map, controls: event.target.value === "true" } })
             }
           >
             {booleanOptions.map((option) => (
@@ -275,11 +357,12 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({ mode, onClose }) => {
               </option>
             ))}
           </select>
-        </label>
+        </div>
+      </section>
 
-        <h2>Formato de reloj y temperatura</h2>
-        <label>
-          Formato de hora
+      <section className="config-grid">
+        <div className="config-field">
+          <label>Formato de hora</label>
           <input
             type="text"
             value={form.ui.fixed.clock.format}
@@ -293,9 +376,9 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({ mode, onClose }) => {
               })
             }
           />
-        </label>
-        <label>
-          Unidad de temperatura (C/F/K)
+        </div>
+        <div className="config-field">
+          <label>Unidad de temperatura (C/F/K)</label>
           <input
             type="text"
             value={form.ui.fixed.temperature.unit}
@@ -309,109 +392,88 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({ mode, onClose }) => {
               })
             }
           />
-        </label>
+        </div>
+      </section>
 
-        <h2>Scroll automático por panel</h2>
-        {scrollPanels.map((panel) => {
-          const current = form.ui.text.scroll[panel] ?? defaultScroll(panel);
-          const speedValue = typeof current.speed === "number" ? String(current.speed) : current.speed;
-          return (
-            <fieldset key={panel} style={{ border: "1px solid rgba(173,203,239,0.25)", borderRadius: "12px", padding: "12px 16px" }}>
-              <legend style={{ padding: "0 8px", fontSize: "0.95rem" }}>{panel}</legend>
-              <label>
-                Activar scroll
-                <select
-                  value={current.enabled ? "true" : "false"}
-                  onChange={(event) =>
-                    handleScrollChange(panel, { enabled: event.target.value === "true" })
-                  }
-                >
-                  {booleanOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Dirección
-                <select
-                  value={current.direction}
-                  onChange={(event) => handleScrollChange(panel, { direction: event.target.value as "left" | "up" })}
-                >
-                  {directionOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Velocidad ({speedPlaceholders})
-                <input
-                  type="text"
-                  value={speedValue}
-                  onChange={(event) =>
-                    handleScrollChange(panel, { speed: parseSpeedInput(event.target.value, current.speed) })
-                  }
-                  list={`speed-${panel}`}
-                />
-                <datalist id={`speed-${panel}`}>
-                  <option value="slow" />
-                  <option value="normal" />
-                  <option value="fast" />
-                </datalist>
-              </label>
-              <label>
-                Gap (px)
-                <input
-                  type="number"
-                  min={0}
-                  value={current.gap_px}
-                  onChange={(event) => handleScrollChange(panel, { gap_px: Number(event.target.value) })}
-                />
-              </label>
-            </fieldset>
-          );
-        })}
+      <section className="config-grid" style={{ gridTemplateColumns: "1fr" }}>
+        <div className="config-field">
+          <label>Scroll automático por panel</label>
+          <div className="config-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+            {scrollPanels.map((panel) => {
+              const current = form.ui.text.scroll[panel] ?? defaultScroll(panel);
+              const speedValue = typeof current.speed === "number" ? String(current.speed) : current.speed;
+              return (
+                <fieldset key={panel} className="config-field" style={{ borderRadius: "16px", border: "1px solid rgba(109,182,255,0.2)", padding: "14px 16px" }}>
+                  <legend style={{ padding: "0 8px", fontSize: "0.95rem" }}>{panel}</legend>
+                  <div className="config-field">
+                    <label>Activar scroll</label>
+                    <select
+                      value={current.enabled ? "true" : "false"}
+                      onChange={(event) => handleScrollChange(panel, { enabled: event.target.value === "true" })}
+                    >
+                      {booleanOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="config-field">
+                    <label>Dirección</label>
+                    <select
+                      value={current.direction}
+                      onChange={(event) => handleScrollChange(panel, { direction: event.target.value as "left" | "up" })}
+                    >
+                      {directionOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="config-field">
+                    <label>Velocidad ({speedPlaceholders})</label>
+                    <input
+                      type="text"
+                      value={speedValue}
+                      onChange={(event) =>
+                        handleScrollChange(panel, { speed: parseSpeedInput(event.target.value, current.speed) })
+                      }
+                      list={`speed-${panel}`}
+                    />
+                    <datalist id={`speed-${panel}`}>
+                      <option value="slow" />
+                      <option value="normal" />
+                      <option value="fast" />
+                    </datalist>
+                  </div>
+                  <div className="config-field">
+                    <label>Separación (px)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={current.gap_px}
+                      onChange={(event) => handleScrollChange(panel, { gap_px: Number(event.target.value) })}
+                    />
+                  </div>
+                </fieldset>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
 
-        <h2>Claves API</h2>
-        <label>
-          API Clima
-          <input
-            type="text"
-            value={form.api_keys.weather ?? ""}
-            onChange={(event) => update("api_keys", { ...form.api_keys, weather: event.target.value })}
-          />
-        </label>
-        <label>
-          API Noticias
-          <input
-            type="text"
-            value={form.api_keys.news ?? ""}
-            onChange={(event) => update("api_keys", { ...form.api_keys, news: event.target.value })}
-          />
-        </label>
-        <label>
-          API Astronomía
-          <input
-            type="text"
-            value={form.api_keys.astronomy ?? ""}
-            onChange={(event) => update("api_keys", { ...form.api_keys, astronomy: event.target.value })}
-          />
-        </label>
-        <label>
-          API Calendario
-          <input
-            type="text"
-            value={form.api_keys.calendar ?? ""}
-            onChange={(event) => update("api_keys", { ...form.api_keys, calendar: event.target.value })}
-          />
-        </label>
-
-        <h2>MQTT</h2>
-        <label>
-          MQTT Activo
+  const renderSystemTab = () => (
+    <div className="config-card">
+      <div>
+        <h2>Servicios del sistema</h2>
+        <p>Configura MQTT y revisa los módulos activos del dashboard.</p>
+      </div>
+      <section className="config-grid">
+        <div className="config-field">
+          <label>MQTT habilitado</label>
           <select
             value={form.mqtt.enabled ? "true" : "false"}
             onChange={(event) => update("mqtt", { ...form.mqtt, enabled: event.target.value === "true" })}
@@ -422,92 +484,127 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({ mode, onClose }) => {
               </option>
             ))}
           </select>
-        </label>
-        <label>
-          MQTT Host
+        </div>
+        <div className="config-field">
+          <label>Host</label>
           <input
             type="text"
             value={form.mqtt.host}
             onChange={(event) => update("mqtt", { ...form.mqtt, host: event.target.value })}
           />
-        </label>
-        <label>
-          MQTT Puerto
+        </div>
+        <div className="config-field">
+          <label>Puerto</label>
           <input
             type="number"
             value={form.mqtt.port}
             onChange={(event) => update("mqtt", { ...form.mqtt, port: Number(event.target.value) })}
           />
-        </label>
-        <label>
-          MQTT Topic
+        </div>
+        <div className="config-field">
+          <label>Tópico</label>
           <input
             type="text"
             value={form.mqtt.topic}
             onChange={(event) => update("mqtt", { ...form.mqtt, topic: event.target.value })}
           />
-        </label>
-        <label>
-          MQTT Usuario
+        </div>
+        <div className="config-field">
+          <label>Usuario</label>
           <input
             type="text"
             value={form.mqtt.username ?? ""}
             onChange={(event) => update("mqtt", { ...form.mqtt, username: event.target.value })}
           />
-        </label>
-        <label>
-          MQTT Password
+        </div>
+        <div className="config-field">
+          <label>Contraseña</label>
           <input
             type="password"
             value={form.mqtt.password ?? ""}
             onChange={(event) => update("mqtt", { ...form.mqtt, password: event.target.value })}
           />
-        </label>
+        </div>
+      </section>
+      <section>
+        <h3>Módulos de pantalla</h3>
+        <p className="config-status">Puedes activar o desactivar los módulos directamente en el archivo de configuración.</p>
+        <ul className="saints-card__list" style={{ marginTop: "12px" }}>
+          {form.display.modules.map((module) => (
+            <li key={module.name}>
+              <span className="harvest-card__item">{module.name}</span>
+              <span className="harvest-card__status">
+                {module.enabled ? `Activo (${module.duration_seconds}s)` : "Desactivado"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
 
-        <h2>Wi-Fi</h2>
-        <label>
-          Wi-Fi Interfaz
-          <input
-            type="text"
-            value={form.wifi.interface}
-            onChange={(event) => update("wifi", { ...form.wifi, interface: event.target.value })}
-          />
-        </label>
-        <label>
-          Wi-Fi SSID
-          <input
-            type="text"
-            value={form.wifi.ssid ?? ""}
-            onChange={(event) => update("wifi", { ...form.wifi, ssid: event.target.value })}
-          />
-        </label>
-        <label>
-          Wi-Fi Contraseña
-          <input
-            type="password"
-            value={form.wifi.psk ?? ""}
-            onChange={(event) => update("wifi", { ...form.wifi, psk: event.target.value })}
-          />
-        </label>
+  const renderActiveTab = () => {
+    switch (activeTab) {
+      case "wifi":
+        return renderWiFiTab();
+      case "api":
+        return renderAPITab();
+      case "ui":
+        return renderUITab();
+      case "system":
+        return renderSystemTab();
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="config-page">
+      <form className="config-page__container" onSubmit={handleSubmit}>
+        <header className="config-page__header">
+          <h1>Configuración del sistema</h1>
+          <p>Gestiona la pantalla desde una red segura. Todas las opciones residen en esta consola.</p>
+        </header>
+
+        <div className="config-tabs">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={`config-tab${activeTab === tab.id ? " is-active" : ""}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {renderActiveTab()}
+
+        <div className="config-actions">
+          <button
+            type="button"
+            className="config-button"
+            onClick={() => navigate("/")}
+          >
+            Volver al panel
+          </button>
+          <button className="config-button primary" type="submit" disabled={saving}>
+            {saving ? "Guardando…" : "Guardar cambios"}
+          </button>
+        </div>
+
+        {(error || message) && (
+          <div
+            className={`config-status${error ? " config-status--error" : " config-status--success"}`}
+          >
+            {error ?? message}
+          </div>
+        )}
+        {loading ? <div className="config-status">Sincronizando…</div> : null}
       </form>
-      <div className="config-actions">
-        <button className="primary" type="submit" form="config-form" disabled={saving}>
-          {saving ? "Guardando…" : "Guardar"}
-        </button>
-        <button className="secondary" type="button" onClick={handleClose}>
-          {mode === "overlay" ? "Cerrar" : "Volver"}
-        </button>
-      </div>
-      {(error || message) && (
-        <div style={{ color: error ? "#ff9f89" : "#74d99f", fontSize: "0.95rem" }}>{error ?? message}</div>
-      )}
-      {loading && <div style={{ color: "rgba(173,203,239,0.65)" }}>Sincronizando…</div>}
     </div>
   );
 };
 
-export const ConfigPage: React.FC = () => {
-  const navigate = useNavigate();
-  const handleClose = useCallback(() => navigate("/"), [navigate]);
-  return <ConfigForm mode="page" onClose={handleClose} />;
-};
+export default ConfigPage;
