@@ -59,7 +59,7 @@ export const ConfigPage: React.FC = () => {
   const [form, setForm] = useState<AppConfig>(config);
   const [activeTab, setActiveTab] = useState<ConfigTab>("wifi");
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [banner, setBanner] = useState<{ kind: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     setForm(config);
@@ -91,19 +91,28 @@ export const ConfigPage: React.FC = () => {
     [form.ui, update]
   );
 
+  useEffect(() => {
+    if (error) {
+      setBanner({ kind: "error", text: error });
+    }
+  }, [error]);
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
-    setMessage(null);
+    setBanner(null);
     try {
       await save(form);
-      setMessage("Configuración guardada correctamente");
+      setBanner({ kind: "success", text: "Configuración guardada correctamente" });
     } catch (err) {
-      setMessage((err as Error).message);
+      const message = err instanceof Error ? err.message : "No se pudo guardar la configuración";
+      setBanner({ kind: "error", text: message });
     } finally {
       setSaving(false);
     }
   };
+
+  const busy = saving || loading;
 
   const renderWiFiTab = () => (
     <div className="config-card">
@@ -565,11 +574,22 @@ export const ConfigPage: React.FC = () => {
               type="button"
               className={`config-tab${activeTab === tab.id ? " is-active" : ""}`}
               onClick={() => setActiveTab(tab.id)}
+              disabled={busy}
             >
               {tab.label}
             </button>
           ))}
         </div>
+
+        {banner ? (
+          <div
+            className={`config-status${banner.kind === "error" ? " config-status--error" : " config-status--success"}`}
+            role="status"
+            aria-live="polite"
+          >
+            {banner.text}
+          </div>
+        ) : null}
 
         {renderActiveTab()}
 
@@ -578,22 +598,20 @@ export const ConfigPage: React.FC = () => {
             type="button"
             className="config-button"
             onClick={() => navigate("/")}
+            disabled={busy}
           >
             Volver al panel
           </button>
-          <button className="config-button primary" type="submit" disabled={saving}>
+          <button className="config-button primary" type="submit" disabled={busy}>
             {saving ? "Guardando…" : "Guardar cambios"}
           </button>
         </div>
 
-        {(error || message) && (
-          <div
-            className={`config-status${error ? " config-status--error" : " config-status--success"}`}
-          >
-            {error ?? message}
+        {loading ? (
+          <div className="config-status" role="status" aria-live="polite">
+            Sincronizando…
           </div>
-        )}
-        {loading ? <div className="config-status">Sincronizando…</div> : null}
+        ) : null}
       </form>
     </div>
   );

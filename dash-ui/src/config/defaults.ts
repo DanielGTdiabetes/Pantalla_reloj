@@ -33,8 +33,8 @@ export const UI_DEFAULTS: UISettings = {
   },
   map: {
     provider: "osm",
-    center: [0, 0],
-    zoom: 2,
+    center: [0, 20],
+    zoom: 1.6,
     interactive: false,
     controls: false
   },

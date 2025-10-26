@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-import { api } from "../services/api";
+import { ApiError, api } from "../services/api";
 import { withConfigDefaults } from "../config/defaults";
 import type { AppConfig } from "../types/config";
 
@@ -9,7 +9,7 @@ type ConfigContextValue = {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
-  save: (payload: Partial<AppConfig>) => Promise<void>;
+  save: (payload: AppConfig) => Promise<void>;
 };
 
 const ConfigContext = createContext<ConfigContextValue | undefined>(undefined);
@@ -26,20 +26,23 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const payload = await api.fetchConfig();
       setConfig(withConfigDefaults(payload));
     } catch (err) {
-      setError((err as Error).message);
+      const message = err instanceof ApiError ? err.message : "No se pudo cargar la configuración";
+      setError(message);
+      setConfig(withConfigDefaults());
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const save = useCallback(async (payload: Partial<AppConfig>) => {
+  const save = useCallback(async (payload: AppConfig) => {
     setLoading(true);
     setError(null);
     try {
       const updated = await api.updateConfig(payload);
       setConfig(withConfigDefaults(updated));
     } catch (err) {
-      setError((err as Error).message);
+      const message = err instanceof ApiError ? err.message : "No se pudo guardar la configuración";
+      setError(message);
       throw err;
     } finally {
       setLoading(false);
