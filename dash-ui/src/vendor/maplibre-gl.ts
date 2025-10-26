@@ -1,7 +1,29 @@
-import type { MapLibreGL } from "../types/maplibre-gl";
-
 const SCRIPT_URL = "https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js";
 const STYLESHEET_URL = "https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css";
+
+export type LngLatLike = [number, number];
+
+export interface MapOptions {
+  container: string | HTMLElement;
+  style: StyleSpecification;
+  center?: LngLatLike;
+  zoom?: number;
+  bearing?: number;
+  pitch?: number;
+  interactive?: boolean;
+  attributionControl?: boolean;
+}
+
+export interface MapInstance {
+  resize(): void;
+  remove(): void;
+}
+
+export interface MapLibreGL {
+  Map: new (options: MapOptions) => MapInstance;
+}
+
+export type StyleSpecification = Record<string, unknown>;
 
 let loaderPromise: Promise<MapLibreGL> | null = null;
 
@@ -61,3 +83,11 @@ const loadMapLibre = (): Promise<MapLibreGL> => {
 };
 
 export default loadMapLibre;
+
+declare global {
+  interface Window {
+    maplibregl?: MapLibreGL;
+  }
+}
+
+export {};
