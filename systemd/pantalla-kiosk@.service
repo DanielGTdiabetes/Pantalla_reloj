@@ -1,22 +1,21 @@
 [Unit]
 Description=Pantalla_reloj Kiosk (Epiphany) for user %i
 After=pantalla-openbox@%i.service pantalla-dash-backend@%i.service
-Requires=pantalla-openbox@%i.service
+Wants=pantalla-openbox@%i.service pantalla-dash-backend@%i.service
 
 [Service]
-Type=simple
 User=%i
-Group=%i
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority
-Environment=XDG_RUNTIME_DIR=/run/user/1000
-WorkingDirectory=/home/%i
+Environment=GIO_USE_PORTALS=0
+Environment=GTK_USE_PORTAL=0
+Environment=EPHY_PROFILE=/var/lib/pantalla-reloj/state/org.gnome.Epiphany.WebApp_PantallaReloj
 ExecStartPre=/bin/sh -c 'test -r "$XAUTHORITY"'
 ExecStartPre=/bin/sh -c 'DISPLAY=:0 XAUTHORITY="$XAUTHORITY" /opt/pantalla/bin/wait-x.sh'
-ExecStart=/usr/local/bin/pantalla-kiosk http://127.0.0.1
-Restart=always
+ExecStart=/usr/bin/epiphany-browser --application-mode --profile=${EPHY_PROFILE} \
+          --new-window http://127.0.0.1
+Restart=on-failure
 RestartSec=2
-TimeoutStartSec=30
 
 [Install]
-WantedBy=graphical.target
+WantedBy=multi-user.target

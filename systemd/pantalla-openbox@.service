@@ -1,23 +1,16 @@
 [Unit]
 Description=Pantalla_reloj Openbox session for %i (DISPLAY=:0)
 After=pantalla-xorg.service
-Requires=pantalla-xorg.service
+Wants=pantalla-xorg.service
 
 [Service]
-Type=simple
 User=%i
-Group=%i
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority
-Environment=XDG_RUNTIME_DIR=/run/user/1000
-WorkingDirectory=/home/%i
 ExecStartPre=/usr/bin/install -d -m 0700 -o %i -g %i /run/user/1000
-ExecStartPre=/bin/sh -c 'test -r "$XAUTHORITY" || { echo "pantalla-openbox@: missing $XAUTHORITY" >&2; exit 1; }'
-ExecStartPre=/bin/sh -c 'DISPLAY=:0 XAUTHORITY="$XAUTHORITY" /opt/pantalla/bin/wait-x.sh'
-ExecStartPre=/bin/test -x /opt/pantalla/openbox/autostart
+ExecStartPre=/bin/sh -c 'test -r "$XAUTHORITY"'
 ExecStart=/usr/bin/openbox --startup /opt/pantalla/openbox/autostart
-Restart=always
-RestartSec=2
+Restart=on-failure
 
 [Install]
-WantedBy=graphical.target
+WantedBy=multi-user.target
