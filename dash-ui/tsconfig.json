@@ -3,6 +3,11 @@
     "target": "ES2020",
     "useDefineForClassFields": true,
     "lib": ["DOM", "DOM.Iterable", "ES2020"],
+    "baseUrl": ".",
+    "paths": {
+      "maplibre-gl": ["./src/vendor/maplibre-gl.ts"],
+      "maplibre-gl/dist/maplibre-gl.css": ["./src/vendor/maplibre-gl.css"]
+    },
     "allowJs": false,
     "skipLibCheck": true,
     "esModuleInterop": true,

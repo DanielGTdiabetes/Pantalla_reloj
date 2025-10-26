@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import maplibregl from "maplibre-gl";
+import maplibregl, { type Map as MapInstance, type StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 type GeoScopeMapProps = {
@@ -8,7 +8,7 @@ type GeoScopeMapProps = {
   zoom?: number;
 };
 
-const style: maplibregl.StyleSpecification = {
+const style: StyleSpecification = {
   version: 8,
   sources: {
     osm: {
@@ -29,7 +29,7 @@ const style: maplibregl.StyleSpecification = {
 
 export const GeoScopeMap = ({ className, center, zoom = 1.6 }: GeoScopeMapProps): JSX.Element => {
   const mapContainer = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
+  const mapRef = useRef<MapInstance | null>(null);
   const [lng, lat] = center ?? [0, 20];
 
   useEffect(() => {
