@@ -66,6 +66,10 @@ BACKEND_LAUNCHER_SRC="${REPO_ROOT}/usr/local/bin/pantalla-backend-launch"
 BACKEND_LAUNCHER_DST=/usr/local/bin/pantalla-backend-launch
 UDEV_RULE=/etc/udev/rules.d/70-pantalla-render.rules
 APP_ID=org.gnome.Epiphany.WebApp_PantallaReloj
+PROFILE_DIR_SRC="${REPO_ROOT}/var/lib/pantalla-reloj/state/${APP_ID}"
+PROFILE_DIR_DST="${STATE_RUNTIME}/${APP_ID}"
+
+install -d -m 0755 "$REPO_ROOT/home/dani/.local/share/applications" >/dev/null 2>&1 || true
 
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$USER_HOME"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" /run/user/1000
@@ -76,7 +80,13 @@ install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$KIOSK_LOG_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$LOG_DIR"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_RUNTIME"
-install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$STATE_RUNTIME/${APP_ID}"
+install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$PROFILE_DIR_DST"
+if [[ -f "${PROFILE_DIR_SRC}/app-id" ]]; then
+  install -o "$USER_NAME" -g "$USER_NAME" -m 0600 "${PROFILE_DIR_SRC}/app-id" "${PROFILE_DIR_DST}/app-id"
+fi
+if [[ -f "${PROFILE_DIR_SRC}/desktop-id" ]]; then
+  install -o "$USER_NAME" -g "$USER_NAME" -m 0600 "${PROFILE_DIR_SRC}/desktop-id" "${PROFILE_DIR_DST}/desktop-id"
+fi
 chown -R "$USER_NAME:$USER_NAME" "$STATE_DIR"
 
 log_info "Installing base packages"
@@ -184,7 +194,9 @@ chown -h "$USER_NAME:$USER_NAME" "$USER_HOME/.Xauthority" || true
 
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/xorg-openbox-env.sh" "$SESSION_PREFIX/bin/xorg-openbox-env.sh"
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/wait-x.sh" "$SESSION_PREFIX/bin/wait-x.sh"
+install -m 0755 "$REPO_ROOT/opt/pantalla/bin/pantalla-geometry.sh" "$SESSION_PREFIX/bin/pantalla-geometry.sh"
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/pantalla-kiosk-sanitize.sh" "$SESSION_PREFIX/bin/pantalla-kiosk-sanitize.sh"
+install -m 0755 "$REPO_ROOT/opt/pantalla/bin/pantalla-kiosk-watchdog.sh" "$SESSION_PREFIX/bin/pantalla-kiosk-watchdog.sh"
 install -m 0755 "$REPO_ROOT/opt/pantalla/openbox/autostart" "$SESSION_PREFIX/openbox/autostart"
 
 install -D -m 0755 "$KIOSK_BIN_SRC" "$KIOSK_BIN_DST"
@@ -193,12 +205,16 @@ install -D -m 0755 "$BACKEND_LAUNCHER_SRC" "$BACKEND_LAUNCHER_DST"
 SUMMARY+=("[install] launcher de backend instalado en ${BACKEND_LAUNCHER_DST}")
 install -D -m 0644 "$REPO_ROOT/usr/local/share/applications/${APP_ID}.desktop" \
   /usr/local/share/applications/${APP_ID}.desktop
+install -D -o "$USER_NAME" -g "$USER_NAME" -m 0644 \
+  "$REPO_ROOT/home/dani/.local/share/applications/${APP_ID}.desktop" \
+  "$USER_HOME/.local/share/applications/${APP_ID}.desktop"
 SUMMARY+=("[install] desktop file ${APP_ID} instalado")
 install -D -m 0755 "$REPO_ROOT/usr/local/bin/pantalla-kiosk-verify" /usr/local/bin/pantalla-kiosk-verify
 SUMMARY+=("[install] verificador de kiosk instalado en /usr/local/bin/pantalla-kiosk-verify")
 
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database /usr/local/share/applications || true
+  runuser -u "$USER_NAME" -- update-desktop-database "$USER_HOME/.local/share/applications" || true
   SUMMARY+=("[install] update-desktop-database ejecutado")
 else
   SUMMARY+=("[install] update-desktop-database no disponible")
@@ -397,6 +413,13 @@ deploy_unit "$REPO_ROOT/systemd/pantalla-xorg.service" /etc/systemd/system/panta
 deploy_unit "$REPO_ROOT/systemd/pantalla-openbox@.service" /etc/systemd/system/pantalla-openbox@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk@.service" /etc/systemd/system/pantalla-kiosk@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-dash-backend@.service" /etc/systemd/system/pantalla-dash-backend@.service
+deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk-watchdog@.service" /etc/systemd/system/pantalla-kiosk-watchdog@.service
+deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk-watchdog@.timer" /etc/systemd/system/pantalla-kiosk-watchdog@.timer
+
+install -D -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk@.service.d/10-sanitize-rollback.conf" \
+  /etc/systemd/system/pantalla-kiosk@.service.d/10-sanitize-rollback.conf
+install -D -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk-watchdog@.service.d/10-rollback.conf" \
+  /etc/systemd/system/pantalla-kiosk-watchdog@.service.d/10-rollback.conf
 
 if [[ $units_changed -eq 1 ]]; then
   log_info "Systemd units updated"
@@ -412,6 +435,7 @@ systemctl enable pantalla-xorg.service || true
 systemctl enable pantalla-dash-backend@${USER_NAME}.service || true
 systemctl enable pantalla-openbox@${USER_NAME}.service || true
 systemctl enable pantalla-kiosk@${USER_NAME}.service || true
+systemctl enable --now pantalla-kiosk-watchdog@${USER_NAME}.timer || true
 
 log_info "Restarting Pantalla services"
 systemctl restart pantalla-xorg.service
@@ -433,9 +457,14 @@ else
   SUMMARY+=('[install] xset q falló')
 fi
 
-if DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xrandr --query | grep -Eq 'HDMI-1 .* 480x1920\+0\+0 left'; then
-  log_ok "Geometría HDMI-1 480x1920 left configurada"
-  SUMMARY+=('[install] geometría HDMI-1 480x1920 left OK')
+if DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xrandr --query | grep -q 'HDMI-1 connected primary 480x1920+0+0'; then
+  if DISPLAY=:0 XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority xrandr --verbose --output HDMI-1 | grep -q 'Rotation: left'; then
+    log_ok "Geometría HDMI-1 480x1920 left configurada"
+    SUMMARY+=('[install] geometría HDMI-1 480x1920 left OK')
+  else
+    log_warn "Rotación HDMI-1 no es left"
+    SUMMARY+=('[install] geometría HDMI-1 rotación inesperada')
+  fi
 else
   log_warn "Geometría HDMI-1 esperada no detectada"
   SUMMARY+=('[install] geometría HDMI-1 no detectada')

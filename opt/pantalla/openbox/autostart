@@ -1,35 +1,91 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export DISPLAY=:0
-export XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority
+export DISPLAY="${DISPLAY:-:0}"
+export XAUTHORITY="${XAUTHORITY:-/var/lib/pantalla-reloj/.Xauthority}"
 
-# Prepare session environment for systemd services
 STATE_DIR=/var/lib/pantalla-reloj/state
-SESSION_ENV="${STATE_DIR}/session.env"
-umask 077
-install -d -m 0700 "$STATE_DIR"
-{
-  echo "DISPLAY=${DISPLAY}"
-  echo "XAUTHORITY=${XAUTHORITY}"
+SESSION_FILE="${STATE_DIR}/session.env"
+LOG_DIR=/var/log/pantalla
+SESSION_LOG="${LOG_DIR}/session.env.log"
+GEOMETRY_LOG="${LOG_DIR}/geometry.log"
+GEOMETRY_SCRIPT=/opt/pantalla/bin/pantalla-geometry.sh
+WAIT_X=/opt/pantalla/bin/wait-x.sh
+
+mkdir -p "$LOG_DIR" >/dev/null 2>&1 || true
+install -d -m 0700 "$STATE_DIR" >/dev/null 2>&1 || true
+
+log_session() {
+  local message ts
+  ts="$(date -Is)"
+  message="$*"
+  printf '%s %s\n' "$ts" "$message" >>"$SESSION_LOG"
+}
+
+ensure_dbus() {
+  local runtime address
+  : "${XDG_RUNTIME_DIR:="/run/user/$(id -u)"}"
+  install -d -m 0700 "$XDG_RUNTIME_DIR" >/dev/null 2>&1 || true
+
   if [[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
-    echo "DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS}"
+    if dbus-send --session --dest=org.freedesktop.DBus --type=method_call \
+        --print-reply /org/freedesktop/DBus org.freedesktop.DBus.ListNames >/dev/null 2>&1; then
+      log_session "dbus existing address=${DBUS_SESSION_BUS_ADDRESS}"
+      return
+    fi
   fi
-} >"${SESSION_ENV}.tmp"
-chmod 0640 "${SESSION_ENV}.tmp"
-mv "${SESSION_ENV}.tmp" "$SESSION_ENV"
 
-if command -v dbus-update-activation-environment >/dev/null 2>&1; then
-  dbus-update-activation-environment --systemd DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS || true
+  if [[ -S "$XDG_RUNTIME_DIR/bus" ]]; then
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+    if dbus-send --session --dest=org.freedesktop.DBus --type=method_call \
+        --print-reply /org/freedesktop/DBus org.freedesktop.DBus.ListNames >/dev/null 2>&1; then
+      log_session "dbus socket-reused address=${DBUS_SESSION_BUS_ADDRESS}"
+      return
+    fi
+    rm -f "$XDG_RUNTIME_DIR/bus"
+  fi
+
+  if address=$(dbus-daemon --session --fork --print-address --address="unix:path=${XDG_RUNTIME_DIR}/bus" 2>/dev/null); then
+    export DBUS_SESSION_BUS_ADDRESS="$address"
+    log_session "dbus launched address=${DBUS_SESSION_BUS_ADDRESS}"
+  else
+    log_session "dbus launch-failed"
+  fi
+}
+
+write_session_state() {
+  {
+    echo "DISPLAY=${DISPLAY}"
+    echo "XAUTHORITY=${XAUTHORITY}"
+    if [[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
+      echo "DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS}"
+    fi
+  } >"${SESSION_FILE}.tmp"
+  chmod 0640 "${SESSION_FILE}.tmp"
+  mv "${SESSION_FILE}.tmp" "$SESSION_FILE"
+  log_session "session-env-updated"
+}
+
+propagate_environment() {
+  if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+    if dbus-update-activation-environment --systemd DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS >/dev/null 2>&1; then
+      log_session "dbus-update-activation=ok"
+    else
+      log_session "dbus-update-activation=failed"
+    fi
+  else
+    log_session "dbus-update-activation=missing"
+  fi
+}
+
+ensure_dbus
+propagate_environment
+write_session_state
+
+log_session "geometry-hook-start"
+if [[ -x "$GEOMETRY_SCRIPT" ]]; then
+  DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" "$GEOMETRY_SCRIPT" --wait >/dev/null 2>&1 || true
+else
+  log_session "geometry-script-missing path=$GEOMETRY_SCRIPT"
 fi
-
-# Disable DPMS and screen blanking to avoid black screen with pointer
-xset -dpms
-xset s off
-xset s noblank
-
-# Fixed geometry without panning: 480x1920 rotated left
-xrandr --output HDMI-1 --rotate left --mode 480x1920 --fb 480x1920 --pos 0x0
-
-# Small delay to keep ordering predictable
-sleep 0.5
+log_session "geometry-hook-finished"

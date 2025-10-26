@@ -1,0 +1,14 @@
+[Unit]
+Description=Pantalla_reloj kiosk watchdog for %i
+After=pantalla-kiosk@%i.service
+Wants=pantalla-kiosk@%i.service
+
+[Service]
+Type=oneshot
+User=%i
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority
+Environment=PANTALLA_WATCHDOG_DISABLE_FILE=/var/lib/pantalla-reloj/state/disable-kiosk-watchdog
+EnvironmentFile=-/var/lib/pantalla-reloj/state/session.env
+ExecStart=/opt/pantalla/bin/pantalla-kiosk-watchdog.sh
+

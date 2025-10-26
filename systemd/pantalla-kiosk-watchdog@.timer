@@ -1,0 +1,12 @@
+[Unit]
+Description=Pantalla_reloj kiosk watchdog timer for %i
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=30s
+Unit=pantalla-kiosk-watchdog@%i.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

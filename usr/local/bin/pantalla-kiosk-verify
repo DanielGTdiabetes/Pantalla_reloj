@@ -4,6 +4,7 @@ set -euo pipefail
 LOG_FILE="/var/log/pantalla/kiosk-verify.log"
 DISPLAY_VALUE="${DISPLAY:-:0}"
 XAUTHORITY_VALUE="${XAUTHORITY:-/var/lib/pantalla-reloj/.Xauthority}"
+LOG_GLOB="/var/log/pantalla/kiosk-*.log"
 
 run_cmd() {
   local desc cmd status
@@ -36,22 +37,15 @@ mkdir -p "$(dirname "$LOG_FILE")"
   run_cmd "wmctrl -lx" env DISPLAY="$DISPLAY_VALUE" XAUTHORITY="$XAUTHORITY_VALUE" wmctrl -lx
   run_cmd "_NET_ACTIVE_WINDOW" env DISPLAY="$DISPLAY_VALUE" XAUTHORITY="$XAUTHORITY_VALUE" xprop -root _NET_ACTIVE_WINDOW
   run_cmd "_NET_CLIENT_LIST" env DISPLAY="$DISPLAY_VALUE" XAUTHORITY="$XAUTHORITY_VALUE" xprop -root _NET_CLIENT_LIST
-  run_cmd "backend health" curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8081/api/health
+  run_cmd "backend health" curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8081/healthz
 
-  echo "--- tail kiosk-sanitize.log ---"
-  if [[ -f /var/log/pantalla/kiosk-sanitize.log ]]; then
-    tail -n 60 /var/log/pantalla/kiosk-sanitize.log
-  else
-    echo "no-sanitize-log"
-  fi
-  echo
-
-  echo "--- tail kiosk-profile.log ---"
-  if [[ -f /var/log/pantalla/kiosk-profile.log ]]; then
-    tail -n 60 /var/log/pantalla/kiosk-profile.log
-  else
-    echo "no-profile-log"
-  fi
+  shopt -s nullglob
+  for logfile in $LOG_GLOB; do
+    echo "--- tail ${logfile##*/} ---"
+    tail -n 60 "$logfile"
+    echo
+  done
+  shopt -u nullglob
 } >"${LOG_FILE}.tmp" 2>&1
 
 mv "${LOG_FILE}.tmp" "$LOG_FILE"

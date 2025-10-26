@@ -13,21 +13,32 @@ URL="${1:-$DEFAULT_URL}"
 EXIT_MISSING=3
 STATE_BASE="/var/lib/pantalla-reloj/state"
 PROFILE_DIR="${EPHY_PROFILE:-${STATE_BASE}/${APP_ID}}"
+APP_ID_FILE="${PROFILE_DIR}/app-id"
+DESKTOP_ID_FILE="${PROFILE_DIR}/desktop-id"
 DESKTOP_FILE="/usr/local/share/applications/${APP_ID}.desktop"
 LOG_DIR="/var/log/pantalla"
 PROFILE_LOG="${LOG_DIR}/kiosk-profile.log"
 SANITIZE_LOG="${LOG_DIR}/kiosk-sanitize.log"
+WATCHDOG_LOG="${LOG_DIR}/kiosk-watchdog.log"
 WAIT_X="/opt/pantalla/bin/wait-x.sh"
 SANITIZER="/opt/pantalla/bin/pantalla-kiosk-sanitize.sh"
+SANITIZER_DISABLE_FILE="${PANTALLA_SANITIZER_DISABLE_FILE:-${STATE_BASE}/disable-kiosk-sanitize}"
 
 OWNER="${KIOSK_USER:-${USER:-$(id -un)}}"
 PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 log_err() { printf '[kiosk] %s\n' "$*" >&2; }
 log_info() { printf '[kiosk] %s\n' "$*"; }
+log_profile() {
+  install -d -m 0755 "$LOG_DIR" >/dev/null 2>&1 || true
+  local ts
+  ts="$(date -Is)"
+  printf '%s %s\n' "$ts" "$*" >>"$PROFILE_LOG"
+}
 
 fail_missing() {
   log_err "$1"
+  log_profile "error ${1}"
   exit "$EXIT_MISSING"
 }
 
@@ -38,8 +49,7 @@ ensure_profile_dir() {
   group="$(stat -c '%G' "$PROFILE_DIR")"
   mode="$(stat -c '%a' "$PROFILE_DIR")"
   if [[ "$owner" != "$OWNER" || "$group" != "$OWNER" ]]; then
-    log_err "Propietario inesperado en $PROFILE_DIR: ${owner}:${group}"
-    fail_missing "El perfil debe pertenecer a ${OWNER}:${OWNER}"
+    fail_missing "Propietario inesperado en $PROFILE_DIR: ${owner}:${group}"
   fi
   if [[ "$mode" != "700" ]]; then
     if ! chmod 0700 "$PROFILE_DIR" 2>/dev/null; then
@@ -48,8 +58,38 @@ ensure_profile_dir() {
   fi
 }
 
+require_profile_markers() {
+  local content ok=1
+  if [[ ! -f "$APP_ID_FILE" ]]; then
+    log_profile "missing app-id"
+    ok=0
+  else
+    content="$(<"$APP_ID_FILE")"
+    if [[ "$content" != "$APP_ID" ]]; then
+      log_profile "app-id-mismatch actual=${content} esperado=${APP_ID}"
+      ok=0
+    fi
+  fi
+
+  if [[ ! -f "$DESKTOP_ID_FILE" ]]; then
+    log_profile "missing desktop-id"
+    ok=0
+  else
+    content="$(<"$DESKTOP_ID_FILE")"
+    if [[ "$content" != "$APP_ID" ]]; then
+      log_profile "desktop-id-mismatch actual=${content} esperado=${APP_ID}"
+      ok=0
+    fi
+  fi
+
+  if (( ! ok )); then
+    fail_missing "Perfil WebApp incompleto en ${PROFILE_DIR}"
+  fi
+}
+
 check_desktop_file() {
   if [[ ! -r "$DESKTOP_FILE" ]]; then
+    log_profile "missing desktop-file path=${DESKTOP_FILE}"
     fail_missing "Desktop file requerido no disponible: ${DESKTOP_FILE}"
   fi
 }
@@ -59,18 +99,19 @@ kill_existing_instances() {
     local uid pattern
     uid="$(id -u "$OWNER")"
     pattern="$PROFILE_DIR"
-    pkill -u "$uid" -f "$pattern" 2>/dev/null || true
+    if pkill -u "$uid" -f "$pattern" 2>/dev/null; then
+      log_profile "previous-instances-terminated"
+    fi
   fi
 }
 
 prepare_logs() {
   if ! install -d -m 0755 "$LOG_DIR" 2>/dev/null; then
     if [[ ! -d "$LOG_DIR" ]]; then
-      log_err "No se pudo preparar ${LOG_DIR}"
       fail_missing "No se pudo preparar el directorio de logs"
     fi
   fi
-  touch "$PROFILE_LOG" "$SANITIZE_LOG"
+  touch "$PROFILE_LOG" "$SANITIZE_LOG" "$WATCHDOG_LOG"
 }
 
 apply_profile_preferences() {
@@ -136,17 +177,22 @@ apply_profile_preferences() {
 }
 
 launch_sanitizer() {
+  if [[ -e "$SANITIZER_DISABLE_FILE" ]]; then
+    log_profile "sanitize-skipped file=${SANITIZER_DISABLE_FILE}"
+    return
+  fi
   if [[ -x "$SANITIZER" ]]; then
     "$SANITIZER" --delay 4 --wm-class "$APP_WM_CLASS" --log "$SANITIZE_LOG" &
   else
-    log_err "No se encontró sanitizador en $SANITIZER"
+    log_profile "sanitize-missing path=$SANITIZER"
   fi
 }
 
 main() {
-  ensure_profile_dir
-  check_desktop_file
   prepare_logs
+  ensure_profile_dir
+  require_profile_markers
+  check_desktop_file
   apply_profile_preferences
 
   if [[ -x "$WAIT_X" ]]; then
@@ -159,13 +205,20 @@ main() {
   local epiphany
   epiphany="$(command -v epiphany-browser || true)"
   if [[ -z "$epiphany" ]]; then
+    log_profile "epiphany-missing"
     log_err "epiphany-browser no encontrado"
     exit 1
   fi
 
+  : "${GDK_BACKEND:=x11}"
+  : "${WEBKIT_DISABLE_DMABUF_RENDERER:=1}"
+  : "${GIO_USE_PORTALS:=1}"
+  : "${GTK_USE_PORTAL:=1}"
+
   exec env -i DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
-    HOME="/home/$OWNER" PATH="$PATH" GIO_USE_PORTALS=0 GTK_USE_PORTAL=0 \
-    GDK_BACKEND="${GDK_BACKEND:-x11}" WEBKIT_DISABLE_DMABUF_RENDERER="${WEBKIT_DISABLE_DMABUF_RENDERER:-1}" \
+    HOME="/home/$OWNER" PATH="$PATH" \
+    GIO_USE_PORTALS="$GIO_USE_PORTALS" GTK_USE_PORTAL="$GTK_USE_PORTAL" \
+    GDK_BACKEND="$GDK_BACKEND" WEBKIT_DISABLE_DMABUF_RENDERER="$WEBKIT_DISABLE_DMABUF_RENDERER" \
     "$epiphany" --application-mode --profile="$PROFILE_DIR" --new-window "$URL"
 }
 
