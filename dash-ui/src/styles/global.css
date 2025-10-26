@@ -43,6 +43,103 @@ body {
   overflow: hidden;
 }
 
+.w-screen {
+  width: 100vw;
+}
+
+.h-screen {
+  height: 100vh;
+}
+
+.w-full {
+  width: 100%;
+}
+
+.h-full {
+  height: 100%;
+}
+
+.flex {
+  display: flex;
+}
+
+.relative {
+  position: relative;
+}
+
+.absolute {
+  position: absolute;
+}
+
+.inset-0 {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+.overflow-hidden {
+  overflow: hidden;
+}
+
+.w-2\/3 {
+  width: 66.6667%;
+}
+
+.w-1\/3 {
+  width: 33.3333%;
+}
+
+.min-w-\[560px\] {
+  min-width: 560px;
+}
+
+.max-w-\[860px\] {
+  max-width: 860px;
+}
+
+.border-l {
+  border-left-width: 1px;
+  border-left-style: solid;
+  border-left-color: currentColor;
+}
+
+.border-white\/10 {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.bg-black\/35 {
+  background-color: rgba(0, 0, 0, 0.35);
+}
+
+.backdrop-blur-sm {
+  backdrop-filter: blur(8px);
+}
+
+.pointer-events-none {
+  pointer-events: none;
+}
+
+.bottom-1 {
+  bottom: 0.25rem;
+}
+
+.left-2 {
+  left: 0.5rem;
+}
+
+.text-\[10px\] {
+  font-size: 10px;
+}
+
+.text-white\/50 {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+#map-column {
+  min-width: 0;
+}
+
 #root {
   display: flex;
 }

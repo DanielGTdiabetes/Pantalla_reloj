@@ -1,139 +1,140 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import maplibregl, { type StyleSpecification } from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+import { useEffect, useRef } from "react";
 
-type GeoScopeMapProps = {
-  className?: string;
-  center?: [number, number];
-  zoom?: number;
+const VOYAGER: StyleSpecification = {
+  version: 8,
+  sources: {
+    carto: {
+      type: "raster",
+      tiles: [
+        "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+        "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+        "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
+      ],
+      tileSize: 256,
+      attribution:
+        '© OpenStreetMap contributors, © <a href="https://carto.com/attributions">CARTO</a>'
+    }
+  },
+  layers: [{ id: "carto", type: "raster", source: "carto" }]
 };
 
-const STATIC_MAP_BASE_URL = "https://staticmap.openstreetmap.de/staticmap.php";
-const MIN_ZOOM = 1;
-const MAX_ZOOM = 18;
-const MIN_LAT = -85;
-const MAX_LAT = 85;
-const MIN_LNG = -180;
-const MAX_LNG = 180;
-const MAX_DIMENSION = 1280;
-
-const clamp = (value: number, min: number, max: number): number => {
-  return Math.min(Math.max(value, min), max);
+const OSM_FALLBACK: StyleSpecification = {
+  version: 8,
+  sources: {
+    osm: {
+      type: "raster",
+      tiles: [
+        "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"
+      ],
+      tileSize: 256,
+      attribution: "© OpenStreetMap contributors"
+    }
+  },
+  layers: [{ id: "osm", type: "raster", source: "osm" }]
 };
 
-export const GeoScopeMap = ({ className, center, zoom = 1.6 }: GeoScopeMapProps): JSX.Element => {
+const FALLBACK_TIMEOUT = 8000;
+
+function GeoScopeMap(): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isReady, setIsReady] = useState(false);
-  const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 600, height: 900 });
-
-  const [lng, lat] = useMemo(() => {
-    const [cx, cy] = center ?? [0, 20];
-    const safeLng = clamp(cx, MIN_LNG, MAX_LNG);
-    const safeLat = clamp(cy, MIN_LAT, MAX_LAT);
-    return [safeLng, safeLat];
-  }, [center?.[0], center?.[1]]);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const fallbackTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) {
+    if (!containerRef.current) {
       return undefined;
     }
 
-    const updateSize = (rect: DOMRectReadOnly | DOMRect) => {
-      const { width, height } = rect;
-      if (width === 0 || height === 0) {
-        return;
-      }
+    let style: StyleSpecification = VOYAGER;
 
-      setDimensions((prev) => {
-        const nextWidth = clamp(Math.round(width), 200, MAX_DIMENSION);
-        const nextHeight = clamp(Math.round(height), 200, MAX_DIMENSION);
-        if (prev.width === nextWidth && prev.height === nextHeight) {
-          return prev;
-        }
-
-        return { width: nextWidth, height: nextHeight };
-      });
-    };
-
-    updateSize(container.getBoundingClientRect());
-
-    if (typeof ResizeObserver === "undefined") {
-      return undefined;
+    try {
+      // Voyager es el estilo principal; MapLibre gestionará errores de tiles automáticamente.
+      style = VOYAGER;
+    } catch {
+      style = OSM_FALLBACK;
     }
 
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) {
-        return;
-      }
-
-      updateSize(entry.contentRect);
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style,
+      center: [0, 20],
+      zoom: 2.2,
+      bearing: 0,
+      pitch: 0,
+      interactive: false,
+      renderWorldCopies: true,
+      preserveDrawingBuffer: false
     });
 
-    observer.observe(container);
+    mapRef.current = map;
+
+    const updatePadding = () => {
+      const aside = document.querySelector("aside");
+      const padRight = aside instanceof HTMLElement ? aside.offsetWidth : 0;
+      map.setPadding({ top: 0, right: padRight, bottom: 0, left: 0 });
+    };
+
+    updatePadding();
+
+    map.once("load", () => {
+      updatePadding();
+      map.resize();
+    });
+
+    const handleResize = () => {
+      updatePadding();
+      map.resize();
+    };
+
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserverRef.current = new ResizeObserver(handleResize);
+      resizeObserverRef.current.observe(containerRef.current);
+    } else {
+      window.addEventListener("resize", handleResize);
+    }
+
+    fallbackTimerRef.current = window.setTimeout(() => {
+      if (mapRef.current && !map.areTilesLoaded()) {
+        mapRef.current.setStyle(OSM_FALLBACK);
+        mapRef.current.once("styledata", () => {
+          updatePadding();
+          mapRef.current?.resize();
+        });
+      }
+    }, FALLBACK_TIMEOUT);
 
     return () => {
-      observer.disconnect();
+      if (fallbackTimerRef.current !== null) {
+        window.clearTimeout(fallbackTimerRef.current);
+        fallbackTimerRef.current = null;
+      }
+
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect();
+        resizeObserverRef.current = null;
+      } else {
+        window.removeEventListener("resize", handleResize);
+      }
+
+      mapRef.current = null;
+      map.remove();
     };
   }, []);
 
-  useEffect(() => {
-    setError(null);
-    setIsReady(false);
-  }, [lat, lng, zoom, dimensions.width, dimensions.height]);
-
-  const staticMapUrl = useMemo(() => {
-    const zoomLevel = clamp(Math.round(zoom), MIN_ZOOM, MAX_ZOOM);
-    const { width, height } = dimensions;
-    const sizeParam = `${width}x${height}`;
-    const markerParam = `${lat},${lng},lightblue1`;
-
-    const query = new URLSearchParams({
-      center: `${lat},${lng}`,
-      zoom: String(zoomLevel),
-      size: sizeParam,
-      maptype: "mapnik",
-      markers: markerParam
-    });
-
-    return `${STATIC_MAP_BASE_URL}?${query.toString()}`;
-  }, [dimensions, lat, lng, zoom]);
-
-  const handleImageLoad = () => {
-    setIsReady(true);
-  };
-
-  const handleImageError = () => {
-    setError("No se pudo cargar el mapa");
-  };
-
-  const classes = useMemo(() => {
-    return ["geo-scope-map", className].filter(Boolean).join(" ");
-  }, [className]);
-
   return (
-    <div ref={containerRef} className={classes}>
-      {error ? (
-        <div className="geo-scope-map__fallback" role="alert">
-          <p>No se pudo cargar el mapa global.</p>
-          <p className="geo-scope-map__hint">{error}</p>
-        </div>
-      ) : (
-        <>
-          <img
-            key={staticMapUrl}
-            src={staticMapUrl}
-            alt="Mapa global con la posición seleccionada"
-            className="geo-scope-map__image"
-            onLoad={handleImageLoad}
-            onError={handleImageError}
-            aria-hidden={!isReady}
-          />
-          <div className="geo-scope-map__attribution">© OpenStreetMap contributors</div>
-        </>
-      )}
+    <div className="absolute inset-0">
+      <div ref={containerRef} className="w-full h-full" />
+      <div className="pointer-events-none absolute bottom-1 left-2 text-[10px] text-white/50">
+        © OpenStreetMap contributors · © CARTO
+      </div>
     </div>
   );
-};
+}
 
+export { GeoScopeMap };
 export default GeoScopeMap;
