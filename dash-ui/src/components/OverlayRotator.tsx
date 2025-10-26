@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-import { useConfig } from "../context/ConfigContext";
-import { api } from "../services/api";
+import { withConfigDefaults } from "../config/defaults";
+import { apiGet } from "../lib/api";
+import { useConfig } from "../lib/useConfig";
 import { dayjs } from "../utils/dayjs";
 import { ensurePlainText, sanitizeRichText } from "../utils/sanitize";
 import type { RotatingCardItem } from "./RotatingCard";
@@ -99,7 +100,8 @@ const extractStrings = (value: unknown): string[] => {
 };
 
 export const OverlayRotator: React.FC = () => {
-  const { config, loading } = useConfig();
+  const { data, loading } = useConfig();
+  const config = useMemo(() => data ?? withConfigDefaults(), [data]);
   const [payload, setPayload] = useState<DashboardPayload>({});
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
 
@@ -109,10 +111,10 @@ export const OverlayRotator: React.FC = () => {
     const fetchAll = async () => {
       try {
         const [weather, news, astronomy, calendar] = await Promise.all([
-          api.fetchWeather().catch(() => ({})),
-          api.fetchNews().catch(() => ({})),
-          api.fetchAstronomy().catch(() => ({})),
-          api.fetchCalendar().catch(() => ({}))
+          apiGet<Record<string, unknown>>("/weather").catch(() => ({})),
+          apiGet<Record<string, unknown>>("/news").catch(() => ({})),
+          apiGet<Record<string, unknown>>("/astronomy").catch(() => ({})),
+          apiGet<Record<string, unknown>>("/calendar").catch(() => ({}))
         ]);
 
         if (mounted) {

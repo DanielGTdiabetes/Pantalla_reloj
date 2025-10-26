@@ -49,6 +49,18 @@ Pantalla_reloj/
 - El site por defecto de Nginx no debe estar habilitado: elimina el symlink
   `/etc/nginx/sites-enabled/default` para evitar colisiones con `server_name _`.
 
+### Verificación post-deploy
+
+Tras cada build o despliegue ejecuta la verificación rápida del proxy/API:
+
+```bash
+chmod +x scripts/verify_api.sh
+./scripts/verify_api.sh
+```
+
+Confirma que `nginx -t` pasa y que `/api/health` y `/api/config` responden vía
+Nginx antes de dar por finalizada la actualización.
+
 ### Servicios systemd
 - `pantalla-xorg.service`: levanta `Xorg :0` sin display manager ni TCP.
 - `pantalla-openbox@dani.service`: sesión gráfica minimalista con autostart que aplica
