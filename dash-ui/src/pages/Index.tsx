@@ -99,7 +99,7 @@ const extractStrings = (value: unknown): string[] => {
   return [];
 };
 
-export const DashboardPage: React.FC = () => {
+export default function Index(): JSX.Element {
   const { config, loading } = useConfig();
   const [payload, setPayload] = useState<DashboardPayload>({});
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
@@ -277,13 +277,13 @@ export const DashboardPage: React.FC = () => {
   const overlayStatus = lastUpdatedLabel ? `Actualizado ${lastUpdatedLabel}` : "datos no disponibles";
 
   return (
-    <main className="dashboard-alt" aria-busy={loading}>
-      <section className="dashboard-alt__map" aria-label="Mapa global">
+    <div className="app-shell" aria-busy={loading}>
+      <div className="app-shell__map" aria-label="Mapa global">
         <GeoScopeMap />
+      </div>
+      <aside className="app-shell__aside" aria-label="Información rotatoria">
         <OverlayRotator cards={rotatingCards} status={overlayStatus} isLoading={loading && !lastUpdatedAt} />
-      </section>
-    </main>
+      </aside>
+    </div>
   );
-};
-
-export default DashboardPage;
+}
