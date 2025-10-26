@@ -612,7 +612,7 @@ export const ConfigPage: React.FC = () => {
   };
 
   const apiStatusLabel =
-    apiOnline === null ? "API CHECKING" : apiOnline ? "API ONLINE" : "API OFFLINE";
+    apiOnline === null ? "API checking" : apiOnline ? "API online" : "API offline";
   const apiStatusClass =
     apiOnline === null ? " is-pending" : apiOnline ? " is-online" : " is-offline";
   const apiHint =
@@ -620,7 +620,7 @@ export const ConfigPage: React.FC = () => {
       ? "Comprobando el estado del backend…"
       : apiOnline
       ? "Conectado al backend."
-      : "No se pudo contactar con el backend. Revisa el proxy /api.";
+      : "API offline. No se pudo contactar con el backend (/api).";
 
   return (
     <div className="config-page">
