@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 
+import { API_BASE } from "../services/api";
+
 type MapPadding = {
   top: number;
   bottom: number;
@@ -34,7 +36,7 @@ type WorldMapProps = {
 };
 
 const MAP_CONTAINER_ID = "map";
-const MAP_STYLE_URL = "http://127.0.0.1:8081/static/style.json";
+const MAP_STYLE_URL = new URL("/static/style.json", API_BASE).toString();
 const MAPLIBRE_SCRIPT = "https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js";
 const MAPLIBRE_STYLES = "https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css";
 const SOUTH_WEST: [number, number] = [-170, -60];
