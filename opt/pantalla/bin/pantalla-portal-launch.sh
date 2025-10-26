@@ -4,7 +4,11 @@ set -euo pipefail
 LOG_DIR=/var/log/pantalla
 LOG_FILE="${LOG_DIR}/xdg-desktop-portal.log"
 STATE_FILE=/var/lib/pantalla-reloj/state/session.env
-DEFAULT_RUNTIME_DIR="/run/user/$(id -u)"
+CURRENT_UID="$(id -u)"
+CURRENT_USER="$(id -un)"
+DEFAULT_SHELL="$(getent passwd "${CURRENT_USER}" | awk -F: 'NR==1 {print $7}' | awk 'NF {print; exit}')"
+DEFAULT_SHELL="${DEFAULT_SHELL:-/bin/bash}"
+DEFAULT_RUNTIME_DIR="/run/user/${CURRENT_UID}"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-$DEFAULT_RUNTIME_DIR}"
 PORTAL_BIN=${PORTAL_BIN:-/usr/libexec/xdg-desktop-portal}
 BACKEND_BIN=${BACKEND_BIN:-/usr/libexec/xdg-desktop-portal-gtk}
@@ -15,21 +19,18 @@ DEFAULT_LANG="${LANG:-C.UTF-8}"
 
 resolve_user_home() {
   local home
-  if home=$(getent passwd "$(id -u)" | awk -F: 'NR==1 {print $6}'); then
-    printf '%s' "${home:-/home/$(id -un)}"
+  if home=$(getent passwd "${CURRENT_UID}" | awk -F: 'NR==1 {print $6}'); then
+    printf '%s' "${home:-/home/${CURRENT_USER}}"
     return
   fi
-  printf '%s' "/home/$(id -un)"
+  printf '%s' "/home/${CURRENT_USER}"
 }
 
 cleanup_existing_processes() {
-  local uid
-  uid="$(id -u)"
-
   if command -v pkill >/dev/null 2>&1; then
     for pattern in xdg-desktop-portal-gtk xdg-desktop-portal; do
-      if pgrep -u "$uid" -f "$pattern" >/dev/null 2>&1; then
-        pkill -u "$uid" -f "$pattern" >/dev/null 2>&1 && \
+      if pgrep -u "${CURRENT_UID}" -f "$pattern" >/dev/null 2>&1; then
+        pkill -u "${CURRENT_UID}" -f "$pattern" >/dev/null 2>&1 && \
           log INFO "killed leftover ${pattern}" || \
           log WARN "failed-kill ${pattern}"
       fi
@@ -93,7 +94,7 @@ ensure_backend() {
     log WARN "backend binary not executable: $BACKEND_BIN"
     return
   fi
-  if pgrep -u "$(id -u)" -f "xdg-desktop-portal-gtk" >/dev/null 2>&1; then
+  if pgrep -u "${CURRENT_UID}" -f "xdg-desktop-portal-gtk" >/dev/null 2>&1; then
     log INFO "backend already running"
     return
   fi
@@ -103,6 +104,9 @@ ensure_backend() {
     XAUTHORITY="${XAUTHORITY:-$DEFAULT_XAUTH}" \
     XDG_RUNTIME_DIR="$RUNTIME_DIR" \
     HOME="${USER_HOME}" \
+    USER="${CURRENT_USER}" \
+    LOGNAME="${CURRENT_USER}" \
+    SHELL="${DEFAULT_SHELL}" \
     PATH="$DEFAULT_PATH" \
     LANG="$DEFAULT_LANG" \
     LC_ALL="$DEFAULT_LANG" \
@@ -113,7 +117,7 @@ ensure_backend() {
 
 snapshot_processes() {
   local user
-  user="$(id -un)"
+  user="${CURRENT_USER}"
   while IFS= read -r line; do
     log INFO "ps ${line}"
   done < <(ps -ef | awk -v user="$user" '$1 == user && /xdg-desktop-portal(-gtk)?/' )
@@ -150,6 +154,9 @@ main() {
     XAUTHORITY="$XAUTHORITY" \
     XDG_RUNTIME_DIR="$RUNTIME_DIR" \
     HOME="$USER_HOME" \
+    USER="${CURRENT_USER}" \
+    LOGNAME="${CURRENT_USER}" \
+    SHELL="${DEFAULT_SHELL}" \
     PATH="$DEFAULT_PATH" \
     LANG="$DEFAULT_LANG" \
     LC_ALL="$DEFAULT_LANG" \

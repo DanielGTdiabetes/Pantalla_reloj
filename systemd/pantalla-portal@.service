@@ -18,4 +18,5 @@ ExecStart=/opt/pantalla/bin/pantalla-portal-launch.sh
 Restart=on-failure
 RestartSec=2
 
-# No [Install] section: the unit is optional and disabled by default
+[Install]
+WantedBy=multi-user.target
