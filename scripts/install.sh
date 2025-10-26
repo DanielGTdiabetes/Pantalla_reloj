@@ -97,7 +97,10 @@ APT_PACKAGES=(
   x11-xserver-utils
   wmctrl
   epiphany-browser
+  xdg-desktop-portal
+  xdg-desktop-portal-gtk
   xdotool
+  procps
   dbus-x11
   curl
   unzip
@@ -197,6 +200,7 @@ install -m 0755 "$REPO_ROOT/opt/pantalla/bin/wait-x.sh" "$SESSION_PREFIX/bin/wai
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/pantalla-geometry.sh" "$SESSION_PREFIX/bin/pantalla-geometry.sh"
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/pantalla-kiosk-sanitize.sh" "$SESSION_PREFIX/bin/pantalla-kiosk-sanitize.sh"
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/pantalla-kiosk-watchdog.sh" "$SESSION_PREFIX/bin/pantalla-kiosk-watchdog.sh"
+install -m 0755 "$REPO_ROOT/opt/pantalla/bin/pantalla-portal-launch.sh" "$SESSION_PREFIX/bin/pantalla-portal-launch.sh"
 install -m 0755 "$REPO_ROOT/opt/pantalla/openbox/autostart" "$SESSION_PREFIX/openbox/autostart"
 
 install -D -m 0755 "$KIOSK_BIN_SRC" "$KIOSK_BIN_DST"
@@ -413,6 +417,7 @@ deploy_unit "$REPO_ROOT/systemd/pantalla-xorg.service" /etc/systemd/system/panta
 deploy_unit "$REPO_ROOT/systemd/pantalla-openbox@.service" /etc/systemd/system/pantalla-openbox@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk@.service" /etc/systemd/system/pantalla-kiosk@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-dash-backend@.service" /etc/systemd/system/pantalla-dash-backend@.service
+deploy_unit "$REPO_ROOT/systemd/pantalla-portal@.service" /etc/systemd/system/pantalla-portal@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk-watchdog@.service" /etc/systemd/system/pantalla-kiosk-watchdog@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk-watchdog@.timer" /etc/systemd/system/pantalla-kiosk-watchdog@.timer
 
@@ -434,6 +439,7 @@ log_info "Enabling services"
 systemctl enable pantalla-xorg.service || true
 systemctl enable pantalla-dash-backend@${USER_NAME}.service || true
 systemctl enable pantalla-openbox@${USER_NAME}.service || true
+systemctl enable pantalla-portal@${USER_NAME}.service || true
 systemctl enable pantalla-kiosk@${USER_NAME}.service || true
 systemctl enable --now pantalla-kiosk-watchdog@${USER_NAME}.timer || true
 
@@ -445,6 +451,8 @@ else
   SUMMARY+=('[install] permisos XAUTHORITY: no disponible')
 fi
 systemctl restart pantalla-openbox@${USER_NAME}.service
+sleep 1
+systemctl restart pantalla-portal@${USER_NAME}.service
 sleep 1
 
 log_info "Running post-install checks"

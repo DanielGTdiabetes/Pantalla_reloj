@@ -76,6 +76,7 @@ UDEV_RULE=/etc/udev/rules.d/70-pantalla-render.rules
 
 SYSTEMD_UNITS=(
   "pantalla-kiosk@${USER_NAME}.service"
+  "pantalla-portal@${USER_NAME}.service"
   "pantalla-openbox@${USER_NAME}.service"
   "pantalla-dash-backend@${USER_NAME}.service"
   "pantalla-xorg.service"
@@ -95,6 +96,7 @@ rm -f /etc/systemd/system/pantalla-kiosk@.service
 rm -f /etc/systemd/system/pantalla-openbox@.service
 rm -f /etc/systemd/system/pantalla-xorg.service
 rm -f /etc/systemd/system/pantalla-dash-backend@.service
+rm -f /etc/systemd/system/pantalla-portal@.service
 rm -rf /etc/systemd/system/pantalla-kiosk@.service.d /etc/systemd/system/pantalla-openbox@.service.d /etc/systemd/system/pantalla-dash-backend@.service.d
 
 systemctl daemon-reload
@@ -188,6 +190,7 @@ fi
 
 rm -f "$SESSION_PREFIX/bin/xorg-openbox-env.sh"
 rm -f "$SESSION_PREFIX/bin/wait-x.sh"
+rm -f "$SESSION_PREFIX/bin/pantalla-portal-launch.sh"
 rm -f "$SESSION_PREFIX/openbox/autostart"
 if [[ -d "$SESSION_PREFIX/bin" ]]; then
   rmdir --ignore-fail-on-non-empty "$SESSION_PREFIX/bin" || true
