@@ -68,6 +68,10 @@ export const GeoScopeMap = ({ className, center, zoom = 1.6 }: GeoScopeMapProps)
         });
 
         mapRef.current = map;
+        const mapWithRenderCopies = map as MapInstance & {
+          setRenderWorldCopies?: (value: boolean) => MapInstance;
+        };
+        mapWithRenderCopies.setRenderWorldCopies?.(false);
         setIsReady(true);
         setError(null);
       } catch (err) {
