@@ -207,6 +207,32 @@ body {
   z-index: 11;
 }
 
+.map-attribution {
+  right: 14px;
+  bottom: 12px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  font-size: clamp(10px, 1.2vw, 13px);
+  line-height: 1.2;
+  color: rgba(245, 248, 255, 0.8);
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.map-attribution a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.map-attribution a:hover,
+.map-attribution a:focus {
+  text-decoration: underline;
+}
+
 .mapboxgl-ctrl,
 .maplibregl-ctrl,
 .mapboxgl-ctrl-logo,

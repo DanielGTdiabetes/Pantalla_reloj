@@ -25,7 +25,7 @@ export const UI_DEFAULTS: UISettings = {
   rotation: {
     enabled: true,
     duration_sec: 10,
-    panels: ["news", "ephemerides", "moon", "forecast", "calendar"]
+    panels: ["news", "weather", "ephemerides", "moon", "forecast", "calendar"]
   },
   fixed: {
     clock: { format: "HH:mm" },

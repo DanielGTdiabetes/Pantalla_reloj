@@ -394,6 +394,16 @@ export const DashboardPage: React.FC = () => {
             titleClassName="title"
             bodyClassName="card-body"
           />
+          <div className="overlay map-attribution">
+            Map data ©{" "}
+            <a
+              href="https://www.openstreetmap.org/copyright"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              OpenStreetMap contributors
+            </a>
+          </div>
         </div>
       </div>
     </div>
