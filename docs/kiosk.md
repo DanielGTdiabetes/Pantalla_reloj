@@ -10,6 +10,31 @@ Con esta configuración, al iniciar `pantalla-xorg.service` se obtiene un arranq
 
 Chromium se ejecuta desde el usuario normal y necesita la cookie real de Xauthority. Asegúrate de que `~/.Xauthority` exista y sea un archivo regular (`-rw-------`) perteneciente a `dani:dani`. El servicio de Xorg ya se inicia con `-auth /home/dani/.Xauthority`, por lo que no es necesario crear enlaces simbólicos en `/var/lib`.
 
+## Arranque determinista (X11 + Chromium)
+
+### Requisitos
+
+* `~/.Xauthority` debe ser un archivo normal (no un enlace simbólico), con permisos `-rw-------` y perteneciente a `dani:dani`.
+* El drop-in [`override.conf`](../systemd/pantalla-kiosk-chromium@dani.service.d/override.conf) fija `DISPLAY=:0` y `XAUTHORITY=/home/dani/.Xauthority` para `pantalla-kiosk-chromium@dani.service`.
+
+### Pasos de verificación
+
+1. `journalctl -u pantalla-dash-backend@dani -n 50` → debe mostrar `Uvicorn running on http://127.0.0.1:8081` y responder `GET /api/health -> 200`.
+2. `systemctl status pantalla-kiosk-chromium@dani` → estado `active (running)` sin mensajes de “Authorization required” ni “Missing X server or $DISPLAY”.
+3. `DISPLAY=:0 XAUTHORITY=/home/dani/.Xauthority wmctrl -lx` → debe listar una ventana Chromium con clase `pantalla-kiosk`.
+
+### Solución de problemas rápida
+
+* Mensajes “not a clean path” o “Authorization required”: recrea `~/.Xauthority` copiando `/var/lib/pantalla-reloj/.Xauthority` (`install -m 600 -o dani -g dani /var/lib/pantalla-reloj/.Xauthority /home/dani/.Xauthority`).
+* Backend sin iniciar: confirma que `pantalla-backend-launch` exporta `PYTHONPATH="/opt/pantalla-reloj"` y que Uvicorn apunta a `backend.main:app`.
+* Chromium sin ventana: valida que el drop-in aplique y que `DISPLAY`/`XAUTHORITY` correspondan al usuario.
+
+El watchdog (`pantalla-kiosk-watchdog@.timer`) permanece deshabilitado por defecto. Si se requiere, actívalo manualmente con:
+
+```bash
+sudo systemctl enable --now pantalla-kiosk-watchdog@dani.timer
+```
+
 ## Servicios systemd relevantes
 
 ```bash

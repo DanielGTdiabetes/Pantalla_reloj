@@ -55,24 +55,14 @@ else
 fi
 
 HOME_AUTH="/home/${USER_NAME}/.Xauthority"
-HOME_AUTH_BACKUP="${HOME_AUTH}.bak"
 
-if [ -e "$HOME_AUTH" ] && [ ! -L "$HOME_AUTH" ]; then
-  if [ -e "$HOME_AUTH_BACKUP" ] && [ ! -L "$HOME_AUTH_BACKUP" ]; then
-    log "Sobrescribiendo backup existente ${HOME_AUTH_BACKUP}"
-    rm -f "$HOME_AUTH_BACKUP"
-  fi
-  log "Renombrando ${HOME_AUTH} a ${HOME_AUTH_BACKUP}"
-  mv -f "$HOME_AUTH" "$HOME_AUTH_BACKUP"
+if [ -L "$HOME_AUTH" ]; then
+  log "Eliminando symlink previo ${HOME_AUTH}"
+  rm -f "$HOME_AUTH"
 fi
 
-ln -sfn "$AUTH_FILE" "$HOME_AUTH"
-
-if chown -h "$USER_NAME:$USER_NAME" "$HOME_AUTH" 2>/dev/null; then
-  :
-else
-  log "No se pudo ajustar propietario del symlink ${HOME_AUTH}; continuando"
-fi
+install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "/home/${USER_NAME}" >/dev/null 2>&1 || true
+install -m 0600 -o "$USER_NAME" -g "$USER_NAME" "$AUTH_FILE" "$HOME_AUTH"
 
 if (( prepare_only )); then
   exit 0

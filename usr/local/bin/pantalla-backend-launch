@@ -4,11 +4,12 @@ LOG=/tmp/backend-launch.log
 exec >>"$LOG" 2>&1
 echo "[backend] $(date -Is) start"
 
-APP_DIR="/opt/pantalla-reloj/backend"
-PY="$APP_DIR/.venv/bin/python"
+APP_ROOT="/opt/pantalla-reloj"
+BACKEND_DIR="${APP_ROOT}/backend"
+PY="$BACKEND_DIR/.venv/bin/python"
 
-if [[ ! -d "$APP_DIR" ]]; then
-  echo "[backend] ERROR: APP_DIR no existe: $APP_DIR" >&2
+if [[ ! -d "$BACKEND_DIR" ]]; then
+  echo "[backend] ERROR: BACKEND_DIR no existe: $BACKEND_DIR" >&2
   exit 2
 fi
 
@@ -17,8 +18,8 @@ if [[ ! -x "$PY" ]]; then
   exit 2
 fi
 
-cd "$APP_DIR"
-export PYTHONPATH="$APP_DIR"
+cd "$APP_ROOT"
+export PYTHONPATH="$APP_ROOT"
 
 "$PY" - <<'PYCODE'
 import importlib, sys
