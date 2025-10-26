@@ -7,7 +7,7 @@ Wants=pantalla-xorg.service
 User=%i
 PermissionsStartOnly=yes
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority
+Environment=XAUTHORITY=/home/%i/.Xauthority
 Environment=XDG_RUNTIME_DIR=/run/user/%U
 EnvironmentFile=-/var/lib/pantalla-reloj/state/session.env
 ExecStartPre=/bin/sh -c 'install -d -m 0700 -o %i -g %i /run/user/$(id -u %i)'

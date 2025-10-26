@@ -1,6 +1,6 @@
 # Deprecated in favor of pantalla-kiosk-chromium@.service
 [Unit]
-Description=Pantalla_reloj Kiosk (Epiphany) for user %i
+Description=Pantalla_reloj Kiosk (Epiphany, deprecated) for user %i
 After=pantalla-openbox@%i.service pantalla-dash-backend@%i.service
 Requires=pantalla-openbox@%i.service
 Wants=pantalla-openbox@%i.service pantalla-dash-backend@%i.service
@@ -8,7 +8,7 @@ Wants=pantalla-openbox@%i.service pantalla-dash-backend@%i.service
 [Service]
 User=%i
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority
+Environment=XAUTHORITY=/home/%i/.Xauthority
 Environment=GDK_BACKEND=x11
 Environment=WEBKIT_DISABLE_DMABUF_RENDERER=1
 EnvironmentFile=-/var/lib/pantalla-reloj/state/session.env
@@ -26,5 +26,4 @@ ExecStartPost=/usr/local/bin/pantalla-kiosk-verify
 Restart=on-failure
 RestartSec=2
 
-[Install]
-WantedBy=multi-user.target
+# No [Install] section on purpose: this unit is not enabled by default.
