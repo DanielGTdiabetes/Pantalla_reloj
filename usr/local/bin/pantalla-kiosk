@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_ID="org.gnome.Epiphany.WebApp_PantallaReloj"
-APP_WM_CLASS="$APP_ID"
+APP_WM_CLASS="epiphany.epiphany"
 DEFAULT_URL="http://127.0.0.1"
 URL="${1:-$DEFAULT_URL}"
 
@@ -96,10 +96,9 @@ check_desktop_file() {
 
 kill_existing_instances() {
   if command -v pkill >/dev/null 2>&1; then
-    local uid pattern
+    local uid
     uid="$(id -u "$OWNER")"
-    pattern="$PROFILE_DIR"
-    if pkill -u "$uid" -f "$pattern" 2>/dev/null; then
+    if pkill -u "$uid" -f "^epiphany( |-browser)" 2>/dev/null; then
       log_profile "previous-instances-terminated"
     fi
   fi

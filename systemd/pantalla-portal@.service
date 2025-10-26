@@ -6,7 +6,7 @@ PartOf=pantalla-openbox@%i.service
 
 [Service]
 User=%i
-Type=simple
+PermissionsStartOnly=yes
 Environment=XDG_RUNTIME_DIR=/run/user/%U
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority

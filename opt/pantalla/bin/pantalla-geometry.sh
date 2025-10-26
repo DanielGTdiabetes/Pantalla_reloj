@@ -113,34 +113,17 @@ run_xrandr() {
 
 log "geometry-start output=$OUTPUT mode=$MODE fb=$FRAMEBUFFER rotate=$ROTATE"
 
-retry_due_to_size=0
-
-apply_sequence() {
-  local prefix="$1"
-
-  if ! out=$(run_xrandr "${prefix}fb" --fb "$FRAMEBUFFER"); then
-    [[ "$out" == *"screen not large enough"* ]] && retry_due_to_size=1
-  fi
-
-  if ! out=$(run_xrandr "${prefix}mode" --output "$OUTPUT" --mode "$MODE"); then
-    [[ "$out" == *"screen not large enough"* ]] && retry_due_to_size=1
-  fi
-
-  if ! out=$(run_xrandr "${prefix}rotate" --output "$OUTPUT" --rotate "$ROTATE"); then
-    [[ "$out" == *"screen not large enough"* ]] && retry_due_to_size=1
-  fi
-
-  run_xrandr "${prefix}primary" --output "$OUTPUT" --primary || true
-  run_xrandr "${prefix}position" --output "$OUTPUT" --pos 0x0 || true
-}
-
-apply_sequence set-
-
-if (( retry_due_to_size )); then
-  log "geometry-retry reason=screen-not-large-enough"
-  retry_due_to_size=0
-  apply_sequence retry-
+if ! run_xrandr "mode" --output "$OUTPUT" --mode "$MODE" --rotate "$ROTATE" --primary --pos 0x0; then
+  log "mode-error"
 fi
+
+sleep 0.3
+
+if ! run_xrandr "framebuffer" --fb "$FRAMEBUFFER"; then
+  log "framebuffer-error"
+fi
+
+sleep 0.2
 
 if (( DISABLE_DPMS )); then
   if DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xset -dpms >/dev/null 2>&1; then

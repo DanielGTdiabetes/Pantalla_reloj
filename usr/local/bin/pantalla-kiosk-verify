@@ -1,53 +1,52 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LOG_FILE="/var/log/pantalla/kiosk-verify.log"
-DISPLAY_VALUE="${DISPLAY:-:0}"
-XAUTHORITY_VALUE="${XAUTHORITY:-/var/lib/pantalla-reloj/.Xauthority}"
-LOG_GLOB="/var/log/pantalla/kiosk-*.log"
+: "${DISPLAY:=:0}"
+: "${XAUTHORITY:=/var/lib/pantalla-reloj/.Xauthority}"
 
-run_cmd() {
-  local desc cmd status
-  desc="$1"
-  shift
-  cmd=("$@")
-  {
-    printf '--- %s ---\n' "$desc"
-    printf 'CMD: %s\n' "${cmd[*]}"
-    if "${cmd[@]}"; then
-      status=0
-    else
-      status=$?
-      printf 'exit-status=%s\n' "$status"
-    fi
-    printf '\n'
-  }
+LOG_DIR=/var/log/pantalla
+VERIFY_LOG="${LOG_DIR}/kiosk-verify.log"
+SANITIZE_LOG="${LOG_DIR}/kiosk-sanitize.log"
+SANITIZER=/opt/pantalla/bin/pantalla-kiosk-sanitize.sh
+WM_CLASS="epiphany.epiphany"
+prepare_logs() {
+  install -d -m 0755 "$LOG_DIR"
+  : >"${VERIFY_LOG}.tmp"
 }
 
-mkdir -p "$(dirname "$LOG_FILE")"
+run_and_capture() {
+  local desc="$1"
+  shift
+  {
+    printf '--- %s ---\n' "$desc"
+    printf 'CMD: %s\n' "$*"
+    if "$@"; then
+      printf 'status=0\n\n'
+    else
+      printf 'status=%s\n\n' "$?"
+    fi
+  } >>"${VERIFY_LOG}.tmp" 2>&1
+}
 
-{
-  echo "=== $(date -Is) pantalla-kiosk-verify ==="
-  echo "DISPLAY=${DISPLAY_VALUE}"
-  echo "XAUTHORITY=${XAUTHORITY_VALUE}"
-  echo
+main() {
+  prepare_logs
 
-  run_cmd "xrandr --query" env DISPLAY="$DISPLAY_VALUE" XAUTHORITY="$XAUTHORITY_VALUE" xrandr --query
-  run_cmd "xset q" env DISPLAY="$DISPLAY_VALUE" XAUTHORITY="$XAUTHORITY_VALUE" xset q
-  run_cmd "wmctrl -lx" env DISPLAY="$DISPLAY_VALUE" XAUTHORITY="$XAUTHORITY_VALUE" wmctrl -lx
-  run_cmd "_NET_ACTIVE_WINDOW" env DISPLAY="$DISPLAY_VALUE" XAUTHORITY="$XAUTHORITY_VALUE" xprop -root _NET_ACTIVE_WINDOW
-  run_cmd "_NET_CLIENT_LIST" env DISPLAY="$DISPLAY_VALUE" XAUTHORITY="$XAUTHORITY_VALUE" xprop -root _NET_CLIENT_LIST
-  run_cmd "backend health" curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8081/healthz
+  if [[ -x "$SANITIZER" ]]; then
+    DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" "$SANITIZER" --delay 0 --timeout 8 --wm-class "$WM_CLASS" --log "$SANITIZE_LOG" || true
+  fi
 
-  shopt -s nullglob
-  for logfile in $LOG_GLOB; do
-    echo "--- tail ${logfile##*/} ---"
-    tail -n 60 "$logfile"
-    echo
-  done
-  shopt -u nullglob
-} >"${LOG_FILE}.tmp" 2>&1
+  run_and_capture "xrandr --query" env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xrandr --query
+  run_and_capture "wmctrl -lx" env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" wmctrl -lx
+  run_and_capture "_NET_ACTIVE_WINDOW" env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xprop -root _NET_ACTIVE_WINDOW
+  if command -v xprop >/dev/null 2>&1; then
+    active_id=$(env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xprop -root _NET_ACTIVE_WINDOW 2>/dev/null | awk -F'# ' 'NF>1 {print $2}' | awk '{print $1}')
+    if [[ -n "$active_id" ]]; then
+      run_and_capture "_NET_WM_STATE ${active_id}" env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xprop -id "$active_id" _NET_WM_STATE
+    fi
+  fi
+  run_and_capture "backend health" curl -fsS -o /dev/null -w '%{http_code}\n' "${PANTALLA_KIOSK_HEALTH_URL:-http://127.0.0.1:8081/healthz}"
 
-mv "${LOG_FILE}.tmp" "$LOG_FILE"
+  mv "${VERIFY_LOG}.tmp" "$VERIFY_LOG"
+}
 
-printf 'Resultados guardados en %s\n' "$LOG_FILE"
+main "$@"
