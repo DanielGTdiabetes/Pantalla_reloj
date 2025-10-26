@@ -17,6 +17,9 @@ export interface MapOptions {
 export interface MapInstance {
   resize(): void;
   remove(): void;
+  once?(event: string, handler: (...args: unknown[]) => void): void;
+  on?(event: string, handler: (...args: unknown[]) => void): void;
+  off?(event: string, handler: (...args: unknown[]) => void): void;
 }
 
 export interface MapLibreGL {

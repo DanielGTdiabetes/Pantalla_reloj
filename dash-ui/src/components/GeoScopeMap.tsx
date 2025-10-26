@@ -45,6 +45,7 @@ export const GeoScopeMap = ({ className, center, zoom = 1.6 }: GeoScopeMapProps)
 
     let disposed = false;
     let map: MapInstance | null = null;
+    let disableWorldCopies: (() => void) | null = null;
 
     setIsReady(false);
     setError(null);
@@ -71,7 +72,11 @@ export const GeoScopeMap = ({ className, center, zoom = 1.6 }: GeoScopeMapProps)
         const mapWithRenderCopies = map as MapInstance & {
           setRenderWorldCopies?: (value: boolean) => MapInstance;
         };
-        mapWithRenderCopies.setRenderWorldCopies?.(false);
+        disableWorldCopies = () => {
+          mapWithRenderCopies.setRenderWorldCopies?.(false);
+        };
+        map.once?.("load", disableWorldCopies);
+        map.on?.("styledata", disableWorldCopies);
         setIsReady(true);
         setError(null);
       } catch (err) {
@@ -93,6 +98,9 @@ export const GeoScopeMap = ({ className, center, zoom = 1.6 }: GeoScopeMapProps)
     return () => {
       disposed = true;
       window.removeEventListener("resize", handleResize);
+      if (disableWorldCopies) {
+        map?.off?.("styledata", disableWorldCopies);
+      }
       mapRef.current?.remove();
       mapRef.current = null;
       map?.remove();
