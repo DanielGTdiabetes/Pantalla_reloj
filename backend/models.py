@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DisplayModule(BaseModel):
@@ -56,12 +56,65 @@ class StormMode(BaseModel):
     last_triggered: Optional[datetime] = None
 
 
+class UIScrollSettings(BaseModel):
+    enabled: bool = True
+    direction: Literal["left", "up"] = "left"
+    speed: float | Literal["slow", "normal", "fast"] = "normal"
+    gap_px: int = Field(default=48, ge=0, le=480)
+
+
+class UITextSettings(BaseModel):
+    scroll: Dict[str, UIScrollSettings] = Field(
+        default_factory=lambda: {
+            "news": UIScrollSettings(direction="left", speed="normal", gap_px=48),
+            "ephemerides": UIScrollSettings(direction="up", speed="slow", gap_px=24),
+            "forecast": UIScrollSettings(direction="up", speed="slow", gap_px=24),
+        }
+    )
+
+
+class UIFixedClockSettings(BaseModel):
+    format: str = "HH:mm"
+
+
+class UIFixedTemperatureSettings(BaseModel):
+    unit: str = "C"
+
+
+class UIFixedSettings(BaseModel):
+    clock: UIFixedClockSettings = Field(default_factory=UIFixedClockSettings)
+    temperature: UIFixedTemperatureSettings = Field(default_factory=UIFixedTemperatureSettings)
+
+
+class UIRotationSettings(BaseModel):
+    enabled: bool = True
+    duration_sec: int = Field(default=10, ge=3, le=3600)
+    panels: List[str] = Field(
+        default_factory=lambda: [
+            "news",
+            "ephemerides",
+            "moon",
+            "forecast",
+            "calendar",
+        ]
+    )
+
+
+class UIMapSettings(BaseModel):
+    provider: str = "osm"
+    center: List[float] = Field(default_factory=lambda: [0.0, 0.0])
+    zoom: int = Field(default=2, ge=0, le=18)
+    interactive: bool = False
+    controls: bool = False
+
+
 class UISettings(BaseModel):
-    layout: Literal["full", "widgets"] = "full"
-    side_panel: Literal["left", "right"] = "right"
-    show_config: bool = False
-    enable_demo: bool = False
-    carousel: bool = False
+    model_config = ConfigDict(extra="allow")
+
+    rotation: UIRotationSettings = Field(default_factory=UIRotationSettings)
+    fixed: UIFixedSettings = Field(default_factory=UIFixedSettings)
+    map: UIMapSettings = Field(default_factory=UIMapSettings)
+    text: UITextSettings = Field(default_factory=UITextSettings)
 
 
 class AppConfig(BaseModel):
@@ -98,6 +151,11 @@ __all__ = [
     "ConfigUpdate",
     "DisplayModule",
     "DisplaySettings",
+    "UIScrollSettings",
+    "UITextSettings",
+    "UIFixedSettings",
+    "UIRotationSettings",
+    "UIMapSettings",
     "UISettings",
     "MQTTSettings",
     "StormMode",

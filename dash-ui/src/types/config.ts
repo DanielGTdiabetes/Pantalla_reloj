@@ -38,12 +38,48 @@ export type StormMode = {
   last_triggered: string | null;
 };
 
+export type UIScrollSpeed = number | "slow" | "normal" | "fast";
+
+export type UIScrollSettings = {
+  enabled: boolean;
+  direction: "left" | "up";
+  speed: UIScrollSpeed;
+  gap_px: number;
+};
+
+export type UITextSettings = {
+  scroll: Record<string, UIScrollSettings>;
+};
+
+export type UIFixedSettings = {
+  clock: { format: string };
+  temperature: { unit: string };
+};
+
+export type UIRotationSettings = {
+  enabled: boolean;
+  duration_sec: number;
+  panels: string[];
+};
+
+export type UIMapSettings = {
+  provider: string;
+  center: [number, number];
+  zoom: number;
+  interactive: boolean;
+  controls: boolean;
+};
+
 export type UISettings = {
-  layout: "full" | "widgets";
-  side_panel: "left" | "right";
-  show_config: boolean;
-  enable_demo: boolean;
-  carousel: boolean;
+  rotation: UIRotationSettings;
+  fixed: UIFixedSettings;
+  map: UIMapSettings;
+  text: UITextSettings;
+  layout?: "full" | "widgets";
+  side_panel?: "left" | "right";
+  show_config?: boolean;
+  enable_demo?: boolean;
+  carousel?: boolean;
 };
 
 export type AppConfig = {

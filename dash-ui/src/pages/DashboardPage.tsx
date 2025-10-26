@@ -1,278 +1,385 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { ConfigForm } from "./ConfigPage";
+import { ClockDisplay } from "../components/ClockDisplay";
+import { RotatingCard, type RotatingPanel } from "../components/RotatingCard";
+import { WorldMap } from "../components/WorldMap";
 import { UI_DEFAULTS } from "../config/defaults";
 import { useConfig } from "../context/ConfigContext";
-import { useModuleRotation } from "../hooks/useModuleRotation";
-import { AstronomyModule } from "../modules/AstronomyModule";
-import { CalendarModule } from "../modules/CalendarModule";
-import { ClockModule } from "../modules/ClockModule";
-import { EventsModule } from "../modules/EventsModule";
-import { NewsModule } from "../modules/NewsModule";
-import { WeatherModule } from "../modules/WeatherModule";
 import { api } from "../services/api";
-import type { AppConfig, DisplayModule } from "../types/config";
+import type { UIScrollSettings } from "../types/config";
+import { ensurePlainText, sanitizeRichText } from "../utils/sanitize";
 
-const MAP_EMBED_URL =
-  "https://www.openstreetmap.org/export/embed.html?bbox=-3.7256%2C40.406%2C-3.681%2C40.43&layer=mapnik&marker=40.4168%2C-3.7038";
+import dayjs from "dayjs";
+import "dayjs/locale/es";
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
 
-type DashboardData = Record<string, any>;
+dayjs.extend(utc);
+dayjs.extend(timezone);
+dayjs.locale("es");
 
-type FullDashboardProps = {
-  config: AppConfig;
-  data: DashboardData;
-  stormMode: Record<string, any>;
+type DashboardPayload = {
+  weather?: Record<string, unknown>;
+  news?: Record<string, unknown>;
+  astronomy?: Record<string, unknown>;
+  calendar?: Record<string, unknown>;
 };
 
-const extractArray = (value: unknown): any[] => (Array.isArray(value) ? value : []);
+const REFRESH_INTERVAL_MS = 60_000;
 
-const FullDashboard: React.FC<FullDashboardProps> = ({ config, data, stormMode }) => {
-  const weatherData = data.weather ?? {};
-  const astronomyData = data.astronomy ?? {};
-  const calendarData = data.calendar ?? {};
-  const newsData = data.news ?? {};
-
-  const temperature = typeof weatherData.temperature === "number" ? weatherData.temperature : null;
-  const temperatureUnit = typeof weatherData.unit === "string" ? weatherData.unit : "°C";
-  const location = typeof weatherData.location === "string" ? weatherData.location : "Madrid";
-  const condition = typeof weatherData.condition === "string" ? weatherData.condition : "Sin datos";
-
-  const newsItems = extractArray(newsData.items);
-  const topNews = newsItems[0] as { title?: string; source?: string } | undefined;
-
-  const upcomingEvents = extractArray(calendarData.upcoming);
-  const nextEvent = upcomingEvents[0] as { title?: string; start?: string } | undefined;
-
-  const moonPhase = typeof astronomyData.moon_phase === "string" ? astronomyData.moon_phase : "Sin datos";
-  const stormEnabled = Boolean(stormMode.enabled);
-
-  return (
-    <div className="full-dashboard">
-      <section className="full-dashboard__map">
-        <iframe src={MAP_EMBED_URL} title="Mapa en vivo" loading="lazy" referrerPolicy="no-referrer" />
-        <div className="full-dashboard__map-overlay">
-          <span className="full-dashboard__map-location">{location}</span>
-          <span className="full-dashboard__map-temp">
-            {temperature !== null ? `${temperature.toFixed(0)}${temperatureUnit}` : "--"}
-          </span>
-          <span className="full-dashboard__map-condition">{condition}</span>
-        </div>
-      </section>
-      <section className="full-dashboard__cards">
-        <div className="full-dashboard__card">
-          <h3>Noticias destacadas</h3>
-          <p>{topNews?.title ?? "Sin titulares"}</p>
-          {topNews?.source && <small>{topNews.source}</small>}
-        </div>
-        <div className="full-dashboard__card">
-          <h3>Próximo evento</h3>
-          <p>{nextEvent?.title ?? "No hay eventos"}</p>
-          {nextEvent?.start && <small>{nextEvent.start}</small>}
-        </div>
-        <div className="full-dashboard__card">
-          <h3>Fase lunar</h3>
-          <p>{moonPhase}</p>
-        </div>
-        <div className="full-dashboard__card">
-          <h3>Modo tormenta</h3>
-          <p style={{ color: stormEnabled ? "#ffb347" : "#74d99f" }}>
-            {stormEnabled ? "Activo" : "Inactivo"}
-          </p>
-        </div>
-        <div className="full-dashboard__card">
-          <h3>Rotación configurada</h3>
-          <p>{config.display.module_cycle_seconds}s</p>
-        </div>
-      </section>
-    </div>
-  );
-};
-
-const ModuleRenderer: React.FC<{
-  module: DisplayModule;
-  config: AppConfig;
-  data: DashboardData;
-}> = ({ module, config, data }) => {
-  switch (module.name) {
-    case "clock":
-      return <ClockModule timezone={config.display.timezone} />;
-    case "weather":
-      return <WeatherModule data={data.weather ?? {}} />;
-    case "moon":
-    case "astronomy":
-      return <AstronomyModule data={data.astronomy ?? {}} />;
-    case "news":
-      return <NewsModule data={data.news ?? {}} />;
-    case "events":
-      return <EventsModule data={data.calendar ?? {}} />;
-    case "calendar":
-      return <CalendarModule data={data.calendar ?? {}} />;
-    default:
-      return (
-        <div className="module-wrapper">
-          <div>
-            <h2>{module.name}</h2>
-            <div className="module-content">Módulo no configurado</div>
-          </div>
-        </div>
-      );
+const normalizeScroll = (
+  scroll: Record<string, UIScrollSettings>,
+  panel: string,
+  fallback: UIScrollSettings
+): UIScrollSettings => {
+  const settings = scroll[panel];
+  if (!settings) {
+    return fallback;
   }
+  return {
+    enabled: settings.enabled ?? fallback.enabled,
+    direction: (settings.direction as "left" | "up") ?? fallback.direction,
+    speed: settings.speed ?? fallback.speed,
+    gap_px: typeof settings.gap_px === "number" ? settings.gap_px : fallback.gap_px
+  };
+};
+
+const temperatureToUnit = (value: number, from: string, to: string): number => {
+  const normalize = (unit: string) => unit.replace("°", "").trim().toUpperCase();
+  const source = normalize(from || "C");
+  const target = normalize(to || "C");
+
+  if (source === target) {
+    return value;
+  }
+
+  const toCelsius = (temp: number, unit: string) => {
+    switch (unit) {
+      case "C":
+        return temp;
+      case "F":
+        return ((temp - 32) * 5) / 9;
+      case "K":
+        return temp - 273.15;
+      default:
+        return temp;
+    }
+  };
+
+  const fromCelsius = (temp: number, unit: string) => {
+    switch (unit) {
+      case "C":
+        return temp;
+      case "F":
+        return (temp * 9) / 5 + 32;
+      case "K":
+        return temp + 273.15;
+      default:
+        return temp;
+    }
+  };
+
+  const celsius = toCelsius(value, source);
+  return fromCelsius(celsius, target);
+};
+
+const formatTemperature = (
+  temperature: number | null,
+  fromUnit: string,
+  targetUnit: string
+): { value: string; unit: string } => {
+  if (temperature === null || Number.isNaN(temperature)) {
+    const normalizedTarget = targetUnit.replace("°", "").trim().toUpperCase() || "C";
+    return { value: "--", unit: normalizedTarget === "K" ? "K" : `°${normalizedTarget}` };
+  }
+  const converted = temperatureToUnit(temperature, fromUnit, targetUnit);
+  const normalizedTarget = targetUnit.replace("°", "").trim().toUpperCase() || "C";
+  const unitLabel = normalizedTarget === "K" ? "K" : `°${normalizedTarget}`;
+  const rounded = Math.round(converted);
+  return { value: `${rounded}`, unit: unitLabel };
+};
+
+const joinWithBreaks = (lines: string[], double = false): string => {
+  return lines.filter(Boolean).join(double ? "<br /><br />" : "<br />");
 };
 
 export const DashboardPage: React.FC = () => {
   const { config, loading } = useConfig();
-  const [data, setData] = useState<DashboardData>({});
-  const [stormMode, setStormMode] = useState<Record<string, any>>({ enabled: false });
-  const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [overlayDismissed, setOverlayDismissed] = useState(false);
+  const [payload, setPayload] = useState<DashboardPayload>({});
 
-  const layout = config.ui.layout ?? UI_DEFAULTS.layout;
-  const sidePanel = config.ui.side_panel ?? UI_DEFAULTS.side_panel;
-  const showDemo = config.ui.enable_demo ?? UI_DEFAULTS.enable_demo;
-  const carouselEnabled = config.ui.carousel ?? UI_DEFAULTS.carousel;
-  const overlayConfigured = config.ui.show_config ?? UI_DEFAULTS.show_config;
+  useEffect(() => {
+    let mounted = true;
 
-  const rotation = useModuleRotation(
-    config.display.modules,
-    config.display.module_cycle_seconds,
-    { enabled: showDemo && carouselEnabled }
-  );
+    const fetchAll = async () => {
+      try {
+        const [weather, news, astronomy, calendar] = await Promise.all([
+          api.fetchWeather().catch(() => ({})),
+          api.fetchNews().catch(() => ({})),
+          api.fetchAstronomy().catch(() => ({})),
+          api.fetchCalendar().catch(() => ({}))
+        ]);
+        if (mounted) {
+          setPayload({ weather, news, astronomy, calendar });
+        }
+      } catch (error) {
+        console.error("Failed to load dashboard data", error);
+      }
+    };
 
-  const fetchData = useMemo(() => {
-    return async () => {
-      const [weather, news, astronomy, calendar, storm] = await Promise.all([
-        api.fetchWeather().catch(() => ({})),
-        api.fetchNews().catch(() => ({})),
-        api.fetchAstronomy().catch(() => ({})),
-        api.fetchCalendar().catch(() => ({})),
-        api.fetchStormMode().catch(() => ({}))
-      ]);
-      setData({ weather, news, astronomy, calendar });
-      setStormMode(storm);
+    void fetchAll();
+    const interval = window.setInterval(() => {
+      void fetchAll();
+    }, REFRESH_INTERVAL_MS);
+
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
     };
   }, []);
 
-  useEffect(() => {
-    void fetchData();
-    const timer = window.setInterval(() => {
-      void fetchData();
-    }, 60_000);
-    return () => window.clearInterval(timer);
-  }, [fetchData]);
+  const weather = (payload.weather ?? {}) as Record<string, unknown>;
+  const astronomy = (payload.astronomy ?? {}) as Record<string, unknown>;
+  const news = (payload.news ?? {}) as Record<string, unknown>;
+  const calendar = (payload.calendar ?? {}) as Record<string, unknown>;
 
-  const overlayParam = searchParams.get("overlay");
-  const overlayRequested =
-    overlayParam === "1" || overlayParam?.toLowerCase() === "true" || overlayParam === "yes";
-  const overlayEnabled = (overlayConfigured || overlayRequested) && !overlayDismissed;
+  const rawTemperature = typeof weather.temperature === "number" ? weather.temperature : null;
+  const rawUnit = ensurePlainText(weather.unit);
+  const targetUnit = config.ui.fixed.temperature.unit ?? UI_DEFAULTS.fixed.temperature.unit;
+  const location = ensurePlainText(weather.location) || "Ubicación desconocida";
+  const condition = ensurePlainText(weather.condition) || "Sin datos";
 
-  useEffect(() => {
-    if (overlayConfigured || overlayRequested) {
-      setOverlayDismissed(false);
-    }
-  }, [overlayConfigured, overlayRequested]);
-
-  const closeOverlay = () => {
-    setOverlayDismissed(true);
-    if (overlayParam) {
-      const next = new URLSearchParams(searchParams);
-      next.delete("overlay");
-      setSearchParams(next, { replace: true });
-    }
-  };
-
-  const layoutLabel = layout === "full" ? "Panel completo" : "Rotación de módulos";
-  const sidePanelLabel = sidePanel === "left" ? "Izquierda" : "Derecha";
-  const stormActive = Boolean(stormMode.enabled);
-  const weatherForPanel = data.weather ?? {};
-  const temperatureCard = typeof weatherForPanel.temperature === "number" ? weatherForPanel.temperature : null;
-  const temperatureUnit = typeof weatherForPanel.unit === "string" ? weatherForPanel.unit : "°C";
-
-  const renderPanel = () => (
-    <aside className="dashboard-panel">
-      <div className="panel-summary">
-        <div className="panel-summary__title">Disposición</div>
-        <div className="panel-summary__value">{layoutLabel}</div>
-        <div className="panel-summary__meta">Panel lateral: {sidePanelLabel}</div>
-      </div>
-      {showDemo && rotation.modules.length > 0 && (
-        <div className="module-tabs">
-          {rotation.modules.map((module, idx) => (
-            <div key={module.name} className={`module-tab ${idx === rotation.index ? "active" : ""}`}>
-              {module.name.toUpperCase()}
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="panel-cards">
-        <div className="panel-card">
-          <div className="panel-card__label">Rotación</div>
-          <div className="panel-card__value">
-            {showDemo ? `${config.display.module_cycle_seconds}s` : "Desactivada"}
-          </div>
-        </div>
-        <div className="panel-card">
-          <div className="panel-card__label">Modo tormenta</div>
-          <div className="panel-card__value" style={{ color: stormActive ? "#ffb347" : "#74d99f" }}>
-            {stormActive ? "Activo" : "Inactivo"}
-          </div>
-        </div>
-        <div className="panel-card">
-          <div className="panel-card__label">Temperatura</div>
-          <div className="panel-card__value">
-            {typeof temperatureCard === "number" ? `${temperatureCard.toFixed(0)}${temperatureUnit}` : "--"}
-          </div>
-        </div>
-      </div>
-      <button className="secondary" onClick={() => navigate("/config")}>Configurar</button>
-    </aside>
+  const { value: temperatureValue, unit: temperatureUnit } = formatTemperature(
+    rawTemperature,
+    rawUnit || "C",
+    targetUnit
   );
 
-  const shouldShowFullLayout = !showDemo && layout === "full";
+  const scrollSettings = config.ui.text?.scroll ?? UI_DEFAULTS.text.scroll;
 
-  let mainContent: React.ReactNode;
-  if (shouldShowFullLayout) {
-    mainContent = <FullDashboard config={config} data={data} stormMode={stormMode} />;
-  } else if (showDemo && rotation.active) {
-    mainContent = <ModuleRenderer module={rotation.active} config={config} data={data} />;
-  } else if (showDemo) {
-    mainContent = (
-      <div className="module-wrapper">
-        <div>
-          <h2>Sin módulos activos</h2>
-          <div className="module-content">Active módulos desde la página de configuración.</div>
-        </div>
-      </div>
-    );
-  } else {
-    mainContent = <FullDashboard config={config} data={data} stormMode={stormMode} />;
-  }
+  const newsScroll = normalizeScroll(scrollSettings, "news", UI_DEFAULTS.text.scroll.news);
+  const ephemeridesScroll = normalizeScroll(
+    scrollSettings,
+    "ephemerides",
+    UI_DEFAULTS.text.scroll.ephemerides
+  );
+  const forecastScroll = normalizeScroll(scrollSettings, "forecast", UI_DEFAULTS.text.scroll.forecast);
 
-  if (loading && showDemo && rotation.modules.length === 0) {
-    return <div className="dashboard-main">Cargando configuración…</div>;
-  }
+  const rotationSettings = config.ui.rotation ?? UI_DEFAULTS.rotation;
+
+  const panels = useMemo<RotatingPanel[]>(() => {
+    const selectedPanels = rotationSettings.panels?.length
+      ? rotationSettings.panels
+      : UI_DEFAULTS.rotation.panels;
+
+    const buildNewsPanel = (): RotatingPanel => {
+      const items = Array.isArray(news.items) ? (news.items as Record<string, unknown>[]) : [];
+      if (items.length === 0) {
+        return {
+          id: "news",
+          title: "Noticias",
+          content: "Sin titulares disponibles",
+          direction: newsScroll.direction,
+          enableScroll: newsScroll.enabled,
+          speed: newsScroll.speed,
+          gap: newsScroll.gap_px
+        };
+      }
+      const segments = items
+        .map((item) => {
+          const title = sanitizeRichText(item?.title);
+          const source = sanitizeRichText(item?.source);
+          if (title && source) {
+            return `${title} — ${source}`;
+          }
+          return title || source;
+        })
+        .filter(Boolean);
+      return {
+        id: "news",
+        title: "Noticias",
+        content: segments.length > 0 ? segments.join(" • ") : "Sin titulares disponibles",
+        direction: newsScroll.direction,
+        enableScroll: newsScroll.enabled,
+        speed: newsScroll.speed,
+        gap: newsScroll.gap_px
+      };
+    };
+
+    const buildEphemeridesPanel = (): RotatingPanel => {
+      const sunrise = sanitizeRichText(astronomy.sunrise);
+      const sunset = sanitizeRichText(astronomy.sunset);
+      const moonPhase = sanitizeRichText(astronomy.moon_phase);
+      const lines = [
+        sunrise ? `Amanecer: ${sunrise}` : "",
+        sunset ? `Anochecer: ${sunset}` : "",
+        moonPhase ? `Fase lunar: ${moonPhase}` : ""
+      ].filter(Boolean);
+      return {
+        id: "ephemerides",
+        title: "Efemérides",
+        content: lines.length > 0 ? joinWithBreaks(lines, true) : "Sin efemérides disponibles",
+        direction: ephemeridesScroll.direction,
+        enableScroll: ephemeridesScroll.enabled,
+        speed: ephemeridesScroll.speed,
+        gap: ephemeridesScroll.gap_px
+      };
+    };
+
+    const buildMoonPanel = (): RotatingPanel => {
+      const moonPhase = sanitizeRichText(astronomy.moon_phase) || "Sin datos";
+      return {
+        id: "moon",
+        title: "Fase lunar",
+        content: moonPhase,
+        direction: ephemeridesScroll.direction,
+        enableScroll: ephemeridesScroll.enabled,
+        speed: ephemeridesScroll.speed,
+        gap: ephemeridesScroll.gap_px
+      };
+    };
+
+    const buildForecastPanel = (): RotatingPanel => {
+      const forecastItems = Array.isArray(weather.forecast)
+        ? (weather.forecast as Record<string, unknown>[])
+        : [];
+      if (forecastItems.length === 0) {
+        const summary = sanitizeRichText(weather.summary) || sanitizeRichText(weather.condition);
+        const fallback = summary || "Sin previsión disponible";
+        return {
+          id: "forecast",
+          title: "Pronóstico",
+          content: fallback,
+          direction: forecastScroll.direction,
+          enableScroll: forecastScroll.enabled,
+          speed: forecastScroll.speed,
+          gap: forecastScroll.gap_px
+        };
+      }
+      const lines = forecastItems
+        .map((entry) => {
+          const label = sanitizeRichText(entry.period ?? entry.label ?? "");
+          const detail = sanitizeRichText(entry.summary ?? entry.condition ?? "");
+          if (label && detail) {
+            return `${label}: ${detail}`;
+          }
+          return label || detail;
+        })
+        .filter(Boolean);
+      return {
+        id: "forecast",
+        title: "Pronóstico",
+        content: lines.length > 0 ? joinWithBreaks(lines, true) : "Sin previsión disponible",
+        direction: forecastScroll.direction,
+        enableScroll: forecastScroll.enabled,
+        speed: forecastScroll.speed,
+        gap: forecastScroll.gap_px
+      };
+    };
+
+    const buildCalendarPanel = (): RotatingPanel => {
+      const entries = Array.isArray(calendar.upcoming)
+        ? (calendar.upcoming as Record<string, unknown>[])
+        : [];
+      if (entries.length === 0) {
+        return {
+          id: "calendar",
+          title: "Agenda",
+          content: "Sin eventos próximos",
+          direction: ephemeridesScroll.direction,
+          enableScroll: ephemeridesScroll.enabled,
+          speed: ephemeridesScroll.speed,
+          gap: ephemeridesScroll.gap_px
+        };
+      }
+      const lines = entries.slice(0, 5).map((entry) => {
+        const title = sanitizeRichText(entry.title);
+        const start = ensurePlainText(entry.start);
+        if (start) {
+          const localized = dayjs(start).tz(config.display.timezone).format("ddd D MMM, HH:mm");
+          return `${title || "Evento"} — ${localized}`;
+        }
+        return title || "Evento";
+      });
+      return {
+        id: "calendar",
+        title: "Agenda",
+        content: lines.length > 0 ? joinWithBreaks(lines, true) : "Sin eventos próximos",
+        direction: ephemeridesScroll.direction,
+        enableScroll: ephemeridesScroll.enabled,
+        speed: ephemeridesScroll.speed,
+        gap: ephemeridesScroll.gap_px
+      };
+    };
+
+    const builders: Record<string, () => RotatingPanel> = {
+      news: buildNewsPanel,
+      ephemerides: buildEphemeridesPanel,
+      moon: buildMoonPanel,
+      forecast: buildForecastPanel,
+      calendar: buildCalendarPanel
+    };
+
+    return selectedPanels
+      .map((panel) => builders[panel]?.())
+      .filter((panel): panel is RotatingPanel => Boolean(panel));
+  }, [
+    astronomy,
+    calendar,
+    config.display.timezone,
+    ephemeridesScroll.direction,
+    ephemeridesScroll.enabled,
+    ephemeridesScroll.gap_px,
+    ephemeridesScroll.speed,
+    forecastScroll.direction,
+    forecastScroll.enabled,
+    forecastScroll.gap_px,
+    forecastScroll.speed,
+    news,
+    newsScroll.direction,
+    newsScroll.enabled,
+    newsScroll.gap_px,
+    newsScroll.speed,
+    rotationSettings.panels,
+    weather
+  ]);
+
+  const mapSettings = config.ui.map ?? UI_DEFAULTS.map;
+  const mapCenter = Array.isArray(mapSettings.center)
+    ? ([Number(mapSettings.center[0]) || 0, Number(mapSettings.center[1]) || 0] as [number, number])
+    : (UI_DEFAULTS.map.center as [number, number]);
+  const mapZoom = typeof mapSettings.zoom === "number" ? mapSettings.zoom : UI_DEFAULTS.map.zoom;
+  const mapProvider = mapSettings.provider || UI_DEFAULTS.map.provider;
 
   return (
-    <div className={`dashboard-layout layout-${layout} side-${sidePanel}`}>
-      {sidePanel === "left" && renderPanel()}
-      <main className="dashboard-main">{mainContent}</main>
-      {sidePanel === "right" && renderPanel()}
-      {overlayEnabled && (
-        <div className="config-overlay">
-          <div className="config-overlay__panel">
-            <button
-              type="button"
-              className="config-overlay__close"
-              onClick={closeOverlay}
-              aria-label="Cerrar configuración"
-            >
-              ×
-            </button>
-            <ConfigForm mode="overlay" onClose={closeOverlay} />
-          </div>
+    <div className="public-dashboard" aria-busy={loading}>
+      <div className="public-dashboard__map">
+        <WorldMap center={mapCenter} zoom={mapZoom} provider={mapProvider} />
+        <div className="public-dashboard__map-overlay">
+          <span className="public-dashboard__map-location">{location}</span>
+          <span className="public-dashboard__map-temp">
+            {temperatureValue}
+            {temperatureUnit}
+          </span>
+          <span className="public-dashboard__map-condition">{condition}</span>
         </div>
-      )}
+        <div className="public-dashboard__map-attribution">© OpenStreetMap contributors</div>
+      </div>
+      <div className="public-dashboard__info">
+        <ClockDisplay timezone={config.display.timezone} format={config.ui.fixed.clock.format} />
+        <div className="public-weather" aria-live="polite">
+          <div className="public-weather__temp">
+            {temperatureValue}
+            {temperatureUnit}
+          </div>
+          <div className="public-weather__condition">{condition}</div>
+          <div className="public-weather__meta">{location}</div>
+        </div>
+        <RotatingCard
+          panels={panels}
+          rotationEnabled={rotationSettings.enabled}
+          durationSeconds={rotationSettings.duration_sec ?? UI_DEFAULTS.rotation.duration_sec}
+        />
+      </div>
     </div>
   );
 };
