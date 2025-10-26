@@ -22,6 +22,7 @@ export type RotatingCardProps = {
   panelClassName?: string;
   titleClassName?: string;
   bodyClassName?: string;
+  showIndicators?: boolean;
 };
 
 const MIN_DURATION = 4;
@@ -33,7 +34,8 @@ export const RotatingCard: React.FC<RotatingCardProps> = ({
   containerClassName,
   panelClassName,
   titleClassName,
-  bodyClassName
+  bodyClassName,
+  showIndicators = false
 }) => {
   const safePanels = useMemo<RotatingPanel[]>(() => {
     if (panels.length > 0) {
@@ -106,6 +108,18 @@ export const RotatingCard: React.FC<RotatingCardProps> = ({
           </article>
         );
       })}
+      {showIndicators ? (
+        <div className="rotating-card__indicators" aria-hidden="true">
+          {safePanels.map((panel, index) => (
+            <span
+              key={`${panel.id}-indicator`}
+              className={["rotating-card__indicator", index === activeIndex ? "is-active" : ""]
+                .filter(Boolean)
+                .join(" ")}
+            />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 };
