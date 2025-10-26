@@ -39,148 +39,99 @@ body {
   display: flex;
 }
 
-.public-dashboard {
-  display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr);
-  gap: 40px;
+.app-shell,
+.stage,
+.map-wrap {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+}
+
+.app-shell {
+  align-items: stretch;
+  justify-content: center;
+}
+
+.stage {
+  padding: clamp(16px, 3vw, 28px);
+}
+
+.map-wrap {
+  border-radius: clamp(12px, 2.4vw, 28px);
+  overflow: hidden;
+  box-shadow: 0 36px 72px rgba(0, 0, 0, 0.45);
+  background: linear-gradient(160deg, rgba(12, 24, 40, 0.85), rgba(4, 8, 14, 0.92));
+}
+
+#map {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  padding: 48px 56px;
-}
-
-@media (max-width: 1280px) {
-  .public-dashboard {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 2fr) minmax(0, 1fr);
-    padding: 32px;
-  }
-}
-
-.public-dashboard__map {
-  position: relative;
-  border-radius: 36px;
   overflow: hidden;
-  background: linear-gradient(160deg, rgba(18, 36, 56, 0.8), rgba(6, 12, 20, 0.92));
-  box-shadow: 0 32px 64px rgba(0, 0, 0, 0.35);
+  background: #000;
 }
 
 .map-container {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   pointer-events: none;
 }
 
-.public-dashboard__map-overlay {
+.overlay,
+.rotator,
+.clock {
   position: absolute;
-  left: 32px;
-  bottom: 32px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 20px 24px;
-  border-radius: 22px;
-  background: rgba(4, 9, 16, 0.7);
-  border: 1px solid rgba(86, 142, 205, 0.4);
-  color: #eef5ff;
+  z-index: 10;
   pointer-events: none;
-  backdrop-filter: blur(12px);
 }
 
-.public-dashboard__map-location {
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  font-size: 0.95rem;
-  color: rgba(223, 238, 255, 0.88);
-}
-
-.public-dashboard__map-temp {
-  font-size: 2.4rem;
+.clock {
+  top: 10px;
+  left: 14px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
   font-weight: 600;
+  line-height: 1.1;
 }
 
-.public-dashboard__map-condition {
-  font-size: 1.2rem;
-  color: rgba(223, 238, 255, 0.75);
+.clock .time {
+  font-size: clamp(22px, 2.6vw, 34px);
 }
 
-.public-dashboard__map-attribution {
-  position: absolute;
-  right: 24px;
-  bottom: 18px;
-  font-size: 0.75rem;
-  color: rgba(210, 227, 255, 0.55);
-  letter-spacing: 0.08em;
-  pointer-events: none;
-  user-select: none;
+.clock .date {
+  margin-top: 2px;
+  font-size: clamp(12px, 1.4vw, 16px);
+  opacity: 0.9;
 }
 
-.public-dashboard__info {
-  display: flex;
-  flex-direction: column;
-  gap: 32px;
-  justify-content: flex-start;
-  height: 100%;
-}
-
-.public-clock {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.public-clock__time {
-  font-size: clamp(96px, 12vw, 160px);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-shadow: 0 12px 30px rgba(0, 0, 0, 0.32);
-}
-
-.public-clock__date {
-  font-size: 1.6rem;
-  color: rgba(229, 238, 255, 0.8);
-  text-transform: capitalize;
-}
-
-.public-weather {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 24px 28px;
-  border-radius: 26px;
-  background: rgba(13, 24, 38, 0.82);
-  border: 1px solid rgba(90, 142, 200, 0.36);
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.35);
-}
-
-.public-weather__temp {
-  font-size: clamp(42px, 6vw, 68px);
-  font-weight: 600;
-}
-
-.public-weather__condition {
-  font-size: 1.4rem;
-  color: rgba(224, 235, 255, 0.78);
-  text-transform: capitalize;
-}
-
-.public-weather__meta {
-  font-size: 0.95rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(197, 216, 245, 0.6);
+.rotator {
+  right: 14px;
+  bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.38);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  max-width: min(38vw, 520px);
+  max-height: min(36vh, 420px);
+  overflow: hidden;
 }
 
 .rotating-card {
   position: relative;
-  flex: 1;
-  padding: 32px;
-  border-radius: 28px;
-  background: rgba(8, 16, 28, 0.9);
-  border: 1px solid rgba(88, 140, 204, 0.3);
-  box-shadow: 0 28px 54px rgba(0, 0, 0, 0.35);
-  overflow: hidden;
-  color: #f7f9ff;
-  min-height: 260px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  color: inherit;
 }
 
 .rotating-card__panel {
@@ -189,9 +140,9 @@ body {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 8px;
   opacity: 0;
-  transition: opacity 360ms ease-in-out;
+  transition: opacity 320ms ease-in-out;
   pointer-events: none;
 }
 
@@ -201,21 +152,85 @@ body {
   position: relative;
 }
 
-.rotating-card__header h2 {
+.rotating-card__header {
   margin: 0;
-  font-size: 1.2rem;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: rgba(213, 229, 255, 0.8);
+  padding: 0;
+}
+
+.rotating-card__title {
+  margin: 0;
+  font-size: inherit;
+  font-weight: 700;
 }
 
 .rotating-card__body {
-  flex: 1;
+  flex: 1 1 auto;
+  display: block;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.rotator .card-body {
+  pointer-events: auto;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  max-height: inherit;
+  font-size: clamp(12px, 1.4vw, 16px);
+  line-height: 1.25;
+  color: rgba(239, 246, 255, 0.95);
+}
+
+.rotator .title {
+  font-size: clamp(14px, 1.6vw, 18px);
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: #f9fbff;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rotator .card-body .auto-scroll__segment {
+  display: block;
+  white-space: normal;
+}
+
+.rotator .card-body .auto-scroll {
+  width: 100%;
+}
+
+.badges {
+  position: absolute;
+  top: 10px;
+  right: 12px;
   display: flex;
-  align-items: center;
-  font-size: 1.6rem;
-  line-height: 1.45;
+  gap: 6px;
+  z-index: 11;
+}
+
+.mapboxgl-ctrl,
+.maplibregl-ctrl,
+.mapboxgl-ctrl-logo,
+.maplibregl-ctrl-logo,
+.mapboxgl-ctrl-attrib,
+.maplibregl-ctrl-attrib {
+  display: none !important;
+}
+
+html,
+body,
+#root,
+#map {
+  cursor: none !important;
+}
+
+@media (max-aspect-ratio: 10/19) {
+  .rotator {
+    max-width: min(46vw, 520px);
+  }
+
+  .clock .time {
+    font-size: clamp(20px, 2.8vw, 30px);
+  }
 }
 
 .auto-scroll {

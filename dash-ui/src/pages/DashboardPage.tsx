@@ -238,6 +238,32 @@ export const DashboardPage: React.FC = () => {
       };
     };
 
+    const buildWeatherPanel = (): RotatingPanel => {
+      const summary = sanitizeRichText(weather.summary) || sanitizeRichText(weather.condition);
+      const segments: string[] = [];
+      const formattedTemperature = temperatureValue !== "--" ? `${temperatureValue}${temperatureUnit}` : "";
+
+      if (formattedTemperature) {
+        segments.push(formattedTemperature);
+      }
+      if (summary) {
+        segments.push(summary);
+      }
+      if (location) {
+        segments.push(location);
+      }
+
+      return {
+        id: "weather",
+        title: "Clima actual",
+        content: segments.length > 0 ? joinWithBreaks(segments, true) : "Sin datos meteorológicos",
+        direction: forecastScroll.direction,
+        enableScroll: forecastScroll.enabled,
+        speed: forecastScroll.speed,
+        gap: forecastScroll.gap_px
+      };
+    };
+
     const buildForecastPanel = (): RotatingPanel => {
       const forecastItems = Array.isArray(weather.forecast)
         ? (weather.forecast as Record<string, unknown>[])
@@ -315,6 +341,7 @@ export const DashboardPage: React.FC = () => {
       news: buildNewsPanel,
       ephemerides: buildEphemeridesPanel,
       moon: buildMoonPanel,
+      weather: buildWeatherPanel,
       forecast: buildForecastPanel,
       calendar: buildCalendarPanel
     };
@@ -340,38 +367,34 @@ export const DashboardPage: React.FC = () => {
     newsScroll.gap_px,
     newsScroll.speed,
     rotationSettings.panels,
-    weather
+    weather,
+    condition,
+    location,
+    temperatureUnit,
+    temperatureValue
   ]);
 
   return (
-    <div className="public-dashboard" aria-busy={loading}>
-      <div className="public-dashboard__map">
-        <WorldMap />
-        <div className="public-dashboard__map-overlay">
-          <span className="public-dashboard__map-location">{location}</span>
-          <span className="public-dashboard__map-temp">
-            {temperatureValue}
-            {temperatureUnit}
-          </span>
-          <span className="public-dashboard__map-condition">{condition}</span>
+    <div className="app-shell" aria-busy={loading}>
+      <div className="stage">
+        <div className="map-wrap">
+          <WorldMap />
+          <ClockDisplay
+            timezone={config.display.timezone}
+            format={config.ui.fixed.clock.format}
+            className="overlay clock"
+            timeClassName="time"
+            dateClassName="date"
+          />
+          <RotatingCard
+            panels={panels}
+            rotationEnabled={rotationSettings.enabled}
+            durationSeconds={rotationSettings.duration_sec ?? UI_DEFAULTS.rotation.duration_sec}
+            containerClassName="overlay rotator"
+            titleClassName="title"
+            bodyClassName="card-body"
+          />
         </div>
-        <div className="public-dashboard__map-attribution">© OpenStreetMap contributors</div>
-      </div>
-      <div className="public-dashboard__info">
-        <ClockDisplay timezone={config.display.timezone} format={config.ui.fixed.clock.format} />
-        <div className="public-weather" aria-live="polite">
-          <div className="public-weather__temp">
-            {temperatureValue}
-            {temperatureUnit}
-          </div>
-          <div className="public-weather__condition">{condition}</div>
-          <div className="public-weather__meta">{location}</div>
-        </div>
-        <RotatingCard
-          panels={panels}
-          rotationEnabled={rotationSettings.enabled}
-          durationSeconds={rotationSettings.duration_sec ?? UI_DEFAULTS.rotation.duration_sec}
-        />
       </div>
     </div>
   );
