@@ -4,6 +4,25 @@ set -euo pipefail
 export DISPLAY=:0
 export XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority
 
+# Prepare session environment for systemd services
+STATE_DIR=/var/lib/pantalla-reloj/state
+SESSION_ENV="${STATE_DIR}/session.env"
+umask 077
+install -d -m 0700 "$STATE_DIR"
+{
+  echo "DISPLAY=${DISPLAY}"
+  echo "XAUTHORITY=${XAUTHORITY}"
+  if [[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
+    echo "DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS}"
+  fi
+} >"${SESSION_ENV}.tmp"
+chmod 0640 "${SESSION_ENV}.tmp"
+mv "${SESSION_ENV}.tmp" "$SESSION_ENV"
+
+if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+  dbus-update-activation-environment --systemd DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS || true
+fi
+
 # Disable DPMS and screen blanking to avoid black screen with pointer
 xset -dpms
 xset s off

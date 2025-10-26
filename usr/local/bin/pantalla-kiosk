@@ -1,45 +1,172 @@
 #!/usr/bin/env bash
-set -euxo pipefail
-URL="${1:-http://127.0.0.1}"
+set -euo pipefail
+
+APP_ID="org.gnome.Epiphany.WebApp_PantallaReloj"
+APP_WM_CLASS="$APP_ID"
+DEFAULT_URL="http://127.0.0.1"
+URL="${1:-$DEFAULT_URL}"
+
 : "${DISPLAY:=:0}"
 : "${XAUTHORITY:?XAUTHORITY must be set}"
-: "${XDG_RUNTIME_DIR:=/run/user/1000}"
+: "${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"
 
-LOG=/tmp/kiosk-launch.log
-exec >>"$LOG" 2>&1
-echo "[kiosk] $(date -Is) start user=$(id -un) DISPLAY=$DISPLAY URL=$URL"
+EXIT_MISSING=3
+STATE_BASE="/var/lib/pantalla-reloj/state"
+PROFILE_DIR="${EPHY_PROFILE:-${STATE_BASE}/${APP_ID}}"
+DESKTOP_FILE="/usr/local/share/applications/${APP_ID}.desktop"
+LOG_DIR="/var/log/pantalla"
+PROFILE_LOG="${LOG_DIR}/kiosk-profile.log"
+SANITIZE_LOG="${LOG_DIR}/kiosk-sanitize.log"
+WAIT_X="/opt/pantalla/bin/wait-x.sh"
+SANITIZER="/opt/pantalla/bin/pantalla-kiosk-sanitize.sh"
 
-STATE_DIR=/var/lib/pantalla-reloj/state
-PROFILE_DIR="$STATE_DIR/org.gnome.Epiphany.WebApp_PantallaReloj"
-LOCK="$STATE_DIR/kiosk.lock"
 OWNER="${KIOSK_USER:-${USER:-$(id -un)}}"
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-if ! install -d -m 0755 "$STATE_DIR" "$PROFILE_DIR" 2>/dev/null; then
-  if [[ ! -d "$PROFILE_DIR" ]]; then
-    echo "[kiosk] no se pudo preparar el perfil: $PROFILE_DIR" >&2
+log_err() { printf '[kiosk] %s\n' "$*" >&2; }
+log_info() { printf '[kiosk] %s\n' "$*"; }
+
+fail_missing() {
+  log_err "$1"
+  exit "$EXIT_MISSING"
+}
+
+ensure_profile_dir() {
+  install -d -m 0700 "$PROFILE_DIR"
+  local owner group mode
+  owner="$(stat -c '%U' "$PROFILE_DIR")"
+  group="$(stat -c '%G' "$PROFILE_DIR")"
+  mode="$(stat -c '%a' "$PROFILE_DIR")"
+  if [[ "$owner" != "$OWNER" || "$group" != "$OWNER" ]]; then
+    log_err "Propietario inesperado en $PROFILE_DIR: ${owner}:${group}"
+    fail_missing "El perfil debe pertenecer a ${OWNER}:${OWNER}"
+  fi
+  if [[ "$mode" != "700" ]]; then
+    if ! chmod 0700 "$PROFILE_DIR" 2>/dev/null; then
+      fail_missing "No se pudo ajustar permisos 0700 en ${PROFILE_DIR}"
+    fi
+  fi
+}
+
+check_desktop_file() {
+  if [[ ! -r "$DESKTOP_FILE" ]]; then
+    fail_missing "Desktop file requerido no disponible: ${DESKTOP_FILE}"
+  fi
+}
+
+kill_existing_instances() {
+  if command -v pkill >/dev/null 2>&1; then
+    local uid pattern
+    uid="$(id -u "$OWNER")"
+    pattern="$PROFILE_DIR"
+    pkill -u "$uid" -f "$pattern" 2>/dev/null || true
+  fi
+}
+
+prepare_logs() {
+  if ! install -d -m 0755 "$LOG_DIR" 2>/dev/null; then
+    if [[ ! -d "$LOG_DIR" ]]; then
+      log_err "No se pudo preparar ${LOG_DIR}"
+      fail_missing "No se pudo preparar el directorio de logs"
+    fi
+  fi
+  touch "$PROFILE_LOG" "$SANITIZE_LOG"
+}
+
+apply_profile_preferences() {
+  local ts summary status schema key desired reason current
+  ts="$(date -Is)"
+  summary=()
+  status=0
+
+  export GSETTINGS_BACKEND=dconf
+  export XDG_CONFIG_HOME="${PROFILE_DIR}/config"
+  export XDG_DATA_HOME="${PROFILE_DIR}/share"
+  export XDG_CACHE_HOME="${PROFILE_DIR}/cache"
+  install -d -m 0700 "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_CACHE_HOME}"
+
+  if ! command -v gsettings >/dev/null 2>&1; then
+    summary+=("gsettings=missing")
+    status=1
+  else
+    if gsettings list-schemas 2>/dev/null | grep -qx "org.gnome.Epiphany"; then
+      schema="org.gnome.Epiphany"
+      key="restore-session-policy"
+      desired="'never'"
+      reason="disable-session-restore"
+      current="$(gsettings get "$schema" "$key" 2>/dev/null || echo '__error__')"
+      if [[ "$current" != "$desired" ]]; then
+        if gsettings set "$schema" "$key" "$desired" 2>/dev/null; then
+          summary+=("${schema}/${key}=${desired}:${reason}")
+        else
+          summary+=("${schema}/${key}=error")
+          status=1
+        fi
+      else
+        summary+=("${schema}/${key}=already:${desired}")
+      fi
+
+      key="process-model"
+      desired="'single-web-process'"
+      reason="reduce-unresponsive-dialogs"
+      current="$(gsettings get "$schema" "$key" 2>/dev/null || echo '__error__')"
+      if [[ "$current" != "$desired" ]]; then
+        if gsettings set "$schema" "$key" "$desired" 2>/dev/null; then
+          summary+=("${schema}/${key}=${desired}:${reason}")
+        else
+          summary+=("${schema}/${key}=error")
+          status=1
+        fi
+      else
+        summary+=("${schema}/${key}=already:${desired}")
+      fi
+    else
+      summary+=("schema-missing=org.gnome.Epiphany")
+      status=1
+    fi
+  fi
+
+  {
+    printf '%s status=%s' "$ts" "$status"
+    for entry in "${summary[@]}"; do
+      printf ' %s' "$entry"
+    done
+    printf '\n'
+  } >>"$PROFILE_LOG"
+}
+
+launch_sanitizer() {
+  if [[ -x "$SANITIZER" ]]; then
+    "$SANITIZER" --delay 4 --wm-class "$APP_WM_CLASS" --log "$SANITIZE_LOG" &
+  else
+    log_err "No se encontró sanitizador en $SANITIZER"
+  fi
+}
+
+main() {
+  ensure_profile_dir
+  check_desktop_file
+  prepare_logs
+  apply_profile_preferences
+
+  if [[ -x "$WAIT_X" ]]; then
+    DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" "$WAIT_X"
+  fi
+
+  kill_existing_instances
+  launch_sanitizer
+
+  local epiphany
+  epiphany="$(command -v epiphany-browser || true)"
+  if [[ -z "$epiphany" ]]; then
+    log_err "epiphany-browser no encontrado"
     exit 1
   fi
-fi
-chown -R "$OWNER:$OWNER" "$STATE_DIR" || true
 
-exec 9>"$LOCK"
-if ! flock -n 9; then
-  echo "[kiosk] otro proceso en ejecución; saliendo"
-  exit 0
-fi
+  exec env -i DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
+    HOME="/home/$OWNER" PATH="$PATH" GIO_USE_PORTALS=0 GTK_USE_PORTAL=0 \
+    GDK_BACKEND="${GDK_BACKEND:-x11}" WEBKIT_DISABLE_DMABUF_RENDERER="${WEBKIT_DISABLE_DMABUF_RENDERER:-1}" \
+    "$epiphany" --application-mode --profile="$PROFILE_DIR" --new-window "$URL"
+}
 
-DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" /opt/pantalla/bin/wait-x.sh
-
-EPIPHANY_BIN="$(command -v epiphany-browser || true)"
-if [[ -z "$EPIPHANY_BIN" ]]; then
-  echo "[kiosk] epiphany-browser no encontrado" >&2
-  exit 1
-fi
-
-export GIO_USE_PORTALS=0
-export GTK_USE_PORTAL=0
-
-exec env -i DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
-  HOME="/home/$OWNER" PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-  GIO_USE_PORTALS=0 GTK_USE_PORTAL=0 \
-  "$EPIPHANY_BIN" --application-mode --profile="$PROFILE_DIR" --new-window "$URL"
+main "$@"
