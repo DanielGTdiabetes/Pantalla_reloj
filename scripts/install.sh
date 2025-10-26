@@ -55,6 +55,7 @@ if ! id "$USER_NAME" >/dev/null 2>&1; then
   exit 1
 fi
 USER_HOME="/home/${USER_NAME}"
+USER_UID="$(id -u "$USER_NAME")"
 
 PANTALLA_PREFIX=/opt/pantalla-reloj
 SESSION_PREFIX=/opt/pantalla
@@ -80,7 +81,6 @@ PROFILE_DIR_DST="${STATE_RUNTIME}/${APP_ID}"
 install -d -m 0755 "$REPO_ROOT/home/dani/.local/share/applications" >/dev/null 2>&1 || true
 
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$USER_HOME"
-install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" /run/user/1000
 install -d -m 0755 "$PANTALLA_PREFIX" "$SESSION_PREFIX"
 install -d -m 0755 "$SESSION_PREFIX/bin" "$SESSION_PREFIX/openbox"
 install -d -m 0755 -o root -g root /var/lib/pantalla
@@ -202,10 +202,6 @@ install -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$REPO_ROOT/openbox/autostart" "
 
 if [[ ! -f "${STATE_DIR}/.Xauthority" ]]; then
   install -m 0600 -o "$USER_NAME" -g "$USER_NAME" /dev/null "${STATE_DIR}/.Xauthority"
-fi
-install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$USER_HOME"
-if [[ -f "${STATE_DIR}/.Xauthority" ]]; then
-  install -m 0600 -o "$USER_NAME" -g "$USER_NAME" "${STATE_DIR}/.Xauthority" "$USER_HOME/.Xauthority"
 fi
 
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/xorg-openbox-env.sh" "$SESSION_PREFIX/bin/xorg-openbox-env.sh"
@@ -453,14 +449,15 @@ DROPIN_DIR="/etc/systemd/system/pantalla-kiosk-chromium@${USER_NAME}.service.d"
 install -d -m 0755 "$DROPIN_DIR"
 cat >"${DROPIN_DIR}/override.conf" <<'EOF'
 [Service]
+# Limpiar y fijar entorno de X (evita “Missing X server or $DISPLAY”)
 Environment=
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/%i/.Xauthority
-Environment=GTK_USE_PORTAL=0
-Environment=GIO_USE_PORTALS=0
-Environment=GDK_BACKEND=x11
-Environment=CHROMIUM_SCALE=0.84
 
+# Escala por defecto (ajustable sin tocar binarios)
+Environment=CHROMIUM_SCALE=0.58
+
+# Reemplaza ExecStart e inyecta la escala
 ExecStart=
 ExecStart=/bin/sh -lc "chromium-browser \
   --class=pantalla-kiosk \
@@ -469,8 +466,7 @@ ExecStart=/bin/sh -lc "chromium-browser \
   --no-first-run --no-default-browser-check \
   --disable-translate --disable-infobars \
   --disable-session-crashed-bubble --noerrdialogs \
-  --disable-features=CalculateNativeWinOcclusion,InfiniteSessionRestore,Translate,HardwareMediaKeyHandling \
-  --disable-renderer-backgrounding --disable-background-timer-throttling --disable-backgrounding-occluded-windows \
+  --disable-features=InfiniteSessionRestore,Translate,HardwareMediaKeyHandling \
   --hide-scrollbars --overscroll-history-navigation=0 \
   --password-store=basic \
   --test-type \
@@ -498,7 +494,20 @@ log_info "Enabling services"
 systemctl enable --now pantalla-xorg.service || true
 systemctl enable --now pantalla-dash-backend@${USER_NAME}.service || true
 systemctl enable --now "pantalla-openbox@${USER_NAME}.service" || true
-systemctl enable --now "pantalla-kiosk-chromium@${USER_NAME}.service" || true
+
+# Crear /run/user/<uid> correcto para el usuario kiosk (no asumir 1000)
+install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "/run/user/${USER_UID}"
+
+# Asegurar XAUTHORITY real (no symlink) con la cookie actual
+install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "/home/${USER_NAME}"
+if [ -f /var/lib/pantalla-reloj/.Xauthority ]; then
+  cp -f /var/lib/pantalla-reloj/.Xauthority "/home/${USER_NAME}/.Xauthority"
+  chown "$USER_NAME:$USER_NAME" "/home/${USER_NAME}/.Xauthority"
+  chmod 600 "/home/${USER_NAME}/.Xauthority"
+fi
+
+systemctl daemon-reload
+systemctl enable --now "pantalla-kiosk-chromium@${USER_NAME}.service"
 
 log_info "Ensuring watchdog disabled"
 systemctl disable --now "pantalla-kiosk-watchdog@${USER_NAME}.timer" "pantalla-kiosk-watchdog@${USER_NAME}.service" 2>/dev/null || true
