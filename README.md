@@ -61,6 +61,24 @@ chmod +x scripts/verify_api.sh
 Confirma que `nginx -t` pasa y que `/api/health` y `/api/config` responden vía
 Nginx antes de dar por finalizada la actualización.
 
+### Build estable (guardarraíles Node/npm)
+
+- El repositorio incluye `.nvmrc` fijado a **Node.js 18.20.3** y `package.json`
+  exige `node >=18.18 <21` y `npm >=9 <11` para evitar incompatibilidades.
+- Todos los scripts usan `npm install --no-audit --no-fund` en lugar de
+  `npm ci`, de modo que el lockfile se sincroniza automáticamente cuando cambian
+  las dependencias.
+- Comandos de referencia para despliegues reproducibles:
+
+  ```bash
+  nvm use || true
+  npm run build:stable
+  npm run verify:api
+  ```
+
+  `build:stable` limpia `node_modules`, instala dependencias sin auditoría y
+  ejecuta `npm run build`.
+
 ### Servicios systemd
 - `pantalla-xorg.service`: levanta `Xorg :0` sin display manager ni TCP.
 - `pantalla-openbox@dani.service`: sesión gráfica minimalista con autostart que aplica

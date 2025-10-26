@@ -858,6 +858,12 @@ main {
   color: var(--danger);
 }
 
+.config-status-bar.is-pending {
+  background: rgba(148, 163, 184, 0.08);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: rgba(226, 232, 240, 0.85);
+}
+
 @media (max-width: 1200px) {
   .dashboard-alt {
     grid-template-columns: 1fr;

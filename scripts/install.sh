@@ -255,11 +255,7 @@ install -m 0755 "$REPO_ROOT/usr/lib/pantalla-reloj/xorg-launch.sh" /usr/lib/pant
 
 log_info "Building frontend"
 pushd "$REPO_ROOT/dash-ui" >/dev/null
-if [[ -f package-lock.json ]]; then
-  npm ci --no-audit --no-fund
-else
-  npm install --no-audit --no-fund
-fi
+npm install --no-audit --no-fund
 npm run build
 popd >/dev/null
 
