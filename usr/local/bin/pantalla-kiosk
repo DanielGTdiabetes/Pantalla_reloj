@@ -98,8 +98,12 @@ kill_existing_instances() {
   if command -v pkill >/dev/null 2>&1; then
     local uid
     uid="$(id -u "$OWNER")"
-    if pkill -u "$uid" -f "^epiphany( |-browser)" 2>/dev/null; then
-      log_profile "previous-instances-terminated"
+    if pkill -u "$uid" -x epiphany-browser >/dev/null 2>&1; then
+      log_profile "previous-instances-terminated exact"
+    elif pkill -u "$uid" -f epiphany-browser >/dev/null 2>&1; then
+      log_profile "previous-instances-terminated pattern"
+    else
+      pkill -u "$uid" -f epiphany-browser >/dev/null 2>&1 || true
     fi
   fi
 }

@@ -1,8 +1,8 @@
 [Unit]
 Description=Pantalla_reloj Kiosk (Epiphany) for user %i
-After=pantalla-openbox@%i.service pantalla-portal@%i.service pantalla-dash-backend@%i.service
-Requires=pantalla-openbox@%i.service pantalla-portal@%i.service
-Wants=pantalla-openbox@%i.service pantalla-portal@%i.service pantalla-dash-backend@%i.service
+After=pantalla-openbox@%i.service pantalla-dash-backend@%i.service
+Requires=pantalla-openbox@%i.service
+Wants=pantalla-openbox@%i.service pantalla-dash-backend@%i.service
 
 [Service]
 User=%i
@@ -10,8 +10,6 @@ Environment=DISPLAY=:0
 Environment=XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority
 Environment=GDK_BACKEND=x11
 Environment=WEBKIT_DISABLE_DMABUF_RENDERER=1
-Environment=GIO_USE_PORTALS=1
-Environment=GTK_USE_PORTAL=1
 EnvironmentFile=-/var/lib/pantalla-reloj/state/session.env
 ExecStartPre=/bin/sh -c 'test -r "$XAUTHORITY"'
 ExecStartPre=/bin/sh -c 'DISPLAY=:0 XAUTHORITY="$XAUTHORITY" /opt/pantalla/bin/wait-x.sh'
@@ -20,7 +18,8 @@ ExecStartPre=/bin/sh -c 'for f in \
   /home/%i/.local/share/xdg-desktop-portal/applications/org.gnome.Epiphany.WebApp_PantallaReloj.desktop \
   /var/lib/pantalla-reloj/state/org.gnome.Epiphany.WebApp_PantallaReloj/app-id \
   /var/lib/pantalla-reloj/state/org.gnome.Epiphany.WebApp_PantallaReloj/desktop-id; do test -r "$f" || exit 3; done'
-ExecStartPre=/bin/sh -c 'pkill -u %U -f "^epiphany( |-browser)" >/dev/null 2>&1 || true'
+ExecStartPre=/usr/bin/pkill -u %U -x epiphany-browser || true
+ExecStartPre=/usr/bin/pkill -u %U -f epiphany-browser || true
 ExecStart=/usr/bin/epiphany-browser --application-mode --profile=/var/lib/pantalla-reloj/state/org.gnome.Epiphany.WebApp_PantallaReloj --new-window http://127.0.0.1
 ExecStartPost=/usr/local/bin/pantalla-kiosk-verify
 Restart=on-failure
