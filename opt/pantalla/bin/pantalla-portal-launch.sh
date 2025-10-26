@@ -10,6 +10,17 @@ PORTAL_BIN=${PORTAL_BIN:-/usr/libexec/xdg-desktop-portal}
 BACKEND_BIN=${BACKEND_BIN:-/usr/libexec/xdg-desktop-portal-gtk}
 DEFAULT_DISPLAY=":0"
 DEFAULT_XAUTH="/var/lib/pantalla-reloj/.Xauthority"
+DEFAULT_PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+DEFAULT_LANG="${LANG:-C.UTF-8}"
+
+resolve_user_home() {
+  local home
+  if home=$(getent passwd "$(id -u)" | awk -F: 'NR==1 {print $6}'); then
+    printf '%s' "${home:-/home/$(id -un)}"
+    return
+  fi
+  printf '%s' "/home/$(id -un)"
+}
 
 cleanup_existing_processes() {
   local uid
@@ -91,6 +102,10 @@ ensure_backend() {
     DISPLAY="${DISPLAY:-$DEFAULT_DISPLAY}" \
     XAUTHORITY="${XAUTHORITY:-$DEFAULT_XAUTH}" \
     XDG_RUNTIME_DIR="$RUNTIME_DIR" \
+    HOME="${USER_HOME}" \
+    PATH="$DEFAULT_PATH" \
+    LANG="$DEFAULT_LANG" \
+    LC_ALL="$DEFAULT_LANG" \
     DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}" \
     XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-Openbox}" \
     "$BACKEND_BIN" >>"$LOG_FILE" 2>&1 &
@@ -114,6 +129,7 @@ main() {
   : "${DISPLAY:=$DEFAULT_DISPLAY}"
   : "${XAUTHORITY:=$DEFAULT_XAUTH}"
   : "${XDG_RUNTIME_DIR:=$RUNTIME_DIR}"
+  : "${USER_HOME:=$(resolve_user_home)}"
 
   ensure_dbus_bus || log WARN "dbus-daemon unavailable"
 
@@ -133,6 +149,10 @@ main() {
     DISPLAY="$DISPLAY" \
     XAUTHORITY="$XAUTHORITY" \
     XDG_RUNTIME_DIR="$RUNTIME_DIR" \
+    HOME="$USER_HOME" \
+    PATH="$DEFAULT_PATH" \
+    LANG="$DEFAULT_LANG" \
+    LC_ALL="$DEFAULT_LANG" \
     DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}" \
     XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-Openbox}" \
     "$PORTAL_BIN" >>"$LOG_FILE" 2>&1
