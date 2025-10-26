@@ -55,6 +55,7 @@ if ! id "$USER_NAME" >/dev/null 2>&1; then
   exit 1
 fi
 USER_HOME="/home/${USER_NAME}"
+USER_UID="$(id -u "$USER_NAME")"
 
 PANTALLA_PREFIX=/opt/pantalla-reloj
 SESSION_PREFIX=/opt/pantalla
@@ -80,7 +81,7 @@ PROFILE_DIR_DST="${STATE_RUNTIME}/${APP_ID}"
 install -d -m 0755 "$REPO_ROOT/home/dani/.local/share/applications" >/dev/null 2>&1 || true
 
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$USER_HOME"
-install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" /run/user/1000
+install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "/run/user/${USER_UID}"
 install -d -m 0755 "$PANTALLA_PREFIX" "$SESSION_PREFIX"
 install -d -m 0755 "$SESSION_PREFIX/bin" "$SESSION_PREFIX/openbox"
 install -d -m 0755 -o root -g root /var/lib/pantalla
