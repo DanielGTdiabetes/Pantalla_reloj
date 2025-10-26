@@ -1,4 +1,5 @@
 import maplibregl from "maplibre-gl";
+import type { StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef } from "react";
 
@@ -24,7 +25,7 @@ const VOYAGER = {
     }
   },
   layers: [{ id: "carto", type: "raster", source: "carto" }]
-} as const;
+} satisfies StyleSpecification;
 
 export default function GeoScopeMap() {
   const hostRef = useRef<HTMLDivElement | null>(null);
