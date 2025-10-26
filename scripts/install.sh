@@ -56,6 +56,7 @@ BACKEND_DEST="${PANTALLA_PREFIX}/backend"
 STATE_DIR=/var/lib/pantalla-reloj
 STATE_RUNTIME="${STATE_DIR}/state"
 LOG_DIR=/var/log/pantalla-reloj
+KIOSK_LOG_DIR=/var/log/pantalla
 INSTALL_LOG=/tmp/install.log
 WEB_ROOT=/var/www/html
 WEBROOT_MANIFEST="${STATE_RUNTIME}/webroot-manifest"
@@ -64,16 +65,18 @@ KIOSK_BIN_DST=/usr/local/bin/pantalla-kiosk
 BACKEND_LAUNCHER_SRC="${REPO_ROOT}/usr/local/bin/pantalla-backend-launch"
 BACKEND_LAUNCHER_DST=/usr/local/bin/pantalla-backend-launch
 UDEV_RULE=/etc/udev/rules.d/70-pantalla-render.rules
+APP_ID=org.gnome.Epiphany.WebApp_PantallaReloj
 
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$USER_HOME"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" /run/user/1000
 install -d -m 0755 "$PANTALLA_PREFIX" "$SESSION_PREFIX"
 install -d -m 0755 "$SESSION_PREFIX/bin" "$SESSION_PREFIX/openbox"
 install -d -m 0755 -o root -g root /var/lib/pantalla
-install -d -m 0755 -o root -g root /var/log/pantalla
+install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$KIOSK_LOG_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$LOG_DIR"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_RUNTIME"
+install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$STATE_RUNTIME/${APP_ID}"
 chown -R "$USER_NAME:$USER_NAME" "$STATE_DIR"
 
 log_info "Installing base packages"
@@ -181,12 +184,32 @@ chown -h "$USER_NAME:$USER_NAME" "$USER_HOME/.Xauthority" || true
 
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/xorg-openbox-env.sh" "$SESSION_PREFIX/bin/xorg-openbox-env.sh"
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/wait-x.sh" "$SESSION_PREFIX/bin/wait-x.sh"
+install -m 0755 "$REPO_ROOT/opt/pantalla/bin/pantalla-kiosk-sanitize.sh" "$SESSION_PREFIX/bin/pantalla-kiosk-sanitize.sh"
 install -m 0755 "$REPO_ROOT/opt/pantalla/openbox/autostart" "$SESSION_PREFIX/openbox/autostart"
 
 install -D -m 0755 "$KIOSK_BIN_SRC" "$KIOSK_BIN_DST"
 SUMMARY+=("[install] launcher de kiosk instalado en ${KIOSK_BIN_DST}")
 install -D -m 0755 "$BACKEND_LAUNCHER_SRC" "$BACKEND_LAUNCHER_DST"
 SUMMARY+=("[install] launcher de backend instalado en ${BACKEND_LAUNCHER_DST}")
+install -D -m 0644 "$REPO_ROOT/usr/local/share/applications/${APP_ID}.desktop" \
+  /usr/local/share/applications/${APP_ID}.desktop
+SUMMARY+=("[install] desktop file ${APP_ID} instalado")
+install -D -m 0755 "$REPO_ROOT/usr/local/bin/pantalla-kiosk-verify" /usr/local/bin/pantalla-kiosk-verify
+SUMMARY+=("[install] verificador de kiosk instalado en /usr/local/bin/pantalla-kiosk-verify")
+
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database /usr/local/share/applications || true
+  SUMMARY+=("[install] update-desktop-database ejecutado")
+else
+  SUMMARY+=("[install] update-desktop-database no disponible")
+fi
+
+if runuser -u "$USER_NAME" -- env XDG_DATA_DIRS="/usr/local/share:/usr/share" \
+  gio info "application://${APP_ID}.desktop" >/dev/null 2>&1; then
+  SUMMARY+=("[install] desktop id visible para ${USER_NAME}")
+else
+  SUMMARY+=("[install] desktop id no visible para ${USER_NAME}")
+fi
 install -d -m 0755 /usr/lib/pantalla-reloj
 install -m 0755 "$REPO_ROOT/usr/lib/pantalla-reloj/xorg-launch.sh" /usr/lib/pantalla-reloj/xorg-launch.sh
 
@@ -227,7 +250,7 @@ publish_webroot() {
 log_info "Publishing frontend to $WEB_ROOT"
 publish_webroot
 
-chown -R "$USER_NAME:$USER_NAME" "$PANTALLA_PREFIX" "$STATE_DIR" "$LOG_DIR"
+chown -R "$USER_NAME:$USER_NAME" "$PANTALLA_PREFIX" "$STATE_DIR" "$LOG_DIR" "$KIOSK_LOG_DIR"
 touch "$LOG_DIR/backend.log"
 chown "$USER_NAME:$USER_NAME" "$LOG_DIR/backend.log"
 
