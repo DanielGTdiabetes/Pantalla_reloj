@@ -29,51 +29,45 @@ const VOYAGER = {
 
 export default function GeoScopeMap() {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
-  const roRef = useRef<ResizeObserver | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const registryRef = useRef<LayerRegistry | null>(null);
 
   useEffect(() => {
-    if (!hostRef.current) return;
+    const host = hostRef.current;
+    if (!host) return;
 
     const map = new maplibregl.Map({
-      container: hostRef.current,
+      container: host,
       style: VOYAGER,
       center: [0, 0],
       zoom: 1,
       interactive: false,
       renderWorldCopies: true
     });
-    mapRef.current = map;
 
-    function fitWorld() {
-      const host = hostRef.current;
-      if (!host) return;
-
+    const fitWorld = () => {
       const aside = document.querySelector("aside") as HTMLElement | null;
       const rect = host.getBoundingClientRect();
 
-      const width = Math.max(0, rect.width);
-      const height = Math.max(0, rect.height);
+      const W = Math.max(0, rect.width);
+      const H = Math.max(0, rect.height);
 
       const basePad = 10;
       const rightAside = aside ? aside.offsetWidth : 0;
 
-      const maxHorizontalPad = Math.max(0, width - 60);
-      const maxVerticalPad = Math.max(0, height - 60);
+      const maxHorizontalPad = Math.max(0, W - 60);
+      const maxVerticalPad = Math.max(0, H - 60);
 
       const padLeft = Math.min(basePad, maxHorizontalPad);
       const padRight = Math.min(rightAside + basePad, Math.max(0, maxHorizontalPad - padLeft));
       const padTop = Math.min(basePad, maxVerticalPad);
       const padBottom = Math.min(basePad, Math.max(0, maxVerticalPad - padTop));
 
-      const paddingWidth = padLeft + padRight;
-      const paddingHeight = padTop + padBottom;
       const tooSmall =
-        width < 120 ||
-        height < 120 ||
-        paddingWidth >= width ||
-        paddingHeight >= height;
+        W < 120 ||
+        H < 120 ||
+        padLeft + padRight >= W ||
+        padTop + padBottom >= H;
 
       const resetView = () => {
         map.setPadding({ top: 0, left: 0, bottom: 0, right: 0 });
@@ -98,36 +92,47 @@ export default function GeoScopeMap() {
         console.warn("[GeoScopeMap] fitBounds failed, falling back to jumpTo", error);
         resetView();
       }
-    }
+    };
 
-    function onStyleReady(cb: () => void) {
+    const onStyleReady = (cb: () => void) => {
       if (map.isStyleLoaded()) cb();
       else map.once("load", cb);
-    }
+    };
 
     onStyleReady(() => {
       fitWorld();
 
       const registry = new LayerRegistry(map);
       registryRef.current = registry;
-      registry.add(new WeatherLayer({ enabled: false }));
-      registry.add(new CyclonesLayer({ enabled: false }));
-      registry.add(new ShipsLayer({ enabled: false }));
-      registry.add(new AircraftLayer({ enabled: false }));
-      registry.add(new LightningLayer({ enabled: true }));
 
-      roRef.current = new ResizeObserver(() => {
+      const layers = [
+        new WeatherLayer({ enabled: false }),
+        new CyclonesLayer({ enabled: false }),
+        new ShipsLayer({ enabled: false }),
+        new AircraftLayer({ enabled: false }),
+        new LightningLayer({ enabled: true })
+      ];
+
+      for (const layer of layers) {
+        try {
+          registry.add(layer);
+        } catch (error) {
+          console.warn(`[GeoScopeMap] Failed to register layer ${layer.id}`, error);
+        }
+      }
+
+      resizeObserverRef.current = new ResizeObserver(() => {
         map.resize();
         fitWorld();
       });
-      if (hostRef.current) {
-        roRef.current.observe(hostRef.current);
-      }
+      resizeObserverRef.current.observe(host);
     });
 
     return () => {
-      roRef.current?.disconnect();
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
       registryRef.current?.destroy();
+      registryRef.current = null;
       map.remove();
     };
   }, []);
