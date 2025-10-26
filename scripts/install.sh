@@ -62,6 +62,8 @@ WEB_ROOT=/var/www/html
 WEBROOT_MANIFEST="${STATE_RUNTIME}/webroot-manifest"
 KIOSK_BIN_SRC="${REPO_ROOT}/usr/local/bin/pantalla-kiosk"
 KIOSK_BIN_DST=/usr/local/bin/pantalla-kiosk
+CHROMIUM_KIOSK_BIN_SRC="${REPO_ROOT}/usr/local/bin/pantalla-kiosk-chromium"
+CHROMIUM_KIOSK_BIN_DST=/usr/local/bin/pantalla-kiosk-chromium
 BACKEND_LAUNCHER_SRC="${REPO_ROOT}/usr/local/bin/pantalla-backend-launch"
 BACKEND_LAUNCHER_DST=/usr/local/bin/pantalla-backend-launch
 UDEV_RULE=/etc/udev/rules.d/70-pantalla-render.rules
@@ -204,7 +206,9 @@ install -m 0755 "$REPO_ROOT/opt/pantalla/bin/pantalla-portal-launch.sh" "$SESSIO
 install -m 0755 "$REPO_ROOT/opt/pantalla/openbox/autostart" "$SESSION_PREFIX/openbox/autostart"
 
 install -D -m 0755 "$KIOSK_BIN_SRC" "$KIOSK_BIN_DST"
+install -D -m 0755 "$CHROMIUM_KIOSK_BIN_SRC" "$CHROMIUM_KIOSK_BIN_DST"
 SUMMARY+=("[install] launcher de kiosk instalado en ${KIOSK_BIN_DST}")
+SUMMARY+=("[install] launcher Chromium kiosk disponible en ${CHROMIUM_KIOSK_BIN_DST}")
 install -D -m 0755 "$BACKEND_LAUNCHER_SRC" "$BACKEND_LAUNCHER_DST"
 SUMMARY+=("[install] launcher de backend instalado en ${BACKEND_LAUNCHER_DST}")
 install -D -m 0644 "$REPO_ROOT/usr/local/share/applications/${APP_ID}.desktop" \
@@ -420,6 +424,7 @@ deploy_unit() {
 deploy_unit "$REPO_ROOT/systemd/pantalla-xorg.service" /etc/systemd/system/pantalla-xorg.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-openbox@.service" /etc/systemd/system/pantalla-openbox@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk@.service" /etc/systemd/system/pantalla-kiosk@.service
+deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk-chromium@.service" /etc/systemd/system/pantalla-kiosk-chromium@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-dash-backend@.service" /etc/systemd/system/pantalla-dash-backend@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-portal@.service" /etc/systemd/system/pantalla-portal@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk-watchdog@.service" /etc/systemd/system/pantalla-kiosk-watchdog@.service

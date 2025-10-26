@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+log() {
+  printf '[pantalla-kiosk-chromium] %s\n' "$*"
+}
+
+find_chromium() {
+  local candidate
+  for candidate in "${CHROMIUM_BIN_OVERRIDE:-}" chromium-browser chromium /snap/bin/chromium; do
+    if [[ -n "$candidate" ]] && command -v "$candidate" >/dev/null 2>&1; then
+      command -v "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+main() {
+  local chromium_bin url user_data_dir cache_dir
+
+  if ! chromium_bin="$(find_chromium)"; then
+    log "ERROR: No se encontró un binario de Chromium disponible"
+    exit 1
+  fi
+
+  url="${KIOSK_URL:-http://127.0.0.1}"
+  user_data_dir="${CHROMIUM_USER_DATA_DIR:-/var/lib/pantalla-reloj/state/chromium}"
+  cache_dir="${CHROMIUM_CACHE_DIR:-/var/lib/pantalla-reloj/cache/chromium}"
+
+  install -d -m 0700 "$user_data_dir"
+  install -d -m 0755 "$cache_dir"
+
+  log "Usando Chromium en: ${chromium_bin}"
+  log "Perfil: ${user_data_dir}"
+  log "Cache: ${cache_dir}"
+  log "URL: ${url}"
+
+  exec "$chromium_bin" \
+    --kiosk --start-fullscreen \
+    --app="${url}" \
+    --no-first-run --no-default-browser-check \
+    --disable-translate --disable-infobars \
+    --overscroll-history-navigation=0 \
+    --password-store=basic \
+    --test-type \
+    --ozone-platform=x11 \
+    --disable-gpu \
+    --disk-cache-dir="${cache_dir}" \
+    --user-data-dir="${user_data_dir}"
+}
+
+main "$@"

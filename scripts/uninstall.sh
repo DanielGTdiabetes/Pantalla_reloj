@@ -76,6 +76,7 @@ UDEV_RULE=/etc/udev/rules.d/70-pantalla-render.rules
 
 SYSTEMD_UNITS=(
   "pantalla-kiosk@${USER_NAME}.service"
+  "pantalla-kiosk-chromium@${USER_NAME}.service"
   "pantalla-portal@${USER_NAME}.service"
   "pantalla-openbox@${USER_NAME}.service"
   "pantalla-dash-backend@${USER_NAME}.service"
@@ -93,6 +94,7 @@ for unit in "${SYSTEMD_UNITS[@]}"; do
 done
 
 rm -f /etc/systemd/system/pantalla-kiosk@.service
+rm -f /etc/systemd/system/pantalla-kiosk-chromium@.service
 rm -f /etc/systemd/system/pantalla-openbox@.service
 rm -f /etc/systemd/system/pantalla-xorg.service
 rm -f /etc/systemd/system/pantalla-dash-backend@.service
