@@ -5,6 +5,7 @@ Wants=pantalla-xorg.service
 
 [Service]
 User=%i
+PermissionsStartOnly=yes
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority
 Environment=XDG_RUNTIME_DIR=/run/user/%U
