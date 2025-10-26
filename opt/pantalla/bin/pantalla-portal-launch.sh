@@ -6,7 +6,12 @@ LOG_FILE="${LOG_DIR}/xdg-desktop-portal.log"
 STATE_FILE=/var/lib/pantalla-reloj/state/session.env
 CURRENT_UID="$(id -u)"
 CURRENT_USER="$(id -un)"
-DEFAULT_SHELL="$(getent passwd "${CURRENT_USER}" | awk -F: 'NR==1 {print $7}' | awk 'NF {print; exit}')"
+DEFAULT_SHELL=""
+if command -v getent >/dev/null 2>&1; then
+  if passwd_entry=$(getent passwd "${CURRENT_USER}" 2>/dev/null); then
+    DEFAULT_SHELL="$(printf '%s' "$passwd_entry" | awk -F: 'NR==1 {print $7}' | awk 'NF {print; exit}')"
+  fi
+fi
 DEFAULT_SHELL="${DEFAULT_SHELL:-/bin/bash}"
 DEFAULT_RUNTIME_DIR="/run/user/${CURRENT_UID}"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-$DEFAULT_RUNTIME_DIR}"
