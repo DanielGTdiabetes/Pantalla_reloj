@@ -117,7 +117,12 @@ const ensureLeaflet = (): Promise<LeafletModule> => {
   return leafletPromise;
 };
 
-export const WorldMap: React.FC<WorldMapProps> = ({ provider = DEFAULT_PROVIDER, className }) => {
+export const WorldMap: React.FC<WorldMapProps> = ({
+  center,
+  zoom,
+  provider = DEFAULT_PROVIDER,
+  className
+}) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const layerRef = useRef<LeafletTileLayer | null>(null);
@@ -156,6 +161,7 @@ export const WorldMap: React.FC<WorldMapProps> = ({ provider = DEFAULT_PROVIDER,
           padding: PORTRAIT_PADDING,
           duration: 0
         });
+        map.setView(center, zoom);
         window.setTimeout(() => map.invalidateSize(), 0);
       } catch (error) {
         console.error(error);
@@ -172,6 +178,14 @@ export const WorldMap: React.FC<WorldMapProps> = ({ provider = DEFAULT_PROVIDER,
       mapRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+    map.setView(center, zoom);
+  }, [center, zoom]);
 
   useEffect(() => {
     const leaflet = moduleRef.current;
