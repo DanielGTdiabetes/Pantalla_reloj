@@ -84,9 +84,31 @@ propagate_environment
 write_session_state
 
 log_session "geometry-hook-start"
+if command -v xset >/dev/null 2>&1; then
+  if DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xset -dpms >/dev/null 2>&1; then
+    log_session "xset-dpms-off"
+  else
+    log_session "xset-dpms-error"
+  fi
+  if DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xset s off >/dev/null 2>&1; then
+    log_session "xset-s-off"
+  else
+    log_session "xset-s-off-error"
+  fi
+  if DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xset s noblank >/dev/null 2>&1; then
+    log_session "xset-s-noblank"
+  else
+    log_session "xset-s-noblank-error"
+  fi
+else
+  log_session "xset-missing"
+fi
+
 if [[ -x "$GEOMETRY_SCRIPT" ]]; then
   DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" "$GEOMETRY_SCRIPT" --wait >/dev/null 2>&1 || true
 else
   log_session "geometry-script-missing path=$GEOMETRY_SCRIPT"
 fi
 log_session "geometry-hook-finished"
+
+sleep 0.5 2>/dev/null || sleep 1

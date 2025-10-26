@@ -67,6 +67,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+export DISPLAY="${DISPLAY:-:0}"
+export XAUTHORITY="${XAUTHORITY:-/var/lib/pantalla-reloj/.Xauthority}"
+
 : "${DISPLAY:?DISPLAY must be set}"
 : "${XAUTHORITY:?XAUTHORITY must be set}"
 
@@ -113,17 +116,86 @@ run_xrandr() {
 
 log "geometry-start output=$OUTPUT mode=$MODE fb=$FRAMEBUFFER rotate=$ROTATE"
 
-if ! run_xrandr "mode" --output "$OUTPUT" --mode "$MODE" --rotate "$ROTATE" --primary --pos 0x0; then
-  log "mode-error"
+verify_geometry() {
+  local query current_line output_line
+  if ! query=$(DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xrandr --query 2>&1); then
+    log "verify-error output=${query//$'\n'/ }"
+    return 1
+  fi
+
+  while IFS= read -r line; do
+    log "xrandr-query ${line}"
+  done <<<"$query"
+
+  current_line=$(printf '%s\n' "$query" | grep -E 'current[[:space:]]+[0-9]+[[:space:]]+x[[:space:]]+[0-9]+' | head -n1)
+  if [[ "$current_line" != *"current 480 x 1920"* ]]; then
+    log "verify-mismatch-current line=${current_line}"
+    return 1
+  fi
+
+  output_line=$(printf '%s\n' "$query" | awk -v out="$OUTPUT" '$1==out {print}' | head -n1)
+  if [[ -z "$output_line" ]]; then
+    log "verify-missing-output output=$OUTPUT"
+    return 1
+  fi
+
+  if [[ "$output_line" != *"480x1920"* || "$output_line" != *"left"* ]]; then
+    log "verify-mismatch-output line=${output_line}"
+    return 1
+  fi
+
+  log "verify-success"
+  return 0
+}
+
+attempt_geometry() {
+  local step="$1"
+
+  if ! run_xrandr "${step}-framebuffer" --fb "$FRAMEBUFFER"; then
+    log "framebuffer-error step=${step}"
+  fi
+
+  local output status
+  output=$(run_xrandr "${step}-mode" --output "$OUTPUT" --mode "$MODE" --rotate "$ROTATE" --primary --pos 0x0) || status=$?
+  status=${status:-0}
+  if (( status != 0 )); then
+    if [[ "$output" == *"screen not large enough"* ]]; then
+      log "mode-too-small step=${step}"
+      return 2
+    fi
+    return "$status"
+  fi
+
+  if [[ "$output" == *"screen not large enough"* ]]; then
+    log "mode-too-small-output step=${step}"
+    return 2
+  fi
+
+  return 0
+}
+
+attempt_geometry "initial"
+status=$?
+
+if (( status == 2 )); then
+  attempt_geometry "retry"
+  status=$?
+elif (( status != 0 )); then
+  log "mode-error status=${status}"
 fi
 
-sleep 0.3
-
-if ! run_xrandr "framebuffer" --fb "$FRAMEBUFFER"; then
-  log "framebuffer-error"
+if ! verify_geometry; then
+  if (( status == 0 )); then
+    log "verify-retry"
+    attempt_geometry "verify"
+    status=$?
+    if ! verify_geometry; then
+      log "verify-failed"
+    fi
+  else
+    log "verify-skipped status=${status}"
+  fi
 fi
-
-sleep 0.2
 
 if (( DISABLE_DPMS )); then
   if DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xset -dpms >/dev/null 2>&1; then
@@ -141,14 +213,6 @@ if (( DISABLE_DPMS )); then
   else
     log "screensaver-error action=noblank"
   fi
-fi
-
-if xrandr_state=$(DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xrandr --query 2>/dev/null); then
-  while IFS= read -r line; do
-    log "xrandr-query ${line}"
-  done <<<"$xrandr_state"
-else
-  log "xrandr-query-error"
 fi
 
 log "geometry-complete"
