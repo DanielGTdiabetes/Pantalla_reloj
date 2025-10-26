@@ -70,9 +70,9 @@ main {
 }
 
 .app-shell__aside {
-  width: 460px;
-  min-width: 400px;
-  max-width: 520px;
+  width: 520px;
+  min-width: 440px;
+  max-width: 600px;
   height: 100%;
   flex-shrink: 0;
   border-left: 1px solid rgba(255, 255, 255, 0.1);
