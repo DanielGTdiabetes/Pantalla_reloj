@@ -40,6 +40,15 @@ Pantalla_reloj/
   depuración puntual.
 - Compilado con `npm run build` y servido por Nginx desde `/var/www/html`.
 
+### Nginx (reverse proxy `/api`)
+
+- El virtual host `etc/nginx/sites-available/pantalla-reloj.conf` debe quedar
+  activo y apuntar a `/var/www/html`. Asegúrate de que el bloque `/api/` use
+  `proxy_pass http://127.0.0.1:8081;` **sin barra final** para mantener los
+  paths correctos.
+- El site por defecto de Nginx no debe estar habilitado: elimina el symlink
+  `/etc/nginx/sites-enabled/default` para evitar colisiones con `server_name _`.
+
 ### Servicios systemd
 - `pantalla-xorg.service`: levanta `Xorg :0` sin display manager ni TCP.
 - `pantalla-openbox@dani.service`: sesión gráfica minimalista con autostart que aplica

@@ -24,8 +24,8 @@ export const RotatingCard = ({ cards }: RotatingCardProps): JSX.Element => {
         duration: 6000,
         render: () => (
           <div className="card card--placeholder">
-            <h2>Sin módulos configurados</h2>
-            <p>Revisa /config para activar los paneles que quieras mostrar.</p>
+            <h2>Datos no disponibles</h2>
+            <p>No hay módulos activos en este momento.</p>
           </div>
         )
       }
