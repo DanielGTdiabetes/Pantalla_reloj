@@ -1,0 +1,19 @@
+[Unit]
+Description=Pantalla_reloj XDG desktop portal for user %i
+After=pantalla-openbox@%i.service
+Requires=pantalla-openbox@%i.service
+PartOf=pantalla-openbox@%i.service
+
+[Service]
+User=%i
+Type=simple
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/var/lib/pantalla-reloj/.Xauthority
+EnvironmentFile=-/var/lib/pantalla-reloj/state/session.env
+ExecStart=/opt/pantalla/bin/pantalla-portal-launch.sh
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

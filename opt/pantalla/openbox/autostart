@@ -57,6 +57,7 @@ write_session_state() {
   {
     echo "DISPLAY=${DISPLAY}"
     echo "XAUTHORITY=${XAUTHORITY}"
+    echo "XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}"
     if [[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
       echo "DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS}"
     fi
@@ -68,7 +69,7 @@ write_session_state() {
 
 propagate_environment() {
   if command -v dbus-update-activation-environment >/dev/null 2>&1; then
-    if dbus-update-activation-environment --systemd DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS >/dev/null 2>&1; then
+    if dbus-update-activation-environment --systemd DISPLAY XAUTHORITY XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS >/dev/null 2>&1; then
       log_session "dbus-update-activation=ok"
     else
       log_session "dbus-update-activation=failed"

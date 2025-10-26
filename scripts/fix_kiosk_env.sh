@@ -140,6 +140,8 @@ install -d -m 0700 -o "$KIOSK_USER" -g "$KIOSK_USER" "/run/user/$KIOSK_UID"
 
 log_info "Instalando scripts kiosk"
 install -m 0755 "$REPO_ROOT/usr/local/bin/kiosk-epiphany" /usr/local/bin/kiosk-epiphany
+install -d -m 0755 /opt/pantalla/bin
+install -m 0755 "$REPO_ROOT/opt/pantalla/bin/pantalla-portal-launch.sh" /opt/pantalla/bin/pantalla-portal-launch.sh
 
 ensure_firefox
 
@@ -148,12 +150,14 @@ install -m 0644 "$REPO_ROOT/systemd/pantalla-xorg.service" /etc/systemd/system/p
 install -m 0644 "$REPO_ROOT/systemd/pantalla-openbox@.service" /etc/systemd/system/pantalla-openbox@.service
 install -m 0644 "$REPO_ROOT/systemd/pantalla-dash-backend@.service" /etc/systemd/system/pantalla-dash-backend@.service
 install -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk@.service" /etc/systemd/system/pantalla-kiosk@.service
+install -m 0644 "$REPO_ROOT/systemd/pantalla-portal@.service" /etc/systemd/system/pantalla-portal@.service
 systemctl daemon-reload
 
 SERVICES=(
   pantalla-xorg.service
   "pantalla-dash-backend@${KIOSK_USER}.service"
   "pantalla-openbox@${KIOSK_USER}.service"
+  "pantalla-portal@${KIOSK_USER}.service"
   "pantalla-kiosk@${KIOSK_USER}.service"
 )
 
