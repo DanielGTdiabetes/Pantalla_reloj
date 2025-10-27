@@ -1,68 +1,9 @@
-export type DisplayModule = {
-  name: string;
-  enabled: boolean;
-  duration_seconds: number;
-};
-
-export type DisplaySettings = {
+export type DisplayConfig = {
   timezone: string;
-  rotation: string;
   module_cycle_seconds: number;
-  modules: DisplayModule[];
 };
 
-export type APIKeys = {
-  weather: string | null;
-  news: string | null;
-  astronomy: string | null;
-  calendar: string | null;
-};
-
-export type MQTTSettings = {
-  enabled: boolean;
-  host: string;
-  port: number;
-  topic: string;
-  username: string | null;
-  password: string | null;
-};
-
-export type WiFiSettings = {
-  interface: string;
-  ssid: string | null;
-  psk: string | null;
-};
-
-export type StormMode = {
-  enabled: boolean;
-  last_triggered: string | null;
-};
-
-export type UIScrollSpeed = number | "slow" | "normal" | "fast";
-
-export type UIScrollSettings = {
-  enabled: boolean;
-  direction: "left" | "up";
-  speed: UIScrollSpeed;
-  gap_px: number;
-};
-
-export type UITextSettings = {
-  scroll: Record<string, UIScrollSettings>;
-};
-
-export type UIFixedSettings = {
-  clock: { format: string };
-  temperature: { unit: string };
-};
-
-export type UIRotationSettings = {
-  enabled: boolean;
-  duration_sec: number;
-  panels: string[];
-};
-
-export type UIMapCinemaBand = {
+export type MapCinemaBand = {
   lat: number;
   zoom: number;
   pitch: number;
@@ -70,59 +11,65 @@ export type UIMapCinemaBand = {
   duration_sec: number;
 };
 
-export type UIMapCinemaSettings = {
+export type UIScrollSpeed = number | "slow" | "normal" | "fast";
+
+export type MapCinemaConfig = {
   enabled: boolean;
   panLngDegPerSec: number;
-  bands: UIMapCinemaBand[];
   bandTransition_sec: number;
+  bands: MapCinemaBand[];
 };
 
-export type UIMapThemeSettings = {
-  sea?: string | null;
-  land?: string | null;
-  label?: string | null;
-  contrast?: number | null;
-  tint?: string | null;
+export type MapThemeConfig = {
+  sea: string;
+  land: string;
+  label: string;
+  contrast: number;
+  tint: string;
 };
 
-export type UIMapProviderMapTiler = {
-  key?: string | null;
-  styleUrlDark?: string | null;
-  styleUrlLight?: string | null;
-  styleUrlBright?: string | null;
+export type MaptilerConfig = {
+  key: string | null;
+  styleUrlDark: string | null;
+  styleUrlLight: string | null;
+  styleUrlBright: string | null;
 };
 
-export type UIMapSettings = {
-  engine?: string;
-  provider: string;
-  center: [number, number];
-  zoom: number;
+export type MapConfig = {
+  engine: "maplibre";
+  style: "vector-dark" | "vector-light" | "vector-bright" | "raster-carto-dark" | "raster-carto-light";
+  provider: "maptiler" | "carto";
+  maptiler: MaptilerConfig;
+  renderWorldCopies: boolean;
   interactive: boolean;
   controls: boolean;
-  renderWorldCopies?: boolean;
-  cinema?: UIMapCinemaSettings;
-  style?: string;
-  theme?: UIMapThemeSettings;
-  maptiler?: UIMapProviderMapTiler;
+  cinema: MapCinemaConfig;
+  theme: MapThemeConfig;
 };
 
-export type UISettings = {
-  rotation: UIRotationSettings;
-  fixed: UIFixedSettings;
-  map: UIMapSettings;
-  text: UITextSettings;
-  layout?: "full" | "widgets";
-  side_panel?: "left" | "right";
-  show_config?: boolean;
-  enable_demo?: boolean;
-  carousel?: boolean;
+export type RotationConfig = {
+  enabled: boolean;
+  duration_sec: number;
+  panels: string[];
+};
+
+export type UIConfig = {
+  layout: "grid-2-1";
+  map: MapConfig;
+  rotation: RotationConfig;
+};
+
+export type NewsConfig = {
+  enabled: boolean;
+};
+
+export type AIConfig = {
+  enabled: boolean;
 };
 
 export type AppConfig = {
-  display: DisplaySettings;
-  api_keys: APIKeys;
-  mqtt: MQTTSettings;
-  wifi: WiFiSettings;
-  storm_mode: StormMode;
-  ui: UISettings;
+  display: DisplayConfig;
+  ui: UIConfig;
+  news: NewsConfig;
+  ai: AIConfig;
 };

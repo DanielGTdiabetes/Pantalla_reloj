@@ -6,9 +6,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import ValidationError
 
 from .cache import CacheStore
 from .config_manager import ConfigManager
@@ -84,8 +85,8 @@ def _default_payload(endpoint: str) -> Dict[str, Any]:
             "generated_at": APP_START.isoformat(),
         },
         "storm_mode": {
-            "enabled": config_manager.read().storm_mode.enabled,
-            "last_triggered": config_manager.read().storm_mode.last_triggered,
+            "enabled": False,
+            "last_triggered": None,
         },
     }
     return defaults.get(endpoint, {"message": f"No data for {endpoint}"})
@@ -129,15 +130,42 @@ def get_config() -> AppConfig:
     return config_manager.read()
 
 
-@app.patch("/api/config", response_model=AppConfig)
-def update_config(payload: Dict[str, Any]) -> AppConfig:
+MAX_CONFIG_PAYLOAD_BYTES = 64 * 1024
+
+
+@app.post("/api/config", response_model=AppConfig)
+async def save_config(request: Request) -> AppConfig:
+    body = await request.body()
+    if len(body) > MAX_CONFIG_PAYLOAD_BYTES:
+        logger.warning("Configuration payload exceeds size limit")
+        raise HTTPException(status_code=413, detail="Configuration payload too large")
+
+    if not body:
+        payload: Dict[str, Any] = {}
+    else:
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError as exc:
+            logger.warning("Invalid JSON payload received: %s", exc)
+            raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+        if not isinstance(payload, dict):
+            logger.warning("Configuration payload must be a JSON object")
+            raise HTTPException(status_code=400, detail="Configuration payload must be a JSON object")
     try:
-        updated = config_manager.update(payload)
+        updated = config_manager.write(payload)
+    except ValidationError as exc:
+        logger.debug("Configuration validation error: %s", exc.errors())
+        raise HTTPException(status_code=400, detail=exc.errors()) from exc
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Failed to update configuration: %s", exc)
-        raise HTTPException(status_code=400, detail="Invalid configuration payload") from exc
+        logger.exception("Failed to persist configuration: %s", exc)
+        raise HTTPException(status_code=500, detail="Unable to persist configuration") from exc
     logger.info("Configuration updated")
     return updated
+
+
+@app.get("/api/config/schema")
+def get_config_schema() -> Dict[str, Any]:
+    return AppConfig.model_json_schema()
 
 
 @app.get("/api/weather")
@@ -162,10 +190,9 @@ def get_calendar() -> Dict[str, Any]:
 
 @app.get("/api/storm_mode")
 def get_storm_mode() -> Dict[str, Any]:
-    config = config_manager.read()
     payload = {
-        "enabled": config.storm_mode.enabled,
-        "last_triggered": config.storm_mode.last_triggered,
+        "enabled": False,
+        "last_triggered": None,
     }
     cache_store.store("storm_mode", payload)
     return payload
@@ -173,30 +200,26 @@ def get_storm_mode() -> Dict[str, Any]:
 
 @app.post("/api/storm_mode")
 def update_storm_mode(payload: Dict[str, Any]) -> Dict[str, Any]:
-    config_data = config_manager.read().model_dump()
-    config_data.setdefault("storm_mode", {}).update(payload)
-    updated = config_manager.update({"storm_mode": config_data["storm_mode"]})
-    result = {
-        "enabled": updated.storm_mode.enabled,
-        "last_triggered": updated.storm_mode.last_triggered,
-    }
-    cache_store.store("storm_mode", result)
-    logger.info("Storm mode updated: %s", result)
-    return result
+    cache_store.store("storm_mode", payload)
+    logger.info("Storm mode update ignored under config v1.5: %s", payload)
+    return {"enabled": False, "last_triggered": None}
 
 
 @app.on_event("startup")
 def on_startup() -> None:
     config = config_manager.read()
-    logger.info("Pantalla backend started with rotation '%s'", config.display.rotation)
+    logger.info(
+        "Pantalla backend started (timezone=%s, rotation_panels=%s)",
+        config.display.timezone,
+        ",".join(config.ui.rotation.panels),
+    )
     cache_store.store("health", {"started_at": APP_START.isoformat()})
     logger.info(
-        "Configuration path %s (defaults: layout=%s, side_panel=%s, demo=%s, carousel=%s)",
+        "Configuration path %s (layout=%s, map_style=%s, map_provider=%s)",
         config_manager.config_file,
         config.ui.layout,
-        config.ui.side_panel,
-        config.ui.enable_demo,
-        config.ui.carousel,
+        config.ui.map.style,
+        config.ui.map.provider,
     )
     root = Path(os.getenv("PANTALLA_STATE_DIR", "/var/lib/pantalla"))
     for child in (root / "cache").glob("*.json"):

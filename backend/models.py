@@ -4,89 +4,105 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-class DisplayModule(BaseModel):
-    name: str
-    enabled: bool = True
-    duration_seconds: int = Field(default=20, ge=5, le=600)
+DEFAULT_CINEMA_BANDS: List[Dict[str, float | int]] = [
+    {"lat": 0.0, "zoom": 2.8, "pitch": 10.0, "minZoom": 2.6, "duration_sec": 900},
+    {"lat": 18.0, "zoom": 3.0, "pitch": 8.0, "minZoom": 2.8, "duration_sec": 720},
+    {"lat": 32.0, "zoom": 3.3, "pitch": 6.0, "minZoom": 3.0, "duration_sec": 600},
+    {"lat": 42.0, "zoom": 3.6, "pitch": 6.0, "minZoom": 3.2, "duration_sec": 480},
+    {"lat": -18.0, "zoom": 3.0, "pitch": 8.0, "minZoom": 2.8, "duration_sec": 720},
+    {"lat": -32.0, "zoom": 3.3, "pitch": 6.0, "minZoom": 3.0, "duration_sec": 600},
+]
 
 
-class DisplaySettings(BaseModel):
-    timezone: str = "Europe/Madrid"
-    rotation: str = "left"
+class Display(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    timezone: str = Field(default="Europe/Madrid", min_length=1)
     module_cycle_seconds: int = Field(default=20, ge=5, le=600)
-    modules: List[DisplayModule] = Field(
-        default_factory=lambda: [
-            DisplayModule(name="clock"),
-            DisplayModule(name="weather"),
-            DisplayModule(name="moon"),
-            DisplayModule(name="news"),
-            DisplayModule(name="events"),
-            DisplayModule(name="calendar"),
-        ]
-    )
 
 
-class APIKeys(BaseModel):
-    weather: Optional[str] = None
-    news: Optional[str] = None
-    astronomy: Optional[str] = None
-    calendar: Optional[str] = None
+class MapCinemaBand(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    lat: float
+    zoom: float
+    pitch: float
+    minZoom: float
+    duration_sec: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def validate_zoom(cls, values: "MapCinemaBand") -> "MapCinemaBand":  # type: ignore[override]
+        if values.minZoom > values.zoom:
+            raise ValueError("minZoom must be less than or equal to zoom")
+        return values
 
 
-class MQTTSettings(BaseModel):
-    enabled: bool = False
-    host: str = "localhost"
-    port: int = 1883
-    topic: str = "pantalla/reloj"
-    username: Optional[str] = None
-    password: Optional[str] = None
+class MapCinema(BaseModel):
+    model_config = ConfigDict(extra="ignore")
 
-
-class WiFiSettings(BaseModel):
-    interface: str = "wlan2"
-    ssid: Optional[str] = None
-    psk: Optional[str] = None
-
-
-class StormMode(BaseModel):
-    enabled: bool = False
-    last_triggered: Optional[datetime] = None
-
-
-class UIScrollSettings(BaseModel):
     enabled: bool = True
-    direction: Literal["left", "up"] = "left"
-    speed: float | Literal["slow", "normal", "fast"] = "normal"
-    gap_px: int = Field(default=48, ge=0, le=480)
-
-
-class UITextSettings(BaseModel):
-    scroll: Dict[str, UIScrollSettings] = Field(
-        default_factory=lambda: {
-            "news": UIScrollSettings(direction="left", speed="normal", gap_px=48),
-            "ephemerides": UIScrollSettings(direction="up", speed="slow", gap_px=24),
-            "forecast": UIScrollSettings(direction="up", speed="slow", gap_px=24),
-        }
+    panLngDegPerSec: float = Field(default=0.30, ge=0)
+    bandTransition_sec: int = Field(default=8, ge=1)
+    bands: List[MapCinemaBand] = Field(
+        default_factory=lambda: [MapCinemaBand(**band) for band in DEFAULT_CINEMA_BANDS]
     )
 
-
-class UIFixedClockSettings(BaseModel):
-    format: str = "HH:mm"
-
-
-class UIFixedTemperatureSettings(BaseModel):
-    unit: str = "C"
-
-
-class UIFixedSettings(BaseModel):
-    clock: UIFixedClockSettings = Field(default_factory=UIFixedClockSettings)
-    temperature: UIFixedTemperatureSettings = Field(default_factory=UIFixedTemperatureSettings)
+    @model_validator(mode="after")
+    def validate_bands(cls, values: "MapCinema") -> "MapCinema":  # type: ignore[override]
+        bands = values.bands
+        if len(bands) != len(DEFAULT_CINEMA_BANDS):
+            raise ValueError(
+                f"cinema must define exactly {len(DEFAULT_CINEMA_BANDS)} bands"
+            )
+        return values
 
 
-class UIRotationSettings(BaseModel):
+class MapTheme(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    sea: str = "#0b3756"
+    land: str = "#20262c"
+    label: str = "#d6e7ff"
+    contrast: float = 0.15
+    tint: str = "rgba(0,170,255,0.06)"
+
+
+DEFAULT_MAPTILER_SETTINGS: Dict[str, Optional[str]] = {
+    "key": None,
+    "styleUrlDark": "https://api.maptiler.com/maps/dark/style.json",
+    "styleUrlLight": "https://api.maptiler.com/maps/streets/style.json",
+    "styleUrlBright": "https://api.maptiler.com/maps/bright/style.json",
+}
+
+
+class MapConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    engine: Literal["maplibre"] = "maplibre"
+    style: Literal[
+        "vector-dark",
+        "vector-light",
+        "vector-bright",
+        "raster-carto-dark",
+        "raster-carto-light",
+    ] = "vector-dark"
+    provider: Literal["maptiler", "carto"] = "maptiler"
+    maptiler: Dict[str, Optional[str]] = Field(
+        default_factory=lambda: DEFAULT_MAPTILER_SETTINGS.copy()
+    )
+    renderWorldCopies: bool = True
+    interactive: bool = False
+    controls: bool = False
+    cinema: MapCinema = Field(default_factory=MapCinema)
+    theme: MapTheme = Field(default_factory=MapTheme)
+
+
+class Rotation(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     enabled: bool = True
     duration_sec: int = Field(default=10, ge=3, le=3600)
     panels: List[str] = Field(
@@ -99,43 +115,53 @@ class UIRotationSettings(BaseModel):
         ]
     )
 
+    @field_validator("panels")
+    @classmethod
+    def validate_panels(cls, value: List[str]) -> List[str]:
+        sanitized = [panel for panel in value if panel]
+        if not sanitized:
+            raise ValueError("rotation.panels must include at least one panel")
+        lower = [panel.lower() for panel in sanitized]
+        if len(lower) != len(set(lower)):
+            raise ValueError("rotation.panels must not include duplicates")
+        return sanitized
 
-class UIMapSettings(BaseModel):
-    provider: str = "osm"
-    center: List[float] = Field(default_factory=lambda: [0.0, 0.0])
-    zoom: int = Field(default=2, ge=0, le=18)
-    interactive: bool = False
-    controls: bool = False
+
+class UI(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    layout: Literal["grid-2-1"] = "grid-2-1"
+    map: MapConfig = Field(default_factory=MapConfig)
+    rotation: Rotation = Field(
+        default_factory=lambda: Rotation(enabled=True, duration_sec=10)
+    )
 
 
-class UISettings(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class News(BaseModel):
+    model_config = ConfigDict(extra="ignore")
 
-    rotation: UIRotationSettings = Field(default_factory=UIRotationSettings)
-    fixed: UIFixedSettings = Field(default_factory=UIFixedSettings)
-    map: UIMapSettings = Field(default_factory=UIMapSettings)
-    text: UITextSettings = Field(default_factory=UITextSettings)
+    enabled: bool = True
+
+
+class AI(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = False
 
 
 class AppConfig(BaseModel):
-    display: DisplaySettings = Field(default_factory=DisplaySettings)
-    api_keys: APIKeys = Field(default_factory=APIKeys)
-    mqtt: MQTTSettings = Field(default_factory=MQTTSettings)
-    wifi: WiFiSettings = Field(default_factory=WiFiSettings)
-    storm_mode: StormMode = Field(default_factory=StormMode)
-    ui: UISettings = Field(default_factory=UISettings)
+    model_config = ConfigDict(extra="ignore")
+
+    display: Display = Field(default_factory=Display)
+    ui: UI = Field(default_factory=UI)
+    news: News = Field(default_factory=News)
+    ai: AI = Field(default_factory=AI)
 
     def to_path(self, path: Path) -> None:
-        path.write_text(self.model_dump_json(indent=2, exclude_none=True), encoding="utf-8")
-
-
-class ConfigUpdate(BaseModel):
-    display: Optional[DisplaySettings] = None
-    api_keys: Optional[APIKeys] = None
-    mqtt: Optional[MQTTSettings] = None
-    wifi: Optional[WiFiSettings] = None
-    storm_mode: Optional[StormMode] = None
-    ui: Optional[UISettings] = None
+        path.write_text(
+            self.model_dump_json(indent=2, exclude_none=True, by_alias=True),
+            encoding="utf-8",
+        )
 
 
 class CachedPayload(BaseModel):
@@ -145,19 +171,15 @@ class CachedPayload(BaseModel):
 
 
 __all__ = [
+    "AI",
     "AppConfig",
-    "APIKeys",
     "CachedPayload",
-    "ConfigUpdate",
-    "DisplayModule",
-    "DisplaySettings",
-    "UIScrollSettings",
-    "UITextSettings",
-    "UIFixedSettings",
-    "UIRotationSettings",
-    "UIMapSettings",
-    "UISettings",
-    "MQTTSettings",
-    "StormMode",
-    "WiFiSettings",
+    "Display",
+    "MapCinema",
+    "MapCinemaBand",
+    "MapConfig",
+    "MapTheme",
+    "News",
+    "Rotation",
+    "UI",
 ]

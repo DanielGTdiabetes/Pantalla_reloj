@@ -142,7 +142,7 @@ export const OverlayRotator: React.FC = () => {
   const news = (payload.news ?? {}) as Record<string, unknown>;
   const calendar = (payload.calendar ?? {}) as Record<string, unknown>;
 
-  const targetUnit = config.ui.fixed.temperature.unit || "C";
+  const targetUnit = "C";
   const rawTemperature = typeof weather.temperature === "number" ? weather.temperature : null;
   const rawUnit = ensurePlainText(weather.unit) || "C";
   const temperature = formatTemperature(rawTemperature, rawUnit, targetUnit);

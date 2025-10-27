@@ -872,6 +872,28 @@ main {
   resize: vertical;
 }
 
+.config-field__hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.config-field__error {
+  font-size: 0.8rem;
+  color: var(--danger);
+}
+
+.config-field__inline {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.config-field__inline input[type="text"],
+.config-field__inline input[type="number"] {
+  flex: 1;
+}
+
 .config-actions {
   display: flex;
   justify-content: flex-end;
@@ -899,6 +921,23 @@ main {
   cursor: not-allowed;
 }
 
+.config-field--checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.config-field--checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.config-field--checkbox input[type="checkbox"] {
+  width: auto;
+}
+
 .config-status {
   font-size: 0.95rem;
 }
@@ -923,6 +962,42 @@ main {
 
 .config-error-callout p {
   margin: 0;
+}
+
+.config-table {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.config-table__header,
+.config-table__row {
+  display: grid;
+  grid-template-columns: 0.8fr repeat(5, minmax(80px, 1fr));
+  gap: 12px;
+  align-items: center;
+}
+
+.config-table__header {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.config-table__label {
+  font-weight: 600;
+}
+
+.config-table__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.config-table__row input {
+  width: 100%;
 }
 
 .config-status-bar {
