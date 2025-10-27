@@ -79,6 +79,13 @@ body {
   height: 100%;
 }
 
+.map-tint {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: normal;
+}
+
 .maplibregl-canvas-container,
 .maplibregl-canvas {
   width: 100% !important;

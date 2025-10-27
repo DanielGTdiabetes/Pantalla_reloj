@@ -3,11 +3,17 @@ import type {
   DisplayModule,
   UIMapCinemaBand,
   UIMapCinemaSettings,
+  UIMapProviderMapTiler,
   UIMapSettings,
+  UIMapThemeSettings,
   UISettings,
   UIScrollSettings,
   UIScrollSpeed,
 } from "../types/config";
+
+const sanitizeString = (value: unknown, fallback: string): string => {
+  return typeof value === "string" && value.trim().length > 0 ? value : fallback;
+};
 
 const sanitizeNumber = (value: unknown, fallback: number): number => {
   const numeric = Number(value);
@@ -25,13 +31,32 @@ const sanitizeNonNegative = (value: unknown, fallback: number): number => {
 };
 
 const CINEMA_BANDS_PRESET: readonly UIMapCinemaBand[] = [
-  { lat: 0, zoom: 2.6, pitch: 10, minZoom: 2.4, duration_sec: 900 },
-  { lat: 18, zoom: 2.8, pitch: 8, minZoom: 2.6, duration_sec: 720 },
-  { lat: 32, zoom: 3.1, pitch: 6, minZoom: 2.9, duration_sec: 600 },
-  { lat: 42, zoom: 3.4, pitch: 6, minZoom: 3.2, duration_sec: 480 },
-  { lat: -18, zoom: 2.8, pitch: 8, minZoom: 2.6, duration_sec: 720 },
-  { lat: -32, zoom: 3.1, pitch: 6, minZoom: 2.9, duration_sec: 600 }
+  { lat: 0, zoom: 2.8, pitch: 10, minZoom: 2.6, duration_sec: 900 },
+  { lat: 18, zoom: 3.0, pitch: 8, minZoom: 2.8, duration_sec: 720 },
+  { lat: 32, zoom: 3.3, pitch: 6, minZoom: 3.0, duration_sec: 600 },
+  { lat: 42, zoom: 3.6, pitch: 6, minZoom: 3.2, duration_sec: 480 },
+  { lat: -18, zoom: 3.0, pitch: 8, minZoom: 2.8, duration_sec: 720 },
+  { lat: -32, zoom: 3.3, pitch: 6, minZoom: 3.0, duration_sec: 600 }
 ];
+
+const DEFAULT_MAP_THEME: UIMapThemeSettings = {
+  sea: "#0b2a3a",
+  land: "#202327",
+  label: "#aeb8c2",
+  contrast: 0.15,
+  tint: null,
+};
+
+const DEFAULT_MAPTILER: UIMapProviderMapTiler = {
+  key: null,
+  styleUrlDark: "https://api.maptiler.com/maps/dark/style.json",
+  styleUrlLight: "https://api.maptiler.com/maps/streets/style.json",
+  styleUrlBright: "https://api.maptiler.com/maps/bright/style.json",
+};
+
+const createDefaultMapTheme = (): UIMapThemeSettings => ({ ...DEFAULT_MAP_THEME });
+
+const createDefaultMaptiler = (): UIMapProviderMapTiler => ({ ...DEFAULT_MAPTILER });
 
 export const createDefaultMapCinema = (): UIMapCinemaSettings => ({
   enabled: true,
@@ -48,7 +73,10 @@ export const createDefaultMapSettings = (): UIMapSettings => ({
   interactive: false,
   controls: false,
   renderWorldCopies: true,
-  cinema: createDefaultMapCinema()
+  cinema: createDefaultMapCinema(),
+  style: "raster-carto-dark",
+  theme: createDefaultMapTheme(),
+  maptiler: createDefaultMaptiler()
 });
 
 const mergeCinema = (cinema?: UIMapCinemaSettings): UIMapCinemaSettings => {
@@ -76,6 +104,46 @@ const mergeCinema = (cinema?: UIMapCinemaSettings): UIMapCinemaSettings => {
   };
 };
 
+const sanitizeNullableString = (value: unknown, fallback: string | null): string | null => {
+  if (value === null) {
+    return null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : fallback;
+  }
+  return fallback;
+};
+
+const mergeTheme = (theme?: UIMapThemeSettings): UIMapThemeSettings => {
+  const defaults = createDefaultMapTheme();
+  if (!theme) {
+    return createDefaultMapTheme();
+  }
+
+  return {
+    sea: sanitizeNullableString(theme.sea, defaults.sea ?? null),
+    land: sanitizeNullableString(theme.land, defaults.land ?? null),
+    label: sanitizeNullableString(theme.label, defaults.label ?? null),
+    contrast: theme.contrast ?? defaults.contrast ?? 0,
+    tint: sanitizeNullableString(theme.tint, defaults.tint ?? null)
+  };
+};
+
+const mergeMaptiler = (maptiler?: UIMapProviderMapTiler): UIMapProviderMapTiler => {
+  const defaults = createDefaultMaptiler();
+  if (!maptiler) {
+    return createDefaultMaptiler();
+  }
+
+  return {
+    key: sanitizeNullableString(maptiler.key, defaults.key ?? null),
+    styleUrlDark: sanitizeNullableString(maptiler.styleUrlDark, defaults.styleUrlDark ?? null),
+    styleUrlLight: sanitizeNullableString(maptiler.styleUrlLight, defaults.styleUrlLight ?? null),
+    styleUrlBright: sanitizeNullableString(maptiler.styleUrlBright, defaults.styleUrlBright ?? null)
+  };
+};
+
 const mergeMapSettings = (map?: UIMapSettings): UIMapSettings => {
   const defaults = createDefaultMapSettings();
   const source = map ?? defaults;
@@ -87,13 +155,16 @@ const mergeMapSettings = (map?: UIMapSettings): UIMapSettings => {
 
   return {
     engine: source.engine ?? defaults.engine,
-    provider: source.provider ?? defaults.provider,
+    provider: sanitizeString(source.provider, defaults.provider),
     center: sanitizedCenter,
     zoom: sanitizeNumber(source.zoom, defaults.zoom),
     interactive: source.interactive ?? defaults.interactive,
     controls: source.controls ?? defaults.controls,
     renderWorldCopies: source.renderWorldCopies ?? defaults.renderWorldCopies,
-    cinema: mergeCinema(source.cinema)
+    cinema: mergeCinema(source.cinema),
+    style: sanitizeString(source.style ?? defaults.style ?? "raster-carto-dark", "raster-carto-dark"),
+    theme: mergeTheme(source.theme),
+    maptiler: mergeMaptiler(source.maptiler)
   };
 };
 
