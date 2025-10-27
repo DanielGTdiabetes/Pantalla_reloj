@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { UI_DEFAULTS, withConfigDefaults } from "../config/defaults";
-import { apiGet, apiPing, apiPut } from "../lib/api";
+import { API_BASE, apiGet, apiPing, apiPut } from "../lib/api";
 import { parseErr } from "../lib/errors";
 import type { AppConfig, UIScrollSettings } from "../types/config";
 
@@ -17,6 +17,8 @@ const directionOptions = [
 ];
 
 const speedPlaceholders = "slow / normal / fast o px/s";
+
+const API_UNREACHABLE = `No se pudo contactar con /api en ${API_BASE}`;
 
 const defaultScroll = (panel: string): UIScrollSettings => {
   return UI_DEFAULTS.text.scroll[panel] ?? { enabled: true, direction: "left", speed: "normal", gap_px: 48 };
@@ -71,7 +73,7 @@ export const ConfigPage: React.FC = () => {
       setForm(withConfigDefaults(cfg));
       setError(null);
     } catch {
-      setError("No se pudo leer /api/config");
+      setError(API_UNREACHABLE);
     } finally {
       setLoading(false);
     }
@@ -103,7 +105,7 @@ export const ConfigPage: React.FC = () => {
     }
     if (!apiOnline) {
       setLoading(false);
-      setError("No se pudo contactar con el backend (/api).");
+      setError(API_UNREACHABLE);
       return;
     }
     void loadConfig();
@@ -157,7 +159,7 @@ export const ConfigPage: React.FC = () => {
       setBanner({ kind: "error", text: message });
       if (message.includes("No se pudo contactar")) {
         setApiOnline(false);
-        setError("No se pudo contactar con el backend (/api).");
+        setError(API_UNREACHABLE);
       }
     } finally {
       setSaving(false);
@@ -620,7 +622,7 @@ export const ConfigPage: React.FC = () => {
       ? "Comprobando el estado del backend…"
       : apiOnline
       ? "Conectado al backend."
-      : "API offline. No se pudo contactar con el backend (/api).";
+      : `API offline. ${API_UNREACHABLE}.`;
 
   return (
     <div className="config-page">
@@ -655,6 +657,23 @@ export const ConfigPage: React.FC = () => {
             aria-live="polite"
           >
             {banner.text}
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="config-status config-status--error config-error-callout">
+            <p>{error}</p>
+            <button
+              type="button"
+              className="config-button"
+              onClick={() => {
+                setError(null);
+                void loadConfig();
+              }}
+              disabled={loading}
+            >
+              Reintentar
+            </button>
           </div>
         ) : null}
 

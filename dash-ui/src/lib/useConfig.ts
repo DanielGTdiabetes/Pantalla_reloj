@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 
 import { withConfigDefaults } from "../config/defaults";
 import type { AppConfig } from "../types/config";
-import { apiGet } from "./api";
+import { API_BASE, apiGet } from "./api";
+
+const API_UNREACHABLE = `No se pudo contactar con /api en ${API_BASE}`;
 
 export function useConfig() {
   const [data, setData] = useState<AppConfig | null>(null);
@@ -16,7 +18,7 @@ export function useConfig() {
       setData(withConfigDefaults(cfg));
       setError(null);
     } catch (e) {
-      setError("No se pudo leer /api/config");
+      setError(API_UNREACHABLE);
     } finally {
       setLoading(false);
     }

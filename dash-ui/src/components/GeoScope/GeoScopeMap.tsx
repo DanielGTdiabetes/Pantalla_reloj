@@ -31,77 +31,45 @@ export default function GeoScopeMap() {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const registryRef = useRef<LayerRegistry | null>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const mapReadyRef = useRef(false);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
 
-    const map = new maplibregl.Map({
-      container: host,
-      style: VOYAGER,
-      center: [0, 0],
-      zoom: 1,
-      interactive: false,
-      renderWorldCopies: true
-    });
+    const safeFit = (map: maplibregl.Map, hostElement: HTMLDivElement) => {
+      const rect = hostElement.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      console.log("[GeoScopeMap] safeFit -> host", { width, height });
 
-    const fitWorld = () => {
-      const aside = document.querySelector("aside") as HTMLElement | null;
-      const rect = host.getBoundingClientRect();
-
-      const W = Math.max(0, rect.width);
-      const H = Math.max(0, rect.height);
-
-      const basePad = 10;
-      const rightAside = aside ? aside.offsetWidth : 0;
-
-      const maxHorizontalPad = Math.max(0, W - 60);
-      const maxVerticalPad = Math.max(0, H - 60);
-
-      const padLeft = Math.min(basePad, maxHorizontalPad);
-      const padRight = Math.min(rightAside + basePad, Math.max(0, maxHorizontalPad - padLeft));
-      const padTop = Math.min(basePad, maxVerticalPad);
-      const padBottom = Math.min(basePad, Math.max(0, maxVerticalPad - padTop));
-
-      const tooSmall =
-        W < 120 ||
-        H < 120 ||
-        padLeft + padRight >= W ||
-        padTop + padBottom >= H;
-
-      const resetView = () => {
-        map.setPadding({ top: 0, left: 0, bottom: 0, right: 0 });
+      if (width < 120 || height < 120) {
+        map.setPadding(0);
         map.jumpTo({ center: [0, 0], zoom: 1 });
-      };
-
-      if (tooSmall) {
-        resetView();
+        console.log("[GeoScopeMap] safeFit fallback: host too small");
         return;
       }
 
-      map.setPadding({ top: padTop, left: padLeft, bottom: padBottom, right: padRight });
-
-      const world: [[number, number], [number, number]] = [
-        [-180, -60],
-        [180, 85]
-      ];
+      map.setPadding({ top: 8, left: 8, right: 8, bottom: 8 });
 
       try {
-        map.fitBounds(world, { animate: false });
+        map.fitBounds(
+          [
+            [-180, -60],
+            [180, 85]
+          ],
+          { animate: false }
+        );
       } catch (error) {
-        console.warn("[GeoScopeMap] fitBounds failed, falling back to jumpTo", error);
-        resetView();
+        console.warn("[GeoScopeMap] safeFit fitBounds failed, using jumpTo fallback", error);
+        map.setPadding(0);
+        map.jumpTo({ center: [0, 0], zoom: 1 });
+        console.log("[GeoScopeMap] safeFit fallback: fitBounds error");
       }
     };
 
-    const onStyleReady = (cb: () => void) => {
-      if (map.isStyleLoaded()) cb();
-      else map.once("load", cb);
-    };
-
-    onStyleReady(() => {
-      fitWorld();
-
+    const initLayers = (map: maplibregl.Map) => {
       const registry = new LayerRegistry(map);
       registryRef.current = registry;
 
@@ -120,22 +88,71 @@ export default function GeoScopeMap() {
           console.warn(`[GeoScopeMap] Failed to register layer ${layer.id}`, error);
         }
       }
+    };
 
-      resizeObserverRef.current = new ResizeObserver(() => {
-        map.resize();
-        fitWorld();
+    const ensureMap = () => {
+      if (mapRef.current || !hostRef.current) {
+        return;
+      }
+
+      const rect = hostRef.current.getBoundingClientRect();
+      const { width, height } = rect;
+      console.log("[GeoScopeMap] measuring host before map init", { width, height });
+
+      if (width <= 0 || height <= 0) {
+        console.log("[GeoScopeMap] host size is zero, delaying map creation");
+        return;
+      }
+
+      const map = new maplibregl.Map({
+        container: hostRef.current,
+        style: VOYAGER,
+        center: [0, 0],
+        zoom: 1,
+        interactive: false,
+        renderWorldCopies: true
       });
-      resizeObserverRef.current.observe(host);
+
+      mapRef.current = map;
+      console.log("[GeoScopeMap] map instance created");
+
+      map.on("load", () => {
+        console.log("[GeoScopeMap] map loaded");
+        mapReadyRef.current = true;
+        safeFit(map, hostRef.current!);
+        initLayers(map);
+      });
+    };
+
+    resizeObserverRef.current = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      const { width, height } = entry?.contentRect ?? host.getBoundingClientRect();
+      console.log("[GeoScopeMap] resize", { width, height });
+
+      if (!mapRef.current) {
+        ensureMap();
+        return;
+      }
+
+      mapRef.current.resize();
+      if (mapReadyRef.current && hostRef.current) {
+        safeFit(mapRef.current, hostRef.current);
+      }
     });
+
+    resizeObserverRef.current.observe(host);
+    ensureMap();
 
     return () => {
       resizeObserverRef.current?.disconnect();
       resizeObserverRef.current = null;
       registryRef.current?.destroy();
       registryRef.current = null;
-      map.remove();
+      mapRef.current?.remove();
+      mapRef.current = null;
+      mapReadyRef.current = false;
     };
   }, []);
 
-  return <div ref={hostRef} className="w-full h-full" />;
+  return <div ref={hostRef} className="w-full h-full block min-h-[240px]" />;
 }
