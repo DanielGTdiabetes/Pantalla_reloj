@@ -45,7 +45,7 @@ export default function GeoScopeMap() {
       console.log("[GeoScopeMap] safeFit -> host", { width, height });
 
       if (width < 120 || height < 120) {
-        map.setPadding(0);
+        map.setPadding({ top: 0, right: 0, bottom: 0, left: 0 });
         map.jumpTo({ center: [0, 0], zoom: 1 });
         console.log("[GeoScopeMap] safeFit fallback: host too small");
         return;
@@ -63,7 +63,7 @@ export default function GeoScopeMap() {
         );
       } catch (error) {
         console.warn("[GeoScopeMap] safeFit fitBounds failed, using jumpTo fallback", error);
-        map.setPadding(0);
+        map.setPadding({ top: 0, right: 0, bottom: 0, left: 0 });
         map.jumpTo({ center: [0, 0], zoom: 1 });
         console.log("[GeoScopeMap] safeFit fallback: fitBounds error");
       }
