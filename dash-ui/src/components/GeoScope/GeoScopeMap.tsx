@@ -25,18 +25,19 @@ const VOYAGER = {
 
 export default function GeoScopeMap() {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const mapFillRef = useRef<HTMLDivElement | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const registryRef = useRef<LayerRegistry | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const mapReadyRef = useRef(false);
 
   useEffect(() => {
-    const host = hostRef.current;
+    const host = mapFillRef.current;
     if (!host) return;
 
     const defaultView = { center: [0, 0] as maplibregl.LngLatLike, zoom: 2 };
     const worldBounds: maplibregl.LngLatBoundsLike = [
-      [-180, -60],
+      [-180, -85],
       [180, 85]
     ];
 
@@ -81,37 +82,35 @@ export default function GeoScopeMap() {
     };
 
     const ensureMap = () => {
-      if (mapRef.current || !hostRef.current) {
+      const container = mapFillRef.current;
+      if (mapRef.current || !container) {
         return;
       }
 
-      const { width, height } = hostRef.current.getBoundingClientRect();
+      const { width, height } = container.getBoundingClientRect();
       if (width <= 0 || height <= 0) {
         return;
       }
 
       const map = new maplibregl.Map({
-        container: hostRef.current,
+        container,
         style: VOYAGER,
         center: defaultView.center,
         zoom: defaultView.zoom,
+        pitch: 0,
+        bearing: 0,
         interactive: false,
         attributionControl: false,
-        renderWorldCopies: false
+        renderWorldCopies: false,
+        maxBounds: worldBounds
       });
 
       mapRef.current = map;
 
-      map.once("idle", () => {
-        if (hostRef.current) {
-          safeFit(map, hostRef.current);
-        }
-      });
-
       map.on("load", () => {
         mapReadyRef.current = true;
         map.setRenderWorldCopies(false);
-        safeFit(map, hostRef.current);
+        safeFit(map, mapFillRef.current);
         initLayers(map);
       });
     };
@@ -129,14 +128,15 @@ export default function GeoScopeMap() {
         return;
       }
 
-      if (mapReadyRef.current && hostRef.current) {
-        safeFit(mapRef.current, hostRef.current);
+      if (mapReadyRef.current && mapFillRef.current) {
+        safeFit(mapRef.current, mapFillRef.current);
       } else {
         mapRef.current.resize();
       }
     });
 
     resizeObserverRef.current.observe(host);
+    ensureMap();
 
     return () => {
       resizeObserverRef.current?.disconnect();
@@ -149,5 +149,9 @@ export default function GeoScopeMap() {
     };
   }, []);
 
-  return <div ref={hostRef} className="map-host" />;
+  return (
+    <div ref={hostRef} className="map-host">
+      <div ref={mapFillRef} className="map-fill" />
+    </div>
+  );
 }

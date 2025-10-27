@@ -1,4 +1,6 @@
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -29,16 +31,15 @@
   --danger: #fca5a5;
 }
 
+
 html,
 body,
 #root {
   height: 100%;
-  width: 100%;
-  margin: 0;
-  padding: 0;
 }
 
 body {
+  margin: 0;
   background: var(--background);
   color: var(--text-primary);
   overflow: hidden;
@@ -46,34 +47,41 @@ body {
 
 
 .app-shell {
+  min-height: 100svh;
   display: grid;
   grid-template-columns: 2fr 1fr;
-  grid-template-rows: 100%;
-  width: 100%;
-  height: 100%;
-  min-height: 100svh;
   gap: 0;
+  align-items: stretch;
+  justify-items: stretch;
 }
 
+
 .map-area {
+  position: relative;
   width: 100%;
   height: 100%;
   min-height: 240px;
-  position: relative;
   overflow: hidden;
 }
 
 .map-host {
+  position: relative;
   width: 100%;
   height: 100%;
-  position: relative;
 }
 
-.map-area .maplibregl-map,
-.map-area .maplibregl-canvas,
-.map-area .maplibregl-canvas-container {
+.map-host .map-fill {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.map-host .maplibregl-canvas-container,
+.map-host .maplibregl-canvas {
   width: 100% !important;
   height: 100% !important;
+  display: block;
 }
 
 .side-panel {
