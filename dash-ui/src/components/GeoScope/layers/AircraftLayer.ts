@@ -1,4 +1,4 @@
-import L from "leaflet";
+import maplibregl from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
 
 import type { Layer } from "./LayerRegistry";
@@ -14,40 +14,46 @@ export default class AircraftLayer implements Layer {
   public readonly zIndex = 40;
 
   private enabled: boolean;
-  private map?: L.Map;
-  private layer?: L.GeoJSON;
-  private paneName?: string;
+  private map?: maplibregl.Map;
+  private readonly sourceId = "geoscope-aircraft-source";
 
   constructor(options: AircraftLayerOptions = {}) {
     this.enabled = options.enabled ?? false;
   }
 
-  add(map: L.Map): void {
+  add(map: maplibregl.Map): void {
     this.map = map;
-    const paneName = this.ensurePane(map);
+    if (!map.getSource(this.sourceId)) {
+      map.addSource(this.sourceId, {
+        type: "geojson",
+        data: EMPTY
+      });
+    }
 
-    if (!this.layer) {
-      this.layer = L.geoJSON(EMPTY, {
-        pane: paneName,
-        pointToLayer: (_, latlng) =>
-          L.circleMarker(latlng, {
-            radius: 4,
-            color: "#f97316",
-            weight: 1,
-            fillColor: "#f97316",
-            fillOpacity: 0.8
-          })
+    if (!map.getLayer(this.id)) {
+      map.addLayer({
+        id: this.id,
+        type: "circle",
+        source: this.sourceId,
+        paint: {
+          "circle-radius": 4,
+          "circle-color": "#f97316",
+          "circle-stroke-color": "#111827",
+          "circle-stroke-width": 1
+        }
       });
     }
 
     this.applyVisibility();
   }
 
-  remove(map: L.Map): void {
-    if (this.layer && map.hasLayer(this.layer)) {
-      map.removeLayer(this.layer);
+  remove(map: maplibregl.Map): void {
+    if (map.getLayer(this.id)) {
+      map.removeLayer(this.id);
     }
-    this.removePane(map);
+    if (map.getSource(this.sourceId)) {
+      map.removeSource(this.sourceId);
+    }
     this.map = undefined;
   }
 
@@ -57,38 +63,14 @@ export default class AircraftLayer implements Layer {
   }
 
   destroy(): void {
-    this.layer?.remove();
-    this.layer = undefined;
     this.map = undefined;
-    this.paneName = undefined;
   }
 
   private applyVisibility() {
-    if (!this.map || !this.layer) return;
-    const shouldShow = this.enabled;
-    if (shouldShow && !this.map.hasLayer(this.layer)) {
-      this.layer.addTo(this.map);
-    } else if (!shouldShow && this.map.hasLayer(this.layer)) {
-      this.map.removeLayer(this.layer);
+    if (!this.map) return;
+    const visibility = this.enabled ? "visible" : "none";
+    if (this.map.getLayer(this.id)) {
+      this.map.setLayoutProperty(this.id, "visibility", visibility);
     }
-  }
-
-  private ensurePane(map: L.Map) {
-    if (!this.paneName) {
-      const paneName = `${this.id}-pane`;
-      const pane = map.getPane(paneName) ?? map.createPane(paneName);
-      pane.style.zIndex = String(300 + this.zIndex);
-      this.paneName = paneName;
-    }
-    return this.paneName;
-  }
-
-  private removePane(map: L.Map) {
-    if (!this.paneName) return;
-    const pane = map.getPane(this.paneName);
-    if (pane?.parentElement) {
-      pane.parentElement.removeChild(pane);
-    }
-    this.paneName = undefined;
   }
 }

@@ -1,19 +1,19 @@
-import type { Map as LeafletMap } from "leaflet";
+import maplibregl from "maplibre-gl";
 
 export interface Layer {
   id: string;
   zIndex: number;
-  add(map: LeafletMap): void;
-  remove(map: LeafletMap): void;
+  add(map: maplibregl.Map): void;
+  remove(map: maplibregl.Map): void;
   setEnabled?(on: boolean): void;
   destroy?(): void;
 }
 
 export class LayerRegistry {
-  private map: LeafletMap;
+  private map: maplibregl.Map;
   private layers: Layer[] = [];
 
-  constructor(map: LeafletMap) {
+  constructor(map: maplibregl.Map) {
     this.map = map;
   }
 
