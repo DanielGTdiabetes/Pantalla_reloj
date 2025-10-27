@@ -536,12 +536,16 @@ else
   SUMMARY+=('[install] backend /api/health no responde')
 fi
 
-log_info "Ejecutando verificador post-deploy"
-if ! "$REPO_ROOT/scripts/verify_api.sh"; then
-  log_error "La verificación de Nginx/API falló"
-  exit 1
+if command -v nginx >/dev/null 2>&1; then
+  log_info "Ejecutando verificador post-deploy"
+  if ! "$REPO_ROOT/scripts/verify_api.sh"; then
+    log_error "La verificación de Nginx/API falló"
+    exit 1
+  fi
+  log_info "Verificador post-deploy completado"
+else
+  log_warn "nginx no está instalado; se omite el verificador post-deploy"
 fi
-log_info "Verificador post-deploy completado"
 
 if DISPLAY=:0 XAUTHORITY=/home/${USER_NAME}/.Xauthority wmctrl -lx | grep -q 'chromium-browser\.pantalla-kiosk'; then
   log_ok "Ventana de Chromium detectada"
