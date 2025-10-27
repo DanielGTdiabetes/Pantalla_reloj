@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { UI_DEFAULTS, withConfigDefaults } from "../config/defaults";
-import { apiGet, apiPing, apiPut } from "../lib/api";
-import { parseErr } from "../lib/errors";
+import { apiGet, apiPing, apiPut, API_BASE } from "../lib/api";
+import { API_ERROR_MESSAGE, parseErr } from "../lib/errors";
 import type { AppConfig, UIScrollSettings } from "../types/config";
 
 const booleanOptions = [
@@ -65,13 +65,17 @@ export const ConfigPage: React.FC = () => {
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
 
   const loadConfig = useCallback(async () => {
+    setLoading(true);
     try {
-      setLoading(true);
       const cfg = await apiGet<AppConfig>("/config");
       setForm(withConfigDefaults(cfg));
       setError(null);
-    } catch {
-      setError("No se pudo leer /api/config");
+      setBanner((prev) => (prev?.kind === "error" ? null : prev));
+      setApiOnline(true);
+    } catch (err) {
+      setApiOnline(false);
+      setError(API_ERROR_MESSAGE);
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -103,19 +107,11 @@ export const ConfigPage: React.FC = () => {
     }
     if (!apiOnline) {
       setLoading(false);
-      setError("No se pudo contactar con el backend (/api).");
+      setError(API_ERROR_MESSAGE);
       return;
     }
-    void loadConfig();
+    void loadConfig().catch(() => undefined);
   }, [apiOnline, loadConfig]);
-
-  useEffect(() => {
-    if (error) {
-      setBanner({ kind: "error", text: error });
-    } else if (banner?.kind === "error") {
-      setBanner(null);
-    }
-  }, [error, banner]);
 
   const update = useCallback(<K extends keyof AppConfig>(section: K, value: AppConfig[K]) => {
     setForm((prev) => ({ ...prev, [section]: value }));
@@ -143,6 +139,13 @@ export const ConfigPage: React.FC = () => {
     [form.ui, update]
   );
 
+  const handleRetry = useCallback(() => {
+    setBanner(null);
+    setError(null);
+    setApiOnline(null);
+    void loadConfig().catch(() => undefined);
+  }, [loadConfig]);
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
@@ -157,7 +160,7 @@ export const ConfigPage: React.FC = () => {
       setBanner({ kind: "error", text: message });
       if (message.includes("No se pudo contactar")) {
         setApiOnline(false);
-        setError("No se pudo contactar con el backend (/api).");
+        setError(API_ERROR_MESSAGE);
       }
     } finally {
       setSaving(false);
@@ -620,7 +623,7 @@ export const ConfigPage: React.FC = () => {
       ? "Comprobando el estado del backend…"
       : apiOnline
       ? "Conectado al backend."
-      : "API offline. No se pudo contactar con el backend (/api).";
+      : `API offline. ${API_ERROR_MESSAGE}`;
 
   return (
     <div className="config-page">
@@ -655,6 +658,20 @@ export const ConfigPage: React.FC = () => {
             aria-live="polite"
           >
             {banner.text}
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="config-status config-status--error" role="alert">
+            <p>No se pudo contactar con /api en {API_BASE}.</p>
+            <button
+              type="button"
+              className="config-button"
+              onClick={handleRetry}
+              disabled={loading}
+            >
+              Reintentar
+            </button>
           </div>
         ) : null}
 

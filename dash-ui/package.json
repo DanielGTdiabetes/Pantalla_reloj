@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=18.18 <21",
-    "npm": ">=9 <11"
+    "node": ">=18",
+    "npm": ">=9"
   },
   "scripts": {
+    "postinstall": "npm run --silent fix-lock || true",
+    "fix-lock": "node ./scripts/fix-lock.js",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
