@@ -235,7 +235,7 @@ const buildRuntimePreferences = (
 
 const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
   try {
-    const config = await apiGet<AppConfig>("/config");
+    const config = await apiGet<AppConfig | undefined>("/api/config");
     const merged = withConfigDefaults(config);
     const mapSettings = merged.ui.map;
     const styleResult = await loadMapStyle(mapSettings);
