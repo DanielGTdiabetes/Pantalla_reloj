@@ -77,6 +77,21 @@ export type UIMapCinemaSettings = {
   bandTransition_sec: number;
 };
 
+export type UIMapThemeSettings = {
+  sea?: string | null;
+  land?: string | null;
+  label?: string | null;
+  contrast?: number | null;
+  tint?: string | null;
+};
+
+export type UIMapProviderMapTiler = {
+  key?: string | null;
+  styleUrlDark?: string | null;
+  styleUrlLight?: string | null;
+  styleUrlBright?: string | null;
+};
+
 export type UIMapSettings = {
   engine?: string;
   provider: string;
@@ -86,6 +101,9 @@ export type UIMapSettings = {
   controls: boolean;
   renderWorldCopies?: boolean;
   cinema?: UIMapCinemaSettings;
+  style?: string;
+  theme?: UIMapThemeSettings;
+  maptiler?: UIMapProviderMapTiler;
 };
 
 export type UISettings = {
