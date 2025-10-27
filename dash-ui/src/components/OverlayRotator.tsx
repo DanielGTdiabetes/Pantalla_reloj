@@ -111,10 +111,10 @@ export const OverlayRotator: React.FC = () => {
     const fetchAll = async () => {
       try {
         const [weather, news, astronomy, calendar] = await Promise.all([
-          apiGet<Record<string, unknown>>("/weather").catch(() => ({})),
-          apiGet<Record<string, unknown>>("/news").catch(() => ({})),
-          apiGet<Record<string, unknown>>("/astronomy").catch(() => ({})),
-          apiGet<Record<string, unknown>>("/calendar").catch(() => ({}))
+          apiGet<Record<string, unknown>>("/api/weather").catch(() => ({})),
+          apiGet<Record<string, unknown>>("/api/news").catch(() => ({})),
+          apiGet<Record<string, unknown>>("/api/astronomy").catch(() => ({})),
+          apiGet<Record<string, unknown>>("/api/calendar").catch(() => ({}))
         ]);
 
         if (mounted) {

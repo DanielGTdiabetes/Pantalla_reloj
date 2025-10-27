@@ -2,8 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { UI_DEFAULTS, withConfigDefaults } from "../config/defaults";
-import { API_BASE, apiGet, apiPing, apiPut } from "../lib/api";
-import { parseErr } from "../lib/errors";
+import { API_ORIGIN, getConfig, getHealth, saveConfig } from "../lib/api";
 import type { AppConfig, UIScrollSettings } from "../types/config";
 
 const booleanOptions = [
@@ -18,7 +17,7 @@ const directionOptions = [
 
 const speedPlaceholders = "slow / normal / fast o px/s";
 
-const API_UNREACHABLE = `No se pudo contactar con /api en ${API_BASE}`;
+const API_ERROR_MESSAGE = `No se pudo conectar con el backend en ${API_ORIGIN}`;
 
 const defaultScroll = (panel: string): UIScrollSettings => {
   return UI_DEFAULTS.text.scroll[panel] ?? { enabled: true, direction: "left", speed: "normal", gap_px: 48 };
@@ -62,62 +61,33 @@ export const ConfigPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ConfigTab>("wifi");
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState<{ kind: "success" | "error"; text: string } | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [apiOnline, setApiOnline] = useState<boolean | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const loadConfig = useCallback(async () => {
+  const refreshConfig = useCallback(async () => {
+    const cfg = await getConfig();
+    setForm(withConfigDefaults((cfg ?? {}) as AppConfig));
+  }, []);
+
+  const initialize = useCallback(async () => {
+    setStatus("loading");
+    setErrorMessage(null);
+    setBanner(null);
     try {
-      setLoading(true);
-      const cfg = await apiGet<AppConfig>("/config");
-      setForm(withConfigDefaults(cfg));
-      setError(null);
-    } catch {
-      setError(API_UNREACHABLE);
-    } finally {
-      setLoading(false);
+      await getHealth();
+      await refreshConfig();
+      setStatus("ready");
+    } catch (error) {
+      console.error("[ConfigPage] Backend unreachable", error);
+      setErrorMessage(API_ERROR_MESSAGE);
+      setStatus("error");
+      setBanner({ kind: "error", text: API_ERROR_MESSAGE });
     }
-  }, []);
+  }, [refreshConfig]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    apiPing()
-      .then((ok) => {
-        if (!cancelled) {
-          setApiOnline(ok);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setApiOnline(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (apiOnline === null) {
-      return;
-    }
-    if (!apiOnline) {
-      setLoading(false);
-      setError(API_UNREACHABLE);
-      return;
-    }
-    void loadConfig();
-  }, [apiOnline, loadConfig]);
-
-  useEffect(() => {
-    if (error) {
-      setBanner({ kind: "error", text: error });
-    } else if (banner?.kind === "error") {
-      setBanner(null);
-    }
-  }, [error, banner]);
+    void initialize();
+  }, [initialize]);
 
   const update = useCallback(<K extends keyof AppConfig>(section: K, value: AppConfig[K]) => {
     setForm((prev) => ({ ...prev, [section]: value }));
@@ -147,26 +117,31 @@ export const ConfigPage: React.FC = () => {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (status !== "ready") {
+      return;
+    }
     setSaving(true);
-    setBanner(null);
     try {
-      await apiPut("/config", form);
-      await loadConfig();
-      setApiOnline(true);
-      setBanner({ kind: "success", text: "Configuración guardada correctamente" });
-    } catch (err) {
-      const message = parseErr(err);
-      setBanner({ kind: "error", text: message });
-      if (message.includes("No se pudo contactar")) {
-        setApiOnline(false);
-        setError(API_UNREACHABLE);
+      await saveConfig(form);
+      setBanner({ kind: "success", text: "Guardado" });
+      await refreshConfig();
+    } catch (error) {
+      console.error("[ConfigPage] Failed to save configuration", error);
+      setBanner({ kind: "error", text: "Error al guardar" });
+      try {
+        await getHealth();
+      } catch {
+        setErrorMessage(API_ERROR_MESSAGE);
+        setStatus("error");
       }
     } finally {
       setSaving(false);
     }
   };
 
-  const busy = saving || loading;
+  const isReady = status === "ready";
+  const disableInputs = !isReady || saving;
+  const showSkeleton = status === "loading";
 
   const renderWiFiTab = () => (
     <div className="config-card">
@@ -614,15 +589,23 @@ export const ConfigPage: React.FC = () => {
   };
 
   const apiStatusLabel =
-    apiOnline === null ? "API checking" : apiOnline ? "API online" : "API offline";
+    status === "loading" ? "API checking" : status === "ready" ? "API online" : "API offline";
   const apiStatusClass =
-    apiOnline === null ? " is-pending" : apiOnline ? " is-online" : " is-offline";
+    status === "loading" ? " is-pending" : status === "ready" ? " is-online" : " is-offline";
   const apiHint =
-    apiOnline === null
+    status === "loading"
       ? "Comprobando el estado del backend…"
-      : apiOnline
-      ? "Conectado al backend."
-      : `API offline. ${API_UNREACHABLE}.`;
+      : status === "ready"
+      ? `Conectado al backend en ${API_ORIGIN}.`
+      : `API offline. ${API_ERROR_MESSAGE}`;
+
+  const renderSkeleton = () => (
+    <div className="config-skeleton" aria-hidden="true">
+      {[0, 1, 2].map((index) => (
+        <div key={index} className="config-skeleton__block" />
+      ))}
+    </div>
+  );
 
   return (
     <div className="config-page">
@@ -636,20 +619,6 @@ export const ConfigPage: React.FC = () => {
           <p>Gestiona la pantalla desde una red segura. Todas las opciones residen en esta consola.</p>
         </header>
 
-        <div className="config-tabs">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={`config-tab${activeTab === tab.id ? " is-active" : ""}`}
-              onClick={() => setActiveTab(tab.id)}
-              disabled={busy}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
         {banner ? (
           <div
             className={`config-status${banner.kind === "error" ? " config-status--error" : " config-status--success"}`}
@@ -660,44 +629,55 @@ export const ConfigPage: React.FC = () => {
           </div>
         ) : null}
 
-        {error ? (
+        {status === "error" && errorMessage ? (
           <div className="config-status config-status--error config-error-callout">
-            <p>{error}</p>
+            <p>{errorMessage}</p>
             <button
               type="button"
               className="config-button"
               onClick={() => {
-                setError(null);
-                void loadConfig();
+                void initialize();
               }}
-              disabled={loading}
+              disabled={status === "loading"}
             >
               Reintentar
             </button>
           </div>
         ) : null}
 
-        {renderActiveTab()}
-
-        <div className="config-actions">
-          <button
-            type="button"
-            className="config-button"
-            onClick={() => navigate("/")}
-            disabled={busy}
-          >
-            Volver al panel
-          </button>
-          <button className="config-button primary" type="submit" disabled={busy}>
-            {saving ? "Guardando…" : "Guardar cambios"}
-          </button>
-        </div>
-
-        {loading ? (
-          <div className="config-status" role="status" aria-live="polite">
-            Sincronizando…
+        <fieldset className="config-form-fields" disabled={disableInputs}>
+          <div className="config-tabs">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                className={`config-tab${activeTab === tab.id ? " is-active" : ""}`}
+                onClick={() => setActiveTab(tab.id)}
+                disabled={disableInputs}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
-        ) : null}
+
+          {showSkeleton ? renderSkeleton() : renderActiveTab()}
+
+          <div className="config-actions">
+            <button
+              type="button"
+              className="config-button"
+              onClick={() => navigate("/")}
+              disabled={disableInputs}
+            >
+              Volver al panel
+            </button>
+            <button className="config-button primary" type="submit" disabled={disableInputs}>
+              {saving ? "Guardando…" : "Guardar cambios"}
+            </button>
+          </div>
+        </fieldset>
+
+        <footer className="config-page__footer">Backend: {API_ORIGIN}</footer>
       </form>
     </div>
   );
