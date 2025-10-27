@@ -65,101 +65,81 @@ const setPaintProperty = (
   }
 };
 
+const WATER_PATTERN = /(background|ocean|sea|water)/i;
+const LAND_PATTERN = /(land|landcover|park|continent)/i;
+const LABEL_PATTERN = /(label|place|road-name|poi)/i;
+
 const applyVectorTheme = (map: maplibregl.Map, theme: UIMapThemeSettings) => {
+  const style = map.getStyle();
+  const layers = style?.layers ?? [];
+  if (!layers.length) {
+    return;
+  }
+
   const sea = theme.sea ?? undefined;
   const land = theme.land ?? undefined;
   const label = theme.label ?? undefined;
-  const contrast = typeof theme.contrast === "number" ? theme.contrast : undefined;
+  const contrast = typeof theme.contrast === "number" ? theme.contrast : 0;
 
-  if (sea) {
-    const waterFillLayers = [
-      "water",
-      "water-depth",
-      "water-pattern",
-      "water-shadow",
-      "ocean",
-      "sea",
-      "lake",
-      "reservoir",
-      "river",
-      "river-canal"
-    ];
-    const waterLineLayers = ["waterway", "waterway-other", "water-boundary"];
+  const fillOpacity = clamp(0.65 + contrast * 0.35, 0.3, 1);
+  const lineOpacity = clamp(0.55 + contrast * 0.3, 0.2, 1);
+  const backgroundOpacity = clamp(0.7 + contrast * 0.25, 0.4, 1);
+  const labelOpacity = clamp(0.85 + contrast * 0.15, 0.5, 1);
+  const haloOpacity = clamp(0.5 - contrast * 0.2, 0.25, 0.6);
 
-    // TODO: extend this list if the upstream style adds or renames hydro layers.
-    for (const layerId of waterFillLayers) {
-      setPaintProperty(map, layerId, "fill-color", sea);
+  for (const layer of layers) {
+    const id = layer.id;
+    if (!id) {
+      continue;
     }
-    for (const layerId of waterLineLayers) {
-      setPaintProperty(map, layerId, "line-color", sea);
+
+    if (sea && WATER_PATTERN.test(id)) {
+      if (layer.type === "background") {
+        setPaintProperty(map, id, "background-color", sea);
+        setPaintProperty(map, id, "background-opacity", backgroundOpacity);
+      } else if (layer.type === "fill" || layer.type === "fill-extrusion") {
+        setPaintProperty(map, id, "fill-color", sea);
+        setPaintProperty(map, id, "fill-opacity", fillOpacity);
+      } else if (layer.type === "line") {
+        setPaintProperty(map, id, "line-color", sea);
+        setPaintProperty(map, id, "line-opacity", lineOpacity);
+      }
     }
-  }
 
-  if (land) {
-    const landFillLayers = [
-      "background",
-      "land",
-      "landcover",
-      "landcover-ice",
-      "landcover-wood",
-      "landuse",
-      "landuse-residential",
-      "park",
-      "park-outline",
-      "national-park"
-    ];
-
-    // TODO: keep layer mappings in sync with the active base style revisions.
-    for (const layerId of landFillLayers) {
-      setPaintProperty(map, layerId, layerId === "background" ? "background-color" : "fill-color", land);
+    if (land && LAND_PATTERN.test(id)) {
+      if (layer.type === "background") {
+        setPaintProperty(map, id, "background-color", land);
+        setPaintProperty(map, id, "background-opacity", backgroundOpacity);
+      } else if (layer.type === "fill" || layer.type === "fill-extrusion") {
+        setPaintProperty(map, id, "fill-color", land);
+        setPaintProperty(map, id, "fill-opacity", fillOpacity);
+      } else if (layer.type === "line") {
+        setPaintProperty(map, id, "line-color", land);
+        setPaintProperty(map, id, "line-opacity", lineOpacity);
+      }
     }
-  }
 
-  if (label) {
-    const labelLayers = [
-      "place-label",
-      "settlement-major-label",
-      "settlement-minor-label",
-      "state-label",
-      "country-label",
-      "marine-label",
-      "airport-label",
-      "road-label",
-      "road-number-shield",
-      "poi-label",
-      "natural-point-label",
-      "water-label"
-    ];
-
-    // TODO: widen coverage for specialised label layers when styles evolve.
-    for (const layerId of labelLayers) {
-      setPaintProperty(map, layerId, "text-color", label);
-      setPaintProperty(map, layerId, "icon-color", label);
-    }
-  }
-
-  if (contrast !== undefined) {
-    const opacity = clamp(0.7 + contrast * 0.6, 0.2, 1);
-    const landOpacityLayers = [
-      "landcover",
-      "landcover-wood",
-      "landuse",
-      "park",
-      "national-park"
-    ];
-    for (const layerId of landOpacityLayers) {
-      setPaintProperty(map, layerId, "fill-opacity", opacity);
+    if (label && LABEL_PATTERN.test(id) && layer.type === "symbol") {
+      setPaintProperty(map, id, "text-color", label);
+      setPaintProperty(map, id, "text-opacity", labelOpacity);
+      setPaintProperty(map, id, "text-halo-color", `rgba(0, 0, 0, ${haloOpacity.toFixed(2)})`);
+      setPaintProperty(map, id, "icon-color", label);
+      setPaintProperty(map, id, "icon-opacity", labelOpacity);
     }
   }
 };
 
 const applyRasterTheme = (map: maplibregl.Map, theme: UIMapThemeSettings) => {
-  const contrast = typeof theme.contrast === "number" ? clamp(theme.contrast, -0.5, 0.5) : 0;
+  const contrast = typeof theme.contrast === "number" ? theme.contrast : 0;
+  const saturationBoost = clamp(0.25 + contrast * 0.25, -1, 1);
+  const contrastBoost = clamp(0.12 + contrast * 0.2, -1, 1);
+  const brightnessMin = clamp(0.05 - contrast * 0.05, 0, 1);
+  const brightnessMax = clamp(1.2 + contrast * 0.2, 0.5, 2);
 
-  setPaintProperty(map, "carto", "raster-contrast", contrast);
-  setPaintProperty(map, "carto", "raster-saturation", 0);
-  setPaintProperty(map, "carto", "raster-brightness-min", clamp(0.6 - contrast * 0.4, 0, 1.5));
-  setPaintProperty(map, "carto", "raster-brightness-max", clamp(1.3 + contrast * 0.4, 0.5, 2));
+  setPaintProperty(map, "carto", "raster-saturation", saturationBoost);
+  setPaintProperty(map, "carto", "raster-contrast", contrastBoost);
+  setPaintProperty(map, "carto", "raster-brightness-min", brightnessMin);
+  setPaintProperty(map, "carto", "raster-brightness-max", brightnessMax);
 };
 
 const applyThemeToMap = (
@@ -180,10 +160,49 @@ const lerp = (start: number, end: number, t: number) => start + (end - start) * 
 const easeInOut = (t: number) =>
   t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 
-const cloneCinema = (cinema: UIMapCinemaSettings): UIMapCinemaSettings => ({
-  ...cinema,
-  bands: cinema.bands.map((band) => ({ ...band }))
-});
+const sanitizeBand = (
+  band: UIMapCinemaBand,
+  fallback: UIMapCinemaBand
+): UIMapCinemaBand => {
+  const safeFallback = fallback ?? FALLBACK_CINEMA.bands[0];
+  const zoom = Number.isFinite(band.zoom) ? band.zoom : safeFallback.zoom;
+  const minZoomCandidate = Number.isFinite(band.minZoom) ? band.minZoom : safeFallback.minZoom;
+  const minZoom = minZoomCandidate <= zoom ? minZoomCandidate : zoom;
+
+  return {
+    lat: Number.isFinite(band.lat) ? band.lat : safeFallback.lat,
+    zoom,
+    pitch: Number.isFinite(band.pitch) ? band.pitch : safeFallback.pitch,
+    minZoom,
+    duration_sec: Number.isFinite(band.duration_sec)
+      ? Math.max(band.duration_sec, 0.1)
+      : Math.max(safeFallback.duration_sec, 0.1)
+  };
+};
+
+const cloneCinema = (cinema: UIMapCinemaSettings): UIMapCinemaSettings => {
+  const fallbackBands = FALLBACK_CINEMA.bands;
+  const bands = cinema.bands.map((band, index) =>
+    sanitizeBand({ ...band }, fallbackBands[index] ?? fallbackBands[0] ?? band)
+  );
+
+  const fallbackPan = FALLBACK_CINEMA.panLngDegPerSec;
+  const fallbackTransition = FALLBACK_CINEMA.bandTransition_sec;
+
+  const panLngDegPerSec = Number.isFinite(cinema.panLngDegPerSec)
+    ? Math.max(cinema.panLngDegPerSec, 0)
+    : fallbackPan;
+  const bandTransition_sec = Number.isFinite(cinema.bandTransition_sec)
+    ? Math.max(cinema.bandTransition_sec, 0)
+    : fallbackTransition;
+
+  return {
+    ...cinema,
+    panLngDegPerSec,
+    bandTransition_sec,
+    bands
+  };
+};
 
 type TransitionState = {
   from: UIMapCinemaBand;
@@ -272,14 +291,18 @@ export default function GeoScopeMap() {
   const [tintColor, setTintColor] = useState<string | null>(null);
 
   const applyBandInstant = (band: UIMapCinemaBand, map?: maplibregl.Map | null) => {
-    viewStateRef.current.lat = band.lat;
-    viewStateRef.current.zoom = band.zoom;
-    viewStateRef.current.pitch = band.pitch;
-    currentMinZoomRef.current = band.minZoom;
+    const zoom = Number.isFinite(band.zoom) ? band.zoom : viewStateRef.current.zoom;
+    const minZoom = Math.min(Number.isFinite(band.minZoom) ? band.minZoom : zoom, zoom);
+
+    viewStateRef.current.lat = Number.isFinite(band.lat) ? band.lat : viewStateRef.current.lat;
+    viewStateRef.current.zoom = zoom;
+    viewStateRef.current.pitch = Number.isFinite(band.pitch) ? band.pitch : viewStateRef.current.pitch;
+    viewStateRef.current.bearing = 0;
+    currentMinZoomRef.current = minZoom;
 
     const target = map ?? mapRef.current;
     if (target) {
-      target.setMinZoom(band.minZoom);
+      target.setMinZoom(minZoom);
     }
   };
 
@@ -338,6 +361,7 @@ export default function GeoScopeMap() {
     viewStateRef.current.lat = lerp(state.from.lat, state.to.lat, eased);
     viewStateRef.current.zoom = lerp(state.from.zoom, state.to.zoom, eased);
     viewStateRef.current.pitch = lerp(state.from.pitch, state.to.pitch, eased);
+    viewStateRef.current.bearing = 0;
 
     if (progress >= 1) {
       finishTransition(mapRef.current);
@@ -382,11 +406,16 @@ export default function GeoScopeMap() {
 
   const updateMapView = (map: maplibregl.Map) => {
     const { lng, lat, zoom, pitch, bearing } = viewStateRef.current;
+    const zoomValue = Number.isFinite(zoom) ? zoom : DEFAULT_VIEW.zoom;
+    const pitchValue = Number.isFinite(pitch) ? pitch : DEFAULT_VIEW.pitch;
+    const bearingValue = Number.isFinite(bearing) ? bearing : 0;
+    const centerLng = Number.isFinite(lng) ? lng : DEFAULT_VIEW.lng;
+    const centerLat = Number.isFinite(lat) ? lat : DEFAULT_VIEW.lat;
     map.jumpTo({
-      center: [lng, lat],
-      zoom,
-      pitch,
-      bearing
+      center: [centerLng, centerLat],
+      zoom: zoomValue,
+      pitch: pitchValue,
+      bearing: bearingValue
     });
   };
 
@@ -584,7 +613,7 @@ export default function GeoScopeMap() {
       bandElapsedRef.current = 0;
       bandTransitionRef.current = null;
 
-      viewStateRef.current.lng = runtime.initialLng;
+      viewStateRef.current.lng = normalizeLng(runtime.initialLng);
       applyBandInstant(firstBand, null);
       viewStateRef.current.pitch = firstBand.pitch;
       viewStateRef.current.bearing = 0;

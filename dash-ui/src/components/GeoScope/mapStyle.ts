@@ -3,8 +3,10 @@ import type { StyleSpecification } from "maplibre-gl";
 import type { UIMapSettings } from "../../types/config";
 
 const CARTO_ATTRIBUTION = "© OpenStreetMap contributors, © CARTO";
-const CARTO_DARK_TILES = "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png";
-const CARTO_LIGHT_TILES = "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png";
+const CARTO_DARK_TILES =
+  "https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png";
+const CARTO_LIGHT_TILES =
+  "https://basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}.png";
 
 export type MapStyleVariant = "dark" | "light" | "bright";
 
