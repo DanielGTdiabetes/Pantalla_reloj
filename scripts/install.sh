@@ -77,6 +77,7 @@ UDEV_RULE=/etc/udev/rules.d/70-pantalla-render.rules
 APP_ID=org.gnome.Epiphany.WebApp_PantallaReloj
 PROFILE_DIR_SRC="${REPO_ROOT}/var/lib/pantalla-reloj/state/${APP_ID}"
 PROFILE_DIR_DST="${STATE_RUNTIME}/${APP_ID}"
+NGINX_TEMPLATE="${REPO_ROOT}/deploy/nginx/pantalla-reloj.conf"
 
 install -d -m 0755 "$REPO_ROOT/home/dani/.local/share/applications" >/dev/null 2>&1 || true
 
@@ -290,33 +291,6 @@ chown -R "$USER_NAME:$USER_NAME" "$PANTALLA_PREFIX" "$STATE_DIR" "$LOG_DIR" "$KI
 touch "$LOG_DIR/backend.log"
 chown "$USER_NAME:$USER_NAME" "$LOG_DIR/backend.log"
 
-write_pantalla_vhost() {
-  local target="$1"
-  tee "$target" >/dev/null <<'NG'
-server {
-  listen 80;
-  listen [::]:80;
-  server_name _;
-
-  root /var/www/html;
-  index index.html;
-
-  location /api/ {
-    proxy_pass http://127.0.0.1:8081/;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-  }
-
-  location / {
-    try_files $uri /index.html;
-  }
-}
-NG
-}
-
 configure_nginx() {
   set -euxo pipefail
   log_info "Configurando Nginx"
@@ -332,7 +306,12 @@ configure_nginx() {
 
   mkdir -p "$sa" "$se"
 
-  write_pantalla_vhost "$vhost"
+  if [[ ! -f "$NGINX_TEMPLATE" ]]; then
+    log_error "No se encontró la plantilla de Nginx en: $NGINX_TEMPLATE"
+    exit 1
+  fi
+
+  install -D -m 0644 "$NGINX_TEMPLATE" "$vhost"
 
   ln -sfn "$vhost" "$se/pantalla-reloj.conf"
 
@@ -363,7 +342,7 @@ configure_nginx() {
       if grep -Eq 'listen[[:space:]]+80[[:space:]]+default_server;' "$vhost" || \
          grep -Eq 'listen[[:space:]]+\[::\]:80[[:space:]]+default_server;' "$vhost"; then
         log_warn "Nuestro vhost contenía default_server; reescribiéndolo sin el flag."
-        write_pantalla_vhost "$vhost"
+        install -D -m 0644 "$NGINX_TEMPLATE" "$vhost"
         ln -sfn "$vhost" "$se/pantalla-reloj.conf"
       fi
 
@@ -415,6 +394,13 @@ configure_nginx() {
   else
     log_info "Backend OK (HTTP 200)"
   fi
+
+  log_info "Ejecutando verificador post-deploy"
+  if ! "$REPO_ROOT/scripts/verify_api.sh"; then
+    log_error "La verificación de Nginx/API falló"
+    exit 1
+  fi
+  log_info "Verificador post-deploy completado"
 }
 
 configure_nginx
