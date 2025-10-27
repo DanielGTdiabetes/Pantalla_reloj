@@ -40,11 +40,11 @@ const CINEMA_BANDS_PRESET: readonly UIMapCinemaBand[] = [
 ];
 
 const DEFAULT_MAP_THEME: UIMapThemeSettings = {
-  sea: "#0b2a3a",
-  land: "#202327",
-  label: "#aeb8c2",
+  sea: "#0b3756",
+  land: "#20262c",
+  label: "#d6e7ff",
   contrast: 0.15,
-  tint: null,
+  tint: "rgba(0,170,255,0.06)",
 };
 
 const DEFAULT_MAPTILER: UIMapProviderMapTiler = {
