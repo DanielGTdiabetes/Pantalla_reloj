@@ -395,12 +395,6 @@ configure_nginx() {
     log_info "Backend OK (HTTP 200)"
   fi
 
-  log_info "Ejecutando verificador post-deploy"
-  if ! "$REPO_ROOT/scripts/verify_api.sh"; then
-    log_error "La verificación de Nginx/API falló"
-    exit 1
-  fi
-  log_info "Verificador post-deploy completado"
 }
 
 configure_nginx
@@ -541,6 +535,13 @@ else
   log_warn "Backend /api/health not responding yet"
   SUMMARY+=('[install] backend /api/health no responde')
 fi
+
+log_info "Ejecutando verificador post-deploy"
+if ! "$REPO_ROOT/scripts/verify_api.sh"; then
+  log_error "La verificación de Nginx/API falló"
+  exit 1
+fi
+log_info "Verificador post-deploy completado"
 
 if DISPLAY=:0 XAUTHORITY=/home/${USER_NAME}/.Xauthority wmctrl -lx | grep -q 'chromium-browser\.pantalla-kiosk'; then
   log_ok "Ventana de Chromium detectada"
