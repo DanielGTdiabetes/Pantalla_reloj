@@ -62,12 +62,30 @@ export type UIRotationSettings = {
   panels: string[];
 };
 
+export type UIMapCinemaBand = {
+  lat: number;
+  zoom: number;
+  pitch: number;
+  minZoom: number;
+  duration_sec: number;
+};
+
+export type UIMapCinemaSettings = {
+  enabled: boolean;
+  panLngDegPerSec: number;
+  bands: UIMapCinemaBand[];
+  bandTransition_sec: number;
+};
+
 export type UIMapSettings = {
+  engine?: string;
   provider: string;
   center: [number, number];
   zoom: number;
   interactive: boolean;
   controls: boolean;
+  renderWorldCopies?: boolean;
+  cinema?: UIMapCinemaSettings;
 };
 
 export type UISettings = {
