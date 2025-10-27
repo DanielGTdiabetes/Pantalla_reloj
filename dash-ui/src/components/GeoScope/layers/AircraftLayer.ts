@@ -57,7 +57,6 @@ export default class AircraftLayer implements Layer {
   }
 
   destroy(): void {
-    this.layer?.remove();
     this.layer = undefined;
     this.map = undefined;
     this.paneName = undefined;
