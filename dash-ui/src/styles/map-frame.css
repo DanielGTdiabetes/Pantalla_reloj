@@ -1,0 +1,14 @@
+.map-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.map-frame-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: var(--map-radius);
+  background-color: var(--map-frame-bg);
+}

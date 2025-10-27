@@ -29,6 +29,8 @@
   --chip-shadow: 0 18px 42px rgba(0, 0, 0, 0.5);
   --success: #7dd3fc;
   --danger: #fca5a5;
+  --map-radius: 28px;
+  --map-frame-bg: #000000;
 }
 
 

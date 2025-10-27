@@ -2,15 +2,16 @@ import React from "react";
 import { Route, Routes } from "react-router-dom";
 
 import GeoScopeMap from "./components/GeoScope/GeoScopeMap";
+import MapFrame from "./components/MapFrame";
 import { RightPanel } from "./components/RightPanel";
 import { ConfigPage } from "./pages/ConfigPage";
 
 const DashboardShell: React.FC = () => {
   return (
     <div className="app-shell">
-      <div className="map-area">
+      <MapFrame className="map-area">
         <GeoScopeMap />
-      </div>
+      </MapFrame>
       <aside className="side-panel">
         <RightPanel />
       </aside>
