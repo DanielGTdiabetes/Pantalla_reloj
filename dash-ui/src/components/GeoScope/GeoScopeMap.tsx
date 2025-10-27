@@ -60,8 +60,7 @@ export default function GeoScopeMap() {
         center: [lng, 0],
         zoom,
         bearing,
-        pitch,
-        animate: false
+        pitch
       });
     };
 
@@ -95,8 +94,7 @@ export default function GeoScopeMap() {
         center: [nextLng, 0],
         zoom: viewStateRef.current.zoom,
         bearing: viewStateRef.current.bearing,
-        pitch: viewStateRef.current.pitch,
-        animate: false
+        pitch: viewStateRef.current.pitch
       });
 
       animationFrameRef.current = requestAnimationFrame(stepPan);
