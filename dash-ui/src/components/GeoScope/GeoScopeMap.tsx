@@ -9,13 +9,7 @@ import {
   createDefaultMapSettings,
   withConfigDefaults
 } from "../../config/defaults";
-import type {
-  AppConfig,
-  UIMapCinemaBand,
-  UIMapCinemaSettings,
-  UIMapSettings,
-  UIMapThemeSettings
-} from "../../types/config";
+import type { AppConfig, MapCinemaBand, MapCinemaConfig, MapConfig, MapThemeConfig } from "../../types/config";
 import {
   loadMapStyle,
   type MapStyleDefinition,
@@ -38,7 +32,7 @@ const MAX_DELTA_SECONDS = 0.5;
 
 const FALLBACK_THEME = createDefaultMapSettings().theme ?? {};
 
-const cloneTheme = (theme?: UIMapThemeSettings | null): UIMapThemeSettings => ({
+const cloneTheme = (theme?: MapThemeConfig | null): MapThemeConfig => ({
   ...FALLBACK_THEME,
   ...(theme ?? {})
 });
@@ -69,7 +63,7 @@ const WATER_PATTERN = /(background|ocean|sea|water)/i;
 const LAND_PATTERN = /(land|landcover|park|continent)/i;
 const LABEL_PATTERN = /(label|place|road-name|poi)/i;
 
-const applyVectorTheme = (map: maplibregl.Map, theme: UIMapThemeSettings) => {
+const applyVectorTheme = (map: maplibregl.Map, theme: MapThemeConfig) => {
   const style = map.getStyle();
   const layers = style?.layers ?? [];
   if (!layers.length) {
@@ -129,7 +123,7 @@ const applyVectorTheme = (map: maplibregl.Map, theme: UIMapThemeSettings) => {
   }
 };
 
-const applyRasterTheme = (map: maplibregl.Map, theme: UIMapThemeSettings) => {
+const applyRasterTheme = (map: maplibregl.Map, theme: MapThemeConfig) => {
   const contrast = typeof theme.contrast === "number" ? theme.contrast : 0;
   const saturationBoost = clamp(0.25 + contrast * 0.25, -1, 1);
   const contrastBoost = clamp(0.12 + contrast * 0.2, -1, 1);
@@ -145,7 +139,7 @@ const applyRasterTheme = (map: maplibregl.Map, theme: UIMapThemeSettings) => {
 const applyThemeToMap = (
   map: maplibregl.Map,
   styleType: MapStyleDefinition["type"],
-  theme: UIMapThemeSettings
+  theme: MapThemeConfig
 ) => {
   if (styleType === "vector") {
     applyVectorTheme(map, theme);
@@ -161,9 +155,9 @@ const easeInOut = (t: number) =>
   t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 
 const sanitizeBand = (
-  band: UIMapCinemaBand,
-  fallback: UIMapCinemaBand
-): UIMapCinemaBand => {
+  band: MapCinemaBand,
+  fallback: MapCinemaBand
+): MapCinemaBand => {
   const safeFallback = fallback ?? FALLBACK_CINEMA.bands[0];
   const zoom = Number.isFinite(band.zoom) ? band.zoom : safeFallback.zoom;
   const minZoomCandidate = Number.isFinite(band.minZoom) ? band.minZoom : safeFallback.minZoom;
@@ -180,7 +174,7 @@ const sanitizeBand = (
   };
 };
 
-const cloneCinema = (cinema: UIMapCinemaSettings): UIMapCinemaSettings => {
+const cloneCinema = (cinema: MapCinemaConfig): MapCinemaConfig => {
   const fallbackBands = FALLBACK_CINEMA.bands;
   const bands = cinema.bands.map((band, index) =>
     sanitizeBand({ ...band }, fallbackBands[index] ?? fallbackBands[0] ?? band)
@@ -205,25 +199,25 @@ const cloneCinema = (cinema: UIMapCinemaSettings): UIMapCinemaSettings => {
 };
 
 type TransitionState = {
-  from: UIMapCinemaBand;
-  to: UIMapCinemaBand;
+  from: MapCinemaBand;
+  to: MapCinemaBand;
   toIndex: number;
   duration: number;
   elapsed: number;
 };
 
 type RuntimePreferences = {
-  cinema: UIMapCinemaSettings;
+  cinema: MapCinemaConfig;
   renderWorldCopies: boolean;
   initialLng: number;
   style: MapStyleDefinition;
   fallbackStyle: MapStyleDefinition;
   styleWasFallback: boolean;
-  theme: UIMapThemeSettings;
+  theme: MapThemeConfig;
 };
 
 const buildRuntimePreferences = (
-  mapSettings: UIMapSettings,
+  mapSettings: MapConfig,
   styleResult: MapStyleResult
 ): RuntimePreferences => {
   const defaults = createDefaultMapSettings();
@@ -232,14 +226,7 @@ const buildRuntimePreferences = (
   const cinema = cloneCinema(cinemaSource);
   cinema.enabled = true;
 
-  const centerLngCandidate = Array.isArray(source.center)
-    ? source.center[0]
-    : defaults.center[0];
-  const initialLng = normalizeLng(
-    Number.isFinite(Number(centerLngCandidate))
-      ? Number(centerLngCandidate)
-      : defaults.center[0]
-  );
+  const initialLng = 0;
 
   return {
     cinema,
@@ -280,17 +267,17 @@ export default function GeoScopeMap() {
   const viewStateRef = useRef({ ...DEFAULT_VIEW });
   const currentMinZoomRef = useRef(DEFAULT_MIN_ZOOM);
   const panSpeedRef = useRef(DEFAULT_PAN_SPEED);
-  const cinemaRef = useRef<UIMapCinemaSettings>(cloneCinema(FALLBACK_CINEMA));
+  const cinemaRef = useRef<MapCinemaConfig>(cloneCinema(FALLBACK_CINEMA));
   const bandIndexRef = useRef(0);
   const bandElapsedRef = useRef(0);
   const bandTransitionRef = useRef<TransitionState | null>(null);
-  const themeRef = useRef<UIMapThemeSettings>(cloneTheme(null));
+  const themeRef = useRef<MapThemeConfig>(cloneTheme(null));
   const styleTypeRef = useRef<MapStyleDefinition["type"]>("raster");
   const fallbackStyleRef = useRef<MapStyleDefinition | null>(null);
   const fallbackAppliedRef = useRef(false);
   const [tintColor, setTintColor] = useState<string | null>(null);
 
-  const applyBandInstant = (band: UIMapCinemaBand, map?: maplibregl.Map | null) => {
+  const applyBandInstant = (band: MapCinemaBand, map?: maplibregl.Map | null) => {
     const zoom = Number.isFinite(band.zoom) ? band.zoom : viewStateRef.current.zoom;
     const minZoom = Math.min(Number.isFinite(band.minZoom) ? band.minZoom : zoom, zoom);
 

@@ -1,63 +1,54 @@
 {
   "display": {
     "timezone": "Europe/Madrid",
-    "rotation": "left",
-    "module_cycle_seconds": 20,
-    "modules": [
-      { "name": "clock", "enabled": true, "duration_seconds": 20 },
-      { "name": "weather", "enabled": true, "duration_seconds": 20 },
-      { "name": "moon", "enabled": true, "duration_seconds": 20 },
-      { "name": "news", "enabled": true, "duration_seconds": 20 },
-      { "name": "events", "enabled": true, "duration_seconds": 20 },
-      { "name": "calendar", "enabled": true, "duration_seconds": 20 }
-    ]
-  },
-  "api_keys": {
-    "weather": null,
-    "news": null,
-    "astronomy": null,
-    "calendar": null
-  },
-  "mqtt": {
-    "enabled": false,
-    "host": "localhost",
-    "port": 1883,
-    "topic": "pantalla/reloj",
-    "username": null,
-    "password": null
-  },
-  "wifi": {
-    "interface": "wlan2",
-    "ssid": null,
-    "psk": null
-  },
-  "storm_mode": {
-    "enabled": false,
-    "last_triggered": null
+    "module_cycle_seconds": 20
   },
   "ui": {
+    "layout": "grid-2-1",
+    "map": {
+      "engine": "maplibre",
+      "style": "vector-dark",
+      "provider": "maptiler",
+      "maptiler": {
+        "key": null,
+        "styleUrlDark": "https://api.maptiler.com/maps/dark/style.json",
+        "styleUrlLight": "https://api.maptiler.com/maps/streets/style.json",
+        "styleUrlBright": "https://api.maptiler.com/maps/bright/style.json"
+      },
+      "renderWorldCopies": true,
+      "interactive": false,
+      "controls": false,
+      "cinema": {
+        "enabled": true,
+        "panLngDegPerSec": 0.3,
+        "bandTransition_sec": 8,
+        "bands": [
+          { "lat": 0.0, "zoom": 2.8, "pitch": 10.0, "minZoom": 2.6, "duration_sec": 900 },
+          { "lat": 18.0, "zoom": 3.0, "pitch": 8.0, "minZoom": 2.8, "duration_sec": 720 },
+          { "lat": 32.0, "zoom": 3.3, "pitch": 6.0, "minZoom": 3.0, "duration_sec": 600 },
+          { "lat": 42.0, "zoom": 3.6, "pitch": 6.0, "minZoom": 3.2, "duration_sec": 480 },
+          { "lat": -18.0, "zoom": 3.0, "pitch": 8.0, "minZoom": 2.8, "duration_sec": 720 },
+          { "lat": -32.0, "zoom": 3.3, "pitch": 6.0, "minZoom": 3.0, "duration_sec": 600 }
+        ]
+      },
+      "theme": {
+        "sea": "#0b3756",
+        "land": "#20262c",
+        "label": "#d6e7ff",
+        "contrast": 0.15,
+        "tint": "rgba(0,170,255,0.06)"
+      }
+    },
     "rotation": {
       "enabled": true,
       "duration_sec": 10,
       "panels": ["news", "ephemerides", "moon", "forecast", "calendar"]
-    },
-    "fixed": {
-      "clock": { "format": "HH:mm" },
-      "temperature": { "unit": "C" }
-    },
-    "map": {
-      "provider": "osm",
-      "center": [0, 0],
-      "zoom": 2,
-      "interactive": false,
-      "controls": false
-    },
-    "text": {
-      "scroll": {
-        "news": { "enabled": true, "direction": "left", "speed": "normal", "gap_px": 48 },
-        "ephemerides": { "enabled": true, "direction": "up", "speed": "slow", "gap_px": 24 },
-        "forecast": { "enabled": true, "direction": "up", "speed": "slow", "gap_px": 24 }
-      }
     }
+  },
+  "news": {
+    "enabled": true
+  },
+  "ai": {
+    "enabled": false
   }
 }
