@@ -15,11 +15,7 @@ const VOYAGER = {
   sources: {
     carto: {
       type: "raster",
-      tiles: [
-        "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
-        "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
-        "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
-      ],
+      tiles: ["https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"],
       tileSize: 256,
       attribution: "© OpenStreetMap contributors, © CARTO"
     }
@@ -38,34 +34,28 @@ export default function GeoScopeMap() {
     const host = hostRef.current;
     if (!host) return;
 
-    const safeFit = (map: maplibregl.Map, hostElement: HTMLDivElement) => {
-      const rect = hostElement.getBoundingClientRect();
-      const width = rect.width;
-      const height = rect.height;
-      console.log("[GeoScopeMap] safeFit -> host", { width, height });
+    const defaultView = { center: [0, 0] as maplibregl.LngLatLike, zoom: 2 };
+    const worldBounds: maplibregl.LngLatBoundsLike = [
+      [-180, -60],
+      [180, 85]
+    ];
 
-      if (width < 120 || height < 120) {
-        map.setPadding({ top: 0, right: 0, bottom: 0, left: 0 });
-        map.jumpTo({ center: [0, 0], zoom: 1 });
-        console.log("[GeoScopeMap] safeFit fallback: host too small");
+    const safeFit = (map: maplibregl.Map, hostElement: HTMLDivElement | null) => {
+      if (!hostElement) return;
+
+      const { width, height } = hostElement.getBoundingClientRect();
+      if (width <= 0 || height <= 0) {
         return;
       }
 
-      map.setPadding({ top: 8, left: 8, right: 8, bottom: 8 });
+      map.resize();
+      map.jumpTo(defaultView);
 
       try {
-        map.fitBounds(
-          [
-            [-180, -60],
-            [180, 85]
-          ],
-          { animate: false }
-        );
+        map.fitBounds(worldBounds, { padding: 24, animate: false });
       } catch (error) {
-        console.warn("[GeoScopeMap] safeFit fitBounds failed, using jumpTo fallback", error);
-        map.setPadding({ top: 0, right: 0, bottom: 0, left: 0 });
-        map.jumpTo({ center: [0, 0], zoom: 1 });
-        console.log("[GeoScopeMap] safeFit fallback: fitBounds error");
+        console.warn("[map] safeFit fallback", error);
+        map.jumpTo(defaultView);
       }
     };
 
@@ -95,31 +85,33 @@ export default function GeoScopeMap() {
         return;
       }
 
-      const rect = hostRef.current.getBoundingClientRect();
-      const { width, height } = rect;
-      console.log("[GeoScopeMap] measuring host before map init", { width, height });
-
+      const { width, height } = hostRef.current.getBoundingClientRect();
       if (width <= 0 || height <= 0) {
-        console.log("[GeoScopeMap] host size is zero, delaying map creation");
         return;
       }
 
       const map = new maplibregl.Map({
         container: hostRef.current,
         style: VOYAGER,
-        center: [0, 0],
-        zoom: 1,
+        center: defaultView.center,
+        zoom: defaultView.zoom,
         interactive: false,
-        renderWorldCopies: true
+        attributionControl: false,
+        renderWorldCopies: false
       });
 
       mapRef.current = map;
-      console.log("[GeoScopeMap] map instance created");
+
+      map.once("idle", () => {
+        if (hostRef.current) {
+          safeFit(map, hostRef.current);
+        }
+      });
 
       map.on("load", () => {
-        console.log("[GeoScopeMap] map loaded");
         mapReadyRef.current = true;
-        safeFit(map, hostRef.current!);
+        map.setRenderWorldCopies(false);
+        safeFit(map, hostRef.current);
         initLayers(map);
       });
     };
@@ -127,21 +119,24 @@ export default function GeoScopeMap() {
     resizeObserverRef.current = new ResizeObserver((entries) => {
       const entry = entries[0];
       const { width, height } = entry?.contentRect ?? host.getBoundingClientRect();
-      console.log("[GeoScopeMap] resize", { width, height });
+
+      if (width <= 0 || height <= 0) {
+        return;
+      }
 
       if (!mapRef.current) {
         ensureMap();
         return;
       }
 
-      mapRef.current.resize();
       if (mapReadyRef.current && hostRef.current) {
         safeFit(mapRef.current, hostRef.current);
+      } else {
+        mapRef.current.resize();
       }
     });
 
     resizeObserverRef.current.observe(host);
-    ensureMap();
 
     return () => {
       resizeObserverRef.current?.disconnect();
@@ -154,5 +149,5 @@ export default function GeoScopeMap() {
     };
   }, []);
 
-  return <div ref={hostRef} className="w-full h-full block min-h-[240px]" />;
+  return <div ref={hostRef} className="map-host" />;
 }
