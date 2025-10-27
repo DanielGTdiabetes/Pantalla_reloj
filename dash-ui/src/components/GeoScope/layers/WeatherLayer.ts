@@ -55,7 +55,6 @@ export default class WeatherLayer implements Layer {
   }
 
   destroy(): void {
-    this.layer?.remove();
     this.layer = undefined;
     this.map = undefined;
     this.paneName = undefined;
