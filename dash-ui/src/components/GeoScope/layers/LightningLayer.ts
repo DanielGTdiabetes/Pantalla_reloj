@@ -1,4 +1,4 @@
-import maplibregl from "maplibre-gl";
+import L from "leaflet";
 import type { FeatureCollection } from "geojson";
 
 import type { Layer } from "./LayerRegistry";
@@ -14,46 +14,40 @@ export default class LightningLayer implements Layer {
   public readonly zIndex = 50;
 
   private enabled: boolean;
-  private map?: maplibregl.Map;
-  private readonly sourceId = "geoscope-lightning-source";
+  private map?: L.Map;
+  private layer?: L.GeoJSON;
+  private paneName?: string;
 
   constructor(options: LightningLayerOptions = {}) {
     this.enabled = options.enabled ?? true;
   }
 
-  add(map: maplibregl.Map): void {
+  add(map: L.Map): void {
     this.map = map;
-    if (!map.getSource(this.sourceId)) {
-      map.addSource(this.sourceId, {
-        type: "geojson",
-        data: EMPTY
-      });
-    }
+    const paneName = this.ensurePane(map);
 
-    if (!map.getLayer(this.id)) {
-      map.addLayer({
-        id: this.id,
-        type: "circle",
-        source: this.sourceId,
-        paint: {
-          "circle-radius": 6,
-          "circle-color": "#fcd34d",
-          "circle-opacity": 0.65,
-          "circle-blur": 0.35
-        }
+    if (!this.layer) {
+      this.layer = L.geoJSON(EMPTY, {
+        pane: paneName,
+        pointToLayer: (_, latlng) =>
+          L.circleMarker(latlng, {
+            radius: 6,
+            color: "#facc15",
+            weight: 0,
+            fillColor: "#facc15",
+            fillOpacity: 0.7
+          })
       });
     }
 
     this.applyVisibility();
   }
 
-  remove(map: maplibregl.Map): void {
-    if (map.getLayer(this.id)) {
-      map.removeLayer(this.id);
+  remove(map: L.Map): void {
+    if (this.layer && map.hasLayer(this.layer)) {
+      map.removeLayer(this.layer);
     }
-    if (map.getSource(this.sourceId)) {
-      map.removeSource(this.sourceId);
-    }
+    this.removePane(map);
     this.map = undefined;
   }
 
@@ -63,14 +57,38 @@ export default class LightningLayer implements Layer {
   }
 
   destroy(): void {
+    this.layer?.remove();
+    this.layer = undefined;
     this.map = undefined;
+    this.paneName = undefined;
   }
 
   private applyVisibility() {
-    if (!this.map) return;
-    const visibility = this.enabled ? "visible" : "none";
-    if (this.map.getLayer(this.id)) {
-      this.map.setLayoutProperty(this.id, "visibility", visibility);
+    if (!this.map || !this.layer) return;
+    const shouldShow = this.enabled;
+    if (shouldShow && !this.map.hasLayer(this.layer)) {
+      this.layer.addTo(this.map);
+    } else if (!shouldShow && this.map.hasLayer(this.layer)) {
+      this.map.removeLayer(this.layer);
     }
+  }
+
+  private ensurePane(map: L.Map) {
+    if (!this.paneName) {
+      const paneName = `${this.id}-pane`;
+      const pane = map.getPane(paneName) ?? map.createPane(paneName);
+      pane.style.zIndex = String(300 + this.zIndex);
+      this.paneName = paneName;
+    }
+    return this.paneName;
+  }
+
+  private removePane(map: L.Map) {
+    if (!this.paneName) return;
+    const pane = map.getPane(this.paneName);
+    if (pane?.parentElement) {
+      pane.parentElement.removeChild(pane);
+    }
+    this.paneName = undefined;
   }
 }
