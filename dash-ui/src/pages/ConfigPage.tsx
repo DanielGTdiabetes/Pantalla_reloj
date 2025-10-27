@@ -140,8 +140,9 @@ export const ConfigPage: React.FC = () => {
   };
 
   const isReady = status === "ready";
+  const isLoading = status === "loading";
   const disableInputs = !isReady || saving;
-  const showSkeleton = status === "loading";
+  const showSkeleton = isLoading;
 
   const renderWiFiTab = () => (
     <div className="config-card">
@@ -638,7 +639,7 @@ export const ConfigPage: React.FC = () => {
               onClick={() => {
                 void initialize();
               }}
-              disabled={status === "loading"}
+              disabled={isLoading}
             >
               Reintentar
             </button>
