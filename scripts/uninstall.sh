@@ -18,6 +18,8 @@ Options:
   --purge-node      Remove frontend node_modules/dist artifacts
   --purge-assets    Remove assets stored in /opt/pantalla-reloj
   --purge-config    Remove configuration under /var/lib/pantalla-reloj
+  --purge-kiosk-chromium-state
+                    Remove Chromium kiosk profile and cache directories
   -h, --help        Show this message
 USAGE
 }
@@ -28,6 +30,7 @@ PURGE_VENV=0
 PURGE_NODE=0
 PURGE_ASSETS=0
 PURGE_CONFIG=0
+PURGE_KIOSK_CHROMIUM_STATE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -37,6 +40,7 @@ while [[ $# -gt 0 ]]; do
     --purge-node) PURGE_NODE=1 ;;
     --purge-assets) PURGE_ASSETS=1 ;;
     --purge-config) PURGE_CONFIG=1 ;;
+    --purge-kiosk-chromium-state) PURGE_KIOSK_CHROMIUM_STATE=1 ;;
     -h|--help)
       usage
       exit 0
@@ -212,6 +216,11 @@ if [[ $PURGE_CONFIG -eq 1 ]]; then
 else
   # Keep state but remove runtime markers
   rm -rf "$STATE_RUNTIME"
+fi
+
+if [[ $PURGE_KIOSK_CHROMIUM_STATE -eq 1 ]]; then
+  log_info "Removing Chromium kiosk state directories"
+  rm -rf /var/lib/pantalla-reloj/state/chromium /var/lib/pantalla-reloj/cache/chromium
 fi
 
 HOME_AUTH="/home/${USER_NAME}/.Xauthority"

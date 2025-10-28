@@ -1,191 +1,58 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+log() {
+  printf '[pantalla-kiosk-verify] %s\n' "$*"
+}
+
+KIOSK_USER="${KIOSK_USER:-dani}"
 : "${DISPLAY:=:0}"
-: "${XAUTHORITY:=/var/lib/pantalla-reloj/.Xauthority}"
+: "${XAUTHORITY:=/home/${KIOSK_USER}/.Xauthority}"
 
-LOG_DIR=/var/log/pantalla
-VERIFY_LOG="${LOG_DIR}/kiosk-verify.log"
-SANITIZE_LOG="${LOG_DIR}/kiosk-sanitize.log"
-SANITIZER=/opt/pantalla/bin/pantalla-kiosk-sanitize.sh
-WM_CLASS="epiphany.epiphany"
-prepare_logs() {
-  install -d -m 0755 "$LOG_DIR"
-  : >"${VERIFY_LOG}.tmp"
-  touch "$SANITIZE_LOG"
-}
+PROCESS_PATTERN='/snap/chromium/.*/chrome .*--class=pantalla-kiosk'
 
-log_sanitize() {
-  local ts
-  ts="$(date -Is)"
-  printf '%s %s\n' "$ts" "$*" >>"$SANITIZE_LOG"
-}
+if ! pgrep -af "$PROCESS_PATTERN" >/dev/null; then
+  log "Proceso de Chromium con clase pantalla-kiosk no encontrado"
+  exit 1
+fi
 
-run_and_capture() {
-  local desc="$1"
-  shift
-  {
-    printf '--- %s ---\n' "$desc"
-    printf 'CMD: %s\n' "$*"
-    if "$@"; then
-      printf 'status=0\n\n'
-    else
-      printf 'status=%s\n\n' "$?"
-    fi
-  } >>"${VERIFY_LOG}.tmp" 2>&1
-}
+if ! command -v wmctrl >/dev/null 2>&1; then
+  log "wmctrl no disponible"
+  exit 1
+fi
 
-normalize_wid() {
-  local wid="$1"
-  wid="${wid,,}"
-  if [[ "$wid" != 0x* ]]; then
-    printf '0x%x' "$((16#$wid))"
-  else
-    printf '%s' "$wid"
-  fi
-}
+WINDOW_LIST=$(DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" wmctrl -lx 2>/dev/null || true)
+if [[ -z "$WINDOW_LIST" ]]; then
+  log "No se pudo obtener la lista de ventanas"
+  exit 1
+fi
 
-declare -gA WINDOW_INFO=()
-declare -ga WINDOW_ORDER=()
-declare -ga STACKING_IDS=()
-stacking_primary=""
+if ! grep -q 'pantalla-kiosk' <<<"$WINDOW_LIST"; then
+  log "No hay ventanas con clase pantalla-kiosk"
+  exit 1
+fi
 
-read_windows() {
-  WINDOW_INFO=()
-  WINDOW_ORDER=()
-  local line wid cls
-  while IFS= read -r line; do
-    wid="${line%% *}"
-    cls="$(printf '%s' "$line" | awk '{print $3}')"
-    if [[ "$cls" == "$WM_CLASS" ]]; then
-      wid="$(normalize_wid "$wid")"
-      WINDOW_INFO["$wid"]="$line"
-      WINDOW_ORDER+=("$wid")
-    fi
-  done < <(env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" wmctrl -lx 2>/dev/null || true)
-}
+WINDOW_ID=$(awk '/pantalla-kiosk/{print $1; exit}' <<<"$WINDOW_LIST")
+if [[ -z "$WINDOW_ID" ]]; then
+  log "No se pudo determinar el ID de la ventana"
+  exit 1
+fi
 
-select_primary_from_stacking() {
-  local stacking raw token wid
-  stacking_primary=""
-  STACKING_IDS=()
-  stacking=$(env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xprop -root _NET_CLIENT_LIST_STACKING 2>/dev/null || true)
-  if [[ "$stacking" == *_NET_CLIENT_LIST_STACKING* ]]; then
-    raw="${stacking#*_NET_CLIENT_LIST_STACKING(WINDOW): window id # }"
-    raw="${raw//,/ }"
-    for token in $raw; do
-      [[ "$token" =~ 0x[0-9a-fA-F]+ ]] || continue
-      wid="$(normalize_wid "$token")"
-      STACKING_IDS+=("$wid")
-    done
-    for (( idx=${#STACKING_IDS[@]}-1; idx>=0; idx-- )); do
-      wid="${STACKING_IDS[idx]}"
-      if [[ -n "${WINDOW_INFO[$wid]:-}" ]]; then
-        stacking_primary="$wid"
-        return
-      fi
-    done
-  fi
-}
+if ! command -v xprop >/dev/null 2>&1; then
+  log "xprop no disponible"
+  exit 1
+fi
 
-sanitize_windows_manual() {
-  if ! command -v wmctrl >/dev/null 2>&1; then
-    log_sanitize "wmctrl-missing"
-    return
-  fi
+STATE=$(DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xprop -id "$WINDOW_ID" _NET_WM_STATE 2>/dev/null || true)
+if [[ -z "$STATE" ]]; then
+  log "No se pudo obtener _NET_WM_STATE para la ventana $WINDOW_ID"
+  exit 1
+fi
 
-  read_windows
-  local count
-  count=${#WINDOW_ORDER[@]}
-  if (( count == 0 )); then
-    log_sanitize "no-windows wmclass=$WM_CLASS"
-    return
-  fi
+if ! grep -Eq 'FULLSCREEN|ABOVE' <<<"$STATE"; then
+  log "La ventana $WINDOW_ID no está en estado FULLSCREEN o ABOVE"
+  exit 1
+fi
 
-  select_primary_from_stacking
-  local primary="${stacking_primary:-${WINDOW_ORDER[-1]}}"
-  if [[ -z "$primary" ]]; then
-    primary="${WINDOW_ORDER[0]}"
-  fi
-
-  log_sanitize "verify-windows count=${count} primary=${primary}"
-
-  local wid
-  for wid in "${WINDOW_ORDER[@]}"; do
-    [[ "$wid" == "$primary" ]] && continue
-    if env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" wmctrl -i -c "$wid" >/dev/null 2>&1; then
-      log_sanitize "verify-closed-extra id=$wid"
-    else
-      log_sanitize "verify-close-extra-failed id=$wid"
-    fi
-    sleep 0.1 2>/dev/null || true
-  done
-
-  if env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" wmctrl -i -r "$primary" -b add,fullscreen >/dev/null 2>&1; then
-    log_sanitize "verify-fullscreen id=$primary"
-  else
-    log_sanitize "verify-fullscreen-failed id=$primary"
-  fi
-
-  if env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" wmctrl -i -R "$primary" >/dev/null 2>&1; then
-    log_sanitize "verify-raise id=$primary"
-  else
-    log_sanitize "verify-raise-failed id=$primary"
-  fi
-
-  if env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" wmctrl -i -a "$primary" >/dev/null 2>&1; then
-    log_sanitize "verify-focus id=$primary"
-  else
-    log_sanitize "verify-focus-failed id=$primary"
-  fi
-
-  local active
-  if command -v xprop >/dev/null 2>&1; then
-    active=$(env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xprop -root _NET_ACTIVE_WINDOW 2>/dev/null | awk -F'# ' 'NF>1 {print $2}' | awk '{print $1}' | tr 'A-F' 'a-f')
-    if [[ -z "$active" ]]; then
-      log_sanitize "verify-active-empty"
-    else
-      log_sanitize "verify-active id=$active"
-      if [[ "$active" != "$primary" ]]; then
-        if env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" wmctrl -i -a "$primary" >/dev/null 2>&1; then
-          log_sanitize "verify-active-corrected from=$active to=$primary"
-        else
-          log_sanitize "verify-active-correction-failed from=$active to=$primary"
-        fi
-      fi
-    fi
-  fi
-
-  while IFS= read -r line; do
-    log_sanitize "verify-wmctrl ${line}"
-  done < <(env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" wmctrl -lx 2>/dev/null || true)
-}
-
-main() {
-  prepare_logs
-
-  if [[ -x "$SANITIZER" ]]; then
-    if DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" "$SANITIZER" --delay 0 --timeout 8 --wm-class "$WM_CLASS" --log "$SANITIZE_LOG"; then
-      log_sanitize "sanitizer-invoked"
-    else
-      log_sanitize "sanitizer-error"
-    fi
-  fi
-
-  sanitize_windows_manual
-
-  run_and_capture "xrandr --query" env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xrandr --query
-  run_and_capture "wmctrl -lx" env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" wmctrl -lx
-  run_and_capture "_NET_ACTIVE_WINDOW" env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xprop -root _NET_ACTIVE_WINDOW
-  if command -v xprop >/dev/null 2>&1; then
-    active_id=$(env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xprop -root _NET_ACTIVE_WINDOW 2>/dev/null | awk -F'# ' 'NF>1 {print $2}' | awk '{print $1}')
-    if [[ -n "$active_id" ]]; then
-      run_and_capture "_NET_WM_STATE ${active_id}" env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xprop -id "$active_id" _NET_WM_STATE
-    fi
-  fi
-  run_and_capture "backend health" curl -fsS -o /dev/null -w '%{http_code}\n' "${PANTALLA_KIOSK_HEALTH_URL:-http://127.0.0.1:8081/healthz}"
-
-  mv "${VERIFY_LOG}.tmp" "$VERIFY_LOG"
-}
-
-main "$@"
+log "Kiosk operativo (proceso y ventana válidos)"
+exit 0
