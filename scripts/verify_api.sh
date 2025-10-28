@@ -16,6 +16,22 @@ if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
   SUDO_BIN=""
 fi
 
+BACKEND_USER="${USERNAME:-${SUDO_USER:-${USER:-}}}"
+if [[ -n "${BACKEND_USER}" ]]; then
+  if ! id "$BACKEND_USER" >/dev/null 2>&1; then
+    log_warn "Usuario '$BACKEND_USER' no encontrado; se omite diagnostico systemctl"
+    BACKEND_USER=""
+  fi
+else
+  log_warn "No se pudo determinar el usuario objetivo; se omite diagnostico systemctl"
+fi
+
+if [[ -n "$BACKEND_USER" ]]; then
+  BACKEND_SERVICE_UNIT="pantalla-dash-backend@${BACKEND_USER}.service"
+else
+  BACKEND_SERVICE_UNIT=""
+fi
+
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
     log_error "Comando requerido no encontrado: $1"
@@ -53,7 +69,9 @@ wait_for_backend() {
   until curl -sfS "$BACKEND_URL" >/dev/null; do
     if (( waited >= MAX_WAIT_BACKEND )); then
       log_error "Backend no responde en 127.0.0.1:8081 tras ${MAX_WAIT_BACKEND}s"
-      systemctl --no-pager -l status pantalla-dash-backend@dani.service | sed -n '1,60p' || true
+      if [[ -n "$BACKEND_SERVICE_UNIT" ]]; then
+        systemctl --no-pager -l status "$BACKEND_SERVICE_UNIT" | sed -n '1,60p' || true
+      fi
       exit 1
     fi
     sleep "$SLEEP"
