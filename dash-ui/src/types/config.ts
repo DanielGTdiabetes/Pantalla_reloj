@@ -47,6 +47,8 @@ export type MapConfig = {
   theme: MapThemeConfig;
 };
 
+export type UIMapSettings = MapConfig;
+
 export type RotationConfig = {
   enabled: boolean;
   duration_sec: number;
@@ -57,6 +59,12 @@ export type UIConfig = {
   layout: "grid-2-1";
   map: MapConfig;
   rotation: RotationConfig;
+};
+
+export type DisplayModule = {
+  id: string;
+  enabled: boolean;
+  [key: string]: unknown;
 };
 
 export type NewsConfig = {

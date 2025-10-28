@@ -162,13 +162,12 @@ const extractBackendErrors = (detail: unknown): FieldErrors => {
       if (!entry || typeof entry !== "object") {
         return acc;
       }
-      const loc = Array.isArray((entry as Record<string, unknown>).loc)
-        ? ((entry as Record<string, unknown>).loc as (string | number)[])
+      const record = entry as Record<string, unknown>;
+      const loc = Array.isArray(record.loc)
+        ? (record.loc as (string | number)[])
         : [];
       const path = loc.length ? loc.map(String).join(".") : "__root__";
-      const message = typeof (entry as Record<string, unknown>).msg === "string"
-        ? (entry as Record<string, unknown>).msg
-        : "Dato inválido";
+      const message = typeof record.msg === "string" ? record.msg : "Dato inválido";
       acc[path] = message;
       return acc;
     }, {});
