@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+const signatureOf = (items: { id: string; duration: number }[]) =>
+  items.map((item) => `${item.id}:${item.duration}`).join("|");
+
 export type RotatingCardItem = {
   id: string;
   duration: number;
@@ -37,6 +40,23 @@ export const RotatingCard = ({ cards, disabled = false }: RotatingCardProps): JS
   const [isTransitioning, setIsTransitioning] = useState(false);
   const timeoutRef = useRef<number | null>(null);
 
+  const signature = useMemo(() => signatureOf(fallbackCards), [fallbackCards]);
+  const previousSignatureRef = useRef<string>(signature);
+
+  useEffect(() => {
+    if (previousSignatureRef.current !== signature) {
+      previousSignatureRef.current = signature;
+      setActiveIndex(0);
+    }
+  }, [signature]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production") {
+      // eslint-disable-next-line no-console
+      console.info(`[RotatingCard] signature → ${signature}`);
+    }
+  }, [signature]);
+
   const cardCount = fallbackCards.length;
   useEffect(() => {
     if (disabled) {
@@ -48,12 +68,12 @@ export const RotatingCard = ({ cards, disabled = false }: RotatingCardProps): JS
   }, [cardCount, disabled]);
 
   useEffect(() => {
-    if (disabled || cardCount === 0) {
+    if (disabled || cardCount === 0 || isTransitioning) {
       return undefined;
     }
 
     const current = fallbackCards[activeIndex];
-    const duration = Math.max(current.duration, MIN_DURATION);
+    const duration = Math.max(current?.duration ?? MIN_DURATION, MIN_DURATION);
 
     timeoutRef.current = window.setTimeout(() => {
       setIsTransitioning(true);
@@ -69,14 +89,12 @@ export const RotatingCard = ({ cards, disabled = false }: RotatingCardProps): JS
         timeoutRef.current = null;
       }
     };
-  }, [activeIndex, cardCount, disabled, fallbackCards]);
+  }, [activeIndex, cardCount, disabled, fallbackCards, isTransitioning]);
 
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) {
-        window.clearTimeout(timeoutRef.current);
-      }
-    };
+  useEffect(() => () => {
+    if (timeoutRef.current) {
+      window.clearTimeout(timeoutRef.current);
+    }
   }, []);
 
   const CurrentCard = (disabled ? fallbackCards[0] : fallbackCards[activeIndex])?.render;
