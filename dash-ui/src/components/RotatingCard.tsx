@@ -41,14 +41,14 @@ export const RotatingCard = ({ cards, disabled = false }: RotatingCardProps): JS
   const timeoutRef = useRef<number | null>(null);
 
   const sig = useMemo(() => signatureOf(fallbackCards), [fallbackCards]);
-  const prevSigRef = useRef<string>(sig);
+  const idsKey = useMemo(
+    () => fallbackCards.map((card) => card.id).join("|"),
+    [fallbackCards]
+  );
 
   useEffect(() => {
-    if (prevSigRef.current !== sig) {
-      prevSigRef.current = sig;
-      setActiveIndex(0);
-    }
-  }, [sig]);
+    setActiveIndex(0);
+  }, [idsKey]);
 
   useEffect(() => {
     if (import.meta.env.DEV) {
@@ -68,6 +68,12 @@ export const RotatingCard = ({ cards, disabled = false }: RotatingCardProps): JS
   }, [cardCount, disabled]);
 
   useEffect(() => {
+    if (fallbackCards.length === 0) {
+      setActiveIndex(0);
+      setIsTransitioning(false);
+      return undefined;
+    }
+
     if (disabled || cardCount === 0 || isTransitioning) {
       return undefined;
     }
