@@ -52,6 +52,45 @@ const createCartoStyle = (tilesUrl: string): StyleSpecification => ({
   layers: [{ id: "carto", type: "raster", source: "carto" }]
 });
 
+const replaceKeyPlaceholders = (
+  input: unknown,
+  key: string
+): unknown => {
+  if (typeof input === "string") {
+    return input.includes("{key}") ? input.replaceAll("{key}", key) : input;
+  }
+  if (Array.isArray(input)) {
+    return input.map((value) => replaceKeyPlaceholders(value, key));
+  }
+  if (input && typeof input === "object") {
+    return Object.fromEntries(
+      Object.entries(input).map(([entryKey, value]) => [entryKey, replaceKeyPlaceholders(value, key)])
+    );
+  }
+  return input;
+};
+
+const fetchVectorStyle = async (
+  styleUrl: string,
+  key: string | null | undefined
+): Promise<StyleSpecification | null> => {
+  try {
+    const response = await fetch(styleUrl);
+    if (!response.ok) {
+      return null;
+    }
+    const text = await response.text();
+    const parsed = JSON.parse(text) as unknown;
+    if (key && key.trim().length > 0) {
+      return replaceKeyPlaceholders(parsed, key.trim()) as StyleSpecification;
+    }
+    return parsed as StyleSpecification;
+  } catch (error) {
+    console.error("Failed to load vector style", error);
+    return null;
+  }
+};
+
 const ensureStyleName = (mapSettings: UIMapSettings): string => {
   const candidate = mapSettings.style;
   if (typeof candidate === "string" && candidate.trim().length > 0) {
@@ -77,12 +116,19 @@ export const loadMapStyle = async (
   let usedFallback = false;
 
   if (resolvedMap.type === "vector") {
-    resolvedStyle = {
-      type: "vector",
-      style: resolvedMap.style_url,
-      variant,
-      name: styleName
-    };
+    const maptilerKey = mapSettings.maptiler?.key ?? null;
+    const vectorStyle = await fetchVectorStyle(resolvedMap.style_url, maptilerKey);
+    if (vectorStyle) {
+      resolvedStyle = {
+        type: "vector",
+        style: vectorStyle,
+        variant,
+        name: styleName
+      };
+    } else {
+      usedFallback = true;
+      resolvedStyle = fallbackStyle;
+    }
   } else {
     const rasterStyle = createCartoStyle(resolvedMap.style_url);
     resolvedStyle = {
