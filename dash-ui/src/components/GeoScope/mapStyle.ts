@@ -1,18 +1,16 @@
 import type { StyleSpecification } from "maplibre-gl";
 
-import type { UIMapSettings } from "../../types/config";
+import type { ResolvedMapConfig, UIMapSettings } from "../../types/config";
 
 const CARTO_ATTRIBUTION = "© OpenStreetMap contributors, © CARTO";
-const CARTO_DARK_TILES =
-  "https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png";
-const CARTO_LIGHT_TILES =
-  "https://basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}.png";
+const CARTO_DARK_TILES = "https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png";
+const CARTO_LIGHT_TILES = "https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png";
 
 export type MapStyleVariant = "dark" | "light" | "bright";
 
 export type MapStyleDefinition = {
   type: "vector" | "raster";
-  style: StyleSpecification;
+  style: StyleSpecification | string;
   variant: MapStyleVariant;
   name: string;
 };
@@ -62,57 +60,10 @@ const ensureStyleName = (mapSettings: UIMapSettings): string => {
   return "raster-carto-dark";
 };
 
-const sanitizeOptionalString = (value?: string | null): string | null => {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-  return null;
-};
-
-const selectMaptilerUrl = (
+export const loadMapStyle = async (
   mapSettings: UIMapSettings,
-  variant: MapStyleVariant
-): string | null => {
-  const config = mapSettings.maptiler;
-  if (!config) {
-    return null;
-  }
-
-  if (variant === "dark") {
-    return sanitizeOptionalString(config.styleUrlDark) ?? sanitizeOptionalString(config.styleUrlLight);
-  }
-
-  if (variant === "bright") {
-    return (
-      sanitizeOptionalString(config.styleUrlBright) ??
-      sanitizeOptionalString(config.styleUrlLight) ??
-      sanitizeOptionalString(config.styleUrlDark)
-    );
-  }
-
-  return sanitizeOptionalString(config.styleUrlLight) ?? sanitizeOptionalString(config.styleUrlDark);
-};
-
-const injectKeyIntoUrl = (baseUrl: string, key: string): string => {
-  try {
-    const url = new URL(baseUrl);
-    url.searchParams.set("key", key);
-    return url.toString();
-  } catch {
-    const delimiter = baseUrl.includes("?") ? "&" : "?";
-    return `${baseUrl}${delimiter}key=${encodeURIComponent(key)}`;
-  }
-};
-
-const injectKeyPlaceholders = (payload: string, key: string): string => {
-  if (!key) {
-    return payload;
-  }
-  return payload.replace(/{key}/g, key);
-};
-
-export const loadMapStyle = async (mapSettings: UIMapSettings): Promise<MapStyleResult> => {
+  resolvedMap: ResolvedMapConfig
+): Promise<MapStyleResult> => {
   const styleName = ensureStyleName(mapSettings);
   const variant = determineVariant(styleName);
   const fallbackStyle: MapStyleDefinition = {
@@ -125,33 +76,26 @@ export const loadMapStyle = async (mapSettings: UIMapSettings): Promise<MapStyle
   let resolvedStyle = fallbackStyle;
   let usedFallback = false;
 
-  if (styleName.startsWith("vector-")) {
-    const key = sanitizeOptionalString(mapSettings.maptiler?.key) ?? "";
-    const baseUrl = selectMaptilerUrl(mapSettings, variant);
-
-    if (key && baseUrl) {
-      const styleUrl = injectKeyIntoUrl(baseUrl, key);
-      try {
-        const response = await fetch(styleUrl);
-        if (!response.ok) {
-          throw new Error(`Failed to load style: HTTP ${response.status}`);
-        }
-        const styleText = await response.text();
-        const parsed = JSON.parse(injectKeyPlaceholders(styleText, key)) as StyleSpecification;
-        resolvedStyle = {
-          type: "vector",
-          style: parsed,
-          variant,
-          name: styleName
-        };
-      } catch (error) {
-        console.warn("[map] vector style failed, using raster fallback", error);
-        usedFallback = true;
-      }
-    } else {
-      console.warn("[map] vector style failed, using raster fallback");
-      usedFallback = true;
-    }
+  if (resolvedMap.type === "vector") {
+    resolvedStyle = {
+      type: "vector",
+      style: resolvedMap.style_url,
+      variant,
+      name: styleName
+    };
+  } else {
+    const rasterStyle = createCartoStyle(resolvedMap.style_url);
+    resolvedStyle = {
+      type: "raster",
+      style: rasterStyle,
+      variant,
+      name: styleName
+    };
+    fallbackStyle.style = rasterStyle;
+    fallbackStyle.type = "raster";
+    fallbackStyle.variant = variant;
+    fallbackStyle.name = styleName;
+    usedFallback = styleName.startsWith("vector-");
   }
 
   return {

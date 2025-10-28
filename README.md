@@ -40,6 +40,30 @@ Pantalla_reloj/
   depuración puntual.
 - Compilado con `npm run build` y servido por Nginx desde `/var/www/html`.
 
+### Mapas y estilos
+
+- El backend añade un bloque `resolved.map` al `GET /api/config` con el estilo ya
+  resuelto (`engine`, `type` y `style_url`). El frontend siempre consume ese bloque
+  para inicializar MapLibre tanto en el navegador del PC como en el kiosk Chromium.
+- Si `ui.map.provider` vale `maptiler` pero `ui.map.maptiler.key` está vacío, el
+  backend fuerza automáticamente el estilo `raster` de Carto
+  (`https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png`) y emite un aviso en
+  logs (`MapTiler key missing; using Carto raster fallback`). El frontend replica
+  el aviso en consola: `[map] No MapTiler key: using raster Carto fallback`.
+- Para usar estilos vectoriales de MapTiler basta con rellenar la clave en
+  `/config → Mapa → Clave MapTiler`. El cambio se persiste en
+  `/var/lib/pantalla/config.json` con permisos `0600 dani:dani` y se replica al
+  instante en ambos navegadores.
+- El endpoint `GET /api/config/version` devuelve la versión numérica de la
+  configuración y `GET /api/events` publica eventos SSE `config_changed` con el
+  mismo número de versión. El frontend se suscribe (EventSource) y vuelve a pedir
+  `/api/config` sólo cuando la versión sube, sin recargar la página ni reiniciar
+  servicios.
+- Para desactivar el live-reload basta con exportar `VITE_DISABLE_SSE=1` antes de
+  compilar el frontend o definir `window.__PANTALLA_DISABLE_SSE = true` en
+  `index.html` antes de cargar `main.tsx`; en ambos casos se omite la conexión SSE
+  y la UI deja de actualizarse en caliente.
+
 ### Nginx (reverse proxy `/api`)
 
 - El virtual host `etc/nginx/sites-available/pantalla-reloj.conf` debe quedar

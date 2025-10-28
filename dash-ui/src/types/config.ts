@@ -75,9 +75,24 @@ export type AIConfig = {
   enabled: boolean;
 };
 
+export type ResolvedMapConfig = {
+  engine: "maplibre";
+  type: "vector" | "raster";
+  style_url: string;
+};
+
+export type ResolvedConfig = {
+  map: ResolvedMapConfig;
+};
+
 export type AppConfig = {
   display: DisplayConfig;
   ui: UIConfig;
   news: NewsConfig;
   ai: AIConfig;
+};
+
+export type AppConfigResponse = AppConfig & {
+  resolved: ResolvedConfig;
+  version: number;
 };

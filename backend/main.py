@@ -1,25 +1,55 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, AsyncIterator, Dict
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from .cache import CacheStore
 from .config_manager import ConfigManager
 from .logging_utils import configure_logging
-from .models import AppConfig
+from .models import AppConfig, AppConfigResponse
 
 APP_START = datetime.now(timezone.utc)
 logger = configure_logging()
 config_manager = ConfigManager()
 cache_store = CacheStore()
+
+
+class EventBroadcaster:
+    def __init__(self) -> None:
+        self._subscribers: set[asyncio.Queue[str]] = set()
+        self._lock = asyncio.Lock()
+
+    async def subscribe(self) -> asyncio.Queue[str]:
+        queue: asyncio.Queue[str] = asyncio.Queue()
+        async with self._lock:
+            self._subscribers.add(queue)
+        return queue
+
+    async def unsubscribe(self, queue: asyncio.Queue[str]) -> None:
+        async with self._lock:
+            self._subscribers.discard(queue)
+
+    async def publish(self, message: str) -> None:
+        async with self._lock:
+            subscribers = list(self._subscribers)
+        for queue in subscribers:
+            try:
+                queue.put_nowait(message)
+            except asyncio.QueueFull:
+                logger.warning("Dropping event for slow subscriber")
+
+
+broadcaster = EventBroadcaster()
 
 app = FastAPI(title="Pantalla Reloj Backend", version="2025.10.0")
 app.add_middleware(
@@ -124,17 +154,17 @@ def healthcheck() -> Dict[str, Any]:
     return _health_payload()
 
 
-@app.get("/api/config", response_model=AppConfig)
-def get_config() -> AppConfig:
+@app.get("/api/config", response_model=AppConfigResponse)
+def get_config() -> AppConfigResponse:
     logger.info("Fetching configuration")
-    return config_manager.read()
+    return config_manager.read_response()
 
 
 MAX_CONFIG_PAYLOAD_BYTES = 64 * 1024
 
 
-@app.post("/api/config", response_model=AppConfig)
-async def save_config(request: Request) -> AppConfig:
+@app.post("/api/config", response_model=AppConfigResponse)
+async def save_config(request: Request) -> AppConfigResponse:
     body = await request.body()
     if len(body) > MAX_CONFIG_PAYLOAD_BYTES:
         logger.warning("Configuration payload exceeds size limit")
@@ -152,7 +182,7 @@ async def save_config(request: Request) -> AppConfig:
             logger.warning("Configuration payload must be a JSON object")
             raise HTTPException(status_code=400, detail="Configuration payload must be a JSON object")
     try:
-        updated = config_manager.write(payload)
+        updated = config_manager.write_response(payload)
     except ValidationError as exc:
         logger.debug("Configuration validation error: %s", exc.errors())
         raise HTTPException(status_code=400, detail=exc.errors()) from exc
@@ -160,12 +190,44 @@ async def save_config(request: Request) -> AppConfig:
         logger.exception("Failed to persist configuration: %s", exc)
         raise HTTPException(status_code=500, detail="Unable to persist configuration") from exc
     logger.info("Configuration updated")
+    await broadcaster.publish(_format_sse("config_changed", {"version": updated.version}))
     return updated
 
 
 @app.get("/api/config/schema")
 def get_config_schema() -> Dict[str, Any]:
     return AppConfig.model_json_schema()
+
+
+@app.get("/api/config/version")
+def get_config_version() -> Dict[str, int]:
+    return {"version": config_manager.version}
+
+
+def _format_sse(event: str, data: Dict[str, Any]) -> str:
+    payload = json.dumps(data, ensure_ascii=False)
+    return f"event: {event}\ndata: {payload}\n\n"
+
+
+async def _event_stream(request: Request) -> AsyncIterator[str]:
+    queue = await broadcaster.subscribe()
+    try:
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                message = await asyncio.wait_for(queue.get(), timeout=15)
+            except asyncio.TimeoutError:
+                yield "event: ping\ndata: {}\n\n"
+                continue
+            yield message
+    finally:
+        await broadcaster.unsubscribe(queue)
+
+
+@app.get("/api/events")
+async def get_events(request: Request) -> StreamingResponse:
+    return StreamingResponse(_event_stream(request), media_type="text/event-stream")
 
 
 @app.get("/api/weather")

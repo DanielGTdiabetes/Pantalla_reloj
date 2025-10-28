@@ -4,6 +4,7 @@ import { Route, Routes } from "react-router-dom";
 import GeoScopeMap from "./components/GeoScope/GeoScopeMap";
 import MapFrame from "./components/MapFrame";
 import { RightPanel } from "./components/RightPanel";
+import useConfigWatcher from "./hooks/useConfigWatcher";
 import { ConfigPage } from "./pages/ConfigPage";
 
 const DashboardShell: React.FC = () => {
@@ -20,6 +21,7 @@ const DashboardShell: React.FC = () => {
 };
 
 const App: React.FC = () => {
+  useConfigWatcher();
   return (
     <Routes>
       <Route path="/" element={<DashboardShell />} />
