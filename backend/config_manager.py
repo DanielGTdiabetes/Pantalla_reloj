@@ -81,8 +81,14 @@ class ConfigManager:
 
     def _atomic_write(self, config: AppConfig) -> None:
         serialized = config.model_dump(mode="json", exclude_none=True)
-        tmp_fd, tmp_path = tempfile.mkstemp(dir=self.config_file.parent, prefix=".config", suffix=".tmp")
+        self.config_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp_fd, tmp_path = tempfile.mkstemp(
+            dir=self.config_file.parent,
+            prefix=".config",
+            suffix=".tmp",
+        )
         try:
+            os.fchmod(tmp_fd, 0o600)
             with os.fdopen(tmp_fd, "w", encoding="utf-8") as handle:
                 json.dump(serialized, handle, indent=2, ensure_ascii=False)
                 handle.flush()

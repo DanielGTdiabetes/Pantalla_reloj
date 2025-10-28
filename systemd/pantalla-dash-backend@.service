@@ -5,6 +5,8 @@ Wants=network-online.target
 
 [Service]
 User=%i
+# StateDirectory crea /var/lib/pantalla con owner=User y 0755; evita PermissionError en atomic_write()
+StateDirectory=pantalla
 WorkingDirectory=/opt/pantalla-reloj/backend
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/local/bin/pantalla-backend-launch
