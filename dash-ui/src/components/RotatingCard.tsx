@@ -8,12 +8,13 @@ export type RotatingCardItem = {
 
 type RotatingCardProps = {
   cards: RotatingCardItem[];
+  disabled?: boolean;
 };
 
 const MIN_DURATION = 4000;
 const TRANSITION_DURATION = 400;
 
-export const RotatingCard = ({ cards }: RotatingCardProps): JSX.Element => {
+export const RotatingCard = ({ cards, disabled = false }: RotatingCardProps): JSX.Element => {
   const fallbackCards = useMemo<RotatingCardItem[]>(() => {
     if (cards.length > 0) {
       return cards;
@@ -38,11 +39,16 @@ export const RotatingCard = ({ cards }: RotatingCardProps): JSX.Element => {
 
   const cardCount = fallbackCards.length;
   useEffect(() => {
+    if (disabled) {
+      setActiveIndex(0);
+      return;
+    }
+
     setActiveIndex((prev) => (prev >= cardCount ? 0 : prev));
-  }, [cardCount]);
+  }, [cardCount, disabled]);
 
   useEffect(() => {
-    if (cardCount === 0) {
+    if (disabled || cardCount === 0) {
       return undefined;
     }
 
@@ -63,7 +69,7 @@ export const RotatingCard = ({ cards }: RotatingCardProps): JSX.Element => {
         timeoutRef.current = null;
       }
     };
-  }, [activeIndex, cardCount]);
+  }, [activeIndex, cardCount, disabled, fallbackCards]);
 
   useEffect(() => {
     return () => {
@@ -73,11 +79,14 @@ export const RotatingCard = ({ cards }: RotatingCardProps): JSX.Element => {
     };
   }, []);
 
-  const CurrentCard = fallbackCards[activeIndex]?.render;
+  const CurrentCard = (disabled ? fallbackCards[0] : fallbackCards[activeIndex])?.render;
+  const isHidden = !disabled && isTransitioning;
 
   return (
     <div className="rotating-card" role="region" aria-live="polite">
-      <div className={`rotating-card__content${isTransitioning ? " rotating-card__content--hidden" : ""}`}>
+      <div
+        className={`rotating-card__content${isHidden ? " rotating-card__content--hidden" : ""}`}
+      >
         {CurrentCard ? <CurrentCard /> : null}
       </div>
     </div>

@@ -13,6 +13,13 @@ npm run dev
 Set `VITE_BACKEND_URL` when connecting to a remote backend (defaults to
 `http://127.0.0.1:8081`).
 
+### Static overlay mode
+
+Add `?static=1` to the kiosk URL or set the environment variable
+`VITE_STATIC_OVERLAY=1` to force a minimal overlay without rotating cards or map
+components. This mode performs a single weather/astronomy fetch on load to aid
+debugging runaway renders.
+
 ## Build
 
 ```bash
