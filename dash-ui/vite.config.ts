@@ -13,8 +13,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 1500
   },
   optimizeDeps: {
-    include: ["react", "react-dom"],
-    dedupe: ["react", "react-dom"]
+    include: ["react", "react-dom"]
   },
   resolve: {
     dedupe: ["react", "react-dom"]
