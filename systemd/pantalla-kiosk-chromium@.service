@@ -4,23 +4,37 @@ After=pantalla-openbox@%i.service
 Wants=pantalla-openbox@%i.service
 
 [Service]
-Type=simple
 User=%i
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/%i/.Xauthority
 Environment=GDK_BACKEND=x11
 Environment=GTK_USE_PORTAL=0
 Environment=GIO_USE_PORTALS=0
-Environment=CHROMIUM_SCALE=0.60
-Environment=PANTALLA_GPU_MODE=auto
-Environment=PANTALLA_FORCE_SWIFTSHADER_FILE=/var/lib/pantalla-reloj/state/.force-swiftshader
+Environment=CHROMIUM_SCALE=0.84
 
 ExecStartPre=/bin/sh -lc 'xset -dpms; xset s off; xset s noblank || true'
+ExecStartPre=/bin/sh -lc 'wmctrl -lx | awk "/pantalla-kiosk/ {print \\$1}" | xargs -r -n1 wmctrl -ic || true'
 
-ExecStart=/usr/local/bin/pantalla-kiosk-chromium
+ExecStart=/bin/sh -lc '\
+  chromium-browser \
+    --class=pantalla-kiosk \
+    --kiosk --start-fullscreen \
+    --app=http://127.0.0.1 \
+    --no-first-run --no-default-browser-check \
+    --disable-translate --disable-infobars --disable-session-crashed-bubble --noerrdialogs \
+    --disable-features=CalculateNativeWinOcclusion,InfiniteSessionRestore,Translate,HardwareMediaKeyHandling \
+    --disable-renderer-backgrounding --disable-background-timer-throttling --disable-backgrounding-occluded-windows \
+    --hide-scrollbars --overscroll-history-navigation=0 \
+    --password-store=basic \
+    --test-type \
+    --ozone-platform=x11 \
+    --disable-gpu \
+    --force-device-scale-factor=${CHROMIUM_SCALE} \
+    --disk-cache-dir=/var/lib/pantalla-reloj/cache/chromium \
+    --user-data-dir=/var/lib/pantalla-reloj/state/chromium \
+'
 Restart=on-failure
 RestartSec=2
-KillMode=process
 
 [Install]
 WantedBy=multi-user.target

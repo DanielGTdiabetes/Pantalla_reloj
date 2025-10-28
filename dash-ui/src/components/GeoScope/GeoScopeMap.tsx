@@ -3,20 +3,13 @@ import type { MapLibreEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
 
+import { apiGet } from "../../lib/api";
 import {
   createDefaultMapCinema,
-  createDefaultMapSettings
+  createDefaultMapSettings,
+  withConfigDefaults
 } from "../../config/defaults";
-import type {
-  AppConfig,
-  MapCinemaBand,
-  MapCinemaConfig,
-  MapConfig,
-  MapThemeConfig,
-  ResolvedMapConfig
-} from "../../types/config";
-import { useConfigStore } from "../../state/configStore";
-import useWebGLCheck from "../../hooks/useWebGLCheck";
+import type { AppConfig, MapCinemaBand, MapCinemaConfig, MapConfig, MapThemeConfig } from "../../types/config";
 import {
   loadMapStyle,
   type MapStyleDefinition,
@@ -38,11 +31,6 @@ const FRAME_MIN_INTERVAL_MS = 1000 / FPS_LIMIT;
 const MAX_DELTA_SECONDS = 0.5;
 
 const FALLBACK_THEME = createDefaultMapSettings().theme ?? {};
-const FALLBACK_RESOLVED_MAP: ResolvedMapConfig = {
-  engine: "maplibre",
-  type: "raster",
-  style_url: "https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
-};
 
 const cloneTheme = (theme?: MapThemeConfig | null): MapThemeConfig => ({
   ...FALLBACK_THEME,
@@ -251,32 +239,25 @@ const buildRuntimePreferences = (
   };
 };
 
-const createRuntimePreferences = async (
-  config: AppConfig | null | undefined,
-  resolvedMap: ResolvedMapConfig | null | undefined
-): Promise<RuntimePreferences> => {
-  const fallbackSettings = createDefaultMapSettings();
-  const effectiveResolved = resolvedMap ?? FALLBACK_RESOLVED_MAP;
+const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
   try {
-    const mapSettings = (config?.ui?.map as MapConfig | undefined) ?? fallbackSettings;
-    const styleResult = await loadMapStyle(mapSettings, effectiveResolved);
+    const config = await apiGet<AppConfig | undefined>("/api/config");
+    const merged = withConfigDefaults(config);
+    const mapSettings = merged.ui.map;
+    const styleResult = await loadMapStyle(mapSettings);
     return buildRuntimePreferences(mapSettings, styleResult);
   } catch (error) {
     console.warn(
       "[GeoScopeMap] Falling back to default cinema configuration (using defaults).",
       error
     );
-    const styleResult = await loadMapStyle(fallbackSettings, FALLBACK_RESOLVED_MAP);
+    const fallbackSettings = createDefaultMapSettings();
+    const styleResult = await loadMapStyle(fallbackSettings);
     return buildRuntimePreferences(fallbackSettings, styleResult);
   }
 };
 
 export default function GeoScopeMap() {
-  const { config, resolved, version } = useConfigStore((state) => ({
-    config: state.config,
-    resolved: state.resolved,
-    version: state.version
-  }));
   const mapFillRef = useRef<HTMLDivElement | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -295,24 +276,6 @@ export default function GeoScopeMap() {
   const fallbackStyleRef = useRef<MapStyleDefinition | null>(null);
   const fallbackAppliedRef = useRef(false);
   const [tintColor, setTintColor] = useState<string | null>(null);
-  const fallbackNoticeRef = useRef(false);
-  const webglCheck = useWebGLCheck();
-
-  useEffect(() => {
-    const mapSettings = config?.ui?.map;
-    const provider = mapSettings?.provider;
-    const key = mapSettings?.maptiler?.key ?? null;
-    const missingKey = provider === "maptiler" && (!key || key.trim().length === 0);
-    const usingRaster = (resolved?.map?.type ?? "raster") === "raster";
-    if (missingKey && usingRaster) {
-      if (!fallbackNoticeRef.current) {
-        console.warn("[map] No MapTiler key: using raster Carto fallback");
-        fallbackNoticeRef.current = true;
-      }
-    } else {
-      fallbackNoticeRef.current = false;
-    }
-  }, [config?.ui?.map?.provider, config?.ui?.map?.maptiler?.key, resolved?.map?.type, resolved?.map?.style_url]);
 
   const applyBandInstant = (band: MapCinemaBand, map?: maplibregl.Map | null) => {
     const zoom = Number.isFinite(band.zoom) ? band.zoom : viewStateRef.current.zoom;
@@ -444,12 +407,6 @@ export default function GeoScopeMap() {
   };
 
   useEffect(() => {
-    if (!webglCheck.supported) {
-      return;
-    }
-    void version;
-    const activeConfig = config ?? null;
-    const activeResolved = resolved?.map ?? null;
     let destroyed = false;
     let sizeCheckFrame: number | null = null;
     let styleErrorHandler: ((event: MapLibreEvent & { error?: unknown }) => void) | null =
@@ -621,7 +578,7 @@ export default function GeoScopeMap() {
 
     const initializeMap = async () => {
       const hostPromise = waitForStableSize();
-      const runtime = await createRuntimePreferences(activeConfig, activeResolved);
+      const runtime = await loadRuntimePreferences();
 
       if (destroyed) {
         return;
@@ -663,30 +620,19 @@ export default function GeoScopeMap() {
         }
       }
 
-      let map: maplibregl.Map;
-      try {
-        map = new maplibregl.Map({
-          container: host,
-          style: runtime.style.style,
-          center: [viewStateRef.current.lng, viewStateRef.current.lat],
-          zoom: viewStateRef.current.zoom,
-          minZoom: firstBand.minZoom,
-          pitch: viewStateRef.current.pitch,
-          bearing: viewStateRef.current.bearing,
-          interactive: false,
-          attributionControl: false,
-          renderWorldCopies: runtime.renderWorldCopies,
-          trackResize: false
-        });
-      } catch (error) {
-        const normalizedError =
-          error instanceof Error ? error : new Error(String(error ?? "Error creando MapLibre"));
-        console.error("[GeoScopeMap] No se pudo inicializar el mapa", normalizedError);
-        setTimeout(() => {
-          throw normalizedError;
-        });
-        return;
-      }
+      const map = new maplibregl.Map({
+        container: host,
+        style: runtime.style.style,
+        center: [viewStateRef.current.lng, viewStateRef.current.lat],
+        zoom: viewStateRef.current.zoom,
+        minZoom: firstBand.minZoom,
+        pitch: viewStateRef.current.pitch,
+        bearing: viewStateRef.current.bearing,
+        interactive: false,
+        attributionControl: false,
+        renderWorldCopies: runtime.renderWorldCopies,
+        trackResize: false
+      });
 
       mapRef.current = map;
       map.setMinZoom(firstBand.minZoom);
@@ -798,7 +744,7 @@ export default function GeoScopeMap() {
         mapRef.current = null;
       }
     };
-  }, [config, resolved, version, webglCheck.supported]);
+  }, []);
 
   return (
     <div className="map-host">

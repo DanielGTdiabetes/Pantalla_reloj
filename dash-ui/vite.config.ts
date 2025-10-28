@@ -9,13 +9,6 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
-    sourcemap: true,
-    chunkSizeWarningLimit: 1500
-  },
-  optimizeDeps: {
-    include: ["react", "react-dom"]
-  },
-  resolve: {
-    dedupe: ["react", "react-dom"]
+    sourcemap: false
   }
 });

@@ -13,21 +13,6 @@ npm run dev
 Set `VITE_BACKEND_URL` when connecting to a remote backend (defaults to
 `http://127.0.0.1:8081`).
 
-### Static overlay mode
-
-Add `?static=1` to the kiosk URL or set the environment variable
-`VITE_STATIC_OVERLAY=1` to force a minimal overlay without rotating cards or map
-components. This mode performs a single weather/astronomy fetch on load to aid
-debugging runaway renders.
-
-### Ultra-safe kiosk mode
-
-Append `?ultra=1` to the kiosk URL or set `VITE_ULTRA_SAFE=1` to render a
-minimal "ULTRA-SAFE MODE" clock screen. This path bypasses all rotating cards,
-map components, intervals, and timers so recurring React `#185` errors can be
-isolated. If the loop persists with this flag, the fault lies outside the
-rotating/map layers.
-
 ## Build
 
 ```bash

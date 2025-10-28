@@ -100,20 +100,6 @@ class MapConfig(BaseModel):
     theme: MapTheme = Field(default_factory=MapTheme)
 
 
-class ResolvedMap(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    engine: Literal["maplibre"] = "maplibre"
-    type: Literal["vector", "raster"]
-    style_url: str = Field(min_length=1)
-
-
-class ResolvedConfig(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    map: ResolvedMap
-
-
 class Rotation(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -178,11 +164,6 @@ class AppConfig(BaseModel):
         )
 
 
-class AppConfigResponse(AppConfig):
-    resolved: ResolvedConfig
-    version: int = Field(default=0, ge=0)
-
-
 class CachedPayload(BaseModel):
     source: str
     fetched_at: datetime
@@ -199,9 +180,6 @@ __all__ = [
     "MapConfig",
     "MapTheme",
     "News",
-    "ResolvedConfig",
-    "ResolvedMap",
     "Rotation",
     "UI",
-    "AppConfigResponse",
 ]

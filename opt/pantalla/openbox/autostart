@@ -119,35 +119,3 @@ fi
 log_session "xset-hook-finished"
 
 sleep 0.5 2>/dev/null || sleep 1
-
-ensure_kiosk_window_state() {
-  if ! command -v wmctrl >/dev/null 2>&1; then
-    log_session "wmctrl-missing"
-    return
-  fi
-
-  local attempt window_id
-  for attempt in {1..30}; do
-    window_id=$(DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" wmctrl -lx 2>/dev/null | awk '/pantalla-kiosk/{print $1; exit}')
-    if [[ -n "$window_id" ]]; then
-      DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" wmctrl -ir "$window_id" -b add,fullscreen,above,sticky >/dev/null 2>&1 || true
-      DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" wmctrl -ir "$window_id" -b add,skip_taskbar,skip_pager >/dev/null 2>&1 || true
-      if command -v xprop >/dev/null 2>&1; then
-        local state
-        state=$(DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xprop -id "$window_id" _NET_WM_STATE 2>/dev/null || true)
-        if grep -Eq 'FULLSCREEN' <<<"$state" && grep -Eq 'ABOVE' <<<"$state"; then
-          log_session "wmctrl-window-ready id=${window_id} attempts=${attempt}"
-          return
-        fi
-      else
-        log_session "wmctrl-window-applied id=${window_id}"
-        return
-      fi
-    fi
-    sleep 0.5
-  done
-
-  log_session "wmctrl-window-timeout"
-}
-
-ensure_kiosk_window_state &
