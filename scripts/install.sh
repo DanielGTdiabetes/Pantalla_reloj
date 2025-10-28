@@ -44,7 +44,7 @@ log_ok()   { printf '[OK] %s\n' "$*"; }
 log_error(){ printf '[ERROR] %s\n' "$*" >&2; }
 
 wait_for_backend_ready() {
-  local max_wait=60
+  local max_wait=40
   local sleep_interval=2
   local waited=0
   local backend_url="http://127.0.0.1:8081/api/health"
@@ -107,7 +107,6 @@ install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$USER_HOME"
 install -d -m 0755 "$PANTALLA_PREFIX" "$SESSION_PREFIX"
 install -d -m 0755 "$SESSION_PREFIX/bin" "$SESSION_PREFIX/openbox"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" /opt/pantalla-reloj/frontend/static
-install -d -m 0755 -o root -g root /var/lib/pantalla
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$KIOSK_LOG_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$LOG_DIR"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
@@ -337,85 +336,24 @@ configure_nginx() {
 
   ln -sfn "$vhost" "$se/pantalla-reloj.conf"
 
-  local nginx_test_output
-  if ! nginx_test_output=$(nginx -t 2>&1); then
-    printf '%s\n' "$nginx_test_output"
-    if [[ "$nginx_test_output" == *"duplicate default server"* ]]; then
-      log_warn "nginx -t falló por default_server duplicado. Ejecutando diagnóstico…"
-
-      log_info "---- default_server refs ----"
-      local default_refs
-      default_refs="$(grep -nR "default_server" /etc/nginx/sites-enabled /etc/nginx/sites-available 2>/dev/null || true)"
-      if [[ -n "$default_refs" ]]; then
-        printf '%s\n' "$default_refs"
-      else
-        log_info "(sin coincidencias)"
-      fi
-
-      log_info "---- listen :80 refs ----"
-      local listen_refs
-      listen_refs="$(grep -nR "listen .*80" /etc/nginx/sites-enabled /etc/nginx/sites-available 2>/dev/null || true)"
-      if [[ -n "$listen_refs" ]]; then
-        printf '%s\n' "$listen_refs"
-      else
-        log_info "(sin coincidencias)"
-      fi
-
-      if grep -Eq 'listen[[:space:]]+80[[:space:]]+default_server;' "$vhost" || \
-         grep -Eq 'listen[[:space:]]+\[::\]:80[[:space:]]+default_server;' "$vhost"; then
-        log_warn "Nuestro vhost contenía default_server; reescribiéndolo sin el flag."
-        install -D -m 0644 "$NGINX_TEMPLATE" "$vhost"
-        ln -sfn "$vhost" "$se/pantalla-reloj.conf"
-      fi
-
-      default_refs="$(grep -nR "default_server" /etc/nginx/sites-enabled /etc/nginx/sites-available 2>/dev/null || true)"
-
-      if ! nginx_test_output=$(nginx -t 2>&1); then
-        printf '%s\n' "$nginx_test_output"
-        if [[ "$nginx_test_output" == *"duplicate default server"* ]]; then
-          local conflict_file
-          conflict_file="$(printf '%s\n' "$default_refs" | awk -F: '$1 !~ /pantalla-reloj\.conf/ && $1 != "" {print $1; exit}')"
-          if [[ -z "$conflict_file" ]]; then
-            conflict_file="otro archivo en /etc/nginx/sites-enabled"
-          fi
-          log_error "Nginx sigue detectando un default_server duplicado en: $conflict_file"
-          log_error "Deshabilítelo manualmente (por ejemplo: sudo rm /etc/nginx/sites-enabled/default) y vuelva a ejecutar el instalador."
-        else
-          log_error "nginx -t sigue fallando: $nginx_test_output"
-        fi
-        exit 1
-      fi
-    else
-      log_error "nginx -t falló: $nginx_test_output"
-      exit 1
-    fi
+  local trailing_files
+  trailing_files="$(grep -RIl 'location /api/ {' /etc/nginx/sites-available /etc/nginx/sites-enabled 2>/dev/null || true)"
+  if [[ -n "${trailing_files// }" ]]; then
+    log_warn "Corrigiendo bloques location /api/ { residuales"
+    while IFS= read -r file; do
+      [[ -z "$file" ]] && continue
+      sed -i 's#location /api/ {#location /api {#' "$file"
+    done <<<"$trailing_files"
   fi
 
   systemctl enable --now nginx >/dev/null 2>&1 || true
-  systemctl reload nginx
+
+  if ! (nginx -t && systemctl reload nginx); then
+    log_error "nginx -t && systemctl reload nginx falló"
+    exit 1
+  fi
+
   log_info "Nginx recargado correctamente"
-
-  local front_status
-  front_status="$(curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1/ || true)"
-  front_status="${front_status:-000}"
-  echo "FRONT:${front_status}"
-
-  local api_status
-  api_status="$(curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1/api/health || true)"
-  api_status="${api_status:-000}"
-  echo "API:${api_status}"
-
-  if [[ "$front_status" != "200" ]]; then
-    log_warn "Frontend aún no responde correctamente (HTTP $front_status)"
-  else
-    log_info "Frontend OK (HTTP 200)"
-  fi
-
-  if [[ "$api_status" != "200" ]]; then
-    log_warn "Backend aún no responde (HTTP $api_status); se levantará vía systemd."
-  else
-    log_info "Backend OK (HTTP 200)"
-  fi
 }
 
 configure_nginx
@@ -492,6 +430,7 @@ systemctl mask "pantalla-portal@${USER_NAME}.service" 2>/dev/null || true
 log_info "Enabling services"
 systemctl enable --now pantalla-xorg.service || true
 systemctl enable --now pantalla-dash-backend@${USER_NAME}.service || true
+install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" /var/lib/pantalla || true
 systemctl enable --now "pantalla-openbox@${USER_NAME}.service" || true
 
 # Crear /run/user/<uid> correcto para el usuario kiosk (no asumir 1000)
@@ -553,7 +492,7 @@ if ! wait_for_backend_ready; then
 fi
 
 log_info "Ejecutando verificador post-deploy"
-if ! "$REPO_ROOT/scripts/verify_api.sh"; then
+if ! VERIFY_USER="$USER_NAME" "$REPO_ROOT/scripts/verify_api.sh"; then
   log_error "La verificación de Nginx/API falló"
   exit 1
 fi
