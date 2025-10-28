@@ -103,7 +103,7 @@ rm -f /etc/systemd/system/pantalla-openbox@.service
 rm -f /etc/systemd/system/pantalla-xorg.service
 rm -f /etc/systemd/system/pantalla-dash-backend@.service
 rm -f /etc/systemd/system/pantalla-portal@.service
-rm -rf /etc/systemd/system/pantalla-kiosk@.service.d /etc/systemd/system/pantalla-openbox@.service.d /etc/systemd/system/pantalla-dash-backend@.service.d
+rm -rf /etc/systemd/system/pantalla-kiosk@.service.d /etc/systemd/system/pantalla-openbox@.service.d /etc/systemd/system/pantalla-dash-backend@.service.d /etc/systemd/system/pantalla-kiosk-chromium@.service.d
 
 systemctl daemon-reload
 systemctl reset-failed >/dev/null 2>&1 || true
@@ -149,6 +149,8 @@ restore_nginx_default() {
 restore_nginx_default
 
 rm -f /usr/local/bin/pantalla-kiosk
+rm -f /usr/local/bin/pantalla-kiosk-chromium
+rm -f /usr/local/bin/pantalla-verify-kiosk
 
 if [[ -f "$WEBROOT_MANIFEST" ]]; then
   log_info "Removing tracked web assets"
@@ -222,6 +224,9 @@ if [[ $PURGE_KIOSK_CHROMIUM_STATE -eq 1 ]]; then
   log_info "Removing Chromium kiosk state directories"
   rm -rf /var/lib/pantalla-reloj/state/chromium /var/lib/pantalla-reloj/cache/chromium
 fi
+
+SWIFTSHADER_FLAG="/var/lib/pantalla-reloj/state/.force-swiftshader"
+rm -f "$SWIFTSHADER_FLAG"
 
 HOME_AUTH="/home/${USER_NAME}/.Xauthority"
 HOME_AUTH_BACKUP="${HOME_AUTH}.bak"

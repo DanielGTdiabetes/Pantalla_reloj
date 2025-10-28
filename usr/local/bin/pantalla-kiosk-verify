@@ -5,15 +5,17 @@ log() {
   printf '[pantalla-kiosk-verify] %s\n' "$*"
 }
 
-KIOSK_USER="${KIOSK_USER:-dani}"
+KIOSK_USER="${KIOSK_USER:-${USER:-$(id -un)}}"
 : "${DISPLAY:=:0}"
 : "${XAUTHORITY:=/home/${KIOSK_USER}/.Xauthority}"
 
-PROCESS_PATTERN='/snap/chromium/.*/chrome .*--class=pantalla-kiosk'
+PROCESS_PATTERN='--class=pantalla-kiosk'
 
-if ! pgrep -af "$PROCESS_PATTERN" >/dev/null; then
-  log "Proceso de Chromium con clase pantalla-kiosk no encontrado"
-  exit 1
+if ! pgrep -afu "$KIOSK_USER" -- "$PROCESS_PATTERN" >/dev/null 2>&1; then
+  if ! pgrep -af "$PROCESS_PATTERN" >/dev/null 2>&1; then
+    log "Proceso de Chromium con clase pantalla-kiosk no encontrado"
+    exit 1
+  fi
 fi
 
 if ! command -v wmctrl >/dev/null 2>&1; then
@@ -49,8 +51,13 @@ if [[ -z "$STATE" ]]; then
   exit 1
 fi
 
-if ! grep -Eq 'FULLSCREEN|ABOVE' <<<"$STATE"; then
-  log "La ventana $WINDOW_ID no está en estado FULLSCREEN o ABOVE"
+if ! grep -Eq 'FULLSCREEN' <<<"$STATE"; then
+  log "La ventana $WINDOW_ID no tiene estado FULLSCREEN"
+  exit 1
+fi
+
+if ! grep -Eq 'ABOVE' <<<"$STATE"; then
+  log "La ventana $WINDOW_ID no tiene estado ABOVE"
   exit 1
 fi
 
