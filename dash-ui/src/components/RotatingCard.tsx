@@ -51,7 +51,7 @@ export const RotatingCard = ({ cards, disabled = false }: RotatingCardProps): JS
   }, [signature]);
 
   useEffect(() => {
-    if (process.env.NODE_ENV !== "production") {
+    if (import.meta.env.DEV) {
       // eslint-disable-next-line no-console
       console.info(`[RotatingCard] signature → ${signature}`);
     }
