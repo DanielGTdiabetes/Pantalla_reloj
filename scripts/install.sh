@@ -138,6 +138,7 @@ APT_PACKAGES=(
   jq
   rsync
   file
+  gnupg  # required for NodeSource key import
   xauth
   python3-venv
   unclutter-xfixes
