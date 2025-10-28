@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 import { withConfigDefaults } from "../config/defaults";
 import { apiGet } from "../lib/api";
+import { isStaticMode } from "../lib/staticMode";
 import { useConfig } from "../lib/useConfig";
 import { dayjs } from "../utils/dayjs";
 import { ensurePlainText, sanitizeRichText } from "../utils/sanitize";
@@ -104,9 +105,36 @@ export const OverlayRotator: React.FC = () => {
   const config = useMemo(() => data ?? withConfigDefaults(), [data]);
   const [payload, setPayload] = useState<DashboardPayload>({});
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const STATIC_MODE = isStaticMode();
 
   useEffect(() => {
     let mounted = true;
+
+    if (STATIC_MODE) {
+      const fetchStaticPayload = async () => {
+        const [weather, astronomy] = await Promise.all([
+          apiGet<Record<string, unknown>>("/api/weather").catch((error) => {
+            console.error("Failed to load weather data", error);
+            return {};
+          }),
+          apiGet<Record<string, unknown>>("/api/astronomy").catch((error) => {
+            console.error("Failed to load astronomy data", error);
+            return {};
+          })
+        ]);
+
+        if (mounted) {
+          setPayload({ weather, astronomy });
+          setLastUpdatedAt(Date.now());
+        }
+      };
+
+      void fetchStaticPayload();
+
+      return () => {
+        mounted = false;
+      };
+    }
 
     const fetchAll = async () => {
       try {
@@ -135,7 +163,7 @@ export const OverlayRotator: React.FC = () => {
       mounted = false;
       window.clearInterval(interval);
     };
-  }, []);
+  }, [STATIC_MODE]);
 
   const weather = (payload.weather ?? {}) as Record<string, unknown>;
   const astronomy = (payload.astronomy ?? {}) as Record<string, unknown>;
@@ -290,6 +318,41 @@ export const OverlayRotator: React.FC = () => {
   }, [lastUpdatedAt, lastUpdatedLabel, loading]);
 
   const hasCards = rotatingCards.length > 0;
+
+  if (STATIC_MODE) {
+    const now = dayjs().tz(config.display.timezone);
+    const timeLabel = now.format("HH:mm");
+    const dateLabel = now.format("dddd, D MMMM");
+    const weatherLineParts: string[] = [];
+
+    if (temperature.value !== "--") {
+      weatherLineParts.push(`${temperature.value}${temperature.unit}`);
+    }
+
+    if (condition) {
+      weatherLineParts.push(condition);
+    }
+
+    const weatherLine = weatherLineParts.join(" · ");
+
+    return (
+      <section className="overlay-rotator" role="complementary" aria-live="polite">
+        <div className="overlay-rotator__content overlay-rotator__content--static">
+          <p className="overlay-rotator__time" aria-label="Hora actual">
+            {timeLabel}
+          </p>
+          <p className="overlay-rotator__date" aria-label="Fecha actual">
+            {dateLabel}
+          </p>
+          {weatherLine ? (
+            <p className="overlay-rotator__weather" aria-label="Condición meteorológica">
+              {weatherLine}
+            </p>
+          ) : null}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="overlay-rotator" role="complementary" aria-live="polite">

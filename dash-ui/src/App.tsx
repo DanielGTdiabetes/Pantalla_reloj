@@ -11,11 +11,28 @@ import { useConfigStore } from "./state/configStore";
 import useWebglStatus from "./hooks/useWebglStatus";
 import { ConfigPage } from "./pages/ConfigPage";
 import { SAFE_MODE_ENABLED } from "./utils/safeMode";
+import { isStaticMode } from "./lib/staticMode";
 
-const DashboardShell: React.FC = () => {
-  const { timezone } = useConfigStore((snapshot) => ({
-    timezone: snapshot.config?.display.timezone ?? "Europe/Madrid"
-  }));
+const StaticDashboardShell: React.FC = () => {
+  const shellClassName = "app-shell";
+
+  return (
+    <div className={shellClassName}>
+      <MapFrame className="map-area">
+        <div className="map-area__static" aria-hidden="true" />
+      </MapFrame>
+      <aside className="side-panel">
+        <RightPanel />
+      </aside>
+    </div>
+  );
+};
+
+type DynamicDashboardShellProps = {
+  timezone: string;
+};
+
+const DynamicDashboardShell: React.FC<DynamicDashboardShellProps> = ({ timezone }) => {
   const webgl = useWebglStatus();
   const safeMode = SAFE_MODE_ENABLED;
   const showFallback = !safeMode && webgl.status === "unavailable";
@@ -37,6 +54,19 @@ const DashboardShell: React.FC = () => {
       </aside>
     </div>
   );
+};
+
+const DashboardShell: React.FC = () => {
+  const { timezone } = useConfigStore((snapshot) => ({
+    timezone: snapshot.config?.display.timezone ?? "Europe/Madrid"
+  }));
+  const staticMode = isStaticMode();
+
+  if (staticMode) {
+    return <StaticDashboardShell />;
+  }
+
+  return <DynamicDashboardShell timezone={timezone} />;
 };
 
 const App: React.FC = () => {
