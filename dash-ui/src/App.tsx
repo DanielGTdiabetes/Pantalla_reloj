@@ -11,7 +11,7 @@ import { useConfigStore } from "./state/configStore";
 import useWebglStatus from "./hooks/useWebglStatus";
 import { ConfigPage } from "./pages/ConfigPage";
 import { SAFE_MODE_ENABLED } from "./utils/safeMode";
-import { isStaticMode } from "./lib/staticMode";
+import { isStaticMode } from "./lib/flags";
 
 const StaticDashboardShell: React.FC = () => {
   const shellClassName = "app-shell";

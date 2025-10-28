@@ -20,6 +20,14 @@ Add `?static=1` to the kiosk URL or set the environment variable
 components. This mode performs a single weather/astronomy fetch on load to aid
 debugging runaway renders.
 
+### Ultra-safe kiosk mode
+
+Append `?ultra=1` to the kiosk URL or set `VITE_ULTRA_SAFE=1` to render a
+minimal "ULTRA-SAFE MODE" clock screen. This path bypasses all rotating cards,
+map components, intervals, and timers so recurring React `#185` errors can be
+isolated. If the loop persists with this flag, the fault lies outside the
+rotating/map layers.
+
 ## Build
 
 ```bash
