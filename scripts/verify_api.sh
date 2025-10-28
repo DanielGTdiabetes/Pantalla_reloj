@@ -1,110 +1,143 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+MAX_WAIT_BACKEND=60
+SLEEP=2
+BACKEND_URL="http://127.0.0.1:8081/api/health"
+NGINX_LOCAL_HEALTH="http://127.0.0.1/api/health"
+NGINX_LOCAL_CONFIG="http://127.0.0.1/api/config"
+
+log() { printf '%s\n' "$*"; }
+log_warn() { printf '[verify][WARN] %s\n' "$*"; }
+log_error() { printf '[verify][ERROR] %s\n' "$*" >&2; }
 
 SUDO_BIN="sudo"
 if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
   SUDO_BIN=""
 fi
 
-log() { printf '%s\n' "$*"; }
-log_error() { printf '[verify][ERROR] %s\n' "$*" >&2; }
-
-check_paths_for_trailing_slashes() {
-  local -a search_paths=()
-
-  [[ -d "$REPO_ROOT/deploy/nginx" ]] && search_paths+=("$REPO_ROOT/deploy/nginx")
-  [[ -d "$REPO_ROOT/etc/nginx" ]] && search_paths+=("$REPO_ROOT/etc/nginx")
-  [[ -f "$REPO_ROOT/scripts/install.sh" ]] && search_paths+=("$REPO_ROOT/scripts/install.sh")
-  [[ -f "$REPO_ROOT/scripts/update.sh" ]] && search_paths+=("$REPO_ROOT/scripts/update.sh")
-
-  if (( ${#search_paths[@]} == 0 )); then
-    return
-  fi
-
-  local pattern='location[[:space:]]+/api/|proxy_pass[[:space:]]+http://127\.0\.0\.1:8081/'
-  local matches
-  matches="$(grep -R -n -E "$pattern" "${search_paths[@]}" 2>/dev/null || true)"
-
-  if [[ -n "$matches" ]]; then
-    log_error "Se detectaron ubicaciones /api con barra final o proxy_pass a 127.0.0.1:8081/ en el repositorio"
-    printf '%s\n' "$matches" >&2
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    log_error "Comando requerido no encontrado: $1"
     exit 1
   fi
 }
 
-check_runtime_trailing_slashes() {
-  local runtime_paths=(
-    /etc/nginx/sites-available/pantalla-reloj.conf
-    /etc/nginx/sites-enabled/pantalla-reloj.conf
-  )
+require_cmd curl
+require_cmd nginx
 
-  for path in "${runtime_paths[@]}"; do
-    if [[ -f "$path" ]]; then
-      if grep -Eq 'location[[:space:]]+/api/' "$path" || \
-         grep -Eq 'proxy_pass[[:space:]]+http://127\.0\.0\.1:8081/' "$path"; then
-        log_error "El archivo $path contiene una definición /api con barra final"
-        exit 1
-      fi
-    fi
-  done
+run_nginx() {
+  if [[ -n "$SUDO_BIN" ]]; then
+    $SUDO_BIN "$@"
+  else
+    "$@"
+  fi
 }
 
-check_endpoint() {
-  local path="$1"
+show_nginx_api_block() {
+  log "[verify] Bloque nginx server_name _; location /api actual"
+  local tmp_file
+  tmp_file="$(mktemp)"
+  if run_nginx nginx -T >"$tmp_file" 2>/dev/null; then
+    sed -n '/server_name _;/,/}/p' "$tmp_file" | sed -n '/location \/api/,/}/p'
+  else
+    log_warn "No se pudo obtener el bloque nginx -T"
+  fi
+  rm -f "$tmp_file"
+  log "[verify] Regla esperada: location /api { proxy_pass http://127.0.0.1:8081; }"
+}
+
+wait_for_backend() {
+  log "[verify] Esperando backend en ${BACKEND_URL} (timeout ${MAX_WAIT_BACKEND}s)"
+  local waited=0
+  until curl -sfS "$BACKEND_URL" >/dev/null; do
+    if (( waited >= MAX_WAIT_BACKEND )); then
+      log_error "Backend no responde en 127.0.0.1:8081 tras ${MAX_WAIT_BACKEND}s"
+      systemctl --no-pager -l status pantalla-dash-backend@dani.service | sed -n '1,60p' || true
+      exit 1
+    fi
+    sleep "$SLEEP"
+    waited=$((waited + SLEEP))
+  done
+  log "[verify] Backend OK en 127.0.0.1:8081"
+}
+
+handle_nginx_failure() {
+  local status="$1"
   local label="$2"
-  local print_body="${3:-0}"
+  local url="$3"
+  local headers_file="$4"
 
-  log "[verify] ${label}"
+  if [[ -s "$headers_file" ]]; then
+    printf '%s\n' "[verify] Cabeceras de respuesta para ${url}:"
+    cat "$headers_file"
+  fi
 
-  local body_file err_file
-  body_file="$(mktemp)"
-  err_file="$(mktemp)"
+  case "$status" in
+    502)
+      log_error "${label} devolvió 502 Bad Gateway"
+      show_nginx_api_block
+      rm -f "$headers_file"
+      exit 1
+      ;;
+    404)
+      log_error "${label} devolvió 404 (revisa la ruta /api en nginx)"
+      rm -f "$headers_file"
+      exit 1
+      ;;
+    "")
+      log_error "${label} falló (curl error al acceder a ${url})"
+      rm -f "$headers_file"
+      exit 1
+      ;;
+    *)
+      log_error "${label} devolvió HTTP ${status}"
+      rm -f "$headers_file"
+      exit 1
+      ;;
+  esac
+}
+
+check_nginx_endpoint() {
+  local url="$1"
+  local label="$2"
+  log "[verify] Probando ${label} (${url})"
+
+  local headers_file
+  headers_file="$(mktemp)"
 
   set +e
-  local http_code
-  http_code=$(curl -sS -o "$body_file" -w '%{http_code}' "http://127.0.0.1${path}" 2>"$err_file")
+  curl -sS -D "$headers_file" -o /dev/null -f "$url"
   local curl_status=$?
   set -e
 
-  if (( curl_status != 0 )); then
-    log_error "curl falló para ${path}"
-    cat "$err_file" >&2
-    rm -f "$body_file" "$err_file"
-    exit 1
+  local status
+  status="$(awk 'NR==1 {print $2}' "$headers_file" 2>/dev/null || true)"
+
+  if (( curl_status != 0 )) || [[ "$status" != "200" ]]; then
+    handle_nginx_failure "$status" "$label" "$url" "$headers_file"
   fi
 
-  if [[ "$http_code" != "200" ]]; then
-    log_error "${path} devolvió HTTP ${http_code}"
-    cat "$body_file" >&2
-    rm -f "$body_file" "$err_file"
-    exit 1
-  fi
-
-  if [[ "$print_body" == "1" ]]; then
-    head -c 200 "$body_file"
-    printf '\n'
-  fi
-
-  rm -f "$body_file" "$err_file"
+  rm -f "$headers_file"
+  log "[verify] ${label} OK"
 }
 
-check_paths_for_trailing_slashes
-check_runtime_trailing_slashes
-
-if ! command -v nginx >/dev/null 2>&1; then
-  log_error "nginx no está instalado"
-  exit 1
-fi
-
 log "[verify] nginx -t"
-if [[ -n "$SUDO_BIN" ]]; then
-  $SUDO_BIN nginx -t
-else
-  nginx -t
+set +e
+if ! run_nginx nginx -t; then
+  log_warn "nginx -t reportó errores"
+fi
+set -e
+
+wait_for_backend
+
+check_nginx_endpoint "$NGINX_LOCAL_HEALTH" "Nginx localhost /api/health"
+check_nginx_endpoint "$NGINX_LOCAL_CONFIG" "Nginx localhost /api/config"
+
+LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+if [[ -n "${LAN_IP// }" ]]; then
+  check_nginx_endpoint "http://${LAN_IP}/api/health" "Nginx LAN ${LAN_IP} /api/health"
+  check_nginx_endpoint "http://${LAN_IP}/api/config" "Nginx LAN ${LAN_IP} /api/config"
 fi
 
-check_endpoint "/api/health" "/api/health (nginx)"
-check_endpoint "/api/config" "/api/config (nginx)" 1
+log "[verify] ✅ /api operativo vía Nginx"

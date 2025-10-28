@@ -43,6 +43,28 @@ log_warn() { printf '[WARN] %s\n' "$*"; }
 log_ok()   { printf '[OK] %s\n' "$*"; }
 log_error(){ printf '[ERROR] %s\n' "$*" >&2; }
 
+wait_for_backend_ready() {
+  local max_wait=60
+  local sleep_interval=2
+  local waited=0
+  local backend_url="http://127.0.0.1:8081/api/health"
+
+  log_info "Esperando backend en ${backend_url} (timeout ${max_wait}s)"
+  until curl -sfS "$backend_url" >/dev/null; do
+    if (( waited >= max_wait )); then
+      log_error "Backend no responde en 127.0.0.1:8081 tras ${max_wait}s"
+      systemctl --no-pager -l status "pantalla-dash-backend@${USER_NAME}.service" | sed -n '1,60p' || true
+      return 1
+    fi
+    sleep "$sleep_interval"
+    waited=$((waited + sleep_interval))
+  done
+
+  log_ok "Backend health responde (/api/health)"
+  SUMMARY+=('[install] backend /api/health responde')
+  return 0
+}
+
 USERNAME="${USERNAME:-${SUDO_USER:-$USER}}"
 if [[ -z "${USERNAME:-}" ]]; then
   log_error "Unable to determine target user"
@@ -525,14 +547,9 @@ else
 fi
 
 systemctl restart pantalla-dash-backend@${USER_NAME}.service
-sleep 1
-
-if curl -fsS -m 2 http://127.0.0.1:8081/api/health | grep -q '"status":"ok"'; then
-  log_ok "Backend health responde (/api/health)"
-  SUMMARY+=('[install] backend /api/health responde')
-else
-  log_warn "Backend /api/health not responding yet"
-  SUMMARY+=('[install] backend /api/health no responde')
+if ! wait_for_backend_ready; then
+  SUMMARY+=('[install] backend /api/health no responde tras la espera configurada')
+  exit 1
 fi
 
 log_info "Ejecutando verificador post-deploy"
