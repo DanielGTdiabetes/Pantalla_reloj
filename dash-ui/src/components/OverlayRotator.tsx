@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 import { withConfigDefaults } from "../config/defaults";
 import { apiGet } from "../lib/api";
-import { isStaticMode } from "../lib/staticMode";
+import { isStaticMode } from "../lib/flags";
 import { useConfig } from "../lib/useConfig";
 import { dayjs } from "../utils/dayjs";
 import { ensurePlainText, sanitizeRichText } from "../utils/sanitize";
