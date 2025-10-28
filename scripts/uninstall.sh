@@ -18,8 +18,6 @@ Options:
   --purge-node      Remove frontend node_modules/dist artifacts
   --purge-assets    Remove assets stored in /opt/pantalla-reloj
   --purge-config    Remove configuration under /var/lib/pantalla-reloj
-  --purge-kiosk-chromium-state
-                    Remove Chromium kiosk profile and cache directories
   -h, --help        Show this message
 USAGE
 }
@@ -30,7 +28,6 @@ PURGE_VENV=0
 PURGE_NODE=0
 PURGE_ASSETS=0
 PURGE_CONFIG=0
-PURGE_KIOSK_CHROMIUM_STATE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -40,7 +37,6 @@ while [[ $# -gt 0 ]]; do
     --purge-node) PURGE_NODE=1 ;;
     --purge-assets) PURGE_ASSETS=1 ;;
     --purge-config) PURGE_CONFIG=1 ;;
-    --purge-kiosk-chromium-state) PURGE_KIOSK_CHROMIUM_STATE=1 ;;
     -h|--help)
       usage
       exit 0
@@ -103,7 +99,7 @@ rm -f /etc/systemd/system/pantalla-openbox@.service
 rm -f /etc/systemd/system/pantalla-xorg.service
 rm -f /etc/systemd/system/pantalla-dash-backend@.service
 rm -f /etc/systemd/system/pantalla-portal@.service
-rm -rf /etc/systemd/system/pantalla-kiosk@.service.d /etc/systemd/system/pantalla-openbox@.service.d /etc/systemd/system/pantalla-dash-backend@.service.d /etc/systemd/system/pantalla-kiosk-chromium@.service.d
+rm -rf /etc/systemd/system/pantalla-kiosk@.service.d /etc/systemd/system/pantalla-openbox@.service.d /etc/systemd/system/pantalla-dash-backend@.service.d
 
 systemctl daemon-reload
 systemctl reset-failed >/dev/null 2>&1 || true
@@ -149,8 +145,6 @@ restore_nginx_default() {
 restore_nginx_default
 
 rm -f /usr/local/bin/pantalla-kiosk
-rm -f /usr/local/bin/pantalla-kiosk-chromium
-rm -f /usr/local/bin/pantalla-verify-kiosk
 
 if [[ -f "$WEBROOT_MANIFEST" ]]; then
   log_info "Removing tracked web assets"
@@ -219,14 +213,6 @@ else
   # Keep state but remove runtime markers
   rm -rf "$STATE_RUNTIME"
 fi
-
-if [[ $PURGE_KIOSK_CHROMIUM_STATE -eq 1 ]]; then
-  log_info "Removing Chromium kiosk state directories"
-  rm -rf /var/lib/pantalla-reloj/state/chromium /var/lib/pantalla-reloj/cache/chromium
-fi
-
-SWIFTSHADER_FLAG="/var/lib/pantalla-reloj/state/.force-swiftshader"
-rm -f "$SWIFTSHADER_FLAG"
 
 HOME_AUTH="/home/${USER_NAME}/.Xauthority"
 HOME_AUTH_BACKUP="${HOME_AUTH}.bak"
