@@ -1,4 +1,4 @@
-import type { AppConfig } from "../types/config";
+import type { AppConfig, AppConfigResponse } from "../types/config";
 
 const BASE = window.location.origin;
 
@@ -64,13 +64,17 @@ export async function getHealth() {
 }
 
 export async function getConfig() {
-  return apiGet<AppConfig | undefined>("/api/config");
+  return apiGet<AppConfigResponse | undefined>("/api/config");
 }
 
 export async function saveConfig(data: AppConfig) {
-  return apiPost<AppConfig>("/api/config", data);
+  return apiPost<AppConfigResponse>("/api/config", data);
 }
 
 export async function getSchema() {
   return apiGet<Record<string, unknown> | undefined>("/api/config/schema");
+}
+
+export async function getConfigVersion() {
+  return apiGet<{ version: number } | undefined>("/api/config/version");
 }
