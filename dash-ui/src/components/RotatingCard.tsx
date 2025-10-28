@@ -36,12 +36,13 @@ export const RotatingCard = ({ cards }: RotatingCardProps): JSX.Element => {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const timeoutRef = useRef<number | null>(null);
 
+  const cardCount = fallbackCards.length;
   useEffect(() => {
-    setActiveIndex(0);
-  }, [fallbackCards]);
+    setActiveIndex((prev) => (prev >= cardCount ? 0 : prev));
+  }, [cardCount]);
 
   useEffect(() => {
-    if (fallbackCards.length === 0) {
+    if (cardCount === 0) {
       return undefined;
     }
 
@@ -62,7 +63,7 @@ export const RotatingCard = ({ cards }: RotatingCardProps): JSX.Element => {
         timeoutRef.current = null;
       }
     };
-  }, [activeIndex, fallbackCards]);
+  }, [activeIndex, cardCount]);
 
   useEffect(() => {
     return () => {
