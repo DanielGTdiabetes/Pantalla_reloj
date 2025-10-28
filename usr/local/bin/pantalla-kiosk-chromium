@@ -5,49 +5,52 @@ log() {
   printf '[pantalla-kiosk-chromium] %s\n' "$*"
 }
 
-find_chromium() {
-  local candidate
-  for candidate in "${CHROMIUM_BIN_OVERRIDE:-}" chromium-browser chromium /snap/bin/chromium; do
-    if [[ -n "$candidate" ]] && command -v "$candidate" >/dev/null 2>&1; then
-      command -v "$candidate"
-      return 0
-    fi
-  done
-  return 1
-}
+USER_NAME="${KIOSK_USER:-${USER:-$(id -un)}}"
+CLASS_NAME="pantalla-kiosk"
+PKILL_PATTERN="chromium.*--class=${CLASS_NAME}"
 
-main() {
-  local chromium_bin url user_data_dir cache_dir
+if command -v pkill >/dev/null 2>&1; then
+  pkill -9 -u "$USER_NAME" -f "$PKILL_PATTERN" >/dev/null 2>&1 || true
+fi
 
-  if ! chromium_bin="$(find_chromium)"; then
-    log "ERROR: No se encontró un binario de Chromium disponible"
-    exit 1
-  fi
+STATE_DIR="${STATE_DIR:-/var/lib/pantalla-reloj/state/chromium}"
+CACHE_DIR="${CACHE_DIR:-/var/lib/pantalla-reloj/cache/chromium}"
 
-  url="${KIOSK_URL:-http://127.0.0.1}"
-  user_data_dir="${CHROMIUM_USER_DATA_DIR:-/var/lib/pantalla-reloj/state/chromium}"
-  cache_dir="${CHROMIUM_CACHE_DIR:-/var/lib/pantalla-reloj/cache/chromium}"
+mkdir -p "$STATE_DIR" "$CACHE_DIR"
+chown "$USER_NAME:$USER_NAME" "$STATE_DIR" "$CACHE_DIR" 2>/dev/null || true
 
-  install -d -m 0700 "$user_data_dir"
-  install -d -m 0755 "$cache_dir"
+CHROME_BIN="${CHROME_BIN:-}"
+if [[ -z "$CHROME_BIN" ]]; then
+  CHROME_BIN="$(readlink -f /snap/chromium/current/usr/lib/chromium-browser/chrome 2>/dev/null || true)"
+fi
 
-  log "Usando Chromium en: ${chromium_bin}"
-  log "Perfil: ${user_data_dir}"
-  log "Cache: ${cache_dir}"
-  log "URL: ${url}"
+if [[ -z "$CHROME_BIN" || ! -x "$CHROME_BIN" ]]; then
+  log "ERROR: No se encontró el binario principal de Chromium en el snap"
+  exit 1
+fi
 
-  exec "$chromium_bin" \
-    --kiosk --start-fullscreen \
-    --app="${url}" \
-    --no-first-run --no-default-browser-check \
-    --disable-translate --disable-infobars \
-    --overscroll-history-navigation=0 \
-    --password-store=basic \
-    --test-type \
-    --ozone-platform=x11 \
-    --disable-gpu \
-    --disk-cache-dir="${cache_dir}" \
-    --user-data-dir="${user_data_dir}"
-}
+URL="${KIOSK_URL:-http://127.0.0.1}"
+SCALE="${CHROMIUM_SCALE:-0.58}"
 
-main "$@"
+log "Usando binario: ${CHROME_BIN}"
+log "Perfil: ${STATE_DIR}"
+log "Cache: ${CACHE_DIR}"
+log "URL: ${URL}"
+log "Escala: ${SCALE}"
+
+exec "$CHROME_BIN" \
+  --class="${CLASS_NAME}" \
+  --kiosk --start-fullscreen \
+  --app="${URL}" \
+  --no-first-run --no-default-browser-check \
+  --disable-translate --disable-infobars \
+  --disable-session-crashed-bubble --noerrdialogs \
+  --disable-features=InfiniteSessionRestore,Translate,HardwareMediaKeyHandling,CalculateNativeWinOcclusion \
+  --hide-scrollbars --overscroll-history-navigation=0 \
+  --password-store=basic \
+  --test-type \
+  --ozone-platform=x11 \
+  --disable-gpu \
+  --force-device-scale-factor="${SCALE}" \
+  --disk-cache-dir="${CACHE_DIR}" \
+  --user-data-dir="${STATE_DIR}"
