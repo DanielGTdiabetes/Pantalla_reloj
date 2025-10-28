@@ -40,22 +40,22 @@ export const RotatingCard = ({ cards, disabled = false }: RotatingCardProps): JS
   const [isTransitioning, setIsTransitioning] = useState(false);
   const timeoutRef = useRef<number | null>(null);
 
-  const signature = useMemo(() => signatureOf(fallbackCards), [fallbackCards]);
-  const previousSignatureRef = useRef<string>(signature);
+  const sig = useMemo(() => signatureOf(fallbackCards), [fallbackCards]);
+  const prevSigRef = useRef<string>(sig);
 
   useEffect(() => {
-    if (previousSignatureRef.current !== signature) {
-      previousSignatureRef.current = signature;
+    if (prevSigRef.current !== sig) {
+      prevSigRef.current = sig;
       setActiveIndex(0);
     }
-  }, [signature]);
+  }, [sig]);
 
   useEffect(() => {
     if (import.meta.env.DEV) {
       // eslint-disable-next-line no-console
-      console.info(`[RotatingCard] signature → ${signature}`);
+      console.info(`[RotatingCard] signature → ${sig}`);
     }
-  }, [signature]);
+  }, [sig]);
 
   const cardCount = fallbackCards.length;
   useEffect(() => {
@@ -89,7 +89,7 @@ export const RotatingCard = ({ cards, disabled = false }: RotatingCardProps): JS
         timeoutRef.current = null;
       }
     };
-  }, [activeIndex, cardCount, disabled, fallbackCards, isTransitioning]);
+  }, [activeIndex, cardCount, disabled, isTransitioning, sig]);
 
   useEffect(() => () => {
     if (timeoutRef.current) {
