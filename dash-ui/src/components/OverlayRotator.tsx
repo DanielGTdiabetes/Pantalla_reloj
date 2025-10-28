@@ -13,6 +13,7 @@ import { EphemeridesCard } from "./dashboard/cards/EphemeridesCard";
 import { HarvestCard } from "./dashboard/cards/HarvestCard";
 import { MoonCard } from "./dashboard/cards/MoonCard";
 import { NewsCard } from "./dashboard/cards/NewsCard";
+import { SaintsCard } from "./dashboard/cards/SaintsCard";
 import { TimeCard } from "./dashboard/cards/TimeCard";
 import { WeatherCard } from "./dashboard/cards/WeatherCard";
 
@@ -38,6 +39,9 @@ type EphemeridesCardWrapperProps = React.ComponentProps<typeof EphemeridesCard>;
 const EphemeridesCardWrapper: React.FC<EphemeridesCardWrapperProps> = (props) => (
   <EphemeridesCard {...props} />
 );
+
+type SaintsCardWrapperProps = React.ComponentProps<typeof SaintsCard>;
+const SaintsCardWrapper: React.FC<SaintsCardWrapperProps> = (props) => <SaintsCard {...props} />;
 
 type DashboardPayload = {
   weather?: Record<string, unknown>;
@@ -387,6 +391,11 @@ export const OverlayRotator: React.FC = () => {
         render: () => (
           <CalendarCardWrapper events={calendarEvents} timezone={config.display.timezone} />
         )
+      },
+      saints: {
+        id: "saints",
+        duration: 8000,
+        render: () => <SaintsCardWrapper saints={saintsEntries} />
       },
       harvest: {
         id: "harvest",
