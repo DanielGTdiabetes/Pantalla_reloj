@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 
 import { withConfigDefaults } from "../config/defaults";
 import { apiGet } from "../lib/api";
-import { isStaticMode } from "../lib/flags";
 import { useConfig } from "../lib/useConfig";
 import { dayjs } from "../utils/dayjs";
 import { ensurePlainText, sanitizeRichText } from "../utils/sanitize";
@@ -16,32 +15,6 @@ import { NewsCard } from "./dashboard/cards/NewsCard";
 import { SaintsCard } from "./dashboard/cards/SaintsCard";
 import { TimeCard } from "./dashboard/cards/TimeCard";
 import { WeatherCard } from "./dashboard/cards/WeatherCard";
-
-type TimeCardWrapperProps = React.ComponentProps<typeof TimeCard>;
-const TimeCardWrapper: React.FC<TimeCardWrapperProps> = (props) => <TimeCard {...props} />;
-
-type WeatherCardWrapperProps = React.ComponentProps<typeof WeatherCard>;
-const WeatherCardWrapper: React.FC<WeatherCardWrapperProps> = (props) => <WeatherCard {...props} />;
-
-type CalendarCardWrapperProps = React.ComponentProps<typeof CalendarCard>;
-const CalendarCardWrapper: React.FC<CalendarCardWrapperProps> = (props) => <CalendarCard {...props} />;
-
-type MoonCardWrapperProps = React.ComponentProps<typeof MoonCard>;
-const MoonCardWrapper: React.FC<MoonCardWrapperProps> = (props) => <MoonCard {...props} />;
-
-type HarvestCardWrapperProps = React.ComponentProps<typeof HarvestCard>;
-const HarvestCardWrapper: React.FC<HarvestCardWrapperProps> = (props) => <HarvestCard {...props} />;
-
-type NewsCardWrapperProps = React.ComponentProps<typeof NewsCard>;
-const NewsCardWrapper: React.FC<NewsCardWrapperProps> = (props) => <NewsCard {...props} />;
-
-type EphemeridesCardWrapperProps = React.ComponentProps<typeof EphemeridesCard>;
-const EphemeridesCardWrapper: React.FC<EphemeridesCardWrapperProps> = (props) => (
-  <EphemeridesCard {...props} />
-);
-
-type SaintsCardWrapperProps = React.ComponentProps<typeof SaintsCard>;
-const SaintsCardWrapper: React.FC<SaintsCardWrapperProps> = (props) => <SaintsCard {...props} />;
 
 type DashboardPayload = {
   weather?: Record<string, unknown>;
@@ -111,20 +84,6 @@ const safeArray = (value: unknown): Record<string, unknown>[] => {
   return Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
 };
 
-const arrSig = (value: unknown): string => {
-  return Array.isArray(value) ? value.join("|") : "";
-};
-
-const DEFAULT_ROTATION_PANELS: readonly string[] = [
-  "time",
-  "weather",
-  "news",
-  "moon",
-  "ephemerides",
-  "calendar",
-  "harvest"
-];
-
 const extractStrings = (value: unknown): string[] => {
   if (!value) {
     return [];
@@ -145,36 +104,9 @@ export const OverlayRotator: React.FC = () => {
   const config = useMemo(() => data ?? withConfigDefaults(), [data]);
   const [payload, setPayload] = useState<DashboardPayload>({});
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
-  const STATIC_MODE = isStaticMode();
 
   useEffect(() => {
     let mounted = true;
-
-    if (STATIC_MODE) {
-      const fetchStaticPayload = async () => {
-        const [weather, astronomy] = await Promise.all([
-          apiGet<Record<string, unknown>>("/api/weather").catch((error) => {
-            console.error("Failed to load weather data", error);
-            return {};
-          }),
-          apiGet<Record<string, unknown>>("/api/astronomy").catch((error) => {
-            console.error("Failed to load astronomy data", error);
-            return {};
-          })
-        ]);
-
-        if (mounted) {
-          setPayload({ weather, astronomy });
-          setLastUpdatedAt(Date.now());
-        }
-      };
-
-      void fetchStaticPayload();
-
-      return () => {
-        mounted = false;
-      };
-    }
 
     const fetchAll = async () => {
       try {
@@ -203,7 +135,7 @@ export const OverlayRotator: React.FC = () => {
       mounted = false;
       window.clearInterval(interval);
     };
-  }, [STATIC_MODE]);
+  }, []);
 
   const weather = (payload.weather ?? {}) as Record<string, unknown>;
   const astronomy = (payload.astronomy ?? {}) as Record<string, unknown>;
@@ -213,17 +145,12 @@ export const OverlayRotator: React.FC = () => {
   const targetUnit = "C";
   const rawTemperature = typeof weather.temperature === "number" ? weather.temperature : null;
   const rawUnit = ensurePlainText(weather.unit) || "C";
-  const temperature = useMemo(
-    () => formatTemperature(rawTemperature, rawUnit, targetUnit),
-    [rawTemperature, rawUnit, targetUnit]
-  );
+  const temperature = formatTemperature(rawTemperature, rawUnit, targetUnit);
 
-  const feelsLikeValue = useMemo(() => {
-    if (typeof weather.feels_like === "number") {
-      return formatTemperature(weather.feels_like as number, rawUnit, targetUnit);
-    }
-    return null;
-  }, [rawUnit, targetUnit, weather.feels_like]);
+  const feelsLikeValue =
+    typeof weather.feels_like === "number"
+      ? formatTemperature(weather.feels_like as number, rawUnit, targetUnit)
+      : null;
 
   const humidity = typeof weather.humidity === "number" ? (weather.humidity as number) : null;
   const wind = typeof weather.wind_speed === "number"
@@ -241,172 +168,109 @@ export const OverlayRotator: React.FC = () => {
       ? (astronomy.illumination as number)
       : null;
 
-  const ephemeridesEvents = useMemo(() => {
-    return safeArray(astronomy.events)
-      .map((entry) => sanitizeRichText(entry?.description ?? entry?.title ?? ""))
-      .filter((value): value is string => Boolean(value));
-  }, [astronomy.events]);
+  const ephemeridesEvents = safeArray(astronomy.events)
+    .map((entry) => sanitizeRichText(entry?.description ?? entry?.title ?? ""))
+    .filter((value): value is string => Boolean(value));
 
-  const newsItems = useMemo(
-    () =>
-      safeArray(news.items).map((item) => ({
-        title: sanitizeRichText(item.title) || "Titular",
-        summary: sanitizeRichText(item.summary) || sanitizeRichText(item.description) || undefined,
-        source: sanitizeRichText(item.source) || undefined
-      })),
-    [news.items]
-  );
+  const newsItems = safeArray(news.items).map((item) => ({
+    title: sanitizeRichText(item.title) || "Titular",
+    summary: sanitizeRichText(item.summary) || sanitizeRichText(item.description) || undefined,
+    source: sanitizeRichText(item.source) || undefined
+  }));
 
-  const calendarEvents = useMemo(
-    () =>
-      safeArray(calendar.upcoming).map((event) => ({
-        title: sanitizeRichText(event.title) || "Evento",
-        start: ensurePlainText(event.start) || ensurePlainText(event.when) || null
-      })),
-    [calendar.upcoming]
-  );
+  const calendarEvents = safeArray(calendar.upcoming).map((event) => ({
+    title: sanitizeRichText(event.title) || "Evento",
+    start: ensurePlainText(event.start) || ensurePlainText(event.when) || null
+  }));
 
-  const harvestItems = useMemo(
-    () =>
-      safeArray(calendar.harvest).map((item) => ({
-        name: sanitizeRichText(item.name) || sanitizeRichText(item.crop) || "Actividad",
-        status: sanitizeRichText(item.status) || sanitizeRichText(item.detail) || null
-      })),
-    [calendar.harvest]
-  );
+  const harvestItems = safeArray(calendar.harvest).map((item) => ({
+    name: sanitizeRichText(item.name) || sanitizeRichText(item.crop) || "Actividad",
+    status: sanitizeRichText(item.status) || sanitizeRichText(item.detail) || null
+  }));
 
   const saintsEntries = useMemo(() => {
     const fromSaints = extractStrings(calendar.saints);
     const fromNamedays = extractStrings(calendar.namedays);
     return [...fromSaints, ...fromNamedays];
-  }, [calendar.namedays, calendar.saints]);
+  }, [calendar.saints, calendar.namedays]);
 
-  const payloadKey = useMemo(() => {
-    const joinRecords = (items: Array<Record<string, unknown>>) =>
-      items
-        .map((item) =>
-          Object.entries(item)
-            .map(([key, value]) => `${key}:${value ?? ""}`)
-            .join(",")
-        )
-        .join("|");
-    const joinStrings = (items: string[]) => items.join("|");
-
-    const feelsLikeSignature = feelsLikeValue
-      ? `${feelsLikeValue.value}${feelsLikeValue.unit}`
-      : "";
-
-    return [
-      config.display.timezone,
-      `${temperature.value}${temperature.unit}`,
-      feelsLikeSignature,
-      condition ?? "",
-      humidity ?? "",
-      wind ?? "",
-      sunrise ?? "",
-      sunset ?? "",
-      moonPhase ?? "",
-      moonIllumination ?? "",
-      joinRecords(calendarEvents as Array<Record<string, unknown>>),
-      joinStrings(ephemeridesEvents),
-      joinRecords(harvestItems as Array<Record<string, unknown>>),
-      joinStrings(saintsEntries),
-      joinRecords(newsItems as Array<Record<string, unknown>>)
-    ].join("||");
-  }, [
-    calendarEvents,
-    condition,
-    config.display.timezone,
-    ephemeridesEvents,
-    feelsLikeValue,
-    harvestItems,
-    humidity,
-    moonIllumination,
-    moonPhase,
-    newsItems,
-    saintsEntries,
-    sunrise,
-    sunset,
-    temperature.unit,
-    temperature.value,
-    wind
-  ]);
-
-  const panelsOrder = useMemo<string[]>(() => {
-    const panels = config?.ui?.rotation?.panels;
-    if (Array.isArray(panels) && panels.length > 0) {
-      return panels as string[];
-    }
-    return DEFAULT_ROTATION_PANELS as string[];
-  }, [config?.ui?.rotation?.panels]);
-
-  const panelsSig = useMemo(() => arrSig(panelsOrder), [panelsOrder]);
-
-  const rotatingCards = useMemo<RotatingCardItem[]>(() => {
-    const weatherProps = {
-      temperatureLabel: `${temperature.value}${temperature.unit}`,
-      feelsLikeLabel: feelsLikeValue ? `${feelsLikeValue.value}${feelsLikeValue.unit}` : null,
-      condition,
-      humidity,
-      wind,
-      unit: temperature.unit
-    };
-
-    const cardsMap: Record<string, RotatingCardItem> = {
-      time: {
+  const rotatingCards = useMemo<RotatingCardItem[]>(
+    () => [
+      {
         id: "time",
         duration: 8000,
-        render: () => <TimeCardWrapper timezone={config.display.timezone} />
+        render: () => <TimeCard timezone={config.display.timezone} />
       },
-      weather: {
+      {
         id: "weather",
-        duration: 8000,
-        render: () => <WeatherCardWrapper {...weatherProps} />
-      },
-      news: {
-        id: "news",
-        duration: 8000,
-        render: () => <NewsCardWrapper items={newsItems} />
-      },
-      moon: {
-        id: "moon",
-        duration: 8000,
-        render: () => <MoonCardWrapper moonPhase={moonPhase} illumination={moonIllumination} />
-      },
-      ephemerides: {
-        id: "ephemerides",
-        duration: 8000,
+        duration: 10000,
         render: () => (
-          <EphemeridesCardWrapper
+          <WeatherCard
+            temperatureLabel={`${temperature.value}${temperature.unit}`}
+            feelsLikeLabel={feelsLikeValue ? `${feelsLikeValue.value}${feelsLikeValue.unit}` : null}
+            condition={condition}
+            humidity={humidity}
+            wind={wind}
+            unit={temperature.unit}
+          />
+        )
+      },
+      {
+        id: "calendar",
+        duration: 10000,
+        render: () => <CalendarCard events={calendarEvents} timezone={config.display.timezone} />
+      },
+      {
+        id: "moon",
+        duration: 10000,
+        render: () => <MoonCard moonPhase={moonPhase} illumination={moonIllumination} />
+      },
+      {
+        id: "harvest",
+        duration: 12000,
+        render: () => <HarvestCard items={harvestItems} />
+      },
+      {
+        id: "saints",
+        duration: 12000,
+        render: () => <SaintsCard saints={saintsEntries} />
+      },
+      {
+        id: "news",
+        duration: 20000,
+        render: () => <NewsCard items={newsItems} />
+      },
+      {
+        id: "ephemerides",
+        duration: 20000,
+        render: () => (
+          <EphemeridesCard
             sunrise={sunrise}
             sunset={sunset}
             moonPhase={moonPhase}
             events={ephemeridesEvents}
           />
         )
-      },
-      calendar: {
-        id: "calendar",
-        duration: 8000,
-        render: () => (
-          <CalendarCardWrapper events={calendarEvents} timezone={config.display.timezone} />
-        )
-      },
-      saints: {
-        id: "saints",
-        duration: 8000,
-        render: () => <SaintsCardWrapper saints={saintsEntries} />
-      },
-      harvest: {
-        id: "harvest",
-        duration: 8000,
-        render: () => <HarvestCardWrapper items={harvestItems} />
       }
-    };
-
-    const list = panelsOrder.map((panelId) => cardsMap[panelId]).filter(Boolean) as RotatingCardItem[];
-    return list.length > 0 ? list : [cardsMap.time];
-  }, [panelsSig, payloadKey]);
+    ], [
+      calendarEvents,
+      condition,
+      config.display.timezone,
+      ephemeridesEvents,
+      feelsLikeValue,
+      harvestItems,
+      humidity,
+      moonIllumination,
+      moonPhase,
+      newsItems,
+      saintsEntries,
+      sunrise,
+      sunset,
+      temperature.unit,
+      temperature.value,
+      wind
+    ]
+  );
 
   const lastUpdatedLabel = useMemo(() => {
     if (!lastUpdatedAt) {
@@ -426,41 +290,6 @@ export const OverlayRotator: React.FC = () => {
   }, [lastUpdatedAt, lastUpdatedLabel, loading]);
 
   const hasCards = rotatingCards.length > 0;
-
-  if (STATIC_MODE) {
-    const now = dayjs().tz(config.display.timezone);
-    const timeLabel = now.format("HH:mm");
-    const dateLabel = now.format("dddd, D MMMM");
-    const weatherLineParts: string[] = [];
-
-    if (temperature.value !== "--") {
-      weatherLineParts.push(`${temperature.value}${temperature.unit}`);
-    }
-
-    if (condition) {
-      weatherLineParts.push(condition);
-    }
-
-    const weatherLine = weatherLineParts.join(" · ");
-
-    return (
-      <section className="overlay-rotator" role="complementary" aria-live="polite">
-        <div className="overlay-rotator__content overlay-rotator__content--static">
-          <p className="overlay-rotator__time" aria-label="Hora actual">
-            {timeLabel}
-          </p>
-          <p className="overlay-rotator__date" aria-label="Fecha actual">
-            {dateLabel}
-          </p>
-          {weatherLine ? (
-            <p className="overlay-rotator__weather" aria-label="Condición meteorológica">
-              {weatherLine}
-            </p>
-          ) : null}
-        </div>
-      </section>
-    );
-  }
 
   return (
     <section className="overlay-rotator" role="complementary" aria-live="polite">

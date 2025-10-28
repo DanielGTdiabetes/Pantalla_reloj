@@ -7,44 +7,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <script>
-      (function () {
-        const updateLastError = (payload) => {
-          try {
-            window.__lastError__ = payload;
-          } catch (error) {
-            console.warn("[error-tracker] No se pudo almacenar el último error", error);
-          }
-        };
-
-        window.onerror = function (message, source, lineno, colno, error) {
-          const payload = {
-            message: message instanceof Event ? String(message) : String(message ?? "Error"),
-            source: source ?? null,
-            line: lineno ?? null,
-            column: colno ?? null,
-            error,
-            timestamp: new Date().toISOString(),
-            origin: "window.onerror"
-          };
-          console.error("[window.onerror]", payload);
-          updateLastError(payload);
-        };
-
-        window.onunhandledrejection = function (event) {
-          const reason = event?.reason;
-          const message = reason instanceof Error ? reason.message : String(reason ?? "Promise rejection");
-          const payload = {
-            message,
-            reason,
-            timestamp: new Date().toISOString(),
-            origin: "unhandledrejection"
-          };
-          console.error("[window.onunhandledrejection]", payload);
-          updateLastError(payload);
-        };
-      })();
-    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

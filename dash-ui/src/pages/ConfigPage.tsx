@@ -9,7 +9,6 @@ import {
   getSchema,
   saveConfig,
 } from "../lib/api";
-import { applyConfigPayload } from "../state/configStore";
 import type { AppConfig, MapCinemaBand } from "../types/config";
 
 type LoadStatus = "loading" | "ready" | "error";
@@ -320,12 +319,7 @@ const ConfigPage: React.FC = () => {
 
   const refreshConfig = useCallback(async () => {
     const cfg = await getConfig();
-    if (cfg) {
-      applyConfigPayload(cfg);
-      setForm(withConfigDefaults(cfg));
-    } else {
-      setForm(withConfigDefaults(undefined));
-    }
+    setForm(withConfigDefaults(cfg ?? undefined));
   }, []);
 
   const initialize = useCallback(async () => {
@@ -417,7 +411,6 @@ const ConfigPage: React.FC = () => {
     setBanner(null);
     try {
       const saved = await saveConfig(form);
-      applyConfigPayload(saved);
       setForm(withConfigDefaults(saved));
       setFieldErrors({});
       setBanner({ kind: "success", text: "Guardado" });

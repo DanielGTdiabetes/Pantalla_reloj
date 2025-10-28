@@ -1,37 +1,32 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 
+import { withConfigDefaults } from "../config/defaults";
+import type { AppConfig } from "../types/config";
 import { API_ORIGIN, getConfig } from "./api";
-import {
-  applyConfigPayload,
-  setConfigError,
-  setConfigLoading,
-  useConfigStore
-} from "../state/configStore";
 
 const API_UNREACHABLE = `No se pudo conectar con el backend en ${API_ORIGIN}`;
 
 export function useConfig() {
-  const { config, loading, error } = useConfigStore((state) => ({
-    config: state.config,
-    loading: state.loading,
-    error: state.error
-  }));
+  const [data, setData] = useState<AppConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setConfigLoading(true);
+      setLoading(true);
       const cfg = await getConfig();
-      if (cfg) {
-        applyConfigPayload(cfg, { loading: false, error: null });
-      } else {
-        setConfigError(API_UNREACHABLE);
-        setConfigLoading(false);
-      }
+      setData(withConfigDefaults((cfg ?? {}) as AppConfig));
+      setError(null);
     } catch (e) {
-      setConfigError(API_UNREACHABLE);
-      setConfigLoading(false);
+      setError(API_UNREACHABLE);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  return { data: config, loading, error, reload: load };
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return { data, loading, error, reload: load };
 }

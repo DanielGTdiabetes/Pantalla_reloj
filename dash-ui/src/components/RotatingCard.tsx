@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-const signatureOf = (items: { id: string; duration: number }[]) =>
-  items.map((item) => `${item.id}:${item.duration}`).join("|");
-
 export type RotatingCardItem = {
   id: string;
   duration: number;
@@ -11,13 +8,12 @@ export type RotatingCardItem = {
 
 type RotatingCardProps = {
   cards: RotatingCardItem[];
-  disabled?: boolean;
 };
 
 const MIN_DURATION = 4000;
 const TRANSITION_DURATION = 400;
 
-export const RotatingCard = ({ cards, disabled = false }: RotatingCardProps): JSX.Element => {
+export const RotatingCard = ({ cards }: RotatingCardProps): JSX.Element => {
   const fallbackCards = useMemo<RotatingCardItem[]>(() => {
     if (cards.length > 0) {
       return cards;
@@ -40,46 +36,17 @@ export const RotatingCard = ({ cards, disabled = false }: RotatingCardProps): JS
   const [isTransitioning, setIsTransitioning] = useState(false);
   const timeoutRef = useRef<number | null>(null);
 
-  const sig = useMemo(() => signatureOf(fallbackCards), [fallbackCards]);
-  const idsKey = useMemo(
-    () => fallbackCards.map((card) => card.id).join("|"),
-    [fallbackCards]
-  );
-
   useEffect(() => {
     setActiveIndex(0);
-  }, [idsKey]);
-
-  useEffect(() => {
-    if (import.meta.env.DEV) {
-      // eslint-disable-next-line no-console
-      console.info(`[RotatingCard] signature → ${sig}`);
-    }
-  }, [sig]);
-
-  const cardCount = fallbackCards.length;
-  useEffect(() => {
-    if (disabled) {
-      setActiveIndex(0);
-      return;
-    }
-
-    setActiveIndex((prev) => (prev >= cardCount ? 0 : prev));
-  }, [cardCount, disabled]);
+  }, [fallbackCards]);
 
   useEffect(() => {
     if (fallbackCards.length === 0) {
-      setActiveIndex(0);
-      setIsTransitioning(false);
-      return undefined;
-    }
-
-    if (disabled || cardCount === 0 || isTransitioning) {
       return undefined;
     }
 
     const current = fallbackCards[activeIndex];
-    const duration = Math.max(current?.duration ?? MIN_DURATION, MIN_DURATION);
+    const duration = Math.max(current.duration, MIN_DURATION);
 
     timeoutRef.current = window.setTimeout(() => {
       setIsTransitioning(true);
@@ -95,22 +62,21 @@ export const RotatingCard = ({ cards, disabled = false }: RotatingCardProps): JS
         timeoutRef.current = null;
       }
     };
-  }, [activeIndex, cardCount, disabled, isTransitioning, sig]);
+  }, [activeIndex, fallbackCards]);
 
-  useEffect(() => () => {
-    if (timeoutRef.current) {
-      window.clearTimeout(timeoutRef.current);
-    }
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+      }
+    };
   }, []);
 
-  const CurrentCard = (disabled ? fallbackCards[0] : fallbackCards[activeIndex])?.render;
-  const isHidden = !disabled && isTransitioning;
+  const CurrentCard = fallbackCards[activeIndex]?.render;
 
   return (
     <div className="rotating-card" role="region" aria-live="polite">
-      <div
-        className={`rotating-card__content${isHidden ? " rotating-card__content--hidden" : ""}`}
-      >
+      <div className={`rotating-card__content${isTransitioning ? " rotating-card__content--hidden" : ""}`}>
         {CurrentCard ? <CurrentCard /> : null}
       </div>
     </div>
