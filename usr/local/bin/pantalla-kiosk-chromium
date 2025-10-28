@@ -19,13 +19,25 @@ CACHE_DIR="${CACHE_DIR:-/var/lib/pantalla-reloj/cache/chromium}"
 mkdir -p "$STATE_DIR" "$CACHE_DIR"
 chown "$USER_NAME:$USER_NAME" "$STATE_DIR" "$CACHE_DIR" 2>/dev/null || true
 
-CHROME_BIN="${CHROME_BIN:-}"
+CHROME_BIN="${CHROME_BIN:-${CHROMIUM_BIN_OVERRIDE:-}}"
 if [[ -z "$CHROME_BIN" ]]; then
-  CHROME_BIN="$(readlink -f /snap/chromium/current/usr/lib/chromium-browser/chrome 2>/dev/null || true)"
+  SNAP_CANDIDATE="/snap/chromium/current/usr/lib/chromium-browser/chrome"
+  if [[ -x "$SNAP_CANDIDATE" ]]; then
+    CHROME_BIN="$(readlink -f "$SNAP_CANDIDATE" 2>/dev/null || printf '%s' "$SNAP_CANDIDATE")"
+  fi
+fi
+
+if [[ -z "$CHROME_BIN" ]]; then
+  for candidate in chromium-browser chromium /snap/bin/chromium; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      CHROME_BIN="$(command -v "$candidate")"
+      break
+    fi
+  done
 fi
 
 if [[ -z "$CHROME_BIN" || ! -x "$CHROME_BIN" ]]; then
-  log "ERROR: No se encontró el binario principal de Chromium en el snap"
+  log "ERROR: No se encontró un binario de Chromium disponible"
   exit 1
 fi
 
