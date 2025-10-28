@@ -1,10 +1,15 @@
 import type {
+  AIConfig,
   AppConfig,
+  DisplayConfig,
   MapCinemaBand,
   MapCinemaConfig,
   MapConfig,
   MapThemeConfig,
   MaptilerConfig,
+  NewsConfig,
+  RotationConfig,
+  UIConfig,
 } from "../types/config";
 
 const clampNumber = (value: number, min: number, max: number): number => {
@@ -169,13 +174,13 @@ const mergeMap = (candidate: unknown): MapConfig => {
   };
 };
 
-const mergeRotation = (candidate: unknown) => {
-  const fallback = {
+const mergeRotation = (candidate: unknown): RotationConfig => {
+  const fallback: RotationConfig = {
     enabled: true,
     duration_sec: 10,
     panels: ["news", "ephemerides", "moon", "forecast", "calendar"],
   };
-  const source = (candidate as Partial<AppConfig["ui"]["rotation"]>) ?? {};
+  const source = (candidate as Partial<RotationConfig>) ?? {};
   const panels = Array.isArray(source.panels)
     ? source.panels.filter((panel): panel is string => typeof panel === "string" && panel.trim().length > 0)
     : fallback.panels;
@@ -209,10 +214,10 @@ export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
     return JSON.parse(JSON.stringify(DEFAULT_CONFIG)) as AppConfig;
   }
 
-  const display = payload.display ?? {};
-  const ui = payload.ui ?? {};
-  const news = payload.news ?? {};
-  const ai = payload.ai ?? {};
+  const display = (payload.display ?? {}) as Partial<DisplayConfig>;
+  const ui = (payload.ui ?? {}) as Partial<UIConfig>;
+  const news = (payload.news ?? {}) as Partial<NewsConfig>;
+  const ai = (payload.ai ?? {}) as Partial<AIConfig>;
 
   return {
     display: {
