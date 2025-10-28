@@ -16,6 +16,7 @@ import type {
   ResolvedMapConfig
 } from "../../types/config";
 import { useConfigStore } from "../../state/configStore";
+import useWebGLCheck from "../../hooks/useWebGLCheck";
 import {
   loadMapStyle,
   type MapStyleDefinition,
@@ -295,6 +296,7 @@ export default function GeoScopeMap() {
   const fallbackAppliedRef = useRef(false);
   const [tintColor, setTintColor] = useState<string | null>(null);
   const fallbackNoticeRef = useRef(false);
+  const webglCheck = useWebGLCheck();
 
   useEffect(() => {
     const mapSettings = config?.ui?.map;
@@ -442,6 +444,9 @@ export default function GeoScopeMap() {
   };
 
   useEffect(() => {
+    if (!webglCheck.supported) {
+      return;
+    }
     void version;
     const activeConfig = config ?? null;
     const activeResolved = resolved?.map ?? null;
@@ -658,19 +663,30 @@ export default function GeoScopeMap() {
         }
       }
 
-      const map = new maplibregl.Map({
-        container: host,
-        style: runtime.style.style,
-        center: [viewStateRef.current.lng, viewStateRef.current.lat],
-        zoom: viewStateRef.current.zoom,
-        minZoom: firstBand.minZoom,
-        pitch: viewStateRef.current.pitch,
-        bearing: viewStateRef.current.bearing,
-        interactive: false,
-        attributionControl: false,
-        renderWorldCopies: runtime.renderWorldCopies,
-        trackResize: false
-      });
+      let map: maplibregl.Map;
+      try {
+        map = new maplibregl.Map({
+          container: host,
+          style: runtime.style.style,
+          center: [viewStateRef.current.lng, viewStateRef.current.lat],
+          zoom: viewStateRef.current.zoom,
+          minZoom: firstBand.minZoom,
+          pitch: viewStateRef.current.pitch,
+          bearing: viewStateRef.current.bearing,
+          interactive: false,
+          attributionControl: false,
+          renderWorldCopies: runtime.renderWorldCopies,
+          trackResize: false
+        });
+      } catch (error) {
+        const normalizedError =
+          error instanceof Error ? error : new Error(String(error ?? "Error creando MapLibre"));
+        console.error("[GeoScopeMap] No se pudo inicializar el mapa", normalizedError);
+        setTimeout(() => {
+          throw normalizedError;
+        });
+        return;
+      }
 
       mapRef.current = map;
       map.setMinZoom(firstBand.minZoom);
@@ -782,7 +798,7 @@ export default function GeoScopeMap() {
         mapRef.current = null;
       }
     };
-  }, [config, resolved, version]);
+  }, [config, resolved, version, webglCheck.supported]);
 
   return (
     <div className="map-host">
