@@ -337,6 +337,13 @@ publish_webroot() {
 
   rsync -a "$REPO_ROOT/dash-ui/dist/" "$WEB_ROOT/"
 
+  if find "$REPO_ROOT/dash-ui/dist" -type f -name '*.map' -print -quit >/dev/null 2>&1; then
+    log_info "Source maps (*.map) detectados y desplegados en $WEB_ROOT"
+    SUMMARY+=("[deploy] source maps publicados en $WEB_ROOT")
+  else
+    log_warn "No se encontraron source maps en dist/; verifique build.sourcemap"
+  fi
+
   pushd "$REPO_ROOT/dash-ui/dist" >/dev/null
   find . -mindepth 1 -print | sed 's#^\./##' >"$WEBROOT_MANIFEST"
   popd >/dev/null
