@@ -109,36 +109,86 @@ export const useConfigWatcher = () => {
     void loadInitial();
 
     const eventsUrl = `${API_ORIGIN}/api/events`;
-    const source = new EventSource(eventsUrl);
+    let source: EventSource | null = null;
+    let reconnectTimer: number | null = null;
+    const INITIAL_RETRY = 4000;
+    const MAX_RETRY = 60000;
+    let retryDelay = INITIAL_RETRY;
 
-    const handleConfigChanged = (event: MessageEvent) => {
+    const cleanupSource = () => {
+      if (source) {
+        source.removeEventListener("config_changed", handleConfigChanged as EventListener);
+        source.removeEventListener("error", handleError);
+        source.removeEventListener("open", handleOpen);
+        source.close();
+        source = null;
+      }
+    };
+
+    const clearReconnect = () => {
+      if (reconnectTimer != null) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+    };
+
+    const scheduleReconnect = () => {
+      if (cancelled || reconnectTimer != null) {
+        return;
+      }
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, MAX_RETRY);
+    };
+
+    function handleConfigChanged(event: MessageEvent) {
       if (cancelled) {
         return;
       }
       const hintedVersion = parseEventVersion(event);
       const currentVersion = getConfigState().version;
       if (typeof hintedVersion === "number" && hintedVersion <= currentVersion) {
-        // Still check the backend version to honour instructions but skip queuing duplicates.
         triggerRefresh();
         return;
       }
       triggerRefresh();
-    };
+    }
 
-    const handleError = (event: Event) => {
+    function handleOpen() {
+      retryDelay = INITIAL_RETRY;
+      clearReconnect();
+    }
+
+    function handleError(event: Event) {
       if (!cancelled) {
         console.warn("[config] EventSource error", event);
       }
+      if (!source || source.readyState === EventSource.CLOSED) {
+        cleanupSource();
+        scheduleReconnect();
+      }
+    }
+
+    const connect = () => {
+      if (cancelled) {
+        return;
+      }
+      cleanupSource();
+      clearReconnect();
+      source = new EventSource(eventsUrl);
+      source.addEventListener("config_changed", handleConfigChanged as EventListener);
+      source.addEventListener("error", handleError);
+      source.addEventListener("open", handleOpen);
     };
 
-    source.addEventListener("config_changed", handleConfigChanged as EventListener);
-    source.addEventListener("error", handleError);
+    connect();
 
     return () => {
       cancelled = true;
-      source.removeEventListener("config_changed", handleConfigChanged as EventListener);
-      source.removeEventListener("error", handleError);
-      source.close();
+      cleanupSource();
+      clearReconnect();
     };
   }, []);
 };

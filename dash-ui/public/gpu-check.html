@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>pantalla-gpu-check:pending</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #040713, #090b1d);
+        color: #f1f5ff;
+      }
+      .card {
+        padding: 2.5rem 3rem;
+        border-radius: 24px;
+        background: rgba(5, 10, 22, 0.85);
+        box-shadow: 0 35px 60px rgba(0, 0, 0, 0.35);
+        text-align: center;
+        min-width: 320px;
+      }
+      .card h1 {
+        font-size: 1.75rem;
+        margin: 0 0 0.5rem;
+      }
+      .card p {
+        margin: 0.25rem 0;
+        font-size: 1.05rem;
+        color: rgba(225, 235, 255, 0.78);
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.35rem 1rem;
+        border-radius: 999px;
+        border: 1px solid rgba(78, 201, 255, 0.45);
+        background: rgba(78, 201, 255, 0.16);
+        margin-bottom: 1rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+      }
+      .status-ok {
+        color: #7dd3fc;
+      }
+      .status-fail {
+        color: #fca5a5;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card" id="card" role="status" aria-live="polite">
+      <div class="badge" id="status-badge">Verificando WebGL…</div>
+      <h1 id="status-title">Chequeo WebGL en progreso</h1>
+      <p id="status-detail">La ventana se cerrará automáticamente en unos segundos.</p>
+    </div>
+    <script>
+      (function () {
+        function setResult(ok, detail) {
+          var badge = document.getElementById("status-badge");
+          var title = document.getElementById("status-title");
+          var detailEl = document.getElementById("status-detail");
+          if (!badge || !title || !detailEl) {
+            return;
+          }
+          if (ok) {
+            badge.textContent = "WebGL operativo";
+            badge.classList.add("status-ok");
+            title.textContent = "WebGL disponible";
+            detailEl.textContent = detail || "El renderer responde correctamente.";
+            document.title = "pantalla-gpu-check:ok";
+            document.body.setAttribute("data-webgl", "ok");
+          } else {
+            badge.textContent = "WebGL deshabilitado";
+            badge.classList.add("status-fail");
+            title.textContent = "Sin aceleración WebGL";
+            detailEl.textContent = detail || "No se pudo inicializar un contexto WebGL.";
+            document.title = "pantalla-gpu-check:fail";
+            document.body.setAttribute("data-webgl", "fail");
+          }
+        }
+
+        function checkWebGL() {
+          try {
+            var canvas = document.createElement("canvas");
+            var gl2 = canvas.getContext("webgl2", { preserveDrawingBuffer: false });
+            if (gl2) {
+              var renderer = gl2.getParameter(gl2.RENDERER);
+              setResult(true, renderer ? "Renderer: " + renderer : "Renderer WebGL2 detectado");
+              return;
+            }
+            var gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+            if (gl) {
+              var renderer1 = gl.getParameter(gl.RENDERER);
+              setResult(true, renderer1 ? "Renderer: " + renderer1 : "Renderer WebGL detectado");
+              return;
+            }
+            setResult(false, "No fue posible crear un contexto WebGL.");
+          } catch (error) {
+            setResult(false, error && error.message ? String(error.message) : "Error desconocido");
+          }
+        }
+
+        window.addEventListener("load", function () {
+          window.setTimeout(checkWebGL, 150);
+        });
+      })();
+    </script>
+  </body>
+</html>

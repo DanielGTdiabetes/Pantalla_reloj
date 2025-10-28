@@ -14,7 +14,7 @@ Pantalla_reloj/
 ├─ scripts/                  # install.sh, uninstall.sh, fix_permissions.sh
 ├─ systemd/                  # Servicios pantalla-*.service
 ├─ etc/nginx/sites-available # Virtual host de Nginx
-└─ openbox/autostart         # Lanzamiento de Epiphany en modo kiosk (Firefox opcional)
+└─ openbox/autostart         # Arranque del entorno gráfico (Openbox) y saneado del kiosk
 ```
 
 ### Backend (FastAPI)
@@ -38,6 +38,8 @@ Pantalla_reloj/
 - `/config` expone la administración completa (rotación, API keys, MQTT, Wi-Fi y
   opciones de UI). El overlay solo aparece en `/` si se añade `?overlay=1` para
   depuración puntual.
+- Cuando WebGL no está disponible, la vista principal activa un modo básico con
+  reloj y estado de degradación en lugar de quedar en negro.
 - Compilado con `npm run build` y servido por Nginx desde `/var/www/html`.
 
 ### Mapas y estilos
@@ -70,6 +72,10 @@ Pantalla_reloj/
   activo y apuntar a `/var/www/html`. Asegúrate de que el bloque `/api/` use
   `proxy_pass http://127.0.0.1:8081;` **sin barra final** para mantener los
   paths correctos.
+- El bloque dedicado a SSE (`location /api/events`) deshabilita `proxy_buffering`,
+  fija `proxy_read_timeout 1h` y elimina `Upgrade/Connection` para evitar los
+  errores 499/502 en el stream de configuración. Si clonas la config, respeta
+  esos ajustes.
 - El site por defecto de Nginx no debe estar habilitado: elimina el symlink
   `/etc/nginx/sites-enabled/default` para evitar colisiones con `server_name _`.
 
@@ -117,16 +123,20 @@ Nginx antes de dar por finalizada la actualización.
 ## Arranque estable (boot hardening)
 
 - **Openbox autostart robusto** (`openbox/autostart`): deja trazas en
-  `/var/log/pantalla-reloj/openbox-autostart.log`, deshabilita DPMS y entrega el
-  control al servicio Chromium para que aplique la geometría conocida.
+  `/var/log/pantalla-reloj/openbox-autostart.log`, deshabilita DPMS y mantiene
+  un bucle corto con `wmctrl`/`xprop` hasta garantizar que la ventana Chromium
+  queda en `fullscreen + above`, incluso si aparece tarde.
 - **Sesión X autenticada**: `pantalla-xorg.service` delega en
   `/usr/lib/pantalla-reloj/xorg-launch.sh`, que genera de forma determinista la
   cookie `MIT-MAGIC-COOKIE-1` en `/home/dani/.Xauthority` y la reutiliza para
   Openbox y el navegador.
 - **Lanzador de navegador resiliente**: `pantalla-kiosk-chromium@dani.service`
-  arranca `chromium-browser` con `--ozone-platform=x11`, `--disable-gpu` y un
-  `user-data-dir` persistente en `/var/lib/pantalla-reloj/state/chromium`, tras
-  ejecutar únicamente la secuencia mínima y estable de `xrandr` para 480×1920.
+  delega en `/usr/local/bin/pantalla-kiosk-chromium`, que detecta primero el
+  binario disponible (`chromium-browser`, `chromium` o snap) y mantiene un único
+  `user-data-dir` en `/var/lib/pantalla-reloj/state/chromium`. El lanzador
+  intenta inicializar WebGL con la GPU y, si falla la sonda (`glxinfo`/`xdpyinfo`)
+  o se crea `/var/lib/pantalla-reloj/state/.force-swiftshader`, fuerza el modo
+  SwiftShader sin abandonar el kiosk.
 - **Orden de arranque garantizado**: `pantalla-openbox@dani.service` depende de
   `pantalla-xorg.service`, del backend y de Nginx (`After=`/`Wants=`) con reinicio
   automático (`Restart=always`). `pantalla-xorg.service` se engancha a
@@ -176,7 +186,15 @@ sudo systemctl status pantalla-xorg.service pantalla-openbox@dani.service \
   pantalla-kiosk-chromium@dani.service
 DISPLAY=:0 xrandr --query
 DISPLAY=:0 wmctrl -lx
+/usr/local/bin/pantalla-verify-kiosk
 ```
+
+El verificador adicional `scripts/verify_kiosk.sh` (instalado como
+`/usr/local/bin/pantalla-verify-kiosk`) comprueba el binario elegido, valida que
+la ventana kiosk esté en `fullscreen`/`above` y abre durante unos segundos la
+prueba `gpu-check.html` para confirmar soporte WebGL. Usa
+`/var/lib/pantalla-reloj/state/.force-swiftshader` como bandera manual para
+forzar el fallback SwiftShader si el hardware no soporta aceleración.
 
 ## Instalación
 

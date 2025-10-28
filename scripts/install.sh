@@ -142,10 +142,46 @@ APT_PACKAGES=(
   xauth
   python3-venv
   unclutter-xfixes
+  mesa-utils
 )
 apt-get update -y
 DEBIAN_FRONTEND=noninteractive apt-get install -y "${APT_PACKAGES[@]}"
 SUMMARY+=("[install] paquetes asegurados: ${APT_PACKAGES[*]}")
+
+ensure_chromium_binary() {
+  if command -v chromium-browser >/dev/null 2>&1; then
+    log_info "Chromium (chromium-browser) detectado via apt"
+    SUMMARY+=('[install] chromium-browser disponible en el sistema')
+    return 0
+  fi
+  if command -v chromium >/dev/null 2>&1; then
+    log_info "Chromium detectado en PATH"
+    SUMMARY+=('[install] chromium disponible en el sistema')
+    return 0
+  fi
+
+  log_warn "Chromium no detectado; intentando instalación via apt"
+  if DEBIAN_FRONTEND=noninteractive apt-get install -y chromium-browser >/dev/null 2>&1; then
+    SUMMARY+=('[install] chromium-browser instalado via apt')
+    return 0
+  fi
+  if DEBIAN_FRONTEND=noninteractive apt-get install -y chromium >/dev/null 2>&1; then
+    SUMMARY+=('[install] chromium instalado via apt')
+    return 0
+  fi
+
+  if command -v snap >/dev/null 2>&1 && snap list chromium >/dev/null 2>&1; then
+    log_info "Chromium disponible via snap"
+    SUMMARY+=('[install] chromium disponible via snap')
+    return 0
+  fi
+
+  log_warn "No se pudo instalar Chromium automáticamente; utilice apt o snap manualmente"
+  SUMMARY+=('[install] Chromium no disponible tras intentos automáticos')
+  return 1
+}
+
+ensure_chromium_binary || true
 
 ensure_node() {
   if command -v node >/dev/null 2>&1; then
@@ -244,6 +280,8 @@ install -D -m 0755 "$KIOSK_BIN_SRC" "$KIOSK_BIN_DST"
 install -D -m 0755 "$CHROMIUM_KIOSK_BIN_SRC" "$CHROMIUM_KIOSK_BIN_DST"
 SUMMARY+=("[install] launcher de kiosk instalado en ${KIOSK_BIN_DST}")
 SUMMARY+=("[install] launcher Chromium kiosk disponible en ${CHROMIUM_KIOSK_BIN_DST}")
+install -D -m 0755 "$REPO_ROOT/scripts/verify_kiosk.sh" /usr/local/bin/pantalla-verify-kiosk
+SUMMARY+=("[install] script de verificación rápida disponible en /usr/local/bin/pantalla-verify-kiosk")
 install -D -m 0755 "$BACKEND_LAUNCHER_SRC" "$BACKEND_LAUNCHER_DST"
 SUMMARY+=("[install] launcher de backend instalado en ${BACKEND_LAUNCHER_DST}")
 install -D -m 0644 "$REPO_ROOT/usr/local/share/applications/${APP_ID}.desktop" \
@@ -383,36 +421,17 @@ install -D -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk@.service.d/10-sanitize-rol
 install -D -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk-watchdog@.service.d/10-rollback.conf" \
   /etc/systemd/system/pantalla-kiosk-watchdog@.service.d/10-rollback.conf
 
+DEFAULT_CHROMIUM_SCALE="${CHROMIUM_SCALE:-0.60}"
 DROPIN_DIR="/etc/systemd/system/pantalla-kiosk-chromium@${USER_NAME}.service.d"
 install -d -m 0755 "$DROPIN_DIR"
-cat >"${DROPIN_DIR}/override.conf" <<'EOF'
+cat >"${DROPIN_DIR}/override.conf" <<EOF
 [Service]
-# Limpiar y fijar entorno de X (evita “Missing X server or $DISPLAY”)
-Environment=
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/%i/.Xauthority
-
-# Escala por defecto (ajustable sin tocar binarios)
-Environment=CHROMIUM_SCALE=0.58
-
-# Reemplaza ExecStart e inyecta la escala
-ExecStart=
-ExecStart=/bin/sh -lc "chromium-browser \
-  --class=pantalla-kiosk \
-  --kiosk --start-fullscreen \
-  --app=http://127.0.0.1 \
-  --no-first-run --no-default-browser-check \
-  --disable-translate --disable-infobars \
-  --disable-session-crashed-bubble --noerrdialogs \
-  --disable-features=InfiniteSessionRestore,Translate,HardwareMediaKeyHandling \
-  --hide-scrollbars --overscroll-history-navigation=0 \
-  --password-store=basic \
-  --test-type \
-  --ozone-platform=x11 \
-  --disable-gpu \
-  --force-device-scale-factor=${CHROMIUM_SCALE} \
-  --disk-cache-dir=/var/lib/pantalla-reloj/cache/chromium \
-  --user-data-dir=/var/lib/pantalla-reloj/state/chromium"
+Environment=KIOSK_USER=%i
+Environment=CHROMIUM_SCALE=${DEFAULT_CHROMIUM_SCALE}
+Environment=PANTALLA_GPU_MODE=
+Environment=PANTALLA_FORCE_SWIFTSHADER_FILE=/var/lib/pantalla-reloj/state/.force-swiftshader
 EOF
 
 if [[ $units_changed -eq 1 ]]; then

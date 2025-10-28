@@ -4,19 +4,23 @@ After=pantalla-openbox@%i.service
 Wants=pantalla-openbox@%i.service
 
 [Service]
+Type=simple
 User=%i
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/%i/.Xauthority
 Environment=GDK_BACKEND=x11
 Environment=GTK_USE_PORTAL=0
 Environment=GIO_USE_PORTALS=0
-Environment=CHROMIUM_SCALE=0.58
+Environment=CHROMIUM_SCALE=0.60
+Environment=PANTALLA_GPU_MODE=auto
+Environment=PANTALLA_FORCE_SWIFTSHADER_FILE=/var/lib/pantalla-reloj/state/.force-swiftshader
 
 ExecStartPre=/bin/sh -lc 'xset -dpms; xset s off; xset s noblank || true'
 
 ExecStart=/usr/local/bin/pantalla-kiosk-chromium
 Restart=on-failure
 RestartSec=2
+KillMode=process
 
 [Install]
 WantedBy=multi-user.target
