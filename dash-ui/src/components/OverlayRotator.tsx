@@ -13,7 +13,6 @@ import { EphemeridesCard } from "./dashboard/cards/EphemeridesCard";
 import { HarvestCard } from "./dashboard/cards/HarvestCard";
 import { MoonCard } from "./dashboard/cards/MoonCard";
 import { NewsCard } from "./dashboard/cards/NewsCard";
-import { SaintsCard } from "./dashboard/cards/SaintsCard";
 import { TimeCard } from "./dashboard/cards/TimeCard";
 import { WeatherCard } from "./dashboard/cards/WeatherCard";
 
@@ -31,9 +30,6 @@ const MoonCardWrapper: React.FC<MoonCardWrapperProps> = (props) => <MoonCard {..
 
 type HarvestCardWrapperProps = React.ComponentProps<typeof HarvestCard>;
 const HarvestCardWrapper: React.FC<HarvestCardWrapperProps> = (props) => <HarvestCard {...props} />;
-
-type SaintsCardWrapperProps = React.ComponentProps<typeof SaintsCard>;
-const SaintsCardWrapper: React.FC<SaintsCardWrapperProps> = (props) => <SaintsCard {...props} />;
 
 type NewsCardWrapperProps = React.ComponentProps<typeof NewsCard>;
 const NewsCardWrapper: React.FC<NewsCardWrapperProps> = (props) => <NewsCard {...props} />;
@@ -110,6 +106,20 @@ const formatTemperature = (
 const safeArray = (value: unknown): Record<string, unknown>[] => {
   return Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
 };
+
+const arrSig = (value: unknown): string => {
+  return Array.isArray(value) ? value.join("|") : "";
+};
+
+const DEFAULT_ROTATION_PANELS: readonly string[] = [
+  "time",
+  "weather",
+  "news",
+  "moon",
+  "ephemerides",
+  "calendar",
+  "harvest"
+];
 
 const extractStrings = (value: unknown): string[] => {
   if (!value) {
@@ -318,6 +328,16 @@ export const OverlayRotator: React.FC = () => {
     wind
   ]);
 
+  const panelsOrder = useMemo<string[]>(() => {
+    const panels = config?.ui?.rotation?.panels;
+    if (Array.isArray(panels) && panels.length > 0) {
+      return panels as string[];
+    }
+    return DEFAULT_ROTATION_PANELS as string[];
+  }, [config?.ui?.rotation?.panels]);
+
+  const panelsSig = useMemo(() => arrSig(panelsOrder), [panelsOrder]);
+
   const rotatingCards = useMemo<RotatingCardItem[]>(() => {
     const weatherProps = {
       temperatureLabel: `${temperature.value}${temperature.unit}`,
@@ -328,18 +348,7 @@ export const OverlayRotator: React.FC = () => {
       unit: temperature.unit
     };
 
-    const cardOrder = (config?.ui?.rotation?.panels ?? [
-      "time",
-      "weather",
-      "news",
-      "moon",
-      "ephemerides",
-      "calendar",
-      "harvest",
-      "saints"
-    ]) as string[];
-
-    const available: Record<string, RotatingCardItem> = {
+    const cardsMap: Record<string, RotatingCardItem> = {
       time: {
         id: "time",
         duration: 8000,
@@ -347,39 +356,22 @@ export const OverlayRotator: React.FC = () => {
       },
       weather: {
         id: "weather",
-        duration: 10000,
+        duration: 8000,
         render: () => <WeatherCardWrapper {...weatherProps} />
-      },
-      calendar: {
-        id: "calendar",
-        duration: 10000,
-        render: () => (
-          <CalendarCardWrapper events={calendarEvents} timezone={config.display.timezone} />
-        )
-      },
-      moon: {
-        id: "moon",
-        duration: 10000,
-        render: () => <MoonCardWrapper moonPhase={moonPhase} illumination={moonIllumination} />
-      },
-      harvest: {
-        id: "harvest",
-        duration: 12000,
-        render: () => <HarvestCardWrapper items={harvestItems} />
-      },
-      saints: {
-        id: "saints",
-        duration: 12000,
-        render: () => <SaintsCardWrapper saints={saintsEntries} />
       },
       news: {
         id: "news",
-        duration: 20000,
+        duration: 8000,
         render: () => <NewsCardWrapper items={newsItems} />
+      },
+      moon: {
+        id: "moon",
+        duration: 8000,
+        render: () => <MoonCardWrapper moonPhase={moonPhase} illumination={moonIllumination} />
       },
       ephemerides: {
         id: "ephemerides",
-        duration: 20000,
+        duration: 8000,
         render: () => (
           <EphemeridesCardWrapper
             sunrise={sunrise}
@@ -388,30 +380,24 @@ export const OverlayRotator: React.FC = () => {
             events={ephemeridesEvents}
           />
         )
+      },
+      calendar: {
+        id: "calendar",
+        duration: 8000,
+        render: () => (
+          <CalendarCardWrapper events={calendarEvents} timezone={config.display.timezone} />
+        )
+      },
+      harvest: {
+        id: "harvest",
+        duration: 8000,
+        render: () => <HarvestCardWrapper items={harvestItems} />
       }
     };
 
-    const list = cardOrder.map((key) => available[key]).filter(Boolean) as RotatingCardItem[];
-    return list.length > 0 ? list : [available.time];
-  }, [
-    calendarEvents,
-    config?.ui?.rotation?.panels,
-    config.display.timezone,
-    ephemeridesEvents,
-    feelsLikeValue,
-    harvestItems,
-    humidity,
-    moonIllumination,
-    moonPhase,
-    newsItems,
-    saintsEntries,
-    sunrise,
-    sunset,
-    temperature.unit,
-    temperature.value,
-    wind,
-    payloadKey
-  ]);
+    const list = panelsOrder.map((panelId) => cardsMap[panelId]).filter(Boolean) as RotatingCardItem[];
+    return list.length > 0 ? list : [cardsMap.time];
+  }, [panelsSig, payloadKey]);
 
   const lastUpdatedLabel = useMemo(() => {
     if (!lastUpdatedAt) {
