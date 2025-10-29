@@ -17,6 +17,8 @@ import {
   type MapStyleResult
 } from "./mapStyle";
 
+export const GEO_SCOPE_AUTOPAN_EVENT = "geoscope:auto-pan-bearing";
+
 const FALLBACK_CINEMA = createDefaultMapCinema();
 const DEFAULT_VIEW = {
   lng: 0,
@@ -26,13 +28,20 @@ const DEFAULT_VIEW = {
   pitch: FALLBACK_CINEMA.bands[0]?.pitch ?? 0
 };
 const DEFAULT_MIN_ZOOM = FALLBACK_CINEMA.bands[0]?.minZoom ?? 2.4;
-const DEFAULT_PAN_SPEED = FALLBACK_CINEMA.panLngDegPerSec;
+const FALLBACK_ROTATION_DEG_PER_SEC = 6 / 60;
+const DEFAULT_PAN_SPEED = Math.max(
+  Number.isFinite(FALLBACK_CINEMA.panLngDegPerSec)
+    ? FALLBACK_CINEMA.panLngDegPerSec
+    : FALLBACK_ROTATION_DEG_PER_SEC,
+  FALLBACK_ROTATION_DEG_PER_SEC
+);
 const FPS_LIMIT = 45;
 const FRAME_MIN_INTERVAL_MS = 1000 / FPS_LIMIT;
 const MAX_DELTA_SECONDS = 0.5;
-const WATCHDOG_INTERVAL_MS = 1500;
+const WATCHDOG_INTERVAL_MS = 3000;
 const WATCHDOG_BEARING_DELTA = 0.75;
 const FALLBACK_TICK_INTERVAL_MS = 1000;
+const AUTOPAN_LOG_INTERVAL_MS = 5000;
 
 const FALLBACK_THEME = createDefaultMapSettings().theme ?? {};
 
@@ -157,6 +166,14 @@ const normalizeLng = (lng: number) => ((lng + 540) % 360) - 180;
 const lerp = (start: number, end: number, t: number) => start + (end - start) * t;
 const easeInOut = (t: number) =>
   t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+const normalizeBearing = (bearing: number) => {
+  let normalized = bearing % 360;
+  if (normalized < 0) {
+    normalized += 360;
+  }
+  return normalized;
+};
 
 const sanitizeBand = (
   band: MapCinemaBand,
@@ -289,6 +306,14 @@ export default function GeoScopeMap() {
   const respectReducedMotionRef = useRef(false);
   const reducedMotionMediaRef = useRef<MediaQueryList | null>(null);
   const reducedMotionActiveRef = useRef(false);
+  const kioskModeRef = useRef(kioskRuntime.isLikelyKiosk());
+  const autopanForcedOnRef = useRef(kioskRuntime.isAutopanForcedOn());
+  const autopanForcedOffRef = useRef(kioskRuntime.isAutopanForcedOff());
+  const motionForcedRef = useRef(kioskRuntime.isMotionForced());
+  const motionOverrideLoggedRef = useRef(false);
+  const autopanEnabledRef = useRef(true);
+  const lastLogTimeRef = useRef<number>(0);
+  const respectDefaultRef = useRef(false);
   const [tintColor, setTintColor] = useState<string | null>(null);
 
   const applyBandInstant = (band: MapCinemaBand, map?: maplibregl.Map | null) => {
@@ -490,15 +515,49 @@ export default function GeoScopeMap() {
       teardownFallbackTimer();
       lastFrameTimeRef.current = null;
       lastRepaintTimeRef.current = null;
+      lastLogTimeRef.current = 0;
+    };
+
+    const startPan = () => {
+      if (animationFrameRef.current != null) return;
+      if (!mapRef.current) return;
+
+      lastFrameTimeRef.current = null;
+      lastRepaintTimeRef.current = null;
+      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+      lastLogTimeRef.current = now - AUTOPAN_LOG_INTERVAL_MS;
+      animationFrameRef.current = requestAnimationFrame(stepPan);
+      ensureFallbackTimer();
+    };
+
+    const recomputeAutopanActivation = () => {
+      const forcedOff = autopanForcedOffRef.current;
+      const kioskDetected = kioskModeRef.current;
+      const motionForced = motionForcedRef.current || autopanForcedOnRef.current;
+      const respectPreference = respectReducedMotionRef.current;
+      const reducedActive = reducedMotionActiveRef.current;
+
+      let shouldRun = !forcedOff;
+      if (shouldRun) {
+        if (motionForced || kioskDetected) {
+          shouldRun = true;
+        } else if (respectPreference && reducedActive) {
+          shouldRun = false;
+        }
+      }
+
+      autopanEnabledRef.current = shouldRun;
+
+      if (shouldRun) {
+        startPan();
+      } else {
+        stopPan();
+      }
     };
 
     const handleReducedMotionChange = (event: MediaQueryListEvent) => {
       reducedMotionActiveRef.current = event.matches;
-      if (event.matches) {
-        stopPan();
-      } else {
-        startPan();
-      }
+      recomputeAutopanActivation();
     };
 
     const applyReducedMotionPreference = (respect: boolean) => {
@@ -511,6 +570,7 @@ export default function GeoScopeMap() {
 
       if (!respect || typeof window.matchMedia !== "function") {
         reducedMotionActiveRef.current = false;
+        recomputeAutopanActivation();
         return;
       }
 
@@ -519,8 +579,39 @@ export default function GeoScopeMap() {
       media.addEventListener("change", handleReducedMotionChange);
       reducedMotionMediaRef.current = media;
 
-      if (media.matches) {
-        stopPan();
+      recomputeAutopanActivation();
+    };
+
+    const refreshRuntimePolicy = (defaultRespect?: boolean) => {
+      const baseRespect = defaultRespect ?? respectDefaultRef.current;
+      autopanForcedOnRef.current = kioskRuntime.isAutopanForcedOn();
+      autopanForcedOffRef.current = kioskRuntime.isAutopanForcedOff();
+      motionForcedRef.current = kioskRuntime.isMotionForced();
+      kioskModeRef.current = kioskRuntime.isLikelyKiosk();
+      const effectiveRespect = kioskRuntime.shouldRespectReducedMotion(baseRespect);
+      applyReducedMotionPreference(effectiveRespect);
+      if (!effectiveRespect && (motionForcedRef.current || autopanForcedOnRef.current)) {
+        if (!motionOverrideLoggedRef.current) {
+          console.info("[GeoScopeMap] prefers-reduced-motion override active (kiosk)");
+          motionOverrideLoggedRef.current = true;
+        }
+      } else if (effectiveRespect) {
+        motionOverrideLoggedRef.current = false;
+      }
+    };
+
+    const emitBearing = (bearing: number, timestamp: number, force?: boolean) => {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent(GEO_SCOPE_AUTOPAN_EVENT, {
+            detail: { bearing }
+          })
+        );
+      }
+      const lastLog = lastLogTimeRef.current;
+      if (force || !lastLog || timestamp - lastLog >= AUTOPAN_LOG_INTERVAL_MS) {
+        lastLogTimeRef.current = timestamp;
+        console.log(`[diagnostics:auto-pan] bearing=${bearing.toFixed(2)}`);
       }
     };
 
@@ -530,7 +621,16 @@ export default function GeoScopeMap() {
         stopPan();
         return;
       }
-      if (respectReducedMotionRef.current && reducedMotionActiveRef.current) {
+      if (!options?.force && !autopanEnabledRef.current) {
+        return;
+      }
+      if (
+        !options?.force &&
+        respectReducedMotionRef.current &&
+        reducedMotionActiveRef.current &&
+        !motionForcedRef.current &&
+        !autopanForcedOnRef.current
+      ) {
         return;
       }
 
@@ -550,12 +650,15 @@ export default function GeoScopeMap() {
 
       updateBandState(elapsedSeconds);
 
-      const deltaLng = panSpeedRef.current * elapsedSeconds;
-      viewStateRef.current.lng = normalizeLng(viewStateRef.current.lng + deltaLng);
+      const deltaBearing = panSpeedRef.current * elapsedSeconds;
+      viewStateRef.current.bearing = normalizeBearing(
+        viewStateRef.current.bearing + deltaBearing
+      );
 
       updateMapView(map);
       lastRepaintTimeRef.current = timestamp;
       map.triggerRepaint();
+      emitBearing(viewStateRef.current.bearing, timestamp, options?.force);
     };
 
     const stepPan = (timestamp: number) => {
@@ -575,6 +678,9 @@ export default function GeoScopeMap() {
         if (!map) {
           return;
         }
+        if (!autopanEnabledRef.current && !motionForcedRef.current && !autopanForcedOnRef.current) {
+          return;
+        }
         const now = performance.now();
         const lastFrame = lastFrameTimeRef.current;
         if (!lastFrame || now - lastFrame >= FRAME_MIN_INTERVAL_MS) {
@@ -584,11 +690,13 @@ export default function GeoScopeMap() {
         if (!lastFrame || now - lastFrame >= WATCHDOG_INTERVAL_MS) {
           const center = map.getCenter();
           const nextBearing = map.getBearing() + WATCHDOG_BEARING_DELTA;
+          const normalizedBearing = normalizeBearing(nextBearing);
+          viewStateRef.current.bearing = normalizedBearing;
           map.jumpTo({
             center,
             zoom: map.getZoom(),
             pitch: map.getPitch(),
-            bearing: nextBearing
+            bearing: normalizedBearing
           });
           lastFrameTimeRef.current = now;
           lastRepaintTimeRef.current = now;
@@ -598,9 +706,10 @@ export default function GeoScopeMap() {
           }
           console.warn(
             "[GeoScopeMap] watchdog jump enforced (bearing=",
-            nextBearing.toFixed(2),
+            normalizedBearing.toFixed(2),
             ")"
           );
+          emitBearing(normalizedBearing, now, true);
           return;
         }
 
@@ -615,10 +724,11 @@ export default function GeoScopeMap() {
     const startPan = () => {
       if (animationFrameRef.current != null) return;
       if (!mapRef.current) return;
-      if (respectReducedMotionRef.current && reducedMotionActiveRef.current) return;
 
       lastFrameTimeRef.current = null;
       lastRepaintTimeRef.current = null;
+      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+      lastLogTimeRef.current = now - AUTOPAN_LOG_INTERVAL_MS;
       animationFrameRef.current = requestAnimationFrame(stepPan);
       ensureFallbackTimer();
     };
@@ -678,7 +788,7 @@ export default function GeoScopeMap() {
         applyThemeToMap(map, styleTypeRef.current, themeRef.current);
       }
       safeFit();
-      startPan();
+      recomputeAutopanActivation();
     };
 
     const handleStyleData = () => {
@@ -698,7 +808,7 @@ export default function GeoScopeMap() {
 
     const handleContextRestored = () => {
       safeFit();
-      startPan();
+      recomputeAutopanActivation();
     };
 
     const setupResizeObserver = (target: Element) => {
@@ -713,6 +823,7 @@ export default function GeoScopeMap() {
     const initializeMap = async () => {
       const hostPromise = waitForStableSize();
       const runtime = await loadRuntimePreferences();
+      respectDefaultRef.current = Boolean(runtime.respectReducedMotion);
 
       if (destroyed) {
         return;
@@ -729,7 +840,15 @@ export default function GeoScopeMap() {
       }
 
       cinemaRef.current = cinemaSettings;
-      panSpeedRef.current = cinemaSettings.panLngDegPerSec;
+      panSpeedRef.current = kioskRuntime.getSpeedOverride(
+        cinemaSettings.panLngDegPerSec,
+        FALLBACK_ROTATION_DEG_PER_SEC
+      );
+      if (Math.abs(panSpeedRef.current - cinemaSettings.panLngDegPerSec) > 1e-6) {
+        console.info(
+          `[GeoScopeMap] autopan speed override active (${panSpeedRef.current.toFixed(3)}°/s)`
+        );
+      }
       bandIndexRef.current = 0;
       bandElapsedRef.current = 0;
       bandTransitionRef.current = null;
@@ -770,14 +889,7 @@ export default function GeoScopeMap() {
 
       mapRef.current = map;
       map.setMinZoom(firstBand.minZoom);
-
-      const effectiveRespect = kioskRuntime.shouldRespectReducedMotion(
-        runtime.respectReducedMotion
-      );
-      applyReducedMotionPreference(effectiveRespect);
-      if (!effectiveRespect && kioskRuntime.isMotionForced()) {
-        console.info("[GeoScopeMap] prefers-reduced-motion override active (kiosk)");
-      }
+      refreshRuntimePolicy(runtime.respectReducedMotion);
 
       const applyFallbackStyle = (reason?: unknown) => {
         if (fallbackAppliedRef.current) {
@@ -845,6 +957,12 @@ export default function GeoScopeMap() {
         media.addEventListener("change", handleDprChange);
         dprMediaRef.current = media;
       }
+
+      kioskRuntime.ensureKioskDetection().then(() => {
+        if (!destroyed) {
+          refreshRuntimePolicy(runtime.respectReducedMotion);
+        }
+      });
     };
 
     void initializeMap();
