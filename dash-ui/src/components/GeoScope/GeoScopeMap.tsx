@@ -350,18 +350,44 @@ export default function GeoScopeMap() {
     const state = bandTransitionRef.current;
     if (!state) return deltaSeconds;
 
-    const targetElapsed = state.elapsed + deltaSeconds;
+    const previousElapsed = state.elapsed;
+    const targetElapsed = previousElapsed + deltaSeconds;
     const clampedElapsed = Math.min(targetElapsed, state.duration);
     state.elapsed = clampedElapsed;
 
     const progress = state.duration > 0 ? clampedElapsed / state.duration : 1;
     const eased = easeInOut(Math.min(progress, 1));
 
+    viewStateRef.current.lat = lerp(state.from.lat, state.to.lat, eased);
+    viewStateRef.current.zoom = lerp(state.from.zoom, state.to.zoom, eased);
+    viewStateRef.current.pitch = lerp(state.from.pitch, state.to.pitch, eased);
+    viewStateRef.current.bearing = 0;
+
+    const consumed = clampedElapsed - previousElapsed;
+    const remaining = Math.max(0, deltaSeconds - consumed);
+
+    if (clampedElapsed >= state.duration) {
+      finishTransition(null);
+    }
+
+    return remaining;
+  };
+
   useEffect(() => {
     let destroyed = false;
     let sizeCheckFrame: number | null = null;
     let styleErrorHandler: ((event: MapLibreEvent & { error?: unknown }) => void) | null =
       null;
+
+    const updateMapView = (map: maplibregl.Map) => {
+      const { lng, lat, zoom, pitch, bearing } = viewStateRef.current;
+      map.jumpTo({
+        center: [lng, lat],
+        zoom,
+        pitch,
+        bearing
+      });
+    };
 
     const safeFit = () => {
       const map = mapRef.current;
@@ -426,6 +452,58 @@ export default function GeoScopeMap() {
 
       if (media.matches) {
         stopPan();
+      }
+    };
+
+    const updateBandState = (deltaSeconds: number) => {
+      const cinema = cinemaRef.current;
+      if (!cinema.bands.length) {
+        return;
+      }
+
+      let remaining = deltaSeconds;
+      let safety = 0;
+      while (remaining > 0 && safety < cinema.bands.length + 4) {
+        safety += 1;
+
+        if (bandTransitionRef.current) {
+          remaining = advanceTransition(remaining);
+          if (bandTransitionRef.current) {
+            return;
+          }
+          continue;
+        }
+
+        const totalBands = cinema.bands.length;
+        const currentIndex = ((bandIndexRef.current % totalBands) + totalBands) % totalBands;
+        const currentBand = cinema.bands[currentIndex];
+        if (!currentBand) {
+          return;
+        }
+
+        viewStateRef.current.lat = currentBand.lat;
+        viewStateRef.current.zoom = currentBand.zoom;
+        viewStateRef.current.pitch = currentBand.pitch;
+        viewStateRef.current.bearing = 0;
+        currentMinZoomRef.current = Math.min(currentBand.minZoom, currentBand.zoom);
+
+        if (totalBands <= 1) {
+          bandElapsedRef.current = 0;
+          return;
+        }
+
+        const duration = Math.max(currentBand.duration_sec, 0.0001);
+        const targetElapsed = bandElapsedRef.current + remaining;
+
+        if (targetElapsed < duration) {
+          bandElapsedRef.current = targetElapsed;
+          return;
+        }
+
+        const overshoot = targetElapsed - duration;
+        bandElapsedRef.current = 0;
+        startTransition(currentIndex + 1);
+        remaining = overshoot;
       }
     };
 
