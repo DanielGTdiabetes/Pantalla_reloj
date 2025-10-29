@@ -292,7 +292,11 @@ install -D -o "$USER_NAME" -g "$USER_NAME" -m 0644 \
   "$REPO_ROOT/home/dani/.local/share/xdg-desktop-portal/applications/${APP_ID}.desktop" \
   "$USER_HOME/.local/share/xdg-desktop-portal/applications/${APP_ID}.desktop"
 SUMMARY+=("[install] desktop file ${APP_ID} instalado")
-install -D -m 0755 "$REPO_ROOT/usr/local/bin/pantalla-kiosk-verify" /usr/local/bin/pantalla-kiosk-verify
+install -D -m 0755 "$REPO_ROOT/scripts/pantalla-kiosk-verify" /usr/local/bin/pantalla-kiosk-verify
+if ! bash -n /usr/local/bin/pantalla-kiosk-verify; then
+  echo "[ERROR] Syntax check failed for pantalla-kiosk-verify" >&2
+  exit 1
+fi
 SUMMARY+=("[install] verificador de kiosk instalado en /usr/local/bin/pantalla-kiosk-verify")
 
 if command -v update-desktop-database >/dev/null 2>&1; then
@@ -512,21 +516,35 @@ if ! VERIFY_USER="$USER_NAME" "$REPO_ROOT/scripts/verify_api.sh"; then
   log_error "La verificación de Nginx/API falló"
   exit 1
 fi
-log_info "Verificador post-deploy completado"
+log_info "Verificador de API completado"
+
+VERIFY_STATUS=0
+if ! VERIFY_OUTPUT="$(VERIFY_USER="$USER_NAME" /usr/local/bin/pantalla-kiosk-verify 2>&1)"; then
+  VERIFY_STATUS=$?
+fi
+printf '%s\n' "$VERIFY_OUTPUT"
+if [[ $VERIFY_STATUS -ne 0 ]]; then
+  if ! grep -q ' - ui=ok' <<<"$VERIFY_OUTPUT"; then
+    log_error "pantalla-kiosk-verify: UI health check failed"
+    exit 1
+  fi
+  if ! grep -q ' - backend=ok' <<<"$VERIFY_OUTPUT"; then
+    log_error "pantalla-kiosk-verify: backend health check failed"
+    exit 1
+  fi
+  log_error "pantalla-kiosk-verify detectó problemas"
+  exit 1
+fi
+SUMMARY+=('[install] pantalla-kiosk-verify completado')
 
 if OUTPUT=$(DISPLAY=:0 XAUTHORITY=/home/${USER_NAME}/.Xauthority "$REPO_ROOT/scripts/verify_kiosk.sh" 2>&1); then
   printf '%s\n' "$OUTPUT"
   SUMMARY+=('[install] ventana de Chromium detectada')
 else
   printf '%s\n' "$OUTPUT"
+  log_warn 'ventana de Chromium/Firefox no detectada'
   SUMMARY+=('[install] ventana de Chromium no detectada')
 fi
-
-if ! VERIFY_USER="$USER_NAME" /usr/local/bin/pantalla-kiosk-verify; then
-  log_error "pantalla-kiosk-verify detectó problemas"
-  exit 1
-fi
-SUMMARY+=('[install] pantalla-kiosk-verify completado')
 
 if DISPLAY=:0 XAUTHORITY=/home/${USER_NAME}/.Xauthority xprop -root _NET_ACTIVE_WINDOW >/dev/null 2>&1; then
   log_ok "xprop _NET_ACTIVE_WINDOW ejecutado"

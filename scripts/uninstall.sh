@@ -147,6 +147,7 @@ restore_nginx_default() {
 restore_nginx_default
 
 rm -f /usr/local/bin/pantalla-kiosk
+rm -f /usr/local/bin/pantalla-kiosk-verify
 
 if [[ -f "$WEBROOT_MANIFEST" ]]; then
   log_info "Removing tracked web assets"
