@@ -6,10 +6,12 @@ log() {
 }
 
 find_chromium() {
-  local candidate
+  local candidate resolved
   for candidate in "${CHROMIUM_BIN_OVERRIDE:-}" chromium-browser chromium /snap/bin/chromium; do
-    if [[ -n "$candidate" ]] && command -v "$candidate" >/dev/null 2>&1; then
-      command -v "$candidate"
+    [[ -z "$candidate" ]] && continue
+    if command -v "$candidate" >/dev/null 2>&1; then
+      resolved="$(command -v "$candidate")"
+      printf '%s\n' "$resolved"
       return 0
     fi
   done
@@ -25,29 +27,58 @@ main() {
   fi
 
   url="${KIOSK_URL:-http://127.0.0.1}"
-  user_data_dir="${CHROMIUM_USER_DATA_DIR:-/var/lib/pantalla-reloj/state/chromium}"
-  cache_dir="${CHROMIUM_CACHE_DIR:-/var/lib/pantalla-reloj/cache/chromium}"
+  user_data_dir="${CHROMIUM_USER_DATA_DIR:-${HOME}/.local/share/pantalla-reloj/chromium}"
+  cache_dir="${CHROMIUM_CACHE_DIR:-${HOME}/.cache/pantalla-reloj/chromium}"
 
   install -d -m 0700 "$user_data_dir"
   install -d -m 0755 "$cache_dir"
+
+  if [[ $(stat -c '%a' "$user_data_dir") != 700 ]]; then
+    chmod 0700 "$user_data_dir"
+  fi
+  if [[ $(stat -c '%a' "$cache_dir") != 755 ]]; then
+    chmod 0755 "$cache_dir"
+  fi
 
   log "Usando Chromium en: ${chromium_bin}"
   log "Perfil: ${user_data_dir}"
   log "Cache: ${cache_dir}"
   log "URL: ${url}"
 
-  exec "$chromium_bin" \
-    --kiosk --start-fullscreen \
-    --app="${url}" \
-    --no-first-run --no-default-browser-check \
-    --disable-translate --disable-infobars \
-    --overscroll-history-navigation=0 \
-    --password-store=basic \
-    --test-type \
-    --ozone-platform=x11 \
-    --disable-gpu \
-    --disk-cache-dir="${cache_dir}" \
-    --user-data-dir="${user_data_dir}"
+  local -a args
+  args=(
+    "${chromium_bin}"
+    --class=pantalla-kiosk
+    --kiosk
+    --start-fullscreen
+    "--app=${url}"
+    --no-first-run
+    --no-default-browser-check
+    --disable-translate
+    --disable-infobars
+    --disable-session-crashed-bubble
+    --noerrdialogs
+    --disable-features=CalculateNativeWinOcclusion,InfiniteSessionRestore,Translate,HardwareMediaKeyHandling
+    --disable-renderer-backgrounding
+    --disable-background-timer-throttling
+    --disable-backgrounding-occluded-windows
+    --hide-scrollbars
+    --overscroll-history-navigation=0
+    --password-store=basic
+    --test-type
+    --ozone-platform=x11
+    --enable-unsafe-swiftshader
+    --ignore-gpu-blocklist
+    --enable-webgl
+    "--disk-cache-dir=${cache_dir}"
+    "--user-data-dir=${user_data_dir}"
+  )
+
+  if [[ -n "${CHROMIUM_SCALE:-}" ]]; then
+    args+=("--force-device-scale-factor=${CHROMIUM_SCALE}")
+  fi
+
+  exec "${args[@]}"
 }
 
 main "$@"
