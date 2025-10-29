@@ -352,12 +352,106 @@ export default function GeoScopeMap() {
     const state = bandTransitionRef.current;
     if (!state) return deltaSeconds;
 
-    const targetElapsed = state.elapsed + deltaSeconds;
+    const previousElapsed = state.elapsed;
+    const targetElapsed = previousElapsed + deltaSeconds;
     const clampedElapsed = Math.min(targetElapsed, state.duration);
     state.elapsed = clampedElapsed;
 
     const progress = state.duration > 0 ? clampedElapsed / state.duration : 1;
     const eased = easeInOut(Math.min(progress, 1));
+
+    const fromBand = state.from;
+    const toBand = state.to;
+
+    const nextLat = lerp(fromBand.lat, toBand.lat, eased);
+    const nextZoom = lerp(fromBand.zoom, toBand.zoom, eased);
+    const nextPitch = lerp(fromBand.pitch, toBand.pitch, eased);
+    const interpolatedMinZoom = lerp(fromBand.minZoom, toBand.minZoom, eased);
+    const nextMinZoom = Math.min(interpolatedMinZoom, nextZoom);
+
+    viewStateRef.current.lat = nextLat;
+    viewStateRef.current.zoom = nextZoom;
+    viewStateRef.current.pitch = nextPitch;
+    viewStateRef.current.bearing = 0;
+    currentMinZoomRef.current = nextMinZoom;
+
+    const map = mapRef.current;
+    if (map) {
+      map.setMinZoom(nextMinZoom);
+    }
+
+    if (clampedElapsed >= state.duration) {
+      finishTransition(map);
+    }
+
+    const consumed = clampedElapsed - previousElapsed;
+    const remaining = deltaSeconds - consumed;
+    return remaining > 0 ? remaining : 0;
+  };
+
+  const updateBandState = (deltaSeconds: number) => {
+    const cinema = cinemaRef.current;
+    const totalBands = cinema.bands.length;
+    if (!totalBands) {
+      return;
+    }
+
+    let remaining = deltaSeconds;
+    let previousRemaining = Number.POSITIVE_INFINITY;
+
+    while (remaining > 0) {
+      if (remaining >= previousRemaining - 1e-6) {
+        break;
+      }
+      previousRemaining = remaining;
+
+      const afterTransition = advanceTransition(remaining);
+      if (afterTransition < remaining) {
+        remaining = afterTransition;
+        continue;
+      }
+
+      const currentIndex = ((bandIndexRef.current % totalBands) + totalBands) % totalBands;
+      const currentBand = cinema.bands[currentIndex];
+      if (!currentBand) {
+        return;
+      }
+
+      const duration = Math.max(0.1, currentBand.duration_sec);
+      const elapsed = bandElapsedRef.current + remaining;
+
+      if (elapsed < duration) {
+        bandElapsedRef.current = elapsed;
+        return;
+      }
+
+      const leftover = Math.max(0, elapsed - duration);
+      bandElapsedRef.current = 0;
+      startTransition(currentIndex + 1);
+
+      if (!bandTransitionRef.current) {
+        const nextIndex = (currentIndex + 1 + totalBands) % totalBands;
+        const nextBand = cinema.bands[nextIndex];
+        if (nextBand) {
+          applyBandInstant(nextBand, mapRef.current);
+          bandIndexRef.current = nextIndex;
+        }
+      }
+
+      remaining = leftover;
+    }
+  };
+
+  const updateMapView = (map: maplibregl.Map) => {
+    const { lng, lat, zoom, pitch, bearing } = viewStateRef.current;
+    map.jumpTo({
+      center: [lng, lat],
+      zoom,
+      pitch,
+      bearing,
+      animate: false
+    });
+  };
 
   useEffect(() => {
     let destroyed = false;
