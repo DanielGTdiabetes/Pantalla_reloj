@@ -42,7 +42,7 @@ const kioskEnabled = Boolean(kioskWindow?.__KIOSK__?.ENABLED ?? kioskEnabledFrom
 
 const params = getSearchParams();
 const reducedOverrideFromQuery = parseBoolean(params.get("reduced"));
-const reducedOverride =
+const reducedMotionOverride =
   typeof kioskWindow?.__KIOSK__?.REDUCED_MOTION === "boolean"
     ? kioskWindow.__KIOSK__!.REDUCED_MOTION
     : reducedOverrideFromQuery;
@@ -55,14 +55,14 @@ export const kioskRuntime = {
       return defaultRespect;
     }
 
-    if (typeof reducedOverride === "boolean") {
-      return reducedOverride;
+    if (typeof reducedMotionOverride === "boolean") {
+      return reducedMotionOverride;
     }
 
     return defaultRespect;
   },
   isMotionForced(): boolean {
-    return kioskEnabled && reducedOverride === false;
+    return kioskEnabled && reducedMotionOverride === false;
   }
 };
 

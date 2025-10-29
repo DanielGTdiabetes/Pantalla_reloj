@@ -448,8 +448,7 @@ export default function GeoScopeMap() {
       center: [lng, lat],
       zoom,
       pitch,
-      bearing,
-      animate: false
+      bearing
     });
   };
 
