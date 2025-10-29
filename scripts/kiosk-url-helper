@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+NAME="$(basename "$0")"
+
+case "$NAME" in
+  kiosk-ui)
+    TARGET_URL="http://127.0.0.1/"
+    ;;
+  kiosk-diag)
+    TARGET_URL="http://127.0.0.1/diagnostics/auto-pan"
+    ;;
+  *)
+    printf '[%s] helper invocation not supported\n' "$NAME" >&2
+    exit 1
+    ;;
+ esac
+
+TARGET_USER="${KIOSK_USER:-${SUDO_USER:-}}"
+if [[ -z "$TARGET_USER" ]]; then
+  printf '[%s] error: run with sudo or provide KIOSK_USER\n' "$NAME" >&2
+  exit 1
+fi
+
+log() {
+  printf '[%s] %s\n' "$NAME" "$*"
+}
+
+STATE_DIR="/var/lib/pantalla-reloj/state"
+ENV_FILE="${STATE_DIR}/kiosk.env"
+DROPIN_DIR="/etc/systemd/system/pantalla-kiosk-chromium@${TARGET_USER}.service.d"
+DROPIN_FILE="${DROPIN_DIR}/10-kiosk-url.conf"
+SERVICE="pantalla-kiosk-chromium@${TARGET_USER}.service"
+
+log "configurando KIOSK_URL=${TARGET_URL} para ${TARGET_USER}"
+install -d -m 0755 "$STATE_DIR"
+printf 'KIOSK_URL=%s\n' "$TARGET_URL" >"$ENV_FILE"
+chmod 0644 "$ENV_FILE"
+
+install -d -m 0755 "$DROPIN_DIR"
+tmp_file="$(mktemp)"
+trap 'rm -f "$tmp_file"' EXIT
+{
+  echo "[Service]"
+  printf 'Environment=KIOSK_URL=%s\n' "$TARGET_URL"
+} >"$tmp_file"
+install -m 0644 "$tmp_file" "$DROPIN_FILE"
+rm -f "$tmp_file"
+trap - EXIT
+log "actualizado drop-in ${DROPIN_FILE}"
+
+systemctl daemon-reload
+log "reiniciando ${SERVICE}"
+systemctl restart "$SERVICE"
+log "KIOSK_URL aplicado"
