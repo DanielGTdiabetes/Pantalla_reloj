@@ -7,14 +7,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 NON_INTERACTIVE=0
-REQUESTED_BROWSER=""
 DIAG_MODE=0
 SUMMARY=()
 
 usage() {
   cat <<USAGE
 Pantalla_reloj installer
-Usage: sudo bash install.sh [--non-interactive] [--browser=firefox|chromium] [--diag-mode]
+Usage: sudo bash install.sh [--non-interactive] [--diag-mode]
 USAGE
 }
 
@@ -22,10 +21,6 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --non-interactive)
       NON_INTERACTIVE=1
-      shift
-      ;;
-    --browser=*)
-      REQUESTED_BROWSER="${1#*=}"
       shift
       ;;
     --diag-mode)
@@ -122,8 +117,6 @@ install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$LOG_DIR"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_RUNTIME"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$PROFILE_DIR_DST"
-FIREFOX_PROFILE_DIR="${STATE_RUNTIME}/firefox-kiosk"
-install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$FIREFOX_PROFILE_DIR"
 KIOSK_ENV_FILE="${STATE_RUNTIME}/kiosk.env"
 if (( DIAG_MODE == 1 )); then
   printf 'KIOSK_URL=/diagnostics/auto-pan\n' >"$KIOSK_ENV_FILE"
@@ -156,7 +149,6 @@ APT_PACKAGES=(
   x11-xserver-utils
   wmctrl
   epiphany-browser
-  firefox-esr
   xdg-desktop-portal
   xdg-desktop-portal-gtk
   xdotool
@@ -175,37 +167,8 @@ apt-get update -y
 DEBIAN_FRONTEND=noninteractive apt-get install -y "${APT_PACKAGES[@]}"
 SUMMARY+=("[install] paquetes asegurados: ${APT_PACKAGES[*]}")
 
-detect_browser() {
-  if command -v firefox-esr >/dev/null 2>&1 || command -v firefox >/dev/null 2>&1; then
-    printf 'firefox\n'
-    return
-  fi
-  printf 'chromium\n'
-}
-
-if [[ -n "$REQUESTED_BROWSER" ]]; then
-  case "$REQUESTED_BROWSER" in
-    firefox|chromium)
-      SELECTED_BROWSER="$REQUESTED_BROWSER"
-      ;;
-    *)
-      log_error "Valor de --browser inválido: ${REQUESTED_BROWSER}"
-      exit 1
-      ;;
-  esac
-else
-  SELECTED_BROWSER="$(detect_browser)"
-fi
-
-log_info "Navegador seleccionado: ${SELECTED_BROWSER}"
-SUMMARY+=("[install] navegador seleccionado=${SELECTED_BROWSER}")
-
-if [[ "$SELECTED_BROWSER" == "firefox" ]]; then
-  if ! command -v firefox-esr >/dev/null 2>&1 && ! command -v firefox >/dev/null 2>&1; then
-    log_error "Firefox no se encontró tras la instalación de paquetes"
-    exit 1
-  fi
-fi
+log_info "Navegador seleccionado: chromium (modo kiosk)"
+SUMMARY+=("[install] navegador seleccionado=chromium")
 
 ensure_node() {
   if command -v node >/dev/null 2>&1; then
@@ -497,13 +460,8 @@ if [ -f /var/lib/pantalla-reloj/.Xauthority ]; then
 fi
 
 systemctl daemon-reload
-if [[ "$SELECTED_BROWSER" == "firefox" ]]; then
-  systemctl disable --now "pantalla-kiosk-chromium@${USER_NAME}.service" 2>/dev/null || true
-  systemctl enable --now "pantalla-kiosk@${USER_NAME}.service" || true
-else
-  systemctl disable --now "pantalla-kiosk@${USER_NAME}.service" 2>/dev/null || true
-  systemctl enable --now "pantalla-kiosk-chromium@${USER_NAME}.service" || true
-fi
+systemctl disable --now "pantalla-kiosk@${USER_NAME}.service" 2>/dev/null || true
+systemctl enable --now "pantalla-kiosk-chromium@${USER_NAME}.service" || true
 
 log_info "Ensuring watchdog disabled"
 systemctl disable --now "pantalla-kiosk-watchdog@${USER_NAME}.timer" "pantalla-kiosk-watchdog@${USER_NAME}.service" 2>/dev/null || true
@@ -517,11 +475,7 @@ else
 fi
 systemctl restart pantalla-openbox@${USER_NAME}.service
 sleep 1
-if [[ "$SELECTED_BROWSER" == "firefox" ]]; then
-  systemctl restart pantalla-kiosk@${USER_NAME}.service
-else
-  systemctl restart pantalla-kiosk-chromium@${USER_NAME}.service
-fi
+systemctl restart pantalla-kiosk-chromium@${USER_NAME}.service
 sleep 2
 
 log_info "Running post-install checks"
@@ -560,16 +514,12 @@ if ! VERIFY_USER="$USER_NAME" "$REPO_ROOT/scripts/verify_api.sh"; then
 fi
 log_info "Verificador post-deploy completado"
 
-if [[ "$SELECTED_BROWSER" == "chromium" ]]; then
-  if OUTPUT=$(DISPLAY=:0 XAUTHORITY=/home/${USER_NAME}/.Xauthority "$REPO_ROOT/scripts/verify_kiosk.sh" 2>&1); then
-    printf '%s\n' "$OUTPUT"
-    SUMMARY+=('[install] ventana de Chromium detectada')
-  else
-    printf '%s\n' "$OUTPUT"
-    SUMMARY+=('[install] ventana de Chromium no detectada')
-  fi
+if OUTPUT=$(DISPLAY=:0 XAUTHORITY=/home/${USER_NAME}/.Xauthority "$REPO_ROOT/scripts/verify_kiosk.sh" 2>&1); then
+  printf '%s\n' "$OUTPUT"
+  SUMMARY+=('[install] ventana de Chromium detectada')
 else
-  SUMMARY+=('[install] verificación visual específica de Chromium omitida')
+  printf '%s\n' "$OUTPUT"
+  SUMMARY+=('[install] ventana de Chromium no detectada')
 fi
 
 if ! VERIFY_USER="$USER_NAME" /usr/local/bin/pantalla-kiosk-verify; then

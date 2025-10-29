@@ -4,6 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
 
 import { apiGet } from "../../lib/api";
+import { kioskRuntime } from "../../lib/runtimeFlags";
 import {
   createDefaultMapCinema,
   createDefaultMapSettings,
@@ -30,6 +31,7 @@ const FPS_LIMIT = 45;
 const FRAME_MIN_INTERVAL_MS = 1000 / FPS_LIMIT;
 const MAX_DELTA_SECONDS = 0.5;
 const WATCHDOG_INTERVAL_MS = 1500;
+const WATCHDOG_BEARING_DELTA = 0.75;
 const FALLBACK_TICK_INTERVAL_MS = 1000;
 
 const FALLBACK_THEME = createDefaultMapSettings().theme ?? {};
@@ -485,6 +487,30 @@ export default function GeoScopeMap() {
         if (!lastFrame || now - lastFrame >= FRAME_MIN_INTERVAL_MS) {
           runPanTick(now, { force: true });
         }
+
+        if (!lastFrame || now - lastFrame >= WATCHDOG_INTERVAL_MS) {
+          const center = map.getCenter();
+          const nextBearing = map.getBearing() + WATCHDOG_BEARING_DELTA;
+          map.jumpTo({
+            center,
+            zoom: map.getZoom(),
+            pitch: map.getPitch(),
+            bearing: nextBearing
+          });
+          lastFrameTimeRef.current = now;
+          lastRepaintTimeRef.current = now;
+          map.triggerRepaint();
+          if (animationFrameRef.current === null) {
+            animationFrameRef.current = requestAnimationFrame(stepPan);
+          }
+          console.warn(
+            "[GeoScopeMap] watchdog jump enforced (bearing=",
+            nextBearing.toFixed(2),
+            ")"
+          );
+          return;
+        }
+
         const lastRepaint = lastRepaintTimeRef.current;
         if (!lastRepaint || now - lastRepaint >= WATCHDOG_INTERVAL_MS) {
           map.triggerRepaint();
@@ -652,7 +678,13 @@ export default function GeoScopeMap() {
       mapRef.current = map;
       map.setMinZoom(firstBand.minZoom);
 
-      applyReducedMotionPreference(runtime.respectReducedMotion);
+      const effectiveRespect = kioskRuntime.shouldRespectReducedMotion(
+        runtime.respectReducedMotion
+      );
+      applyReducedMotionPreference(effectiveRespect);
+      if (!effectiveRespect && kioskRuntime.isMotionForced()) {
+        console.info("[GeoScopeMap] prefers-reduced-motion override active (kiosk)");
+      }
 
       const applyFallbackStyle = (reason?: unknown) => {
         if (fallbackAppliedRef.current) {
