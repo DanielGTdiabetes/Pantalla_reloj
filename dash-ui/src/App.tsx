@@ -5,6 +5,7 @@ import GeoScopeMap from "./components/GeoScope/GeoScopeMap";
 import MapFrame from "./components/MapFrame";
 import { RightPanel } from "./components/RightPanel";
 import { ConfigPage } from "./pages/ConfigPage";
+import DiagnosticsAutoPan from "./pages/DiagnosticsAutoPan";
 
 const DashboardShell: React.FC = () => {
   return (
@@ -24,6 +25,7 @@ const App: React.FC = () => {
     <Routes>
       <Route path="/" element={<DashboardShell />} />
       <Route path="/config" element={<ConfigPage />} />
+      <Route path="/diagnostics/auto-pan" element={<DiagnosticsAutoPan />} />
     </Routes>
   );
 };

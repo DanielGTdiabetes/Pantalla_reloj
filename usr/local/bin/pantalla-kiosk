@@ -1,228 +1,94 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_ID="org.gnome.Epiphany.WebApp_PantallaReloj"
-APP_WM_CLASS="epiphany.epiphany"
-DEFAULT_URL="http://127.0.0.1"
-URL="${1:-$DEFAULT_URL}"
+DEFAULT_ORIGIN="http://127.0.0.1"
+DEFAULT_URL="${DEFAULT_ORIGIN}/"
 
-: "${DISPLAY:=:0}"
-: "${XAUTHORITY:?XAUTHORITY must be set}"
-: "${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"
-
-EXIT_MISSING=3
-STATE_BASE="/var/lib/pantalla-reloj/state"
-PROFILE_DIR="${EPHY_PROFILE:-${STATE_BASE}/${APP_ID}}"
-APP_ID_FILE="${PROFILE_DIR}/app-id"
-DESKTOP_ID_FILE="${PROFILE_DIR}/desktop-id"
-DESKTOP_FILE="/usr/local/share/applications/${APP_ID}.desktop"
-LOG_DIR="/var/log/pantalla"
-PROFILE_LOG="${LOG_DIR}/kiosk-profile.log"
-SANITIZE_LOG="${LOG_DIR}/kiosk-sanitize.log"
-WATCHDOG_LOG="${LOG_DIR}/kiosk-watchdog.log"
-WAIT_X="/opt/pantalla/bin/wait-x.sh"
-SANITIZER="/opt/pantalla/bin/pantalla-kiosk-sanitize.sh"
-SANITIZER_DISABLE_FILE="${PANTALLA_SANITIZER_DISABLE_FILE:-${STATE_BASE}/disable-kiosk-sanitize}"
-
-OWNER="${KIOSK_USER:-${USER:-$(id -un)}}"
-PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-
-log_err() { printf '[kiosk] %s\n' "$*" >&2; }
-log_info() { printf '[kiosk] %s\n' "$*"; }
-log_profile() {
-  install -d -m 0755 "$LOG_DIR" >/dev/null 2>&1 || true
-  local ts
-  ts="$(date -Is)"
-  printf '%s %s\n' "$ts" "$*" >>"$PROFILE_LOG"
+log() {
+  printf '[pantalla-kiosk] %s\n' "$*" >&2
 }
 
-fail_missing() {
-  log_err "$1"
-  log_profile "error ${1}"
-  exit "$EXIT_MISSING"
-}
-
-ensure_profile_dir() {
-  install -d -m 0700 "$PROFILE_DIR"
-  local owner group mode
-  owner="$(stat -c '%U' "$PROFILE_DIR")"
-  group="$(stat -c '%G' "$PROFILE_DIR")"
-  mode="$(stat -c '%a' "$PROFILE_DIR")"
-  if [[ "$owner" != "$OWNER" || "$group" != "$OWNER" ]]; then
-    fail_missing "Propietario inesperado en $PROFILE_DIR: ${owner}:${group}"
+resolve_url() {
+  local candidate="$1"
+  if [[ -z "$candidate" ]]; then
+    candidate="$DEFAULT_URL"
   fi
-  if [[ "$mode" != "700" ]]; then
-    if ! chmod 0700 "$PROFILE_DIR" 2>/dev/null; then
-      fail_missing "No se pudo ajustar permisos 0700 en ${PROFILE_DIR}"
+  if [[ "$candidate" == /* ]]; then
+    candidate="${DEFAULT_ORIGIN%/}${candidate}"
+  fi
+  if [[ "$candidate" != http://* && "$candidate" != https://* ]]; then
+    candidate="${candidate%/}"
+    candidate="${DEFAULT_ORIGIN%/}/${candidate}"
+  fi
+  printf '%s\n' "$candidate"
+}
+
+find_firefox() {
+  local candidate resolved
+  for candidate in firefox-esr firefox "$FIREFOX_BIN_OVERRIDE"; do
+    [[ -z "$candidate" ]] && continue
+    if command -v "$candidate" >/dev/null 2>&1; then
+      resolved="$(command -v "$candidate")"
+      printf '%s\n' "$resolved"
+      return 0
     fi
-  fi
+  done
+  return 1
 }
 
-require_profile_markers() {
-  local content ok=1
-  if [[ ! -f "$APP_ID_FILE" ]]; then
-    log_profile "missing app-id"
-    ok=0
-  else
-    content="$(<"$APP_ID_FILE")"
-    if [[ "$content" != "$APP_ID" ]]; then
-      log_profile "app-id-mismatch actual=${content} esperado=${APP_ID}"
-      ok=0
-    fi
-  fi
-
-  if [[ ! -f "$DESKTOP_ID_FILE" ]]; then
-    log_profile "missing desktop-id"
-    ok=0
-  else
-    content="$(<"$DESKTOP_ID_FILE")"
-    if [[ "$content" != "$APP_ID" ]]; then
-      log_profile "desktop-id-mismatch actual=${content} esperado=${APP_ID}"
-      ok=0
-    fi
-  fi
-
-  if (( ! ok )); then
-    fail_missing "Perfil WebApp incompleto en ${PROFILE_DIR}"
-  fi
+prepare_profile() {
+  local dir="$1"
+  install -d -m 0700 "$dir"
 }
 
-check_desktop_file() {
-  if [[ ! -r "$DESKTOP_FILE" ]]; then
-    log_profile "missing desktop-file path=${DESKTOP_FILE}"
-    fail_missing "Desktop file requerido no disponible: ${DESKTOP_FILE}"
-  fi
-}
-
-kill_existing_instances() {
+kill_existing() {
   if command -v pkill >/dev/null 2>&1; then
-    local uid
-    uid="$(id -u "$OWNER")"
-    if pkill -u "$uid" -x epiphany-browser >/dev/null 2>&1; then
-      log_profile "previous-instances-terminated exact"
-    elif pkill -u "$uid" -f epiphany-browser >/dev/null 2>&1; then
-      log_profile "previous-instances-terminated pattern"
-    else
-      pkill -u "$uid" -f epiphany-browser >/dev/null 2>&1 || true
-    fi
-  fi
-}
-
-prepare_logs() {
-  if ! install -d -m 0755 "$LOG_DIR" 2>/dev/null; then
-    if [[ ! -d "$LOG_DIR" ]]; then
-      fail_missing "No se pudo preparar el directorio de logs"
-    fi
-  fi
-  touch "$PROFILE_LOG" "$SANITIZE_LOG" "$WATCHDOG_LOG"
-}
-
-apply_profile_preferences() {
-  local ts summary status schema key desired reason current
-  ts="$(date -Is)"
-  summary=()
-  status=0
-
-  export GSETTINGS_BACKEND=dconf
-  export XDG_CONFIG_HOME="${PROFILE_DIR}/config"
-  export XDG_DATA_HOME="${PROFILE_DIR}/share"
-  export XDG_CACHE_HOME="${PROFILE_DIR}/cache"
-  install -d -m 0700 "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_CACHE_HOME}"
-
-  if ! command -v gsettings >/dev/null 2>&1; then
-    summary+=("gsettings=missing")
-    status=1
-  else
-    if gsettings list-schemas 2>/dev/null | grep -qx "org.gnome.Epiphany"; then
-      schema="org.gnome.Epiphany"
-      key="restore-session-policy"
-      desired="'never'"
-      reason="disable-session-restore"
-      current="$(gsettings get "$schema" "$key" 2>/dev/null || echo '__error__')"
-      if [[ "$current" != "$desired" ]]; then
-        if gsettings set "$schema" "$key" "$desired" 2>/dev/null; then
-          summary+=("${schema}/${key}=${desired}:${reason}")
-        else
-          summary+=("${schema}/${key}=error")
-          status=1
-        fi
-      else
-        summary+=("${schema}/${key}=already:${desired}")
-      fi
-
-      key="process-model"
-      desired="'single-web-process'"
-      reason="reduce-unresponsive-dialogs"
-      current="$(gsettings get "$schema" "$key" 2>/dev/null || echo '__error__')"
-      if [[ "$current" != "$desired" ]]; then
-        if gsettings set "$schema" "$key" "$desired" 2>/dev/null; then
-          summary+=("${schema}/${key}=${desired}:${reason}")
-        else
-          summary+=("${schema}/${key}=error")
-          status=1
-        fi
-      else
-        summary+=("${schema}/${key}=already:${desired}")
-      fi
-    else
-      summary+=("schema-missing=org.gnome.Epiphany")
-      status=1
-    fi
-  fi
-
-  {
-    printf '%s status=%s' "$ts" "$status"
-    for entry in "${summary[@]}"; do
-      printf ' %s' "$entry"
-    done
-    printf '\n'
-  } >>"$PROFILE_LOG"
-}
-
-launch_sanitizer() {
-  if [[ -e "$SANITIZER_DISABLE_FILE" ]]; then
-    log_profile "sanitize-skipped file=${SANITIZER_DISABLE_FILE}"
-    return
-  fi
-  if [[ -x "$SANITIZER" ]]; then
-    "$SANITIZER" --delay 4 --wm-class "$APP_WM_CLASS" --log "$SANITIZE_LOG" &
-  else
-    log_profile "sanitize-missing path=$SANITIZER"
+    pkill -u "$(id -u)" -x firefox-esr >/dev/null 2>&1 || true
+    pkill -u "$(id -u)" -x firefox >/dev/null 2>&1 || true
   fi
 }
 
 main() {
-  prepare_logs
-  ensure_profile_dir
-  require_profile_markers
-  check_desktop_file
-  apply_profile_preferences
+  : "${DISPLAY:=:0}"
+  : "${XAUTHORITY:?XAUTHORITY must be set}"
+  : "${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"
 
-  if [[ -x "$WAIT_X" ]]; then
-    DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" "$WAIT_X"
-  fi
+  local raw_url
+  raw_url="${1:-${KIOSK_URL:-}}"
+  local target_url
+  target_url="$(resolve_url "$raw_url")"
 
-  kill_existing_instances
-  launch_sanitizer
-
-  local epiphany
-  epiphany="$(command -v epiphany-browser || true)"
-  if [[ -z "$epiphany" ]]; then
-    log_profile "epiphany-missing"
-    log_err "epiphany-browser no encontrado"
+  local firefox
+  if ! firefox="$(find_firefox)"; then
+    log "ERROR: firefox-esr/firefox no disponible en PATH"
     exit 1
   fi
 
-  : "${GDK_BACKEND:=x11}"
-  : "${WEBKIT_DISABLE_DMABUF_RENDERER:=1}"
-  : "${GIO_USE_PORTALS:=1}"
-  : "${GTK_USE_PORTAL:=1}"
+  local state_base profile_dir log_dir
+  state_base="${PANTALLA_STATE_DIR:-/var/lib/pantalla-reloj/state}"
+  profile_dir="${FIREFOX_PROFILE_DIR:-${state_base}/firefox-kiosk}"
+  log_dir="${PANTALLA_KIOSK_LOG_DIR:-/var/log/pantalla}"
 
-  exec env -i DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
-    HOME="/home/$OWNER" PATH="$PATH" \
-    GIO_USE_PORTALS="$GIO_USE_PORTALS" GTK_USE_PORTAL="$GTK_USE_PORTAL" \
-    GDK_BACKEND="$GDK_BACKEND" WEBKIT_DISABLE_DMABUF_RENDERER="$WEBKIT_DISABLE_DMABUF_RENDERER" \
-    "$epiphany" --application-mode --profile="$PROFILE_DIR" --new-window "$URL"
+  prepare_profile "$profile_dir"
+  install -d -m 0755 "$log_dir" >/dev/null 2>&1 || true
+
+  kill_existing
+
+  export MOZ_DISABLE_SAFE_MODE_DIALOG=1
+  export MOZ_USE_XINPUT2=1
+  export MOZ_LOG_FILE="${log_dir}/firefox-kiosk.log"
+  export MOZ_CRASHREPORTER_DISABLE=1
+  export GTK_USE_PORTAL="${GTK_USE_PORTAL:-0}"
+  export GIO_USE_PORTALS="${GIO_USE_PORTALS:-0}"
+  export GDK_BACKEND="${GDK_BACKEND:-x11}"
+
+  local -a cmd
+  cmd=("${firefox}" --kiosk --new-instance --profile "$profile_dir" --no-remote "$target_url")
+
+  log "launch: ${cmd[*]}"
+  log "url: ${target_url}"
+
+  exec "${cmd[@]}"
 }
 
 main "$@"
