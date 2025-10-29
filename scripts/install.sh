@@ -112,6 +112,11 @@ install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$LOG_DIR"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_RUNTIME"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$PROFILE_DIR_DST"
+
+CHROMIUM_HOME_DATA_DIR="$USER_HOME/.local/share/pantalla-reloj/chromium"
+CHROMIUM_HOME_CACHE_DIR="$USER_HOME/.cache/pantalla-reloj/chromium"
+install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$CHROMIUM_HOME_DATA_DIR"
+install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$CHROMIUM_HOME_CACHE_DIR"
 if [[ -f "${PROFILE_DIR_SRC}/app-id" ]]; then
   install -o "$USER_NAME" -g "$USER_NAME" -m 0600 "${PROFILE_DIR_SRC}/app-id" "${PROFILE_DIR_DST}/app-id"
 fi
@@ -243,6 +248,20 @@ install -D -m 0755 "$KIOSK_BIN_SRC" "$KIOSK_BIN_DST"
 install -D -m 0755 "$CHROMIUM_KIOSK_BIN_SRC" "$CHROMIUM_KIOSK_BIN_DST"
 SUMMARY+=("[install] launcher de kiosk instalado en ${KIOSK_BIN_DST}")
 SUMMARY+=("[install] launcher Chromium kiosk disponible en ${CHROMIUM_KIOSK_BIN_DST}")
+
+if command -v chromium-browser >/dev/null 2>&1; then
+  chromium_realpath="$(readlink -f "$(command -v chromium-browser)" || true)"
+  if [[ -n "$chromium_realpath" ]]; then
+    if grep -q '/snap/' <<<"$chromium_realpath"; then
+      log_info "chromium-browser apunta al snap (${chromium_realpath})"
+    else
+      log_info "chromium-browser localizado en ${chromium_realpath}"
+    fi
+  fi
+else
+  log_warn "chromium-browser no se encontró en PATH durante la instalación"
+fi
+
 install -D -m 0755 "$BACKEND_LAUNCHER_SRC" "$BACKEND_LAUNCHER_DST"
 SUMMARY+=("[install] launcher de backend instalado en ${BACKEND_LAUNCHER_DST}")
 install -D -m 0644 "$REPO_ROOT/usr/local/share/applications/${APP_ID}.desktop" \
@@ -390,28 +409,16 @@ cat >"${DROPIN_DIR}/override.conf" <<'EOF'
 Environment=
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/%i/.Xauthority
+Environment=GDK_BACKEND=x11
 
-# Escala por defecto (ajustable sin tocar binarios)
+# Escala por defecto y rutas en $HOME (ajustable sin tocar binarios)
 Environment=CHROMIUM_SCALE=0.58
+Environment=CHROMIUM_USER_DATA_DIR=/home/%i/.local/share/pantalla-reloj/chromium
+Environment=CHROMIUM_CACHE_DIR=/home/%i/.cache/pantalla-reloj/chromium
 
-# Reemplaza ExecStart e inyecta la escala
+# Reemplaza ExecStart para usar el lanzador dedicado
 ExecStart=
-ExecStart=/bin/sh -lc "chromium-browser \
-  --class=pantalla-kiosk \
-  --kiosk --start-fullscreen \
-  --app=http://127.0.0.1 \
-  --no-first-run --no-default-browser-check \
-  --disable-translate --disable-infobars \
-  --disable-session-crashed-bubble --noerrdialogs \
-  --disable-features=InfiniteSessionRestore,Translate,HardwareMediaKeyHandling \
-  --hide-scrollbars --overscroll-history-navigation=0 \
-  --password-store=basic \
-  --test-type \
-  --ozone-platform=x11 \
-  --disable-gpu \
-  --force-device-scale-factor=${CHROMIUM_SCALE} \
-  --disk-cache-dir=/var/lib/pantalla-reloj/cache/chromium \
-  --user-data-dir=/var/lib/pantalla-reloj/state/chromium"
+ExecStart=/usr/local/bin/pantalla-kiosk-chromium
 EOF
 
 if [[ $units_changed -eq 1 ]]; then
@@ -422,6 +429,7 @@ fi
 
 log_info "Reloading systemd daemon"
 systemctl daemon-reload
+SUMMARY+=('[install] kiosk chromium usando rutas en $HOME')
 
 log_info "Disabling portal service"
 systemctl disable --now "pantalla-portal@${USER_NAME}.service" 2>/dev/null || true
@@ -498,11 +506,11 @@ if ! VERIFY_USER="$USER_NAME" "$REPO_ROOT/scripts/verify_api.sh"; then
 fi
 log_info "Verificador post-deploy completado"
 
-if DISPLAY=:0 XAUTHORITY=/home/${USER_NAME}/.Xauthority wmctrl -lx | grep -q 'chromium-browser\.pantalla-kiosk'; then
-  log_ok "Ventana de Chromium detectada"
+if OUTPUT=$(DISPLAY=:0 XAUTHORITY=/home/${USER_NAME}/.Xauthority "$REPO_ROOT/scripts/verify_kiosk.sh" 2>&1); then
+  printf '%s\n' "$OUTPUT"
   SUMMARY+=('[install] ventana de Chromium detectada')
 else
-  log_warn "No se detectó ventana de Chromium"
+  printf '%s\n' "$OUTPUT"
   SUMMARY+=('[install] ventana de Chromium no detectada')
 fi
 

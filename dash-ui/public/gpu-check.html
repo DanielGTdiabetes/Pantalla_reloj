@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>GPU Check</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        margin: 2rem;
+        background: #111;
+        color: #f1f1f1;
+      }
+      main {
+        max-width: 40rem;
+        margin: 0 auto;
+        padding: 2rem;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 0.5rem;
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.35);
+      }
+      h1 {
+        font-size: 1.75rem;
+        margin-top: 0;
+      }
+      .status {
+        font-size: 1.2rem;
+        margin-bottom: 1rem;
+      }
+      .status span {
+        font-weight: 700;
+      }
+      pre {
+        padding: 1rem;
+        background: rgba(0, 0, 0, 0.4);
+        border-radius: 0.5rem;
+        overflow: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Chromium GPU / WebGL Check</h1>
+      <p class="status">
+        WebGL enabled: <span id="webgl-enabled">checking…</span>
+      </p>
+      <div>
+        <strong>Renderer:</strong>
+        <pre id="webgl-renderer">(pending)</pre>
+      </div>
+      <p>
+        Esta página comprueba si el contexto WebGL está disponible y muestra el
+        renderer devuelto por <code>gl.getParameter(gl.RENDERER)</code>.
+      </p>
+    </main>
+    <script>
+      (function () {
+        var enabledEl = document.getElementById("webgl-enabled");
+        var rendererEl = document.getElementById("webgl-renderer");
+        var hasWebGL = !!window.WebGLRenderingContext;
+        enabledEl.textContent = hasWebGL ? "true" : "false";
+
+        if (!hasWebGL) {
+          rendererEl.textContent = "WebGLRenderingContext no disponible";
+          return;
+        }
+
+        var canvas = document.createElement("canvas");
+        var gl =
+          canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+
+        if (!gl) {
+          rendererEl.textContent = "No se pudo crear un contexto WebGL";
+          return;
+        }
+
+        var rendererInfo = gl.getExtension("WEBGL_debug_renderer_info");
+        var renderer = "";
+
+        try {
+          if (rendererInfo) {
+            renderer = gl.getParameter(rendererInfo.UNMASKED_RENDERER_WEBGL);
+          }
+        } catch (error) {
+          renderer = "Error obteniendo renderer: " + error.message;
+        }
+
+        if (!renderer) {
+          renderer = gl.getParameter(gl.RENDERER);
+        }
+
+        rendererEl.textContent = renderer || "Renderer no disponible";
+      })();
+    </script>
+  </body>
+</html>

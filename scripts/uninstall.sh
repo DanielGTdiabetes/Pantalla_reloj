@@ -73,6 +73,8 @@ NGINX_DEFAULT_LINK=/etc/nginx/sites-enabled/default
 NGINX_DEFAULT_STATE="${STATE_RUNTIME}/nginx-default-enabled"
 WEBROOT_MANIFEST="${STATE_RUNTIME}/webroot-manifest"
 UDEV_RULE=/etc/udev/rules.d/70-pantalla-render.rules
+CHROMIUM_HOME_DATA_DIR="/home/${USER_NAME}/.local/share/pantalla-reloj/chromium"
+CHROMIUM_HOME_CACHE_DIR="/home/${USER_NAME}/.cache/pantalla-reloj/chromium"
 
 SYSTEMD_UNITS=(
   "pantalla-kiosk@${USER_NAME}.service"
@@ -235,6 +237,21 @@ if [[ -f "$AUTO_BACKUP" ]]; then
 elif [[ -f "$AUTO_FILE" ]]; then
   rm -f "$AUTO_FILE"
 fi
+
+clean_empty_chromium_dir() {
+  local dir="$1"
+  if [[ -d "$dir" ]]; then
+    if [[ -n "$(find "$dir" -mindepth 1 -print -quit 2>/dev/null)" ]]; then
+      return
+    fi
+    if rmdir "$dir" >/dev/null 2>&1; then
+      log_info "Removed empty Chromium directory $dir"
+    fi
+  fi
+}
+
+clean_empty_chromium_dir "$CHROMIUM_HOME_DATA_DIR"
+clean_empty_chromium_dir "$CHROMIUM_HOME_CACHE_DIR"
 
 if command -v nginx >/dev/null 2>&1; then
   if nginx -t >/dev/null 2>&1; then
