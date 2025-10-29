@@ -8,6 +8,10 @@ STATE_ROOT="/var/lib/pantalla-reloj"
 KIOSK_ENV_FILE="${STATE_ROOT}/state/kiosk.env"
 TARGET_USER="${VERIFY_USER:-${SUDO_USER:-$(id -un)}}"
 
+declare -r PY_VALIDATE_UI=$'import json, sys\nfrom pathlib import Path\nbody = Path(sys.argv[1]).read_text()\ntry:\n    payload = json.loads(body)\nexcept json.JSONDecodeError:\n    sys.exit(1)\nif payload.get("ui") == "ok":\n    sys.exit(0)\nsys.exit(1)\n'
+
+declare -r PY_AUTOPAN_DELTA=$'import sys\nstart = float(sys.argv[1])\nend = float(sys.argv[2])\ndelta = abs(end - start)\nif delta < 0.1:\n    sys.exit(1)\nprint(f"{delta:.2f}")\n'
+
 log() {
   printf '[pantalla-kiosk-verify] %s\n' "$*"
 }
@@ -51,7 +55,7 @@ check_ui_health() {
     record_result "ui" "http${http_code}"
     return 1
   fi
-  if ! python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get("ui")=="ok" else 1)' "$tmp" >/dev/null 2>&1; then
+  if ! python3 -c "$PY_VALIDATE_UI" "$tmp" >/dev/null 2>&1; then
     local body
     body="$(<"$tmp")"
     rm -f "$tmp"
@@ -196,7 +200,7 @@ check_autopan_rotation() {
   fi
 
   local delta
-  if ! delta="$(python3 -c 'import sys; s=float(sys.argv[1]); e=float(sys.argv[2]); d=abs(e-s); (print(f"{d:.2f}") if d>=0.1 else exit(1))' "$first" "$last" 2>/dev/null)"; then
+  if ! delta="$(python3 -c "$PY_AUTOPAN_DELTA" "$first" "$last" 2>/dev/null)"; then
     record_result "autopan" "delta-too-low"
     return 1
   fi

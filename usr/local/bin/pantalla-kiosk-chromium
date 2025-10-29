@@ -24,7 +24,7 @@ resolve_url() {
 }
 
 find_chromium() {
-  local override="$CHROMIUM_BIN_OVERRIDE"
+  local override="${CHROMIUM_BIN_OVERRIDE:-}"
   if [[ -n "$override" ]]; then
     if [[ -x "$override" ]]; then
       printf '%s\n' "$override"
@@ -34,22 +34,27 @@ find_chromium() {
       printf '%s\n' "$(command -v "$override")"
       return 0
     fi
-  fi
-
-  local snap_candidate="/snap/chromium/current/usr/lib/chromium-browser/chrome"
-  if [[ -x "$snap_candidate" ]]; then
-    printf '%s\n' "$snap_candidate"
-    return 0
+    log "WARN: CHROMIUM_BIN_OVERRIDE inválido (${override})"
   fi
 
   local candidate resolved
-  for candidate in /snap/bin/chromium chromium-browser chromium; do
+  for candidate in /usr/local/bin/chromium-kiosk-bin chromium-browser chromium /snap/bin/chromium; do
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
     if command -v "$candidate" >/dev/null 2>&1; then
       resolved="$(command -v "$candidate")"
       printf '%s\n' "$resolved"
       return 0
     fi
   done
+
+  local snap_candidate="/snap/chromium/current/usr/lib/chromium-browser/chrome"
+  if [[ -x "$snap_candidate" ]]; then
+    printf '%s\n' "$snap_candidate"
+    return 0
+  fi
 
   return 1
 }
@@ -161,9 +166,10 @@ main() {
 
   prepare_dirs "$profile_dir" "$cache_dir"
 
-  log "using chromium: ${chromium_bin}"
-  log "profile: ${profile_dir}"
-  log "cache: ${cache_dir}"
+  log "chromium_bin: ${chromium_bin}"
+  log "user_data_dir: ${profile_dir}"
+  log "cache_dir: ${cache_dir}"
+  log "url: ${target_url}"
 
   if launch_chromium 0 "$chromium_bin" "$target_url" "$profile_dir" "$cache_dir"; then
     exit 0

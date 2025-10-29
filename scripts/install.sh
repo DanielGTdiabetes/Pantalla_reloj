@@ -118,14 +118,17 @@ install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_RUNTIME"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$PROFILE_DIR_DST"
 KIOSK_ENV_FILE="${STATE_RUNTIME}/kiosk.env"
+DEFAULT_KIOSK_URL="http://127.0.0.1/"
+DIAG_KIOSK_URL="${DEFAULT_KIOSK_URL}diagnostics/auto-pan"
+ACTIVE_KIOSK_URL="$DEFAULT_KIOSK_URL"
 if (( DIAG_MODE == 1 )); then
-  printf 'KIOSK_URL=/diagnostics/auto-pan\n' >"$KIOSK_ENV_FILE"
-  chown "$USER_NAME:$USER_NAME" "$KIOSK_ENV_FILE"
-  chmod 0644 "$KIOSK_ENV_FILE"
-  SUMMARY+=("[install] modo diagnóstico habilitado (/diagnostics/auto-pan)")
-else
-  rm -f "$KIOSK_ENV_FILE"
+  ACTIVE_KIOSK_URL="$DIAG_KIOSK_URL"
+  SUMMARY+=("[install] modo diagnóstico habilitado (${ACTIVE_KIOSK_URL})")
 fi
+printf 'KIOSK_URL=%s\n' "$ACTIVE_KIOSK_URL" >"$KIOSK_ENV_FILE"
+chown "$USER_NAME:$USER_NAME" "$KIOSK_ENV_FILE"
+chmod 0644 "$KIOSK_ENV_FILE"
+SUMMARY+=("[install] estado kiosk.env apuntando a ${ACTIVE_KIOSK_URL}")
 
 CHROMIUM_SNAP_BASE="$USER_HOME/snap/chromium/common/pantalla-reloj"
 CHROMIUM_HOME_DATA_DIR="${CHROMIUM_SNAP_BASE}/chromium"
@@ -299,6 +302,16 @@ if ! bash -n /usr/local/bin/pantalla-kiosk-verify; then
 fi
 SUMMARY+=("[install] verificador de kiosk instalado en /usr/local/bin/pantalla-kiosk-verify")
 
+install -D -m 0755 "$REPO_ROOT/scripts/kiosk-url-helper" /usr/local/bin/kiosk-ui
+install -D -m 0755 "$REPO_ROOT/scripts/kiosk-url-helper" /usr/local/bin/kiosk-diag
+for helper in /usr/local/bin/kiosk-ui /usr/local/bin/kiosk-diag; do
+  if ! bash -n "$helper"; then
+    echo "[ERROR] Syntax check failed for ${helper}" >&2
+    exit 1
+  fi
+done
+SUMMARY+=("[install] helpers kiosk-ui y kiosk-diag instalados")
+
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database /usr/local/share/applications || true
   runuser -u "$USER_NAME" -- update-desktop-database "$USER_HOME/.local/share/applications" || true
@@ -431,6 +444,11 @@ cat >"${DROPIN_DIR}/override.conf" <<'EOF'
 ExecStart=
 ExecStart=/usr/local/bin/pantalla-kiosk-chromium
 EOF
+cat >"${DROPIN_DIR}/10-kiosk-url.conf" <<EOF
+[Service]
+Environment=KIOSK_URL=${ACTIVE_KIOSK_URL}
+EOF
+SUMMARY+=("[install] drop-in KIOSK_URL actualizado (${ACTIVE_KIOSK_URL})")
 
 if [[ $units_changed -eq 1 ]]; then
   log_info "Systemd units updated"

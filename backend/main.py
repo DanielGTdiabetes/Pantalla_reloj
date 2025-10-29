@@ -132,8 +132,9 @@ def healthcheck_root() -> Dict[str, Any]:
     return _health_payload()
 
 
-@app.get("/ui-healthz")
+@app.get("/ui-healthz", response_model=Dict[str, str])
 def ui_healthcheck() -> Dict[str, str]:
+    logger.debug("UI health probe requested")
     return {"ui": "ok"}
 
 
