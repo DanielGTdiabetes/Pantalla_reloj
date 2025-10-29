@@ -33,6 +33,20 @@ app.add_middleware(
 STATIC_DIR = Path("/opt/pantalla-reloj/frontend/static")
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
+FRONTEND_DIST_DIR = Path(os.getenv("PANTALLA_UI_DIST", "/var/www/html"))
+FRONTEND_DIST_DIR.mkdir(parents=True, exist_ok=True)
+
+
+class SPAStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):  # type: ignore[override]
+        response = await super().get_response(path, scope)
+        if response.status_code == 404:
+            return await super().get_response("index.html", scope)
+        return response
+
+
+spa_static_files = SPAStaticFiles(directory=str(FRONTEND_DIST_DIR), html=True)
+
 STYLE_PATH = STATIC_DIR / "style.json"
 if not STYLE_PATH.exists():
     style = {
@@ -116,6 +130,11 @@ def _health_payload() -> Dict[str, Any]:
 def healthcheck_root() -> Dict[str, Any]:
     logger.debug("Healthz probe requested")
     return _health_payload()
+
+
+@app.get("/ui-healthz")
+def ui_healthcheck() -> Dict[str, str]:
+    return {"ui": "ok"}
 
 
 @app.get("/api/health")
@@ -203,6 +222,14 @@ def update_storm_mode(payload: Dict[str, Any]) -> Dict[str, Any]:
     cache_store.store("storm_mode", payload)
     logger.info("Storm mode update ignored under config v1.5: %s", payload)
     return {"enabled": False, "last_triggered": None}
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_frontend(full_path: str, request: Request):
+    if full_path.startswith("api/") or full_path.startswith("static/"):
+        raise HTTPException(status_code=404, detail="Not Found")
+    path = full_path or "index.html"
+    return await spa_static_files.get_response(path, request.scope)
 
 
 @app.on_event("startup")

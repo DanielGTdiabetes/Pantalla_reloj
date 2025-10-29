@@ -16,18 +16,57 @@ record_result() {
   RESULTS+=("$1=$2")
 }
 
+resolve_kiosk_url() {
+  local unit="$1"
+  local url=""
+  if [[ -r "$KIOSK_ENV_FILE" ]]; then
+    url="$(grep -E '^KIOSK_URL=' "$KIOSK_ENV_FILE" | tail -n1 | cut -d= -f2-)"
+  fi
+  if [[ -z "$url" ]]; then
+    local env_output
+    if env_output="$(systemctl show "$unit" -p Environment --value 2>/dev/null)"; then
+      for entry in $env_output; do
+        if [[ "$entry" == KIOSK_URL=* ]]; then
+          url="${entry#KIOSK_URL=}"
+        fi
+      done
+    fi
+  fi
+  printf '%s\n' "$url"
+}
+
 check_ui_health() {
-  local body
-  if ! body="$(curl -fsS "$UI_HEALTH_URL" 2>/dev/null)"; then
+  local tmp http_code
+  tmp="$(mktemp)"
+  if ! http_code="$(curl -fsS -w '%{http_code}' -o "$tmp" "$UI_HEALTH_URL" 2>/dev/null)"; then
     log "UI health check failed (${UI_HEALTH_URL})"
+    rm -f "$tmp"
     record_result "ui" "fail"
     return 1
   fi
-  if [[ "$body" != "ok" ]]; then
+  if [[ "$http_code" != "200" ]]; then
+    log "UI health unexpected HTTP status: ${http_code}"
+    rm -f "$tmp"
+    record_result "ui" "http${http_code}"
+    return 1
+  fi
+  if ! python3 - "$tmp" <<'PY' >/dev/null 2>&1; then
+import json
+import sys
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    data = json.load(handle)
+if data.get("ui") != "ok":
+    raise SystemExit(1)
+PY
+  then
+    local body
+    body="$(<"$tmp")"
+    rm -f "$tmp"
     log "UI health unexpected payload: ${body}"
     record_result "ui" "unexpected"
     return 1
   fi
+  rm -f "$tmp"
   record_result "ui" "ok"
   return 0
 }
@@ -96,6 +135,7 @@ maybe_restart_for_swiftshader() {
     return 0
   fi
   if ! is_diag_mode "$diag_url"; then
+    record_result "webgl" "skipped"
     return 0
   fi
 
@@ -126,20 +166,107 @@ maybe_restart_for_swiftshader() {
   return 0
 }
 
+check_autopan_rotation() {
+  local diag_url="$1"
+  local unit="pantalla-kiosk-chromium@${TARGET_USER}.service"
+  if ! is_diag_mode "$diag_url"; then
+    record_result "autopan" "skipped"
+    return 0
+  fi
+
+  local journal_output
+  if ! journal_output="$(journalctl -u "$unit" --since "-10 minutes" --no-pager 2>/dev/null)"; then
+    record_result "autopan" "journal-missing"
+    return 1
+  fi
+
+  local bearings
+  bearings="$(grep -E '\[diagnostics:auto-pan] bearing=' <<<"$journal_output" | awk -F'=' '{print $2}' | sed 's/[^0-9\.\-]//g')"
+  if [[ -z "$bearings" ]]; then
+    record_result "autopan" "no-logs"
+    return 1
+  fi
+
+  local first="" last="" count=0
+  while IFS= read -r value; do
+    [[ -z "$value" ]] && continue
+    (( count++ ))
+    if [[ -z "$first" ]]; then
+      first="$value"
+    fi
+    last="$value"
+  done <<<"$bearings"
+
+  if (( count < 2 )); then
+    record_result "autopan" "insufficient"
+    return 1
+  fi
+
+  local delta
+  if ! delta="$(python3 - <<'PY' "$first" "$last" 2>/dev/null)"; then
+import sys
+start=float(sys.argv[1])
+end=float(sys.argv[2])
+delta=abs(end - start)
+if delta < 0.1:
+    raise SystemExit(1)
+print(f"{delta:.2f}")
+PY
+  then
+    record_result "autopan" "delta-too-low"
+    return 1
+  fi
+
+  record_result "autopan" "bearing+${delta}"
+  return 0
+}
+
+check_kiosk_logs() {
+  local unit="pantalla-kiosk-chromium@${TARGET_USER}.service"
+  if ! systemctl list-units --full --all "$unit" >/dev/null 2>&1; then
+    record_result "chromium_logs" "unit-missing"
+    return 1
+  fi
+
+  local journal_output
+  if ! journal_output="$(journalctl -u "$unit" --since "-10 minutes" --no-pager 2>/dev/null)"; then
+    record_result "chromium_logs" "journal-missing"
+    return 1
+  fi
+
+  if ! grep -q "url:" <<<"$journal_output"; then
+    record_result "chromium_logs" "missing-url"
+    return 1
+  fi
+
+  if grep -q "SingletonLock" <<<"$journal_output"; then
+    record_result "chromium_logs" "singletonlock"
+    return 1
+  fi
+
+  if grep -Ei 'cache[^\n]*(denied|permission)' <<<"$journal_output"; then
+    record_result "chromium_logs" "cache-error"
+    return 1
+  fi
+
+  record_result "chromium_logs" "clean"
+  return 0
+}
+
 main() {
   local failures=0
   check_ui_health || failures=$((failures + 1))
   check_backend_health || failures=$((failures + 1))
   check_kiosk_units || failures=$((failures + 1))
 
-  local kiosk_url=""
-  if [[ -r "$KIOSK_ENV_FILE" ]]; then
-    # shellcheck disable=SC1090
-    source "$KIOSK_ENV_FILE"
-    kiosk_url="${KIOSK_URL:-}"
-  fi
+  local kiosk_unit="pantalla-kiosk-chromium@${TARGET_USER}.service"
+  local kiosk_url
+  kiosk_url="$(resolve_kiosk_url "$kiosk_unit")"
+  record_result "kiosk_url" "${kiosk_url:-<unset>}"
 
   maybe_restart_for_swiftshader "$kiosk_url"
+  check_autopan_rotation "$kiosk_url" || failures=$((failures + 1))
+  check_kiosk_logs || failures=$((failures + 1))
 
   printf 'pantalla-kiosk-verify summary\n'
   for entry in "${RESULTS[@]}"; do

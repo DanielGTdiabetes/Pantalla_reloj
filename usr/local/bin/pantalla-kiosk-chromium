@@ -24,15 +24,33 @@ resolve_url() {
 }
 
 find_chromium() {
+  local override="$CHROMIUM_BIN_OVERRIDE"
+  if [[ -n "$override" ]]; then
+    if [[ -x "$override" ]]; then
+      printf '%s\n' "$override"
+      return 0
+    fi
+    if command -v "$override" >/dev/null 2>&1; then
+      printf '%s\n' "$(command -v "$override")"
+      return 0
+    fi
+  fi
+
+  local snap_candidate="/snap/chromium/current/usr/lib/chromium-browser/chrome"
+  if [[ -x "$snap_candidate" ]]; then
+    printf '%s\n' "$snap_candidate"
+    return 0
+  fi
+
   local candidate resolved
-  for candidate in "${CHROMIUM_BIN_OVERRIDE:-}" chromium-browser chromium /snap/bin/chromium; do
-    [[ -z "$candidate" ]] && continue
+  for candidate in /snap/bin/chromium chromium-browser chromium; do
     if command -v "$candidate" >/dev/null 2>&1; then
       resolved="$(command -v "$candidate")"
       printf '%s\n' "$resolved"
       return 0
     fi
   done
+
   return 1
 }
 
@@ -124,6 +142,11 @@ main() {
   if ! chromium_bin="$(find_chromium)"; then
     log "ERROR: no se encontró un binario de Chromium disponible"
     exit 1
+  fi
+
+  local expected_snap="/snap/chromium/current/usr/lib/chromium-browser/chrome"
+  if [[ -x "$expected_snap" && "$chromium_bin" != "$expected_snap" ]]; then
+    log "WARN: usando binario Chromium alternativo (${chromium_bin})"
   fi
 
   local raw_url
