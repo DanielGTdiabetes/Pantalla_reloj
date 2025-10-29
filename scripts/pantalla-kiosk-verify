@@ -8,9 +8,9 @@ STATE_ROOT="/var/lib/pantalla-reloj"
 KIOSK_ENV_FILE="${STATE_ROOT}/state/kiosk.env"
 TARGET_USER="${VERIFY_USER:-${SUDO_USER:-$(id -un)}}"
 
-declare -r PY_VALIDATE_UI=$'import json, sys\nfrom pathlib import Path\nbody = Path(sys.argv[1]).read_text()\ntry:\n    payload = json.loads(body)\nexcept json.JSONDecodeError:\n    sys.exit(1)\nif payload.get("ui") == "ok":\n    sys.exit(0)\nsys.exit(1)\n'
+declare -r PY_VALIDATE_UI='import json, sys; from pathlib import Path; body = Path(sys.argv[1]).read_text(); payload = json.loads(body); sys.exit(0) if payload.get("ui") == "ok" else sys.exit(1)'
 
-declare -r PY_AUTOPAN_DELTA=$'import sys\nstart = float(sys.argv[1])\nend = float(sys.argv[2])\ndelta = abs(end - start)\nif delta < 0.1:\n    sys.exit(1)\nprint(f"{delta:.2f}")\n'
+declare -r PY_AUTOPAN_DELTA='import sys; start = float(sys.argv[1]); end = float(sys.argv[2]); delta = abs(end - start); sys.exit(1) if delta < 0.1 else print(f"{delta:.2f}")'
 
 log() {
   printf '[pantalla-kiosk-verify] %s\n' "$*"
@@ -164,13 +164,7 @@ maybe_restart_for_swiftshader() {
 }
 
 check_autopan_rotation() {
-  local diag_url="$1"
   local unit="pantalla-kiosk-chromium@${TARGET_USER}.service"
-  if ! is_diag_mode "$diag_url"; then
-    record_result "autopan" "skipped"
-    return 0
-  fi
-
   local journal_output
   if ! journal_output="$(journalctl -u "$unit" --since "-10 minutes" --no-pager 2>/dev/null)"; then
     record_result "autopan" "journal-missing"
@@ -253,7 +247,7 @@ main() {
   record_result "kiosk_url" "${kiosk_url:-<unset>}"
 
   maybe_restart_for_swiftshader "$kiosk_url"
-  check_autopan_rotation "$kiosk_url" || failures=$((failures + 1))
+  check_autopan_rotation || failures=$((failures + 1))
   check_kiosk_logs || failures=$((failures + 1))
 
   printf 'pantalla-kiosk-verify summary\n'

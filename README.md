@@ -40,6 +40,20 @@ Pantalla_reloj/
   depuración puntual.
 - Compilado con `npm run build` y servido por Nginx desde `/var/www/html`.
 
+#### Autopan y diagnósticos
+
+- El mapa GeoScope rota automáticamente en modo kiosk incluso si el panel lateral
+  no es visible; se escribe una traza periódica en `console.log`
+  (`[diagnostics:auto-pan] bearing=<valor>`) para que `journalctl` pueda validar el
+  movimiento.
+- Flags de runtime disponibles vía `window.location.search` o `localStorage`:
+  - `autopan=1|0` fuerza la animación ON/OFF.
+  - `reduced=1|0` controla si se respeta `prefers-reduced-motion` (`0` la ignora).
+  - `speed=<grados/segundo>` fija la velocidad sin recompilar (por defecto ~0.1 °/s).
+- `/diagnostics/auto-pan` monta solo el mapa a pantalla completa con
+  `autopan=1&reduced=0` y muestra un banner superior con el bearing actual, ideal para
+  comprobar rápidamente el kiosk.
+
 ### Nginx (reverse proxy `/api`)
 
 - El virtual host `etc/nginx/sites-available/pantalla-reloj.conf` debe quedar
