@@ -91,6 +91,7 @@ export const createDefaultMapSettings = (): MapConfig => ({
   renderWorldCopies: true,
   interactive: false,
   controls: false,
+  respectReducedMotion: false,
   cinema: createDefaultMapCinema(),
   theme: { ...DEFAULT_THEME },
 });
@@ -169,6 +170,10 @@ const mergeMap = (candidate: unknown): MapConfig => {
     renderWorldCopies: toBoolean(source.renderWorldCopies, fallback.renderWorldCopies),
     interactive: toBoolean(source.interactive, fallback.interactive),
     controls: toBoolean(source.controls, fallback.controls),
+    respectReducedMotion: toBoolean(
+      (source as { respectReducedMotion?: unknown })?.respectReducedMotion,
+      fallback.respectReducedMotion
+    ),
     cinema: mergeCinema(source.cinema),
     theme: mergeTheme(source.theme),
   };

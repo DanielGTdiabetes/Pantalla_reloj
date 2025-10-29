@@ -73,8 +73,8 @@ NGINX_DEFAULT_LINK=/etc/nginx/sites-enabled/default
 NGINX_DEFAULT_STATE="${STATE_RUNTIME}/nginx-default-enabled"
 WEBROOT_MANIFEST="${STATE_RUNTIME}/webroot-manifest"
 UDEV_RULE=/etc/udev/rules.d/70-pantalla-render.rules
-CHROMIUM_HOME_DATA_DIR="/home/${USER_NAME}/.local/share/pantalla-reloj/chromium"
-CHROMIUM_HOME_CACHE_DIR="/home/${USER_NAME}/.cache/pantalla-reloj/chromium"
+CHROMIUM_HOME_DATA_DIR="/home/${USER_NAME}/snap/chromium/common/pantalla-reloj/chromium"
+CHROMIUM_HOME_CACHE_DIR="/home/${USER_NAME}/snap/chromium/common/pantalla-reloj/cache"
 
 SYSTEMD_UNITS=(
   "pantalla-kiosk@${USER_NAME}.service"

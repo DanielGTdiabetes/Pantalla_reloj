@@ -29,6 +29,8 @@ const DEFAULT_PAN_SPEED = FALLBACK_CINEMA.panLngDegPerSec;
 const FPS_LIMIT = 45;
 const FRAME_MIN_INTERVAL_MS = 1000 / FPS_LIMIT;
 const MAX_DELTA_SECONDS = 0.5;
+const WATCHDOG_INTERVAL_MS = 1500;
+const FALLBACK_TICK_INTERVAL_MS = 1000;
 
 const FALLBACK_THEME = createDefaultMapSettings().theme ?? {};
 
@@ -214,6 +216,7 @@ type RuntimePreferences = {
   fallbackStyle: MapStyleDefinition;
   styleWasFallback: boolean;
   theme: MapThemeConfig;
+  respectReducedMotion: boolean;
 };
 
 const buildRuntimePreferences = (
@@ -235,7 +238,11 @@ const buildRuntimePreferences = (
     style: styleResult.resolved,
     fallbackStyle: styleResult.fallback,
     styleWasFallback: styleResult.usedFallback,
-    theme: cloneTheme(source.theme)
+    theme: cloneTheme(source.theme),
+    respectReducedMotion:
+      typeof source.respectReducedMotion === "boolean"
+        ? source.respectReducedMotion
+        : defaults.respectReducedMotion ?? false
   };
 };
 
@@ -275,6 +282,11 @@ export default function GeoScopeMap() {
   const styleTypeRef = useRef<MapStyleDefinition["type"]>("raster");
   const fallbackStyleRef = useRef<MapStyleDefinition | null>(null);
   const fallbackAppliedRef = useRef(false);
+  const fallbackTimerRef = useRef<number | null>(null);
+  const lastRepaintTimeRef = useRef<number | null>(null);
+  const respectReducedMotionRef = useRef(false);
+  const reducedMotionMediaRef = useRef<MediaQueryList | null>(null);
+  const reducedMotionActiveRef = useRef(false);
   const [tintColor, setTintColor] = useState<string | null>(null);
 
   const applyBandInstant = (band: MapCinemaBand, map?: maplibregl.Map | null) => {
@@ -345,67 +357,6 @@ export default function GeoScopeMap() {
     const progress = state.duration > 0 ? clampedElapsed / state.duration : 1;
     const eased = easeInOut(Math.min(progress, 1));
 
-    viewStateRef.current.lat = lerp(state.from.lat, state.to.lat, eased);
-    viewStateRef.current.zoom = lerp(state.from.zoom, state.to.zoom, eased);
-    viewStateRef.current.pitch = lerp(state.from.pitch, state.to.pitch, eased);
-    viewStateRef.current.bearing = 0;
-
-    if (progress >= 1) {
-      finishTransition(mapRef.current);
-      const leftover = targetElapsed - state.duration;
-      return leftover > 0 ? leftover : 0;
-    }
-
-    return 0;
-  };
-
-  const updateBandState = (deltaSeconds: number) => {
-    const cinema = cinemaRef.current;
-    if (!cinema.bands.length) return;
-
-    if (bandTransitionRef.current) {
-      const leftover = advanceTransition(deltaSeconds);
-      if (leftover > 0) {
-        updateBandState(leftover);
-      }
-      return;
-    }
-
-    const totalBands = cinema.bands.length;
-    const currentIndex = ((bandIndexRef.current % totalBands) + totalBands) % totalBands;
-    const currentBand = cinema.bands[currentIndex];
-    const newElapsed = bandElapsedRef.current + deltaSeconds;
-
-    if (newElapsed >= currentBand.duration_sec) {
-      bandElapsedRef.current = currentBand.duration_sec;
-      const overshoot = newElapsed - currentBand.duration_sec;
-      const nextIndex = (currentIndex + 1) % totalBands;
-      startTransition(nextIndex);
-      const leftover = advanceTransition(overshoot);
-      if (leftover > 0) {
-        updateBandState(leftover);
-      }
-    } else {
-      bandElapsedRef.current = newElapsed;
-      applyBandInstant(currentBand);
-    }
-  };
-
-  const updateMapView = (map: maplibregl.Map) => {
-    const { lng, lat, zoom, pitch, bearing } = viewStateRef.current;
-    const zoomValue = Number.isFinite(zoom) ? zoom : DEFAULT_VIEW.zoom;
-    const pitchValue = Number.isFinite(pitch) ? pitch : DEFAULT_VIEW.pitch;
-    const bearingValue = Number.isFinite(bearing) ? bearing : 0;
-    const centerLng = Number.isFinite(lng) ? lng : DEFAULT_VIEW.lng;
-    const centerLat = Number.isFinite(lat) ? lat : DEFAULT_VIEW.lat;
-    map.jumpTo({
-      center: [centerLng, centerLat],
-      zoom: zoomValue,
-      pitch: pitchValue,
-      bearing: bearingValue
-    });
-  };
-
   useEffect(() => {
     let destroyed = false;
     let sizeCheckFrame: number | null = null;
@@ -429,31 +380,69 @@ export default function GeoScopeMap() {
       updateMapView(map);
     };
 
+    const teardownFallbackTimer = () => {
+      if (fallbackTimerRef.current != null) {
+        window.clearInterval(fallbackTimerRef.current);
+        fallbackTimerRef.current = null;
+      }
+    };
+
     const stopPan = () => {
       if (animationFrameRef.current !== null) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
       }
+      teardownFallbackTimer();
       lastFrameTimeRef.current = null;
+      lastRepaintTimeRef.current = null;
     };
 
-    const stepPan = (timestamp: number) => {
+    const handleReducedMotionChange = (event: MediaQueryListEvent) => {
+      reducedMotionActiveRef.current = event.matches;
+      if (event.matches) {
+        stopPan();
+      } else {
+        startPan();
+      }
+    };
+
+    const applyReducedMotionPreference = (respect: boolean) => {
+      respectReducedMotionRef.current = respect;
+      const existing = reducedMotionMediaRef.current;
+      if (existing) {
+        existing.removeEventListener("change", handleReducedMotionChange);
+        reducedMotionMediaRef.current = null;
+      }
+
+      if (!respect || typeof window.matchMedia !== "function") {
+        reducedMotionActiveRef.current = false;
+        return;
+      }
+
+      const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+      reducedMotionActiveRef.current = media.matches;
+      media.addEventListener("change", handleReducedMotionChange);
+      reducedMotionMediaRef.current = media;
+
+      if (media.matches) {
+        stopPan();
+      }
+    };
+
+    const runPanTick = (timestamp: number, options?: { force?: boolean }) => {
       const map = mapRef.current;
       if (!map) {
         stopPan();
         return;
       }
-
-      const lastFrame = lastFrameTimeRef.current;
-      if (lastFrame == null) {
-        lastFrameTimeRef.current = timestamp;
-        animationFrameRef.current = requestAnimationFrame(stepPan);
+      if (respectReducedMotionRef.current && reducedMotionActiveRef.current) {
         return;
       }
 
-      const deltaMs = timestamp - lastFrame;
-      if (deltaMs < FRAME_MIN_INTERVAL_MS) {
-        animationFrameRef.current = requestAnimationFrame(stepPan);
+      const lastFrame = lastFrameTimeRef.current;
+      const effectiveLast = lastFrame ?? timestamp - FRAME_MIN_INTERVAL_MS;
+      const deltaMs = timestamp - effectiveLast;
+      if (!options?.force && deltaMs < FRAME_MIN_INTERVAL_MS) {
         return;
       }
 
@@ -470,22 +459,49 @@ export default function GeoScopeMap() {
       viewStateRef.current.lng = normalizeLng(viewStateRef.current.lng + deltaLng);
 
       updateMapView(map);
+      lastRepaintTimeRef.current = timestamp;
+      map.triggerRepaint();
+    };
 
+    const stepPan = (timestamp: number) => {
+      if (animationFrameRef.current === null) {
+        return;
+      }
+      runPanTick(timestamp);
       animationFrameRef.current = requestAnimationFrame(stepPan);
+    };
+
+    const ensureFallbackTimer = () => {
+      if (fallbackTimerRef.current != null) {
+        return;
+      }
+      fallbackTimerRef.current = window.setInterval(() => {
+        const map = mapRef.current;
+        if (!map) {
+          return;
+        }
+        const now = performance.now();
+        const lastFrame = lastFrameTimeRef.current;
+        if (!lastFrame || now - lastFrame >= FRAME_MIN_INTERVAL_MS) {
+          runPanTick(now, { force: true });
+        }
+        const lastRepaint = lastRepaintTimeRef.current;
+        if (!lastRepaint || now - lastRepaint >= WATCHDOG_INTERVAL_MS) {
+          map.triggerRepaint();
+          lastRepaintTimeRef.current = now;
+        }
+      }, FALLBACK_TICK_INTERVAL_MS);
     };
 
     const startPan = () => {
-      if (animationFrameRef.current != null || !mapRef.current) return;
-      lastFrameTimeRef.current = null;
-      animationFrameRef.current = requestAnimationFrame(stepPan);
-    };
+      if (animationFrameRef.current != null) return;
+      if (!mapRef.current) return;
+      if (respectReducedMotionRef.current && reducedMotionActiveRef.current) return;
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        startPan();
-      } else {
-        stopPan();
-      }
+      lastFrameTimeRef.current = null;
+      lastRepaintTimeRef.current = null;
+      animationFrameRef.current = requestAnimationFrame(stepPan);
+      ensureFallbackTimer();
     };
 
     const handleDprChange = () => {
@@ -543,9 +559,7 @@ export default function GeoScopeMap() {
         applyThemeToMap(map, styleTypeRef.current, themeRef.current);
       }
       safeFit();
-      if (document.visibilityState === "visible") {
-        startPan();
-      }
+      startPan();
     };
 
     const handleStyleData = () => {
@@ -565,6 +579,7 @@ export default function GeoScopeMap() {
 
     const handleContextRestored = () => {
       safeFit();
+      startPan();
     };
 
     const setupResizeObserver = (target: Element) => {
@@ -637,6 +652,8 @@ export default function GeoScopeMap() {
       mapRef.current = map;
       map.setMinZoom(firstBand.minZoom);
 
+      applyReducedMotionPreference(runtime.respectReducedMotion);
+
       const applyFallbackStyle = (reason?: unknown) => {
         if (fallbackAppliedRef.current) {
           return;
@@ -703,8 +720,6 @@ export default function GeoScopeMap() {
         media.addEventListener("change", handleDprChange);
         dprMediaRef.current = media;
       }
-
-      document.addEventListener("visibilitychange", handleVisibilityChange);
     };
 
     void initializeMap();
@@ -717,8 +732,6 @@ export default function GeoScopeMap() {
         sizeCheckFrame = null;
       }
 
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-
       stopPan();
 
       resizeObserverRef.current?.disconnect();
@@ -728,6 +741,12 @@ export default function GeoScopeMap() {
       if (media) {
         media.removeEventListener("change", handleDprChange);
         dprMediaRef.current = null;
+      }
+
+      const reduced = reducedMotionMediaRef.current;
+      if (reduced) {
+        reduced.removeEventListener("change", handleReducedMotionChange);
+        reducedMotionMediaRef.current = null;
       }
 
       const map = mapRef.current;
@@ -745,7 +764,6 @@ export default function GeoScopeMap() {
       }
     };
   }, []);
-
   return (
     <div className="map-host">
       <div ref={mapFillRef} className="map-fill" />

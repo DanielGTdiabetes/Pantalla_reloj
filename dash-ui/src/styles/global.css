@@ -199,6 +199,19 @@ body {
   border-left-color: currentColor;
 }
 
+.diagnostics-auto-pan {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  background: var(--background);
+}
+
+.diagnostics-auto-pan__map {
+  flex: 1;
+}
+
 .border-white\/10 {
   border-color: rgba(255, 255, 255, 0.1);
 }

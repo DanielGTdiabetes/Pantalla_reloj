@@ -43,6 +43,7 @@ export type MapConfig = {
   renderWorldCopies: boolean;
   interactive: boolean;
   controls: boolean;
+  respectReducedMotion: boolean;
   cinema: MapCinemaConfig;
   theme: MapThemeConfig;
 };

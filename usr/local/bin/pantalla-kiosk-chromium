@@ -1,8 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+DEFAULT_ORIGIN="http://127.0.0.1"
+DEFAULT_URL="${DEFAULT_ORIGIN}/"
+
 log() {
-  printf '[pantalla-kiosk-chromium] %s\n' "$*"
+  printf '[pantalla-kiosk-chromium] %s\n' "$*" >&2
+}
+
+resolve_url() {
+  local candidate="$1"
+  if [[ -z "$candidate" ]]; then
+    candidate="$DEFAULT_URL"
+  fi
+  if [[ "$candidate" == /* ]]; then
+    candidate="${DEFAULT_ORIGIN%/}${candidate}"
+  fi
+  if [[ "$candidate" != http://* && "$candidate" != https://* ]]; then
+    candidate="${candidate%/}"
+    candidate="${DEFAULT_ORIGIN%/}/${candidate}"
+  fi
+  printf '%s\n' "$candidate"
 }
 
 find_chromium() {
@@ -18,36 +36,22 @@ find_chromium() {
   return 1
 }
 
-main() {
-  local chromium_bin url user_data_dir cache_dir
-
-  if ! chromium_bin="$(find_chromium)"; then
-    log "ERROR: No se encontró un binario de Chromium disponible"
-    exit 1
-  fi
-
-  url="${KIOSK_URL:-http://127.0.0.1}"
-  user_data_dir="${CHROMIUM_USER_DATA_DIR:-${HOME}/.local/share/pantalla-reloj/chromium}"
-  cache_dir="${CHROMIUM_CACHE_DIR:-${HOME}/.cache/pantalla-reloj/chromium}"
-
-  install -d -m 0700 "$user_data_dir"
+prepare_dirs() {
+  local profile_dir="$1" cache_dir="$2"
+  install -d -m 0700 "$profile_dir"
   install -d -m 0755 "$cache_dir"
+}
 
-  if [[ $(stat -c '%a' "$user_data_dir") != 700 ]]; then
-    chmod 0700 "$user_data_dir"
-  fi
-  if [[ $(stat -c '%a' "$cache_dir") != 755 ]]; then
-    chmod 0755 "$cache_dir"
-  fi
-
-  log "Usando Chromium en: ${chromium_bin}"
-  log "Perfil: ${user_data_dir}"
-  log "Cache: ${cache_dir}"
-  log "URL: ${url}"
+launch_chromium() {
+  local use_swiftshader="$1"
+  local chromium_bin="$2"
+  local url="$3"
+  local profile_dir="$4"
+  local cache_dir="$5"
 
   local -a args
   args=(
-    "${chromium_bin}"
+    "$chromium_bin"
     --class=pantalla-kiosk
     --kiosk
     --start-fullscreen
@@ -58,7 +62,7 @@ main() {
     --disable-infobars
     --disable-session-crashed-bubble
     --noerrdialogs
-    --disable-features=CalculateNativeWinOcclusion,InfiniteSessionRestore,Translate,HardwareMediaKeyHandling
+    --disable-features=InfiniteSessionRestore,Translate,HardwareMediaKeyHandling,CalculateNativeWinOcclusion
     --disable-renderer-backgrounding
     --disable-background-timer-throttling
     --disable-backgrounding-occluded-windows
@@ -67,18 +71,92 @@ main() {
     --password-store=basic
     --test-type
     --ozone-platform=x11
-    --enable-unsafe-swiftshader
     --ignore-gpu-blocklist
     --enable-webgl
+    --use-gl=egl-angle
+    --enable-logging=stderr
+    --v=1
     "--disk-cache-dir=${cache_dir}"
-    "--user-data-dir=${user_data_dir}"
+    "--user-data-dir=${profile_dir}"
   )
 
   if [[ -n "${CHROMIUM_SCALE:-}" ]]; then
     args+=("--force-device-scale-factor=${CHROMIUM_SCALE}")
   fi
 
-  exec "${args[@]}"
+  if (( use_swiftshader )); then
+    args+=(--enable-unsafe-swiftshader)
+  fi
+
+  log "launch: ${args[*]}"
+  log "url: ${url}"
+
+  local log_file
+  log_file="$(mktemp -t pantalla-chromium.XXXXXX)"
+
+  "${args[@]}" 2> >(tee -a "$log_file" >&2)
+  local status=$?
+
+  local fallback=0
+  if (( use_swiftshader == 0 )); then
+    if (( status != 0 )); then
+      fallback=1
+    else
+      if grep -Eq \
+        'Automatic fallback to software WebGL has been deprecated|GPU process isn'"'"'t usable|GpuProcessHostUIShim:|GpuChannelHost|ERROR:gpu_init' \
+        "$log_file"; then
+        fallback=1
+      fi
+    fi
+  fi
+
+  rm -f "$log_file"
+
+  if (( fallback )); then
+    return 99
+  fi
+
+  return $status
+}
+
+main() {
+  local chromium_bin
+  if ! chromium_bin="$(find_chromium)"; then
+    log "ERROR: no se encontró un binario de Chromium disponible"
+    exit 1
+  fi
+
+  local raw_url
+  raw_url="${KIOSK_URL:-${1:-}}"
+  local target_url
+  target_url="$(resolve_url "$raw_url")"
+
+  local base_dir profile_dir cache_dir
+  base_dir="${CHROMIUM_BASE_DIR:-${HOME}/snap/chromium/common/pantalla-reloj}"
+  profile_dir="${CHROMIUM_USER_DATA_DIR:-${base_dir}/chromium}"
+  cache_dir="${CHROMIUM_CACHE_DIR:-${base_dir}/cache}"
+
+  prepare_dirs "$profile_dir" "$cache_dir"
+
+  log "using chromium: ${chromium_bin}"
+  log "profile: ${profile_dir}"
+  log "cache: ${cache_dir}"
+
+  if launch_chromium 0 "$chromium_bin" "$target_url" "$profile_dir" "$cache_dir"; then
+    exit 0
+  fi
+
+  local first_status=$?
+  if (( first_status == 99 )); then
+    log "swiftshader fallback enabled"
+    if launch_chromium 1 "$chromium_bin" "$target_url" "$profile_dir" "$cache_dir"; then
+      exit 0
+    fi
+    local second_status=$?
+    exit $second_status
+  fi
+
+  exit $first_status
 }
 
 main "$@"
