@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# NOTE: Avoid heredocs; CI enforces bash -n
 
 UI_HEALTH_URL="${UI_HEALTH_URL:-http://127.0.0.1/ui-healthz}"
 BACKEND_HEALTH_URL="${BACKEND_HEALTH_URL:-http://127.0.0.1/api/health}"
@@ -50,15 +51,7 @@ check_ui_health() {
     record_result "ui" "http${http_code}"
     return 1
   fi
-  if ! python3 - "$tmp" <<'PY' >/dev/null 2>&1; then
-import json
-import sys
-with open(sys.argv[1], "r", encoding="utf-8") as handle:
-    data = json.load(handle)
-if data.get("ui") != "ok":
-    raise SystemExit(1)
-PY
-  then
+  if ! python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get("ui")=="ok" else 1)' "$tmp" >/dev/null 2>&1; then
     local body
     body="$(<"$tmp")"
     rm -f "$tmp"
@@ -203,16 +196,7 @@ check_autopan_rotation() {
   fi
 
   local delta
-  if ! delta="$(python3 - <<'PY' "$first" "$last" 2>/dev/null)"; then
-import sys
-start=float(sys.argv[1])
-end=float(sys.argv[2])
-delta=abs(end - start)
-if delta < 0.1:
-    raise SystemExit(1)
-print(f"{delta:.2f}")
-PY
-  then
+  if ! delta="$(python3 -c 'import sys; s=float(sys.argv[1]); e=float(sys.argv[2]); d=abs(e-s); (print(f"{d:.2f}") if d>=0.1 else exit(1))' "$first" "$last" 2>/dev/null)"; then
     record_result "autopan" "delta-too-low"
     return 1
   fi
