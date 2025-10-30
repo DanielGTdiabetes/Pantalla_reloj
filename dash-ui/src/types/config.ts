@@ -20,6 +20,11 @@ export type MapCinemaConfig = {
   bands: MapCinemaBand[];
 };
 
+export type MapIdlePanConfig = {
+  enabled: boolean;
+  intervalSec: number;
+};
+
 export type MapThemeConfig = {
   sea: string;
   land: string;
@@ -45,6 +50,7 @@ export type MapConfig = {
   controls: boolean;
   respectReducedMotion: boolean;
   cinema: MapCinemaConfig;
+  idlePan: MapIdlePanConfig;
   theme: MapThemeConfig;
 };
 

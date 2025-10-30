@@ -5,6 +5,7 @@ import type {
   MapCinemaBand,
   MapCinemaConfig,
   MapConfig,
+  MapIdlePanConfig,
   MapThemeConfig,
   MaptilerConfig,
   MapPreferences,
@@ -94,10 +95,15 @@ export const createDefaultMapPreferences = (): MapPreferences => ({
 });
 
 export const createDefaultMapCinema = (): MapCinemaConfig => ({
-  enabled: true,
-  panLngDegPerSec: 0.3,
+  enabled: false,
+  panLngDegPerSec: 0,
   bandTransition_sec: 8,
   bands: DEFAULT_CINEMA_BANDS.map((band) => ({ ...band })),
+});
+
+export const createDefaultMapIdlePan = (): MapIdlePanConfig => ({
+  enabled: false,
+  intervalSec: 300,
 });
 
 export const createDefaultMapSettings = (): MapConfig => ({
@@ -110,6 +116,7 @@ export const createDefaultMapSettings = (): MapConfig => ({
   controls: false,
   respectReducedMotion: false,
   cinema: createDefaultMapCinema(),
+  idlePan: createDefaultMapIdlePan(),
   theme: { ...DEFAULT_THEME },
 });
 
@@ -136,6 +143,16 @@ const mergeCinema = (candidate: unknown): MapCinemaConfig => {
     panLngDegPerSec: Math.max(0, toNumber(source.panLngDegPerSec, fallback.panLngDegPerSec)),
     bandTransition_sec: Math.max(1, Math.round(toNumber(source.bandTransition_sec, fallback.bandTransition_sec))),
     bands,
+  };
+};
+
+const mergeIdlePan = (candidate: unknown): MapIdlePanConfig => {
+  const fallback = createDefaultMapIdlePan();
+  const source = (candidate as Partial<MapIdlePanConfig>) ?? {};
+  const interval = Math.max(10, Math.round(toNumber(source.intervalSec, fallback.intervalSec)));
+  return {
+    enabled: toBoolean(source.enabled, fallback.enabled),
+    intervalSec: interval,
   };
 };
 
@@ -192,6 +209,7 @@ const mergeMap = (candidate: unknown): MapConfig => {
       fallback.respectReducedMotion
     ),
     cinema: mergeCinema(source.cinema),
+    idlePan: mergeIdlePan((source as { idlePan?: unknown })?.idlePan),
     theme: mergeTheme(source.theme),
   };
 };
@@ -209,7 +227,7 @@ const mergeMapPreferences = (candidate: unknown): MapPreferences => {
 
 const mergeRotation = (candidate: unknown): RotationConfig => {
   const fallback: RotationConfig = {
-    enabled: true,
+    enabled: false,
     duration_sec: 10,
     panels: ["news", "ephemerides", "moon", "forecast", "calendar"],
   };

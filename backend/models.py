@@ -43,8 +43,8 @@ class MapCinemaBand(BaseModel):
 class MapCinema(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    enabled: bool = True
-    panLngDegPerSec: float = Field(default=0.30, ge=0)
+    enabled: bool = False
+    panLngDegPerSec: float = Field(default=0.0, ge=0)
     bandTransition_sec: int = Field(default=8, ge=1)
     bands: List[MapCinemaBand] = Field(
         default_factory=lambda: [MapCinemaBand(**band) for band in DEFAULT_CINEMA_BANDS]
@@ -58,6 +58,13 @@ class MapCinema(BaseModel):
                 f"cinema must define exactly {len(DEFAULT_CINEMA_BANDS)} bands"
             )
         return values
+
+
+class MapIdlePan(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = False
+    intervalSec: int = Field(default=300, ge=10)
 
 
 class MapTheme(BaseModel):
@@ -97,13 +104,14 @@ class MapConfig(BaseModel):
     interactive: bool = False
     controls: bool = False
     cinema: MapCinema = Field(default_factory=MapCinema)
+    idlePan: MapIdlePan = Field(default_factory=MapIdlePan)
     theme: MapTheme = Field(default_factory=MapTheme)
 
 
 class Rotation(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    enabled: bool = True
+    enabled: bool = False
     duration_sec: int = Field(default=10, ge=3, le=3600)
     panels: List[str] = Field(
         default_factory=lambda: [
@@ -132,9 +140,7 @@ class UI(BaseModel):
 
     layout: Literal["grid-2-1"] = "grid-2-1"
     map: MapConfig = Field(default_factory=MapConfig)
-    rotation: Rotation = Field(
-        default_factory=lambda: Rotation(enabled=True, duration_sec=10)
-    )
+    rotation: Rotation = Field(default_factory=Rotation)
 
 
 class News(BaseModel):
@@ -215,6 +221,7 @@ __all__ = [
     "MapCinema",
     "MapCinemaBand",
     "MapConfig",
+    "MapIdlePan",
     "MapTheme",
     "News",
     "Rotation",
