@@ -252,6 +252,13 @@ const validateConfig = (config: AppConfig, supports: SchemaInspector["has"]): Fi
     }
   }
 
+  if (supports("ui.map.idlePan.intervalSec")) {
+    const value = config.ui.map.idlePan.intervalSec;
+    if (!Number.isFinite(value) || value < 10) {
+      errors["ui.map.idlePan.intervalSec"] = "Debe ser mayor o igual a 10";
+    }
+  }
+
   if (supports("ui.map.cinema.bands")) {
     if (config.ui.map.cinema.bands.length !== CINEMA_BAND_COUNT) {
       errors["ui.map.cinema.bands"] = `Configura exactamente ${CINEMA_BAND_COUNT} bandas`;
@@ -325,6 +332,11 @@ const ConfigPage: React.FC = () => {
     const base = new Set<string>([...DEFAULT_PANELS, ...form.ui.rotation.panels]);
     return Array.from(base);
   }, [form.ui.rotation.panels]);
+
+  const cinemaBlocked = !form.ui.rotation.enabled || !form.ui.map.cinema.enabled;
+  const disableCinemaControls = disableInputs || cinemaBlocked;
+  const disableIdlePanControls =
+    disableInputs || cinemaBlocked || !form.ui.map.idlePan.enabled;
 
   const resetErrorsFor = useCallback((pathPrefix: string) => {
     setFieldErrors((prev) => {
@@ -692,6 +704,40 @@ const ConfigPage: React.FC = () => {
                 </div>
               )}
 
+              {supports("ui.map.cinema.enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="cinema_enabled">
+                    <input
+                      id="cinema_enabled"
+                      type="checkbox"
+                      checked={form.ui.map.cinema.enabled}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          ui: {
+                            ...prev.ui,
+                            map: {
+                              ...prev.ui.map,
+                              cinema: {
+                                ...prev.ui.map.cinema,
+                                enabled,
+                              },
+                            },
+                          },
+                        }));
+                        resetErrorsFor("ui.map.cinema.enabled");
+                      }}
+                    />
+                    Activar modo cine
+                  </label>
+                  {renderHelp(
+                    "Habilita las panorámicas automáticas del mapa (requiere la rotación del kiosco)"
+                  )}
+                </div>
+              )}
+
               {supports("ui.map.cinema.panLngDegPerSec") && (
                 <div className="config-field">
                   <label htmlFor="cinema_pan">Velocidad panorámica</label>
@@ -700,7 +746,7 @@ const ConfigPage: React.FC = () => {
                     type="number"
                     step="0.01"
                     value={form.ui.map.cinema.panLngDegPerSec}
-                    disabled={disableInputs}
+                    disabled={disableCinemaControls}
                     onChange={(event) => {
                       const value = Number(event.target.value);
                       if (Number.isNaN(value)) {
@@ -735,7 +781,7 @@ const ConfigPage: React.FC = () => {
                     type="number"
                     min={1}
                     value={form.ui.map.cinema.bandTransition_sec}
-                    disabled={disableInputs}
+                    disabled={disableCinemaControls}
                     onChange={(event) => {
                       const value = Number(event.target.value);
                       if (Number.isNaN(value)) {
@@ -761,6 +807,73 @@ const ConfigPage: React.FC = () => {
                   {renderFieldError("ui.map.cinema.bandTransition_sec")}
                 </div>
               )}
+
+              {supports("ui.map.idlePan.enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="idle_pan_enabled">
+                    <input
+                      id="idle_pan_enabled"
+                      type="checkbox"
+                      checked={form.ui.map.idlePan.enabled}
+                      disabled={disableInputs || cinemaBlocked}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          ui: {
+                            ...prev.ui,
+                            map: {
+                              ...prev.ui.map,
+                              idlePan: {
+                                ...prev.ui.map.idlePan,
+                                enabled,
+                              },
+                            },
+                          },
+                        }));
+                        resetErrorsFor("ui.map.idlePan.enabled");
+                      }}
+                    />
+                    Activar movimiento en reposo
+                  </label>
+                  {renderHelp("Realiza un pequeño desplazamiento periódico (sin rotación)")}
+                </div>
+              )}
+
+              {supports("ui.map.idlePan.intervalSec") && (
+                <div className="config-field">
+                  <label htmlFor="idle_pan_interval">Intervalo entre desplazamientos</label>
+                  <input
+                    id="idle_pan_interval"
+                    type="number"
+                    min={10}
+                    value={form.ui.map.idlePan.intervalSec}
+                    disabled={disableIdlePanControls}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (Number.isNaN(value)) {
+                        return;
+                      }
+                      setForm((prev) => ({
+                        ...prev,
+                        ui: {
+                          ...prev.ui,
+                          map: {
+                            ...prev.ui.map,
+                            idlePan: {
+                              ...prev.ui.map.idlePan,
+                              intervalSec: value,
+                            },
+                          },
+                        },
+                      }));
+                      resetErrorsFor("ui.map.idlePan.intervalSec");
+                    }}
+                  />
+                  {renderHelp("Segundos entre cada desplazamiento automático")}
+                  {renderFieldError("ui.map.idlePan.intervalSec")}
+                </div>
+              )}
             </div>
 
             {supports("ui.map.cinema.bands") && (
@@ -783,7 +896,7 @@ const ConfigPage: React.FC = () => {
                       <div className="config-table__cell">
                         <input
                           type="number"
-                          disabled={disableInputs}
+                          disabled={disableCinemaControls}
                           value={band.lat}
                           onChange={(event) => {
                             const value = Number(event.target.value);
@@ -798,7 +911,7 @@ const ConfigPage: React.FC = () => {
                         <input
                           type="number"
                           step="0.1"
-                          disabled={disableInputs}
+                          disabled={disableCinemaControls}
                           value={band.zoom}
                           onChange={(event) => {
                             const value = Number(event.target.value);
@@ -813,7 +926,7 @@ const ConfigPage: React.FC = () => {
                         <input
                           type="number"
                           step="0.1"
-                          disabled={disableInputs}
+                          disabled={disableCinemaControls}
                           value={band.pitch}
                           onChange={(event) => {
                             const value = Number(event.target.value);
@@ -828,7 +941,7 @@ const ConfigPage: React.FC = () => {
                         <input
                           type="number"
                           step="0.1"
-                          disabled={disableInputs}
+                          disabled={disableCinemaControls}
                           value={band.minZoom}
                           onChange={(event) => {
                             const value = Number(event.target.value);
@@ -843,7 +956,7 @@ const ConfigPage: React.FC = () => {
                         <input
                           type="number"
                           min={1}
-                          disabled={disableInputs}
+                          disabled={disableCinemaControls}
                           value={band.duration_sec}
                           onChange={(event) => {
                             const value = Number(event.target.value);
@@ -1003,6 +1116,29 @@ const ConfigPage: React.FC = () => {
               <p>Controla la duración y las tarjetas presentes en la rotación.</p>
             </div>
             <div className="config-grid">
+              {supports("ui.rotation.enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="rotation_enabled">
+                    <input
+                      id="rotation_enabled"
+                      type="checkbox"
+                      checked={form.ui.rotation.enabled}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        updateForm("ui", {
+                          ...form.ui,
+                          rotation: { ...form.ui.rotation, enabled },
+                        });
+                        resetErrorsFor("ui.rotation.enabled");
+                      }}
+                    />
+                    Activar rotación automática
+                  </label>
+                  {renderHelp("Permite alternar los módulos y habilita el modo cine del mapa")}
+                </div>
+              )}
+
               {supports("ui.rotation.duration_sec") && (
                 <div className="config-field">
                   <label htmlFor="rotation_duration">Duración por panel</label>

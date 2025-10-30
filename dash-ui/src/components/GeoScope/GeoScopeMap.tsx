@@ -7,6 +7,7 @@ import { apiGet } from "../../lib/api";
 import { kioskRuntime } from "../../lib/runtimeFlags";
 import {
   createDefaultMapCinema,
+  createDefaultMapIdlePan,
   createDefaultMapPreferences,
   createDefaultMapSettings,
   withConfigDefaults
@@ -16,8 +17,10 @@ import type {
   MapCinemaBand,
   MapCinemaConfig,
   MapConfig,
+  MapIdlePanConfig,
   MapPreferences,
-  MapThemeConfig
+  MapThemeConfig,
+  RotationConfig
 } from "../../types/config";
 import {
   loadMapStyle,
@@ -624,17 +627,34 @@ type RuntimePreferences = {
   styleWasFallback: boolean;
   theme: MapThemeConfig;
   respectReducedMotion: boolean;
+  idlePan: MapIdlePanConfig;
+  rotationEnabled: boolean;
+  allowCinema: boolean;
+  panSpeedDegPerSec: number;
 };
 
 const buildRuntimePreferences = (
   mapSettings: MapConfig,
+  rotationSettings: RotationConfig,
   styleResult: MapStyleResult
 ): RuntimePreferences => {
   const defaults = createDefaultMapSettings();
   const source = mapSettings ?? defaults;
   const cinemaSource = source.cinema ?? defaults.cinema ?? createDefaultMapCinema();
   const cinema = cloneCinema(cinemaSource);
-  cinema.enabled = true;
+  const fallbackIdlePan = defaults.idlePan ?? createDefaultMapIdlePan();
+  const idlePanSource = source.idlePan ?? fallbackIdlePan;
+  const idlePan: MapIdlePanConfig = {
+    enabled: Boolean(idlePanSource.enabled),
+    intervalSec: Math.max(10, Math.round(idlePanSource.intervalSec ?? fallbackIdlePan.intervalSec))
+  };
+
+  const rotationEnabled = Boolean(rotationSettings?.enabled);
+  const panSpeedDegPerSec = Math.max(
+    0,
+    Number.isFinite(cinema.panLngDegPerSec) ? cinema.panLngDegPerSec : 0
+  );
+  const allowCinema = rotationEnabled && cinema.enabled && panSpeedDegPerSec > 0;
 
   const initialLng = 0;
 
@@ -649,7 +669,11 @@ const buildRuntimePreferences = (
     respectReducedMotion:
       typeof source.respectReducedMotion === "boolean"
         ? source.respectReducedMotion
-        : defaults.respectReducedMotion ?? false
+        : defaults.respectReducedMotion ?? false,
+    idlePan,
+    rotationEnabled,
+    allowCinema,
+    panSpeedDegPerSec
   };
 };
 
@@ -658,9 +682,10 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
     const config = await apiGet<AppConfig | undefined>("/api/config");
     const merged = withConfigDefaults(config);
     const mapSettings = merged.ui.map;
+    const rotationSettings = merged.ui.rotation;
     const mapPreferences: MapPreferences = merged.map ?? createDefaultMapPreferences();
     const styleResult = await loadMapStyle(mapSettings, mapPreferences);
-    return buildRuntimePreferences(mapSettings, styleResult);
+    return buildRuntimePreferences(mapSettings, rotationSettings, styleResult);
   } catch (error) {
     console.warn(
       "[GeoScopeMap] Falling back to default cinema configuration (using defaults).",
@@ -669,7 +694,8 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
     const fallbackSettings = createDefaultMapSettings();
     const fallbackPreferences = createDefaultMapPreferences();
     const styleResult = await loadMapStyle(fallbackSettings, fallbackPreferences);
-    return buildRuntimePreferences(fallbackSettings, styleResult);
+    const fallbackRotation = withConfigDefaults(undefined).ui.rotation;
+    return buildRuntimePreferences(fallbackSettings, fallbackRotation, styleResult);
   }
 };
 
@@ -701,6 +727,11 @@ export default function GeoScopeMap() {
   const autopanForcedOffRef = useRef(kioskRuntime.isAutopanForcedOff());
   const motionForcedRef = useRef(kioskRuntime.isMotionForced());
   const motionOverrideLoggedRef = useRef(false);
+  const allowCinemaRef = useRef(false);
+  const idlePanConfigRef = useRef<MapIdlePanConfig>(createDefaultMapIdlePan());
+  const idlePanTimerRef = useRef<number | null>(null);
+  const idlePanDirectionRef = useRef<1 | -1>(1);
+  const idlePanDeltaRef = useRef(0.5);
   const autopanEnabledRef = useRef(true);
   const diagnosticsAutopanRef = useRef<DiagnosticsAutopanConfig>(
     parseDiagnosticsAutopanConfig()
@@ -720,6 +751,75 @@ export default function GeoScopeMap() {
   const lastLogTimeRef = useRef<number>(0);
   const respectDefaultRef = useRef(false);
   const [tintColor, setTintColor] = useState<string | null>(null);
+
+  const clearIdlePanTimer = () => {
+    if (idlePanTimerRef.current != null) {
+      window.clearInterval(idlePanTimerRef.current);
+      idlePanTimerRef.current = null;
+    }
+  };
+
+  const runIdlePan = () => {
+    if (!allowCinemaRef.current) {
+      return;
+    }
+    const config = idlePanConfigRef.current;
+    if (!config.enabled) {
+      return;
+    }
+    if (respectReducedMotionRef.current && reducedMotionActiveRef.current) {
+      return;
+    }
+    if (typeof document !== "undefined" && document.hidden) {
+      return;
+    }
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) {
+      return;
+    }
+
+    const direction = idlePanDirectionRef.current;
+    idlePanDirectionRef.current = direction === 1 ? -1 : 1;
+
+    const center = map.getCenter();
+    const delta = Math.max(0.05, idlePanDeltaRef.current);
+    const nextLng = normalizeLng(center.lng + direction * delta);
+
+    map.easeTo({
+      center: [nextLng, center.lat],
+      duration: 1500,
+      easing: (t) => t,
+      essential: true
+    });
+  };
+
+  const scheduleIdlePan = () => {
+    clearIdlePanTimer();
+    if (!mapRef.current) {
+      return;
+    }
+    if (!allowCinemaRef.current) {
+      return;
+    }
+    const config = idlePanConfigRef.current;
+    if (!config.enabled) {
+      return;
+    }
+    if (respectReducedMotionRef.current && reducedMotionActiveRef.current) {
+      return;
+    }
+    if (typeof document !== "undefined" && document.hidden) {
+      return;
+    }
+
+    const intervalSec = Math.max(10, Math.round(config.intervalSec));
+    if (!Number.isFinite(intervalSec) || intervalSec <= 0) {
+      return;
+    }
+    idlePanTimerRef.current = window.setInterval(() => {
+      runIdlePan();
+    }, intervalSec * 1000);
+  };
 
   const applyBandInstant = (band: MapCinemaBand, map?: maplibregl.Map | null) => {
     const zoom = Number.isFinite(band.zoom) ? band.zoom : viewStateRef.current.zoom;
@@ -982,11 +1082,18 @@ export default function GeoScopeMap() {
     };
 
     const startPan = () => {
+      if (!allowCinemaRef.current) {
+        return;
+      }
       if (autopanModeRef.current !== "rotate") {
         return;
       }
       if (animationFrameRef.current != null) return;
-      if (!mapRef.current) return;
+      const map = mapRef.current;
+      if (!map || (typeof document !== "undefined" && document.hidden)) return;
+      if (!map.isStyleLoaded()) {
+        return;
+      }
 
       lastFrameTimeRef.current = null;
       lastRepaintTimeRef.current = null;
@@ -997,46 +1104,15 @@ export default function GeoScopeMap() {
     };
 
     const recomputeAutopanActivation = () => {
-      if (autopanModeRef.current !== "rotate") {
-        autopanEnabledRef.current = false;
-        stopPan();
-        if (autopanModeRef.current === "serpentine") {
-          ensureSerpentine();
-        } else {
-          cancelSerpentine();
-        }
-        return;
-      }
-
+      autopanEnabledRef.current = false;
+      stopPan();
       cancelSerpentine();
-
-      const forcedOff = autopanForcedOffRef.current;
-      const kioskDetected = kioskModeRef.current;
-      const motionForced = motionForcedRef.current || autopanForcedOnRef.current;
-      const respectPreference = respectReducedMotionRef.current;
-      const reducedActive = reducedMotionActiveRef.current;
-
-      let shouldRun = !forcedOff;
-      if (shouldRun) {
-        if (motionForced || kioskDetected) {
-          shouldRun = true;
-        } else if (respectPreference && reducedActive) {
-          shouldRun = false;
-        }
-      }
-
-      autopanEnabledRef.current = shouldRun;
-
-      if (shouldRun) {
-        startPan();
-      } else {
-        stopPan();
-      }
     };
 
     const handleReducedMotionChange = (event: MediaQueryListEvent) => {
       reducedMotionActiveRef.current = event.matches;
       recomputeAutopanActivation();
+      scheduleIdlePan();
     };
 
     const applyReducedMotionPreference = (respect: boolean) => {
@@ -1050,6 +1126,7 @@ export default function GeoScopeMap() {
       if (!respect || typeof window.matchMedia !== "function") {
         reducedMotionActiveRef.current = false;
         recomputeAutopanActivation();
+        scheduleIdlePan();
         return;
       }
 
@@ -1059,6 +1136,7 @@ export default function GeoScopeMap() {
       reducedMotionMediaRef.current = media;
 
       recomputeAutopanActivation();
+      scheduleIdlePan();
     };
 
     const refreshRuntimePolicy = (defaultRespect?: boolean) => {
@@ -1080,6 +1158,9 @@ export default function GeoScopeMap() {
     };
 
     const emitBearing = (bearing: number, timestamp: number, force?: boolean) => {
+      if (!allowCinemaRef.current) {
+        return;
+      }
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent(GEO_SCOPE_AUTOPAN_EVENT, {
@@ -1097,6 +1178,10 @@ export default function GeoScopeMap() {
     const runPanTick = (timestamp: number, options?: { force?: boolean }) => {
       const map = mapRef.current;
       if (!map) {
+        stopPan();
+        return;
+      }
+      if (!allowCinemaRef.current) {
         stopPan();
         return;
       }
@@ -1259,6 +1344,7 @@ export default function GeoScopeMap() {
       }
       safeFit();
       recomputeAutopanActivation();
+      scheduleIdlePan();
     };
 
     const handleStyleData = () => {
@@ -1273,12 +1359,27 @@ export default function GeoScopeMap() {
       event: MapLibreEvent & { originalEvent?: WebGLContextEvent }
     ) => {
       event.originalEvent?.preventDefault();
+      stopPan();
+      clearIdlePanTimer();
       safeFit();
     };
 
     const handleContextRestored = () => {
       safeFit();
       recomputeAutopanActivation();
+      scheduleIdlePan();
+    };
+
+    const handleVisibilityChange = () => {
+      if (typeof document === "undefined") {
+        return;
+      }
+      if (document.hidden) {
+        stopPan();
+        clearIdlePanTimer();
+        return;
+      }
+      scheduleIdlePan();
     };
 
     const setupResizeObserver = (target: Element) => {
@@ -1294,6 +1395,24 @@ export default function GeoScopeMap() {
       const hostPromise = waitForStableSize();
       const runtime = await loadRuntimePreferences();
       respectDefaultRef.current = Boolean(runtime.respectReducedMotion);
+      allowCinemaRef.current = runtime.allowCinema;
+      idlePanConfigRef.current = {
+        ...runtime.idlePan,
+        enabled: runtime.allowCinema ? runtime.idlePan.enabled : false
+      };
+      idlePanDirectionRef.current = 1;
+      if (runtime.allowCinema) {
+        const overrideSpeed = kioskRuntime.getSpeedOverride(
+          runtime.panSpeedDegPerSec,
+          FALLBACK_ROTATION_DEG_PER_SEC
+        );
+        panSpeedRef.current = overrideSpeed;
+        idlePanDeltaRef.current =
+          overrideSpeed > 0 ? Math.min(3, Math.max(0.1, overrideSpeed * 2)) : 0.5;
+      } else {
+        panSpeedRef.current = 0;
+        idlePanDeltaRef.current = 0.5;
+      }
 
       if (destroyed) {
         return;
@@ -1310,15 +1429,6 @@ export default function GeoScopeMap() {
       }
 
       cinemaRef.current = cinemaSettings;
-      panSpeedRef.current = kioskRuntime.getSpeedOverride(
-        cinemaSettings.panLngDegPerSec,
-        FALLBACK_ROTATION_DEG_PER_SEC
-      );
-      if (Math.abs(panSpeedRef.current - cinemaSettings.panLngDegPerSec) > 1e-6) {
-        console.info(
-          `[GeoScopeMap] autopan speed override active (${panSpeedRef.current.toFixed(3)}°/s)`
-        );
-      }
       bandIndexRef.current = 0;
       bandElapsedRef.current = 0;
       bandTransitionRef.current = null;
@@ -1435,6 +1545,10 @@ export default function GeoScopeMap() {
       });
     };
 
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
+
     void initializeMap();
 
     return () => {
@@ -1447,6 +1561,7 @@ export default function GeoScopeMap() {
 
       cancelSerpentine();
       stopPan();
+      clearIdlePanTimer();
 
       resizeObserverRef.current?.disconnect();
       resizeObserverRef.current = null;
@@ -1461,6 +1576,10 @@ export default function GeoScopeMap() {
       if (reduced) {
         reduced.removeEventListener("change", handleReducedMotionChange);
         reducedMotionMediaRef.current = null;
+      }
+
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
       }
 
       const map = mapRef.current;
