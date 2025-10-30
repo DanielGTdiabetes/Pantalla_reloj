@@ -101,6 +101,7 @@ rm -f /etc/systemd/system/pantalla-openbox@.service
 rm -f /etc/systemd/system/pantalla-xorg.service
 rm -f /etc/systemd/system/pantalla-dash-backend@.service
 rm -f /etc/systemd/system/pantalla-portal@.service
+rm -f /etc/systemd/system/pantalla-kiosk-chromium@${USER_NAME}.service.d/override.conf
 rm -rf /etc/systemd/system/pantalla-kiosk@.service.d /etc/systemd/system/pantalla-openbox@.service.d /etc/systemd/system/pantalla-dash-backend@.service.d
 
 systemctl daemon-reload
@@ -112,6 +113,8 @@ udevadm trigger >/dev/null 2>&1 || true
 
 rm -f "$NGINX_SITE_LINK"
 rm -f "$NGINX_SITE"
+rm -f /etc/pantalla-reloj/wifi.conf
+rmdir /etc/pantalla-reloj 2>/dev/null || true
 
 restore_nginx_default() {
   local default_conf=/etc/nginx/sites-available/default
@@ -148,6 +151,7 @@ restore_nginx_default
 
 rm -f /usr/local/bin/pantalla-kiosk
 rm -f /usr/local/bin/pantalla-kiosk-verify
+rm -f /usr/local/bin/diag_kiosk.sh
 rm -f /usr/local/bin/kiosk-ui /usr/local/bin/kiosk-diag
 
 if [[ -f "$WEBROOT_MANIFEST" ]]; then
