@@ -188,29 +188,29 @@ const normalizeBearing = (bearing: number) => {
 
 type AutopanMode = "rotate" | "serpentine";
 
+type SerpentineDirection = "E" | "W";
+
 type SerpentineConfig = {
-  cols: number;
-  rows: number;
-  lonMin: number;
-  lonMax: number;
+  stepDeg: number;
+  latStepDeg: number;
+  pauseMs: number;
+  loops: number;
+  reducedMotion: boolean;
+  force: boolean;
   latMin: number;
   latMax: number;
-  speedSec: number;
-  pauseMs: number;
-  reducedMotion: boolean;
-  initialDirection: "E" | "W";
-  force: boolean;
+  startDirection: SerpentineDirection;
 };
 
 type DiagnosticsAutopanConfig =
   | { mode: "rotate" }
   | { mode: "serpentine"; config: SerpentineConfig };
 
-type SerpentinePoint = {
-  row: number;
-  column: number;
+type SerpentineStep = {
   lon: number;
   lat: number;
+  band: number;
+  direction: SerpentineDirection;
 };
 
 type SerpentineRunner = {
@@ -244,6 +244,15 @@ const parseBooleanParam = (value: string | null | undefined): boolean | undefine
 
 const clampLatitude = (value: number) => clamp(value, -85, 85);
 
+const LON_MIN = -180;
+const LON_MAX = 180;
+const SERPENTINE_MIN_STEP_DEG = 0.05;
+const SERPENTINE_MIN_LAT_STEP_DEG = 0.1;
+const SERPENTINE_MIN_DURATION_MS = 120;
+const SERPENTINE_MAX_DURATION_MS = 4000;
+const SERPENTINE_DEFAULT_LAT_MIN = -70;
+const SERPENTINE_DEFAULT_LAT_MAX = 70;
+
 const parseDiagnosticsAutopanConfig = (): DiagnosticsAutopanConfig => {
   if (typeof window === "undefined") {
     return { mode: "rotate" };
@@ -257,49 +266,60 @@ const parseDiagnosticsAutopanConfig = (): DiagnosticsAutopanConfig => {
   }
 
   const modeParam = params.get("mode")?.toLowerCase();
-  if (modeParam !== "serpentine") {
+  const path = window.location.pathname ?? "";
+  const defaultSerpentine = /\/diagnostics\/auto-pan(\/|$)/.test(path);
+
+  const isSpinMode =
+    modeParam === "spin" ||
+    modeParam === "rotate" ||
+    modeParam === "bearing" ||
+    (!modeParam && !defaultSerpentine);
+
+  if (isSpinMode) {
     return { mode: "rotate" };
   }
 
-  const readInt = (key: string, fallback: number): number => {
-    const raw = params.get(key);
-    if (raw == null) {
-      return fallback;
-    }
-    const parsed = Number.parseInt(raw, 10);
-    return Number.isFinite(parsed) ? parsed : fallback;
-  };
-
   const readNumber = (key: string, fallback: number): number => {
     const raw = params.get(key);
-    if (raw == null) {
+    if (raw == null || raw.trim().length === 0) {
       return fallback;
     }
     const parsed = Number.parseFloat(raw);
     return Number.isFinite(parsed) ? parsed : fallback;
   };
 
-  const cols = Math.max(1, readInt("cols", 24));
-  const rows = Math.max(1, readInt("rows", 6));
+  const readInt = (key: string, fallback: number): number => {
+    const raw = params.get(key);
+    if (raw == null || raw.trim().length === 0) {
+      return fallback;
+    }
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
 
-  let lonMin = readNumber("lonMin", -170);
-  let lonMax = readNumber("lonMax", 170);
-  if (lonMin > lonMax) {
-    [lonMin, lonMax] = [lonMax, lonMin];
-  }
+  const stepSource = params.has("stepDeg") ? "stepDeg" : params.has("speed") ? "speed" : null;
+  const stepDefault = 0.4;
+  const stepDegRaw = stepSource ? readNumber(stepSource, stepDefault) : stepDefault;
+  const stepDeg = Math.max(SERPENTINE_MIN_STEP_DEG, Math.abs(stepDegRaw));
 
-  let latMin = clampLatitude(readNumber("latMin", -60));
-  let latMax = clampLatitude(readNumber("latMax", 60));
+  const latStepRaw = readNumber("latStepDeg", 5);
+  const latStepDeg = Math.max(SERPENTINE_MIN_LAT_STEP_DEG, Math.abs(latStepRaw));
+
+  const pauseMs = Math.max(0, Math.round(readNumber("pauseMs", readNumber("pause", 500))));
+
+  const loopsRaw = readInt("loops", -1);
+  const loops = Number.isFinite(loopsRaw) ? loopsRaw : -1;
+
+  let latMin = clampLatitude(readNumber("latMin", SERPENTINE_DEFAULT_LAT_MIN));
+  let latMax = clampLatitude(readNumber("latMax", SERPENTINE_DEFAULT_LAT_MAX));
   if (latMin > latMax) {
     [latMin, latMax] = [latMax, latMin];
   }
 
-  const speedSecRaw = readNumber("speed", 0.8);
-  const speedSec = speedSecRaw > 0 ? speedSecRaw : 0;
-  const pauseMsRaw = readNumber("pause", 800);
-  const pauseMs = Math.max(0, Math.round(pauseMsRaw));
-  const dirParam = params.get("dir");
-  const initialDirection = dirParam && dirParam.toUpperCase() === "W" ? "W" : "E";
+  const dirParam = params.get("dir") ?? params.get("direction");
+  const startDirection: SerpentineDirection =
+    dirParam && dirParam.toUpperCase() === "W" ? "W" : "E";
+
   const reducedMotionParam = parseBooleanParam(params.get("reducedMotion"));
   const reducedMotion = reducedMotionParam === true;
   const forceParam = parseBooleanParam(params.get("force"));
@@ -308,57 +328,64 @@ const parseDiagnosticsAutopanConfig = (): DiagnosticsAutopanConfig => {
   return {
     mode: "serpentine",
     config: {
-      cols,
-      rows,
-      lonMin,
-      lonMax,
+      stepDeg,
+      latStepDeg,
+      pauseMs,
+      loops,
+      reducedMotion,
+      force,
       latMin,
       latMax,
-      speedSec,
-      pauseMs,
-      reducedMotion,
-      initialDirection,
-      force
+      startDirection
     }
   };
 };
 
-const generateSerpentinePoints = (config: SerpentineConfig): SerpentinePoint[] => {
-  const points: SerpentinePoint[] = [];
-  const { rows, cols, lonMin, lonMax, latMin, latMax, initialDirection } = config;
-  const lonStep = cols > 1 ? (lonMax - lonMin) / (cols - 1) : 0;
-  const latStep = rows > 1 ? (latMax - latMin) / (rows - 1) : 0;
-  const fallbackLon = (lonMin + lonMax) / 2;
-  const fallbackLat = (latMin + latMax) / 2;
-  const initialEast = initialDirection === "E";
-
-  for (let row = 0; row < rows; row += 1) {
-    const goEast = row % 2 === 0 ? initialEast : !initialEast;
-    const lat = rows > 1 ? latMin + latStep * row : fallbackLat;
-    for (let step = 0; step < cols; step += 1) {
-      const column = goEast ? step : cols - 1 - step;
-      const lon = cols > 1 ? lonMin + lonStep * column : fallbackLon;
-      points.push({ row, column, lon, lat });
-    }
+const buildSerpentineBands = (
+  latMin: number,
+  latMax: number,
+  latStepDeg: number
+): number[] => {
+  const bands: number[] = [];
+  if (!Number.isFinite(latMin) || !Number.isFinite(latMax) || latStepDeg <= 0) {
+    return bands;
   }
 
-  return points;
+  const safeStep = Math.max(SERPENTINE_MIN_LAT_STEP_DEG, latStepDeg);
+  const epsilon = safeStep / 1000;
+  let cursor = latMin;
+  while (cursor <= latMax + epsilon) {
+    bands.push(clampLatitude(cursor));
+    cursor += safeStep;
+  }
+  const last = bands[bands.length - 1];
+  if (!bands.length || Math.abs(last - latMax) > epsilon) {
+    bands.push(clampLatitude(latMax));
+  }
+
+  return bands;
 };
 
 const createSerpentineRunner = (
   map: maplibregl.Map,
   config: SerpentineConfig,
-  onCenterChange?: (lon: number, lat: number) => void
+  onStep?: (step: SerpentineStep) => void
 ): SerpentineRunner | null => {
-  const points = generateSerpentinePoints(config);
-  if (!points.length) {
+  const bands = buildSerpentineBands(config.latMin, config.latMax, config.latStepDeg);
+  if (!bands.length) {
     return null;
   }
 
+  const speedDeg = Math.max(SERPENTINE_MIN_STEP_DEG, config.stepDeg);
   let cancelled = false;
   let timeoutId: number | null = null;
   let frameId: number | null = null;
-  let index = 0;
+  let bandIndex = 0;
+  let direction: SerpentineDirection = config.startDirection;
+  let lon = direction === "E" ? LON_MIN : LON_MAX;
+  let loopsRemaining = config.loops;
+  const infiniteLoops = loopsRemaining < 0;
+  let lastAggregateLog = 0;
 
   const clearTimers = () => {
     if (timeoutId != null) {
@@ -368,6 +395,27 @@ const createSerpentineRunner = (
     if (frameId != null) {
       cancelAnimationFrame(frameId);
       frameId = null;
+    }
+  };
+
+  const dispatchStep = (step: SerpentineStep) => {
+    onStep?.(step);
+    try {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent(GEO_SCOPE_AUTOPAN_EVENT, {
+            detail: {
+              mode: "serpentine",
+              lat: step.lat,
+              lon: step.lon,
+              band: step.band,
+              direction: step.direction
+            }
+          })
+        );
+      }
+    } catch {
+      // Ignore event dispatch failures in non-browser environments.
     }
   };
 
@@ -395,39 +443,106 @@ const createSerpentineRunner = (
     }, delayMs);
   };
 
+  const computeDuration = (distanceDeg: number): number => {
+    if (config.reducedMotion) {
+      return Math.max(16, Math.round((distanceDeg / speedDeg) * 1000));
+    }
+    const candidate = Math.round((distanceDeg / speedDeg) * 1000);
+    return clamp(candidate, SERPENTINE_MIN_DURATION_MS, SERPENTINE_MAX_DURATION_MS);
+  };
+
+  const logStep = (step: SerpentineStep) => {
+    const now = Date.now();
+    console.info("[auto-pan:step]", {
+      mode: "serpentine",
+      lat: Number(step.lat.toFixed(4)),
+      lon: Number(step.lon.toFixed(4)),
+      band: step.band,
+      direction: step.direction,
+      stepDeg: speedDeg,
+      latStepDeg: config.latStepDeg
+    });
+    if (!lastAggregateLog || now - lastAggregateLog >= AUTOPAN_LOG_INTERVAL_MS) {
+      lastAggregateLog = now;
+      console.info(
+        `[diagnostics:auto-pan] lat=${step.lat.toFixed(4)}, lon=${step.lon.toFixed(4)}, band=${step.band}`
+      );
+    }
+  };
+
+  const advanceBand = () => {
+    if (bandIndex >= bands.length - 1) {
+      if (!infiniteLoops) {
+        loopsRemaining -= 1;
+        if (loopsRemaining < 0) {
+          loopsRemaining = 0;
+        }
+        if (loopsRemaining === 0) {
+          return false;
+        }
+      }
+      bandIndex = 0;
+      direction = "E";
+      lon = LON_MIN;
+      return true;
+    }
+
+    bandIndex += 1;
+    direction = direction === "E" ? "W" : "E";
+    lon = direction === "E" ? LON_MIN : LON_MAX;
+    return true;
+  };
+
   const runStep = () => {
     if (cancelled) {
       return;
     }
-    const point = points[index];
-    if (!point) {
-      index = 0;
-      scheduleNext(0);
+    if (!infiniteLoops && loopsRemaining === 0) {
+      cancel();
       return;
     }
 
-    const normalizedLon = normalizeLng(point.lon);
-    onCenterChange?.(normalizedLon, point.lat);
-    console.log(
-      `[auto-pan:step] mode=serpentine r=${point.row} c=${point.column} center=[${normalizedLon.toFixed(4)},${point.lat.toFixed(4)}]`
-    );
-    const center: [number, number] = [normalizedLon, point.lat];
+    const targetLon = direction === "E" ? LON_MAX : LON_MIN;
+    const remaining = Math.abs(targetLon - lon);
+    const stepDistance = remaining <= speedDeg ? remaining : speedDeg;
+    const nextLon = direction === "E" ? lon + stepDistance : lon - stepDistance;
+    const bandLat = bands[bandIndex];
+    const step: SerpentineStep = {
+      lon: normalizeLng(nextLon),
+      lat: bandLat,
+      band: bandIndex,
+      direction: direction
+    };
 
-    index = (index + 1) % points.length;
+    const duration = computeDuration(stepDistance || speedDeg);
+
+    dispatchStep(step);
+    logStep(step);
 
     if (config.reducedMotion) {
-      map.jumpTo({ center });
-      scheduleNext(config.pauseMs);
+      map.jumpTo({ center: [step.lon, step.lat] });
+    } else {
+      map.easeTo({
+        center: [step.lon, step.lat],
+        duration,
+        easing: (t: number) => t,
+        essential: true
+      });
+    }
+
+    lon = direction === "E" ? Math.min(targetLon, nextLon) : Math.max(targetLon, nextLon);
+
+    const reachedEnd = Math.abs(targetLon - lon) <= 1e-3;
+    if (reachedEnd) {
+      if (!advanceBand()) {
+        cancel();
+        return;
+      }
+      scheduleNext(duration + config.pauseMs);
       return;
     }
 
-    const durationMs = Math.max(0, config.speedSec * 1000);
-    map.easeTo({
-      center,
-      duration: durationMs,
-      easing: (t: number) => t
-    });
-    scheduleNext(durationMs + config.pauseMs);
+    scheduleNext(duration);
   };
 
   const cancel = () => {
@@ -840,9 +955,9 @@ export default function GeoScopeMap() {
 
       cancelSerpentine();
 
-      const runner = createSerpentineRunner(map, config, (lon, lat) => {
-        viewStateRef.current.lng = lon;
-        viewStateRef.current.lat = lat;
+      const runner = createSerpentineRunner(map, config, (step) => {
+        viewStateRef.current.lng = step.lon;
+        viewStateRef.current.lat = step.lat;
         viewStateRef.current.bearing = 0;
       });
 
@@ -968,14 +1083,14 @@ export default function GeoScopeMap() {
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent(GEO_SCOPE_AUTOPAN_EVENT, {
-            detail: { bearing }
+            detail: { mode: "spin", bearing }
           })
         );
       }
       const lastLog = lastLogTimeRef.current;
       if (force || !lastLog || timestamp - lastLog >= AUTOPAN_LOG_INTERVAL_MS) {
         lastLogTimeRef.current = timestamp;
-        console.log(`[diagnostics:auto-pan] bearing=${bearing.toFixed(1)}`);
+        console.info(`[diagnostics:auto-pan] bearing=${bearing.toFixed(1)}`);
       }
     };
 
