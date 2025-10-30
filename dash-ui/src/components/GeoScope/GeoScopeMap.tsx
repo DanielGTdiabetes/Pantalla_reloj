@@ -882,19 +882,6 @@ export default function GeoScopeMap() {
     };
 
     const recomputeAutopanActivation = () => {
-      if (autopanModeRef.current !== "rotate") {
-        autopanEnabledRef.current = false;
-        stopPan();
-        if (autopanModeRef.current === "serpentine") {
-          ensureSerpentine();
-        } else {
-          cancelSerpentine();
-        }
-        return;
-      }
-
-      cancelSerpentine();
-
       const forcedOff = autopanForcedOffRef.current;
       const kioskDetected = kioskModeRef.current;
       const motionForced = motionForcedRef.current || autopanForcedOnRef.current;
@@ -909,6 +896,23 @@ export default function GeoScopeMap() {
           shouldRun = false;
         }
       }
+
+      if (autopanModeRef.current !== "rotate") {
+        autopanEnabledRef.current = false;
+        stopPan();
+        if (autopanModeRef.current === "serpentine") {
+          if (shouldRun) {
+            ensureSerpentine();
+          } else {
+            cancelSerpentine();
+          }
+        } else {
+          cancelSerpentine();
+        }
+        return;
+      }
+
+      cancelSerpentine();
 
       autopanEnabledRef.current = shouldRun;
 
