@@ -721,18 +721,6 @@ export default function GeoScopeMap() {
       }, FALLBACK_TICK_INTERVAL_MS);
     };
 
-    const startPan = () => {
-      if (animationFrameRef.current != null) return;
-      if (!mapRef.current) return;
-
-      lastFrameTimeRef.current = null;
-      lastRepaintTimeRef.current = null;
-      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
-      lastLogTimeRef.current = now - AUTOPAN_LOG_INTERVAL_MS;
-      animationFrameRef.current = requestAnimationFrame(stepPan);
-      ensureFallbackTimer();
-    };
-
     const handleDprChange = () => {
       safeFit();
       const previous = dprMediaRef.current;

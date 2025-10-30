@@ -24,6 +24,19 @@ const parseNumber = (value: string | null | undefined): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
+type NodeProcess = { env?: { NODE_ENV?: string } };
+
+const getNodeProcess = (): NodeProcess | undefined => {
+  if (typeof globalThis === "undefined") {
+    return undefined;
+  }
+  const candidate = (globalThis as { process?: NodeProcess }).process;
+  if (candidate && typeof candidate === "object") {
+    return candidate;
+  }
+  return undefined;
+};
+
 const getSearchParams = (): URLSearchParams => {
   if (typeof window === "undefined") {
     return new URLSearchParams();
@@ -83,8 +96,9 @@ const isProduction = (): boolean => {
   if (typeof import.meta !== "undefined" && typeof import.meta.env !== "undefined") {
     return Boolean(import.meta.env.PROD);
   }
-  if (typeof process !== "undefined" && typeof process.env?.NODE_ENV === "string") {
-    return process.env.NODE_ENV === "production";
+  const nodeProcess = getNodeProcess();
+  if (typeof nodeProcess?.env?.NODE_ENV === "string") {
+    return nodeProcess.env.NODE_ENV === "production";
   }
   return false;
 };
@@ -127,11 +141,13 @@ const userAgent = typeof navigator !== "undefined" ? navigator.userAgent : "";
 const chromeLike = /Chrome/i.test(userAgent);
 const kioskClassFlag = /--class=pantalla-kiosk/i.test(userAgent);
 
+const kioskEnabledRuntime = kioskWindow?.__KIOSK__?.ENABLED;
+
 const initialKioskLikely = Boolean(
-  kioskWindow?.__KIOSK__?.ENABLED ??
-    kioskModeStored ||
-    kioskEnabledFromEnv() ||
-    (isProduction() && chromeLike && !kioskClassFlag)
+  kioskEnabledRuntime ??
+    (kioskModeStored ||
+      kioskEnabledFromEnv() ||
+      (isProduction() && chromeLike && !kioskClassFlag))
 );
 
 const state = {
