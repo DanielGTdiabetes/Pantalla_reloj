@@ -48,11 +48,12 @@ Pantalla_reloj/
   movimiento.
 - Flags de runtime disponibles vía `window.location.search` o `localStorage`:
   - `autopan=1|0` fuerza la animación ON/OFF.
-  - `reduced=1|0` controla si se respeta `prefers-reduced-motion` (`0` la ignora).
+  - `force=1|0` ignora heurísticas y activa/desactiva el autopan incluso en escritorio.
+  - `reducedMotion=1|0` (alias heredado `reduced`) indica si se respeta `prefers-reduced-motion`.
   - `speed=<grados/segundo>` fija la velocidad sin recompilar (por defecto ~0.1 °/s).
 - `/diagnostics/auto-pan` monta solo el mapa a pantalla completa con
-  `autopan=1&reduced=0` y muestra un banner superior con el bearing actual, ideal para
-  comprobar rápidamente el kiosk.
+  `force=1&reducedMotion=0` y muestra un banner superior con el bearing actual, ideal
+  para comprobar rápidamente el kiosk.
 
 ### Nginx (reverse proxy `/api`)
 
@@ -74,6 +75,32 @@ chmod +x scripts/verify_api.sh
 
 Confirma que `nginx -t` pasa y que `/api/health` y `/api/config` responden vía
 Nginx antes de dar por finalizada la actualización.
+
+### Checks posteriores a install.sh
+
+Tras ejecutar `sudo bash scripts/install.sh` valida el estado final con:
+
+```bash
+systemctl is-active pantalla-openbox@dani
+systemctl is-active pantalla-kiosk-chromium@dani
+curl -s http://127.0.0.1/ui-healthz
+systemctl show pantalla-kiosk-chromium@dani -p Environment
+pantalla-kiosk-verify
+```
+
+- `curl` debe devolver `{"ui":"ok"}` (HTTP 200) gracias al fallback SPA.
+- `systemctl show ... -p Environment` debe listar un único `KIOSK_URL=...` definido en
+  `/etc/systemd/system/pantalla-kiosk-chromium@dani.service.d/override.conf`.
+- `pantalla-kiosk-verify` debe terminar con código 0; cualquier resumen diferente a
+  `ok` merece revisión antes de cerrar el despliegue.
+
+### Wi-Fi por defecto
+
+`install.sh` crea `/etc/pantalla-reloj/wifi.conf` con `WIFI_INTERFACE=wlp2s0` para
+uniformar la configuración inalámbrica. Comprueba la interfaz presente en el
+equipo con `nmcli device status` y edita el archivo si usas otro nombre (p. ej.
+`wlan0`). Recarga cualquier script/servicio dependiente tras modificar la
+variable.
 
 ### Build estable (guardarraíles Node/npm)
 
@@ -167,6 +194,29 @@ sudo systemctl status pantalla-xorg.service pantalla-openbox@dani.service \
 DISPLAY=:0 xrandr --query
 DISPLAY=:0 wmctrl -lx
 ```
+
+Para un volcado rápido de entorno y bearings ejecuta
+`sudo /usr/local/bin/diag_kiosk.sh` (acepta el usuario como argumento opcional).
+El script muestra las variables efectivas del servicio, la línea de comandos de
+Chromium y retransmite durante 20 s las trazas `diagnostics:auto-pan` desde
+`journalctl`.
+
+#### Modo diagnóstico del kiosk
+
+Para forzar temporalmente la ruta `/diagnostics/auto-pan` (útil al ajustar el
+autopan) edita el override de systemd y reinicia el servicio:
+
+```bash
+sudoedit /etc/systemd/system/pantalla-kiosk-chromium@dani.service.d/override.conf
+# Sustituye/añade:
+# Environment=KIOSK_URL=http://127.0.0.1/diagnostics/auto-pan?force=1&reducedMotion=0
+sudo systemctl daemon-reload
+sudo systemctl restart pantalla-kiosk-chromium@dani.service
+```
+
+Comprueba el valor activo con
+`systemctl show pantalla-kiosk-chromium@dani -p Environment` y revierte la URL a
+`http://127.0.0.1/` cuando finalices la prueba.
 
 ## Instalación
 

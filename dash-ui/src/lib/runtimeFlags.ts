@@ -77,6 +77,16 @@ const readBooleanFlag = (key: string): boolean | undefined => {
   return parseBoolean(fromStorage);
 };
 
+const readBooleanFlags = (...keys: string[]): boolean | undefined => {
+  for (const key of keys) {
+    const value = readBooleanFlag(key);
+    if (typeof value === "boolean") {
+      return value;
+    }
+  }
+  return undefined;
+};
+
 const readNumberFlag = (key: string): number | undefined => {
   const params = getSearchParams();
   const fromQuery = parseNumber(params.get(key));
@@ -189,13 +199,14 @@ const ensureKioskProbe = (): Promise<boolean> => {
   return state.kioskProbePromise;
 };
 
-const getAutopanOverride = (): boolean | undefined => readBooleanFlag("autopan");
+const getAutopanOverride = (): boolean | undefined =>
+  readBooleanFlags("force", "autopan");
+
 const getReducedOverride = (): boolean | undefined => {
-  const explicit = readBooleanFlag("reduced");
   if (typeof kioskWindow?.__KIOSK__?.REDUCED_MOTION === "boolean") {
     return kioskWindow.__KIOSK__!.REDUCED_MOTION;
   }
-  return explicit;
+  return readBooleanFlags("reducedMotion", "reduced");
 };
 
 export const kioskRuntime = {

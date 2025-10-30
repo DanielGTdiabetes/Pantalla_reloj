@@ -8,13 +8,14 @@ STATE_ROOT="/var/lib/pantalla-reloj"
 KIOSK_ENV_FILE="${STATE_ROOT}/state/kiosk.env"
 TARGET_USER="${VERIFY_USER:-${SUDO_USER:-$(id -un)}}"
 
-declare -r PY_VALIDATE_UI='import json, sys; from pathlib import Path; body = Path(sys.argv[1]).read_text(); payload = json.loads(body); sys.exit(0) if payload.get("ui") == "ok" else sys.exit(1)'
-
-declare -r PY_AUTOPAN_DELTA='import sys; start = float(sys.argv[1]); end = float(sys.argv[2]); delta = abs(end - start); sys.exit(1) if delta < 0.1 else print(f"{delta:.2f}")'
-
 log() {
   printf '[pantalla-kiosk-verify] %s\n' "$*"
 }
+
+if ! command -v python3 >/dev/null 2>&1; then
+  printf '[pantalla-kiosk-verify] python3 requerido pero no disponible\n' >&2
+  exit 1
+fi
 
 RESULTS=()
 record_result() {
@@ -55,7 +56,11 @@ check_ui_health() {
     record_result "ui" "http${http_code}"
     return 1
   fi
-  if ! python3 -c "$PY_VALIDATE_UI" "$tmp" >/dev/null 2>&1; then
+  if ! python3 -c 'import json, sys
+from pathlib import Path
+payload = json.loads(Path(sys.argv[1]).read_text())
+sys.exit(0 if payload.get("ui") == "ok" else 1)
+' "$tmp" >/dev/null 2>&1; then
     local body
     body="$(<"$tmp")"
     rm -f "$tmp"
@@ -144,7 +149,7 @@ maybe_restart_for_swiftshader() {
     return 0
   fi
 
-  local error_pattern='Automatic fallback to software WebGL has been deprecated|GPU process isn''t usable|GpuProcessHostUIShim|ERROR:gpu_init'
+  local error_pattern='Automatic fallback to software WebGL has been deprecated|GPU process isn''t usable|GpuProcessHostUIShim: The GPU process has crashed|GpuProcessHostUIShim|ERROR:gpu_init'
   if ! grep -Eq "$error_pattern" <<<"$journal_output"; then
     record_result "webgl" "clean"
     return 0
@@ -194,7 +199,14 @@ check_autopan_rotation() {
   fi
 
   local delta
-  if ! delta="$(python3 -c "$PY_AUTOPAN_DELTA" "$first" "$last" 2>/dev/null)"; then
+  if ! delta="$(python3 -c 'import sys
+start = float(sys.argv[1])
+end = float(sys.argv[2])
+delta = abs(end - start)
+if delta < 0.1:
+    sys.exit(1)
+print(f"{delta:.2f}")
+' "$first" "$last" 2>/dev/null)"; then
     record_result "autopan" "delta-too-low"
     return 1
   fi

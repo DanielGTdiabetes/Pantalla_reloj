@@ -611,7 +611,7 @@ export default function GeoScopeMap() {
       const lastLog = lastLogTimeRef.current;
       if (force || !lastLog || timestamp - lastLog >= AUTOPAN_LOG_INTERVAL_MS) {
         lastLogTimeRef.current = timestamp;
-        console.log(`[diagnostics:auto-pan] bearing=${bearing.toFixed(2)}`);
+        console.log(`[diagnostics:auto-pan] bearing=${bearing.toFixed(1)}`);
       }
     };
 

@@ -14,6 +14,14 @@ const ensureDiagnosticsParams = () => {
     params.set("autopan", "1");
     changed = true;
   }
+  if (!params.has("force")) {
+    params.set("force", "1");
+    changed = true;
+  }
+  if (!params.has("reducedMotion")) {
+    params.set("reducedMotion", "0");
+    changed = true;
+  }
   if (!params.has("reduced")) {
     params.set("reduced", "0");
     changed = true;

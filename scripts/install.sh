@@ -94,6 +94,8 @@ KIOSK_LOG_DIR=/var/log/pantalla
 INSTALL_LOG=/tmp/install.log
 WEB_ROOT=/var/www/html
 WEBROOT_MANIFEST="${STATE_RUNTIME}/webroot-manifest"
+WIFI_CONFIG_SRC="${REPO_ROOT}/deploy/network/wifi.conf"
+WIFI_CONFIG_DST="/etc/pantalla-reloj/wifi.conf"
 KIOSK_BIN_SRC="${REPO_ROOT}/usr/local/bin/pantalla-kiosk"
 KIOSK_BIN_DST=/usr/local/bin/pantalla-kiosk
 CHROMIUM_KIOSK_BIN_SRC="${REPO_ROOT}/usr/local/bin/pantalla-kiosk-chromium"
@@ -143,6 +145,17 @@ if [[ -f "${PROFILE_DIR_SRC}/desktop-id" ]]; then
   install -o "$USER_NAME" -g "$USER_NAME" -m 0600 "${PROFILE_DIR_SRC}/desktop-id" "${PROFILE_DIR_DST}/desktop-id"
 fi
 chown -R "$USER_NAME:$USER_NAME" "$STATE_DIR"
+
+install -d -m 0755 /etc/pantalla-reloj
+if [[ -f "$WIFI_CONFIG_SRC" ]]; then
+  if [[ ! -f "$WIFI_CONFIG_DST" ]]; then
+    install -m 0644 "$WIFI_CONFIG_SRC" "$WIFI_CONFIG_DST"
+  elif ! grep -q '^WIFI_INTERFACE=' "$WIFI_CONFIG_DST"; then
+    printf 'WIFI_INTERFACE=wlp2s0\n' >>"$WIFI_CONFIG_DST"
+  fi
+  wifi_iface="$(grep -E '^WIFI_INTERFACE=' "$WIFI_CONFIG_DST" | tail -n1 | cut -d= -f2- | tr -d '[:space:]')"
+  SUMMARY+=("[install] Wi-Fi interface en ${WIFI_CONFIG_DST}: ${wifi_iface:-<no definida>}")
+fi
 
 log_info "Installing base packages"
 APT_PACKAGES=(
@@ -302,6 +315,13 @@ if ! bash -n /usr/local/bin/pantalla-kiosk-verify; then
 fi
 SUMMARY+=("[install] verificador de kiosk instalado en /usr/local/bin/pantalla-kiosk-verify")
 
+install -D -m 0755 "$REPO_ROOT/scripts/diag_kiosk.sh" /usr/local/bin/diag_kiosk.sh
+if ! bash -n /usr/local/bin/diag_kiosk.sh; then
+  echo "[ERROR] Syntax check failed for diag_kiosk.sh" >&2
+  exit 1
+fi
+SUMMARY+=("[install] diag_kiosk.sh disponible en /usr/local/bin/diag_kiosk.sh")
+
 install -D -m 0755 "$REPO_ROOT/scripts/kiosk-url-helper" /usr/local/bin/kiosk-ui
 install -D -m 0755 "$REPO_ROOT/scripts/kiosk-url-helper" /usr/local/bin/kiosk-diag
 for helper in /usr/local/bin/kiosk-ui /usr/local/bin/kiosk-diag; do
@@ -438,17 +458,29 @@ install -D -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk-watchdog@.service.d/10-rol
   /etc/systemd/system/pantalla-kiosk-watchdog@.service.d/10-rollback.conf
 
 DROPIN_DIR="/etc/systemd/system/pantalla-kiosk-chromium@${USER_NAME}.service.d"
+DROPIN_OVERRIDE_SRC="${REPO_ROOT}/deploy/systemd/pantalla-kiosk-chromium@dani.service.d/override.conf"
+DROPIN_OVERRIDE_DST="${DROPIN_DIR}/override.conf"
 install -d -m 0755 "$DROPIN_DIR"
-cat >"${DROPIN_DIR}/override.conf" <<'EOF'
-[Service]
-ExecStart=
-ExecStart=/usr/local/bin/pantalla-kiosk-chromium
-EOF
-cat >"${DROPIN_DIR}/10-kiosk-url.conf" <<EOF
-[Service]
-Environment=KIOSK_URL=${ACTIVE_KIOSK_URL}
-EOF
-SUMMARY+=("[install] drop-in KIOSK_URL actualizado (${ACTIVE_KIOSK_URL})")
+
+if [[ -d "$DROPIN_DIR" ]]; then
+  while IFS= read -r -d '' dropin; do
+    if grep -q 'KIOSK_URL' "$dropin"; then
+      rm -f "$dropin"
+    fi
+  done < <(find "$DROPIN_DIR" -maxdepth 1 -type f ! -name 'override.conf' -print0 2>/dev/null)
+fi
+
+install -D -m 0644 "$DROPIN_OVERRIDE_SRC" "$DROPIN_OVERRIDE_DST"
+
+escaped_url="$(printf '%s\n' "$ACTIVE_KIOSK_URL" | sed 's/[\/&]/\\&/g')"
+if grep -q '^Environment=KIOSK_URL=' "$DROPIN_OVERRIDE_DST"; then
+  sed -i "s#^Environment=KIOSK_URL=.*#Environment=KIOSK_URL=${escaped_url}#" "$DROPIN_OVERRIDE_DST"
+else
+  printf 'Environment=KIOSK_URL=%s\n' "$ACTIVE_KIOSK_URL" >>"$DROPIN_OVERRIDE_DST"
+fi
+
+log_info "KIOSK_URL definido en ${DROPIN_OVERRIDE_DST}"
+SUMMARY+=("[install] override kiosk-chromium actualizado (${ACTIVE_KIOSK_URL})")
 
 if [[ $units_changed -eq 1 ]]; then
   log_info "Systemd units updated"
