@@ -38,7 +38,7 @@ export type MaptilerConfig = {
 export type MapConfig = {
   engine: "maplibre";
   style: "vector-dark" | "vector-light" | "vector-bright" | "raster-carto-dark" | "raster-carto-light";
-  provider: "maptiler" | "carto";
+  provider: "maptiler" | "osm";
   maptiler: MaptilerConfig;
   renderWorldCopies: boolean;
   interactive: boolean;
@@ -49,6 +49,11 @@ export type MapConfig = {
 };
 
 export type UIMapSettings = MapConfig;
+
+export type MapPreferences = {
+  provider: "maptiler" | "osm";
+  maptiler_api_key: string | null;
+};
 
 export type RotationConfig = {
   enabled: boolean;
@@ -78,6 +83,7 @@ export type AIConfig = {
 
 export type AppConfig = {
   display: DisplayConfig;
+  map: MapPreferences;
   ui: UIConfig;
   news: NewsConfig;
   ai: AIConfig;

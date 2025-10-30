@@ -37,7 +37,14 @@ const MAP_STYLE_OPTIONS: AppConfig["ui"]["map"]["style"][] = [
   "raster-carto-dark",
   "raster-carto-light",
 ];
-const MAP_PROVIDER_OPTIONS: AppConfig["ui"]["map"]["provider"][] = ["maptiler", "carto"];
+const MAP_PROVIDER_OPTIONS: AppConfig["ui"]["map"]["provider"][] = ["maptiler", "osm"];
+const MAP_BACKEND_PROVIDERS: AppConfig["map"]["provider"][] = ["maptiler", "osm"];
+const MAP_PROVIDER_LABELS: Record<AppConfig["map"]["provider"], string> = {
+  maptiler: "MapTiler",
+  osm: "OpenStreetMap",
+};
+const MAPTILER_KEY_PATTERN = /^[A-Za-z0-9._-]+$/;
+const MAPTILER_DOCS_TEXT = "Obtén la clave en docs.maptiler.com/cloud/api-keys";
 const DEFAULT_PANELS = DEFAULT_CONFIG.ui.rotation.panels;
 const CINEMA_BAND_COUNT = DEFAULT_CONFIG.ui.map.cinema.bands.length;
 
@@ -204,6 +211,23 @@ const validateConfig = (config: AppConfig, supports: SchemaInspector["has"]): Fi
     }
   }
 
+  if (supports("map.provider")) {
+    if (!MAP_BACKEND_PROVIDERS.includes(config.map.provider)) {
+      errors["map.provider"] = "Selecciona un proveedor soportado";
+    }
+  }
+
+  if (supports("map.maptiler_api_key")) {
+    if (config.map.provider === "maptiler") {
+      const key = config.map.maptiler_api_key ?? "";
+      if (!key.trim()) {
+        errors["map.maptiler_api_key"] = "Introduce la API key de MapTiler";
+      } else if (!MAPTILER_KEY_PATTERN.test(key.trim())) {
+        errors["map.maptiler_api_key"] = "La API key solo puede incluir letras, números, punto, guion y guion bajo";
+      }
+    }
+  }
+
   if (supports("ui.map.style")) {
     if (!MAP_STYLE_OPTIONS.includes(config.ui.map.style)) {
       errors["ui.map.style"] = "Selecciona un estilo compatible";
@@ -292,6 +316,7 @@ const ConfigPage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [newPanel, setNewPanel] = useState("");
+  const [showMaptilerKey, setShowMaptilerKey] = useState(false);
 
   const schemaInspector = useMemo(() => createSchemaInspector(schema ?? undefined), [schema]);
   const supports = useCallback((path: string) => schemaInspector.has(path), [schemaInspector]);
@@ -320,6 +345,7 @@ const ConfigPage: React.FC = () => {
   const refreshConfig = useCallback(async () => {
     const cfg = await getConfig();
     setForm(withConfigDefaults(cfg ?? undefined));
+    setShowMaptilerKey(false);
   }, []);
 
   const initialize = useCallback(async () => {
@@ -412,6 +438,7 @@ const ConfigPage: React.FC = () => {
     try {
       const saved = await saveConfig(form);
       setForm(withConfigDefaults(saved));
+      setShowMaptilerKey(false);
       setFieldErrors({});
       setBanner({ kind: "success", text: "Guardado" });
     } catch (error) {
@@ -523,11 +550,120 @@ const ConfigPage: React.FC = () => {
           </div>
         )}
 
+        {supports("map") && (
+          <div className="config-card">
+            <div>
+              <h2>Mapas</h2>
+              <p>Elige el proveedor y gestiona la API key que usa el kiosco.</p>
+            </div>
+            <div className="config-grid">
+              {supports("map.provider") && (
+                <div className="config-field">
+                  <label htmlFor="map_provider_backend">Proveedor</label>
+                  <select
+                    id="map_provider_backend"
+                    value={form.map.provider}
+                    disabled={disableInputs}
+                    onChange={(event) => {
+                      const provider = event.target.value as AppConfig["map"]["provider"];
+                      setForm((prev) => {
+                        const nextKey = provider === "maptiler" ? prev.map.maptiler_api_key : null;
+                        return {
+                          ...prev,
+                          map: {
+                            provider,
+                            maptiler_api_key: provider === "maptiler" ? nextKey : null,
+                          },
+                          ui: {
+                            ...prev.ui,
+                            map: {
+                              ...prev.ui.map,
+                              provider: provider as AppConfig["ui"]["map"]["provider"],
+                              maptiler: {
+                                ...prev.ui.map.maptiler,
+                                key: provider === "maptiler" ? (nextKey ?? prev.ui.map.maptiler.key ?? null) : null,
+                              },
+                            },
+                          },
+                        };
+                      });
+                      if (provider !== "maptiler") {
+                        setShowMaptilerKey(false);
+                        resetErrorsFor("map.maptiler_api_key");
+                      }
+                      resetErrorsFor("map.provider");
+                      resetErrorsFor("ui.map.provider");
+                    }}
+                  >
+                    {MAP_BACKEND_PROVIDERS.map((option) => (
+                      <option key={option} value={option}>
+                        {MAP_PROVIDER_LABELS[option]}
+                      </option>
+                    ))}
+                  </select>
+                  {renderHelp("Proveedor del mapa base del kiosco")}
+                  {renderFieldError("map.provider")}
+                  {renderFieldError("ui.map.provider")}
+                </div>
+              )}
+
+              {supports("map.maptiler_api_key") && form.map.provider === "maptiler" && (
+                <div className="config-field">
+                  <label htmlFor="maptiler_api_key">API key de MapTiler</label>
+                  <div className="config-field__inline">
+                    <input
+                      id="maptiler_api_key"
+                      type={showMaptilerKey ? "text" : "password"}
+                      autoComplete="off"
+                      value={form.map.maptiler_api_key ?? ""}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setForm((prev) => ({
+                          ...prev,
+                          map: {
+                            ...prev.map,
+                            maptiler_api_key: value,
+                          },
+                          ui: {
+                            ...prev.ui,
+                            map: {
+                              ...prev.ui.map,
+                              maptiler: {
+                                ...prev.ui.map.maptiler,
+                                key: value || null,
+                              },
+                            },
+                          },
+                        }));
+                        resetErrorsFor("map.maptiler_api_key");
+                        resetErrorsFor("ui.map.maptiler.key");
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="config-button"
+                      onClick={() => setShowMaptilerKey((prev) => !prev)}
+                      disabled={disableInputs}
+                    >
+                      {showMaptilerKey ? "Ocultar" : "Mostrar"}
+                    </button>
+                  </div>
+                  <span className="config-field__hint" title={MAPTILER_DOCS_TEXT}>
+                    {MAPTILER_DOCS_TEXT}
+                  </span>
+                  {renderFieldError("map.maptiler_api_key")}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {supports("ui.map") && (
           <div className="config-card">
             <div>
               <h2>Mapa</h2>
-              <p>Configura el estilo, proveedor y modo cine del mapa principal.</p>
+              <p>Configura el estilo y el modo cine del mapa principal.</p>
             </div>
             <div className="config-grid">
               {supports("ui.map.style") && (
@@ -553,57 +689,6 @@ const ConfigPage: React.FC = () => {
                   </select>
                   {renderHelp("Tema base del mapa (vector o raster)")}
                   {renderFieldError("ui.map.style")}
-                </div>
-              )}
-
-              {supports("ui.map.provider") && (
-                <div className="config-field">
-                  <label htmlFor="map_provider">Proveedor</label>
-                  <select
-                    id="map_provider"
-                    value={form.ui.map.provider}
-                    disabled={disableInputs}
-                    onChange={(event) => {
-                      updateForm("ui", {
-                        ...form.ui,
-                        map: { ...form.ui.map, provider: event.target.value as AppConfig["ui"]["map"]["provider"] },
-                      });
-                      resetErrorsFor("ui.map.provider");
-                    }}
-                  >
-                    {MAP_PROVIDER_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                  {renderHelp("Proveedor de teselas para el mapa")}
-                  {renderFieldError("ui.map.provider")}
-                </div>
-              )}
-
-              {supports("ui.map.maptiler.key") && (
-                <div className="config-field">
-                  <label htmlFor="maptiler_key">Clave MapTiler</label>
-                  <input
-                    id="maptiler_key"
-                    type="text"
-                    value={form.ui.map.maptiler.key ?? ""}
-                    disabled={disableInputs}
-                    onChange={(event) => {
-                      updateForm("ui", {
-                        ...form.ui,
-                        map: {
-                          ...form.ui.map,
-                          maptiler: {
-                            ...form.ui.map.maptiler,
-                            key: event.target.value || null,
-                          },
-                        },
-                      });
-                    }}
-                  />
-                  {renderHelp("Necesaria para MapTiler (vacío si usas Carto)")}
                 </div>
               )}
 
