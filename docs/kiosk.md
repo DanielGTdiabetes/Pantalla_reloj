@@ -10,24 +10,24 @@ Con esta configuración, al iniciar `pantalla-xorg.service` se obtiene un arranq
 
 Chromium se ejecuta desde el usuario normal y necesita la cookie real de Xauthority. Asegúrate de que `~/.Xauthority` exista y sea un archivo regular (`-rw-------`) perteneciente a `dani:dani`. El servicio de Xorg ya se inicia con `-auth /home/dani/.Xauthority`, por lo que no es necesario crear enlaces simbólicos en `/var/lib`.
 
-## Arranque determinista (X11 + Chromium)
+## Arranque determinista (X11 + navegador kiosk)
 
 ### Requisitos
 
 * `~/.Xauthority` debe ser un archivo normal (no un enlace simbólico), con permisos `-rw-------` y perteneciente a `dani:dani`.
-* El drop-in [`override.conf`](../systemd/pantalla-kiosk-chromium@dani.service.d/override.conf) fija `DISPLAY=:0` y `XAUTHORITY=/home/dani/.Xauthority` para `pantalla-kiosk-chromium@dani.service`.
+* `pantalla-kiosk@dani.service` fija `DISPLAY=:0`, `XAUTHORITY=/home/dani/.Xauthority`, `GDK_BACKEND=x11`, `GTK_USE_PORTAL=0`, `GIO_USE_PORTALS=0` y `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/<UID>/bus` consumiendo `/var/lib/pantalla-reloj/state/kiosk.env`.
 
 ### Pasos de verificación
 
 1. `journalctl -u pantalla-dash-backend@dani -n 50` → debe mostrar `Uvicorn running on http://127.0.0.1:8081` y responder `GET /api/health -> 200`.
-2. `systemctl status pantalla-kiosk-chromium@dani` → estado `active (running)` sin mensajes de “Authorization required” ni “Missing X server or $DISPLAY”.
-3. `DISPLAY=:0 XAUTHORITY=/home/dani/.Xauthority wmctrl -lx` → debe listar una ventana Chromium con clase `pantalla-kiosk`.
+2. `systemctl status pantalla-kiosk@dani` → estado `active (running)` sin mensajes de “Authorization required”, “Failed to connect to the bus” ni “Missing X server or $DISPLAY”.
+3. `DISPLAY=:0 XAUTHORITY=/home/dani/.Xauthority wmctrl -lx` → debe listar una ventana del navegador con clase `pantalla-kiosk`.
 
 ### Solución de problemas rápida
 
 * Mensajes “not a clean path” o “Authorization required”: recrea `~/.Xauthority` copiando `/var/lib/pantalla-reloj/.Xauthority` (`install -m 600 -o dani -g dani /var/lib/pantalla-reloj/.Xauthority /home/dani/.Xauthority`).
 * Backend sin iniciar: confirma que `pantalla-backend-launch` exporta `PYTHONPATH="/opt/pantalla-reloj"` y que Uvicorn apunta a `backend.main:app`.
-* Chromium sin ventana: valida que el drop-in aplique y que `DISPLAY`/`XAUTHORITY` correspondan al usuario.
+* Navegador sin ventana: revisa `/var/log/pantalla/browser-kiosk.log`, confirma que `kiosk.env` tenga rutas válidas y valida con `systemctl show pantalla-kiosk@dani -p Environment` que `DISPLAY`, `XAUTHORITY` y `DBUS_SESSION_BUS_ADDRESS` estén definidos.
 
 El watchdog (`pantalla-kiosk-watchdog@.timer`) permanece deshabilitado por defecto. Si se requiere, actívalo manualmente con:
 
@@ -40,19 +40,12 @@ sudo systemctl enable --now pantalla-kiosk-watchdog@dani.timer
 ```bash
 sudo systemctl enable --now pantalla-xorg.service
 sudo systemctl enable --now pantalla-openbox@dani.service
-sudo systemctl enable --now pantalla-kiosk-chromium@dani.service
+sudo systemctl enable --now pantalla-kiosk@dani.service
 ```
 
-El servicio [`pantalla-kiosk-chromium@.service`](../systemd/pantalla-kiosk-chromium@.service) ejecuta Chromium en modo kiosk con la clase de ventana `pantalla-kiosk`, sin ventanas emergentes de error y con la plataforma X11 forzada (`--ozone-platform=x11 --disable-gpu`).
+`pantalla-kiosk@.service` invoca `/usr/local/bin/pantalla-kiosk`, que prioriza Chromium y recurre a Firefox si no hay binario Chromium disponible. El perfil persistente vive en `/var/lib/pantalla-reloj/state/chromium-kiosk` y las trazas se escriben en `/var/log/pantalla/browser-kiosk.log`.
 
-### Escala de la interfaz
-
-La escala de Chromium se controla mediante la variable de entorno `CHROMIUM_SCALE` que por defecto vale `0.84`. Para ajustarla sin editar la unidad:
-
-```bash
-sudo systemctl set-environment CHROMIUM_SCALE=0.86
-sudo systemctl restart pantalla-kiosk-chromium@dani.service
-```
+Las variables `KIOSK_URL`, `CHROME_BIN_OVERRIDE`, `FIREFOX_BIN_OVERRIDE`, `CHROMIUM_PROFILE_DIR` y `FIREFOX_PROFILE_DIR` se definen en `/var/lib/pantalla-reloj/state/kiosk.env`. Tras cualquier cambio reinicia el servicio con `sudo systemctl restart pantalla-kiosk@dani`.
 
 ### Evitar ventanas duplicadas
 
@@ -71,4 +64,4 @@ Si hay más de una, ciérralas con `wmctrl -ic <ID>` y revisa que no existan otr
 
 ## Servicios opcionales
 
-El viejo servicio `pantalla-kiosk@.service` (Epiphany) permanece disponible pero está marcado como **deprecated** y no se habilita por defecto. De igual forma, `pantalla-portal@.service` no se activa automáticamente para evitar ventanas auxiliares; habilítalo manualmente sólo si es necesario.
+El wrapper legado `pantalla-kiosk-chromium@.service` permanece disponible para escenarios que aún dependan de la configuración anterior. También `pantalla-portal@.service` continúa deshabilitado por defecto para evitar ventanas auxiliares; habilítalo manualmente sólo si es necesario.

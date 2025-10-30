@@ -118,6 +118,8 @@ install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$KIOSK_LOG_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$LOG_DIR"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_RUNTIME"
+install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "${STATE_RUNTIME}/chromium-kiosk"
+install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "${STATE_RUNTIME}/firefox-kiosk"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$PROFILE_DIR_DST"
 KIOSK_ENV_FILE="${STATE_RUNTIME}/kiosk.env"
 DEFAULT_KIOSK_URL="http://127.0.0.1/"
@@ -127,10 +129,22 @@ if (( DIAG_MODE == 1 )); then
   ACTIVE_KIOSK_URL="$DIAG_KIOSK_URL"
   SUMMARY+=("[install] modo diagnóstico habilitado (${ACTIVE_KIOSK_URL})")
 fi
-printf 'KIOSK_URL=%s\n' "$ACTIVE_KIOSK_URL" >"$KIOSK_ENV_FILE"
-chown "$USER_NAME:$USER_NAME" "$KIOSK_ENV_FILE"
-chmod 0644 "$KIOSK_ENV_FILE"
-SUMMARY+=("[install] estado kiosk.env apuntando a ${ACTIVE_KIOSK_URL}")
+if [[ ! -f "$KIOSK_ENV_FILE" ]]; then
+  cat >"$KIOSK_ENV_FILE" <<EOF
+# Pantalla_reloj kiosk configuration
+KIOSK_URL=${ACTIVE_KIOSK_URL}
+CHROMIUM_PROFILE_DIR=/var/lib/pantalla-reloj/state/chromium-kiosk
+#FIREFOX_PROFILE_DIR=/var/lib/pantalla-reloj/state/firefox-kiosk
+#CHROME_BIN_OVERRIDE=
+#FIREFOX_BIN_OVERRIDE=
+EOF
+  chown "$USER_NAME:$USER_NAME" "$KIOSK_ENV_FILE"
+  chmod 0644 "$KIOSK_ENV_FILE"
+  SUMMARY+=("[install] kiosk.env inicializado en ${KIOSK_ENV_FILE}")
+else
+  log_info "Preservando kiosk.env existente (${KIOSK_ENV_FILE})"
+  SUMMARY+=("[install] kiosk.env preservado (sin cambios)")
+fi
 
 CHROMIUM_SNAP_BASE="$USER_HOME/snap/chromium/common/pantalla-reloj"
 CHROMIUM_HOME_DATA_DIR="${CHROMIUM_SNAP_BASE}/chromium"
@@ -183,8 +197,8 @@ apt-get update -y
 DEBIAN_FRONTEND=noninteractive apt-get install -y "${APT_PACKAGES[@]}"
 SUMMARY+=("[install] paquetes asegurados: ${APT_PACKAGES[*]}")
 
-log_info "Navegador seleccionado: chromium (modo kiosk)"
-SUMMARY+=("[install] navegador seleccionado=chromium")
+log_info "Navegador kiosk predeterminado: Chromium (fallback a Firefox si está disponible)"
+SUMMARY+=("[install] navegador kiosk predeterminado=chromium (fallback firefox)")
 
 ensure_node() {
   if command -v node >/dev/null 2>&1; then

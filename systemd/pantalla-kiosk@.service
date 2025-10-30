@@ -1,5 +1,5 @@
 [Unit]
-Description=Pantalla_reloj Kiosk (Firefox ESR) for user %i
+Description=Pantalla_reloj Kiosk Browser for user %i
 After=pantalla-openbox@%i.service pantalla-dash-backend@%i.service
 Wants=pantalla-openbox@%i.service pantalla-dash-backend@%i.service
 
@@ -10,8 +10,7 @@ Environment=XAUTHORITY=/home/%i/.Xauthority
 Environment=GDK_BACKEND=x11
 Environment=GTK_USE_PORTAL=0
 Environment=GIO_USE_PORTALS=0
-Environment=MOZ_USE_XINPUT2=1
-Environment=MOZ_DISABLE_SAFE_MODE_DIALOG=1
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
 EnvironmentFile=-/var/lib/pantalla-reloj/state/kiosk.env
 ExecStartPre=/bin/sh -lc 'xset -dpms; xset s off; xset s noblank || true'
 ExecStart=/usr/local/bin/pantalla-kiosk
