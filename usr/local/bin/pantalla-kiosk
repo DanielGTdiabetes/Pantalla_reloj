@@ -3,6 +3,8 @@ set -euo pipefail
 
 DEFAULT_ORIGIN="http://127.0.0.1"
 DEFAULT_URL="${DEFAULT_ORIGIN}/"
+DEFAULT_STATE_DIR="/var/lib/pantalla-reloj/state"
+DEFAULT_LOG_DIR="/var/log/pantalla"
 
 log() {
   printf '[pantalla-kiosk] %s\n' "$*" >&2
@@ -23,72 +25,196 @@ resolve_url() {
   printf '%s\n' "$candidate"
 }
 
-find_firefox() {
-  local candidate resolved
-  for candidate in firefox-esr firefox "$FIREFOX_BIN_OVERRIDE"; do
-    [[ -z "$candidate" ]] && continue
-    if command -v "$candidate" >/dev/null 2>&1; then
-      resolved="$(command -v "$candidate")"
-      printf '%s\n' "$resolved"
+resolve_binary() {
+  local candidate="$1"
+  if [[ -z "$candidate" ]]; then
+    return 1
+  fi
+  if [[ "$candidate" == */* ]]; then
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
       return 0
     fi
-  done
+    return 1
+  fi
+  if command -v "$candidate" >/dev/null 2>&1; then
+    printf '%s\n' "$(command -v "$candidate")"
+    return 0
+  fi
   return 1
 }
 
-prepare_profile() {
+find_chromium() {
+  local override
+  override="${CHROME_BIN_OVERRIDE:-${CHROMIUM_BIN_OVERRIDE:-}}"
+  if [[ -n "$override" ]]; then
+    if resolve_binary "$override"; then
+      return 0
+    fi
+    log "WARN: CHROME_BIN_OVERRIDE inválido (${override})"
+  fi
+
+  local -a candidates=(
+    chromium-browser
+    chromium
+    google-chrome-stable
+    google-chrome
+    /snap/bin/chromium
+    /usr/lib/chromium-browser/chromium-browser
+  )
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if resolve_binary "$candidate"; then
+      return 0
+    fi
+  done
+
+  local snap_candidate="/snap/chromium/current/usr/lib/chromium-browser/chrome"
+  if [[ -x "$snap_candidate" ]]; then
+    printf '%s\n' "$snap_candidate"
+    return 0
+  fi
+
+  return 1
+}
+
+find_firefox() {
+  local override
+  override="${FIREFOX_BIN_OVERRIDE:-}"
+  if [[ -n "$override" ]]; then
+    if resolve_binary "$override"; then
+      return 0
+    fi
+    log "WARN: FIREFOX_BIN_OVERRIDE inválido (${override})"
+  fi
+
+  local -a candidates=(firefox firefox-esr)
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if resolve_binary "$candidate"; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+prepare_dir() {
   local dir="$1"
   install -d -m 0700 "$dir"
 }
 
+prepare_log_dir() {
+  local dir="$1"
+  install -d -m 0755 "$dir" >/dev/null 2>&1 || true
+}
+
 kill_existing() {
-  if command -v pkill >/dev/null 2>&1; then
-    pkill -u "$(id -u)" -x firefox-esr >/dev/null 2>&1 || true
-    pkill -u "$(id -u)" -x firefox >/dev/null 2>&1 || true
-  fi
+  command -v pkill >/dev/null 2>&1 || return 0
+  local -a names=(
+    chromium
+    chromium-browser
+    chrome
+    google-chrome
+    google-chrome-stable
+    firefox
+    firefox-esr
+  )
+  local name
+  for name in "${names[@]}"; do
+    pkill -u "$(id -u)" -x "$name" >/dev/null 2>&1 || true
+  done
+}
+
+launch_chromium() {
+  local binary="$1" url="$2" profile_dir="$3" log_file="$4"
+  local -a cmd
+  cmd=(
+    "$binary"
+    --class=pantalla-kiosk
+    --kiosk
+    --no-first-run
+    --no-default-browser-check
+    --password-store=basic
+    "--user-data-dir=${profile_dir}"
+    "$url"
+  )
+
+  log "chromium_bin: ${binary}"
+  log "profile_dir: ${profile_dir}"
+  log "launch: ${cmd[*]}"
+  log "url: ${url}"
+
+  exec "${cmd[@]}" >>"$log_file" 2>&1
+}
+
+launch_firefox() {
+  local binary="$1" url="$2" profile_dir="$3" log_file="$4"
+  local -a cmd
+  cmd=(
+    "$binary"
+    --kiosk
+    --new-instance
+    --profile "$profile_dir"
+    --no-remote
+    "$url"
+  )
+
+  export MOZ_DISABLE_SAFE_MODE_DIALOG=1
+  export MOZ_USE_XINPUT2=1
+  export MOZ_CRASHREPORTER_DISABLE=1
+
+  log "firefox_bin: ${binary}"
+  log "profile_dir: ${profile_dir}"
+  log "launch: ${cmd[*]}"
+  log "url: ${url}"
+
+  exec "${cmd[@]}" >>"$log_file" 2>&1
 }
 
 main() {
   : "${DISPLAY:=:0}"
   : "${XAUTHORITY:?XAUTHORITY must be set}"
   : "${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"
+  : "${DBUS_SESSION_BUS_ADDRESS:=unix:path=/run/user/$(id -u)/bus}"
 
-  local raw_url
-  raw_url="${1:-${KIOSK_URL:-}}"
-  local target_url
-  target_url="$(resolve_url "$raw_url")"
-
-  local firefox
-  if ! firefox="$(find_firefox)"; then
-    log "ERROR: firefox-esr/firefox no disponible en PATH"
-    exit 1
-  fi
-
-  local state_base profile_dir log_dir
-  state_base="${PANTALLA_STATE_DIR:-/var/lib/pantalla-reloj/state}"
-  profile_dir="${FIREFOX_PROFILE_DIR:-${state_base}/firefox-kiosk}"
-  log_dir="${PANTALLA_KIOSK_LOG_DIR:-/var/log/pantalla}"
-
-  prepare_profile "$profile_dir"
-  install -d -m 0755 "$log_dir" >/dev/null 2>&1 || true
-
-  kill_existing
-
-  export MOZ_DISABLE_SAFE_MODE_DIALOG=1
-  export MOZ_USE_XINPUT2=1
-  export MOZ_LOG_FILE="${log_dir}/firefox-kiosk.log"
-  export MOZ_CRASHREPORTER_DISABLE=1
   export GTK_USE_PORTAL="${GTK_USE_PORTAL:-0}"
   export GIO_USE_PORTALS="${GIO_USE_PORTALS:-0}"
   export GDK_BACKEND="${GDK_BACKEND:-x11}"
 
-  local -a cmd
-  cmd=("${firefox}" --kiosk --new-instance --profile "$profile_dir" --no-remote "$target_url")
+  local raw_url target_url
+  raw_url="${1:-${KIOSK_URL:-}}"
+  target_url="$(resolve_url "$raw_url")"
 
-  log "launch: ${cmd[*]}"
-  log "url: ${target_url}"
+  local state_base
+  state_base="${PANTALLA_STATE_DIR:-${DEFAULT_STATE_DIR}}"
 
-  exec "${cmd[@]}"
+  local chromium_profile firefox_profile
+  chromium_profile="${CHROMIUM_PROFILE_DIR:-${state_base}/chromium-kiosk}"
+  firefox_profile="${FIREFOX_PROFILE_DIR:-${state_base}/firefox-kiosk}"
+
+  local log_dir log_file
+  log_dir="${PANTALLA_KIOSK_LOG_DIR:-${DEFAULT_LOG_DIR}}"
+  log_file="${log_dir}/browser-kiosk.log"
+
+  install -d -m 0755 "$state_base"
+  prepare_dir "$chromium_profile"
+  prepare_dir "$firefox_profile"
+  prepare_log_dir "$log_dir"
+
+  kill_existing
+
+  local browser
+  if browser="$(find_chromium)"; then
+    launch_chromium "$browser" "$target_url" "$chromium_profile" "$log_file"
+  fi
+
+  if browser="$(find_firefox)"; then
+    launch_firefox "$browser" "$target_url" "$firefox_profile" "$log_file"
+  fi
+
+  log "ERROR: no se encontró un navegador compatible (Chromium/Firefox)"
+  exit 1
 }
 
 main "$@"

@@ -95,15 +95,15 @@ Tras ejecutar `sudo bash scripts/install.sh` valida el estado final con:
 
 ```bash
 systemctl is-active pantalla-openbox@dani
-systemctl is-active pantalla-kiosk-chromium@dani
+systemctl is-active pantalla-kiosk@dani
 curl -s http://127.0.0.1/ui-healthz
-systemctl show pantalla-kiosk-chromium@dani -p Environment
+systemctl show pantalla-kiosk@dani -p Environment
 pantalla-kiosk-verify
 ```
 
 - `curl` debe devolver `{"ui":"ok"}` (HTTP 200) gracias al fallback SPA.
-- `systemctl show ... -p Environment` debe listar un único `KIOSK_URL=...` definido en
-  `/etc/systemd/system/pantalla-kiosk-chromium@dani.service.d/override.conf`.
+- `systemctl show ... -p Environment` debe listar `EnvironmentFile=/var/lib/pantalla-reloj/state/kiosk.env` y las variables
+  heredadas de ese archivo.
 - `pantalla-kiosk-verify` debe terminar con código 0; cualquier resumen diferente a
   `ok` merece revisión antes de cerrar el despliegue.
 
@@ -139,10 +139,11 @@ variable.
   la geometría fija descrita arriba y prepara el entorno antes de lanzar el kiosk.
 - `pantalla-dash-backend@dani.service`: ejecuta el backend FastAPI como usuario `dani`
   vía `pantalla-backend-launch`, que valida imports y crea las rutas necesarias.
-- `pantalla-kiosk@dani.service`: (obsoleto) mantiene la integración con Epiphany para
-  instalaciones que aún no migran.
-- `pantalla-kiosk-chromium@dani.service`: navegador recomendado basado en Chromium
-  (paquete deb o snap) con rotación estable 480×1920, DPMS deshabilitado y sin portals.
+- `pantalla-kiosk@dani.service`: lanzador agnóstico que prioriza Chromium (deb o snap) y
+  recurre a Firefox si no hay binario Chromium disponible; consume `kiosk.env` para
+  URL y overrides.
+- `pantalla-kiosk-chromium@dani.service`: wrapper legado mantenido para entornos que
+  aún dependan del despliegue antiguo; no se habilita por defecto.
 
 ## Arranque estable (boot hardening)
 
@@ -153,10 +154,10 @@ variable.
   `/usr/lib/pantalla-reloj/xorg-launch.sh`, que genera de forma determinista la
   cookie `MIT-MAGIC-COOKIE-1` en `/home/dani/.Xauthority` y la reutiliza para
   Openbox y el navegador.
-- **Lanzador de navegador resiliente**: `pantalla-kiosk-chromium@dani.service`
-  arranca `chromium-browser` con `--ozone-platform=x11`, `--disable-gpu` y un
-  `user-data-dir` persistente en `/var/lib/pantalla-reloj/state/chromium`, tras
-  ejecutar únicamente la secuencia mínima y estable de `xrandr` para 480×1920.
+- **Lanzador de navegador resiliente**: `pantalla-kiosk@dani.service` selecciona
+  Chromium (`chromium-browser`, `chromium`, snap o `CHROME_BIN_OVERRIDE`) y recurre a
+  Firefox como fallback, reutilizando perfiles persistentes en
+  `/var/lib/pantalla-reloj/state/chromium-kiosk` o `/var/lib/pantalla-reloj/state/firefox-kiosk`.
 - **Orden de arranque garantizado**: `pantalla-openbox@dani.service` depende de
   `pantalla-xorg.service`, del backend y de Nginx (`After=`/`Wants=`) con reinicio
   automático (`Restart=always`). `pantalla-xorg.service` se engancha a
@@ -172,64 +173,98 @@ variable.
   deshace si lo enmascaramos nosotros, evitando interferencias con sesiones gráficas
   ajenas.
 
-## Kiosk (Chromium) — Opción A (Recomendada)
+## Kiosk Browser
 
-Habilita los tres servicios gráficos y el navegador Chromium con:
+### Servicios esenciales
 
 ```bash
 sudo systemctl enable --now pantalla-xorg.service
 sudo systemctl enable --now pantalla-openbox@dani.service
-sudo systemctl enable --now pantalla-kiosk-chromium@dani.service
+sudo systemctl enable --now pantalla-kiosk@dani.service
 ```
 
-### Troubleshooting específico de Chromium
+`pantalla-kiosk@.service` carga `/var/lib/pantalla-reloj/state/kiosk.env` y fija
+`DISPLAY=:0`, `XAUTHORITY=/home/%i/.Xauthority`, `GDK_BACKEND=x11`,
+`GTK_USE_PORTAL=0`, `GIO_USE_PORTALS=0` y `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus`
+para que Chromium (paquete deb o snap) funcione sin portales ni errores de bus.
 
-- **BadMatch (RANDR RRSetCrtcConfig)**: asegúrate de ejecutar únicamente:
-  ```bash
-  xrandr --fb 1920x1920
-  xrandr --output HDMI-1 --mode 480x1920 --primary --pos 0x0 --rotate left
-  ```
-  Elimina cualquier `--fb 480x1920` previo.
-- **"Authorization required" / "Missing X server or $DISPLAY"**: confirma que
-  exista `/home/dani/.Xauthority` (no debe ser un symlink), con permisos
-  `-rw------- dani:dani`.
-- **Verificación rápida de modos**:
-  ```bash
-  DISPLAY=:0 xrandr --query
-  ```
-  Debe mostrar `HDMI-1 connected 480x1920+0+0 left (normal left inverted right x axis y axis)`.
+### Archivo `kiosk.env` (overrides)
+
+`scripts/install.sh` crea `kiosk.env` solo si no existe. El archivo mantiene
+variables persistentes y puede editarse manualmente. Valores admitidos:
+
+- `KIOSK_URL` – URL inicial (por defecto `http://127.0.0.1/`).
+- `CHROME_BIN_OVERRIDE` – comando o ruta absoluta para Chromium/Chrome.
+- `FIREFOX_BIN_OVERRIDE` – comando o ruta absoluta para Firefox.
+- `CHROMIUM_PROFILE_DIR` – perfil persistente de Chromium
+  (default `/var/lib/pantalla-reloj/state/chromium-kiosk`).
+- `FIREFOX_PROFILE_DIR` – perfil persistente de Firefox
+  (default `/var/lib/pantalla-reloj/state/firefox-kiosk`).
+- `PANTALLA_KIOSK_LOG_DIR` – directorio para `browser-kiosk.log`
+  (default `/var/log/pantalla`).
+
+Después de editar `kiosk.env`, ejecuta `sudo systemctl restart pantalla-kiosk@dani`.
+
+### Orden de preferencia del navegador
+
+1. `CHROME_BIN_OVERRIDE` (o `CHROMIUM_BIN_OVERRIDE` heredado) si apunta a un
+   ejecutable válido.
+2. `chromium-browser`.
+3. `chromium`.
+4. `/snap/bin/chromium`.
+5. `google-chrome-stable` / `google-chrome`.
+6. `/snap/chromium/current/usr/lib/chromium-browser/chrome`.
+7. `FIREFOX_BIN_OVERRIDE`.
+8. `firefox`.
+9. `firefox-esr`.
+
+Si no se encuentra ningún binario compatible el servicio escribe un error y se
+reinicia tras `RestartSec=2`.
+
+### Flags y perfiles persistentes
+
+Chromium se lanza con los flags mínimos requeridos para kiosk estable:
+`--kiosk --no-first-run --no-default-browser-check --password-store=basic`,
+siempre acompañados de `--user-data-dir=<perfil>`. Firefox recibe
+`--kiosk --new-instance --profile <dir> --no-remote`.
+
+Los perfiles viven en `/var/lib/pantalla-reloj/state/chromium-kiosk` y
+`/var/lib/pantalla-reloj/state/firefox-kiosk` (permisos `0700`). Puedes moverlos
+editando `kiosk.env`.
+
+### Troubleshooting DBus y portals
+
+El entorno fija explícitamente `DBUS_SESSION_BUS_ADDRESS`, `GTK_USE_PORTAL=0` y
+`GIO_USE_PORTALS=0`. Si reaparece el error “Failed to connect to the bus: Could
+not parse server address”, confirma que `/run/user/<UID>/bus` existe y que
+`systemctl show pantalla-kiosk@dani -p Environment` refleja la variable. Eliminar
+portals evita cuadros de diálogo inesperados en modo kiosk.
+
+### Logs y diagnóstico
+
+El lanzador escribe en `/var/log/pantalla/browser-kiosk.log`. Para revisar la
+ejecución completa usa `journalctl -u pantalla-kiosk@dani.service -n 120 --no-pager -l`.
+`/usr/local/bin/diag_kiosk.sh` sigue siendo compatible y vuelca variables, PID y
+trazas `diagnostics:auto-pan` durante 20 segundos.
 
 ### Diagnóstico rápido
 
 ```bash
 sudo systemctl status pantalla-xorg.service pantalla-openbox@dani.service \
-  pantalla-kiosk-chromium@dani.service
+  pantalla-kiosk@dani.service
 DISPLAY=:0 xrandr --query
 DISPLAY=:0 wmctrl -lx
 ```
 
-Para un volcado rápido de entorno y bearings ejecuta
-`sudo /usr/local/bin/diag_kiosk.sh` (acepta el usuario como argumento opcional).
-El script muestra las variables efectivas del servicio, la línea de comandos de
-Chromium y retransmite durante 20 s las trazas `diagnostics:auto-pan` desde
-`journalctl`.
+### Modo diagnóstico del kiosk
 
-#### Modo diagnóstico del kiosk
-
-Para forzar temporalmente la ruta `/diagnostics/auto-pan` (útil al ajustar el
-autopan) edita el override de systemd y reinicia el servicio:
-
-```bash
-sudoedit /etc/systemd/system/pantalla-kiosk-chromium@dani.service.d/override.conf
-# Sustituye/añade:
-# Environment=KIOSK_URL=http://127.0.0.1/diagnostics/auto-pan?force=1&reducedMotion=0
-sudo systemctl daemon-reload
-sudo systemctl restart pantalla-kiosk-chromium@dani.service
-```
-
-Comprueba el valor activo con
-`systemctl show pantalla-kiosk-chromium@dani -p Environment` y revierte la URL a
-`http://127.0.0.1/` cuando finalices la prueba.
+Para forzar temporalmente `/diagnostics/auto-pan` añade la entrada
+`KIOSK_URL=http://127.0.0.1/diagnostics/auto-pan?force=1&reducedMotion=0` a
+`kiosk.env` o aplica un drop-in con `systemctl edit pantalla-kiosk@dani.service`.
+Recarga con `sudo systemctl daemon-reload` (si creaste un drop-in) y reinicia el
+servicio. Comprueba el valor efectivo con
+`systemctl show pantalla-kiosk@dani -p Environment` y vuelve a
+`http://127.0.0.1/` al terminar.
 
 ## Instalación
 
@@ -256,10 +291,9 @@ en un estado consistente. Durante la instalación:
 
 - Se validan e instalan las dependencias APT requeridas.
 - Se habilita Corepack con `npm` actualizado sin usar `apt install npm`.
-- Se instala Epiphany como navegador histórico (Firefox se descarga solo si se
-  ejecuta con `--with-firefox`). Para operar en modo soportado, habilita
-  `pantalla-kiosk-chromium@dani.service` tras la instalación (ver sección
-  "Kiosk (Chromium) — Opción A").
+- Se instala el lanzador multi-navegador (`/usr/local/bin/pantalla-kiosk`) y la
+  unidad `pantalla-kiosk@.service`, creando `kiosk.env` solo si falta para evitar
+  sobrescrituras.
 - Se prepara el backend (venv + `requirements.txt`) sirviendo en
   `http://127.0.0.1:8081` y se crea `/var/lib/pantalla/config.json` con el layout
   `full`, panel derecho y overlay oculto.
@@ -268,8 +302,8 @@ en un estado consistente. Durante la instalación:
 - Se configura Nginx como reverse proxy (`/api/` → backend) y servidor estático.
 - Se instalan y activan las unidades systemd (`pantalla-xorg.service`,
   `pantalla-openbox@dani.service`, `pantalla-dash-backend@dani.service`).
-- Se asegura la rotación de la pantalla a horizontal y se lanza Epiphany en modo
-  kiosk apuntando a `http://127.0.0.1` (Firefox solo si se solicitó).
+- Se asegura la rotación de la pantalla a horizontal y se lanza el navegador kiosk
+  (Chromium por defecto, Firefox como fallback) apuntando a `http://127.0.0.1`.
 - Crea `/var/log/pantalla`, `/var/lib/pantalla` y `/var/lib/pantalla-reloj/state`,
   asegurando que la cookie `~/.Xauthority` exista con permisos correctos para
   `dani`.
@@ -304,7 +338,7 @@ También desinstala las unidades systemd sin reactivar ningún display manager.
 1. Revisar servicios clave:
    ```bash
    sudo systemctl status pantalla-xorg.service pantalla-openbox@dani.service \
-     pantalla-dash-backend@dani.service pantalla-kiosk-chromium@dani.service
+     pantalla-dash-backend@dani.service pantalla-kiosk@dani.service
    ```
 2. Si el backend falló, inspeccionar `/tmp/backend-launch.log`; para reiniciar:
    ```bash
@@ -328,9 +362,9 @@ También desinstala las unidades systemd sin reactivar ningún display manager.
    DISPLAY=:0 XAUTHORITY=/home/dani/.Xauthority \
      xrandr --output HDMI-1 --mode 480x1920 --primary --pos 0x0 --rotate left
    ```
-6. Si persiste la pantalla negra, revisa el journal del servicio Chromium:
+6. Si persiste la pantalla negra, revisa el journal del servicio kiosk:
    ```bash
-   journalctl -u pantalla-kiosk-chromium@dani.service -n 120 --no-pager -l
+   journalctl -u pantalla-kiosk@dani.service -n 120 --no-pager -l
    ```
 
 ## Corrección de permisos
@@ -356,9 +390,7 @@ El script reinstala el navegador desde Mozilla (opcional con
 `--with-firefox`), restablece `~/.mozilla/pantalla-kiosk`, `.Xauthority`,
 copias actualizadas de los servicios `pantalla-*.service` y reactiva
 automáticamente `pantalla-xorg`, `pantalla-openbox@dani`,
-`pantalla-dash-backend@dani` y `pantalla-kiosk@dani`. Tras su ejecución,
-habilita manualmente `pantalla-kiosk-chromium@dani.service` si deseas volver al
-modo recomendado con Chromium.
+`pantalla-dash-backend@dani` y `pantalla-kiosk@dani`.
 
 ## Desarrollo local
 
