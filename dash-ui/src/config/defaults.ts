@@ -7,6 +7,7 @@ import type {
   MapConfig,
   MapThemeConfig,
   MaptilerConfig,
+  MapPreferences,
   NewsConfig,
   RotationConfig,
   UIConfig,
@@ -76,6 +77,22 @@ const DEFAULT_MAPTILER: MaptilerConfig = {
   styleUrlBright: "https://api.maptiler.com/maps/bright/style.json",
 };
 
+const sanitizeApiKey = (value: unknown): string | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return /^[A-Za-z0-9._-]+$/.test(trimmed) ? trimmed : null;
+};
+
+export const createDefaultMapPreferences = (): MapPreferences => ({
+  provider: "osm",
+  maptiler_api_key: null,
+});
+
 export const createDefaultMapCinema = (): MapCinemaConfig => ({
   enabled: true,
   panLngDegPerSec: 0.3,
@@ -86,7 +103,7 @@ export const createDefaultMapCinema = (): MapCinemaConfig => ({
 export const createDefaultMapSettings = (): MapConfig => ({
   engine: "maplibre",
   style: "vector-dark",
-  provider: "maptiler",
+  provider: "osm",
   maptiler: { ...DEFAULT_MAPTILER },
   renderWorldCopies: true,
   interactive: false,
@@ -155,7 +172,7 @@ const mergeMap = (candidate: unknown): MapConfig => {
     "raster-carto-dark",
     "raster-carto-light",
   ];
-  const allowedProviders: MapConfig["provider"][] = ["maptiler", "carto"];
+  const allowedProviders: MapConfig["provider"][] = ["maptiler", "osm"];
   const style = allowedStyles.includes(source.style ?? fallback.style)
     ? (source.style as MapConfig["style"])
     : fallback.style;
@@ -176,6 +193,17 @@ const mergeMap = (candidate: unknown): MapConfig => {
     ),
     cinema: mergeCinema(source.cinema),
     theme: mergeTheme(source.theme),
+  };
+};
+
+const mergeMapPreferences = (candidate: unknown): MapPreferences => {
+  const fallback = createDefaultMapPreferences();
+  const source = (candidate as Partial<MapPreferences>) ?? {};
+  const provider: MapPreferences["provider"] = source.provider === "maptiler" ? "maptiler" : fallback.provider;
+  const key = sanitizeApiKey(source.maptiler_api_key);
+  return {
+    provider,
+    maptiler_api_key: provider === "maptiler" ? key : null,
   };
 };
 
@@ -201,6 +229,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     timezone: "Europe/Madrid",
     module_cycle_seconds: 20,
   },
+  map: createDefaultMapPreferences(),
   ui: {
     layout: "grid-2-1",
     map: createDefaultMapSettings(),
@@ -220,6 +249,7 @@ export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
   }
 
   const display = (payload.display ?? {}) as Partial<DisplayConfig>;
+  const map = (payload.map ?? {}) as Partial<MapPreferences>;
   const ui = (payload.ui ?? {}) as Partial<UIConfig>;
   const news = (payload.news ?? {}) as Partial<NewsConfig>;
   const ai = (payload.ai ?? {}) as Partial<AIConfig>;
@@ -233,6 +263,7 @@ export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
         600,
       ),
     },
+    map: mergeMapPreferences(map),
     ui: {
       layout: "grid-2-1",
       map: mergeMap(ui.map),

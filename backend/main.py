@@ -247,7 +247,7 @@ def on_startup() -> None:
         config_manager.config_file,
         config.ui.layout,
         config.ui.map.style,
-        config.ui.map.provider,
+        config.map.provider,
     )
     root = Path(os.getenv("PANTALLA_STATE_DIR", "/var/lib/pantalla"))
     for child in (root / "cache").glob("*.json"):

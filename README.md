@@ -55,6 +55,19 @@ Pantalla_reloj/
   `force=1&reducedMotion=0` y muestra un banner superior con el bearing actual, ideal
   para comprobar rápidamente el kiosk.
 
+### Configurar MapTiler
+
+- Crea una cuenta en [MapTiler](https://maptiler.com/) y genera una API key desde el
+  panel **Cloud → API keys**. Copia el identificador alfanumérico (solo letras,
+  números, punto, guion y guion bajo).
+- En la UI de configuración (`/#/config`), abre la tarjeta **Mapas**, selecciona
+  **MapTiler** como proveedor y pega la API key. Usa el botón «Mostrar» para
+  comprobarla antes de guardar.
+- La clave queda almacenada en `config.json` y se envía al navegador para cargar los
+  estilos vectoriales, por lo que se considera información visible desde el cliente.
+  Si el plan de MapTiler lo permite, restringe la API key a los dominios o direcciones
+  IP del kiosk desde el panel de MapTiler.
+
 ### Nginx (reverse proxy `/api`)
 
 - El virtual host `etc/nginx/sites-available/pantalla-reloj.conf` debe quedar

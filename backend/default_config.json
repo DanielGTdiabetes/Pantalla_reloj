@@ -3,12 +3,16 @@
     "timezone": "Europe/Madrid",
     "module_cycle_seconds": 20
   },
+  "map": {
+    "provider": "osm",
+    "maptiler_api_key": null
+  },
   "ui": {
     "layout": "grid-2-1",
     "map": {
       "engine": "maplibre",
       "style": "vector-dark",
-      "provider": "maptiler",
+      "provider": "osm",
       "maptiler": {
         "key": null,
         "styleUrlDark": "https://api.maptiler.com/maps/dark/style.json",

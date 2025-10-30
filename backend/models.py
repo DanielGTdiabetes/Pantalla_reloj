@@ -89,7 +89,7 @@ class MapConfig(BaseModel):
         "raster-carto-dark",
         "raster-carto-light",
     ] = "vector-dark"
-    provider: Literal["maptiler", "carto"] = "maptiler"
+    provider: Literal["maptiler", "osm"] = "osm"
     maptiler: Dict[str, Optional[str]] = Field(
         default_factory=lambda: DEFAULT_MAPTILER_SETTINGS.copy()
     )
@@ -149,6 +149,41 @@ class AI(BaseModel):
     enabled: bool = False
 
 
+class MapBackend(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    provider: Literal["maptiler", "osm"] = "osm"
+    maptiler_api_key: Optional[str] = Field(default=None, max_length=128)
+
+    @field_validator("maptiler_api_key", mode="before")
+    @classmethod
+    def normalize_api_key(cls, value: object) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        raise TypeError("maptiler_api_key must be a string or null")
+
+    @field_validator("maptiler_api_key")
+    @classmethod
+    def validate_key_pattern(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+        if not value:
+            return None
+        if any(char not in allowed for char in value):
+            raise ValueError("maptiler_api_key solo puede contener letras, números, punto, guion y guion bajo")
+        return value
+
+    @model_validator(mode="after")
+    def validate_dependencies(self) -> "MapBackend":  # type: ignore[override]
+        if self.provider == "maptiler" and not self.maptiler_api_key:
+            raise ValueError("map.maptiler_api_key es obligatorio cuando el proveedor es MapTiler")
+        return self
+
+
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -156,6 +191,7 @@ class AppConfig(BaseModel):
     ui: UI = Field(default_factory=UI)
     news: News = Field(default_factory=News)
     ai: AI = Field(default_factory=AI)
+    map: MapBackend = Field(default_factory=MapBackend)
 
     def to_path(self, path: Path) -> None:
         path.write_text(
@@ -175,6 +211,7 @@ __all__ = [
     "AppConfig",
     "CachedPayload",
     "Display",
+    "MapBackend",
     "MapCinema",
     "MapCinemaBand",
     "MapConfig",

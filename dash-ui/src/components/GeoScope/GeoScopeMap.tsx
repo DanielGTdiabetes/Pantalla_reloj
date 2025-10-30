@@ -7,10 +7,18 @@ import { apiGet } from "../../lib/api";
 import { kioskRuntime } from "../../lib/runtimeFlags";
 import {
   createDefaultMapCinema,
+  createDefaultMapPreferences,
   createDefaultMapSettings,
   withConfigDefaults
 } from "../../config/defaults";
-import type { AppConfig, MapCinemaBand, MapCinemaConfig, MapConfig, MapThemeConfig } from "../../types/config";
+import type {
+  AppConfig,
+  MapCinemaBand,
+  MapCinemaConfig,
+  MapConfig,
+  MapPreferences,
+  MapThemeConfig
+} from "../../types/config";
 import {
   loadMapStyle,
   type MapStyleDefinition,
@@ -143,10 +151,13 @@ const applyRasterTheme = (map: maplibregl.Map, theme: MapThemeConfig) => {
   const brightnessMin = clamp(0.05 - contrast * 0.05, 0, 1);
   const brightnessMax = clamp(1.2 + contrast * 0.2, 0.5, 2);
 
-  setPaintProperty(map, "carto", "raster-saturation", saturationBoost);
-  setPaintProperty(map, "carto", "raster-contrast", contrastBoost);
-  setPaintProperty(map, "carto", "raster-brightness-min", brightnessMin);
-  setPaintProperty(map, "carto", "raster-brightness-max", brightnessMax);
+  const rasterLayers = ["carto", "osm"];
+  for (const layerId of rasterLayers) {
+    setPaintProperty(map, layerId, "raster-saturation", saturationBoost);
+    setPaintProperty(map, layerId, "raster-contrast", contrastBoost);
+    setPaintProperty(map, layerId, "raster-brightness-min", brightnessMin);
+    setPaintProperty(map, layerId, "raster-brightness-max", brightnessMax);
+  }
 };
 
 const applyThemeToMap = (
@@ -270,7 +281,8 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
     const config = await apiGet<AppConfig | undefined>("/api/config");
     const merged = withConfigDefaults(config);
     const mapSettings = merged.ui.map;
-    const styleResult = await loadMapStyle(mapSettings);
+    const mapPreferences: MapPreferences = merged.map ?? createDefaultMapPreferences();
+    const styleResult = await loadMapStyle(mapSettings, mapPreferences);
     return buildRuntimePreferences(mapSettings, styleResult);
   } catch (error) {
     console.warn(
@@ -278,7 +290,8 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
       error
     );
     const fallbackSettings = createDefaultMapSettings();
-    const styleResult = await loadMapStyle(fallbackSettings);
+    const fallbackPreferences = createDefaultMapPreferences();
+    const styleResult = await loadMapStyle(fallbackSettings, fallbackPreferences);
     return buildRuntimePreferences(fallbackSettings, styleResult);
   }
 };
