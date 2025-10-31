@@ -4,99 +4,233 @@ from __future__ import annotations
 import html
 import re
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlparse
 
 import requests
 
-# Datos estáticos
-HARVEST_SEASON_DATA: Dict[int, List[Dict[str, str]]] = {
-    1: [  # Enero
-        {"name": "Naranjas", "status": "Temporada alta"},
-        {"name": "Mandarinas", "status": "Temporada alta"},
-        {"name": "Limones", "status": "Temporada"},
-        {"name": "Acelgas", "status": "Temporada"},
-        {"name": "Coles", "status": "Temporada"},
-    ],
-    2: [  # Febrero
-        {"name": "Naranjas", "status": "Temporada"},
-        {"name": "Mandarinas", "status": "Fin de temporada"},
-        {"name": "Limones", "status": "Temporada"},
-        {"name": "Acelgas", "status": "Temporada"},
-        {"name": "Brócoli", "status": "Temporada"},
-    ],
-    3: [  # Marzo
-        {"name": "Limones", "status": "Temporada"},
-        {"name": "Fresas", "status": "Inicio temporada"},
-        {"name": "Acelgas", "status": "Temporada"},
-        {"name": "Brócoli", "status": "Temporada"},
-        {"name": "Espinacas", "status": "Temporada"},
-    ],
-    4: [  # Abril
-        {"name": "Fresas", "status": "Temporada alta"},
-        {"name": "Alcachofas", "status": "Temporada"},
-        {"name": "Guisantes", "status": "Temporada"},
-        {"name": "Lechugas", "status": "Temporada"},
-        {"name": "Rábanos", "status": "Temporada"},
-    ],
-    5: [  # Mayo
-        {"name": "Fresas", "status": "Temporada"},
-        {"name": "Alcachofas", "status": "Temporada"},
-        {"name": "Guisantes", "status": "Temporada"},
-        {"name": "Lechugas", "status": "Temporada"},
-        {"name": "Judías verdes", "status": "Inicio temporada"},
-    ],
-    6: [  # Junio
-        {"name": "Melocotones", "status": "Inicio temporada"},
-        {"name": "Albaricoques", "status": "Inicio temporada"},
-        {"name": "Judías verdes", "status": "Temporada"},
-        {"name": "Calabacines", "status": "Inicio temporada"},
-        {"name": "Tomates", "status": "Inicio temporada"},
-    ],
-    7: [  # Julio
-        {"name": "Melocotones", "status": "Temporada alta"},
-        {"name": "Albaricoques", "status": "Temporada"},
-        {"name": "Melones", "status": "Temporada"},
-        {"name": "Sandías", "status": "Temporada"},
-        {"name": "Tomates", "status": "Temporada alta"},
-        {"name": "Pimientos", "status": "Temporada"},
-    ],
-    8: [  # Agosto
-        {"name": "Melocotones", "status": "Temporada"},
-        {"name": "Melones", "status": "Temporada alta"},
-        {"name": "Sandías", "status": "Temporada alta"},
-        {"name": "Tomates", "status": "Temporada alta"},
-        {"name": "Pimientos", "status": "Temporada"},
-        {"name": "Calabacines", "status": "Temporada"},
-    ],
-    9: [  # Septiembre
-        {"name": "Uvas", "status": "Temporada"},
-        {"name": "Higos", "status": "Temporada"},
-        {"name": "Tomates", "status": "Temporada"},
-        {"name": "Pimientos", "status": "Temporada"},
-        {"name": "Calabazas", "status": "Inicio temporada"},
-    ],
-    10: [  # Octubre
-        {"name": "Uvas", "status": "Temporada"},
-        {"name": "Granadas", "status": "Temporada"},
-        {"name": "Caquis", "status": "Temporada"},
-        {"name": "Calabazas", "status": "Temporada"},
-        {"name": "Berenjenas", "status": "Temporada"},
-    ],
-    11: [  # Noviembre
-        {"name": "Caquis", "status": "Temporada"},
-        {"name": "Castñas", "status": "Temporada"},
-        {"name": "Calabazas", "status": "Temporada"},
-        {"name": "Coles", "status": "Temporada"},
-        {"name": "Coliflor", "status": "Temporada"},
-    ],
-    12: [  # Diciembre
-        {"name": "Naranjas", "status": "Inicio temporada"},
-        {"name": "Mandarinas", "status": "Temporada"},
-        {"name": "Limones", "status": "Temporada"},
-        {"name": "Coles", "status": "Temporada"},
-        {"name": "Coliflor", "status": "Temporada"},
-    ],
+# Datos estáticos mejorados con siembra, cosecha y mantenimiento
+HARVEST_SEASON_DATA: Dict[int, Dict[str, List[Dict[str, str]]]] = {
+    1: {  # Enero
+        "harvest": [  # Cosecha
+            {"name": "Naranjas", "status": "Temporada alta"},
+            {"name": "Mandarinas", "status": "Temporada alta"},
+            {"name": "Limones", "status": "Temporada"},
+            {"name": "Acelgas", "status": "Temporada"},
+            {"name": "Coles", "status": "Temporada"},
+        ],
+        "planting": [  # Siembra
+            {"name": "Ajo", "status": "Siembra directa"},
+            {"name": "Cebolla", "status": "Semilleros"},
+            {"name": "Guisantes", "status": "Siembra protegida"},
+        ],
+        "maintenance": [  # Mantenimiento
+            {"name": "Poda de árboles frutales", "status": "Temporada"},
+            {"name": "Abonado de cítricos", "status": "Preparación"},
+        ],
+    },
+    2: {  # Febrero
+        "harvest": [
+            {"name": "Naranjas", "status": "Temporada"},
+            {"name": "Mandarinas", "status": "Fin de temporada"},
+            {"name": "Limones", "status": "Temporada"},
+            {"name": "Acelgas", "status": "Temporada"},
+            {"name": "Brócoli", "status": "Temporada"},
+        ],
+        "planting": [
+            {"name": "Lechugas", "status": "Semilleros"},
+            {"name": "Rábanos", "status": "Siembra directa"},
+            {"name": "Espinacas", "status": "Siembra directa"},
+            {"name": "Zanahorias", "status": "Siembra directa"},
+        ],
+        "maintenance": [
+            {"name": "Poda de árboles", "status": "Temporada alta"},
+            {"name": "Abonado", "status": "Inicio temporada"},
+        ],
+    },
+    3: {  # Marzo
+        "harvest": [
+            {"name": "Limones", "status": "Temporada"},
+            {"name": "Fresas", "status": "Inicio temporada"},
+            {"name": "Acelgas", "status": "Temporada"},
+            {"name": "Brócoli", "status": "Temporada"},
+            {"name": "Espinacas", "status": "Temporada"},
+        ],
+        "planting": [
+            {"name": "Tomates", "status": "Semilleros"},
+            {"name": "Pimientos", "status": "Semilleros"},
+            {"name": "Berenjenas", "status": "Semilleros"},
+            {"name": "Calabacines", "status": "Semilleros"},
+            {"name": "Calabazas", "status": "Semilleros"},
+        ],
+        "maintenance": [
+            {"name": "Trasplante de semilleros", "status": "Temporada"},
+            {"name": "Preparación de bancales", "status": "Temporada"},
+        ],
+    },
+    4: {  # Abril
+        "harvest": [
+            {"name": "Fresas", "status": "Temporada alta"},
+            {"name": "Alcachofas", "status": "Temporada"},
+            {"name": "Guisantes", "status": "Temporada"},
+            {"name": "Lechugas", "status": "Temporada"},
+            {"name": "Rábanos", "status": "Temporada"},
+        ],
+        "planting": [
+            {"name": "Maíz", "status": "Siembra directa"},
+            {"name": "Judías verdes", "status": "Siembra directa"},
+            {"name": "Calabacines", "status": "Trasplante"},
+            {"name": "Tomates", "status": "Trasplante"},
+        ],
+        "maintenance": [
+            {"name": "Trasplante al aire libre", "status": "Temporada alta"},
+            {"name": "Riego regular", "status": "Inicio"},
+        ],
+    },
+    5: {  # Mayo
+        "harvest": [
+            {"name": "Fresas", "status": "Temporada"},
+            {"name": "Alcachofas", "status": "Temporada"},
+            {"name": "Guisantes", "status": "Temporada"},
+            {"name": "Lechugas", "status": "Temporada"},
+            {"name": "Judías verdes", "status": "Inicio temporada"},
+        ],
+        "planting": [
+            {"name": "Calabazas", "status": "Siembra directa"},
+            {"name": "Melones", "status": "Siembra directa"},
+            {"name": "Sandías", "status": "Siembra directa"},
+            {"name": "Pepinos", "status": "Trasplante"},
+        ],
+        "maintenance": [
+            {"name": "Entutorado", "status": "Temporada"},
+            {"name": "Riego", "status": "Temporada alta"},
+        ],
+    },
+    6: {  # Junio
+        "harvest": [
+            {"name": "Melocotones", "status": "Inicio temporada"},
+            {"name": "Albaricoques", "status": "Inicio temporada"},
+            {"name": "Judías verdes", "status": "Temporada"},
+            {"name": "Calabacines", "status": "Inicio temporada"},
+            {"name": "Tomates", "status": "Inicio temporada"},
+        ],
+        "planting": [
+            {"name": "Zanahorias", "status": "Siembra escalonada"},
+            {"name": "Rábanos", "status": "Siembra escalonada"},
+            {"name": "Lechugas", "status": "Siembra escalonada"},
+        ],
+        "maintenance": [
+            {"name": "Riego", "status": "Temporada alta"},
+            {"name": "Desherbado", "status": "Temporada"},
+        ],
+    },
+    7: {  # Julio
+        "harvest": [
+            {"name": "Melocotones", "status": "Temporada alta"},
+            {"name": "Albaricoques", "status": "Temporada"},
+            {"name": "Melones", "status": "Temporada"},
+            {"name": "Sandías", "status": "Temporada"},
+            {"name": "Tomates", "status": "Temporada alta"},
+            {"name": "Pimientos", "status": "Temporada"},
+        ],
+        "planting": [
+            {"name": "Coles de invierno", "status": "Siembra"},
+            {"name": "Brócoli", "status": "Siembra"},
+            {"name": "Coliflor", "status": "Siembra"},
+        ],
+        "maintenance": [
+            {"name": "Riego", "status": "Temporada crítica"},
+            {"name": "Recolección frecuente", "status": "Temporada alta"},
+        ],
+    },
+    8: {  # Agosto
+        "harvest": [
+            {"name": "Melocotones", "status": "Temporada"},
+            {"name": "Melones", "status": "Temporada alta"},
+            {"name": "Sandías", "status": "Temporada alta"},
+            {"name": "Tomates", "status": "Temporada alta"},
+            {"name": "Pimientos", "status": "Temporada"},
+            {"name": "Calabacines", "status": "Temporada"},
+        ],
+        "planting": [
+            {"name": "Lechugas de otoño", "status": "Siembra"},
+            {"name": "Rúcula", "status": "Siembra"},
+            {"name": "Espinacas", "status": "Siembra"},
+        ],
+        "maintenance": [
+            {"name": "Riego", "status": "Temporada crítica"},
+            {"name": "Podas de mantenimiento", "status": "Temporada"},
+        ],
+    },
+    9: {  # Septiembre
+        "harvest": [
+            {"name": "Uvas", "status": "Temporada"},
+            {"name": "Higos", "status": "Temporada"},
+            {"name": "Tomates", "status": "Temporada"},
+            {"name": "Pimientos", "status": "Temporada"},
+            {"name": "Calabazas", "status": "Inicio temporada"},
+        ],
+        "planting": [
+            {"name": "Ajo", "status": "Preparación"},
+            {"name": "Cebolla", "status": "Preparación"},
+            {"name": "Guisantes", "status": "Siembra"},
+        ],
+        "maintenance": [
+            {"name": "Vendimia", "status": "Temporada alta"},
+            {"name": "Preparación de otoño", "status": "Temporada"},
+        ],
+    },
+    10: {  # Octubre
+        "harvest": [
+            {"name": "Uvas", "status": "Temporada"},
+            {"name": "Granadas", "status": "Temporada"},
+            {"name": "Caquis", "status": "Temporada"},
+            {"name": "Calabazas", "status": "Temporada"},
+            {"name": "Berenjenas", "status": "Temporada"},
+        ],
+        "planting": [
+            {"name": "Ajo", "status": "Siembra directa"},
+            {"name": "Cebolla", "status": "Siembra"},
+            {"name": "Habones", "status": "Siembra"},
+        ],
+        "maintenance": [
+            {"name": "Recolección y almacenamiento", "status": "Temporada"},
+            {"name": "Limpieza de bancales", "status": "Temporada"},
+        ],
+    },
+    11: {  # Noviembre
+        "harvest": [
+            {"name": "Caquis", "status": "Temporada"},
+            {"name": "Castñas", "status": "Temporada"},
+            {"name": "Calabazas", "status": "Temporada"},
+            {"name": "Coles", "status": "Temporada"},
+            {"name": "Coliflor", "status": "Temporada"},
+        ],
+        "planting": [
+            {"name": "Ajo", "status": "Siembra directa"},
+            {"name": "Guisantes", "status": "Siembra protegida"},
+        ],
+        "maintenance": [
+            {"name": "Poda de árboles", "status": "Inicio temporada"},
+            {"name": "Abonado de otoño", "status": "Temporada"},
+        ],
+    },
+    12: {  # Diciembre
+        "harvest": [
+            {"name": "Naranjas", "status": "Inicio temporada"},
+            {"name": "Mandarinas", "status": "Temporada"},
+            {"name": "Limones", "status": "Temporada"},
+            {"name": "Coles", "status": "Temporada"},
+            {"name": "Coliflor", "status": "Temporada"},
+        ],
+        "planting": [
+            {"name": "Semilleros de primavera", "status": "Preparación"},
+        ],
+        "maintenance": [
+            {"name": "Poda", "status": "Temporada"},
+            {"name": "Protección contra heladas", "status": "Temporada"},
+        ],
+    },
 }
 
 SAINTS_BY_DATE: Dict[str, List[str]] = {
@@ -335,33 +469,240 @@ def parse_rss_feed(feed_url: str, max_items: int = 10, timeout: int = 10) -> Lis
         return []
 
 
-def get_harvest_data(custom_items: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    """Obtiene datos de hortalizas según el mes actual."""
+def get_harvest_data(
+    custom_items: List[Dict[str, str]] = None,
+    include_planting: bool = True,
+    include_maintenance: bool = False
+) -> Dict[str, List[Dict[str, str]]]:
+    """Obtiene datos de hortalizas según el mes actual.
+    
+    Retorna un diccionario con información de cosecha, siembra y mantenimiento
+    según la configuración solicitada. Mantiene retrocompatibilidad.
+    
+    Args:
+        custom_items: Items personalizados a agregar (solo a harvest)
+        include_planting: Incluir información de siembra
+        include_maintenance: Incluir información de mantenimiento
+    
+    Returns:
+        Diccionario con 'harvest', y opcionalmente 'planting' y 'maintenance'
+    """
     today = date.today()
     month = today.month
     
-    # Obtener datos estacionales
-    seasonal_items = HARVEST_SEASON_DATA.get(month, [])
+    # Obtener datos estacionales del mes
+    month_data = HARVEST_SEASON_DATA.get(month, {})
     
-    # Combinar con items personalizados
-    all_items = list(seasonal_items)
+    # Extraer datos según estructura (nueva o antigua para compatibilidad)
+    if isinstance(month_data, dict):
+        # Nueva estructura con harvest/planting/maintenance
+        harvest_items = month_data.get("harvest", [])
+        planting_items = month_data.get("planting", [])
+        maintenance_items = month_data.get("maintenance", [])
+    else:
+        # Estructura antigua (lista simple) - retrocompatibilidad
+        harvest_items = month_data if isinstance(month_data, list) else []
+        planting_items = []
+        maintenance_items = []
+    
+    # Combinar harvest con items personalizados
+    all_harvest = list(harvest_items)
     if custom_items:
-        all_items.extend(custom_items)
+        all_harvest.extend(custom_items)
     
-    return all_items
+    # Construir resultado
+    result: Dict[str, List[Dict[str, str]]] = {
+        "harvest": all_harvest,
+    }
+    
+    if include_planting:
+        result["planting"] = list(planting_items)
+    
+    if include_maintenance:
+        result["maintenance"] = list(maintenance_items)
+    
+    return result
 
 
-def get_saints_today(include_namedays: bool = True, locale: str = "es") -> List[str]:
-    """Obtiene los santos del día actual."""
+# Diccionario auxiliar con información enriquecida para santos principales
+SAINTS_ENRICHED_INFO: Dict[str, Dict[str, Any]] = {
+    "María, Madre de Dios": {
+        "type": "solemnity",
+        "patron_of": ["Madrid", "España"],
+        "name_days": ["María", "Mariano", "Mariana", "Mari", "Mari Carmen"]
+    },
+    "José": {
+        "type": "solemnity",
+        "patron_of": ["Trabajadores", "Padres", "Carpinteros"],
+        "name_days": ["José", "Pepe", "Jose", "Josefa", "Josefina"]
+    },
+    "José de Nazaret": {
+        "type": "solemnity",
+        "patron_of": ["Trabajadores", "Padres", "Carpinteros"],
+        "name_days": ["José", "Pepe", "Jose", "Josefa", "Josefina"]
+    },
+    "Francisco de Asís": {
+        "type": "memorial",
+        "patron_of": ["Italia", "Animales", "Ecología"],
+        "name_days": ["Francisco", "Fran", "Paco", "Francis", "Francisca"]
+    },
+    "Teresa de Ávila": {
+        "type": "memorial",
+        "patron_of": ["Escritores", "España"],
+        "name_days": ["Teresa", "Tere", "Teresita"]
+    },
+    "Antonio de Padua": {
+        "type": "memorial",
+        "patron_of": ["Lisboa", "Objetos perdidos", "Pobres"],
+        "name_days": ["Antonio", "Toño", "Anton", "Antonia"]
+    },
+    "Isidro Labrador": {
+        "type": "memorial",
+        "patron_of": ["Madrid", "Labradores", "Agricultores"],
+        "name_days": ["Isidro", "Isidro", "Isidra"]
+    },
+    "Santiago": {
+        "type": "feast",
+        "patron_of": ["España", "Galicia"],
+        "name_days": ["Santiago", "Jaime", "Diego", "Yago"]
+    },
+    "Pedro": {
+        "type": "solemnity",
+        "patron_of": ["Pescadores", "Roma"],
+        "name_days": ["Pedro", "Perico", "Peter", "Piedad", "Pilar"]
+    },
+    "Pablo": {
+        "type": "solemnity",
+        "patron_of": ["Escritores", "Misioneros"],
+        "name_days": ["Pablo", "Paula", "Pau"]
+    },
+    "Juan": {
+        "type": "feast",
+        "patron_of": ["Escritores", "Teólogos"],
+        "name_days": ["Juan", "Juanito", "Jon", "Juana", "Iván"]
+    },
+    "María Magdalena": {
+        "type": "memorial",
+        "patron_of": ["Penitentes", "Perfumeros"],
+        "name_days": ["Magdalena", "Magda", "Maite"]
+    },
+    "Valentín": {
+        "type": "optional_memorial",
+        "patron_of": ["Enamorados", "Apicultores"],
+        "name_days": ["Valentín", "Valentina", "Val"]
+    },
+    "Lucas": {
+        "type": "feast",
+        "patron_of": ["Médicos", "Artistas", "Pintores"],
+        "name_days": ["Lucas", "Luca"]
+    },
+    "Mateo": {
+        "type": "feast",
+        "patron_of": ["Banqueros", "Contadores"],
+        "name_days": ["Mateo", "Mate", "Matías", "Matilde"]
+    },
+    "Jorge": {
+        "type": "optional_memorial",
+        "patron_of": ["Inglaterra", "Cataluña", "Caballeros"],
+        "name_days": ["Jorge", "Jordi", "George"]
+    },
+    "Juan Bosco": {
+        "type": "memorial",
+        "patron_of": ["Jóvenes", "Editores", "Estudiantes"],
+        "name_days": ["Juan", "Juanito"]
+    },
+    "Tomás de Aquino": {
+        "type": "memorial",
+        "patron_of": ["Escuelas", "Estudiantes", "Teólogos"],
+        "name_days": ["Tomás", "Tomas", "Tomeu"]
+    },
+}
+
+
+def get_saints_today(
+    include_namedays: bool = True,
+    locale: str = "es",
+    include_info: bool = False
+) -> Union[List[str], Dict[str, Any]]:
+    """Obtiene los santos del día actual.
+    
+    Args:
+        include_namedays: Incluir onomásticos asociados
+        locale: Localización (actualmente solo "es")
+        include_info: Si True, retorna estructura enriquecida con información adicional
+    
+    Returns:
+        Si include_info=False: Lista de nombres de santos (retrocompatibilidad)
+        Si include_info=True: Diccionario con 'saints' (lista enriquecida) y 'namedays' (lista)
+    """
     today = date.today()
     date_key = f"{today.month:02d}-{today.day:02d}"
     
-    saints = SAINTS_BY_DATE.get(date_key, [])
+    saints_raw = SAINTS_BY_DATE.get(date_key, [])
     
+    # Si se solicita información enriquecida
+    if include_info:
+        saints_enriched = []
+        all_namedays = []
+        
+        for saint_name in saints_raw:
+            # Buscar información enriquecida
+            enriched = SAINTS_ENRICHED_INFO.get(saint_name, {})
+            
+            # Crear entrada del santo
+            saint_entry: Dict[str, Any] = {
+                "name": saint_name,
+            }
+            
+            # Agregar información adicional si está disponible
+            if enriched:
+                saint_entry.update({
+                    "type": enriched.get("type", "memorial"),
+                    "patron_of": enriched.get("patron_of", []),
+                })
+                
+                # Agregar onomásticos si se solicitan
+                if include_namedays and enriched.get("name_days"):
+                    saint_entry["name_days"] = enriched["name_days"]
+                    all_namedays.extend(enriched["name_days"])
+            else:
+                # Si no hay información enriquecida, intentar extraer nombre base
+                # para generar onomásticos básicos
+                if include_namedays:
+                    # Extraer primer nombre del santo
+                    base_name = saint_name.split(",")[0].strip()
+                    saint_entry["name_days"] = [base_name]
+                    all_namedays.append(base_name)
+            
+            saints_enriched.append(saint_entry)
+        
+        return {
+            "saints": saints_enriched,
+            "namedays": sorted(list(set(all_namedays))) if include_namedays else [],
+        }
+    
+    # Modo simple (retrocompatibilidad)
+    saints = saints_raw
+    
+    # Si se solicitan onomásticos en modo simple, intentar extraerlos
     if include_namedays and locale == "es":
-        # Agregar onomásticos comunes (simplificado)
-        # En una implementación completa, esto vendría de una base de datos
-        pass
+        namedays_set = set()
+        for saint_name in saints:
+            # Buscar en información enriquecida
+            enriched = SAINTS_ENRICHED_INFO.get(saint_name, {})
+            if enriched.get("name_days"):
+                namedays_set.update(enriched["name_days"])
+            else:
+                # Fallback: usar primer nombre del santo
+                base_name = saint_name.split(",")[0].split(" ")[0].strip()
+                namedays_set.add(base_name)
+        
+        # En modo simple, agregar onomásticos como comentario en la lista
+        # O retornar lista extendida (mantener compatibilidad)
+        if namedays_set:
+            # Para retrocompatibilidad, solo retornar nombres de santos
+            # Los onomásticos se obtienen con include_info=True
+            pass
     
     return saints
 
@@ -419,38 +760,209 @@ def calculate_moon_phase(dt: Optional[datetime] = None) -> Dict[str, Any]:
     }
 
 
-def calculate_sun_times(lat: float, lng: float, tz_str: str = "Europe/Madrid", dt: Optional[date] = None) -> Dict[str, str]:
-    """Calcula horas de salida y puesta del sol (simplificado)."""
+def calculate_sun_times(lat: float, lng: float, tz_str: str = "Europe/Madrid", dt: Optional[date] = None, elevation: float = 0.0) -> Dict[str, Any]:
+    """Calcula horas de salida y puesta del sol con alta precisión.
+    
+    Intenta usar la librería `astral` para máxima precisión (±1 minuto),
+    con fallback a algoritmo simplificado si no está disponible.
+    
+    Args:
+        lat: Latitud en grados (-90 a 90)
+        lng: Longitud en grados (-180 a 180)
+        tz_str: Zona horaria (ej: "Europe/Madrid")
+        dt: Fecha (por defecto: hoy)
+        elevation: Elevación sobre el nivel del mar en metros (opcional)
+    
+    Returns:
+        Diccionario con sunrise, sunset, y opcionalmente solar_noon, dusk, dawn
+    """
     if dt is None:
         dt = date.today()
     
-    # Algoritmo simplificado de salida/puesta de sol
-    # Para mayor precisión, usar librería como `astral` o `pyephem`
-    day_of_year = dt.timetuple().tm_yday
+    # Validar coordenadas
+    if not (-90 <= lat <= 90):
+        raise ValueError(f"Latitud inválida: {lat} (debe estar entre -90 y 90)")
+    if not (-180 <= lng <= 180):
+        raise ValueError(f"Longitud inválida: {lng} (debe estar entre -180 y 180)")
     
-    # Ecuación del tiempo (simplificada)
-    eq_time = 4 * (
-        0.000075 + 0.001868 * (day_of_year - 81) - 0.014615 * (day_of_year - 81) ** 2 / 365
-    )
+    # Intentar usar astral para máxima precisión
+    try:
+        from astral import LocationInfo
+        from astral.sun import sun
+        from zoneinfo import ZoneInfo
+        
+        # Validar zona horaria
+        try:
+            tz = ZoneInfo(tz_str)
+        except Exception:
+            # Fallback a Europe/Madrid si la zona horaria es inválida
+            tz_str = "Europe/Madrid"
+            tz = ZoneInfo(tz_str)
+        
+        location = LocationInfo(
+            name="Location",
+            region="Region",
+            timezone=tz_str,
+            latitude=lat,
+            longitude=lng,
+        )
+        
+        # Calcular eventos solares
+        s = sun(location.observer, date=dt, tzinfo=tz)
+        
+        return {
+            "sunrise": s["sunrise"].strftime("%H:%M"),
+            "sunset": s["sunset"].strftime("%H:%M"),
+            "solar_noon": s["noon"].strftime("%H:%M"),
+            "dawn": s["dawn"].strftime("%H:%M"),
+            "dusk": s["dusk"].strftime("%H:%M"),
+            "precision": "high",  # Indicador de que se usó astral
+        }
     
-    # Declinación solar (simplificada)
-    declination = 23.45 * (3.14159 / 180) * (360 / 365.0) * (day_of_year - 81)
+    except ImportError:
+        # Fallback al algoritmo simplificado si astral no está disponible
+        # Algoritmo simplificado de salida/puesta de sol
+        day_of_year = dt.timetuple().tm_yday
+        
+        # Ecuación del tiempo (simplificada)
+        eq_time = 4 * (
+            0.000075 + 0.001868 * (day_of_year - 81) - 0.014615 * (day_of_year - 81) ** 2 / 365
+        )
+        
+        # Declinación solar (simplificada)
+        declination = 23.45 * (3.14159 / 180) * (360 / 365.0) * (day_of_year - 81)
+        
+        # Hora solar (simplificada, sin considerar horario de verano completamente)
+        solar_noon = 12 - (lng / 15.0) - eq_time / 60.0
+        hour_angle = abs(declination) * (3.14159 / 180) / 15.0
+        
+        sunrise_hour = solar_noon - hour_angle
+        sunset_hour = solar_noon + hour_angle
+        
+        # Formatear horas
+        sunrise_str = f"{int(sunrise_hour):02d}:{int((sunrise_hour % 1) * 60):02d}"
+        sunset_str = f"{int(sunset_hour):02d}:{int((sunset_hour % 1) * 60):02d}"
+        
+        return {
+            "sunrise": sunrise_str,
+            "sunset": sunset_str,
+            "precision": "low",  # Indicador de algoritmo simplificado
+        }
     
-    # Hora solar (simplificada, sin considerar horario de verano)
-    solar_noon = 12 - (lng / 15.0) - eq_time / 60.0
-    hour_angle = abs(declination) * (3.14159 / 180) / 15.0
+    except Exception as e:
+        # En caso de cualquier otro error, usar algoritmo simplificado
+        # y registrar el error
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Error usando astral, fallback a algoritmo simplificado: {e}")
+        
+        # Algoritmo simplificado
+        day_of_year = dt.timetuple().tm_yday
+        eq_time = 4 * (
+            0.000075 + 0.001868 * (day_of_year - 81) - 0.014615 * (day_of_year - 81) ** 2 / 365
+        )
+        declination = 23.45 * (3.14159 / 180) * (360 / 365.0) * (day_of_year - 81)
+        solar_noon = 12 - (lng / 15.0) - eq_time / 60.0
+        hour_angle = abs(declination) * (3.14159 / 180) / 15.0
+        
+        sunrise_hour = solar_noon - hour_angle
+        sunset_hour = solar_noon + hour_angle
+        
+        sunrise_str = f"{int(sunrise_hour):02d}:{int((sunrise_hour % 1) * 60):02d}"
+        sunset_str = f"{int(sunset_hour):02d}:{int((sunset_hour % 1) * 60):02d}"
+        
+        return {
+            "sunrise": sunrise_str,
+            "sunset": sunset_str,
+            "precision": "low",
+            "error": str(e),
+        }
+
+
+def calculate_extended_astronomy(
+    lat: float,
+    lng: float,
+    tz_str: str = "Europe/Madrid",
+    days_ahead: int = 7,
+    dt: Optional[date] = None
+) -> Dict[str, Any]:
+    """Calcula información astronómica extendida.
     
-    sunrise_hour = solar_noon - hour_angle
-    sunset_hour = solar_noon + hour_angle
+    Incluye fase lunar actual, próximas fases, duración del día,
+    crepúsculos y mediodía solar.
     
-    # Formatear horas
-    sunrise_str = f"{int(sunrise_hour):02d}:{int((sunrise_hour % 1) * 60):02d}"
-    sunset_str = f"{int(sunset_hour):02d}:{int((sunset_hour % 1) * 60):02d}"
+    Args:
+        lat: Latitud en grados
+        lng: Longitud en grados
+        tz_str: Zona horaria
+        days_ahead: Días hacia adelante para calcular próximas fases
+        dt: Fecha base (por defecto: hoy)
     
-    return {
-        "sunrise": sunrise_str,
-        "sunset": sunset_str,
+    Returns:
+        Diccionario con información astronómica completa
+    """
+    if dt is None:
+        dt = date.today()
+    
+    # Fase lunar actual (usar la misma fecha base que para los cálculos solares)
+    dt_aware = datetime.combine(dt, datetime.min.time()).replace(tzinfo=timezone.utc)
+    moon_data = calculate_moon_phase(dt_aware)
+    
+    # Calcular próximas fases lunares
+    next_phases = []
+    for i in range(min(days_ahead, 30)):  # Limitar a 30 días máximo
+        future_date = dt + timedelta(days=i)
+        future_dt = datetime.combine(future_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+        future_moon = calculate_moon_phase(future_dt)
+        
+        # Solo agregar si es un cambio de fase significativo
+        # o si es el día actual o el siguiente
+        phase_name = future_moon["moon_phase"]
+        is_significant_phase = phase_name in [
+            "Luna nueva", "Luna llena", "Cuarto creciente", "Cuarto menguante"
+        ]
+        
+        if i == 0 or is_significant_phase:
+            next_phases.append({
+                "date": future_date.isoformat(),
+                "phase": phase_name,
+                "illumination": future_moon["moon_illumination"],
+                "days_from_today": i,
+            })
+    
+    # Calcular datos solares
+    sun_data = calculate_sun_times(lat, lng, tz_str, dt)
+    
+    # Calcular duración del día (en horas)
+    try:
+        sunrise = datetime.strptime(sun_data["sunrise"], "%H:%M")
+        sunset = datetime.strptime(sun_data["sunset"], "%H:%M")
+        # Calcular diferencia (considerando que puede cruzar medianoche)
+        if sunset > sunrise:
+            day_duration = (sunset - sunrise).total_seconds() / 3600
+        else:
+            # Si sunset < sunrise, asumir que es al día siguiente
+            day_duration = (timedelta(days=1) - (sunrise - sunset)).total_seconds() / 3600
+    except (ValueError, KeyError):
+        day_duration = None
+    
+    # Información adicional
+    result = {
+        "current_moon": moon_data,
+        "sun_data": {
+            "sunrise": sun_data.get("sunrise"),
+            "sunset": sun_data.get("sunset"),
+            "solar_noon": sun_data.get("solar_noon"),
+            "dawn": sun_data.get("dawn"),
+            "dusk": sun_data.get("dusk"),
+            "precision": sun_data.get("precision", "unknown"),
+        },
+        "day_duration_hours": round(day_duration, 2) if day_duration is not None else None,
+        "next_phases": next_phases[:5],  # Limitar a 5 próximas fases más relevantes
+        "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+    
+    return result
 
 
 def fetch_google_calendar_events(

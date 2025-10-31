@@ -4,3 +4,4 @@ requests
 pydantic
 aiofiles
 shapely>=2.0.0
+astral>=3.2

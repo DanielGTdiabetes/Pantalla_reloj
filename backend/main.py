@@ -19,6 +19,7 @@ from pydantic import BaseModel, ValidationError
 from .cache import CacheStore
 from .config_manager import ConfigManager
 from .data_sources import (
+    calculate_extended_astronomy,
     calculate_moon_phase,
     calculate_sun_times,
     fetch_google_calendar_events,
@@ -498,7 +499,11 @@ def get_news() -> Dict[str, Any]:
 
 @app.get("/api/astronomy")
 def get_astronomy() -> Dict[str, Any]:
-    """Obtiene datos astronómicos (fases lunares, salida/puesta de sol)."""
+    """Obtiene datos astronómicos ampliados (fases lunares, salida/puesta de sol, duración del día, crepúsculos).
+    
+    Retorna información extendida con próximas fases lunares, duración del día,
+    mediodía solar y crepúsculos (dawn/dusk). Mantiene retrocompatibilidad con campos básicos.
+    """
     config = config_manager.read()
     ephemerides_config = config.ephemerides
     
@@ -510,35 +515,83 @@ def get_astronomy() -> Dict[str, Any]:
     if cached:
         return cached.payload
     
-    # Calcular fase lunar
-    moon_data = calculate_moon_phase()
+    try:
+        # Usar función extendida para obtener información completa
+        extended_data = calculate_extended_astronomy(
+            lat=ephemerides_config.latitude,
+            lng=ephemerides_config.longitude,
+            tz_str=ephemerides_config.timezone,
+            days_ahead=7,
+        )
+        
+        # Extraer datos para mantener retrocompatibilidad
+        moon_data = extended_data["current_moon"]
+        sun_data_dict = extended_data["sun_data"]
+        
+        # Eventos astronómicos básicos del día
+        events = [
+            f"Salida del sol: {sun_data_dict.get('sunrise', 'N/A')}",
+            f"Puesta del sol: {sun_data_dict.get('sunset', 'N/A')}",
+            f"Fase lunar: {moon_data['moon_phase']}",
+        ]
+        
+        # Si hay mediodía solar, agregarlo
+        if sun_data_dict.get("solar_noon"):
+            events.append(f"Mediodía solar: {sun_data_dict['solar_noon']}")
+        
+        # Construir payload con retrocompatibilidad y datos extendidos
+        payload: Dict[str, Any] = {
+            # Campos básicos (retrocompatibilidad)
+            "moon_phase": moon_data["moon_phase"],
+            "moon_illumination": moon_data["moon_illumination"],
+            "illumination": moon_data["illumination"],  # Alias para compatibilidad
+            "sunrise": sun_data_dict.get("sunrise"),
+            "sunset": sun_data_dict.get("sunset"),
+            "events": events,
+            "updated_at": extended_data["updated_at"],
+            
+            # Campos extendidos (nuevos)
+            "day_duration_hours": extended_data.get("day_duration_hours"),
+            "solar_noon": sun_data_dict.get("solar_noon"),
+            "dawn": sun_data_dict.get("dawn"),
+            "dusk": sun_data_dict.get("dusk"),
+            "precision": sun_data_dict.get("precision", "unknown"),
+            "next_phases": extended_data.get("next_phases", []),
+        }
+        
+        cache_store.store("astronomy", payload)
+        return payload
     
-    # Calcular salida/puesta de sol
-    sun_data = calculate_sun_times(
-        lat=ephemerides_config.latitude,
-        lng=ephemerides_config.longitude,
-        tz_str=ephemerides_config.timezone,
-    )
-    
-    # Eventos astronómicos básicos del día
-    events = [
-        f"Salida del sol: {sun_data['sunrise']}",
-        f"Puesta del sol: {sun_data['sunset']}",
-        f"Fase lunar: {moon_data['moon_phase']}",
-    ]
-    
-    payload = {
-        "moon_phase": moon_data["moon_phase"],
-        "moon_illumination": moon_data["moon_illumination"],
-        "illumination": moon_data["illumination"],
-        "sunrise": sun_data["sunrise"],
-        "sunset": sun_data["sunset"],
-        "events": events,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
-    
-    cache_store.store("astronomy", payload)
-    return payload
+    except Exception as exc:
+        logger.warning("Error calculando astronomía extendida, usando método básico: %s", exc)
+        
+        # Fallback al método básico en caso de error
+        moon_data = calculate_moon_phase()
+        sun_data = calculate_sun_times(
+            lat=ephemerides_config.latitude,
+            lng=ephemerides_config.longitude,
+            tz_str=ephemerides_config.timezone,
+        )
+        
+        events = [
+            f"Salida del sol: {sun_data.get('sunrise', 'N/A')}",
+            f"Puesta del sol: {sun_data.get('sunset', 'N/A')}",
+            f"Fase lunar: {moon_data['moon_phase']}",
+        ]
+        
+        payload = {
+            "moon_phase": moon_data["moon_phase"],
+            "moon_illumination": moon_data["moon_illumination"],
+            "illumination": moon_data["illumination"],
+            "sunrise": sun_data.get("sunrise"),
+            "sunset": sun_data.get("sunset"),
+            "events": events,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "error": "Extended calculation failed, using basic method",
+        }
+        
+        cache_store.store("astronomy", payload)
+        return payload
 
 
 @app.get("/api/calendar")
@@ -578,26 +631,59 @@ def get_calendar() -> Dict[str, Any]:
     else:
         payload["upcoming"] = []
     
-    # Hortalizas estacionales
+    # Hortalizas estacionales (mejoradas con siembra y mantenimiento)
     if harvest_config.enabled:
         try:
-            harvest_items = get_harvest_data(harvest_config.custom_items)
-            payload["harvest"] = harvest_items
+            harvest_data = get_harvest_data(
+                custom_items=harvest_config.custom_items,
+                include_planting=True,
+                include_maintenance=False  # Por defecto no incluir mantenimiento para no saturar
+            )
+            # Mantener retrocompatibilidad: harvest siempre presente
+            payload["harvest"] = harvest_data.get("harvest", [])
+            # Agregar información extendida si está disponible
+            if "planting" in harvest_data:
+                payload["planting"] = harvest_data["planting"]
+            if "maintenance" in harvest_data:
+                payload["maintenance"] = harvest_data["maintenance"]
         except Exception as exc:
             logger.warning("Failed to get harvest data: %s", exc)
             payload["harvest"] = []
+            payload["planting"] = []
+            payload["maintenance"] = []
+    else:
+        payload["harvest"] = []
+        payload["planting"] = []
+        payload["maintenance"] = []
     
-    # Santoral
+    # Santoral (mejorado con información enriquecida)
     if saints_config.enabled:
         try:
-            saints_today = get_saints_today(
+            # Obtener información enriquecida
+            saints_data = get_saints_today(
                 include_namedays=saints_config.include_namedays,
                 locale=saints_config.locale,
+                include_info=True,  # Solicitar información enriquecida
             )
-            payload["saints"] = saints_today
-            if saints_config.include_namedays:
-                # Para onomásticos, usar los mismos santos (en producción, separar)
-                payload["namedays"] = saints_today
+            
+            # Verificar si es diccionario (enriquecido) o lista (simple)
+            if isinstance(saints_data, dict):
+                # Información enriquecida
+                payload["saints"] = saints_data.get("saints", [])
+                if saints_config.include_namedays:
+                    payload["namedays"] = saints_data.get("namedays", [])
+            else:
+                # Retrocompatibilidad: lista simple
+                payload["saints"] = saints_data
+                if saints_config.include_namedays:
+                    # Intentar extraer onomásticos de los nombres
+                    namedays_set = set()
+                    for saint_name in saints_data:
+                        if isinstance(saint_name, str):
+                            # Extraer primer nombre
+                            base_name = saint_name.split(",")[0].split(" ")[0].strip()
+                            namedays_set.add(base_name)
+                    payload["namedays"] = sorted(list(namedays_set))
         except Exception as exc:
             logger.warning("Failed to get saints data: %s", exc)
             payload["saints"] = []
