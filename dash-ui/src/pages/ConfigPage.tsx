@@ -2658,6 +2658,407 @@ const ConfigPage: React.FC = () => {
           </div>
         )}
 
+        {supports("layers.global") && (() => {
+          // Helper para obtener valores de global con defaults completos
+          const getGlobalWithDefaults = (prev: AppConfig) => {
+            const defaultGlobal = DEFAULT_CONFIG.layers.global;
+            const currentGlobal = prev.layers.global;
+            
+            return {
+              satellite: {
+                enabled: currentGlobal?.satellite?.enabled ?? defaultGlobal.satellite.enabled,
+                provider: "gibs" as const,
+                refresh_minutes: currentGlobal?.satellite?.refresh_minutes ?? defaultGlobal.satellite.refresh_minutes,
+                history_minutes: currentGlobal?.satellite?.history_minutes ?? defaultGlobal.satellite.history_minutes,
+                frame_step: currentGlobal?.satellite?.frame_step ?? defaultGlobal.satellite.frame_step,
+                opacity: currentGlobal?.satellite?.opacity ?? defaultGlobal.satellite.opacity,
+              },
+              radar: {
+                enabled: currentGlobal?.radar?.enabled ?? defaultGlobal.radar.enabled,
+                provider: "rainviewer" as const,
+                refresh_minutes: currentGlobal?.radar?.refresh_minutes ?? defaultGlobal.radar.refresh_minutes,
+                history_minutes: currentGlobal?.radar?.history_minutes ?? defaultGlobal.radar.history_minutes,
+                frame_step: currentGlobal?.radar?.frame_step ?? defaultGlobal.radar.frame_step,
+                opacity: currentGlobal?.radar?.opacity ?? defaultGlobal.radar.opacity,
+              },
+            };
+          };
+
+          return (
+            <div className="config-card">
+              <div>
+                <h2>Capas Globales</h2>
+                <p>Configura las capas globales de satélite y radar (cobertura mundial).</p>
+              </div>
+              <div className="config-grid">
+                {supports("layers.global.satellite") && (
+                  <>
+                    <div className="config-field config-field--checkbox">
+                      <label htmlFor="global_satellite_enabled">
+                        <input
+                          id="global_satellite_enabled"
+                          type="checkbox"
+                          checked={form.layers.global?.satellite.enabled ?? false}
+                          disabled={disableInputs}
+                          onChange={(event) => {
+                            const enabled = event.target.checked;
+                            setForm((prev) => {
+                              const globalWithDefaults = getGlobalWithDefaults(prev);
+                              return {
+                                ...prev,
+                                layers: {
+                                  ...prev.layers,
+                                  global: {
+                                    ...globalWithDefaults,
+                                    satellite: {
+                                      ...globalWithDefaults.satellite,
+                                      enabled,
+                                    },
+                                  },
+                                },
+                              };
+                            });
+                            resetErrorsFor("layers.global.satellite.enabled");
+                          }}
+                        />
+                        Activar capa de satélite global
+                      </label>
+                      {renderHelp("Muestra imágenes de satélite globales (GIBS)")}
+                    </div>
+
+                  <div className="config-field">
+                    <label htmlFor="global_satellite_opacity">Opacidad</label>
+                    <input
+                      id="global_satellite_opacity"
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={form.layers.global?.satellite.opacity ?? 0.7}
+                      disabled={disableInputs || !form.layers.global?.satellite.enabled}
+                      onChange={(event) => {
+                        const opacity = Number(event.target.value);
+                        if (!Number.isNaN(opacity)) {
+                          setForm((prev) => {
+                            const globalWithDefaults = getGlobalWithDefaults(prev);
+                            return {
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                global: {
+                                  ...globalWithDefaults,
+                                  satellite: {
+                                    ...globalWithDefaults.satellite,
+                                    opacity: Math.max(0, Math.min(1, opacity)),
+                                  },
+                                },
+                              },
+                            };
+                          });
+                          resetErrorsFor("layers.global.satellite.opacity");
+                        }
+                      }}
+                    />
+                    <span>{Math.round((form.layers.global?.satellite.opacity ?? 0.7) * 100)}%</span>
+                    {renderHelp("Opacidad de la capa de satélite (0.0 - 1.0)")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="global_satellite_refresh">Intervalo de actualización (minutos)</label>
+                    <input
+                      id="global_satellite_refresh"
+                      type="number"
+                      min="1"
+                      max="1440"
+                      value={form.layers.global?.satellite.refresh_minutes ?? 10}
+                      disabled={disableInputs || !form.layers.global?.satellite.enabled}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isNaN(value)) {
+                          setForm((prev) => {
+                            const globalWithDefaults = getGlobalWithDefaults(prev);
+                            return {
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                global: {
+                                  ...globalWithDefaults,
+                                  satellite: {
+                                    ...globalWithDefaults.satellite,
+                                    refresh_minutes: Math.max(1, Math.min(1440, Math.round(value))),
+                                  },
+                                },
+                              },
+                            };
+                          });
+                          resetErrorsFor("layers.global.satellite.refresh_minutes");
+                        }
+                      }}
+                    />
+                    {renderHelp("Cada cuántos minutos se actualizan los frames (1-1440)")}
+                    {renderFieldError("layers.global.satellite.refresh_minutes")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="global_satellite_history">Historia (minutos)</label>
+                    <input
+                      id="global_satellite_history"
+                      type="number"
+                      min="1"
+                      max="1440"
+                      value={form.layers.global?.satellite.history_minutes ?? 90}
+                      disabled={disableInputs || !form.layers.global?.satellite.enabled}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isNaN(value)) {
+                          setForm((prev) => {
+                            const globalWithDefaults = getGlobalWithDefaults(prev);
+                            return {
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                global: {
+                                  ...globalWithDefaults,
+                                  satellite: {
+                                    ...globalWithDefaults.satellite,
+                                    history_minutes: Math.max(1, Math.min(1440, Math.round(value))),
+                                  },
+                                },
+                              },
+                            };
+                          });
+                          resetErrorsFor("layers.global.satellite.history_minutes");
+                        }
+                      }}
+                    />
+                    {renderHelp("Cuántos minutos de historia mantener (1-1440)")}
+                    {renderFieldError("layers.global.satellite.history_minutes")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="global_satellite_frame_step">Salto entre frames (minutos)</label>
+                    <input
+                      id="global_satellite_frame_step"
+                      type="number"
+                      min="1"
+                      max="1440"
+                      value={form.layers.global?.satellite.frame_step ?? 10}
+                      disabled={disableInputs || !form.layers.global?.satellite.enabled}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isNaN(value)) {
+                          setForm((prev) => {
+                            const globalWithDefaults = getGlobalWithDefaults(prev);
+                            return {
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                global: {
+                                  ...globalWithDefaults,
+                                  satellite: {
+                                    ...globalWithDefaults.satellite,
+                                    frame_step: Math.max(1, Math.min(1440, Math.round(value))),
+                                  },
+                                },
+                              },
+                            };
+                          });
+                          resetErrorsFor("layers.global.satellite.frame_step");
+                        }
+                      }}
+                    />
+                    {renderHelp("Intervalo entre frames en la animación (1-1440)")}
+                    {renderFieldError("layers.global.satellite.frame_step")}
+                  </div>
+                </>
+              )}
+
+              {supports("layers.global.radar") && (
+                <>
+                  <div className="config-field config-field--checkbox">
+                    <label htmlFor="global_radar_enabled">
+                      <input
+                        id="global_radar_enabled"
+                        type="checkbox"
+                        checked={form.layers.global?.radar.enabled ?? false}
+                        disabled={disableInputs}
+                        onChange={(event) => {
+                          const enabled = event.target.checked;
+                          setForm((prev) => {
+                            const globalWithDefaults = getGlobalWithDefaults(prev);
+                            return {
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                global: {
+                                  ...globalWithDefaults,
+                                  radar: {
+                                    ...globalWithDefaults.radar,
+                                    enabled,
+                                  },
+                                },
+                              },
+                            };
+                          });
+                          resetErrorsFor("layers.global.radar.enabled");
+                        }}
+                      />
+                      Activar capa de radar global
+                    </label>
+                    {renderHelp("Muestra radar de precipitación global (RainViewer)")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="global_radar_opacity">Opacidad</label>
+                    <input
+                      id="global_radar_opacity"
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={form.layers.global?.radar.opacity ?? 0.7}
+                      disabled={disableInputs || !form.layers.global?.radar.enabled}
+                      onChange={(event) => {
+                        const opacity = Number(event.target.value);
+                        if (!Number.isNaN(opacity)) {
+                          setForm((prev) => {
+                            const globalWithDefaults = getGlobalWithDefaults(prev);
+                            return {
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                global: {
+                                  ...globalWithDefaults,
+                                  radar: {
+                                    ...globalWithDefaults.radar,
+                                    opacity: Math.max(0, Math.min(1, opacity)),
+                                  },
+                                },
+                              },
+                            };
+                          });
+                          resetErrorsFor("layers.global.radar.opacity");
+                        }
+                      }}
+                    />
+                    <span>{Math.round((form.layers.global?.radar.opacity ?? 0.7) * 100)}%</span>
+                    {renderHelp("Opacidad de la capa de radar (0.0 - 1.0)")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="global_radar_refresh">Intervalo de actualización (minutos)</label>
+                    <input
+                      id="global_radar_refresh"
+                      type="number"
+                      min="1"
+                      max="1440"
+                      value={form.layers.global?.radar.refresh_minutes ?? 5}
+                      disabled={disableInputs || !form.layers.global?.radar.enabled}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isNaN(value)) {
+                          setForm((prev) => {
+                            const globalWithDefaults = getGlobalWithDefaults(prev);
+                            return {
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                global: {
+                                  ...globalWithDefaults,
+                                  radar: {
+                                    ...globalWithDefaults.radar,
+                                    refresh_minutes: Math.max(1, Math.min(1440, Math.round(value))),
+                                  },
+                                },
+                              },
+                            };
+                          });
+                          resetErrorsFor("layers.global.radar.refresh_minutes");
+                        }
+                      }}
+                    />
+                    {renderHelp("Cada cuántos minutos se actualizan los frames (1-1440)")}
+                    {renderFieldError("layers.global.radar.refresh_minutes")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="global_radar_history">Historia (minutos)</label>
+                    <input
+                      id="global_radar_history"
+                      type="number"
+                      min="1"
+                      max="1440"
+                      value={form.layers.global?.radar.history_minutes ?? 90}
+                      disabled={disableInputs || !form.layers.global?.radar.enabled}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isNaN(value)) {
+                          setForm((prev) => {
+                            const globalWithDefaults = getGlobalWithDefaults(prev);
+                            return {
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                global: {
+                                  ...globalWithDefaults,
+                                  radar: {
+                                    ...globalWithDefaults.radar,
+                                    history_minutes: Math.max(1, Math.min(1440, Math.round(value))),
+                                  },
+                                },
+                              },
+                            };
+                          });
+                          resetErrorsFor("layers.global.radar.history_minutes");
+                        }
+                      }}
+                    />
+                    {renderHelp("Cuántos minutos de historia mantener (1-1440)")}
+                    {renderFieldError("layers.global.radar.history_minutes")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="global_radar_frame_step">Salto entre frames (minutos)</label>
+                    <input
+                      id="global_radar_frame_step"
+                      type="number"
+                      min="1"
+                      max="1440"
+                      value={form.layers.global?.radar.frame_step ?? 5}
+                      disabled={disableInputs || !form.layers.global?.radar.enabled}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isNaN(value)) {
+                          setForm((prev) => {
+                            const globalWithDefaults = getGlobalWithDefaults(prev);
+                            return {
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                global: {
+                                  ...globalWithDefaults,
+                                  radar: {
+                                    ...globalWithDefaults.radar,
+                                    frame_step: Math.max(1, Math.min(1440, Math.round(value))),
+                                  },
+                                },
+                              },
+                            };
+                          });
+                          resetErrorsFor("layers.global.radar.frame_step");
+                        }
+                      }}
+                    />
+                    {renderHelp("Intervalo entre frames en la animación (1-1440)")}
+                    {renderFieldError("layers.global.radar.frame_step")}
+                  </div>
+                </>
+              )}
+              </div>
+            </div>
+          );
+        })()}
+
         <div className="config-card">
           <div>
             <h2>WiFi</h2>
