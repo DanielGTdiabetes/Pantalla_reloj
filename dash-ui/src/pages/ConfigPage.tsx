@@ -2161,6 +2161,159 @@ const ConfigPage: React.FC = () => {
                     {renderHelp("Tiempo máximo antes de ocultar datos antiguos (10-600)")}
                     {renderFieldError("layers.flights.max_age_seconds")}
                   </div>
+
+                  <div className="config-field">
+                    <label htmlFor="flights_provider">Proveedor</label>
+                    <select
+                      id="flights_provider"
+                      value={form.layers.flights.provider}
+                      disabled={disableInputs || !form.layers.flights.enabled}
+                      onChange={(event) => {
+                        const provider = event.target.value as "opensky" | "aviationstack" | "custom";
+                        setForm((prev) => ({
+                          ...prev,
+                          layers: {
+                            ...prev.layers,
+                            flights: {
+                              ...prev.layers.flights,
+                              provider,
+                            },
+                          },
+                        }));
+                        resetErrorsFor("layers.flights.provider");
+                      }}
+                    >
+                      <option value="opensky">OpenSky Network</option>
+                      <option value="aviationstack">AviationStack</option>
+                      <option value="custom">Custom</option>
+                    </select>
+                    {renderHelp("Selecciona el proveedor de datos de vuelos")}
+                    {renderFieldError("layers.flights.provider")}
+                  </div>
+
+                  {form.layers.flights.provider === "opensky" && (
+                    <>
+                      <div className="config-field">
+                        <label htmlFor="flights_opensky_username">Usuario OpenSky (opcional)</label>
+                        <input
+                          id="flights_opensky_username"
+                          type="text"
+                          maxLength={128}
+                          value={form.layers.flights.opensky?.username || ""}
+                          disabled={disableInputs || !form.layers.flights.enabled}
+                          onChange={(event) => {
+                            const username = event.target.value.trim() || null;
+                            setForm((prev) => ({
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                flights: {
+                                  ...prev.layers.flights,
+                                  opensky: {
+                                    ...prev.layers.flights.opensky,
+                                    username,
+                                  },
+                                },
+                              },
+                            }));
+                            resetErrorsFor("layers.flights.opensky.username");
+                          }}
+                        />
+                        {renderHelp("Usuario de OpenSky Network (opcional, mejora límites de tasa)")}
+                      </div>
+
+                      <div className="config-field">
+                        <label htmlFor="flights_opensky_password">Contraseña OpenSky (opcional)</label>
+                        <input
+                          id="flights_opensky_password"
+                          type="password"
+                          maxLength={128}
+                          value={form.layers.flights.opensky?.password || ""}
+                          disabled={disableInputs || !form.layers.flights.enabled}
+                          onChange={(event) => {
+                            const password = event.target.value.trim() || null;
+                            setForm((prev) => ({
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                flights: {
+                                  ...prev.layers.flights,
+                                  opensky: {
+                                    ...prev.layers.flights.opensky,
+                                    password,
+                                  },
+                                },
+                              },
+                            }));
+                            resetErrorsFor("layers.flights.opensky.password");
+                          }}
+                        />
+                        {renderHelp("Contraseña de OpenSky Network (opcional)")}
+                      </div>
+                    </>
+                  )}
+
+                  {form.layers.flights.provider === "aviationstack" && (
+                    <>
+                      <div className="config-field">
+                        <label htmlFor="flights_aviationstack_base_url">URL Base AviationStack</label>
+                        <input
+                          id="flights_aviationstack_base_url"
+                          type="url"
+                          maxLength={256}
+                          value={form.layers.flights.aviationstack?.base_url || ""}
+                          disabled={disableInputs || !form.layers.flights.enabled}
+                          onChange={(event) => {
+                            const base_url = event.target.value.trim() || null;
+                            setForm((prev) => ({
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                flights: {
+                                  ...prev.layers.flights,
+                                  aviationstack: {
+                                    ...prev.layers.flights.aviationstack,
+                                    base_url,
+                                  },
+                                },
+                              },
+                            }));
+                            resetErrorsFor("layers.flights.aviationstack.base_url");
+                          }}
+                        />
+                        {renderHelp("URL base de la API de AviationStack")}
+                      </div>
+
+                      <div className="config-field">
+                        <label htmlFor="flights_aviationstack_api_key">API Key AviationStack</label>
+                        <input
+                          id="flights_aviationstack_api_key"
+                          type="text"
+                          maxLength={256}
+                          value={form.layers.flights.aviationstack?.api_key || ""}
+                          disabled={disableInputs || !form.layers.flights.enabled}
+                          onChange={(event) => {
+                            const api_key = event.target.value.trim() || null;
+                            setForm((prev) => ({
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                flights: {
+                                  ...prev.layers.flights,
+                                  aviationstack: {
+                                    ...prev.layers.flights.aviationstack,
+                                    api_key,
+                                  },
+                                },
+                              },
+                            }));
+                            resetErrorsFor("layers.flights.aviationstack.api_key");
+                          }}
+                        />
+                        {renderHelp("API key de AviationStack (requerida para usar este proveedor)")}
+                      </div>
+                    </>
+                  )}
                 </>
               )}
 
@@ -2283,6 +2436,222 @@ const ConfigPage: React.FC = () => {
                     {renderHelp("Tiempo máximo antes de ocultar datos antiguos (10-600)")}
                     {renderFieldError("layers.ships.max_age_seconds")}
                   </div>
+
+                  <div className="config-field">
+                    <label htmlFor="ships_provider">Proveedor</label>
+                    <select
+                      id="ships_provider"
+                      value={form.layers.ships.provider}
+                      disabled={disableInputs || !form.layers.ships.enabled}
+                      onChange={(event) => {
+                        const provider = event.target.value as "ais_generic" | "aisstream" | "aishub" | "custom";
+                        setForm((prev) => ({
+                          ...prev,
+                          layers: {
+                            ...prev.layers,
+                            ships: {
+                              ...prev.layers.ships,
+                              provider,
+                            },
+                          },
+                        }));
+                        resetErrorsFor("layers.ships.provider");
+                      }}
+                    >
+                      <option value="ais_generic">Generic AIS (Demo)</option>
+                      <option value="aisstream">AISStream</option>
+                      <option value="aishub">AISHub</option>
+                      <option value="custom">Custom</option>
+                    </select>
+                    {renderHelp("Selecciona el proveedor de datos de barcos")}
+                    {renderFieldError("layers.ships.provider")}
+                  </div>
+
+                  {form.layers.ships.provider === "ais_generic" && (
+                    <>
+                      <div className="config-field">
+                        <label htmlFor="ships_ais_generic_api_url">URL API AIS (opcional)</label>
+                        <input
+                          id="ships_ais_generic_api_url"
+                          type="url"
+                          maxLength={256}
+                          value={form.layers.ships.ais_generic?.api_url || ""}
+                          disabled={disableInputs || !form.layers.ships.enabled}
+                          onChange={(event) => {
+                            const api_url = event.target.value.trim() || null;
+                            setForm((prev) => ({
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                ships: {
+                                  ...prev.layers.ships,
+                                  ais_generic: {
+                                    ...prev.layers.ships.ais_generic,
+                                    api_url,
+                                  },
+                                },
+                              },
+                            }));
+                            resetErrorsFor("layers.ships.ais_generic.api_url");
+                          }}
+                        />
+                        {renderHelp("URL de la API AIS personalizada (opcional, usa demo si está vacío)")}
+                      </div>
+
+                      <div className="config-field">
+                        <label htmlFor="ships_ais_generic_api_key">API Key AIS (opcional)</label>
+                        <input
+                          id="ships_ais_generic_api_key"
+                          type="text"
+                          maxLength={256}
+                          value={form.layers.ships.ais_generic?.api_key || ""}
+                          disabled={disableInputs || !form.layers.ships.enabled}
+                          onChange={(event) => {
+                            const api_key = event.target.value.trim() || null;
+                            setForm((prev) => ({
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                ships: {
+                                  ...prev.layers.ships,
+                                  ais_generic: {
+                                    ...prev.layers.ships.ais_generic,
+                                    api_key,
+                                  },
+                                },
+                              },
+                            }));
+                            resetErrorsFor("layers.ships.ais_generic.api_key");
+                          }}
+                        />
+                        {renderHelp("API key de la API AIS personalizada (opcional)")}
+                      </div>
+                    </>
+                  )}
+
+                  {form.layers.ships.provider === "aisstream" && (
+                    <>
+                      <div className="config-field">
+                        <label htmlFor="ships_aisstream_ws_url">WebSocket/URL AISStream</label>
+                        <input
+                          id="ships_aisstream_ws_url"
+                          type="url"
+                          maxLength={256}
+                          value={form.layers.ships.aisstream?.ws_url || ""}
+                          disabled={disableInputs || !form.layers.ships.enabled}
+                          onChange={(event) => {
+                            const ws_url = event.target.value.trim() || null;
+                            setForm((prev) => ({
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                ships: {
+                                  ...prev.layers.ships,
+                                  aisstream: {
+                                    ...prev.layers.ships.aisstream,
+                                    ws_url,
+                                  },
+                                },
+                              },
+                            }));
+                            resetErrorsFor("layers.ships.aisstream.ws_url");
+                          }}
+                        />
+                        {renderHelp("URL WebSocket o REST de AISStream")}
+                      </div>
+
+                      <div className="config-field">
+                        <label htmlFor="ships_aisstream_api_key">API Key AISStream (opcional)</label>
+                        <input
+                          id="ships_aisstream_api_key"
+                          type="text"
+                          maxLength={256}
+                          value={form.layers.ships.aisstream?.api_key || ""}
+                          disabled={disableInputs || !form.layers.ships.enabled}
+                          onChange={(event) => {
+                            const api_key = event.target.value.trim() || null;
+                            setForm((prev) => ({
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                ships: {
+                                  ...prev.layers.ships,
+                                  aisstream: {
+                                    ...prev.layers.ships.aisstream,
+                                    api_key,
+                                  },
+                                },
+                              },
+                            }));
+                            resetErrorsFor("layers.ships.aisstream.api_key");
+                          }}
+                        />
+                        {renderHelp("API key de AISStream (opcional)")}
+                      </div>
+                    </>
+                  )}
+
+                  {form.layers.ships.provider === "aishub" && (
+                    <>
+                      <div className="config-field">
+                        <label htmlFor="ships_aishub_base_url">URL Base AISHub</label>
+                        <input
+                          id="ships_aishub_base_url"
+                          type="url"
+                          maxLength={256}
+                          value={form.layers.ships.aishub?.base_url || ""}
+                          disabled={disableInputs || !form.layers.ships.enabled}
+                          onChange={(event) => {
+                            const base_url = event.target.value.trim() || null;
+                            setForm((prev) => ({
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                ships: {
+                                  ...prev.layers.ships,
+                                  aishub: {
+                                    ...prev.layers.ships.aishub,
+                                    base_url,
+                                  },
+                                },
+                              },
+                            }));
+                            resetErrorsFor("layers.ships.aishub.base_url");
+                          }}
+                        />
+                        {renderHelp("URL base de la API de AISHub")}
+                      </div>
+
+                      <div className="config-field">
+                        <label htmlFor="ships_aishub_api_key">API Key AISHub</label>
+                        <input
+                          id="ships_aishub_api_key"
+                          type="text"
+                          maxLength={256}
+                          value={form.layers.ships.aishub?.api_key || ""}
+                          disabled={disableInputs || !form.layers.ships.enabled}
+                          onChange={(event) => {
+                            const api_key = event.target.value.trim() || null;
+                            setForm((prev) => ({
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                ships: {
+                                  ...prev.layers.ships,
+                                  aishub: {
+                                    ...prev.layers.ships.aishub,
+                                    api_key,
+                                  },
+                                },
+                              },
+                            }));
+                            resetErrorsFor("layers.ships.aishub.api_key");
+                          }}
+                        />
+                        {renderHelp("API key de AISHub (requerida para usar este proveedor)")}
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </div>

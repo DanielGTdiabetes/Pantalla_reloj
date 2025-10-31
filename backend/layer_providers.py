@@ -153,6 +153,116 @@ class OpenSkyFlightProvider(FlightProvider):
             return {"type": "FeatureCollection", "features": []}
 
 
+class AviationStackFlightProvider(FlightProvider):
+    """Proveedor de datos de vuelos usando AviationStack API."""
+    
+    def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None):
+        self.base_url = base_url or "http://api.aviationstack.com/v1"
+        self.api_key = api_key
+        
+    def fetch(
+        self,
+        bounds: Optional[Tuple[float, float, float, float]] = None,
+        since: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """Obtiene vuelos de AviationStack API."""
+        if not self.api_key:
+            logger.warning("AviationStackFlightProvider: api_key not configured")
+            return {"type": "FeatureCollection", "features": []}
+        
+        try:
+            url = f"{self.base_url}/flights"
+            params = {"access_key": self.api_key, "limit": 100}
+            
+            if bounds:
+                # AviationStack acepta bbox como string "lat1,lon1,lat2,lon2"
+                min_lon, min_lat, max_lon, max_lat = bounds
+                params["bbox"] = f"{min_lat},{min_lon},{max_lat},{max_lon}"
+            
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if "data" not in data or not data["data"]:
+                return {"type": "FeatureCollection", "features": []}
+            
+            features = []
+            now = datetime.now(timezone.utc).timestamp()
+            
+            for flight in data["data"]:
+                if not flight.get("live"):
+                    continue
+                
+                latitude = flight.get("latitude")
+                longitude = flight.get("longitude")
+                
+                if not (latitude and longitude and abs(latitude) <= 90 and abs(longitude) <= 180):
+                    continue
+                
+                # Obtener información del vuelo
+                flight_info = flight.get("flight", {})
+                airline = flight_info.get("iata") or flight_info.get("icao") or ""
+                number = flight_info.get("number", "")
+                callsign = f"{airline}{number}" if airline and number else ""
+                
+                # Obtener dirección (track)
+                direction = flight.get("direction") or 0
+                
+                # Obtener velocidad (en km/h, convertir a m/s)
+                speed_kmh = flight.get("speed", {}).get("horizontal") or 0
+                speed_ms = speed_kmh / 3.6  # km/h a m/s
+                
+                # Obtener altitud (en metros)
+                altitude_m = flight.get("altitude", {}) or 0
+                if isinstance(altitude_m, dict):
+                    altitude_m = altitude_m.get("meters") or 0
+                
+                # Timestamp
+                updated = flight.get("updated")
+                if updated:
+                    try:
+                        # Intentar parsear timestamp ISO
+                        if isinstance(updated, str):
+                            try:
+                                # Intentar fromisoformat (Python 3.7+)
+                                dt = datetime.fromisoformat(updated.replace('Z', '+00:00'))
+                                timestamp = int(dt.timestamp())
+                            except:
+                                # Si falla, usar timestamp actual
+                                timestamp = int(now)
+                        else:
+                            timestamp = int(now)
+                    except:
+                        timestamp = int(now)
+                else:
+                    timestamp = int(now)
+                
+                features.append({
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [float(longitude), float(latitude)]
+                    },
+                    "properties": {
+                        "icao24": flight.get("aircraft", {}).get("registration", ""),
+                        "callsign": callsign,
+                        "alt_baro": altitude_m if altitude_m else None,
+                        "track": direction,
+                        "speed": speed_ms,
+                        "timestamp": timestamp
+                    }
+                })
+            
+            return {
+                "type": "FeatureCollection",
+                "features": features
+            }
+        except Exception as exc:
+            logger.error("AviationStackFlightProvider fetch failed: %s", exc)
+            return {"type": "FeatureCollection", "features": []}
+
+
 class GenericAISProvider(ShipProvider):
     """Proveedor genérico de datos AIS (barcos).
     
@@ -241,4 +351,159 @@ class GenericAISProvider(ShipProvider):
             "type": "FeatureCollection",
             "features": features
         }
+
+
+class AISStreamProvider(ShipProvider):
+    """Proveedor de datos AIS usando AISStream API (WebSocket o REST)."""
+    
+    def __init__(self, ws_url: Optional[str] = None, api_key: Optional[str] = None):
+        self.ws_url = ws_url
+        self.api_key = api_key
+        self.rest_url = None
+        # Si ws_url es una URL REST, usarla directamente
+        if ws_url and not ws_url.startswith("ws"):
+            self.rest_url = ws_url
+    
+    def fetch(
+        self,
+        bounds: Optional[Tuple[float, float, float, float]] = None,
+        since: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """Obtiene datos de barcos desde AISStream."""
+        # Por ahora, solo soportamos REST (WebSocket requiere conexión persistente)
+        if not self.rest_url and not self.ws_url:
+            logger.warning("AISStreamProvider: no URL configured")
+            return {"type": "FeatureCollection", "features": []}
+        
+        url = self.rest_url or self.ws_url.replace("ws://", "http://").replace("wss://", "https://")
+        
+        try:
+            headers = {}
+            if self.api_key:
+                headers["Authorization"] = f"Bearer {self.api_key}"
+            
+            params = {}
+            if bounds:
+                params["bbox"] = f"{bounds[0]},{bounds[1]},{bounds[2]},{bounds[3]}"
+            
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            # Esperar GeoJSON FeatureCollection
+            if data.get("type") == "FeatureCollection":
+                return data
+            
+            # Si devuelve otro formato, intentar convertir
+            features = []
+            if isinstance(data, dict) and "vessels" in data:
+                # Formato alternativo de AISStream
+                now = int(datetime.now(timezone.utc).timestamp())
+                for vessel in data.get("vessels", []):
+                    lat = vessel.get("lat")
+                    lon = vessel.get("lon")
+                    if lat and lon and abs(lat) <= 90 and abs(lon) <= 180:
+                        features.append({
+                            "type": "Feature",
+                            "geometry": {
+                                "type": "Point",
+                                "coordinates": [float(lon), float(lat)]
+                            },
+                            "properties": {
+                                "mmsi": str(vessel.get("mmsi", "")),
+                                "name": vessel.get("name", ""),
+                                "course": vessel.get("course", 0),
+                                "speed": vessel.get("speed", 0),
+                                "timestamp": vessel.get("timestamp", now),
+                                "type": vessel.get("type", "Unknown")
+                            }
+                        })
+                
+                return {
+                    "type": "FeatureCollection",
+                    "features": features
+                }
+            
+            return {"type": "FeatureCollection", "features": []}
+        except Exception as exc:
+            logger.error("AISStreamProvider fetch failed: %s", exc)
+            return {"type": "FeatureCollection", "features": []}
+
+
+class AISHubProvider(ShipProvider):
+    """Proveedor de datos AIS usando AISHub API."""
+    
+    def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None):
+        self.base_url = base_url or "https://www.aishub.net/api"
+        self.api_key = api_key
+    
+    def fetch(
+        self,
+        bounds: Optional[Tuple[float, float, float, float]] = None,
+        since: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """Obtiene datos de barcos desde AISHub."""
+        if not self.api_key:
+            logger.warning("AISHubProvider: api_key not configured")
+            return {"type": "FeatureCollection", "features": []}
+        
+        try:
+            url = f"{self.base_url}/v2/latest"
+            params = {"key": self.api_key, "format": "json"}
+            
+            if bounds:
+                min_lon, min_lat, max_lon, max_lat = bounds
+                params["lat1"] = min_lat
+                params["lon1"] = min_lon
+                params["lat2"] = max_lat
+                params["lon2"] = max_lon
+            
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if "data" not in data or not data["data"]:
+                return {"type": "FeatureCollection", "features": []}
+            
+            features = []
+            now = int(datetime.now(timezone.utc).timestamp())
+            
+            for vessel in data["data"]:
+                lat = vessel.get("LAT")
+                lon = vessel.get("LON")
+                
+                if not (lat and lon and abs(lat) <= 90 and abs(lon) <= 180):
+                    continue
+                
+                mmsi = str(vessel.get("MMSI", ""))
+                name = vessel.get("NAME", "").strip()
+                course = vessel.get("COURSE") or 0
+                speed = vessel.get("SPEED") or 0  # knots
+                timestamp = vessel.get("TIME") or now
+                
+                features.append({
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [float(lon), float(lat)]
+                    },
+                    "properties": {
+                        "mmsi": mmsi,
+                        "name": name,
+                        "course": course,
+                        "speed": speed,
+                        "timestamp": timestamp,
+                        "type": vessel.get("TYPE", "Unknown")
+                    }
+                })
+            
+            return {
+                "type": "FeatureCollection",
+                "features": features
+            }
+        except Exception as exc:
+            logger.error("AISHubProvider fetch failed: %s", exc)
+            return {"type": "FeatureCollection", "features": []}
 

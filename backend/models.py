@@ -242,12 +242,52 @@ class CineFocus(BaseModel):
     hard_hide_outside: bool = False
 
 
+class OpenSkyAuth(BaseModel):
+    """Configuración de autenticación OpenSky."""
+    model_config = ConfigDict(extra="ignore")
+
+    username: Optional[str] = Field(default=None, max_length=128)
+    password: Optional[str] = Field(default=None, max_length=128)
+
+
+class AviationStackConfig(BaseModel):
+    """Configuración de AviationStack API."""
+    model_config = ConfigDict(extra="ignore")
+
+    base_url: Optional[str] = Field(default="http://api.aviationstack.com/v1", max_length=256)
+    api_key: Optional[str] = Field(default=None, max_length=256)
+
+
+class AISStreamConfig(BaseModel):
+    """Configuración de AISStream API."""
+    model_config = ConfigDict(extra="ignore")
+
+    ws_url: Optional[str] = Field(default=None, max_length=256)
+    api_key: Optional[str] = Field(default=None, max_length=256)
+
+
+class AISHubConfig(BaseModel):
+    """Configuración de AISHub API."""
+    model_config = ConfigDict(extra="ignore")
+
+    base_url: Optional[str] = Field(default="https://www.aishub.net/api", max_length=256)
+    api_key: Optional[str] = Field(default=None, max_length=256)
+
+
+class GenericAISConfig(BaseModel):
+    """Configuración genérica para AIS (custom)."""
+    model_config = ConfigDict(extra="ignore")
+
+    api_url: Optional[str] = Field(default=None, max_length=256)
+    api_key: Optional[str] = Field(default=None, max_length=256)
+
+
 class FlightsLayer(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = True
     opacity: float = Field(default=0.9, ge=0.0, le=1.0)
-    provider: Literal["opensky", "custom"] = Field(default="opensky")
+    provider: Literal["opensky", "aviationstack", "custom"] = Field(default="opensky")
     refresh_seconds: int = Field(default=12, ge=1, le=300)
     max_age_seconds: int = Field(default=120, ge=10, le=600)
     max_items_global: int = Field(default=2000, ge=1, le=10000)
@@ -256,6 +296,8 @@ class FlightsLayer(BaseModel):
     decimate: Literal["grid", "none"] = Field(default="grid")
     grid_px: int = Field(default=28, ge=8, le=128)
     cine_focus: CineFocus = Field(default_factory=CineFocus)
+    opensky: OpenSkyAuth = Field(default_factory=OpenSkyAuth)
+    aviationstack: AviationStackConfig = Field(default_factory=AviationStackConfig)
 
 
 class ShipsLayer(BaseModel):
@@ -263,7 +305,7 @@ class ShipsLayer(BaseModel):
 
     enabled: bool = True
     opacity: float = Field(default=0.9, ge=0.0, le=1.0)
-    provider: Literal["ais_generic", "custom"] = Field(default="ais_generic")
+    provider: Literal["ais_generic", "aisstream", "aishub", "custom"] = Field(default="ais_generic")
     refresh_seconds: int = Field(default=18, ge=1, le=300)
     max_age_seconds: int = Field(default=180, ge=10, le=600)
     max_items_global: int = Field(default=1500, ge=1, le=10000)
@@ -273,6 +315,9 @@ class ShipsLayer(BaseModel):
     decimate: Literal["grid", "none"] = Field(default="grid")
     grid_px: int = Field(default=28, ge=8, le=128)
     cine_focus: CineFocus = Field(default_factory=CineFocus)
+    ais_generic: GenericAISConfig = Field(default_factory=GenericAISConfig)
+    aisstream: AISStreamConfig = Field(default_factory=AISStreamConfig)
+    aishub: AISHubConfig = Field(default_factory=AISHubConfig)
 
 
 class LayersConfig(BaseModel):

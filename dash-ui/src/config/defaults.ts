@@ -358,6 +358,14 @@ export const DEFAULT_CONFIG: AppConfig = {
         outside_dim_opacity: 0.25,
         hard_hide_outside: false,
       },
+      opensky: {
+        username: null,
+        password: null,
+      },
+      aviationstack: {
+        base_url: "http://api.aviationstack.com/v1",
+        api_key: null,
+      },
     },
     ships: {
       enabled: true,
@@ -379,6 +387,18 @@ export const DEFAULT_CONFIG: AppConfig = {
         buffer_km: 20.0,
         outside_dim_opacity: 0.30,
         hard_hide_outside: false,
+      },
+      ais_generic: {
+        api_url: null,
+        api_key: null,
+      },
+      aisstream: {
+        ws_url: null,
+        api_key: null,
+      },
+      aishub: {
+        base_url: "https://www.aishub.net/api",
+        api_key: null,
       },
     },
   },
@@ -506,10 +526,19 @@ const mergeFlightsLayer = (candidate: unknown): FlightsLayerConfig => {
   const cineFocusSource = source.cine_focus ?? {};
   const cineFocusFallback = fallback.cine_focus;
   
+  const openskySource = source.opensky ?? {};
+  const openskyFallback = fallback.opensky ?? { username: null, password: null };
+  const aviationstackSource = source.aviationstack ?? {};
+  const aviationstackFallback = fallback.aviationstack ?? { base_url: "http://api.aviationstack.com/v1", api_key: null };
+  
+  const provider = (source.provider === "aviationstack" || source.provider === "custom")
+    ? source.provider
+    : "opensky";
+  
   return {
     enabled: toBoolean(source.enabled, fallback.enabled),
     opacity: clampNumber(toNumber(source.opacity, fallback.opacity), 0.0, 1.0),
-    provider: source.provider === "custom" ? "custom" : "opensky",
+    provider: provider,
     refresh_seconds: clampNumber(
       Math.round(toNumber(source.refresh_seconds, fallback.refresh_seconds)),
       1,
@@ -566,6 +595,14 @@ const mergeFlightsLayer = (candidate: unknown): FlightsLayerConfig => {
       ),
       hard_hide_outside: toBoolean(cineFocusSource.hard_hide_outside, cineFocusFallback.hard_hide_outside),
     },
+    opensky: {
+      username: sanitizeNullableString(openskySource.username, openskyFallback.username),
+      password: sanitizeNullableString(openskySource.password, openskyFallback.password),
+    },
+    aviationstack: {
+      base_url: sanitizeNullableString(aviationstackSource.base_url, aviationstackFallback.base_url),
+      api_key: sanitizeNullableString(aviationstackSource.api_key, aviationstackFallback.api_key),
+    },
   };
 };
 
@@ -575,10 +612,21 @@ const mergeShipsLayer = (candidate: unknown): ShipsLayerConfig => {
   const cineFocusSource = source.cine_focus ?? {};
   const cineFocusFallback = fallback.cine_focus;
   
+  const aisGenericSource = source.ais_generic ?? {};
+  const aisGenericFallback = fallback.ais_generic ?? { api_url: null, api_key: null };
+  const aisstreamSource = source.aisstream ?? {};
+  const aisstreamFallback = fallback.aisstream ?? { ws_url: null, api_key: null };
+  const aishubSource = source.aishub ?? {};
+  const aishubFallback = fallback.aishub ?? { base_url: "https://www.aishub.net/api", api_key: null };
+  
+  const provider = (source.provider === "aisstream" || source.provider === "aishub" || source.provider === "custom")
+    ? source.provider
+    : "ais_generic";
+  
   return {
     enabled: toBoolean(source.enabled, fallback.enabled),
     opacity: clampNumber(toNumber(source.opacity, fallback.opacity), 0.0, 1.0),
-    provider: source.provider === "custom" ? "custom" : "ais_generic",
+    provider: provider,
     refresh_seconds: clampNumber(
       Math.round(toNumber(source.refresh_seconds, fallback.refresh_seconds)),
       1,
@@ -639,6 +687,18 @@ const mergeShipsLayer = (candidate: unknown): ShipsLayerConfig => {
         1.0,
       ),
       hard_hide_outside: toBoolean(cineFocusSource.hard_hide_outside, cineFocusFallback.hard_hide_outside),
+    },
+    ais_generic: {
+      api_url: sanitizeNullableString(aisGenericSource.api_url, aisGenericFallback.api_url),
+      api_key: sanitizeNullableString(aisGenericSource.api_key, aisGenericFallback.api_key),
+    },
+    aisstream: {
+      ws_url: sanitizeNullableString(aisstreamSource.ws_url, aisstreamFallback.ws_url),
+      api_key: sanitizeNullableString(aisstreamSource.api_key, aisstreamFallback.api_key),
+    },
+    aishub: {
+      base_url: sanitizeNullableString(aishubSource.base_url, aishubFallback.base_url),
+      api_key: sanitizeNullableString(aishubSource.api_key, aishubFallback.api_key),
     },
   };
 };

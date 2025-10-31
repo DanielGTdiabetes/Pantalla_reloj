@@ -131,6 +131,14 @@
         "buffer_km": 25.0,
         "outside_dim_opacity": 0.25,
         "hard_hide_outside": false
+      },
+      "opensky": {
+        "username": null,
+        "password": null
+      },
+      "aviationstack": {
+        "base_url": "http://api.aviationstack.com/v1",
+        "api_key": null
       }
     },
     "ships": {
@@ -153,6 +161,18 @@
         "buffer_km": 20.0,
         "outside_dim_opacity": 0.30,
         "hard_hide_outside": false
+      },
+      "ais_generic": {
+        "api_url": null,
+        "api_key": null
+      },
+      "aisstream": {
+        "ws_url": null,
+        "api_key": null
+      },
+      "aishub": {
+        "base_url": "https://www.aishub.net/api",
+        "api_key": null
       }
     }
   }

@@ -153,10 +153,35 @@ export type CineFocusConfig = {
   hard_hide_outside: boolean;
 };
 
+export type OpenSkyAuthConfig = {
+  username?: string | null;
+  password?: string | null;
+};
+
+export type AviationStackConfig = {
+  base_url?: string | null;
+  api_key?: string | null;
+};
+
+export type AISStreamConfig = {
+  ws_url?: string | null;
+  api_key?: string | null;
+};
+
+export type AISHubConfig = {
+  base_url?: string | null;
+  api_key?: string | null;
+};
+
+export type GenericAISConfig = {
+  api_url?: string | null;
+  api_key?: string | null;
+};
+
 export type FlightsLayerConfig = {
   enabled: boolean;
   opacity: number;
-  provider: "opensky" | "custom";
+  provider: "opensky" | "aviationstack" | "custom";
   refresh_seconds: number;
   max_age_seconds: number;
   max_items_global: number;
@@ -165,12 +190,14 @@ export type FlightsLayerConfig = {
   decimate: "grid" | "none";
   grid_px: number;
   cine_focus: CineFocusConfig;
+  opensky?: OpenSkyAuthConfig;
+  aviationstack?: AviationStackConfig;
 };
 
 export type ShipsLayerConfig = {
   enabled: boolean;
   opacity: number;
-  provider: "ais_generic" | "custom";
+  provider: "ais_generic" | "aisstream" | "aishub" | "custom";
   refresh_seconds: number;
   max_age_seconds: number;
   max_items_global: number;
@@ -180,6 +207,9 @@ export type ShipsLayerConfig = {
   decimate: "grid" | "none";
   grid_px: number;
   cine_focus: CineFocusConfig;
+  ais_generic?: GenericAISConfig;
+  aisstream?: AISStreamConfig;
+  aishub?: AISHubConfig;
 };
 
 export type LayersConfig = {

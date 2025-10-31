@@ -25,7 +25,15 @@ from .data_sources import (
     parse_rss_feed,
 )
 from .focus_masks import check_point_in_focus, load_or_build_focus_mask
-from .layer_providers import GenericAISProvider, OpenSkyFlightProvider
+from .layer_providers import (
+    AISHubProvider,
+    AISStreamProvider,
+    AviationStackFlightProvider,
+    FlightProvider,
+    GenericAISProvider,
+    OpenSkyFlightProvider,
+    ShipProvider,
+)
 from .logging_utils import configure_logging
 from .models import AppConfig
 from .rate_limiter import check_rate_limit
@@ -958,24 +966,85 @@ def wifi_disconnect() -> Dict[str, Any]:
 
 
 # Rate limiters y proveedores para layers
-_flights_provider: Optional[OpenSkyFlightProvider] = None
-_ships_provider: Optional[GenericAISProvider] = None
+# Cache de proveedores por configuración (se recrean si cambia la config)
+_flights_provider_cache: Dict[str, Any] = {}
+_ships_provider_cache: Dict[str, Any] = {}
 
 
-def _get_flights_provider() -> OpenSkyFlightProvider:
-    """Obtiene o crea el proveedor de vuelos."""
-    global _flights_provider
-    if _flights_provider is None:
-        _flights_provider = OpenSkyFlightProvider()
-    return _flights_provider
+def _get_flights_provider(config: AppConfig) -> FlightProvider:
+    """Obtiene o crea el proveedor de vuelos según la configuración."""
+    flights_config = config.layers.flights
+    provider_key = f"{flights_config.provider}"
+    
+    # Si ya existe y es del mismo tipo, reutilizar
+    if provider_key in _flights_provider_cache:
+        cached_provider = _flights_provider_cache[provider_key]
+        # Verificar que sea del tipo correcto (podría haber cambiado la config)
+        if flights_config.provider == "opensky" and isinstance(cached_provider, OpenSkyFlightProvider):
+            return cached_provider
+        elif flights_config.provider == "aviationstack" and isinstance(cached_provider, AviationStackFlightProvider):
+            return cached_provider
+    
+    # Crear nuevo proveedor según configuración
+    if flights_config.provider == "opensky":
+        provider = OpenSkyFlightProvider(
+            username=flights_config.opensky.username,
+            password=flights_config.opensky.password
+        )
+    elif flights_config.provider == "aviationstack":
+        provider = AviationStackFlightProvider(
+            base_url=flights_config.aviationstack.base_url,
+            api_key=flights_config.aviationstack.api_key
+        )
+    else:
+        # Fallback a OpenSky si no se reconoce
+        logger.warning("Unknown flights provider: %s, using OpenSky", flights_config.provider)
+        provider = OpenSkyFlightProvider()
+    
+    _flights_provider_cache[provider_key] = provider
+    return provider
 
 
-def _get_ships_provider() -> GenericAISProvider:
-    """Obtiene o crea el proveedor de barcos."""
-    global _ships_provider
-    if _ships_provider is None:
-        _ships_provider = GenericAISProvider(demo_enabled=True)
-    return _ships_provider
+def _get_ships_provider(config: AppConfig) -> ShipProvider:
+    """Obtiene o crea el proveedor de barcos según la configuración."""
+    ships_config = config.layers.ships
+    provider_key = f"{ships_config.provider}"
+    
+    # Si ya existe y es del mismo tipo, reutilizar
+    if provider_key in _ships_provider_cache:
+        cached_provider = _ships_provider_cache[provider_key]
+        # Verificar que sea del tipo correcto
+        if ships_config.provider == "ais_generic" and isinstance(cached_provider, GenericAISProvider):
+            return cached_provider
+        elif ships_config.provider == "aisstream" and isinstance(cached_provider, AISStreamProvider):
+            return cached_provider
+        elif ships_config.provider == "aishub" and isinstance(cached_provider, AISHubProvider):
+            return cached_provider
+    
+    # Crear nuevo proveedor según configuración
+    if ships_config.provider == "ais_generic":
+        provider = GenericAISProvider(
+            api_url=ships_config.ais_generic.api_url,
+            api_key=ships_config.ais_generic.api_key,
+            demo_enabled=True  # Mantener demo como fallback
+        )
+    elif ships_config.provider == "aisstream":
+        provider = AISStreamProvider(
+            ws_url=ships_config.aisstream.ws_url,
+            api_key=ships_config.aisstream.api_key
+        )
+    elif ships_config.provider == "aishub":
+        provider = AISHubProvider(
+            base_url=ships_config.aishub.base_url,
+            api_key=ships_config.aishub.api_key
+        )
+    else:
+        # Fallback a GenericAIS si no se reconoce
+        logger.warning("Unknown ships provider: %s, using GenericAIS", ships_config.provider)
+        provider = GenericAISProvider(demo_enabled=True)
+    
+    _ships_provider_cache[provider_key] = provider
+    return provider
 
 
 @app.get("/api/layers/flights")
@@ -1021,7 +1090,7 @@ def get_flights(
     
     # Fetch de datos
     try:
-        provider = _get_flights_provider()
+        provider = _get_flights_provider(config)
         data = provider.fetch(bounds=bounds)
         
         # Filtrar por edad (max_age_seconds) y límites de densidad
@@ -1174,7 +1243,7 @@ def get_ships(
     
     # Fetch de datos
     try:
-        provider = _get_ships_provider()
+        provider = _get_ships_provider(config)
         data = provider.fetch(bounds=bounds)
         
         # Filtrar por edad (max_age_seconds), velocidad mínima y límites de densidad
