@@ -1365,7 +1365,7 @@ const ConfigPage: React.FC = () => {
                     />
                     Activar modo tormenta
                   </label>
-                  {renderHelp("Activa el modo de visualización para tormentas locales (zoom Castellón/Vila-real)"}
+                  {renderHelp("Activa el modo de visualización para tormentas locales (zoom Castellón/Vila-real)")}
                 </div>
               )}
 
