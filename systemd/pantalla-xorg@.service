@@ -1,0 +1,16 @@
+[Unit]
+Description=Pantalla_reloj Xorg server (:0, vt7) for %i
+After=systemd-user-sessions.service
+
+[Service]
+Type=simple
+User=root
+Environment="SYSTEMD_USER=%i"
+ExecStartPre=/usr/bin/install -d -m 0755 -o root -g root /var/log/pantalla
+ExecStartPre=/usr/lib/pantalla-reloj/xorg-launch.sh --prepare-only %i
+ExecStart=/usr/lib/pantalla-reloj/xorg-launch.sh %i
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+

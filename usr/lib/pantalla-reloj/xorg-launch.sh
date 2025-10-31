@@ -1,7 +1,20 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
-USER_NAME=${KIOSK_USER:-dani}
+# Detectar usuario desde systemd o usar variable de entorno
+if [[ -n "${SYSTEMD_USER:-}" ]]; then
+  USER_NAME="$SYSTEMD_USER"
+elif [[ -n "${KIOSK_USER:-}" ]]; then
+  USER_NAME="$KIOSK_USER"
+else
+  # Intentar detectar desde el primer servicio activo
+  SERVICE_USER=$(systemctl show -p User pantalla-openbox@*.service 2>/dev/null | head -n1 | cut -d= -f2 || echo "")
+  if [[ -n "$SERVICE_USER" ]]; then
+    USER_NAME="$SERVICE_USER"
+  else
+    USER_NAME="${1:-dani}"  # Fallback: usar primer argumento o "dani"
+  fi
+fi
 STATE_DIR=${PANTALLA_STATE_DIR:-/var/lib/pantalla-reloj}
 AUTH_FILE="${STATE_DIR}/.Xauthority"
 LOCK_FILE="${STATE_DIR}/.Xauthority.lock"

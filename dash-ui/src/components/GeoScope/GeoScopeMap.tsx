@@ -708,9 +708,32 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
   }
 };
 
+// Verificar disponibilidad de WebGL
+function checkWebGLSupport(): { supported: boolean; reason?: string } {
+  try {
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+    
+    if (!gl) {
+      return { supported: false, reason: "WebGL no está disponible en este navegador" };
+    }
+    
+    // Verificar que WebGL esté realmente funcional
+    const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
+    if (!debugInfo) {
+      return { supported: false, reason: "WebGL no está completamente funcional" };
+    }
+    
+    return { supported: true };
+  } catch (error) {
+    return { supported: false, reason: `Error verificando WebGL: ${error}` };
+  }
+}
+
 export default function GeoScopeMap() {
   const { data: config, reload: reloadConfig } = useConfig();
   const mapFillRef = useRef<HTMLDivElement | null>(null);
+  const [webglError, setWebglError] = useState<string | null>(null);
   
   // Guardar estado de si necesitamos iniciar animación cuando la página esté visible
   const pendingAnimationRef = useRef(false);
@@ -1609,6 +1632,15 @@ export default function GeoScopeMap() {
     };
 
     const initializeMap = async () => {
+      // Verificar WebGL antes de continuar
+      const webglCheck = checkWebGLSupport();
+      if (!webglCheck.supported) {
+        console.error("[GeoScopeMap] WebGL no disponible:", webglCheck.reason);
+        setWebglError(webglCheck.reason || "WebGL no está disponible");
+        return;
+      }
+      
+      setWebglError(null);
       const hostPromise = waitForStableSize();
       const runtime = await loadRuntimePreferences();
       respectDefaultRef.current = Boolean(runtime.respectReducedMotion);
@@ -1675,19 +1707,26 @@ export default function GeoScopeMap() {
         }
       }
 
-      const map = new maplibregl.Map({
-        container: host,
-        style: runtime.style.style,
-        center: [viewStateRef.current.lng, viewStateRef.current.lat],
-        zoom: viewStateRef.current.zoom,
-        minZoom: firstBand.minZoom,
-        pitch: viewStateRef.current.pitch,
-        bearing: viewStateRef.current.bearing,
-        interactive: false,
-        attributionControl: false,
-        renderWorldCopies: runtime.renderWorldCopies,
-        trackResize: false
-      });
+      let map: maplibregl.Map;
+      try {
+        map = new maplibregl.Map({
+          container: host,
+          style: runtime.style.style,
+          center: [viewStateRef.current.lng, viewStateRef.current.lat],
+          zoom: viewStateRef.current.zoom,
+          minZoom: firstBand.minZoom,
+          pitch: viewStateRef.current.pitch,
+          bearing: viewStateRef.current.bearing,
+          interactive: false,
+          attributionControl: false,
+          renderWorldCopies: runtime.renderWorldCopies,
+          trackResize: false
+        });
+      } catch (error) {
+        console.error("[GeoScopeMap] Failed to create map:", error);
+        setWebglError(`Error al inicializar el mapa: ${error instanceof Error ? error.message : String(error)}`);
+        return;
+      }
 
       mapRef.current = map;
       map.setMinZoom(firstBand.minZoom);
@@ -1746,11 +1785,22 @@ export default function GeoScopeMap() {
 
       map.on("load", handleLoad);
       map.on("styledata", handleStyleData);
-      map.on("webglcontextlost", handleContextLost);
+      map.on("webglcontextlost", (e) => {
+        console.error("[GeoScopeMap] WebGL context lost");
+        setWebglError("El contexto WebGL se perdió. El mapa puede no funcionar correctamente.");
+        handleContextLost(e);
+      });
       map.on("webglcontextrestored", handleContextRestored);
-      if (styleErrorHandler) {
-        map.on("error", styleErrorHandler);
-      }
+      map.on("error", (e) => {
+        console.error("[GeoScopeMap] Map error:", e);
+        // Si el error no es manejado por styleErrorHandler, mostrar error general
+        if (styleErrorHandler) {
+          styleErrorHandler(e);
+        } else {
+          const errorMsg = e.error instanceof Error ? e.error.message : String(e.error || "Error desconocido");
+          setWebglError(`Error en el mapa: ${errorMsg}`);
+        }
+      });
 
       // Inicializar sistema de capas cuando el mapa esté listo
       map.once("load", () => {
@@ -2872,6 +2922,21 @@ export default function GeoScopeMap() {
       clearInterval(refreshTimer);
     };
   }, [config]);
+
+  // Mostrar error si WebGL no está disponible o el mapa falló
+  if (webglError) {
+    return (
+      <div className="map-host map-error">
+        <div className="map-error-content">
+          <h2>Error de visualización</h2>
+          <p>{webglError}</p>
+          <p className="map-error-hint">
+            Por favor, verifica que tu navegador soporte WebGL y que los controladores gráficos estén actualizados.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="map-host">

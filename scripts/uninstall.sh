@@ -82,7 +82,7 @@ SYSTEMD_UNITS=(
   "pantalla-portal@${USER_NAME}.service"
   "pantalla-openbox@${USER_NAME}.service"
   "pantalla-dash-backend@${USER_NAME}.service"
-  "pantalla-xorg.service"
+  "pantalla-xorg@${USER_NAME}.service"
   "pantalla-session.target"
 )
 
@@ -98,7 +98,7 @@ done
 rm -f /etc/systemd/system/pantalla-kiosk@.service
 rm -f /etc/systemd/system/pantalla-kiosk-chromium@.service
 rm -f /etc/systemd/system/pantalla-openbox@.service
-rm -f /etc/systemd/system/pantalla-xorg.service
+rm -f /etc/systemd/system/pantalla-xorg@.service
 rm -f /etc/systemd/system/pantalla-dash-backend@.service
 rm -f /etc/systemd/system/pantalla-portal@.service
 rm -f /etc/systemd/system/pantalla-kiosk-chromium@${USER_NAME}.service.d/override.conf

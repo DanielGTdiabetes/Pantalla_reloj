@@ -464,7 +464,7 @@ deploy_unit() {
   fi
 }
 
-deploy_unit "$REPO_ROOT/systemd/pantalla-xorg.service" /etc/systemd/system/pantalla-xorg.service
+deploy_unit "$REPO_ROOT/systemd/pantalla-xorg@.service" /etc/systemd/system/pantalla-xorg@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-openbox@.service" /etc/systemd/system/pantalla-openbox@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk@.service" /etc/systemd/system/pantalla-kiosk@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk-chromium@.service" /etc/systemd/system/pantalla-kiosk-chromium@.service
@@ -518,7 +518,7 @@ systemctl disable --now "pantalla-portal@${USER_NAME}.service" 2>/dev/null || tr
 systemctl mask "pantalla-portal@${USER_NAME}.service" 2>/dev/null || true
 
 log_info "Enabling services"
-systemctl enable --now pantalla-xorg.service || true
+systemctl enable --now "pantalla-xorg@${USER_NAME}.service" || true
 systemctl enable --now pantalla-dash-backend@${USER_NAME}.service || true
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" /var/lib/pantalla || true
 systemctl enable --now "pantalla-openbox@${USER_NAME}.service" || true
@@ -542,7 +542,7 @@ log_info "Ensuring watchdog disabled"
 systemctl disable --now "pantalla-kiosk-watchdog@${USER_NAME}.timer" "pantalla-kiosk-watchdog@${USER_NAME}.service" 2>/dev/null || true
 
 log_info "Restarting Pantalla services"
-systemctl restart pantalla-xorg.service
+systemctl restart "pantalla-xorg@${USER_NAME}.service"
 if stat_output=$(stat -c '%U:%G %a %n' /var/lib/pantalla-reloj/.Xauthority 2>/dev/null); then
   SUMMARY+=("[install] permisos XAUTHORITY: ${stat_output}")
 else

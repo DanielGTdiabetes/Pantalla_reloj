@@ -66,6 +66,37 @@ body {
   overflow: hidden;
 }
 
+.map-host.map-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1a1a;
+  color: #fff;
+  padding: 2rem;
+  text-align: center;
+}
+
+.map-error-content {
+  max-width: 600px;
+}
+
+.map-error-content h2 {
+  color: #ff6b6b;
+  margin: 0 0 1rem 0;
+  font-size: 1.5rem;
+}
+
+.map-error-content p {
+  margin: 0.5rem 0;
+  line-height: 1.5;
+}
+
+.map-error-hint {
+  color: #999;
+  font-size: 0.9rem;
+  margin-top: 1rem;
+}
+
 .map-host {
   position: relative;
   width: 100%;

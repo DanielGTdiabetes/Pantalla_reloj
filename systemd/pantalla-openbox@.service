@@ -1,7 +1,7 @@
 [Unit]
 Description=Pantalla_reloj Openbox session for %i (DISPLAY=:0)
-After=pantalla-xorg.service
-Wants=pantalla-xorg.service
+After=pantalla-xorg@%i.service
+Wants=pantalla-xorg@%i.service
 
 [Service]
 User=%i
