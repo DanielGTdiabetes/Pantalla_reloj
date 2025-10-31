@@ -1827,13 +1827,34 @@ export default function GeoScopeMap() {
         // Reiniciar el mapa con nueva configuración
         cinemaRef.current = cloneCinema(cinemaSource);
         
+        // Asegurar que autopanEnabled esté activado
+        autopanEnabledRef.current = true;
+        
         // Reiniciar animación si el mapa está listo
         const map = mapRef.current;
+        console.log("[GeoScopeMap] Attempting to start animation:", {
+          mapExists: !!map,
+          isStyleLoaded: map?.isStyleLoaded(),
+          isHidden: document.hidden,
+          autopanMode: autopanModeRef.current,
+          allowCinema: allowCinemaRef.current,
+          animationFrame: animationFrameRef.current
+        });
+        
         if (map && map.isStyleLoaded() && !document.hidden && autopanModeRef.current === "rotate") {
           // Usar un pequeño delay para asegurar que todo esté listo
           setTimeout(() => {
             const map = mapRef.current;
+            console.log("[GeoScopeMap] Inside setTimeout - checking conditions:", {
+              mapExists: !!map,
+              isStyleLoaded: map?.isStyleLoaded(),
+              isHidden: document.hidden,
+              allowCinema: allowCinemaRef.current,
+              animationFrame: animationFrameRef.current
+            });
+            
             if (map && map.isStyleLoaded() && !document.hidden && allowCinemaRef.current && animationFrameRef.current === null) {
+              console.log("[GeoScopeMap] Starting animation cycle");
               lastFrameTimeRef.current = null;
               lastRepaintTimeRef.current = null;
               const now = typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -1843,9 +1864,17 @@ export default function GeoScopeMap() {
               const stepPan = (timestamp: number) => {
                 const map = mapRef.current;
                 if (animationFrameRef.current === null || !map || !allowCinemaRef.current) {
+                  if (animationFrameRef.current === null) {
+                    console.log("[GeoScopeMap] stepPan: Animation frame cancelled");
+                  }
                   return;
                 }
                 if (autopanModeRef.current !== "rotate") {
+                  console.log("[GeoScopeMap] stepPan: Wrong autopan mode:", autopanModeRef.current);
+                  return;
+                }
+                if (!autopanEnabledRef.current) {
+                  console.log("[GeoScopeMap] stepPan: Autopan disabled");
                   return;
                 }
                 
@@ -1949,9 +1978,15 @@ export default function GeoScopeMap() {
                 animationFrameRef.current = requestAnimationFrame(stepPan);
               };
               
+              // Iniciar el ciclo de animación
               animationFrameRef.current = requestAnimationFrame(stepPan);
+              console.log("[GeoScopeMap] Animation frame started:", animationFrameRef.current);
+            } else {
+              console.warn("[GeoScopeMap] Conditions not met to start animation");
             }
           }, 100);
+        } else {
+          console.warn("[GeoScopeMap] Cannot start animation - initial conditions not met");
         }
       } else {
         // Si se desactiva, asegurar que el bearing sea 0
