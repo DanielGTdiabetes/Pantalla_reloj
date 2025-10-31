@@ -27,6 +27,7 @@ export default class AircraftLayer implements Layer {
   private cineFocus?: AircraftLayerOptions["cineFocus"];
   private map?: maplibregl.Map;
   private readonly sourceId = "geoscope-aircraft-source";
+  private lastData: FeatureCollection = EMPTY;
 
   constructor(options: AircraftLayerOptions = {}) {
     this.enabled = options.enabled ?? false;
@@ -40,8 +41,13 @@ export default class AircraftLayer implements Layer {
     if (!map.getSource(this.sourceId)) {
       map.addSource(this.sourceId, {
         type: "geojson",
-        data: EMPTY
+        data: this.lastData
       });
+    }
+
+    const source = map.getSource(this.sourceId);
+    if (isGeoJSONSource(source)) {
+      source.setData(this.lastData);
     }
 
     if (!map.getLayer(this.id)) {
@@ -159,47 +165,46 @@ export default class AircraftLayer implements Layer {
   }
 
   updateData(data: FeatureCollection): void {
-    if (!this.map) return;
-    
     // Calcular edad para cada feature y aplicar dimming según in_focus
     const now = Math.floor(Date.now() / 1000);
     const featuresWithAge = {
       ...data,
-      features: data.features.map((feature) => {
-        const props = feature.properties || {};
-        const timestamp = props.timestamp || now;
-        const ageSeconds = Math.max(0, now - timestamp);
-        const inFocus = Boolean(props.in_focus);
-        
-        // Si hard_hide_outside está activado y no está en foco, ocultar
-        if (this.cineFocus?.enabled && this.cineFocus.hardHideOutside && !inFocus) {
-          return null; // Filtrar después
-        }
-        
-        return {
-          ...feature,
-          properties: {
-            ...props,
-            age_seconds: ageSeconds,
-            in_focus: inFocus
+      features: data.features
+        .map((feature) => {
+          const props = feature.properties || {};
+          const timestamp = props.timestamp || now;
+          const ageSeconds = Math.max(0, now - timestamp);
+          const inFocus = Boolean(props.in_focus);
+
+          // Si hard_hide_outside está activado y no está en foco, ocultar
+          if (this.cineFocus?.enabled && this.cineFocus.hardHideOutside && !inFocus) {
+            return null; // Filtrar después
           }
-        };
-      }).filter((f): f is NonNullable<typeof f> => f !== null)
+
+          return {
+            ...feature,
+            properties: {
+              ...props,
+              age_seconds: ageSeconds,
+              in_focus: inFocus
+            }
+          };
+        })
+        .filter((f): f is NonNullable<typeof f> => f !== null)
     };
+
+    this.lastData = featuresWithAge;
+
+    if (!this.map) return;
 
     const source = this.map.getSource(this.sourceId);
     if (isGeoJSONSource(source)) {
-      source.setData(featuresWithAge);
+      source.setData(this.lastData);
     }
   }
 
   getData(): FeatureCollection {
-    if (!this.map) return EMPTY;
-    const source = this.map.getSource(this.sourceId);
-    if (isGeoJSONSource(source)) {
-      return (source.getData() as FeatureCollection) ?? EMPTY;
-    }
-    return EMPTY;
+    return this.lastData;
   }
 
   destroy(): void {
