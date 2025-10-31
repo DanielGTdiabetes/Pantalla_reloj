@@ -751,6 +751,8 @@ export default function GeoScopeMap() {
   const lastLogTimeRef = useRef<number>(0);
   const respectDefaultRef = useRef(false);
   const [tintColor, setTintColor] = useState<string | null>(null);
+  const horizontalDirectionRef = useRef<1 | -1>(1); // 1 = Este (derecha), -1 = Oeste (izquierda)
+  const verticalDirectionRef = useRef<1 | -1>(1); // 1 = hacia abajo, -1 = hacia arriba
 
   const clearIdlePanTimer = () => {
     if (idlePanTimerRef.current != null) {
@@ -788,7 +790,7 @@ export default function GeoScopeMap() {
     map.easeTo({
       center: [nextLng, center.lat],
       duration: 1500,
-      easing: (t) => t,
+      easing: (t: number) => t,
       essential: true
     });
   };
@@ -1157,24 +1159,6 @@ export default function GeoScopeMap() {
       }
     };
 
-    const emitBearing = (bearing: number, timestamp: number, force?: boolean) => {
-      if (!allowCinemaRef.current) {
-        return;
-      }
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(
-          new CustomEvent(GEO_SCOPE_AUTOPAN_EVENT, {
-            detail: { mode: "spin", bearing }
-          })
-        );
-      }
-      const lastLog = lastLogTimeRef.current;
-      if (force || !lastLog || timestamp - lastLog >= AUTOPAN_LOG_INTERVAL_MS) {
-        lastLogTimeRef.current = timestamp;
-        console.info(`[diagnostics:auto-pan] bearing=${bearing.toFixed(1)}`);
-      }
-    };
-
     const runPanTick = (timestamp: number, options?: { force?: boolean }) => {
       const map = mapRef.current;
       if (!map) {
@@ -1215,17 +1199,96 @@ export default function GeoScopeMap() {
         elapsedSeconds = MAX_DELTA_SECONDS;
       }
 
-      updateBandState(elapsedSeconds);
+      const cinema = cinemaRef.current;
+      const totalBands = cinema.bands.length;
+      if (!totalBands) {
+        return;
+      }
 
-      const deltaBearing = panSpeedRef.current * elapsedSeconds;
-      viewStateRef.current.bearing = normalizeBearing(
-        viewStateRef.current.bearing + deltaBearing
+      // Obtener la banda actual
+      const currentIndex = ((bandIndexRef.current % totalBands) + totalBands) % totalBands;
+      const currentBand = cinema.bands[currentIndex];
+      if (!currentBand) {
+        return;
+      }
+
+      // Aplicar la configuración de la banda actual (zoom, pitch, lat)
+      viewStateRef.current.lat = currentBand.lat;
+      viewStateRef.current.zoom = currentBand.zoom;
+      viewStateRef.current.pitch = currentBand.pitch;
+      viewStateRef.current.bearing = 0; // Sin rotación
+      const minZoom = Math.min(
+        Number.isFinite(currentBand.minZoom) ? currentBand.minZoom : currentBand.zoom,
+        currentBand.zoom
       );
+      currentMinZoomRef.current = minZoom;
+
+      // Mover horizontalmente
+      const deltaLng = panSpeedRef.current * elapsedSeconds * horizontalDirectionRef.current;
+      let newLng = viewStateRef.current.lng + deltaLng;
+
+      // Verificar si llegamos al final horizontal
+      const reachedEast = newLng >= 180;
+      const reachedWest = newLng <= -180;
+
+      if (reachedEast || reachedWest) {
+        // Normalizar la longitud al límite
+        newLng = reachedEast ? 180 : -180;
+
+        // Cambiar a la siguiente banda verticalmente
+        const nextIndex = currentIndex + verticalDirectionRef.current;
+
+        // Si llegamos al final de las bandas (abajo o arriba), invertir dirección vertical
+        if (nextIndex < 0) {
+          // Estamos en la primera banda y vamos hacia arriba, invertir dirección
+          verticalDirectionRef.current = 1; // Cambiar a bajar
+          // Invertir también dirección horizontal para la siguiente pasada
+          horizontalDirectionRef.current = horizontalDirectionRef.current === 1 ? -1 : 1;
+          // Empezar desde el lado opuesto
+          newLng = horizontalDirectionRef.current === 1 ? -180 : 180;
+          // Ir a la primera banda
+          bandIndexRef.current = 0;
+        } else if (nextIndex >= totalBands) {
+          // Estamos en la última banda y vamos hacia abajo, invertir dirección
+          verticalDirectionRef.current = -1; // Cambiar a subir
+          // Invertir también dirección horizontal para la siguiente pasada
+          horizontalDirectionRef.current = horizontalDirectionRef.current === 1 ? -1 : 1;
+          // Empezar desde el lado opuesto
+          newLng = horizontalDirectionRef.current === 1 ? -180 : 180;
+          // Ir a la última banda
+          bandIndexRef.current = totalBands - 1;
+        } else {
+          // Cambiar a la siguiente banda
+          bandIndexRef.current = nextIndex;
+          // Invertir dirección horizontal al cambiar de banda
+          horizontalDirectionRef.current = horizontalDirectionRef.current === 1 ? -1 : 1;
+          // Empezar desde el lado opuesto
+          newLng = horizontalDirectionRef.current === 1 ? -180 : 180;
+        }
+      }
+
+      viewStateRef.current.lng = normalizeLng(newLng);
+      
+      // Actualizar el minZoom del mapa
+      map.setMinZoom(minZoom);
 
       updateMapView(map);
       lastRepaintTimeRef.current = timestamp;
       map.triggerRepaint();
-      emitBearing(viewStateRef.current.bearing, timestamp, options?.force);
+      
+      // Emitir evento con la posición actual (sin bearing)
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent(GEO_SCOPE_AUTOPAN_EVENT, {
+            detail: {
+              mode: "horizontal",
+              lng: viewStateRef.current.lng,
+              lat: viewStateRef.current.lat,
+              band: currentIndex
+            }
+          })
+        );
+      }
     };
 
     const stepPan = (timestamp: number) => {
@@ -1255,29 +1318,21 @@ export default function GeoScopeMap() {
         }
 
         if (!lastFrame || now - lastFrame >= WATCHDOG_INTERVAL_MS) {
-          const center = map.getCenter();
-          const nextBearing = map.getBearing() + WATCHDOG_BEARING_DELTA;
-          const normalizedBearing = normalizeBearing(nextBearing);
-          viewStateRef.current.bearing = normalizedBearing;
+          // Watchdog: sincronizar el estado del mapa si el movimiento se detuvo
+          if (animationFrameRef.current === null) {
+            animationFrameRef.current = requestAnimationFrame(stepPan);
+          }
+          // Asegurar que el mapa esté actualizado con el estado actual
+          const currentView = viewStateRef.current;
           map.jumpTo({
-            center,
-            zoom: map.getZoom(),
-            pitch: map.getPitch(),
-            bearing: normalizedBearing
+            center: [currentView.lng, currentView.lat],
+            zoom: currentView.zoom,
+            pitch: currentView.pitch,
+            bearing: 0
           });
           lastFrameTimeRef.current = now;
           lastRepaintTimeRef.current = now;
           map.triggerRepaint();
-          if (animationFrameRef.current === null) {
-            animationFrameRef.current = requestAnimationFrame(stepPan);
-          }
-          console.warn(
-            "[GeoScopeMap] watchdog jump enforced (bearing=",
-            normalizedBearing.toFixed(2),
-            ")"
-          );
-          emitBearing(normalizedBearing, now, true);
-          return;
         }
 
         const lastRepaint = lastRepaintTimeRef.current;
@@ -1433,10 +1488,15 @@ export default function GeoScopeMap() {
       bandElapsedRef.current = 0;
       bandTransitionRef.current = null;
 
-      viewStateRef.current.lng = normalizeLng(runtime.initialLng);
+      // Inicializar direcciones: empezar desde la izquierda moviéndose hacia la derecha
+      horizontalDirectionRef.current = 1; // Este (derecha)
+      verticalDirectionRef.current = 1; // Hacia abajo
+      
+      // Empezar desde el lado izquierdo del mapa
+      viewStateRef.current.lng = -180;
       applyBandInstant(firstBand, null);
       viewStateRef.current.pitch = firstBand.pitch;
-      viewStateRef.current.bearing = 0;
+      viewStateRef.current.bearing = 0; // Sin rotación
 
       themeRef.current = cloneTheme(runtime.theme);
       styleTypeRef.current = runtime.style.type;
