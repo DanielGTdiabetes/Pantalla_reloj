@@ -119,7 +119,7 @@ export default class AircraftLayer implements Layer {
     }
 
     if (!map.getSource(this.sourceId)) {
-      const sourceInit: maplibregl.GeoJSONSourceRaw = {
+      const sourceInit: maplibregl.GeoJSONSourceSpecification = {
         type: "geojson",
         data: this.lastData,
       };
@@ -212,7 +212,7 @@ export default class AircraftLayer implements Layer {
     }
   }
 
-  private getOpacityExpression(): maplibregl.Expression {
+  private getOpacityExpression(): maplibregl.ExpressionSpecification {
     return [
       "interpolate",
       ["linear"],
