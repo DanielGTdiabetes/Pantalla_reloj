@@ -29,7 +29,8 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
       <div className="news-card__scroller">
         <div className="news-card__list">
           {repeatItems(list).map((item, index) => (
-            <article key={`${item.title}-${index}`} className="news-card__item">
+            // Usar índice completo para garantizar keys únicas (incluso después de duplicar)
+            <article key={`news-${index}`} className="news-card__item">
               <h3>{item.title}</h3>
               {item.summary ? <p>{item.summary}</p> : null}
               {item.source ? <span className="news-card__source">{item.source}</span> : null}

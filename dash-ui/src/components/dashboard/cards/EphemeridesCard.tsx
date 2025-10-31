@@ -7,8 +7,16 @@ type EphemeridesCardProps = {
   events: string[];
 };
 
+const repeatItems = <T,>(items: T[]): T[] => {
+  if (items.length === 0) {
+    return items;
+  }
+  return [...items, ...items];
+};
+
 export const EphemeridesCard = ({ sunrise, sunset, moonPhase, events }: EphemeridesCardProps): JSX.Element => {
   const items = events.length > 0 ? events : ["Sin efemérides registradas"];
+  const repeatedItems = repeatItems(items);
 
   return (
     <div className="card ephemerides-card">
@@ -30,10 +38,14 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, events }: Ephemeri
           <span>{moonPhase ?? "Sin datos"}</span>
         </div>
       </div>
-      <div className="ephemerides-card__events">
-        {items.map((item, index) => (
-          <p key={`${item}-${index}`}>{item}</p>
-        ))}
+      <div className="ephemerides-card__scroller">
+        <div className="ephemerides-card__events">
+          {repeatedItems.map((item, index) => (
+            // Usar índice completo para garantizar keys únicas (incluso después de duplicar)
+            <p key={`ephemerides-${index}`}>{item}</p>
+          ))}
+        </div>
+        <div className="ephemerides-card__gradient" aria-hidden="true" />
       </div>
     </div>
   );
