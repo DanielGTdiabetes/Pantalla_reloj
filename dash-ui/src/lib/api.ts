@@ -168,7 +168,7 @@ export async function getOpenSkyClientSecretMeta() {
 }
 
 export async function getOpenSkyStatus() {
-  return apiGet<OpenSkyStatus>("/api/opensky/status");
+  return apiGet<OpenSkyStatus | null>("/api/opensky/status");
 }
 
 // Storm Mode API
