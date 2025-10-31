@@ -8,6 +8,57 @@ log() {
   printf '[pantalla-kiosk-chromium] %s\n' "$*" >&2
 }
 
+list_matching_windows() {
+  local patterns="$1"
+  if ! command -v wmctrl >/dev/null 2>&1; then
+    return 0
+  fi
+  local display="${DISPLAY:-:0}"
+  local auth="${XAUTHORITY:-}"
+  DISPLAY="$display" XAUTHORITY="$auth" wmctrl -lx 2>/dev/null | awk -v pat="$patterns" '$3 ~ pat {print $1}'
+}
+
+close_existing_windows() {
+  local patterns='pantalla-kiosk|chrome.chromium|chromium-browser.Chromium-browser|chromium.Chromium'
+  if ! command -v wmctrl >/dev/null 2>&1; then
+    log "wmctrl no disponible: se omite limpieza previa de ventanas"
+    return
+  fi
+  local -a ids
+  mapfile -t ids < <(list_matching_windows "$patterns")
+  if ((${#ids[@]} == 0)); then
+    return
+  fi
+  log "cerrando ${#ids[@]} ventanas Chromium residuales"
+  local display="${DISPLAY:-:0}"
+  local auth="${XAUTHORITY:-}"
+  for wid in "${ids[@]}"; do
+    [[ -n "$wid" ]] || continue
+    DISPLAY="$display" XAUTHORITY="$auth" wmctrl -ic "$wid" || true
+  done
+  sleep 0.3
+}
+
+cleanup_profile_artifacts() {
+  local profile_dir="$1"
+  local cache_dir="$2"
+  local -a singleton_patterns=(SingletonLock SingletonCookie SingletonSocket)
+  local base
+  for base in "$profile_dir" "$cache_dir"; do
+    [[ -d "$base" ]] || continue
+    find "$base" -maxdepth 2 -type f \( -name "${singleton_patterns[0]}" -o -name "${singleton_patterns[1]}" -o -name "${singleton_patterns[2]}" \) -delete 2>/dev/null || true
+    local -a locks=()
+    mapfile -t locks < <(find "$base" -maxdepth 3 -type f -name 'LOCK' -print 2>/dev/null)
+    if ((${#locks[@]} > 0)); then
+      local lock
+      for lock in "${locks[@]}"; do
+        rm -f "$lock"
+      done
+      log "eliminados ${#locks[@]} LOCK residuales en ${base}"
+    fi
+  done
+}
+
 resolve_url() {
   local candidate="$1"
   if [[ -z "$candidate" ]]; then
@@ -97,8 +148,6 @@ launch_chromium() {
     --ignore-gpu-blocklist
     --enable-webgl
     --use-gl=egl-angle
-    --enable-logging=stderr
-    --v=1
     "--disk-cache-dir=${cache_dir}"
     "--user-data-dir=${profile_dir}"
   )
@@ -107,17 +156,38 @@ launch_chromium() {
     args+=("--force-device-scale-factor=${CHROMIUM_SCALE}")
   fi
 
+  if [[ "${PANTALLA_CHROMIUM_VERBOSE:-0}" == "1" ]]; then
+    args+=(--enable-logging=stderr --v=1)
+  else
+    args+=(--enable-logging=stderr --log-level=1)
+  fi
+
   if (( use_swiftshader )); then
     args+=(--enable-unsafe-swiftshader)
+    log "swiftshader habilitado para esta ejecución"
   fi
 
   log "launch: ${args[*]}"
   log "url: ${url}"
 
-  local log_file
-  log_file="$(mktemp -t pantalla-chromium.XXXXXX)"
+  local log_dir="/var/log/pantalla"
+  install -d -m 0755 "$log_dir"
+  local persistent_log="${log_dir}/browser-kiosk.log"
+  touch "$persistent_log"
+  chmod 0644 "$persistent_log" 2>/dev/null || true
+  if [[ -s "$persistent_log" ]]; then
+    tail -n 4000 "$persistent_log" >"${persistent_log}.tmp" 2>/dev/null && mv "${persistent_log}.tmp" "$persistent_log"
+  fi
 
-  "${args[@]}" 2> >(tee -a "$log_file" >&2)
+  local log_file
+  log_file="$(mktemp -p /tmp pantalla-chromium.XXXXXX.log)"
+  if [[ -z "$log_file" ]]; then
+    log "no se pudo crear archivo temporal en /tmp"
+    log_file="/tmp/pantalla-chromium.log"
+  fi
+  log "stderr se registrará en ${log_file} y ${persistent_log}"
+
+  "${args[@]}" 2> >(tee -a "$log_file" | tee -a "$persistent_log" >&2)
   local status=$?
 
   local fallback=0
@@ -132,8 +202,6 @@ launch_chromium() {
       fi
     fi
   fi
-
-  rm -f "$log_file"
 
   if (( fallback )); then
     return 99
@@ -202,16 +270,19 @@ main() {
   local target_url
   target_url="$(resolve_url "$raw_url")"
 
+  local allow_swiftshader=0
+  if [[ "${PANTALLA_ALLOW_SWIFTSHADER:-0}" == "1" ]]; then
+    allow_swiftshader=1
+    log "SwiftShader permitido bajo demanda (PANTALLA_ALLOW_SWIFTSHADER=1)"
+  fi
+
   local base_dir profile_dir cache_dir
   base_dir="${CHROMIUM_BASE_DIR:-${HOME}/snap/chromium/common/pantalla-reloj}"
   profile_dir="${CHROMIUM_USER_DATA_DIR:-${base_dir}/chromium}"
   cache_dir="${CHROMIUM_CACHE_DIR:-${base_dir}/cache}"
 
   prepare_dirs "$profile_dir" "$cache_dir"
-
-  find "$profile_dir" -maxdepth 2 -type f \
-    \( -name 'SingletonLock' -o -name 'SingletonCookie' -o -name 'SingletonSocket' \) \
-    -print -delete || true
+  cleanup_profile_artifacts "$profile_dir" "$cache_dir"
 
   if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
     export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
@@ -224,18 +295,28 @@ main() {
   log "cache_dir: ${cache_dir}"
   log "url: ${target_url}"
 
+  if [[ "${PANTALLA_CHROMIUM_VERBOSE:-0}" == "1" ]]; then
+    log "Chromium se inicia en modo verbose (--v=1)"
+  fi
+
+  close_existing_windows
+
   if launch_chromium 0 "$chromium_bin" "$target_url" "$profile_dir" "$cache_dir"; then
     exit 0
   fi
 
   local first_status=$?
   if (( first_status == 99 )); then
-    log "swiftshader fallback enabled"
-    if launch_chromium 1 "$chromium_bin" "$target_url" "$profile_dir" "$cache_dir"; then
-      exit 0
+    if (( allow_swiftshader )); then
+      log "Activando fallback SwiftShader (--enable-unsafe-swiftshader)"
+      if launch_chromium 1 "$chromium_bin" "$target_url" "$profile_dir" "$cache_dir"; then
+        exit 0
+      fi
+      local second_status=$?
+      exit $second_status
     fi
-    local second_status=$?
-    exit $second_status
+    log "SwiftShader deshabilitado (exporta PANTALLA_ALLOW_SWIFTSHADER=1 para permitirlo)"
+    exit $first_status
   fi
 
   exit $first_status

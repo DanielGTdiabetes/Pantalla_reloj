@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
-import { DEFAULT_CONFIG, createDefaultGlobalLayers, withConfigDefaults } from "../config/defaults";
+import { DEFAULT_CONFIG, createDefaultGlobalLayers, createDefaultMapCinema, withConfigDefaults } from "../config/defaults";
 import {
   API_ORIGIN,
   ApiError,
@@ -8,6 +8,8 @@ import {
   getHealth,
   getSchema,
   saveConfig,
+  testAemetApiKey,
+  updateAemetApiKey,
   wifiConnect,
   wifiDisconnect,
   wifiScan,
@@ -53,6 +55,32 @@ const MAPTILER_KEY_PATTERN = /^[A-Za-z0-9._-]+$/;
 const MAPTILER_DOCS_TEXT = "Obtén la clave en docs.maptiler.com/cloud/api-keys";
 const DEFAULT_PANELS = DEFAULT_CONFIG.ui.rotation.panels;
 const CINEMA_BAND_COUNT = DEFAULT_CONFIG.ui.map.cinema.bands.length;
+const CINEMA_SPEED_VALUES: Record<"slow" | "medium" | "fast", number> = {
+  slow: 3,
+  medium: 6,
+  fast: 9,
+};
+const CINEMA_AMPLITUDE_RANGE = { min: 20, max: 160 };
+
+const deriveSpeedPreset = (value: number): keyof typeof CINEMA_SPEED_VALUES => {
+  if (!Number.isFinite(value)) {
+    return "medium";
+  }
+  if (value <= (CINEMA_SPEED_VALUES.slow + CINEMA_SPEED_VALUES.medium) / 2) {
+    return "slow";
+  }
+  if (value <= (CINEMA_SPEED_VALUES.medium + CINEMA_SPEED_VALUES.fast) / 2) {
+    return "medium";
+  }
+  return "fast";
+};
+
+const AEMET_REASON_MESSAGES: Record<string, string> = {
+  unauthorized: "AEMET rechazó la clave (401)",
+  network: "No hay conexión con los servicios de AEMET",
+  upstream: "Servicio de AEMET temporalmente no disponible",
+  missing_api_key: "Introduce una API key antes de probar",
+};
 
 const DEFAULT_SCHEMA_PATHS: Set<string> = (() => {
   const paths = new Set<string>();
@@ -353,6 +381,11 @@ const ConfigPage: React.FC = () => {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [newPanel, setNewPanel] = useState("");
   const [showMaptilerKey, setShowMaptilerKey] = useState(false);
+  const [showAemetKey, setShowAemetKey] = useState(false);
+  const [aemetKeyInput, setAemetKeyInput] = useState("");
+  const [savingAemetKey, setSavingAemetKey] = useState(false);
+  const [testingAemetKey, setTestingAemetKey] = useState(false);
+  const [aemetTestResult, setAemetTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   
   // WiFi state
   const [wifiNetworks, setWifiNetworks] = useState<WiFiNetwork[]>([]);
@@ -395,10 +428,189 @@ const ConfigPage: React.FC = () => {
     });
   }, []);
 
+  const currentCinemaMotion = useMemo(
+    () => ({
+      ...createDefaultMapCinema().motion,
+      ...(form.ui.map.cinema.motion ?? {}),
+    }),
+    [form.ui.map.cinema.motion]
+  );
+
+  const maskedAemetKey = useMemo(() => {
+    if (!form.aemet?.has_api_key) {
+      return "";
+    }
+    const last4 = form.aemet.api_key_last4;
+    if (typeof last4 === "string" && last4.trim().length > 0) {
+      return `•••• ${last4}`;
+    }
+    return "••••";
+  }, [form.aemet?.has_api_key, form.aemet?.api_key_last4]);
+
+  const trimmedAemetKeyInput = aemetKeyInput.trim();
+  const hasStoredAemetKey = Boolean(form.aemet?.has_api_key);
+  const canTestAemetKey = showAemetKey ? trimmedAemetKeyInput.length > 0 : hasStoredAemetKey;
+  const canPersistAemetKey =
+    showAemetKey && !savingAemetKey && (trimmedAemetKeyInput.length > 0 || hasStoredAemetKey);
+
+  const updateCinemaMotion = useCallback(
+    (patch: Partial<AppConfig["ui"]["map"]["cinema"]["motion"]>) => {
+      setForm((prev) => {
+        const baseMotion = {
+          ...createDefaultMapCinema().motion,
+          ...(prev.ui.map.cinema.motion ?? {}),
+        };
+        return {
+          ...prev,
+          ui: {
+            ...prev.ui,
+            map: {
+              ...prev.ui.map,
+              cinema: {
+                ...prev.ui.map.cinema,
+                motion: {
+                  ...baseMotion,
+                  ...patch,
+                },
+              },
+            },
+          },
+        };
+      });
+    },
+    []
+  );
+
+  const handleCinemaSpeedPresetChange = useCallback(
+    (preset: keyof typeof CINEMA_SPEED_VALUES) => {
+      const speed = CINEMA_SPEED_VALUES[preset];
+      setForm((prev) => {
+        const baseMotion = {
+          ...createDefaultMapCinema().motion,
+          ...(prev.ui.map.cinema.motion ?? {}),
+        };
+        return {
+          ...prev,
+          ui: {
+            ...prev.ui,
+            map: {
+              ...prev.ui.map,
+              cinema: {
+                ...prev.ui.map.cinema,
+                panLngDegPerSec: speed,
+                motion: {
+                  ...baseMotion,
+                  speedPreset: preset,
+                },
+              },
+            },
+          },
+        };
+      });
+      resetErrorsFor("ui.map.cinema.panLngDegPerSec");
+    },
+    [resetErrorsFor]
+  );
+
+  const resetCinemaSettings = useCallback(() => {
+    const defaults = createDefaultMapCinema();
+    setForm((prev) => ({
+      ...prev,
+      ui: {
+        ...prev.ui,
+        map: {
+          ...prev.ui.map,
+          cinema: {
+            ...prev.ui.map.cinema,
+            enabled: defaults.enabled,
+            panLngDegPerSec: defaults.panLngDegPerSec,
+            bandTransition_sec: defaults.bandTransition_sec,
+            motion: { ...defaults.motion },
+          },
+        },
+      },
+    }));
+    resetErrorsFor("ui.map.cinema");
+  }, [resetErrorsFor]);
+
+  const handleToggleAemetKeyVisibility = useCallback(() => {
+    setShowAemetKey((prev) => {
+      const next = !prev;
+      if (!next) {
+        setAemetKeyInput("");
+      }
+      setAemetTestResult(null);
+      return next;
+    });
+  }, []);
+
+  const handleSaveAemetKey = useCallback(async () => {
+    if (!isReady || savingAemetKey || !showAemetKey) {
+      return;
+    }
+    const trimmed = aemetKeyInput.trim();
+    setSavingAemetKey(true);
+    try {
+      await updateAemetApiKey(trimmed ? trimmed : null);
+      setForm((prev) => ({
+        ...prev,
+        aemet: {
+          ...prev.aemet,
+          has_api_key: Boolean(trimmed),
+          api_key_last4: trimmed ? trimmed.slice(-4) : null,
+        },
+      }));
+      setBanner({
+        kind: "success",
+        text: trimmed ? "Clave de AEMET guardada" : "Clave de AEMET eliminada",
+      });
+      setShowAemetKey(false);
+      setAemetKeyInput("");
+      setAemetTestResult(null);
+    } catch (error) {
+      console.error("[ConfigPage] Failed to update AEMET API key", error);
+      const message = resolveApiErrorMessage(error, "No se pudo actualizar la API key de AEMET");
+      setBanner({ kind: "error", text: message });
+    } finally {
+      setSavingAemetKey(false);
+    }
+  }, [aemetKeyInput, isReady, savingAemetKey, setBanner, showAemetKey]);
+
+  const handleTestAemetKey = useCallback(async () => {
+    if (testingAemetKey || (!showAemetKey && !form.aemet.has_api_key)) {
+      if (!showAemetKey && !form.aemet.has_api_key) {
+        setAemetTestResult({ ok: false, message: AEMET_REASON_MESSAGES.missing_api_key });
+      }
+      return;
+    }
+
+    const candidate = showAemetKey ? aemetKeyInput.trim() : "";
+    setTestingAemetKey(true);
+    setAemetTestResult(null);
+    try {
+      const response = await testAemetApiKey(candidate ? candidate : undefined);
+      if (response?.ok) {
+        setAemetTestResult({ ok: true, message: "Clave válida: AEMET respondió correctamente" });
+      } else {
+        const reason = response?.reason ?? "";
+        const message = AEMET_REASON_MESSAGES[reason] ?? "No se pudo comprobar la clave";
+        setAemetTestResult({ ok: false, message });
+      }
+    } catch (error) {
+      console.error("[ConfigPage] Failed to test AEMET API key", error);
+      setAemetTestResult({ ok: false, message: "No se pudo comprobar la clave" });
+    } finally {
+      setTestingAemetKey(false);
+    }
+  }, [aemetKeyInput, form.aemet.has_api_key, showAemetKey, testingAemetKey]);
+
   const refreshConfig = useCallback(async () => {
     const cfg = await getConfig();
     setForm(withConfigDefaults(cfg ?? undefined));
     setShowMaptilerKey(false);
+    setShowAemetKey(false);
+    setAemetKeyInput("");
+    setAemetTestResult(null);
   }, []);
 
   // WiFi functions
@@ -560,9 +772,18 @@ const ConfigPage: React.FC = () => {
     setSaving(true);
     setBanner(null);
     try {
-      const saved = await saveConfig(form);
+      const payload = JSON.parse(JSON.stringify(form)) as AppConfig;
+      if (payload.aemet) {
+        delete payload.aemet.api_key;
+        delete (payload.aemet as { has_api_key?: boolean }).has_api_key;
+        delete (payload.aemet as { api_key_last4?: string | null }).api_key_last4;
+      }
+      const saved = await saveConfig(payload);
       setForm(withConfigDefaults(saved));
       setShowMaptilerKey(false);
+      setShowAemetKey(false);
+      setAemetKeyInput("");
+      setAemetTestResult(null);
       setFieldErrors({});
       setBanner({ kind: "success", text: "Guardado" });
     } catch (error) {
@@ -850,38 +1071,97 @@ const ConfigPage: React.FC = () => {
                 </div>
               )}
 
-              {supports("ui.map.cinema.panLngDegPerSec") && (
+              {supports("ui.map.cinema.motion") && (
                 <div className="config-field">
-                  <label htmlFor="cinema_pan">Velocidad panorámica</label>
+                  <label htmlFor="cinema_speed">Velocidad</label>
+                  <select
+                    id="cinema_speed"
+                    value={currentCinemaMotion.speedPreset ?? deriveSpeedPreset(form.ui.map.cinema.panLngDegPerSec)}
+                    disabled={disableCinemaControls}
+                    onChange={(event) => {
+                      handleCinemaSpeedPresetChange(event.target.value as keyof typeof CINEMA_SPEED_VALUES);
+                    }}
+                  >
+                    <option value="slow">Lenta</option>
+                    <option value="medium">Media</option>
+                    <option value="fast">Rápida</option>
+                  </select>
+                  {renderHelp("Controla la rapidez del barrido horizontal del mapa")}
+                  {renderFieldError("ui.map.cinema.panLngDegPerSec")}
+                </div>
+              )}
+
+              {supports("ui.map.cinema.motion.amplitudeDeg") && (
+                <div className="config-field">
+                  <label htmlFor="cinema_amplitude">Amplitud del movimiento</label>
                   <input
-                    id="cinema_pan"
-                    type="number"
-                    step="0.01"
-                    value={form.ui.map.cinema.panLngDegPerSec}
+                    id="cinema_amplitude"
+                    type="range"
+                    min={CINEMA_AMPLITUDE_RANGE.min}
+                    max={CINEMA_AMPLITUDE_RANGE.max}
+                    step={5}
+                    value={Math.round(currentCinemaMotion.amplitudeDeg)}
                     disabled={disableCinemaControls}
                     onChange={(event) => {
                       const value = Number(event.target.value);
                       if (Number.isNaN(value)) {
                         return;
                       }
-                      setForm((prev) => ({
-                        ...prev,
-                        ui: {
-                          ...prev.ui,
-                          map: {
-                            ...prev.ui.map,
-                            cinema: {
-                              ...prev.ui.map.cinema,
-                              panLngDegPerSec: value,
-                            },
-                          },
-                        },
-                      }));
-                      resetErrorsFor("ui.map.cinema.panLngDegPerSec");
+                      updateCinemaMotion({ amplitudeDeg: value });
                     }}
                   />
-                  {renderHelp("Grados de longitud por segundo")}
-                  {renderFieldError("ui.map.cinema.panLngDegPerSec")}
+                  <div className="config-field__hint">
+                    Cobertura horizontal ±{Math.round(currentCinemaMotion.amplitudeDeg)}° alrededor del centro.
+                  </div>
+                </div>
+              )}
+
+              {supports("ui.map.cinema.motion.easing") && (
+                <div className="config-field">
+                  <label htmlFor="cinema_easing">Suavizado del movimiento</label>
+                  <select
+                    id="cinema_easing"
+                    value={currentCinemaMotion.easing}
+                    disabled={disableCinemaControls}
+                    onChange={(event) => {
+                      updateCinemaMotion({ easing: event.target.value as AppConfig["ui"]["map"]["cinema"]["motion"]["easing"] });
+                    }}
+                  >
+                    <option value="linear">Lineal</option>
+                    <option value="ease-in-out">Suave (ease-in-out)</option>
+                  </select>
+                  {renderHelp("Elige cómo acelera y frena el desplazamiento al cambiar de sentido")}
+                </div>
+              )}
+
+              {supports("ui.map.cinema.motion.pauseWithOverlay") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="cinema_pause_overlay">
+                    <input
+                      id="cinema_pause_overlay"
+                      type="checkbox"
+                      checked={currentCinemaMotion.pauseWithOverlay}
+                      disabled={disableCinemaControls}
+                      onChange={(event) => {
+                        updateCinemaMotion({ pauseWithOverlay: event.target.checked });
+                      }}
+                    />
+                    Pausar cuando haya overlays informativos
+                  </label>
+                  {renderHelp("Detiene el movimiento si se muestra el modo tormenta u otros paneles prioritarios")}
+                </div>
+              )}
+
+              {supports("ui.map.cinema.motion") && (
+                <div className="config-field">
+                  <button
+                    type="button"
+                    className="config-button"
+                    onClick={resetCinemaSettings}
+                    disabled={disableCinemaControls}
+                  >
+                    Restablecer valores del modo cine
+                  </button>
                 </div>
               )}
 
@@ -1524,6 +1804,223 @@ const ConfigPage: React.FC = () => {
                   />
                   {renderHelp("Minutos antes de desactivar automáticamente el modo tormenta (5-1440)")}
                   {renderFieldError("storm.auto_disable_after_minutes")}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {supports("aemet") && (
+          <div className="config-card">
+            <div>
+              <h2>AEMET</h2>
+              <p>Gestiona la integración de datos oficiales de AEMET y su clave privada.</p>
+            </div>
+            <div className="config-grid">
+              {supports("aemet.enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="aemet_enabled">
+                    <input
+                      id="aemet_enabled"
+                      type="checkbox"
+                      checked={form.aemet.enabled}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          aemet: {
+                            ...prev.aemet,
+                            enabled,
+                          },
+                        }));
+                        resetErrorsFor("aemet.enabled");
+                      }}
+                    />
+                    Activar datos oficiales de AEMET
+                  </label>
+                  {renderHelp("Incluye avisos CAP, radar y satélite si la clave es válida")}
+                  {renderFieldError("aemet.enabled")}
+                </div>
+              )}
+
+              {supports("aemet.cap_enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="aemet_cap_enabled">
+                    <input
+                      id="aemet_cap_enabled"
+                      type="checkbox"
+                      checked={form.aemet.cap_enabled}
+                      disabled={disableInputs || !form.aemet.enabled}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          aemet: {
+                            ...prev.aemet,
+                            cap_enabled: enabled,
+                          },
+                        }));
+                      }}
+                    />
+                    Alertas CAP (avisos oficiales)
+                  </label>
+                  {renderHelp("Descarga avisos meteorológicos oficiales (CAP)")}
+                  {renderFieldError("aemet.cap_enabled")}
+                </div>
+              )}
+
+              {supports("aemet.radar_enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="aemet_radar_enabled">
+                    <input
+                      id="aemet_radar_enabled"
+                      type="checkbox"
+                      checked={form.aemet.radar_enabled}
+                      disabled={disableInputs || !form.aemet.enabled}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          aemet: {
+                            ...prev.aemet,
+                            radar_enabled: enabled,
+                          },
+                        }));
+                      }}
+                    />
+                    Radar de precipitación
+                  </label>
+                  {renderHelp("Superpone el radar nacional de lluvia en el mapa")}
+                  {renderFieldError("aemet.radar_enabled")}
+                </div>
+              )}
+
+              {supports("aemet.satellite_enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="aemet_satellite_enabled">
+                    <input
+                      id="aemet_satellite_enabled"
+                      type="checkbox"
+                      checked={form.aemet.satellite_enabled}
+                      disabled={disableInputs || !form.aemet.enabled}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          aemet: {
+                            ...prev.aemet,
+                            satellite_enabled: enabled,
+                          },
+                        }));
+                      }}
+                    />
+                    Imágenes satelitales
+                  </label>
+                  {renderHelp("Activa la capa de satélite visible de AEMET")}
+                  {renderFieldError("aemet.satellite_enabled")}
+                </div>
+              )}
+
+              {supports("aemet.cache_minutes") && (
+                <div className="config-field">
+                  <label htmlFor="aemet_cache_minutes">Frecuencia de actualización (min)</label>
+                  <input
+                    id="aemet_cache_minutes"
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={form.aemet.cache_minutes}
+                    disabled={disableInputs || !form.aemet.enabled}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (Number.isNaN(value)) {
+                        return;
+                      }
+                      setForm((prev) => ({
+                        ...prev,
+                        aemet: {
+                          ...prev.aemet,
+                          cache_minutes: Math.max(1, Math.min(60, Math.round(value))),
+                        },
+                      }));
+                    }}
+                  />
+                  {renderHelp("Tiempo mínimo entre descargas desde la API")}
+                  {renderFieldError("aemet.cache_minutes")}
+                </div>
+              )}
+
+              {supports("aemet.api_key") && (
+                <div className="config-field">
+                  <label htmlFor="aemet_api_key">API key de AEMET</label>
+                  <div className="config-field__secret">
+                    {showAemetKey ? (
+                      <input
+                        id="aemet_api_key"
+                        type="text"
+                        value={aemetKeyInput}
+                        disabled={disableInputs}
+                        onChange={(event) => {
+                          setAemetKeyInput(event.target.value);
+                          setAemetTestResult(null);
+                        }}
+                        placeholder="Introduce la clave completa de AEMET"
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                    ) : (
+                      <input
+                        id="aemet_api_key_masked"
+                        type="text"
+                        value={maskedAemetKey}
+                        readOnly
+                        disabled
+                        placeholder="Sin clave guardada"
+                      />
+                    )}
+                    <button
+                      type="button"
+                      className="config-button"
+                      onClick={handleToggleAemetKeyVisibility}
+                      disabled={disableInputs}
+                    >
+                      {showAemetKey ? "Ocultar" : hasStoredAemetKey ? "Mostrar" : "Añadir"}
+                    </button>
+                  </div>
+                  <div className="config-field__hint">
+                    La clave se guarda en el backend y nunca se muestra completa en pantalla.
+                  </div>
+                  <div className="config-field__actions">
+                    {showAemetKey && (
+                      <button
+                        type="button"
+                        className="config-button primary"
+                        onClick={() => void handleSaveAemetKey()}
+                        disabled={disableInputs || !canPersistAemetKey}
+                      >
+                        Guardar clave
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="config-button"
+                      onClick={() => void handleTestAemetKey()}
+                      disabled={disableInputs || testingAemetKey || !canTestAemetKey}
+                    >
+                      {testingAemetKey ? "Comprobando…" : "Probar clave"}
+                    </button>
+                  </div>
+                  {aemetTestResult && (
+                    <div
+                      className={`config-field__hint ${
+                        aemetTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                      }`}
+                    >
+                      {aemetTestResult.message}
+                    </div>
+                  )}
+                  {renderFieldError("aemet.api_key")}
                 </div>
               )}
             </div>

@@ -46,6 +46,14 @@ Pantalla_reloj/
 - `/config` expone la administración completa (rotación, API keys, MQTT, Wi-Fi y
   opciones de UI). El overlay solo aparece en `/` si se añade `?overlay=1` para
   depuración puntual.
+- La tarjeta **Mapa → Modo Cine** ofrece ahora controles dedicados: selector de
+  velocidad (lenta/media/rápida), amplitud del barrido con `range`, easing
+  lineal/suave, pausa automática cuando hay overlays y un botón para restaurar
+  los valores por defecto.
+- El bloque **AEMET** permite gestionar la API key de forma segura. El campo se
+  muestra enmascarado (•••• 1234), el botón «Mostrar» habilita la edición en
+  claro y el botón «Probar clave» ejecuta `/api/aemet/test_key` para validar la
+  credencial sin exponerla al resto del formulario.
 - Compilado con `npm run build` y servido por Nginx desde `/var/www/html`.
 
 #### Autopan y diagnósticos
@@ -75,6 +83,18 @@ Pantalla_reloj/
   estilos vectoriales, por lo que se considera información visible desde el cliente.
   Si el plan de MapTiler lo permite, restringe la API key a los dominios o direcciones
   IP del kiosk desde el panel de MapTiler.
+
+### Configurar AEMET
+
+- En la tarjeta **AEMET** de `/config` podrás activar/desactivar la integración y
+  definir qué capas (CAP, radar, satélite) se descargan.
+- La clave se almacena sólo en backend: el campo muestra `•••• 1234` si existe
+  un secreto guardado. Pulsa «Mostrar» para editar y «Guardar clave» para enviar
+  la actualización a `/api/config/secret/aemet_api_key`.
+- Usa «Probar clave» para llamar a `/api/aemet/test_key`; el backend contacta con
+  AEMET y responde `{ok:true}` o `{ok:false, reason:"unauthorized|network|…"}`.
+- `GET /api/config` nunca devuelve la clave completa; expone `has_api_key` y
+  `api_key_last4` para saber si se ha cargado correctamente.
 
 ### Nginx (reverse proxy `/api`)
 
@@ -208,8 +228,9 @@ variables persistentes y puede editarse manualmente. Valores admitidos:
   (default `/var/lib/pantalla-reloj/state/chromium-kiosk`).
 - `FIREFOX_PROFILE_DIR` – perfil persistente de Firefox
   (default `/var/lib/pantalla-reloj/state/firefox-kiosk`).
-- `PANTALLA_KIOSK_LOG_DIR` – directorio para `browser-kiosk.log`
-  (default `/var/log/pantalla`).
+- `PANTALLA_CHROMIUM_VERBOSE` – `1` para añadir `--v=1` y forzar trazas VERBOSE.
+- `PANTALLA_ALLOW_SWIFTSHADER` – `1` para permitir el fallback
+  `--enable-unsafe-swiftshader` si ANGLE falla.
 
 Después de editar `kiosk.env`, ejecuta `sudo systemctl restart pantalla-kiosk@dani`.
 
@@ -233,8 +254,15 @@ reinicia tras `RestartSec=2`.
 
 Chromium se lanza con los flags mínimos requeridos para kiosk estable:
 `--kiosk --no-first-run --no-default-browser-check --password-store=basic`,
-siempre acompañados de `--user-data-dir=<perfil>`. Firefox recibe
-`--kiosk --new-instance --profile <dir> --no-remote`.
+`--ozone-platform=x11`, `--ignore-gpu-blocklist`, `--enable-webgl` y
+`--use-gl=egl-angle`, siempre acompañados de `--user-data-dir=<perfil>`. Firefox
+recibe `--kiosk --new-instance --profile <dir> --no-remote`.
+
+El wrapper elimina previamente cualquier ventana `pantalla-kiosk` o
+`chrome.chromium` con `wmctrl -ic` y replica el stderr del navegador en
+`/tmp/pantalla-chromium.XXXXXX.log` y `/var/log/pantalla/browser-kiosk.log`. Usa
+`PANTALLA_CHROMIUM_VERBOSE=1` para habilitar `--v=1` o `PANTALLA_ALLOW_SWIFTSHADER=1`
+para permitir el fallback software.
 
 Los perfiles viven en `/var/lib/pantalla-reloj/state/chromium-kiosk` y
 `/var/lib/pantalla-reloj/state/firefox-kiosk` (permisos `0700`). Puedes moverlos

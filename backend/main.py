@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from .cache import CacheStore
 from .config_manager import ConfigManager
@@ -97,6 +97,44 @@ if not STYLE_PATH.exists():
     STYLE_PATH.write_text(json.dumps(style))
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+class AemetSecretRequest(BaseModel):
+    api_key: Optional[str] = Field(default=None, max_length=256)
+
+
+class AemetTestRequest(BaseModel):
+    api_key: Optional[str] = Field(default=None, max_length=256)
+
+
+def _sanitize_secret(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    trimmed = value.strip()
+    return trimmed or None
+
+
+def _mask_secret(value: Optional[str]) -> Dict[str, Any]:
+    if not value:
+        return {"has_api_key": False, "api_key_last4": None}
+    visible = value[-4:] if len(value) >= 4 else value
+    return {"has_api_key": True, "api_key_last4": visible}
+
+
+def _build_public_config(config: AppConfig) -> Dict[str, Any]:
+    payload = config.model_dump(mode="json", exclude_none=True, by_alias=True)
+    aemet_info = payload.get("aemet", {})
+
+    masked = _mask_secret(config.aemet.api_key)
+    aemet_info.pop("api_key", None)
+    aemet_info.update(masked)
+    payload["aemet"] = aemet_info
+    return payload
+
+
+AEMET_TEST_ENDPOINT = (
+    "https://opendata.aemet.es/opendata/api/observacion/convencional/todas"
+)
 
 
 def _default_payload(endpoint: str) -> Dict[str, Any]:
@@ -381,7 +419,7 @@ def get_config(request: Request) -> JSONResponse:
     if if_none_match == config_etag:
         return Response(status_code=304)  # Not Modified
     
-    response = JSONResponse(content=config.model_dump(mode="json", exclude_none=True))
+    response = JSONResponse(content=_build_public_config(config))
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
@@ -413,6 +451,14 @@ async def save_config(request: Request) -> JSONResponse:
             logger.warning("Configuration payload must be a JSON object")
             raise HTTPException(status_code=400, detail="Configuration payload must be a JSON object")
     try:
+        current_config = config_manager.read()
+        incoming_aemet = payload.get("aemet")
+        if not isinstance(incoming_aemet, dict):
+            incoming_aemet = {}
+            payload["aemet"] = incoming_aemet
+        if "api_key" not in incoming_aemet:
+            incoming_aemet["api_key"] = current_config.aemet.api_key
+
         updated = config_manager.write(payload)
     except ValidationError as exc:
         logger.debug("Configuration validation error: %s", exc.errors())
@@ -434,7 +480,7 @@ async def save_config(request: Request) -> JSONResponse:
         config_mtime = datetime.now().timestamp()
         config_etag = f'"{config_mtime}"'
     
-    response = JSONResponse(content=updated.model_dump(mode="json", exclude_none=True))
+    response = JSONResponse(content=_build_public_config(updated))
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
@@ -447,6 +493,71 @@ async def save_config(request: Request) -> JSONResponse:
 @app.get("/api/config/schema")
 def get_config_schema() -> Dict[str, Any]:
     return AppConfig.model_json_schema()
+
+
+@app.post("/api/config/secret/aemet_api_key", status_code=204)
+async def update_aemet_secret(request: AemetSecretRequest) -> Response:
+    api_key = _sanitize_secret(request.api_key)
+    masked = _mask_secret(api_key)
+    logger.info(
+        "Updating AEMET API key (present=%s, last4=%s)",
+        masked.get("has_api_key", False),
+        masked.get("api_key_last4", "****"),
+    )
+
+    current = config_manager.read()
+    payload = current.model_dump(mode="python", exclude_none=False)
+    aemet_section = payload.get("aemet") or {}
+    aemet_section["api_key"] = api_key
+    payload["aemet"] = aemet_section
+
+    try:
+        config_manager.write(payload)
+    except ValidationError as exc:  # pragma: no cover - defensive
+        raise HTTPException(status_code=400, detail=exc.errors()) from exc
+
+    return Response(status_code=204)
+
+
+@app.post("/api/aemet/test_key")
+def test_aemet_key(payload: AemetTestRequest) -> Dict[str, Any]:
+    candidate = _sanitize_secret(payload.api_key)
+    config = config_manager.read()
+    api_key = candidate or config.aemet.api_key
+
+    if not api_key:
+        return {"ok": False, "reason": "missing_api_key"}
+
+    headers = {
+        "Accept": "application/json",
+        "api_key": api_key,
+    }
+
+    try:
+        response = requests.get(AEMET_TEST_ENDPOINT, headers=headers, timeout=6)
+    except requests.RequestException as exc:  # noqa: PERF203
+        logger.warning("AEMET test request failed: %s", exc)
+        return {"ok": False, "reason": "network"}
+
+    if response.status_code in {401, 403}:
+        return {"ok": False, "reason": "unauthorized"}
+
+    if response.status_code >= 500:
+        return {"ok": False, "reason": "upstream"}
+
+    try:
+        payload_json = response.json()
+    except ValueError:
+        payload_json = None
+
+    estado = None
+    if isinstance(payload_json, dict):
+        estado = payload_json.get("estado")
+
+    if isinstance(estado, int) and estado in {401, 403}:
+        return {"ok": False, "reason": "unauthorized"}
+
+    return {"ok": True}
 
 
 @app.get("/api/weather")

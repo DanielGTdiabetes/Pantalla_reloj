@@ -2,7 +2,7 @@ import maplibregl from "maplibre-gl";
 import type { MapLibreEvent } from "maplibre-gl";
 import type { FeatureCollection, GeoJsonProperties, Geometry, Point } from "geojson";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
 
 import { apiGet, saveConfig } from "../../lib/api";
 import { useConfig } from "../../lib/useConfig";
@@ -54,6 +54,10 @@ const DEFAULT_PAN_SPEED = Math.max(
     : FALLBACK_ROTATION_DEG_PER_SEC,
   FALLBACK_ROTATION_DEG_PER_SEC
 );
+const DEFAULT_CINEMA_MOTION = FALLBACK_CINEMA.motion;
+const HORIZONTAL_CENTER_LNG = 0;
+const MIN_MOTION_AMPLITUDE = 1;
+const MAX_MOTION_AMPLITUDE = 180;
 const FPS_LIMIT = 45;
 const FRAME_MIN_INTERVAL_MS = 1000 / FPS_LIMIT;
 const MAX_DELTA_SECONDS = 0.5;
@@ -500,19 +504,12 @@ const createSerpentineRunner = (
 
   const logStep = (step: SerpentineStep) => {
     const now = Date.now();
-    console.info("[auto-pan:step]", {
-      mode: "serpentine",
-      lat: Number(step.lat.toFixed(4)),
-      lon: Number(step.lon.toFixed(4)),
-      band: step.band,
-      direction: step.direction,
-      stepDeg: speedDeg,
-      latStepDeg: config.latStepDeg
-    });
     if (!lastAggregateLog || now - lastAggregateLog >= AUTOPAN_LOG_INTERVAL_MS) {
       lastAggregateLog = now;
-      console.info(
-        `[diagnostics:auto-pan] lat=${step.lat.toFixed(4)}, lon=${step.lon.toFixed(4)}, band=${step.band}`
+      const latText = step.lat.toFixed(4);
+      const lonText = step.lon.toFixed(4);
+      console.log(
+        `[diagnostics:auto-pan] bearing=${lonText}, lat=${latText}, lon=${lonText}, band=${step.band}`
       );
     }
   };
@@ -638,6 +635,8 @@ const cloneCinema = (cinema: MapCinemaConfig): MapCinemaConfig => {
 
   const fallbackPan = FALLBACK_CINEMA.panLngDegPerSec;
   const fallbackTransition = FALLBACK_CINEMA.bandTransition_sec;
+  const fallbackMotion = FALLBACK_CINEMA.motion;
+  const sourceMotion = cinema.motion ?? fallbackMotion;
 
   const panLngDegPerSec = Number.isFinite(cinema.panLngDegPerSec)
     ? Math.max(cinema.panLngDegPerSec, 0)
@@ -646,12 +645,69 @@ const cloneCinema = (cinema: MapCinemaConfig): MapCinemaConfig => {
     ? Math.max(cinema.bandTransition_sec, 0)
     : fallbackTransition;
 
+  const motion: MapCinemaConfig["motion"] = {
+    speedPreset:
+      sourceMotion?.speedPreset === "slow" || sourceMotion?.speedPreset === "medium" || sourceMotion?.speedPreset === "fast"
+        ? sourceMotion.speedPreset
+        : fallbackMotion.speedPreset,
+    amplitudeDeg: clamp(
+      Number.isFinite(sourceMotion?.amplitudeDeg) ? Number(sourceMotion?.amplitudeDeg) : fallbackMotion.amplitudeDeg,
+      1,
+      180
+    ),
+    easing: sourceMotion?.easing === "linear" ? "linear" : "ease-in-out",
+    pauseWithOverlay:
+      typeof sourceMotion?.pauseWithOverlay === "boolean"
+        ? sourceMotion.pauseWithOverlay
+        : fallbackMotion.pauseWithOverlay,
+    phaseOffsetDeg: clamp(
+      Number.isFinite(sourceMotion?.phaseOffsetDeg)
+        ? Number(sourceMotion?.phaseOffsetDeg)
+        : fallbackMotion.phaseOffsetDeg,
+      0,
+      360
+    ),
+  };
+
   return {
     ...cinema,
     panLngDegPerSec,
     bandTransition_sec,
-    bands
+    bands,
+    motion
   };
+};
+
+const initializeMotionState = (
+  cinema: MapCinemaConfig,
+  motionProgressRef: MutableRefObject<number>,
+  horizontalDirectionRef: MutableRefObject<1 | -1>
+) => {
+  const motion = cinema.motion ?? DEFAULT_CINEMA_MOTION;
+  const normalizedPhase = Number.isFinite(motion.phaseOffsetDeg)
+    ? ((Number(motion.phaseOffsetDeg) % 360) + 360) % 360
+    : DEFAULT_CINEMA_MOTION.phaseOffsetDeg;
+  let cycle = normalizedPhase / 180;
+  let direction: 1 | -1 = 1;
+  if (cycle > 1) {
+    cycle = 2 - cycle;
+    direction = -1;
+  }
+  const progress = clamp(cycle, 0, 1);
+  motionProgressRef.current = progress;
+  horizontalDirectionRef.current = direction;
+  const amplitude = clamp(
+    Number.isFinite(motion.amplitudeDeg)
+      ? Number(motion.amplitudeDeg)
+      : DEFAULT_CINEMA_MOTION.amplitudeDeg,
+    MIN_MOTION_AMPLITUDE,
+    MAX_MOTION_AMPLITUDE
+  );
+  const eased = motion.easing === "ease-in-out" ? easeInOut(progress) : progress;
+  const minLng = HORIZONTAL_CENTER_LNG - amplitude;
+  const maxLng = HORIZONTAL_CENTER_LNG + amplitude;
+  const lng = minLng + (maxLng - minLng) * eased;
+  return { motion, amplitude, lng };
 };
 
 type TransitionState = {
@@ -781,23 +837,13 @@ export default function GeoScopeMap() {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden) {
-        console.log("[GeoScopeMap] Page became visible, pendingAnimation:", pendingAnimationRef.current);
         // Recargar config cuando la página vuelve a ser visible
         reloadConfig();
-        
+
         // Si había una animación pendiente, iniciarla ahora
         if (pendingAnimationRef.current) {
           const map = mapRef.current;
-          console.log("[GeoScopeMap] Checking conditions for pending animation:", {
-            map: !!map,
-            isStyleLoaded: map?.isStyleLoaded(),
-            allowCinema: allowCinemaRef.current,
-            autopanMode: autopanModeRef.current,
-            animationFrame: animationFrameRef.current
-          });
-          
           if (map && map.isStyleLoaded() && allowCinemaRef.current && autopanModeRef.current === "rotate" && animationFrameRef.current === null) {
-            console.log("[GeoScopeMap] Starting pending animation after visibility change");
             autopanEnabledRef.current = true;
             lastFrameTimeRef.current = null;
             lastRepaintTimeRef.current = null;
@@ -853,32 +899,54 @@ export default function GeoScopeMap() {
               );
               currentMinZoomRef.current = minZoom;
 
-              const deltaLng = panSpeedRef.current * elapsedSeconds * horizontalDirectionRef.current;
-              let newLng = viewStateRef.current.lng + deltaLng;
+              updateBandState(elapsedSeconds);
 
-              const reachedEast = newLng >= 180;
-              const reachedWest = newLng <= -180;
+              const motion = cinema.motion ?? DEFAULT_CINEMA_MOTION;
+              const amplitude = clamp(
+                Number.isFinite(motion.amplitudeDeg)
+                  ? Number(motion.amplitudeDeg)
+                  : DEFAULT_CINEMA_MOTION.amplitudeDeg,
+                MIN_MOTION_AMPLITUDE,
+                MAX_MOTION_AMPLITUDE
+              );
+              const travel = Math.max(amplitude * 2, 1);
+              const deltaProgress = travel > 0 ? (panSpeedRef.current * elapsedSeconds) / travel : 0;
+              let progress = motionProgressRef.current + deltaProgress * horizontalDirectionRef.current;
 
-              if (reachedEast || reachedWest) {
-                newLng = reachedEast ? 180 : -180;
+              let hitMax = false;
+              let hitMin = false;
+              if (progress >= 1) {
+                progress = 1;
+                hitMax = true;
+              } else if (progress <= 0) {
+                progress = 0;
+                hitMin = true;
+              }
+
+              if (hitMax || hitMin) {
                 const nextIndex = currentIndex + verticalDirectionRef.current;
-
                 if (nextIndex < 0) {
                   verticalDirectionRef.current = 1;
-                  horizontalDirectionRef.current = horizontalDirectionRef.current === 1 ? -1 : 1;
-                  newLng = horizontalDirectionRef.current === 1 ? -180 : 180;
                   bandIndexRef.current = 0;
+                  horizontalDirectionRef.current = 1;
+                  progress = 0;
                 } else if (nextIndex >= totalBands) {
                   verticalDirectionRef.current = -1;
-                  horizontalDirectionRef.current = horizontalDirectionRef.current === 1 ? -1 : 1;
-                  newLng = horizontalDirectionRef.current === 1 ? -180 : 180;
                   bandIndexRef.current = totalBands - 1;
+                  horizontalDirectionRef.current = -1;
+                  progress = 1;
                 } else {
                   bandIndexRef.current = nextIndex;
-                  horizontalDirectionRef.current = horizontalDirectionRef.current === 1 ? -1 : 1;
-                  newLng = horizontalDirectionRef.current === 1 ? -180 : 180;
+                  horizontalDirectionRef.current = hitMax ? -1 : 1;
                 }
               }
+
+              motionProgressRef.current = progress;
+
+              const easedProgress = motion.easing === "ease-in-out" ? easeInOut(progress) : progress;
+              const minLng = HORIZONTAL_CENTER_LNG - amplitude;
+              const maxLng = HORIZONTAL_CENTER_LNG + amplitude;
+              const newLng = minLng + (maxLng - minLng) * easedProgress;
 
               viewStateRef.current.lng = normalizeLng(newLng);
               map.setMinZoom(minZoom);
@@ -976,6 +1044,7 @@ export default function GeoScopeMap() {
   const [tintColor, setTintColor] = useState<string | null>(null);
   const horizontalDirectionRef = useRef<1 | -1>(1); // 1 = Este (derecha), -1 = Oeste (izquierda)
   const verticalDirectionRef = useRef<1 | -1>(1); // 1 = hacia abajo, -1 = hacia arriba
+  const motionProgressRef = useRef(0.5);
 
   const clearIdlePanTimer = () => {
     if (idlePanTimerRef.current != null) {
@@ -1447,49 +1516,54 @@ export default function GeoScopeMap() {
       );
       currentMinZoomRef.current = minZoom;
 
-      // Mover horizontalmente
-      const deltaLng = panSpeedRef.current * elapsedSeconds * horizontalDirectionRef.current;
-      let newLng = viewStateRef.current.lng + deltaLng;
+      updateBandState(elapsedSeconds);
 
-      // Verificar si llegamos al final horizontal
-      const reachedEast = newLng >= 180;
-      const reachedWest = newLng <= -180;
+      const motion = cinema.motion ?? DEFAULT_CINEMA_MOTION;
+      const amplitude = clamp(
+        Number.isFinite(motion.amplitudeDeg)
+          ? Number(motion.amplitudeDeg)
+          : DEFAULT_CINEMA_MOTION.amplitudeDeg,
+        MIN_MOTION_AMPLITUDE,
+        MAX_MOTION_AMPLITUDE
+      );
+      const travel = Math.max(amplitude * 2, 1);
+      const deltaProgress = travel > 0 ? (panSpeedRef.current * elapsedSeconds) / travel : 0;
+      let progress = motionProgressRef.current + deltaProgress * horizontalDirectionRef.current;
 
-      if (reachedEast || reachedWest) {
-        // Normalizar la longitud al límite
-        newLng = reachedEast ? 180 : -180;
+      let hitMax = false;
+      let hitMin = false;
+      if (progress >= 1) {
+        progress = 1;
+        hitMax = true;
+      } else if (progress <= 0) {
+        progress = 0;
+        hitMin = true;
+      }
 
-        // Cambiar a la siguiente banda verticalmente
+      if (hitMax || hitMin) {
         const nextIndex = currentIndex + verticalDirectionRef.current;
-
-        // Si llegamos al final de las bandas (abajo o arriba), invertir dirección vertical
         if (nextIndex < 0) {
-          // Estamos en la primera banda y vamos hacia arriba, invertir dirección
-          verticalDirectionRef.current = 1; // Cambiar a bajar
-          // Invertir también dirección horizontal para la siguiente pasada
-          horizontalDirectionRef.current = horizontalDirectionRef.current === 1 ? -1 : 1;
-          // Empezar desde el lado opuesto
-          newLng = horizontalDirectionRef.current === 1 ? -180 : 180;
-          // Ir a la primera banda
+          verticalDirectionRef.current = 1;
           bandIndexRef.current = 0;
+          horizontalDirectionRef.current = 1;
+          progress = 0;
         } else if (nextIndex >= totalBands) {
-          // Estamos en la última banda y vamos hacia abajo, invertir dirección
-          verticalDirectionRef.current = -1; // Cambiar a subir
-          // Invertir también dirección horizontal para la siguiente pasada
-          horizontalDirectionRef.current = horizontalDirectionRef.current === 1 ? -1 : 1;
-          // Empezar desde el lado opuesto
-          newLng = horizontalDirectionRef.current === 1 ? -180 : 180;
-          // Ir a la última banda
+          verticalDirectionRef.current = -1;
           bandIndexRef.current = totalBands - 1;
+          horizontalDirectionRef.current = -1;
+          progress = 1;
         } else {
-          // Cambiar a la siguiente banda
           bandIndexRef.current = nextIndex;
-          // Invertir dirección horizontal al cambiar de banda
-          horizontalDirectionRef.current = horizontalDirectionRef.current === 1 ? -1 : 1;
-          // Empezar desde el lado opuesto
-          newLng = horizontalDirectionRef.current === 1 ? -180 : 180;
+          horizontalDirectionRef.current = hitMax ? -1 : 1;
         }
       }
+
+      motionProgressRef.current = progress;
+
+      const easedProgress = motion.easing === "ease-in-out" ? easeInOut(progress) : progress;
+      const minLng = HORIZONTAL_CENTER_LNG - amplitude;
+      const maxLng = HORIZONTAL_CENTER_LNG + amplitude;
+      const newLng = minLng + (maxLng - minLng) * easedProgress;
 
       viewStateRef.current.lng = normalizeLng(newLng);
       
@@ -1740,12 +1814,13 @@ export default function GeoScopeMap() {
       bandElapsedRef.current = 0;
       bandTransitionRef.current = null;
 
-      // Inicializar direcciones: empezar desde la izquierda moviéndose hacia la derecha
-      horizontalDirectionRef.current = 1; // Este (derecha)
-      verticalDirectionRef.current = 1; // Hacia abajo
-      
-      // Empezar desde el lado izquierdo del mapa
-      viewStateRef.current.lng = -180;
+      const motionInit = initializeMotionState(
+        cinemaSettings,
+        motionProgressRef,
+        horizontalDirectionRef
+      );
+      verticalDirectionRef.current = 1;
+      viewStateRef.current.lng = motionInit.lng;
       applyBandInstant(firstBand, null);
       viewStateRef.current.pitch = firstBand.pitch;
       viewStateRef.current.bearing = 0; // Sin rotación
@@ -1969,10 +2044,17 @@ export default function GeoScopeMap() {
             FALLBACK_ROTATION_DEG_PER_SEC
           );
           panSpeedRef.current = overrideSpeed;
-          
+
           // Reiniciar el mapa con nueva configuración
           cinemaRef.current = cloneCinema(cinemaSource);
-          
+          const motionInit = initializeMotionState(
+            cinemaRef.current,
+            motionProgressRef,
+            horizontalDirectionRef
+          );
+          verticalDirectionRef.current = 1;
+          viewStateRef.current.lng = motionInit.lng;
+
           // NO llamar recomputeAutopanActivation() aquí porque lo desactiva
           // En su lugar, activar directamente
           autopanEnabledRef.current = true;
@@ -2004,6 +2086,12 @@ export default function GeoScopeMap() {
         );
         panSpeedRef.current = overrideSpeed;
         cinemaRef.current = cloneCinema(cinemaSource);
+        const motionInit = initializeMotionState(
+          cinemaRef.current,
+          motionProgressRef,
+          horizontalDirectionRef
+        );
+        viewStateRef.current.lng = motionInit.lng;
       }
     };
 
@@ -2093,16 +2181,6 @@ export default function GeoScopeMap() {
     
     // Actualizar si cambió el estado, velocidad, bandas o tiempo de transición
     if (cinemaChanged || (newAllowCinema && (speedChanged || bandsChanged || transitionChanged))) {
-      console.log("[GeoScopeMap] Config changed - updating:", {
-        cinemaEnabled,
-        panSpeedDegPerSec,
-        newAllowCinema,
-        currentAllowCinema: allowCinemaRef.current,
-        cinemaChanged,
-        speedChanged,
-        bandsChanged,
-        transitionChanged
-      });
       allowCinemaRef.current = newAllowCinema;
       
       // Detener cualquier animación actual
@@ -2144,41 +2222,35 @@ export default function GeoScopeMap() {
           FALLBACK_ROTATION_DEG_PER_SEC
         );
         panSpeedRef.current = overrideSpeed;
-        
+
         // Reiniciar el mapa con nueva configuración
         cinemaRef.current = cloneCinema(cinemaSource);
-        
+        const motionInit = initializeMotionState(
+          cinemaRef.current,
+          motionProgressRef,
+          horizontalDirectionRef
+        );
+        verticalDirectionRef.current = 1;
+        viewStateRef.current.lng = motionInit.lng;
+
         // Asegurar que autopanEnabled esté activado
         autopanEnabledRef.current = true;
         
         // Reiniciar animación si el mapa está listo
         const map = mapRef.current;
-        console.log("[GeoScopeMap] Attempting to start animation:", {
-          mapExists: !!map,
-          isStyleLoaded: map?.isStyleLoaded(),
-          isHidden: document.hidden,
-          autopanMode: autopanModeRef.current,
-          allowCinema: allowCinemaRef.current,
-          animationFrame: animationFrameRef.current
-        });
-        
         // Si la página está oculta, marcar como pendiente para iniciar cuando vuelva a ser visible
         if (document.hidden) {
-          console.log("[GeoScopeMap] Page is hidden, will start animation when visible");
           pendingAnimationRef.current = true;
           // No intentar iniciar ahora, se iniciará cuando la página vuelva a ser visible
         } else {
           // Iniciar inmediatamente si la página está visible
-          console.log("[GeoScopeMap] Page is visible, attempting to start animation immediately");
           pendingAnimationRef.current = false;
-          
+
           // Intentar iniciar la animación inmediatamente si el mapa está listo
           const tryStartAnimation = () => {
             const map = mapRef.current;
-            if (map && map.isStyleLoaded() && !document.hidden && allowCinemaRef.current && 
+            if (map && map.isStyleLoaded() && !document.hidden && allowCinemaRef.current &&
                 autopanModeRef.current === "rotate" && animationFrameRef.current === null) {
-              console.log("[GeoScopeMap] Starting animation cycle immediately");
-              
               // Asegurar que autopanEnabled esté activado antes de iniciar
               autopanEnabledRef.current = true;
               
@@ -2191,17 +2263,12 @@ export default function GeoScopeMap() {
               const stepPan = (timestamp: number) => {
                 const map = mapRef.current;
                 if (animationFrameRef.current === null || !map || !allowCinemaRef.current) {
-                  if (animationFrameRef.current === null) {
-                    console.log("[GeoScopeMap] stepPan: Animation frame cancelled");
-                  }
                   return;
                 }
                 if (autopanModeRef.current !== "rotate") {
-                  console.log("[GeoScopeMap] stepPan: Wrong autopan mode:", autopanModeRef.current);
                   return;
                 }
                 if (!autopanEnabledRef.current) {
-                  console.log("[GeoScopeMap] stepPan: Autopan disabled");
                   return;
                 }
                 
@@ -2246,34 +2313,54 @@ export default function GeoScopeMap() {
                 );
                 currentMinZoomRef.current = minZoom;
 
-                // Mover horizontalmente
-                const deltaLng = panSpeedRef.current * elapsedSeconds * horizontalDirectionRef.current;
-                let newLng = viewStateRef.current.lng + deltaLng;
+                updateBandState(elapsedSeconds);
 
-                // Verificar si llegamos al final horizontal
-                const reachedEast = newLng >= 180;
-                const reachedWest = newLng <= -180;
+                const motion = cinema.motion ?? DEFAULT_CINEMA_MOTION;
+                const amplitude = clamp(
+                  Number.isFinite(motion.amplitudeDeg)
+                    ? Number(motion.amplitudeDeg)
+                    : DEFAULT_CINEMA_MOTION.amplitudeDeg,
+                  MIN_MOTION_AMPLITUDE,
+                  MAX_MOTION_AMPLITUDE
+                );
+                const travel = Math.max(amplitude * 2, 1);
+                const deltaProgress = travel > 0 ? (panSpeedRef.current * elapsedSeconds) / travel : 0;
+                let progress = motionProgressRef.current + deltaProgress * horizontalDirectionRef.current;
 
-                if (reachedEast || reachedWest) {
-                  newLng = reachedEast ? 180 : -180;
+                let hitMax = false;
+                let hitMin = false;
+                if (progress >= 1) {
+                  progress = 1;
+                  hitMax = true;
+                } else if (progress <= 0) {
+                  progress = 0;
+                  hitMin = true;
+                }
+
+                if (hitMax || hitMin) {
                   const nextIndex = currentIndex + verticalDirectionRef.current;
-
                   if (nextIndex < 0) {
                     verticalDirectionRef.current = 1;
-                    horizontalDirectionRef.current = horizontalDirectionRef.current === 1 ? -1 : 1;
-                    newLng = horizontalDirectionRef.current === 1 ? -180 : 180;
                     bandIndexRef.current = 0;
+                    horizontalDirectionRef.current = 1;
+                    progress = 0;
                   } else if (nextIndex >= totalBands) {
                     verticalDirectionRef.current = -1;
-                    horizontalDirectionRef.current = horizontalDirectionRef.current === 1 ? -1 : 1;
-                    newLng = horizontalDirectionRef.current === 1 ? -180 : 180;
                     bandIndexRef.current = totalBands - 1;
+                    horizontalDirectionRef.current = -1;
+                    progress = 1;
                   } else {
                     bandIndexRef.current = nextIndex;
-                    horizontalDirectionRef.current = horizontalDirectionRef.current === 1 ? -1 : 1;
-                    newLng = horizontalDirectionRef.current === 1 ? -180 : 180;
+                    horizontalDirectionRef.current = hitMax ? -1 : 1;
                   }
                 }
+
+                motionProgressRef.current = progress;
+
+                const easedProgress = motion.easing === "ease-in-out" ? easeInOut(progress) : progress;
+                const minLng = HORIZONTAL_CENTER_LNG - amplitude;
+                const maxLng = HORIZONTAL_CENTER_LNG + amplitude;
+                const newLng = minLng + (maxLng - minLng) * easedProgress;
 
                 viewStateRef.current.lng = normalizeLng(newLng);
                 map.setMinZoom(minZoom);
@@ -2307,7 +2394,6 @@ export default function GeoScopeMap() {
               
               // Iniciar el ciclo de animación
               animationFrameRef.current = requestAnimationFrame(stepPan);
-              console.log("[GeoScopeMap] Animation frame started:", animationFrameRef.current);
             } else {
               console.warn("[GeoScopeMap] Conditions not met to start animation:", {
                 map: !!map,
@@ -2355,29 +2441,33 @@ export default function GeoScopeMap() {
         );
         panSpeedRef.current = overrideSpeed;
         cinemaRef.current = cloneCinema(cinemaSource);
+        const motionInit = initializeMotionState(
+          cinemaRef.current,
+          motionProgressRef,
+          horizontalDirectionRef
+        );
+        viewStateRef.current.lng = motionInit.lng;
       }
     } else if (newAllowCinema && (speedChanged || bandsChanged || transitionChanged)) {
       // Si cambió la velocidad, bandas o tiempo de transición pero el modo sigue activo
-      console.log("[GeoScopeMap] Cinema config changed:", {
-        speedChanged,
-        bandsChanged,
-        transitionChanged,
-        fromSpeed: panSpeedRef.current,
-        toSpeed: panSpeedDegPerSec
-      });
       const overrideSpeed = kioskRuntime.getSpeedOverride(
         panSpeedDegPerSec,
         FALLBACK_ROTATION_DEG_PER_SEC
       );
       panSpeedRef.current = overrideSpeed;
       cinemaRef.current = cloneCinema(cinemaSource);
-      
+      const motionInit = initializeMotionState(
+        cinemaRef.current,
+        motionProgressRef,
+        horizontalDirectionRef
+      );
+      viewStateRef.current.lng = motionInit.lng;
+
       // Si cambiaron las bandas o el tiempo de transición, reiniciar el índice de banda
       if (bandsChanged || transitionChanged) {
         bandIndexRef.current = 0;
         bandElapsedRef.current = 0;
         bandTransitionRef.current = null;
-        console.log("[GeoScopeMap] Bands or transition changed, resetting band state");
       }
     }
   }, [config, reloadConfig]);
@@ -2400,7 +2490,6 @@ export default function GeoScopeMap() {
       const lightningLayer = lightningLayerRef.current;
 
       if (stormEnabled) {
-        console.log("[GeoScopeMap] Storm mode activated");
         
         // Detener modo cine si está activo - usar refs directamente
         if (animationFrameRef.current !== null) {
@@ -2485,7 +2574,6 @@ export default function GeoScopeMap() {
           // Ignore
         });
       } else {
-        console.log("[GeoScopeMap] Storm mode deactivated");
 
         // Restaurar vista al modo normal (volver a la primera banda del cine si está activo)
         if (allowCinemaRef.current && cinemaRef.current) {
@@ -2573,8 +2661,7 @@ export default function GeoScopeMap() {
             });
 
             if (hasNearbyLightning) {
-              console.log("[GeoScopeMap] Detected lightning near Castellón/Vila-real, auto-enabling storm mode");
-              
+
               // Activar modo tormenta actualizando la configuración
               const updatedConfig = {
                 ...merged,
@@ -2586,7 +2673,6 @@ export default function GeoScopeMap() {
 
               // Guardar configuración para activar el modo tormenta
               saveConfig(updatedConfig).then(() => {
-                console.log("[GeoScopeMap] Storm mode auto-enabled");
                 // Recargar configuración para que el useEffect de storm mode reaccione
                 reloadConfig();
               }).catch((err) => {

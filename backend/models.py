@@ -40,6 +40,20 @@ class MapCinemaBand(BaseModel):
         return values
 
 
+class MapCinemaMotion(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    speed_preset: Literal["slow", "medium", "fast"] = Field(
+        default="medium", alias="speedPreset"
+    )
+    amplitude_deg: float = Field(default=60.0, ge=1.0, le=180.0, alias="amplitudeDeg")
+    easing: Literal["linear", "ease-in-out"] = "ease-in-out"
+    pause_with_overlay: bool = Field(default=True, alias="pauseWithOverlay")
+    phase_offset_deg: float = Field(
+        default=25.0, ge=0.0, le=360.0, alias="phaseOffsetDeg"
+    )
+
+
 class MapCinema(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -49,6 +63,7 @@ class MapCinema(BaseModel):
     bands: List[MapCinemaBand] = Field(
         default_factory=lambda: [MapCinemaBand(**band) for band in DEFAULT_CINEMA_BANDS]
     )
+    motion: MapCinemaMotion = Field(default_factory=MapCinemaMotion)
 
     @model_validator(mode="after")
     def validate_bands(cls, values: "MapCinema") -> "MapCinema":  # type: ignore[override]
@@ -454,6 +469,7 @@ __all__ = [
     "Harvest",
     "MapBackend",
     "MapCinema",
+    "MapCinemaMotion",
     "MapCinemaBand",
     "MapConfig",
     "MapIdlePan",

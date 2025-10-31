@@ -247,11 +247,60 @@ check_kiosk_logs() {
   return 0
 }
 
+check_window_consistency() {
+  if ! command -v wmctrl >/dev/null 2>&1; then
+    record_result "windows" "skipped-no-wmctrl"
+    return 0
+  fi
+  local display_env="${DISPLAY:-:0}"
+  local xauth_env="${XAUTHORITY:-/home/${TARGET_USER}/.Xauthority}"
+  local wm_output
+  if ! wm_output=$(DISPLAY="$display_env" XAUTHORITY="$xauth_env" wmctrl -lx 2>/dev/null); then
+    record_result "windows" "wmctrl-fail"
+    return 1
+  fi
+  local kiosk_count
+  kiosk_count=$(printf '%s\n' "$wm_output" | awk '$4 ~ /pantalla-kiosk/ {count++} END {print count+0}')
+  if (( kiosk_count == 0 )); then
+    record_result "windows" "missing-kiosk"
+    return 1
+  fi
+  local residual_count
+  residual_count=$(printf '%s\n' "$wm_output" | awk '$4 ~ /^(chromium-browser\.Chromium-browser|chrome\.chromium|chromium\.Chromium)$/ {count++} END {print count+0}')
+  if (( residual_count > 0 )); then
+    record_result "windows" "residual-${residual_count}"
+    return 1
+  fi
+  record_result "windows" "ok"
+  return 0
+}
+
+check_gl_flag() {
+  if ! command -v pgrep >/dev/null 2>&1; then
+    record_result "egl" "skipped-no-pgrep"
+    return 0
+  fi
+  local processes
+  processes=$(pgrep -af -- '--class=pantalla-kiosk' 2>/dev/null || true)
+  if [[ -z "$processes" ]]; then
+    record_result "egl" "missing-process"
+    return 1
+  fi
+  if ! grep -q -- '--use-gl=egl-angle' <<<"$processes"; then
+    record_result "egl" "missing-flag"
+    return 1
+  fi
+  record_result "egl" "ok"
+  return 0
+}
+
 main() {
   local failures=0
   check_ui_health || failures=$((failures + 1))
   check_backend_health || failures=$((failures + 1))
   check_kiosk_units || failures=$((failures + 1))
+  check_window_consistency || failures=$((failures + 1))
+  check_gl_flag || failures=$((failures + 1))
 
   local kiosk_unit="pantalla-kiosk-chromium@${TARGET_USER}.service"
   local kiosk_url

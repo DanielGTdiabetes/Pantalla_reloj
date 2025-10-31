@@ -1025,6 +1025,32 @@ main {
   flex: 1;
 }
 
+.config-field__secret {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.config-field__secret input[type="text"],
+.config-field__secret input[type="password"] {
+  flex: 1;
+}
+
+.config-field__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.config-field__hint--success {
+  color: var(--success);
+}
+
+.config-field__hint--error {
+  color: var(--danger);
+}
+
 .config-actions {
   display: flex;
   justify-content: flex-end;
