@@ -706,12 +706,133 @@ export default function GeoScopeMap() {
   const { data: config, reload: reloadConfig } = useConfig();
   const mapFillRef = useRef<HTMLDivElement | null>(null);
   
+  // Guardar estado de si necesitamos iniciar animación cuando la página esté visible
+  const pendingAnimationRef = useRef(false);
+  
   // Recargar config cuando la página se vuelve visible (después de guardar en /config)
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden) {
+        console.log("[GeoScopeMap] Page became visible, pendingAnimation:", pendingAnimationRef.current);
         // Recargar config cuando la página vuelve a ser visible
         reloadConfig();
+        
+        // Si había una animación pendiente, iniciarla ahora
+        if (pendingAnimationRef.current) {
+          const map = mapRef.current;
+          console.log("[GeoScopeMap] Checking conditions for pending animation:", {
+            map: !!map,
+            isStyleLoaded: map?.isStyleLoaded(),
+            allowCinema: allowCinemaRef.current,
+            autopanMode: autopanModeRef.current,
+            animationFrame: animationFrameRef.current
+          });
+          
+          if (map && map.isStyleLoaded() && allowCinemaRef.current && autopanModeRef.current === "rotate" && animationFrameRef.current === null) {
+            console.log("[GeoScopeMap] Starting pending animation after visibility change");
+            autopanEnabledRef.current = true;
+            lastFrameTimeRef.current = null;
+            lastRepaintTimeRef.current = null;
+            const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+            lastLogTimeRef.current = now - AUTOPAN_LOG_INTERVAL_MS;
+            
+            // Usar la función stepPan del useEffect principal si está disponible
+            // Si no, iniciar con el método inline
+            const stepPan = (timestamp: number) => {
+              if (animationFrameRef.current === null || !mapRef.current || !allowCinemaRef.current) {
+                return;
+              }
+              if (autopanModeRef.current !== "rotate" || !autopanEnabledRef.current) {
+                return;
+              }
+              
+              const map = mapRef.current;
+              const lastFrame = lastFrameTimeRef.current;
+              const effectiveLast = lastFrame ?? timestamp - FRAME_MIN_INTERVAL_MS;
+              const deltaMs = timestamp - effectiveLast;
+              if (deltaMs < FRAME_MIN_INTERVAL_MS) {
+                animationFrameRef.current = requestAnimationFrame(stepPan);
+                return;
+              }
+
+              lastFrameTimeRef.current = timestamp;
+              let elapsedSeconds = deltaMs / 1000;
+              if (elapsedSeconds > MAX_DELTA_SECONDS) {
+                elapsedSeconds = MAX_DELTA_SECONDS;
+              }
+
+              const cinema = cinemaRef.current;
+              const totalBands = cinema.bands.length;
+              if (!totalBands) {
+                animationFrameRef.current = requestAnimationFrame(stepPan);
+                return;
+              }
+
+              const currentIndex = ((bandIndexRef.current % totalBands) + totalBands) % totalBands;
+              const currentBand = cinema.bands[currentIndex];
+              if (!currentBand) {
+                animationFrameRef.current = requestAnimationFrame(stepPan);
+                return;
+              }
+
+              viewStateRef.current.lat = currentBand.lat;
+              viewStateRef.current.zoom = currentBand.zoom;
+              viewStateRef.current.pitch = currentBand.pitch;
+              viewStateRef.current.bearing = 0;
+              const minZoom = Math.min(
+                Number.isFinite(currentBand.minZoom) ? currentBand.minZoom : currentBand.zoom,
+                currentBand.zoom
+              );
+              currentMinZoomRef.current = minZoom;
+
+              const deltaLng = panSpeedRef.current * elapsedSeconds * horizontalDirectionRef.current;
+              let newLng = viewStateRef.current.lng + deltaLng;
+
+              const reachedEast = newLng >= 180;
+              const reachedWest = newLng <= -180;
+
+              if (reachedEast || reachedWest) {
+                newLng = reachedEast ? 180 : -180;
+                const nextIndex = currentIndex + verticalDirectionRef.current;
+
+                if (nextIndex < 0) {
+                  verticalDirectionRef.current = 1;
+                  horizontalDirectionRef.current = horizontalDirectionRef.current === 1 ? -1 : 1;
+                  newLng = horizontalDirectionRef.current === 1 ? -180 : 180;
+                  bandIndexRef.current = 0;
+                } else if (nextIndex >= totalBands) {
+                  verticalDirectionRef.current = -1;
+                  horizontalDirectionRef.current = horizontalDirectionRef.current === 1 ? -1 : 1;
+                  newLng = horizontalDirectionRef.current === 1 ? -180 : 180;
+                  bandIndexRef.current = totalBands - 1;
+                } else {
+                  bandIndexRef.current = nextIndex;
+                  horizontalDirectionRef.current = horizontalDirectionRef.current === 1 ? -1 : 1;
+                  newLng = horizontalDirectionRef.current === 1 ? -180 : 180;
+                }
+              }
+
+              viewStateRef.current.lng = normalizeLng(newLng);
+              map.setMinZoom(minZoom);
+              
+              const { lng, lat, zoom, pitch } = viewStateRef.current;
+              map.jumpTo({
+                center: [lng, lat],
+                zoom,
+                pitch,
+                bearing: 0
+              });
+              
+              lastRepaintTimeRef.current = timestamp;
+              map.triggerRepaint();
+
+              animationFrameRef.current = requestAnimationFrame(stepPan);
+            };
+            
+            animationFrameRef.current = requestAnimationFrame(stepPan);
+            pendingAnimationRef.current = false;
+          }
+        }
       }
     };
     
@@ -1674,7 +1795,10 @@ export default function GeoScopeMap() {
           
           // Reiniciar el mapa con nueva configuración
           cinemaRef.current = cloneCinema(cinemaSource);
-          recomputeAutopanActivation();
+          
+          // NO llamar recomputeAutopanActivation() aquí porque lo desactiva
+          // En su lugar, activar directamente
+          autopanEnabledRef.current = true;
           
           // Reiniciar animación si el mapa está listo
           const map = mapRef.current;
@@ -1841,20 +1965,26 @@ export default function GeoScopeMap() {
           animationFrame: animationFrameRef.current
         });
         
-        if (map && map.isStyleLoaded() && !document.hidden && autopanModeRef.current === "rotate") {
-          // Usar un pequeño delay para asegurar que todo esté listo
-          setTimeout(() => {
+        // Si la página está oculta, marcar como pendiente para iniciar cuando vuelva a ser visible
+        if (document.hidden) {
+          console.log("[GeoScopeMap] Page is hidden, will start animation when visible");
+          pendingAnimationRef.current = true;
+          // No intentar iniciar ahora, se iniciará cuando la página vuelva a ser visible
+        } else {
+          // Iniciar inmediatamente si la página está visible
+          console.log("[GeoScopeMap] Page is visible, attempting to start animation immediately");
+          pendingAnimationRef.current = false;
+          
+          // Intentar iniciar la animación inmediatamente si el mapa está listo
+          const tryStartAnimation = () => {
             const map = mapRef.current;
-            console.log("[GeoScopeMap] Inside setTimeout - checking conditions:", {
-              mapExists: !!map,
-              isStyleLoaded: map?.isStyleLoaded(),
-              isHidden: document.hidden,
-              allowCinema: allowCinemaRef.current,
-              animationFrame: animationFrameRef.current
-            });
-            
-            if (map && map.isStyleLoaded() && !document.hidden && allowCinemaRef.current && animationFrameRef.current === null) {
-              console.log("[GeoScopeMap] Starting animation cycle");
+            if (map && map.isStyleLoaded() && !document.hidden && allowCinemaRef.current && 
+                autopanModeRef.current === "rotate" && animationFrameRef.current === null) {
+              console.log("[GeoScopeMap] Starting animation cycle immediately");
+              
+              // Asegurar que autopanEnabled esté activado antes de iniciar
+              autopanEnabledRef.current = true;
+              
               lastFrameTimeRef.current = null;
               lastRepaintTimeRef.current = null;
               const now = typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -1982,11 +2112,28 @@ export default function GeoScopeMap() {
               animationFrameRef.current = requestAnimationFrame(stepPan);
               console.log("[GeoScopeMap] Animation frame started:", animationFrameRef.current);
             } else {
-              console.warn("[GeoScopeMap] Conditions not met to start animation");
+              console.warn("[GeoScopeMap] Conditions not met to start animation:", {
+                map: !!map,
+                isStyleLoaded: map?.isStyleLoaded(),
+                isHidden: document.hidden,
+                allowCinema: allowCinemaRef.current,
+                autopanMode: autopanModeRef.current,
+                animationFrame: animationFrameRef.current
+              });
+            }
+          };
+          
+          // Intentar iniciar inmediatamente
+          tryStartAnimation();
+          
+          // Si no se pudo iniciar, intentar después de un pequeño delay
+          setTimeout(() => {
+            const map = mapRef.current;
+            if (map && map.isStyleLoaded() && !document.hidden && allowCinemaRef.current && 
+                autopanModeRef.current === "rotate" && animationFrameRef.current === null) {
+              tryStartAnimation();
             }
           }, 100);
-        } else {
-          console.warn("[GeoScopeMap] Cannot start animation - initial conditions not met");
         }
       } else {
         // Si se desactiva, asegurar que el bearing sea 0
