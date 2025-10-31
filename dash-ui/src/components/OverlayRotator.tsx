@@ -195,67 +195,100 @@ export const OverlayRotator: React.FC = () => {
   }, [calendar.saints, calendar.namedays]);
 
   const rotatingCards = useMemo<RotatingCardItem[]>(
-    () => [
-      {
-        id: "time",
-        duration: 8000,
-        render: () => <TimeCard timezone={config.display.timezone} />
-      },
-      {
-        id: "weather",
-        duration: 10000,
-        render: () => (
-          <WeatherCard
-            temperatureLabel={`${temperature.value}${temperature.unit}`}
-            feelsLikeLabel={feelsLikeValue ? `${feelsLikeValue.value}${feelsLikeValue.unit}` : null}
-            condition={condition}
-            humidity={humidity}
-            wind={wind}
-            unit={temperature.unit}
-          />
-        )
-      },
-      {
-        id: "calendar",
-        duration: 10000,
-        render: () => <CalendarCard events={calendarEvents} timezone={config.display.timezone} />
-      },
-      {
-        id: "moon",
-        duration: 10000,
-        render: () => <MoonCard moonPhase={moonPhase} illumination={moonIllumination} />
-      },
-      {
-        id: "harvest",
-        duration: 12000,
-        render: () => <HarvestCard items={harvestItems} />
-      },
-      {
-        id: "saints",
-        duration: 12000,
-        render: () => <SaintsCard saints={saintsEntries} />
-      },
-      {
-        id: "news",
-        duration: 20000,
-        render: () => <NewsCard items={newsItems} />
-      },
-      {
-        id: "ephemerides",
-        duration: 20000,
-        render: () => (
-          <EphemeridesCard
-            sunrise={sunrise}
-            sunset={sunset}
-            moonPhase={moonPhase}
-            events={ephemeridesEvents}
-          />
-        )
+    () => {
+      const cards: RotatingCardItem[] = [
+        {
+          id: "time",
+          duration: 8000,
+          render: () => <TimeCard timezone={config.display.timezone} />
+        },
+        {
+          id: "weather",
+          duration: 10000,
+          render: () => (
+            <WeatherCard
+              temperatureLabel={`${temperature.value}${temperature.unit}`}
+              feelsLikeLabel={feelsLikeValue ? `${feelsLikeValue.value}${feelsLikeValue.unit}` : null}
+              condition={condition}
+              humidity={humidity}
+              wind={wind}
+              unit={temperature.unit}
+            />
+          )
+        }
+      ];
+
+      // Calendar card - solo si está habilitado
+      if (config.calendar?.enabled) {
+        cards.push({
+          id: "calendar",
+          duration: 10000,
+          render: () => <CalendarCard events={calendarEvents} timezone={config.display.timezone} />
+        });
       }
-    ], [
+
+      // Moon card - solo si efemérides está habilitado
+      if (config.ephemerides?.enabled) {
+        cards.push({
+          id: "moon",
+          duration: 10000,
+          render: () => <MoonCard moonPhase={moonPhase} illumination={moonIllumination} />
+        });
+      }
+
+      // Harvest card - solo si está habilitado
+      if (config.harvest?.enabled) {
+        cards.push({
+          id: "harvest",
+          duration: 12000,
+          render: () => <HarvestCard items={harvestItems} />
+        });
+      }
+
+      // Saints card - solo si está habilitado
+      if (config.saints?.enabled) {
+        cards.push({
+          id: "saints",
+          duration: 12000,
+          render: () => <SaintsCard saints={saintsEntries} />
+        });
+      }
+
+      // News card - solo si está habilitado
+      if (config.news?.enabled) {
+        cards.push({
+          id: "news",
+          duration: 20000,
+          render: () => <NewsCard items={newsItems} />
+        });
+      }
+
+      // Ephemerides card - solo si está habilitado
+      if (config.ephemerides?.enabled) {
+        cards.push({
+          id: "ephemerides",
+          duration: 20000,
+          render: () => (
+            <EphemeridesCard
+              sunrise={sunrise}
+              sunset={sunset}
+              moonPhase={moonPhase}
+              events={ephemeridesEvents}
+            />
+          )
+        });
+      }
+
+      return cards;
+    }, [
       calendarEvents,
       condition,
       config.display.timezone,
+      config.calendar?.enabled,
+      config.ephemerides?.enabled,
+      config.harvest?.enabled,
+      config.saints?.enabled,
+      config.news?.enabled,
       ephemeridesEvents,
       feelsLikeValue,
       harvestItems,

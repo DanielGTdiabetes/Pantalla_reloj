@@ -1308,31 +1308,13 @@ const ConfigPage: React.FC = () => {
           </div>
         )}
 
-        {(supports("news.enabled") || supports("ai.enabled")) && (
+        {supports("ai.enabled") && (
           <div className="config-card">
             <div>
               <h2>Módulos</h2>
               <p>Activa o desactiva contenido adicional.</p>
             </div>
             <div className="config-grid">
-              {supports("news.enabled") && (
-                <div className="config-field config-field--checkbox">
-                  <label htmlFor="news_enabled">
-                    <input
-                      id="news_enabled"
-                      type="checkbox"
-                      checked={form.news.enabled}
-                      disabled={disableInputs}
-                      onChange={(event) => {
-                        updateForm("news", { enabled: event.target.checked });
-                      }}
-                    />
-                    Mostrar noticias
-                  </label>
-                  {renderHelp("Activa el módulo de titulares RSS")}
-                </div>
-              )}
-
               {supports("ai.enabled") && (
                 <div className="config-field config-field--checkbox">
                   <label htmlFor="ai_enabled">
@@ -1529,6 +1511,524 @@ const ConfigPage: React.FC = () => {
                   />
                   {renderHelp("Minutos antes de desactivar automáticamente el modo tormenta (5-1440)")}
                   {renderFieldError("storm.auto_disable_after_minutes")}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {supports("news") && (
+          <div className="config-card">
+            <div>
+              <h2>Noticias RSS</h2>
+              <p>Configura los feeds RSS para obtener noticias del día.</p>
+            </div>
+            <div className="config-grid">
+              {supports("news.enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="news_enabled">
+                    <input
+                      id="news_enabled"
+                      type="checkbox"
+                      checked={form.news.enabled}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          news: {
+                            ...prev.news,
+                            enabled,
+                          },
+                        }));
+                        resetErrorsFor("news.enabled");
+                      }}
+                    />
+                    Activar noticias RSS
+                  </label>
+                  {renderHelp("Habilita la carga de noticias desde feeds RSS")}
+                </div>
+              )}
+
+              {supports("news.rss_feeds") && (
+                <div className="config-field">
+                  <label htmlFor="news_rss_feeds">Feeds RSS (uno por línea)</label>
+                  <textarea
+                    id="news_rss_feeds"
+                    rows={4}
+                    value={form.news.rss_feeds.join("\n")}
+                    disabled={disableInputs || !form.news.enabled}
+                    onChange={(event) => {
+                      const feeds = event.target.value
+                        .split("\n")
+                        .map((line) => line.trim())
+                        .filter((line) => line.length > 0);
+                      setForm((prev) => ({
+                        ...prev,
+                        news: {
+                          ...prev.news,
+                          rss_feeds: feeds.length > 0 ? feeds : ["https://www.elperiodicomediterraneo.com/rss"],
+                        },
+                      }));
+                      resetErrorsFor("news.rss_feeds");
+                    }}
+                    placeholder="https://www.elperiodicomediterraneo.com/rss&#10;https://www.xataka.com/feed"
+                  />
+                  {renderHelp("URLs de feeds RSS, una por línea (ej: Periódico Mediterráneo, Xataka)")}
+                  {renderFieldError("news.rss_feeds")}
+                </div>
+              )}
+
+              {supports("news.max_items_per_feed") && (
+                <div className="config-field">
+                  <label htmlFor="news_max_items">Máximo de artículos por feed</label>
+                  <input
+                    id="news_max_items"
+                    type="number"
+                    min="1"
+                    max="50"
+                    value={form.news.max_items_per_feed}
+                    disabled={disableInputs || !form.news.enabled}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (!Number.isNaN(value)) {
+                        setForm((prev) => ({
+                          ...prev,
+                          news: {
+                            ...prev.news,
+                            max_items_per_feed: Math.max(1, Math.min(50, Math.round(value))),
+                          },
+                        }));
+                        resetErrorsFor("news.max_items_per_feed");
+                      }
+                    }}
+                  />
+                  {renderHelp("Número máximo de artículos a mostrar por cada feed RSS (1-50)")}
+                  {renderFieldError("news.max_items_per_feed")}
+                </div>
+              )}
+
+              {supports("news.refresh_minutes") && (
+                <div className="config-field">
+                  <label htmlFor="news_refresh">Intervalo de actualización (minutos)</label>
+                  <input
+                    id="news_refresh"
+                    type="number"
+                    min="5"
+                    max="1440"
+                    value={form.news.refresh_minutes}
+                    disabled={disableInputs || !form.news.enabled}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (!Number.isNaN(value)) {
+                        setForm((prev) => ({
+                          ...prev,
+                          news: {
+                            ...prev.news,
+                            refresh_minutes: Math.max(5, Math.min(1440, Math.round(value))),
+                          },
+                        }));
+                        resetErrorsFor("news.refresh_minutes");
+                      }
+                    }}
+                  />
+                  {renderHelp("Cada cuántos minutos se actualizan las noticias (5-1440)")}
+                  {renderFieldError("news.refresh_minutes")}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {supports("calendar") && (
+          <div className="config-card">
+            <div>
+              <h2>Google Calendar</h2>
+              <p>Configura la integración con Google Calendar para mostrar eventos.</p>
+            </div>
+            <div className="config-grid">
+              {supports("calendar.enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="calendar_enabled">
+                    <input
+                      id="calendar_enabled"
+                      type="checkbox"
+                      checked={form.calendar.enabled}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          calendar: {
+                            ...prev.calendar,
+                            enabled,
+                          },
+                        }));
+                        resetErrorsFor("calendar.enabled");
+                      }}
+                    />
+                    Activar Google Calendar
+                  </label>
+                  {renderHelp("Habilita la integración con Google Calendar")}
+                </div>
+              )}
+
+              {supports("calendar.google_api_key") && (
+                <div className="config-field">
+                  <label htmlFor="calendar_api_key">API Key de Google Calendar</label>
+                  <input
+                    id="calendar_api_key"
+                    type="text"
+                    value={form.calendar.google_api_key || ""}
+                    disabled={disableInputs || !form.calendar.enabled}
+                    onChange={(event) => {
+                      const api_key = event.target.value.trim() || null;
+                      setForm((prev) => ({
+                        ...prev,
+                        calendar: {
+                          ...prev.calendar,
+                          google_api_key: api_key,
+                        },
+                      }));
+                      resetErrorsFor("calendar.google_api_key");
+                    }}
+                    placeholder="AIza..."
+                  />
+                  {renderHelp("API key de Google Calendar (opcional, se puede obtener en Google Cloud Console)")}
+                  {renderFieldError("calendar.google_api_key")}
+                </div>
+              )}
+
+              {supports("calendar.google_calendar_id") && (
+                <div className="config-field">
+                  <label htmlFor="calendar_calendar_id">Calendar ID</label>
+                  <input
+                    id="calendar_calendar_id"
+                    type="text"
+                    value={form.calendar.google_calendar_id || ""}
+                    disabled={disableInputs || !form.calendar.enabled}
+                    onChange={(event) => {
+                      const calendar_id = event.target.value.trim() || null;
+                      setForm((prev) => ({
+                        ...prev,
+                        calendar: {
+                          ...prev.calendar,
+                          google_calendar_id: calendar_id,
+                        },
+                      }));
+                      resetErrorsFor("calendar.google_calendar_id");
+                    }}
+                    placeholder="primary o example@gmail.com"
+                  />
+                  {renderHelp("ID del calendario de Google (ej: 'primary' o dirección de email)")}
+                  {renderFieldError("calendar.google_calendar_id")}
+                </div>
+              )}
+
+              {supports("calendar.days_ahead") && (
+                <div className="config-field">
+                  <label htmlFor="calendar_days_ahead">Días adelante</label>
+                  <input
+                    id="calendar_days_ahead"
+                    type="number"
+                    min="1"
+                    max="90"
+                    value={form.calendar.days_ahead}
+                    disabled={disableInputs || !form.calendar.enabled}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (!Number.isNaN(value)) {
+                        setForm((prev) => ({
+                          ...prev,
+                          calendar: {
+                            ...prev.calendar,
+                            days_ahead: Math.max(1, Math.min(90, Math.round(value))),
+                          },
+                        }));
+                        resetErrorsFor("calendar.days_ahead");
+                      }
+                    }}
+                  />
+                  {renderHelp("Número de días adelante para obtener eventos (1-90)")}
+                  {renderFieldError("calendar.days_ahead")}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {supports("harvest") && (
+          <div className="config-card">
+            <div>
+              <h2>Hortalizas y Cultivos</h2>
+              <p>Configura los cultivos estacionales y personalizados a mostrar.</p>
+            </div>
+            <div className="config-grid">
+              {supports("harvest.enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="harvest_enabled">
+                    <input
+                      id="harvest_enabled"
+                      type="checkbox"
+                      checked={form.harvest.enabled}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          harvest: {
+                            ...prev.harvest,
+                            enabled,
+                          },
+                        }));
+                        resetErrorsFor("harvest.enabled");
+                      }}
+                    />
+                    Activar hortalizas estacionales
+                  </label>
+                  {renderHelp("Muestra las hortalizas y cultivos en temporada según el mes actual")}
+                </div>
+              )}
+
+              {supports("harvest.custom_items") && (
+                <div className="config-field">
+                  <label>Items personalizados (JSON)</label>
+                  <textarea
+                    rows={6}
+                    value={JSON.stringify(form.harvest.custom_items, null, 2)}
+                    disabled={disableInputs || !form.harvest.enabled}
+                    onChange={(event) => {
+                      try {
+                        const items = JSON.parse(event.target.value);
+                        if (Array.isArray(items)) {
+                          setForm((prev) => ({
+                            ...prev,
+                            harvest: {
+                              ...prev.harvest,
+                              custom_items: items,
+                            },
+                          }));
+                          resetErrorsFor("harvest.custom_items");
+                        }
+                      } catch {
+                        // Ignore invalid JSON
+                      }
+                    }}
+                    placeholder='[{"name": "Tomates", "status": "Temporada"}, ...]'
+                  />
+                  {renderHelp("Items personalizados de cultivos en formato JSON (se combinan con los estacionales)")}
+                  {renderFieldError("harvest.custom_items")}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {supports("saints") && (
+          <div className="config-card">
+            <div>
+              <h2>Santoral</h2>
+              <p>Configura el santoral y onomásticos del día.</p>
+            </div>
+            <div className="config-grid">
+              {supports("saints.enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="saints_enabled">
+                    <input
+                      id="saints_enabled"
+                      type="checkbox"
+                      checked={form.saints.enabled}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          saints: {
+                            ...prev.saints,
+                            enabled,
+                          },
+                        }));
+                        resetErrorsFor("saints.enabled");
+                      }}
+                    />
+                    Activar santoral
+                  </label>
+                  {renderHelp("Muestra los santos del día en el panel rotativo")}
+                </div>
+              )}
+
+              {supports("saints.include_namedays") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="saints_namedays">
+                    <input
+                      id="saints_namedays"
+                      type="checkbox"
+                      checked={form.saints.include_namedays}
+                      disabled={disableInputs || !form.saints.enabled}
+                      onChange={(event) => {
+                        const include_namedays = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          saints: {
+                            ...prev.saints,
+                            include_namedays,
+                          },
+                        }));
+                        resetErrorsFor("saints.include_namedays");
+                      }}
+                    />
+                    Incluir onomásticos
+                  </label>
+                  {renderHelp("Incluye los onomásticos junto con los santos del día")}
+                </div>
+              )}
+
+              {supports("saints.locale") && (
+                <div className="config-field">
+                  <label htmlFor="saints_locale">Locale</label>
+                  <input
+                    id="saints_locale"
+                    type="text"
+                    maxLength={5}
+                    value={form.saints.locale}
+                    disabled={disableInputs || !form.saints.enabled}
+                    onChange={(event) => {
+                      const locale = event.target.value.substring(0, 5);
+                      setForm((prev) => ({
+                        ...prev,
+                        saints: {
+                          ...prev.saints,
+                          locale,
+                        },
+                      }));
+                      resetErrorsFor("saints.locale");
+                    }}
+                    placeholder="es"
+                  />
+                  {renderHelp("Código de locale para los nombres (ej: 'es' para español)")}
+                  {renderFieldError("saints.locale")}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {supports("ephemerides") && (
+          <div className="config-card">
+            <div>
+              <h2>Efemérides</h2>
+              <p>Configura los cálculos astronómicos (salida/puesta de sol, fases lunares).</p>
+            </div>
+            <div className="config-grid">
+              {supports("ephemerides.enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="ephemerides_enabled">
+                    <input
+                      id="ephemerides_enabled"
+                      type="checkbox"
+                      checked={form.ephemerides.enabled}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          ephemerides: {
+                            ...prev.ephemerides,
+                            enabled,
+                          },
+                        }));
+                        resetErrorsFor("ephemerides.enabled");
+                      }}
+                    />
+                    Activar efemérides
+                  </label>
+                  {renderHelp("Habilita los cálculos astronómicos (sol, luna)")}
+                </div>
+              )}
+
+              {supports("ephemerides.latitude") && (
+                <div className="config-field">
+                  <label htmlFor="ephemerides_lat">Latitud</label>
+                  <input
+                    id="ephemerides_lat"
+                    type="number"
+                    step="0.001"
+                    min="-90"
+                    max="90"
+                    value={form.ephemerides.latitude}
+                    disabled={disableInputs || !form.ephemerides.enabled}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (!Number.isNaN(value)) {
+                        setForm((prev) => ({
+                          ...prev,
+                          ephemerides: {
+                            ...prev.ephemerides,
+                            latitude: Math.max(-90, Math.min(90, value)),
+                          },
+                        }));
+                        resetErrorsFor("ephemerides.latitude");
+                      }
+                    }}
+                  />
+                  {renderHelp("Latitud para cálculos astronómicos (Castellón: 39.986)")}
+                  {renderFieldError("ephemerides.latitude")}
+                </div>
+              )}
+
+              {supports("ephemerides.longitude") && (
+                <div className="config-field">
+                  <label htmlFor="ephemerides_lng">Longitud</label>
+                  <input
+                    id="ephemerides_lng"
+                    type="number"
+                    step="0.001"
+                    min="-180"
+                    max="180"
+                    value={form.ephemerides.longitude}
+                    disabled={disableInputs || !form.ephemerides.enabled}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (!Number.isNaN(value)) {
+                        setForm((prev) => ({
+                          ...prev,
+                          ephemerides: {
+                            ...prev.ephemerides,
+                            longitude: Math.max(-180, Math.min(180, value)),
+                          },
+                        }));
+                        resetErrorsFor("ephemerides.longitude");
+                      }
+                    }}
+                  />
+                  {renderHelp("Longitud para cálculos astronómicos (Vila-real: -0.051)")}
+                  {renderFieldError("ephemerides.longitude")}
+                </div>
+              )}
+
+              {supports("ephemerides.timezone") && (
+                <div className="config-field">
+                  <label htmlFor="ephemerides_timezone">Zona horaria</label>
+                  <input
+                    id="ephemerides_timezone"
+                    type="text"
+                    value={form.ephemerides.timezone}
+                    disabled={disableInputs || !form.ephemerides.enabled}
+                    onChange={(event) => {
+                      const timezone = event.target.value.trim();
+                      setForm((prev) => ({
+                        ...prev,
+                        ephemerides: {
+                          ...prev.ephemerides,
+                          timezone,
+                        },
+                      }));
+                      resetErrorsFor("ephemerides.timezone");
+                    }}
+                    placeholder="Europe/Madrid"
+                  />
+                  {renderHelp("Zona horaria para los cálculos (ej: 'Europe/Madrid')")}
+                  {renderFieldError("ephemerides.timezone")}
                 </div>
               )}
             </div>

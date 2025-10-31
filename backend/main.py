@@ -16,6 +16,14 @@ from pydantic import BaseModel, ValidationError
 
 from .cache import CacheStore
 from .config_manager import ConfigManager
+from .data_sources import (
+    calculate_moon_phase,
+    calculate_sun_times,
+    fetch_google_calendar_events,
+    get_harvest_data,
+    get_saints_today,
+    parse_rss_feed,
+)
 from .logging_utils import configure_logging
 from .models import AppConfig
 
@@ -243,17 +251,157 @@ def get_weather() -> Dict[str, Any]:
 
 @app.get("/api/news")
 def get_news() -> Dict[str, Any]:
-    return _load_or_default("news")
+    """Obtiene noticias de feeds RSS configurados."""
+    config = config_manager.read()
+    news_config = config.news
+    
+    if not news_config.enabled:
+        return _load_or_default("news")
+    
+    # Verificar caché
+    cached = cache_store.load("news", max_age_minutes=news_config.refresh_minutes)
+    if cached:
+        return cached.payload
+    
+    # Obtener noticias de todos los feeds
+    all_items: List[Dict[str, Any]] = []
+    
+    for feed_url in news_config.rss_feeds:
+        if not feed_url or not feed_url.strip():
+            continue
+        
+        try:
+            items = parse_rss_feed(feed_url, max_items=news_config.max_items_per_feed)
+            all_items.extend(items)
+        except Exception as exc:
+            logger.warning("Failed to fetch RSS feed %s: %s", feed_url, exc)
+            continue
+    
+    # Ordenar por fecha (si está disponible)
+    all_items.sort(key=lambda x: x.get("published_at", ""), reverse=True)
+    
+    # Limitar total
+    max_total = news_config.max_items_per_feed * len(news_config.rss_feeds)
+    all_items = all_items[:max_total]
+    
+    payload = {
+        "items": all_items,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    
+    cache_store.store("news", payload)
+    return payload
 
 
 @app.get("/api/astronomy")
 def get_astronomy() -> Dict[str, Any]:
-    return _load_or_default("astronomy")
+    """Obtiene datos astronómicos (fases lunares, salida/puesta de sol)."""
+    config = config_manager.read()
+    ephemerides_config = config.ephemerides
+    
+    if not ephemerides_config.enabled:
+        return _load_or_default("astronomy")
+    
+    # Verificar caché (actualizar cada hora)
+    cached = cache_store.load("astronomy", max_age_minutes=60)
+    if cached:
+        return cached.payload
+    
+    # Calcular fase lunar
+    moon_data = calculate_moon_phase()
+    
+    # Calcular salida/puesta de sol
+    sun_data = calculate_sun_times(
+        lat=ephemerides_config.latitude,
+        lng=ephemerides_config.longitude,
+        tz_str=ephemerides_config.timezone,
+    )
+    
+    # Eventos astronómicos básicos del día
+    events = [
+        f"Salida del sol: {sun_data['sunrise']}",
+        f"Puesta del sol: {sun_data['sunset']}",
+        f"Fase lunar: {moon_data['moon_phase']}",
+    ]
+    
+    payload = {
+        "moon_phase": moon_data["moon_phase"],
+        "moon_illumination": moon_data["moon_illumination"],
+        "illumination": moon_data["illumination"],
+        "sunrise": sun_data["sunrise"],
+        "sunset": sun_data["sunset"],
+        "events": events,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    
+    cache_store.store("astronomy", payload)
+    return payload
 
 
 @app.get("/api/calendar")
 def get_calendar() -> Dict[str, Any]:
-    return _load_or_default("calendar")
+    """Obtiene datos del calendario (eventos, hortalizas, santoral)."""
+    config = config_manager.read()
+    calendar_config = config.calendar
+    harvest_config = config.harvest
+    saints_config = config.saints
+    
+    # Verificar caché
+    cached = cache_store.load("calendar", max_age_minutes=60)
+    if cached:
+        return cached.payload
+    
+    payload: Dict[str, Any] = {
+        "upcoming": [],
+        "harvest": [],
+        "saints": [],
+        "namedays": [],
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    
+    # Eventos de Google Calendar (si está configurado)
+    if calendar_config.enabled and calendar_config.google_api_key and calendar_config.google_calendar_id:
+        try:
+            events = fetch_google_calendar_events(
+                api_key=calendar_config.google_api_key,
+                calendar_id=calendar_config.google_calendar_id,
+                days_ahead=calendar_config.days_ahead,
+                max_results=20,
+            )
+            payload["upcoming"] = events
+        except Exception as exc:
+            logger.warning("Failed to fetch Google Calendar events: %s", exc)
+            payload["upcoming"] = []
+    else:
+        payload["upcoming"] = []
+    
+    # Hortalizas estacionales
+    if harvest_config.enabled:
+        try:
+            harvest_items = get_harvest_data(harvest_config.custom_items)
+            payload["harvest"] = harvest_items
+        except Exception as exc:
+            logger.warning("Failed to get harvest data: %s", exc)
+            payload["harvest"] = []
+    
+    # Santoral
+    if saints_config.enabled:
+        try:
+            saints_today = get_saints_today(
+                include_namedays=saints_config.include_namedays,
+                locale=saints_config.locale,
+            )
+            payload["saints"] = saints_today
+            if saints_config.include_namedays:
+                # Para onomásticos, usar los mismos santos (en producción, separar)
+                payload["namedays"] = saints_today
+        except Exception as exc:
+            logger.warning("Failed to get saints data: %s", exc)
+            payload["saints"] = []
+            payload["namedays"] = []
+    
+    cache_store.store("calendar", payload)
+    return payload
 
 
 @app.get("/api/storm_mode")
