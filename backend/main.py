@@ -6,7 +6,7 @@ import re
 import subprocess
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
@@ -885,7 +885,8 @@ def _validate_wifi_interface(interface: str) -> Tuple[bool, Optional[str]]:  # t
     """
     stdout, stderr, code = _run_nmcli(["device", "status"], timeout=10)
     if code != 0:
-        return False, f"Cannot check device status: {stderr or stdout or 'Unknown error'}"
+        error_detail = stderr or stdout or "Unknown error"
+        return False, f"Cannot check device status: {error_detail}"
     
     # Verificar que la interfaz existe en la lista
     for line in stdout.strip().split("\n"):
@@ -953,7 +954,7 @@ def wifi_scan() -> Dict[str, Any]:
     if not interface_valid:
         logger.error("WiFi interface validation failed: %s", error_msg)
         raise HTTPException(
-            status_code=400,
+            status_code=404 if error_msg and "not found" in error_msg.lower() else 400,
             detail=error_msg or f"WiFi device '{interface}' not found or invalid"
         )
     
@@ -963,8 +964,15 @@ def wifi_scan() -> Dict[str, Any]:
     # Trigger scan
     stdout, stderr, code = _run_nmcli(["device", "wifi", "rescan", "--ifname", interface], timeout=10)
     if code != 0:
+        error_detail = stderr or stdout or "Unknown error"
         logger.warning("Failed to trigger WiFi scan: stdout=%r, stderr=%r", stdout, stderr)
-        # Continue anyway, we can still try to list existing scan results
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "Failed to trigger WiFi scan",
+                "stderr": error_detail,
+            },
+        )
     
     # Wait a bit for scan to complete
     import time
@@ -989,15 +997,14 @@ def wifi_scan() -> Dict[str, Any]:
     
     if code != 0:
         logger.error("Failed to list WiFi networks: stdout=%r, stderr=%r, code=%d", stdout, stderr, code)
-        # Provide more helpful error message
         error_detail = stderr or stdout or "Unknown error"
-        if "permission denied" in error_detail.lower() or "permission" in error_detail.lower():
-            error_msg = f"Permission denied. The backend may need to run with elevated privileges to access WiFi: {error_detail}"
-        elif "device" in error_detail.lower() and "not found" in error_detail.lower():
-            error_msg = f"WiFi device '{interface}' not found. Please check /etc/pantalla-reloj/wifi.conf: {error_detail}"
-        else:
-            error_msg = f"Failed to scan WiFi networks: {error_detail}"
-        raise HTTPException(status_code=500, detail=error_msg)
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "Failed to list WiFi networks",
+                "stderr": error_detail,
+            },
+        )
     
     networks: List[WiFiNetwork] = []
     lines = stdout.strip().split("\n")
@@ -1045,7 +1052,13 @@ def wifi_scan() -> Dict[str, Any]:
 def wifi_status() -> Dict[str, Any]:
     """Get current WiFi connection status."""
     interface = _get_wifi_interface()
-    
+    interface_valid, error_msg = _validate_wifi_interface(interface)
+    if not interface_valid:
+        raise HTTPException(
+            status_code=404 if error_msg and "not found" in error_msg.lower() else 400,
+            detail=error_msg or f"WiFi device '{interface}' not found or invalid",
+        )
+
     # Get connection info
     stdout, stderr, code = _run_nmcli(
         ["device", "status"], timeout=10
@@ -1124,10 +1137,13 @@ def wifi_networks() -> Dict[str, Any]:
     
     if code != 0:
         logger.error("Failed to list connections: %s", stderr)
-        return {
-            "networks": [],
-            "count": 0,
-        }
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "Failed to list saved WiFi networks",
+                "stderr": stderr or stdout or "Unknown error",
+            },
+        )
     
     networks: List[Dict[str, str]] = []
     lines = stdout.strip().split("\n")
@@ -1163,7 +1179,7 @@ async def wifi_connect(request: WiFiConnectRequest) -> Dict[str, Any]:
     if not interface_valid:
         logger.error("WiFi interface validation failed: %s", error_msg)
         raise HTTPException(
-            status_code=400,
+            status_code=404 if error_msg and "not found" in error_msg.lower() else 400,
             detail=error_msg or f"WiFi device '{interface}' not found or invalid"
         )
     
@@ -1208,8 +1224,11 @@ async def wifi_connect(request: WiFiConnectRequest) -> Dict[str, Any]:
             detail_msg = f"Failed to connect to WiFi network: {error_msg}"
         
         raise HTTPException(
-            status_code=500,
-            detail=detail_msg,
+            status_code=502,
+            detail={
+                "error": detail_msg,
+                "stderr": error_msg,
+            },
         )
     
     logger.info("Successfully connected to %s", request.ssid)
@@ -1225,20 +1244,12 @@ def wifi_disconnect() -> Dict[str, Any]:
     """Disconnect from current WiFi network."""
     interface = _get_wifi_interface()
     logger.info("Disconnecting WiFi on interface %s", interface)
-    
-    # Validar que la interfaz existe (pero no requerir que sea WiFi para desconectar)
-    stdout, stderr, code = _run_nmcli(["device", "status"], timeout=10)
-    if code != 0:
+
+    interface_valid, error_msg = _validate_wifi_interface(interface)
+    if not interface_valid:
         raise HTTPException(
-            status_code=500,
-            detail=f"Cannot check device status: {stderr or stdout or 'Unknown error'}"
-        )
-    
-    device_found = any(interface in line for line in stdout.strip().split("\n"))
-    if not device_found:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Device '{interface}' not found"
+            status_code=404 if error_msg and "not found" in error_msg.lower() else 400,
+            detail=error_msg or f"WiFi device '{interface}' not found or invalid",
         )
     
     stdout, stderr, code = _run_nmcli(
@@ -1256,8 +1267,11 @@ def wifi_disconnect() -> Dict[str, Any]:
             detail_msg = f"Failed to disconnect WiFi: {error_msg}"
         
         raise HTTPException(
-            status_code=500,
-            detail=detail_msg,
+            status_code=502,
+            detail={
+                "error": detail_msg,
+                "stderr": error_msg,
+            },
         )
     
     logger.info("Successfully disconnected WiFi")

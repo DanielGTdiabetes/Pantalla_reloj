@@ -48,32 +48,36 @@ find_chromium() {
   local override
   override="${CHROME_BIN_OVERRIDE:-${CHROMIUM_BIN_OVERRIDE:-}}"
   if [[ -n "$override" ]]; then
-    if resolve_binary "$override"; then
+    if resolved_bin="$(resolve_binary "$override" 2>/dev/null)"; then
+      printf '%s\n' "$resolved_bin"
       return 0
     fi
     log "WARN: CHROME_BIN_OVERRIDE inválido (${override})"
   fi
-
-  local -a candidates=(
-    chromium-browser
-    chromium
-    google-chrome-stable
-    google-chrome
-    /snap/bin/chromium
-    /usr/lib/chromium-browser/chromium-browser
-  )
-  local candidate
-  for candidate in "${candidates[@]}"; do
-    if resolve_binary "$candidate"; then
-      return 0
-    fi
-  done
 
   local snap_candidate="/snap/chromium/current/usr/lib/chromium-browser/chrome"
   if [[ -x "$snap_candidate" ]]; then
     printf '%s\n' "$snap_candidate"
     return 0
   fi
+
+  local -a candidates=(
+    /snap/bin/chromium
+    chromium
+    google-chrome-stable
+    google-chrome
+  )
+  local candidate resolved
+  for candidate in "${candidates[@]}"; do
+    if resolved="$(resolve_binary "$candidate" 2>/dev/null)"; then
+      if [[ "$resolved" == "/usr/bin/chromium-browser" ]]; then
+        log "INFO: Ignorando shim de chromium-browser en ${resolved}"
+        continue
+      fi
+      printf '%s\n' "$resolved"
+      return 0
+    fi
+  done
 
   return 1
 }
@@ -145,7 +149,10 @@ launch_chromium() {
   log "launch: ${cmd[*]}"
   log "url: ${url}"
 
-  exec "${cmd[@]}" >>"$log_file" 2>&1
+  if ! exec "${cmd[@]}" >>"$log_file" 2>&1; then
+    log "ERROR: fallo al ejecutar Chromium (${binary})"
+    exit 1
+  fi
 }
 
 launch_firefox() {
@@ -169,7 +176,10 @@ launch_firefox() {
   log "launch: ${cmd[*]}"
   log "url: ${url}"
 
-  exec "${cmd[@]}" >>"$log_file" 2>&1
+  if ! exec "${cmd[@]}" >>"$log_file" 2>&1; then
+    log "ERROR: fallo al ejecutar Firefox (${binary})"
+    exit 1
+  fi
 }
 
 main() {

@@ -76,6 +76,29 @@ const DEFAULT_SCHEMA_PATHS: Set<string> = (() => {
   return paths;
 })();
 
+const resolveApiErrorMessage = (error: unknown, fallback: string): string => {
+  if (error instanceof ApiError) {
+    const body = error.body as { detail?: unknown } | undefined;
+    const detail = body?.detail;
+    if (typeof detail === "string" && detail.trim().length > 0) {
+      return detail;
+    }
+    if (detail && typeof detail === "object") {
+      const detailRecord = detail as Record<string, unknown>;
+      const explicitError = detailRecord.error;
+      if (typeof explicitError === "string" && explicitError.trim().length > 0) {
+        return explicitError;
+      }
+      const stderr = detailRecord.stderr;
+      if (typeof stderr === "string" && stderr.trim().length > 0) {
+        return `${fallback}: ${stderr}`;
+      }
+    }
+    return `${fallback} (código ${error.status})`;
+  }
+  return fallback;
+};
+
 const joinPath = (path: string | string[]): string => {
   if (Array.isArray(path)) {
     return path.join(".");
@@ -397,11 +420,7 @@ const ConfigPage: React.FC = () => {
       await loadWifiStatus();
     } catch (error) {
       console.error("Failed to scan WiFi:", error);
-      setWifiConnectError(
-        error instanceof ApiError
-          ? `Error al buscar redes WiFi: ${error.status}`
-          : "Error al buscar redes WiFi"
-      );
+      setWifiConnectError(resolveApiErrorMessage(error, "Error al buscar redes WiFi"));
     } finally {
       setWifiScanning(false);
     }
@@ -424,10 +443,7 @@ const ConfigPage: React.FC = () => {
         });
       } catch (error) {
         console.error("Failed to connect to WiFi:", error);
-        const errorMsg =
-          error instanceof ApiError
-            ? `Error al conectar: ${(error.body as { detail?: string })?.detail || error.status}`
-            : "Error al conectar a la red WiFi";
+        const errorMsg = resolveApiErrorMessage(error, "Error al conectar a la red WiFi");
         setWifiConnectError(errorMsg);
         setBanner({ kind: "error", text: errorMsg });
       } finally {
@@ -446,10 +462,7 @@ const ConfigPage: React.FC = () => {
       await loadWifiStatus();
     } catch (error) {
       console.error("Failed to disconnect WiFi:", error);
-      const errorMsg =
-        error instanceof ApiError
-          ? `Error al desconectar: ${(error.body as { detail?: string })?.detail || error.status}`
-          : "Error al desconectar de la red WiFi";
+      const errorMsg = resolveApiErrorMessage(error, "Error al desconectar de la red WiFi");
       setWifiConnectError(errorMsg);
       setBanner({ kind: "error", text: errorMsg });
     } finally {
@@ -3256,6 +3269,9 @@ const ConfigPage: React.FC = () => {
               </div>
               {wifiConnectError && (
                 <div className="config-field-error">{wifiConnectError}</div>
+              )}
+              {wifiScanning && (
+                <div className="config-field-hint">Buscando redes…</div>
               )}
               {wifiNetworks.length > 0 ? (
                 <div className="config-field-list">
