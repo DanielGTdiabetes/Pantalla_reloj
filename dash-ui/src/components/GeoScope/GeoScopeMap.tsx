@@ -1,5 +1,6 @@
 import maplibregl from "maplibre-gl";
 import type { MapLibreEvent } from "maplibre-gl";
+import type { FeatureCollection, GeoJsonProperties, Geometry, Point } from "geojson";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
 
@@ -93,6 +94,42 @@ const setPaintProperty = (
 const WATER_PATTERN = /(background|ocean|sea|water)/i;
 const LAND_PATTERN = /(land|landcover|park|continent)/i;
 const LABEL_PATTERN = /(label|place|road-name|poi)/i;
+
+type LightningFeatureProperties = {
+  timestamp?: number;
+  intensity?: number;
+};
+
+type FlightFeatureProperties = {
+  icao24?: string;
+  callsign?: string;
+  alt_baro?: number;
+  track?: number;
+  speed?: number;
+  timestamp?: number;
+  in_focus?: boolean;
+};
+
+type ShipFeatureProperties = {
+  mmsi?: string;
+  name?: string;
+  course?: number;
+  speed?: number;
+  timestamp?: number;
+  type?: string;
+  in_focus?: boolean;
+};
+
+const isFeatureCollection = <G extends Geometry, P extends GeoJsonProperties = GeoJsonProperties>(
+  value: unknown
+): value is FeatureCollection<G, P> => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as FeatureCollection<G, P>;
+  return candidate.type === "FeatureCollection" && Array.isArray(candidate.features);
+};
 
 const applyVectorTheme = (map: maplibregl.Map, theme: MapThemeConfig) => {
   const style = map.getStyle();
@@ -712,7 +749,9 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
 function checkWebGLSupport(): { supported: boolean; reason?: string } {
   try {
     const canvas = document.createElement("canvas");
-    const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+    const gl =
+      (canvas.getContext("webgl") as WebGLRenderingContext | null) ||
+      (canvas.getContext("experimental-webgl") as WebGLRenderingContext | null);
     
     if (!gl) {
       return { supported: false, reason: "WebGL no está disponible en este navegador" };
@@ -1604,6 +1643,25 @@ export default function GeoScopeMap() {
       safeFit();
     };
 
+    const handleWebGLContextLost = (
+      event: MapLibreEvent & { originalEvent?: WebGLContextEvent }
+    ) => {
+      console.error("[GeoScopeMap] WebGL context lost");
+      setWebglError("El contexto WebGL se perdió. El mapa puede no funcionar correctamente.");
+      handleContextLost(event);
+    };
+
+    const handleMapError = (event: MapLibreEvent & { error?: unknown }) => {
+      console.error("[GeoScopeMap] Map error:", event);
+      if (styleErrorHandler) {
+        styleErrorHandler(event);
+        return;
+      }
+      const error = event.error;
+      const errorMsg = error instanceof Error ? error.message : String(error || "Error desconocido");
+      setWebglError(`Error en el mapa: ${errorMsg}`);
+    };
+
     const handleContextRestored = () => {
       safeFit();
       recomputeAutopanActivation();
@@ -1785,22 +1843,9 @@ export default function GeoScopeMap() {
 
       map.on("load", handleLoad);
       map.on("styledata", handleStyleData);
-      map.on("webglcontextlost", (e) => {
-        console.error("[GeoScopeMap] WebGL context lost");
-        setWebglError("El contexto WebGL se perdió. El mapa puede no funcionar correctamente.");
-        handleContextLost(e);
-      });
+      map.on("webglcontextlost", handleWebGLContextLost);
       map.on("webglcontextrestored", handleContextRestored);
-      map.on("error", (e) => {
-        console.error("[GeoScopeMap] Map error:", e);
-        // Si el error no es manejado por styleErrorHandler, mostrar error general
-        if (styleErrorHandler) {
-          styleErrorHandler(e);
-        } else {
-          const errorMsg = e.error instanceof Error ? e.error.message : String(e.error || "Error desconocido");
-          setWebglError(`Error en el mapa: ${errorMsg}`);
-        }
-      });
+      map.on("error", handleMapError);
 
       // Inicializar sistema de capas cuando el mapa esté listo
       map.once("load", () => {
@@ -2009,12 +2054,10 @@ export default function GeoScopeMap() {
       if (map) {
         map.off("load", handleLoad);
         map.off("styledata", handleStyleData);
-        map.off("webglcontextlost", handleContextLost);
+        map.off("webglcontextlost", handleWebGLContextLost);
         map.off("webglcontextrestored", handleContextRestored);
-        if (styleErrorHandler) {
-          map.off("error", styleErrorHandler);
-          styleErrorHandler = null;
-        }
+        map.off("error", handleMapError);
+        styleErrorHandler = null;
         map.remove();
         mapRef.current = null;
       }
@@ -2499,17 +2542,10 @@ export default function GeoScopeMap() {
     // Cargar datos de rayos periódicamente
     const loadLightningData = async () => {
       try {
-        const response = await apiGet<{
-          type: string;
-          features: Array<{
-            type: string;
-            geometry: { type: string; coordinates: [number, number] };
-            properties: { timestamp?: number; intensity?: number };
-          }>;
-        }>("/api/lightning");
+        const response = await apiGet<unknown>("/api/lightning");
 
         const lightningLayer = lightningLayerRef.current;
-        if (lightningLayer && response && response.type === "FeatureCollection") {
+        if (lightningLayer && isFeatureCollection<Point, LightningFeatureProperties>(response)) {
           lightningLayer.updateData(response);
 
           // Verificar auto-activación del modo tormenta
@@ -2518,7 +2554,7 @@ export default function GeoScopeMap() {
           const autoEnable = Boolean(stormConfig?.auto_enable);
 
           // Si auto-enable está activo pero el modo tormenta no está activo
-          if (autoEnable && !stormEnabled && response.features && response.features.length > 0) {
+          if (autoEnable && !stormEnabled && response.features.length > 0) {
             // Verificar si hay rayos cerca de Castellón/Vila-real
             const centerLat = Number.isFinite(stormConfig.center_lat) ? stormConfig.center_lat : 39.986;
             const centerLng = Number.isFinite(stormConfig.center_lng) ? stormConfig.center_lng : -0.051;
@@ -2648,28 +2684,11 @@ export default function GeoScopeMap() {
           url += `?${params.toString()}`;
         }
         
-        const response = await apiGet<{
-          type: string;
-          features: Array<{
-            type: string;
-            geometry: { type: string; coordinates: [number, number] };
-            properties: {
-              icao24?: string;
-              callsign?: string;
-              alt_baro?: number;
-              track?: number;
-              speed?: number;
-              timestamp?: number;
-              in_focus?: boolean;
-            };
-          }>;
-          stale?: boolean;
-          properties?: { focus_unavailable?: boolean };
-        }>(url);
+        const response = await apiGet<unknown>(url);
 
         const aircraftLayer = aircraftLayerRef.current;
-        if (aircraftLayer && response && response.type === "FeatureCollection") {
-          aircraftLayer.updateData(response as any);
+        if (aircraftLayer && isFeatureCollection<Point, FlightFeatureProperties>(response)) {
+          aircraftLayer.updateData(response);
         }
       } catch (error) {
         console.error("[GeoScopeMap] Failed to load flights data:", error);
@@ -2731,28 +2750,11 @@ export default function GeoScopeMap() {
           url += `?${params.toString()}`;
         }
         
-        const response = await apiGet<{
-          type: string;
-          features: Array<{
-            type: string;
-            geometry: { type: string; coordinates: [number, number] };
-            properties: {
-              mmsi?: string;
-              name?: string;
-              course?: number;
-              speed?: number;
-              timestamp?: number;
-              type?: string;
-              in_focus?: boolean;
-            };
-          }>;
-          stale?: boolean;
-          properties?: { focus_unavailable?: boolean };
-        }>(url);
+        const response = await apiGet<unknown>(url);
 
         const shipsLayer = shipsLayerRef.current;
-        if (shipsLayer && response && response.type === "FeatureCollection") {
-          shipsLayer.updateData(response as any);
+        if (shipsLayer && isFeatureCollection<Point, ShipFeatureProperties>(response)) {
+          shipsLayer.updateData(response);
         }
       } catch (error) {
         console.error("[GeoScopeMap] Failed to load ships data:", error);

@@ -2,6 +2,7 @@ import maplibregl from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
 
 import type { Layer } from "./LayerRegistry";
+import { isGeoJSONSource } from "./layerUtils";
 
 interface LightningLayerOptions {
   enabled?: boolean;
@@ -65,7 +66,7 @@ export default class LightningLayer implements Layer {
   updateData(data: FeatureCollection): void {
     if (!this.map) return;
     const source = this.map.getSource(this.sourceId);
-    if (source && source.type === "geojson") {
+    if (isGeoJSONSource(source)) {
       source.setData(data);
     }
   }
@@ -73,7 +74,7 @@ export default class LightningLayer implements Layer {
   getData(): FeatureCollection {
     if (!this.map) return EMPTY;
     const source = this.map.getSource(this.sourceId);
-    if (source && source.type === "geojson") {
+    if (isGeoJSONSource(source)) {
       return (source.getData() as FeatureCollection) ?? EMPTY;
     }
     return EMPTY;

@@ -1,7 +1,10 @@
 import type {
   AEMETConfig,
   AIConfig,
+  AISStreamConfig,
+  AISHubConfig,
   AppConfig,
+  AviationStackConfig,
   BlitzortungConfig,
   CalendarConfig,
   CustomFlightConfig,
@@ -9,6 +12,7 @@ import type {
   DisplayConfig,
   EphemeridesConfig,
   FlightsLayerConfig,
+  GenericAISConfig,
   GlobalLayersConfig,
   GlobalRadarLayerConfig,
   GlobalSatelliteLayerConfig,
@@ -22,6 +26,7 @@ import type {
   MaptilerConfig,
   MapPreferences,
   NewsConfig,
+  OpenSkyAuthConfig,
   RotationConfig,
   SaintsConfig,
   ShipsLayerConfig,
@@ -133,6 +138,29 @@ export const createDefaultMapSettings = (): MapConfig => ({
   cinema: createDefaultMapCinema(),
   idlePan: createDefaultMapIdlePan(),
   theme: { ...DEFAULT_THEME },
+});
+
+export const createDefaultGlobalSatelliteLayer = (): GlobalSatelliteLayerConfig => ({
+  enabled: true,
+  provider: "gibs",
+  refresh_minutes: 10,
+  history_minutes: 90,
+  frame_step: 10,
+  opacity: 0.7,
+});
+
+export const createDefaultGlobalRadarLayer = (): GlobalRadarLayerConfig => ({
+  enabled: true,
+  provider: "rainviewer",
+  refresh_minutes: 5,
+  history_minutes: 90,
+  frame_step: 5,
+  opacity: 0.7,
+});
+
+export const createDefaultGlobalLayers = (): GlobalLayersConfig => ({
+  satellite: createDefaultGlobalSatelliteLayer(),
+  radar: createDefaultGlobalRadarLayer(),
 });
 
 const mergeCinemaBand = (candidate: unknown, fallback: MapCinemaBand): MapCinemaBand => {
@@ -414,24 +442,7 @@ export const DEFAULT_CONFIG: AppConfig = {
         api_key: null,
       },
     },
-    global: {
-      satellite: {
-        enabled: true,
-        provider: "gibs" as const,
-        refresh_minutes: 10,
-        history_minutes: 90,
-        frame_step: 10,
-        opacity: 0.7,
-      },
-      radar: {
-        enabled: true,
-        provider: "rainviewer" as const,
-        refresh_minutes: 5,
-        history_minutes: 90,
-        frame_step: 5,
-        opacity: 0.7,
-      },
-    },
+    global: createDefaultGlobalLayers(),
   },
 };
 
@@ -552,7 +563,7 @@ const mergeEphemerides = (candidate: unknown): EphemeridesConfig => {
 };
 
 const mergeCustomFlight = (candidate: unknown): CustomFlightConfig => {
-  const fallback: CustomFlightConfig = {
+  const fallback: Required<CustomFlightConfig> = {
     api_url: null,
     api_key: null,
   };
@@ -564,7 +575,7 @@ const mergeCustomFlight = (candidate: unknown): CustomFlightConfig => {
 };
 
 const mergeCustomShip = (candidate: unknown): CustomShipConfig => {
-  const fallback: CustomShipConfig = {
+  const fallback: Required<CustomShipConfig> = {
     api_url: null,
     api_key: null,
   };
@@ -578,25 +589,29 @@ const mergeCustomShip = (candidate: unknown): CustomShipConfig => {
 const mergeFlightsLayer = (candidate: unknown): FlightsLayerConfig => {
   const fallback = DEFAULT_CONFIG.layers.flights;
   const source = (candidate as Partial<FlightsLayerConfig>) ?? {};
-  const cineFocusSource = source.cine_focus ?? {};
+  const cineFocusSource: Partial<FlightsLayerConfig["cine_focus"]> = source.cine_focus ?? {};
   const cineFocusFallback = fallback.cine_focus;
-  
-  const openskySource = source.opensky ?? {};
-  const openskyFallback = fallback.opensky ?? { username: null, password: null };
-  const aviationstackSource = source.aviationstack ?? {};
-  const aviationstackFallback = fallback.aviationstack ?? { base_url: "http://api.aviationstack.com/v1", api_key: null };
-  const customSource = source.custom ?? {};
-  const customFallback = fallback.custom ?? { api_url: null, api_key: null };
-  
+
+  const openskySource: Partial<OpenSkyAuthConfig> = source.opensky ?? {};
+  const openskyFallback: Required<OpenSkyAuthConfig> = {
+    username: fallback.opensky?.username ?? null,
+    password: fallback.opensky?.password ?? null,
+  };
+  const aviationstackSource: Partial<AviationStackConfig> = source.aviationstack ?? {};
+  const aviationstackFallback: Required<AviationStackConfig> = {
+    base_url: fallback.aviationstack?.base_url ?? "http://api.aviationstack.com/v1",
+    api_key: fallback.aviationstack?.api_key ?? null,
+  };
+
   const allowedProviders: Array<"opensky" | "aviationstack" | "custom"> = ["opensky", "aviationstack", "custom"];
   const provider = allowedProviders.includes(source.provider as any)
     ? (source.provider as "opensky" | "aviationstack" | "custom")
     : "opensky";
-  
+
   return {
     enabled: toBoolean(source.enabled, fallback.enabled),
     opacity: clampNumber(toNumber(source.opacity, fallback.opacity), 0.0, 1.0),
-    provider: provider,
+    provider,
     refresh_seconds: clampNumber(
       Math.round(toNumber(source.refresh_seconds, fallback.refresh_seconds)),
       1,
@@ -630,8 +645,8 @@ const mergeFlightsLayer = (candidate: unknown): FlightsLayerConfig => {
     ),
     cine_focus: {
       enabled: toBoolean(cineFocusSource.enabled, cineFocusFallback.enabled),
-      mode: (cineFocusSource.mode === "cap" || cineFocusSource.mode === "radar") 
-        ? cineFocusSource.mode 
+      mode: (cineFocusSource.mode === "cap" || cineFocusSource.mode === "radar")
+        ? cineFocusSource.mode
         : "both",
       min_severity: (cineFocusSource.min_severity === "yellow" || cineFocusSource.min_severity === "red")
         ? cineFocusSource.min_severity
@@ -654,41 +669,48 @@ const mergeFlightsLayer = (candidate: unknown): FlightsLayerConfig => {
       hard_hide_outside: toBoolean(cineFocusSource.hard_hide_outside, cineFocusFallback.hard_hide_outside),
     },
     opensky: {
-      username: sanitizeNullableString(openskySource.username, openskyFallback.username),
-      password: sanitizeNullableString(openskySource.password, openskyFallback.password),
+      username: sanitizeNullableString(openskySource.username, openskyFallback.username ?? null),
+      password: sanitizeNullableString(openskySource.password, openskyFallback.password ?? null),
     },
     aviationstack: {
-      base_url: sanitizeNullableString(aviationstackSource.base_url, aviationstackFallback.base_url),
-      api_key: sanitizeNullableString(aviationstackSource.api_key, aviationstackFallback.api_key),
+      base_url: sanitizeNullableString(aviationstackSource.base_url, aviationstackFallback.base_url ?? null),
+      api_key: sanitizeNullableString(aviationstackSource.api_key, aviationstackFallback.api_key ?? null),
     },
-    custom: mergeCustomFlight(customSource ?? customFallback),
+    custom: mergeCustomFlight(source.custom),
   };
 };
 
 const mergeShipsLayer = (candidate: unknown): ShipsLayerConfig => {
   const fallback = DEFAULT_CONFIG.layers.ships;
   const source = (candidate as Partial<ShipsLayerConfig>) ?? {};
-  const cineFocusSource = source.cine_focus ?? {};
+  const cineFocusSource: Partial<ShipsLayerConfig["cine_focus"]> = source.cine_focus ?? {};
   const cineFocusFallback = fallback.cine_focus;
-  
-  const aisGenericSource = source.ais_generic ?? {};
-  const aisGenericFallback = fallback.ais_generic ?? { api_url: null, api_key: null };
-  const aisstreamSource = source.aisstream ?? {};
-  const aisstreamFallback = fallback.aisstream ?? { ws_url: null, api_key: null };
-  const aishubSource = source.aishub ?? {};
-  const aishubFallback = fallback.aishub ?? { base_url: "https://www.aishub.net/api", api_key: null };
-  const customSource = source.custom ?? {};
-  const customFallback = fallback.custom ?? { api_url: null, api_key: null };
-  
+
+  const aisGenericSource: Partial<GenericAISConfig> = source.ais_generic ?? {};
+  const aisGenericFallback: Required<GenericAISConfig> = {
+    api_url: fallback.ais_generic?.api_url ?? null,
+    api_key: fallback.ais_generic?.api_key ?? null,
+  };
+  const aisstreamSource: Partial<AISStreamConfig> = source.aisstream ?? {};
+  const aisstreamFallback: Required<AISStreamConfig> = {
+    ws_url: fallback.aisstream?.ws_url ?? null,
+    api_key: fallback.aisstream?.api_key ?? null,
+  };
+  const aishubSource: Partial<AISHubConfig> = source.aishub ?? {};
+  const aishubFallback: Required<AISHubConfig> = {
+    base_url: fallback.aishub?.base_url ?? "https://www.aishub.net/api",
+    api_key: fallback.aishub?.api_key ?? null,
+  };
+
   const allowedProviders: Array<"ais_generic" | "aisstream" | "aishub" | "custom"> = ["ais_generic", "aisstream", "aishub", "custom"];
   const provider = allowedProviders.includes(source.provider as any)
     ? (source.provider as "ais_generic" | "aisstream" | "aishub" | "custom")
     : "ais_generic";
-  
+
   return {
     enabled: toBoolean(source.enabled, fallback.enabled),
     opacity: clampNumber(toNumber(source.opacity, fallback.opacity), 0.0, 1.0),
-    provider: provider,
+    provider,
     refresh_seconds: clampNumber(
       Math.round(toNumber(source.refresh_seconds, fallback.refresh_seconds)),
       1,
@@ -727,8 +749,8 @@ const mergeShipsLayer = (candidate: unknown): ShipsLayerConfig => {
     ),
     cine_focus: {
       enabled: toBoolean(cineFocusSource.enabled, cineFocusFallback.enabled),
-      mode: (cineFocusSource.mode === "cap" || cineFocusSource.mode === "radar") 
-        ? cineFocusSource.mode 
+      mode: (cineFocusSource.mode === "cap" || cineFocusSource.mode === "radar")
+        ? cineFocusSource.mode
         : "both",
       min_severity: (cineFocusSource.min_severity === "yellow" || cineFocusSource.min_severity === "red")
         ? cineFocusSource.min_severity
@@ -751,23 +773,24 @@ const mergeShipsLayer = (candidate: unknown): ShipsLayerConfig => {
       hard_hide_outside: toBoolean(cineFocusSource.hard_hide_outside, cineFocusFallback.hard_hide_outside),
     },
     ais_generic: {
-      api_url: sanitizeNullableString(aisGenericSource.api_url, aisGenericFallback.api_url),
-      api_key: sanitizeNullableString(aisGenericSource.api_key, aisGenericFallback.api_key),
+      api_url: sanitizeNullableString(aisGenericSource.api_url, aisGenericFallback.api_url ?? null),
+      api_key: sanitizeNullableString(aisGenericSource.api_key, aisGenericFallback.api_key ?? null),
     },
     aisstream: {
-      ws_url: sanitizeNullableString(aisstreamSource.ws_url, aisstreamFallback.ws_url),
-      api_key: sanitizeNullableString(aisstreamSource.api_key, aisstreamFallback.api_key),
+      ws_url: sanitizeNullableString(aisstreamSource.ws_url, aisstreamFallback.ws_url ?? null),
+      api_key: sanitizeNullableString(aisstreamSource.api_key, aisstreamFallback.api_key ?? null),
     },
     aishub: {
-      base_url: sanitizeNullableString(aishubSource.base_url, aishubFallback.base_url),
-      api_key: sanitizeNullableString(aishubSource.api_key, aishubFallback.api_key),
+      base_url: sanitizeNullableString(aishubSource.base_url, aishubFallback.base_url ?? null),
+      api_key: sanitizeNullableString(aishubSource.api_key, aishubFallback.api_key ?? null),
     },
-    custom: mergeCustomShip(source.custom ?? fallback.custom),
+    custom: mergeCustomShip(source.custom),
   };
 };
 
 const mergeGlobalSatelliteLayer = (candidate: unknown): GlobalSatelliteLayerConfig => {
-  const fallback = DEFAULT_CONFIG.layers.global.satellite;
+  const globalFallback = DEFAULT_CONFIG.layers.global ?? createDefaultGlobalLayers();
+  const fallback = globalFallback.satellite;
   const source = (candidate as Partial<GlobalSatelliteLayerConfig>) ?? {};
   
   return {
@@ -793,7 +816,8 @@ const mergeGlobalSatelliteLayer = (candidate: unknown): GlobalSatelliteLayerConf
 };
 
 const mergeGlobalRadarLayer = (candidate: unknown): GlobalRadarLayerConfig => {
-  const fallback = DEFAULT_CONFIG.layers.global.radar;
+  const globalFallback = DEFAULT_CONFIG.layers.global ?? createDefaultGlobalLayers();
+  const fallback = globalFallback.radar;
   const source = (candidate as Partial<GlobalRadarLayerConfig>) ?? {};
   
   return {
@@ -819,9 +843,9 @@ const mergeGlobalRadarLayer = (candidate: unknown): GlobalRadarLayerConfig => {
 };
 
 const mergeGlobalLayers = (candidate: unknown): GlobalLayersConfig => {
-  const fallback = DEFAULT_CONFIG.layers.global;
+  const fallback = DEFAULT_CONFIG.layers.global ?? createDefaultGlobalLayers();
   const source = (candidate as Partial<GlobalLayersConfig>) ?? {};
-  
+
   return {
     satellite: mergeGlobalSatelliteLayer(source.satellite),
     radar: mergeGlobalRadarLayer(source.radar),
@@ -861,7 +885,7 @@ export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
       layout: "grid-2-1",
       map: mergeMap(ui.map),
       rotation: mergeRotation(ui.rotation),
-      cineMode: toBoolean(ui.cineMode, DEFAULT_CONFIG.ui.cineMode),
+      cineMode: toBoolean(ui.cineMode, DEFAULT_CONFIG.ui.cineMode ?? true),
     },
     news: mergeNews(news),
     ai: {
