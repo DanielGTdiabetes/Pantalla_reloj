@@ -2,6 +2,7 @@ import maplibregl from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
 
 import type { Layer } from "./LayerRegistry";
+import { getExistingPopup, isGeoJSONSource } from "./layerUtils";
 
 interface ShipsLayerOptions {
   enabled?: boolean;
@@ -99,7 +100,7 @@ export default class ShipsLayer implements Layer {
             const content = `<strong>${name}</strong><br/>MMSI: ${mmsi}<br/>Velocidad: ${speed}<br/>Curso: ${course}<br/>Última actualización: ${timestamp}`;
             
             // Crear popup si no existe
-            if (!map.getPopup()) {
+            if (!getExistingPopup(map)) {
               new maplibregl.Popup({ closeOnClick: false, closeButton: true })
                 .setLngLat(e.lngLat)
                 .setHTML(content)
@@ -111,7 +112,7 @@ export default class ShipsLayer implements Layer {
 
       map.on("mouseleave", this.id, () => {
         map.getCanvas().style.cursor = "";
-        const popup = map.getPopup();
+        const popup = getExistingPopup(map);
         if (popup) {
           popup.remove();
         }
@@ -120,7 +121,7 @@ export default class ShipsLayer implements Layer {
 
       map.on("mousemove", this.id, (e) => {
         if (e.features && e.features.length > 0 && hoveredId) {
-          const popup = map.getPopup();
+          const popup = getExistingPopup(map);
           if (popup) {
             popup.setLngLat(e.lngLat);
           }
@@ -191,7 +192,7 @@ export default class ShipsLayer implements Layer {
     };
 
     const source = this.map.getSource(this.sourceId);
-    if (source && source.type === "geojson") {
+    if (isGeoJSONSource(source)) {
       source.setData(featuresWithAge);
     }
   }
@@ -199,7 +200,7 @@ export default class ShipsLayer implements Layer {
   getData(): FeatureCollection {
     if (!this.map) return EMPTY;
     const source = this.map.getSource(this.sourceId);
-    if (source && source.type === "geojson") {
+    if (isGeoJSONSource(source)) {
       return (source.getData() as FeatureCollection) ?? EMPTY;
     }
     return EMPTY;

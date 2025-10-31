@@ -41,14 +41,17 @@ const apiRequest = async <T>(path: string, init?: RequestInit): Promise<T> => {
       }
     : {};
 
+  const { headers: initHeaders, cache: initCache, ...restInit } = init ?? {};
+  const headers = new Headers(initHeaders ?? {});
+  headers.set("Accept", "application/json");
+  for (const [key, value] of Object.entries(cacheHeaders)) {
+    headers.set(key, value);
+  }
+
   const response = await fetch(withBase(path), {
-    headers: {
-      Accept: "application/json",
-      ...cacheHeaders,
-      ...(init?.headers ?? {}),
-    },
-    cache: isConfigEndpoint ? "no-store" : "default",
-    ...init,
+    ...restInit,
+    headers,
+    cache: isConfigEndpoint ? "no-store" : initCache ?? "default",
   });
   if (!response.ok) {
     const body = await readJson(response);

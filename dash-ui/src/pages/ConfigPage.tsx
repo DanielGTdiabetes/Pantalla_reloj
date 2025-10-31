@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
-import { DEFAULT_CONFIG, withConfigDefaults } from "../config/defaults";
+import { DEFAULT_CONFIG, createDefaultGlobalLayers, withConfigDefaults } from "../config/defaults";
 import {
   API_ORIGIN,
   ApiError,
@@ -2791,7 +2791,7 @@ const ConfigPage: React.FC = () => {
         {supports("layers.global") && (() => {
           // Helper para obtener valores de global con defaults completos
           const getGlobalWithDefaults = (prev: AppConfig) => {
-            const defaultGlobal = DEFAULT_CONFIG.layers.global;
+            const defaultGlobal = DEFAULT_CONFIG.layers.global ?? createDefaultGlobalLayers();
             const currentGlobal = prev.layers.global;
             
             return {
