@@ -333,6 +333,9 @@ const ConfigPage: React.FC = () => {
     return Array.from(base);
   }, [form.ui.rotation.panels]);
 
+  const isReady = status === "ready";
+  const disableInputs = !isReady || saving;
+
   const cinemaBlocked = !form.ui.rotation.enabled || !form.ui.map.cinema.enabled;
   const disableCinemaControls = disableInputs || cinemaBlocked;
   const disableIdlePanControls =
@@ -429,9 +432,6 @@ const ConfigPage: React.FC = () => {
     }
     setNewPanel("");
   };
-
-  const isReady = status === "ready";
-  const disableInputs = !isReady || saving;
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
