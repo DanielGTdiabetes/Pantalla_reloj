@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import requests
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -25,6 +27,7 @@ from .data_sources import (
     parse_rss_feed,
 )
 from .focus_masks import check_point_in_focus, load_or_build_focus_mask
+from .global_providers import GIBSProvider, RainViewerProvider
 from .layer_providers import (
     AISHubProvider,
     AISStreamProvider,
@@ -279,6 +282,75 @@ def healthcheck_full() -> Dict[str, Any]:
         "source": focus_source,
         "area_km2": focus_area_km2,
         "cache_age": focus_cache_age
+    }
+    
+    # Información de global layers
+    global_config = config.layers.global_layers
+    
+    # Global Satellite
+    global_sat_status = "down"
+    global_sat_frames_count = 0
+    global_sat_last_fetch = None
+    global_sat_cache_age = None
+    
+    if global_config.satellite.enabled:
+        try:
+            frames = _gibs_provider.get_available_frames(
+                history_minutes=global_config.satellite.history_minutes,
+                frame_step=global_config.satellite.frame_step
+            )
+            if frames:
+                global_sat_status = "ok"
+                global_sat_frames_count = len(frames)
+                # Obtener timestamp del último frame
+                if frames:
+                    latest_frame = frames[-1]
+                    global_sat_last_fetch = datetime.fromtimestamp(
+                        latest_frame["timestamp"], tz=timezone.utc
+                    ).isoformat()
+        except Exception as exc:
+            logger.warning("Failed to get global satellite status: %s", exc)
+            global_sat_status = "degraded"
+    
+    payload["global_satellite"] = {
+        "status": global_sat_status,
+        "frames_count": global_sat_frames_count,
+        "provider": global_config.satellite.provider,
+        "last_fetch": global_sat_last_fetch,
+        "cache_age": global_sat_cache_age
+    }
+    
+    # Global Radar
+    global_radar_status = "down"
+    global_radar_frames_count = 0
+    global_radar_last_fetch = None
+    global_radar_cache_age = None
+    
+    if global_config.radar.enabled:
+        try:
+            frames = _rainviewer_provider.get_available_frames(
+                history_minutes=global_config.radar.history_minutes,
+                frame_step=global_config.radar.frame_step
+            )
+            if frames:
+                global_radar_status = "ok"
+                global_radar_frames_count = len(frames)
+                # Obtener timestamp del último frame
+                if frames:
+                    latest_frame = frames[-1]
+                    global_radar_last_fetch = datetime.fromtimestamp(
+                        latest_frame["timestamp"], tz=timezone.utc
+                    ).isoformat()
+        except Exception as exc:
+            logger.warning("Failed to get global radar status: %s", exc)
+            global_radar_status = "degraded"
+    
+    payload["global_radar"] = {
+        "status": global_radar_status,
+        "frames_count": global_radar_frames_count,
+        "provider": global_config.radar.provider,
+        "last_fetch": global_radar_last_fetch,
+        "cache_age": global_radar_cache_age
     }
     
     return payload
@@ -1364,6 +1436,199 @@ async def serve_frontend(full_path: str, request: Request):
         raise HTTPException(status_code=404, detail="Not Found")
     path = full_path or "index.html"
     return await spa_static_files.get_response(path, request.scope)
+
+
+# Proveedores globales
+_gibs_provider = GIBSProvider()
+_rainviewer_provider = RainViewerProvider()
+
+
+@app.get("/api/global/satellite/frames")
+def get_global_satellite_frames() -> Dict[str, Any]:
+    """Obtiene lista de frames disponibles de satélite global."""
+    config = config_manager.read()
+    global_config = config.layers.global_layers.satellite
+    
+    if not global_config.enabled:
+        return {"frames": []}
+    
+    try:
+        frames = _gibs_provider.get_available_frames(
+            history_minutes=global_config.history_minutes,
+            frame_step=global_config.frame_step
+        )
+        return {
+            "frames": frames,
+            "count": len(frames),
+            "provider": global_config.provider
+        }
+    except Exception as exc:
+        logger.error("Failed to get global satellite frames: %s", exc)
+        return {"frames": [], "error": str(exc)}
+
+
+@app.get("/api/global/radar/frames")
+def get_global_radar_frames() -> Dict[str, Any]:
+    """Obtiene lista de frames disponibles de radar global."""
+    config = config_manager.read()
+    global_config = config.layers.global_layers.radar
+    
+    if not global_config.enabled:
+        return {"frames": []}
+    
+    try:
+        frames = _rainviewer_provider.get_available_frames(
+            history_minutes=global_config.history_minutes,
+            frame_step=global_config.frame_step
+        )
+        return {
+            "frames": frames,
+            "count": len(frames),
+            "provider": global_config.provider
+        }
+    except Exception as exc:
+        logger.error("Failed to get global radar frames: %s", exc)
+        return {"frames": [], "error": str(exc)}
+
+
+@app.get("/api/global/satellite/tiles/{timestamp:int}/{z:int}/{x:int}/{y:int}.png")
+async def get_global_satellite_tile(
+    timestamp: int,
+    z: int,
+    x: int,
+    y: int,
+    request: Request
+) -> Response:
+    """Proxy de tiles de satélite global con caché."""
+    config = config_manager.read()
+    global_config = config.layers.global_layers.satellite
+    
+    if not global_config.enabled:
+        raise HTTPException(status_code=404, detail="Global satellite layer disabled")
+    
+    # Caché de tiles en disco
+    cache_dir = Path("/var/cache/pantalla/global/satellite")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    tile_path = cache_dir / f"{timestamp}_{z}_{x}_{y}.png"
+    
+    # Verificar caché en disco
+    if tile_path.exists():
+        tile_age = datetime.now(timezone.utc).timestamp() - tile_path.stat().st_mtime
+        if tile_age < global_config.refresh_minutes * 60:
+            tile_data = tile_path.read_bytes()
+            return Response(
+                content=tile_data,
+                media_type="image/png",
+                headers={
+                    "Cache-Control": "public, max-age=300",
+                    "ETag": f'"{timestamp}_{z}_{x}_{y}"'
+                }
+            )
+    
+    # Descargar tile
+    try:
+        tile_url = _gibs_provider.get_tile_url(timestamp, z, x, y)
+        response = requests.get(tile_url, timeout=10, stream=True)
+        response.raise_for_status()
+        
+        tile_data = response.content
+        
+        # Guardar en caché en disco
+        tile_path.write_bytes(tile_data)
+        
+        return Response(
+            content=tile_data,
+            media_type=response.headers.get("Content-Type", "image/png"),
+            headers={
+                "Cache-Control": "public, max-age=300",
+                "ETag": f'"{timestamp}_{z}_{x}_{y}"'
+            }
+        )
+    except Exception as exc:
+        logger.error("Failed to fetch global satellite tile: %s", exc)
+        # Intentar servir desde caché aunque sea stale
+        if tile_path.exists():
+            tile_data = tile_path.read_bytes()
+            return Response(
+                content=tile_data,
+                media_type="image/png",
+                headers={
+                    "Cache-Control": "public, max-age=300",
+                    "ETag": f'"{timestamp}_{z}_{x}_{y}"',
+                    "X-Stale": "true"
+                }
+            )
+        raise HTTPException(status_code=500, detail="Failed to fetch tile")
+
+
+@app.get("/api/global/radar/tiles/{timestamp:int}/{z:int}/{x:int}/{y:int}.png")
+async def get_global_radar_tile(
+    timestamp: int,
+    z: int,
+    x: int,
+    y: int,
+    request: Request
+) -> Response:
+    """Proxy de tiles de radar global con caché."""
+    config = config_manager.read()
+    global_config = config.layers.global_layers.radar
+    
+    if not global_config.enabled:
+        raise HTTPException(status_code=404, detail="Global radar layer disabled")
+    
+    # Caché de tiles en disco
+    cache_dir = Path("/var/cache/pantalla/global/radar")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    tile_path = cache_dir / f"{timestamp}_{z}_{x}_{y}.png"
+    
+    # Verificar caché en disco
+    if tile_path.exists():
+        tile_age = datetime.now(timezone.utc).timestamp() - tile_path.stat().st_mtime
+        if tile_age < global_config.refresh_minutes * 60:
+            tile_data = tile_path.read_bytes()
+            return Response(
+                content=tile_data,
+                media_type="image/png",
+                headers={
+                    "Cache-Control": "public, max-age=180",
+                    "ETag": f'"{timestamp}_{z}_{x}_{y}"'
+                }
+            )
+    
+    # Descargar tile
+    try:
+        tile_url = _rainviewer_provider.get_tile_url(timestamp, z, x, y)
+        response = requests.get(tile_url, timeout=10, stream=True)
+        response.raise_for_status()
+        
+        tile_data = response.content
+        
+        # Guardar en caché en disco
+        tile_path.write_bytes(tile_data)
+        
+        return Response(
+            content=tile_data,
+            media_type=response.headers.get("Content-Type", "image/png"),
+            headers={
+                "Cache-Control": "public, max-age=180",
+                "ETag": f'"{timestamp}_{z}_{x}_{y}"'
+            }
+        )
+    except Exception as exc:
+        logger.error("Failed to fetch global radar tile: %s", exc)
+        # Intentar servir desde caché aunque sea stale
+        if tile_path.exists():
+            tile_data = tile_path.read_bytes()
+            return Response(
+                content=tile_data,
+                media_type="image/png",
+                headers={
+                    "Cache-Control": "public, max-age=180",
+                    "ETag": f'"{timestamp}_{z}_{x}_{y}"',
+                    "X-Stale": "true"
+                }
+            )
+        raise HTTPException(status_code=500, detail="Failed to fetch tile")
 
 
 @app.on_event("startup")

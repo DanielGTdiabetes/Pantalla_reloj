@@ -272,6 +272,9 @@ install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$STATE_DIR/cache"
 # Crear directorios de caché para layers (flights/ships) y focus masks
 install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 /var/cache/pantalla
 install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 /var/cache/pantalla/focus
+install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 /var/cache/pantalla/global
+install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 /var/cache/pantalla/global/satellite
+install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 /var/cache/pantalla/global/radar
 SUMMARY+=("[install] directorios de caché creados en /var/cache/pantalla/")
 
 install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$USER_HOME/.config/openbox"

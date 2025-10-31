@@ -181,19 +181,68 @@ def build_radar_mask(
 ) -> Optional[Dict[str, Any]]:
     """Construye una máscara de foco a partir de datos de radar.
     
-    Nota: Por ahora, esto es una implementación simplificada.
-    En producción, necesitaría procesar los tiles de radar reales.
+    Soporta tanto datos de AEMET (regional) como RainViewer (global).
     
     Args:
-        radar_data: Datos de radar (simplificado por ahora)
+        radar_data: Datos de radar (metadatos o tiles procesados)
         threshold_dbz: Umbral de dBZ
         buffer_km: Buffer en km
         
     Returns:
         GeoJSON MultiPolygon o None
     """
-    # Por ahora, retornar None ya que necesitaríamos procesar tiles de radar
-    # En producción, esto procesaría los tiles y generaría contornos
+    if not radar_data:
+        return None
+    
+    # Si es metadata de RainViewer, aún no podemos procesar tiles
+    # En el futuro, esto descargaría tiles y generaría contornos
+    if radar_data.get("type") == "radar_metadata":
+        provider = radar_data.get("provider")
+        if provider == "rainviewer":
+            # Por ahora, retornar None (requiere procesamiento de tiles)
+            # TODO: Implementar descarga y procesamiento de tiles RainViewer
+            logger.debug("RainViewer radar mask generation not yet implemented (requires tile processing)")
+            return None
+        else:
+            return None
+    
+    # Si ya viene procesado (futuro: después de procesar tiles)
+    if radar_data.get("type") == "FeatureCollection":
+        # Combinar features en un MultiPolygon
+        features = radar_data.get("features", [])
+        if not features:
+            return None
+        
+        polygons = []
+        for feature in features:
+            geom = feature.get("geometry")
+            if geom and geom.get("type") == "Polygon":
+                coords = geom.get("coordinates", [])
+                if coords:
+                    buffered = apply_buffer_simple(coords[0], buffer_km)
+                    polygons.append([buffered])
+            elif geom and geom.get("type") == "MultiPolygon":
+                coords = geom.get("coordinates", [])
+                for ring_group in coords:
+                    if ring_group and ring_group[0]:
+                        buffered = apply_buffer_simple(ring_group[0], buffer_km)
+                        polygons.append([buffered])
+        
+        if not polygons:
+            return None
+        
+        if len(polygons) == 1:
+            return {
+                "type": "Polygon",
+                "coordinates": polygons[0]
+            }
+        else:
+            return {
+                "type": "MultiPolygon",
+                "coordinates": polygons
+            }
+    
+    # Fallback: retornar None
     return None
 
 
@@ -300,7 +349,18 @@ def load_or_build_focus_mask(
         - máscara: GeoJSON MultiPolygon o None
         - from_cache: True si se cargó de caché
     """
-    if not cine_focus.enabled or not config.aemet.enabled:
+    if not cine_focus.enabled:
+        return None, False
+    
+    # Verificar si hay fuentes de datos disponibles
+    # Para "cap": requiere AEMET
+    # Para "radar": puede usar AEMET o RainViewer global
+    aemet_config = config.aemet
+    if mode_key == "cap" and not (aemet_config.enabled and aemet_config.cap_enabled):
+        return None, False
+    if mode_key == "radar" and not aemet_config.enabled and not config.layers.global_layers.radar.enabled:
+        return None, False
+    if mode_key == "both" and not aemet_config.enabled and not config.layers.global_layers.radar.enabled:
         return None, False
     
     # Determinar TTL según refresh de CAP/Radar
@@ -330,11 +390,28 @@ def load_or_build_focus_mask(
                 if isinstance(warnings_data, dict) and "features" in warnings_data:
                     cap_warnings = warnings_data["features"]
         
-        # Obtener datos Radar (simplificado por ahora)
+        # Obtener datos Radar (AEMET regional o global RainViewer)
         radar_data = None
-        if aemet_config.radar_enabled and mode_key in ["radar", "both"]:
-            # Por ahora, radar_data = None (se implementaría procesando tiles)
-            pass
+        if mode_key in ["radar", "both"]:
+            # Prioridad: AEMET si está habilitado y configurado (solo España)
+            # Fallback: RainViewer global
+            if aemet_config.enabled and aemet_config.radar_enabled:
+                # Intentar cargar desde caché de AEMET
+                aemet_radar_cached = cache_store.load("aemet_radar", max_age_minutes=None)
+                if aemet_radar_cached and aemet_radar_cached.payload:
+                    radar_data = aemet_radar_cached.payload
+            else:
+                # Usar RainViewer global
+                try:
+                    from .global_providers import RainViewerProvider
+                    provider = RainViewerProvider()
+                    # Obtener metadatos para procesamiento
+                    radar_data = provider.get_radar_data_for_focus(
+                        threshold_dbz=cine_focus.radar_dbz_threshold
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to get RainViewer radar data: %s", exc)
+                    radar_data = None
         
         # Construir máscara
         mask = build_focus_mask(

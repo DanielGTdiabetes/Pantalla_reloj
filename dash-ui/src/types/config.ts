@@ -212,9 +212,33 @@ export type ShipsLayerConfig = {
   aishub?: AISHubConfig;
 };
 
+export type GlobalSatelliteLayerConfig = {
+  enabled: boolean;
+  provider: "gibs";
+  refresh_minutes: number;
+  history_minutes: number;
+  frame_step: number;
+  opacity: number;
+};
+
+export type GlobalRadarLayerConfig = {
+  enabled: boolean;
+  provider: "rainviewer";
+  refresh_minutes: number;
+  history_minutes: number;
+  frame_step: number;
+  opacity: number;
+};
+
+export type GlobalLayersConfig = {
+  satellite: GlobalSatelliteLayerConfig;
+  radar: GlobalRadarLayerConfig;
+};
+
 export type LayersConfig = {
   flights: FlightsLayerConfig;
   ships: ShipsLayerConfig;
+  global?: GlobalLayersConfig;
 };
 
 export type AppConfig = {

@@ -7,6 +7,8 @@ import { apiGet, saveConfig } from "../../lib/api";
 import { useConfig } from "../../lib/useConfig";
 import { kioskRuntime } from "../../lib/runtimeFlags";
 import AircraftLayer from "./layers/AircraftLayer";
+import GlobalRadarLayer from "./layers/GlobalRadarLayer";
+import GlobalSatelliteLayer from "./layers/GlobalSatelliteLayer";
 import LightningLayer from "./layers/LightningLayer";
 import { LayerRegistry } from "./layers/LayerRegistry";
 import ShipsLayer from "./layers/ShipsLayer";
@@ -901,6 +903,8 @@ export default function GeoScopeMap() {
       : false
   );
   const aircraftLayerRef = useRef<AircraftLayer | null>(null);
+  const globalRadarLayerRef = useRef<GlobalRadarLayer | null>(null);
+  const globalSatelliteLayerRef = useRef<GlobalSatelliteLayer | null>(null);
   const lightningLayerRef = useRef<LightningLayer | null>(null);
   const layerRegistryRef = useRef<LayerRegistry | null>(null);
   const shipsLayerRef = useRef<ShipsLayer | null>(null);
@@ -1764,6 +1768,28 @@ export default function GeoScopeMap() {
         // Usar defaults si config aún no está disponible
         const mergedConfig = config ? withConfigDefaults(config) : withConfigDefaults();
         
+          // Global Satellite Layer (z-index 10, debajo de AEMET)
+          const globalSatelliteConfig = mergedConfig.layers.global?.satellite;
+          if (globalSatelliteConfig?.enabled) {
+            const globalSatelliteLayer = new GlobalSatelliteLayer({
+              enabled: globalSatelliteConfig.enabled,
+              opacity: globalSatelliteConfig.opacity,
+            });
+            layerRegistry.add(globalSatelliteLayer);
+            globalSatelliteLayerRef.current = globalSatelliteLayer;
+          }
+
+          // Global Radar Layer (z-index 10, debajo de AEMET)
+          const globalRadarConfig = mergedConfig.layers.global?.radar;
+          if (globalRadarConfig?.enabled) {
+            const globalRadarLayer = new GlobalRadarLayer({
+              enabled: globalRadarConfig.enabled,
+              opacity: globalRadarConfig.opacity,
+            });
+            layerRegistry.add(globalRadarLayer);
+            globalRadarLayerRef.current = globalRadarLayer;
+          }
+
           // AircraftLayer
           const flightsConfig = mergedConfig.layers.flights;
           const aircraftLayer = new AircraftLayer({
@@ -1924,6 +1950,8 @@ export default function GeoScopeMap() {
         layerRegistryRef.current = null;
       }
       aircraftLayerRef.current = null;
+      globalRadarLayerRef.current = null;
+      globalSatelliteLayerRef.current = null;
       lightningLayerRef.current = null;
       shipsLayerRef.current = null;
 
@@ -2692,6 +2720,156 @@ export default function GeoScopeMap() {
 
     return () => {
       clearInterval(intervalId);
+    };
+  }, [config]);
+
+  // useEffect para gestionar frames de capas globales (satellite/radar)
+  useEffect(() => {
+    if (!config || !mapRef.current) {
+      return;
+    }
+
+    const merged = withConfigDefaults(config);
+    const globalConfig = merged.layers.global;
+    
+    if (!globalConfig) {
+      return;
+    }
+
+    let satelliteFrameIndex = 0;
+    let radarFrameIndex = 0;
+    let satelliteFrames: Array<{ timestamp: number; iso: string }> = [];
+    let radarFrames: Array<{ timestamp: number; iso: string }> = [];
+    let animationTimer: number | null = null;
+    let isPlaying = true;
+    let playbackSpeed = 1.0;
+
+    const fetchFrames = async () => {
+      try {
+        // Fetch satellite frames
+        if (globalConfig.satellite?.enabled) {
+          const satResponse = await apiGet<{
+            frames: Array<{ timestamp: number; iso: string }>;
+            count: number;
+            provider: string;
+          }>("/api/global/satellite/frames");
+          if (satResponse?.frames && satResponse.frames.length > 0) {
+            satelliteFrames = satResponse.frames;
+            satelliteFrameIndex = 0;
+            
+            // Actualizar capa con primer frame
+            const globalSatLayer = globalSatelliteLayerRef.current;
+            if (globalSatLayer && satelliteFrames[0]) {
+              globalSatLayer.update({ currentTimestamp: satelliteFrames[0].timestamp });
+            }
+          }
+        }
+
+        // Fetch radar frames
+        if (globalConfig.radar?.enabled) {
+          const radarResponse = await apiGet<{
+            frames: Array<{ timestamp: number; iso: string }>;
+            count: number;
+            provider: string;
+          }>("/api/global/radar/frames");
+          if (radarResponse?.frames && radarResponse.frames.length > 0) {
+            radarFrames = radarResponse.frames;
+            radarFrameIndex = 0;
+            
+            // Actualizar capa con primer frame
+            const globalRadarLayer = globalRadarLayerRef.current;
+            if (globalRadarLayer && radarFrames[0]) {
+              globalRadarLayer.update({ currentTimestamp: radarFrames[0].timestamp });
+            }
+          }
+        }
+      } catch (err) {
+        console.error("[GeoScopeMap] Failed to fetch global frames:", err);
+      }
+    };
+
+    const advanceFrames = () => {
+      if (!isPlaying) return;
+
+      // Avanzar satellite frames
+      if (globalConfig.satellite?.enabled && satelliteFrames.length > 0) {
+        satelliteFrameIndex = (satelliteFrameIndex + 1) % satelliteFrames.length;
+        const globalSatLayer = globalSatelliteLayerRef.current;
+        if (globalSatLayer && satelliteFrames[satelliteFrameIndex]) {
+          globalSatLayer.update({ currentTimestamp: satelliteFrames[satelliteFrameIndex].timestamp });
+        }
+      }
+
+      // Avanzar radar frames
+      if (globalConfig.radar?.enabled && radarFrames.length > 0) {
+        radarFrameIndex = (radarFrameIndex + 1) % radarFrames.length;
+        const globalRadarLayer = globalRadarLayerRef.current;
+        if (globalRadarLayer && radarFrames[radarFrameIndex]) {
+          globalRadarLayer.update({ currentTimestamp: radarFrames[radarFrameIndex].timestamp });
+        }
+      }
+    };
+
+    const startAnimation = () => {
+      if (animationTimer !== null) return;
+
+      // Usar frame_step de configuración (en minutos) convertido a ms
+      const satFrameStep = globalConfig.satellite?.frame_step ?? 10;
+      const radarFrameStep = globalConfig.radar?.frame_step ?? 5;
+      // Usar el menor intervalo
+      const frameIntervalMs = Math.min(satFrameStep, radarFrameStep) * 60 * 1000 / playbackSpeed;
+
+      const animate = () => {
+        advanceFrames();
+        animationTimer = window.setTimeout(animate, frameIntervalMs);
+      };
+
+      animate();
+    };
+
+    const stopAnimation = () => {
+      if (animationTimer !== null) {
+        window.clearTimeout(animationTimer);
+        animationTimer = null;
+      }
+    };
+
+    // Cargar frames inicialmente
+    void fetchFrames();
+
+    // Actualizar frames periódicamente según refresh_minutes
+    const refreshInterval = Math.min(
+      globalConfig.satellite?.refresh_minutes ?? 10,
+      globalConfig.radar?.refresh_minutes ?? 5
+    ) * 60 * 1000;
+
+    const refreshTimer = setInterval(() => {
+      void fetchFrames();
+    }, refreshInterval);
+
+    // Iniciar animación si está habilitada
+    if (globalConfig.satellite?.enabled || globalConfig.radar?.enabled) {
+      startAnimation();
+    }
+
+    // Actualizar opacidad de las capas cuando cambie la configuración
+    const updateLayersOpacity = () => {
+      const globalSatLayer = globalSatelliteLayerRef.current;
+      if (globalSatLayer && globalConfig.satellite?.enabled) {
+        globalSatLayer.update({ opacity: globalConfig.satellite.opacity });
+      }
+
+      const globalRadarLayer = globalRadarLayerRef.current;
+      if (globalRadarLayer && globalConfig.radar?.enabled) {
+        globalRadarLayer.update({ opacity: globalConfig.radar.opacity });
+      }
+    };
+
+    updateLayersOpacity();
+
+    return () => {
+      stopAnimation();
+      clearInterval(refreshTimer);
     };
   }, [config]);
 

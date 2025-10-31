@@ -228,6 +228,10 @@ if [[ $PURGE_CONFIG -eq 1 ]] || [[ $PURGE_VENV -eq 1 ]]; then
   if [[ -d /var/cache/pantalla/focus ]]; then
     rm -rf /var/cache/pantalla/focus/* >/dev/null 2>&1 || true
   fi
+  if [[ -d /var/cache/pantalla/global ]]; then
+    rm -rf /var/cache/pantalla/global/satellite/* >/dev/null 2>&1 || true
+    rm -rf /var/cache/pantalla/global/radar/* >/dev/null 2>&1 || true
+  fi
   if [[ -d /var/cache/pantalla ]]; then
     find /var/cache/pantalla -maxdepth 1 -type f \( -name "flights.*" -o -name "ships.*" \) -delete >/dev/null 2>&1 || true
   fi

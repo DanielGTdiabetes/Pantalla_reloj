@@ -320,11 +320,44 @@ class ShipsLayer(BaseModel):
     aishub: AISHubConfig = Field(default_factory=AISHubConfig)
 
 
+class GlobalSatelliteLayer(BaseModel):
+    """Configuración de capa global de satélite."""
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = True
+    provider: Literal["gibs"] = Field(default="gibs")
+    refresh_minutes: int = Field(default=10, ge=1, le=1440)
+    history_minutes: int = Field(default=90, ge=1, le=1440)
+    frame_step: int = Field(default=10, ge=1, le=1440)
+    opacity: float = Field(default=0.7, ge=0.0, le=1.0)
+
+
+class GlobalRadarLayer(BaseModel):
+    """Configuración de capa global de radar."""
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = True
+    provider: Literal["rainviewer"] = Field(default="rainviewer")
+    refresh_minutes: int = Field(default=5, ge=1, le=1440)
+    history_minutes: int = Field(default=90, ge=1, le=1440)
+    frame_step: int = Field(default=5, ge=1, le=1440)
+    opacity: float = Field(default=0.7, ge=0.0, le=1.0)
+
+
+class GlobalLayers(BaseModel):
+    """Configuración de capas globales (satélite y radar)."""
+    model_config = ConfigDict(extra="ignore")
+
+    satellite: GlobalSatelliteLayer = Field(default_factory=GlobalSatelliteLayer)
+    radar: GlobalRadarLayer = Field(default_factory=GlobalRadarLayer)
+
+
 class LayersConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     flights: FlightsLayer = Field(default_factory=FlightsLayer)
     ships: ShipsLayer = Field(default_factory=ShipsLayer)
+    global_layers: GlobalLayers = Field(default_factory=GlobalLayers, alias="global")
 
 
 class MapBackend(BaseModel):

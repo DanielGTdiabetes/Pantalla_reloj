@@ -7,6 +7,9 @@ import type {
   DisplayConfig,
   EphemeridesConfig,
   FlightsLayerConfig,
+  GlobalLayersConfig,
+  GlobalRadarLayerConfig,
+  GlobalSatelliteLayerConfig,
   HarvestConfig,
   LayersConfig,
   MapCinemaBand,
@@ -401,6 +404,24 @@ export const DEFAULT_CONFIG: AppConfig = {
         api_key: null,
       },
     },
+    global: {
+      satellite: {
+        enabled: true,
+        provider: "gibs" as const,
+        refresh_minutes: 10,
+        history_minutes: 90,
+        frame_step: 10,
+        opacity: 0.7,
+      },
+      radar: {
+        enabled: true,
+        provider: "rainviewer" as const,
+        refresh_minutes: 5,
+        history_minutes: 90,
+        frame_step: 5,
+        opacity: 0.7,
+      },
+    },
   },
 };
 
@@ -703,6 +724,68 @@ const mergeShipsLayer = (candidate: unknown): ShipsLayerConfig => {
   };
 };
 
+const mergeGlobalSatelliteLayer = (candidate: unknown): GlobalSatelliteLayerConfig => {
+  const fallback = DEFAULT_CONFIG.layers.global.satellite;
+  const source = (candidate as Partial<GlobalSatelliteLayerConfig>) ?? {};
+  
+  return {
+    enabled: toBoolean(source.enabled, fallback.enabled),
+    provider: "gibs", // Solo un proveedor por ahora
+    refresh_minutes: clampNumber(
+      Math.round(toNumber(source.refresh_minutes, fallback.refresh_minutes)),
+      1,
+      1440,
+    ),
+    history_minutes: clampNumber(
+      Math.round(toNumber(source.history_minutes, fallback.history_minutes)),
+      1,
+      1440,
+    ),
+    frame_step: clampNumber(
+      Math.round(toNumber(source.frame_step, fallback.frame_step)),
+      1,
+      1440,
+    ),
+    opacity: clampNumber(toNumber(source.opacity, fallback.opacity), 0.0, 1.0),
+  };
+};
+
+const mergeGlobalRadarLayer = (candidate: unknown): GlobalRadarLayerConfig => {
+  const fallback = DEFAULT_CONFIG.layers.global.radar;
+  const source = (candidate as Partial<GlobalRadarLayerConfig>) ?? {};
+  
+  return {
+    enabled: toBoolean(source.enabled, fallback.enabled),
+    provider: "rainviewer", // Solo un proveedor por ahora
+    refresh_minutes: clampNumber(
+      Math.round(toNumber(source.refresh_minutes, fallback.refresh_minutes)),
+      1,
+      1440,
+    ),
+    history_minutes: clampNumber(
+      Math.round(toNumber(source.history_minutes, fallback.history_minutes)),
+      1,
+      1440,
+    ),
+    frame_step: clampNumber(
+      Math.round(toNumber(source.frame_step, fallback.frame_step)),
+      1,
+      1440,
+    ),
+    opacity: clampNumber(toNumber(source.opacity, fallback.opacity), 0.0, 1.0),
+  };
+};
+
+const mergeGlobalLayers = (candidate: unknown): GlobalLayersConfig => {
+  const fallback = DEFAULT_CONFIG.layers.global;
+  const source = (candidate as Partial<GlobalLayersConfig>) ?? {};
+  
+  return {
+    satellite: mergeGlobalSatelliteLayer(source.satellite),
+    radar: mergeGlobalRadarLayer(source.radar),
+  };
+};
+
 export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
   if (!payload) {
     return JSON.parse(JSON.stringify(DEFAULT_CONFIG)) as AppConfig;
@@ -752,6 +835,7 @@ export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
     layers: {
       flights: mergeFlightsLayer(layers.flights),
       ships: mergeShipsLayer(layers.ships),
+      global: mergeGlobalLayers(layers.global),
     },
   };
 };
