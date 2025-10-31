@@ -1,22 +1,32 @@
 # Fase 3: Implementación de Datos del Panel Rotativo
 
-## Estado Actual
+## ✅ Estado Completado
 
-### ✅ Cards Existentes
+### Backend Implementado
+1. ✅ **Google Calendar API** - `/api/calendar` con integración real
+2. ✅ **RSS Feeds** - `/api/news` con parser RSS/Atom real
+3. ✅ **Fases Lunares** - `/api/astronomy` con cálculo astronómico real
+4. ✅ **Hortalizas Estacionales** - `/api/calendar.harvest` con datos por mes
+5. ✅ **Santoral** - `/api/calendar.saints` con base de datos completa
+6. ✅ **Efemérides** - Cálculo de salida/puesta de sol
+
+### Cards Existentes
 1. **TimeCard** - Hora/fecha (funciona con timezone)
 2. **WeatherCard** - Clima (backend devuelve datos por defecto)
-3. **CalendarCard** - Eventos de calendario (backend devuelve vacío)
-4. **MoonCard** - Fase lunar (backend devuelve datos por defecto)
-5. **HarvestCard** - Hortalizas/cultivos (backend devuelve vacío)
-6. **SaintsCard** - Santos y onomásticos (backend devuelve vacío)
-7. **NewsCard** - Noticias (backend devuelve datos por defecto)
-8. **EphemeridesCard** - Efemérides (sol/luna)
+3. **CalendarCard** - Eventos de calendario (✅ backend real implementado)
+4. **MoonCard** - Fase lunar (✅ backend real implementado)
+5. **HarvestCard** - Hortalizas/cultivos (✅ backend real implementado)
+6. **SaintsCard** - Santos y onomásticos (✅ backend real implementado)
+7. **NewsCard** - Noticias (✅ backend real implementado)
+8. **EphemeridesCard** - Efemérides (✅ backend real implementado)
 
-### ❌ Backend Faltante
-1. **Google Calendar API** - `/api/calendar` solo devuelve datos vacíos
-2. **RSS Feeds** - `/api/news` solo devuelve datos por defecto
-3. **Fases Lunares** - `/api/astronomy` solo devuelve datos estáticos
-4. **Hortalizas Estacionales** - `/api/calendar.harvest` solo devuelve vacío
+### Configuración UI
+✅ Todos los módulos tienen configuración completa en `/config`:
+- Noticias RSS (feeds, max items, refresh interval)
+- Google Calendar (API key, calendar ID, days ahead)
+- Hortalizas (custom items)
+- Santoral (include namedays, locale)
+- Efemérides (latitude, longitude, timezone)
 
 ## Objetivos Fase 3
 
