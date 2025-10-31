@@ -81,6 +81,34 @@ export type DisplayModule = {
 
 export type NewsConfig = {
   enabled: boolean;
+  rss_feeds: string[];
+  max_items_per_feed: number;
+  refresh_minutes: number;
+};
+
+export type CalendarConfig = {
+  enabled: boolean;
+  google_api_key: string | null;
+  google_calendar_id: string | null;
+  days_ahead: number;
+};
+
+export type HarvestConfig = {
+  enabled: boolean;
+  custom_items: Array<Record<string, string>>;
+};
+
+export type SaintsConfig = {
+  enabled: boolean;
+  include_namedays: boolean;
+  locale: string;
+};
+
+export type EphemeridesConfig = {
+  enabled: boolean;
+  latitude: number;
+  longitude: number;
+  timezone: string;
 };
 
 export type AIConfig = {
@@ -123,4 +151,8 @@ export type AppConfig = {
   storm: StormModeConfig;
   aemet: AEMETConfig;
   blitzortung: BlitzortungConfig;
+  calendar: CalendarConfig;
+  harvest: HarvestConfig;
+  saints: SaintsConfig;
+  ephemerides: EphemeridesConfig;
 };

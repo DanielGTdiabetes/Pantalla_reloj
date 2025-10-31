@@ -147,6 +147,14 @@ class News(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = True
+    rss_feeds: List[str] = Field(
+        default_factory=lambda: [
+            "https://www.elperiodicomediterraneo.com/rss",
+            "https://www.xataka.com/feed",
+        ]
+    )
+    max_items_per_feed: int = Field(default=10, ge=1, le=50)
+    refresh_minutes: int = Field(default=30, ge=5, le=1440)
 
 
 class AI(BaseModel):
@@ -186,6 +194,39 @@ class Blitzortung(BaseModel):
     mqtt_topic: str = Field(default="blitzortung/1", min_length=1)
     ws_enabled: bool = False
     ws_url: Optional[str] = Field(default=None, max_length=512)
+
+
+class Calendar(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = True
+    google_api_key: Optional[str] = Field(default=None, max_length=512)
+    google_calendar_id: Optional[str] = Field(default=None, max_length=256)
+    days_ahead: int = Field(default=14, ge=1, le=90)
+
+
+class Harvest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = True
+    custom_items: List[Dict[str, str]] = Field(default_factory=list)
+
+
+class Saints(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = True
+    include_namedays: bool = True
+    locale: str = Field(default="es", min_length=2, max_length=5)
+
+
+class Ephemerides(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = True
+    latitude: float = Field(default=39.986, ge=-90, le=90)  # Castellón
+    longitude: float = Field(default=-0.051, ge=-180, le=180)  # Vila-real
+    timezone: str = Field(default="Europe/Madrid", min_length=1)
 
 
 class MapBackend(BaseModel):
@@ -234,6 +275,10 @@ class AppConfig(BaseModel):
     storm: StormMode = Field(default_factory=StormMode)
     aemet: AEMET = Field(default_factory=AEMET)
     blitzortung: Blitzortung = Field(default_factory=Blitzortung)
+    calendar: Calendar = Field(default_factory=Calendar)
+    harvest: Harvest = Field(default_factory=Harvest)
+    saints: Saints = Field(default_factory=Saints)
+    ephemerides: Ephemerides = Field(default_factory=Ephemerides)
 
     def to_path(self, path: Path) -> None:
         path.write_text(
@@ -253,8 +298,10 @@ __all__ = [
     "AEMET",
     "AppConfig",
     "Blitzortung",
+    "Calendar",
     "CachedPayload",
     "Display",
+    "Harvest",
     "MapBackend",
     "MapCinema",
     "MapCinemaBand",
@@ -263,6 +310,8 @@ __all__ = [
     "MapTheme",
     "News",
     "Rotation",
+    "Saints",
+    "Ephemerides",
     "StormMode",
     "UI",
 ]

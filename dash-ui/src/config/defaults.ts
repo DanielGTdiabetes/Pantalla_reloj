@@ -3,7 +3,10 @@ import type {
   AIConfig,
   AppConfig,
   BlitzortungConfig,
+  CalendarConfig,
   DisplayConfig,
+  EphemeridesConfig,
+  HarvestConfig,
   MapCinemaBand,
   MapCinemaConfig,
   MapConfig,
@@ -13,6 +16,7 @@ import type {
   MapPreferences,
   NewsConfig,
   RotationConfig,
+  SaintsConfig,
   StormModeConfig,
   UIConfig,
 } from "../types/config";
@@ -272,6 +276,41 @@ export const createDefaultBlitzortung = (): BlitzortungConfig => ({
   ws_url: null,
 });
 
+export const createDefaultNews = (): NewsConfig => ({
+  enabled: true,
+  rss_feeds: [
+    "https://www.elperiodicomediterraneo.com/rss",
+    "https://www.xataka.com/feed",
+  ],
+  max_items_per_feed: 10,
+  refresh_minutes: 30,
+});
+
+export const createDefaultCalendar = (): CalendarConfig => ({
+  enabled: true,
+  google_api_key: null,
+  google_calendar_id: null,
+  days_ahead: 14,
+});
+
+export const createDefaultHarvest = (): HarvestConfig => ({
+  enabled: true,
+  custom_items: [],
+});
+
+export const createDefaultSaints = (): SaintsConfig => ({
+  enabled: true,
+  include_namedays: true,
+  locale: "es",
+});
+
+export const createDefaultEphemerides = (): EphemeridesConfig => ({
+  enabled: true,
+  latitude: 39.986,
+  longitude: -0.051,
+  timezone: "Europe/Madrid",
+});
+
 export const DEFAULT_CONFIG: AppConfig = {
   display: {
     timezone: "Europe/Madrid",
@@ -283,15 +322,17 @@ export const DEFAULT_CONFIG: AppConfig = {
     map: createDefaultMapSettings(),
     rotation: mergeRotation(undefined),
   },
-  news: {
-    enabled: true,
-  },
+  news: createDefaultNews(),
   ai: {
     enabled: false,
   },
   storm: createDefaultStormMode(),
   aemet: createDefaultAEMET(),
   blitzortung: createDefaultBlitzortung(),
+  calendar: createDefaultCalendar(),
+  harvest: createDefaultHarvest(),
+  saints: createDefaultSaints(),
+  ephemerides: createDefaultEphemerides(),
 };
 
 const mergeStormMode = (candidate: unknown): StormModeConfig => {
@@ -341,6 +382,75 @@ const mergeBlitzortung = (candidate: unknown): BlitzortungConfig => {
   };
 };
 
+const mergeNews = (candidate: unknown): NewsConfig => {
+  const fallback = createDefaultNews();
+  const source = (candidate as Partial<NewsConfig>) ?? {};
+  const rssFeeds = Array.isArray(source.rss_feeds)
+    ? source.rss_feeds.filter((url): url is string => typeof url === "string" && url.trim().length > 0)
+    : fallback.rss_feeds;
+  return {
+    enabled: toBoolean(source.enabled, fallback.enabled),
+    rss_feeds: rssFeeds.length > 0 ? rssFeeds : fallback.rss_feeds,
+    max_items_per_feed: clampNumber(
+      Math.round(toNumber(source.max_items_per_feed, fallback.max_items_per_feed)),
+      1,
+      50,
+    ),
+    refresh_minutes: clampNumber(
+      Math.round(toNumber(source.refresh_minutes, fallback.refresh_minutes)),
+      5,
+      1440,
+    ),
+  };
+};
+
+const mergeCalendar = (candidate: unknown): CalendarConfig => {
+  const fallback = createDefaultCalendar();
+  const source = (candidate as Partial<CalendarConfig>) ?? {};
+  return {
+    enabled: toBoolean(source.enabled, fallback.enabled),
+    google_api_key: sanitizeNullableString(source.google_api_key, fallback.google_api_key),
+    google_calendar_id: sanitizeNullableString(source.google_calendar_id, fallback.google_calendar_id),
+    days_ahead: clampNumber(Math.round(toNumber(source.days_ahead, fallback.days_ahead)), 1, 90),
+  };
+};
+
+const mergeHarvest = (candidate: unknown): HarvestConfig => {
+  const fallback = createDefaultHarvest();
+  const source = (candidate as Partial<HarvestConfig>) ?? {};
+  const customItems = Array.isArray(source.custom_items)
+    ? source.custom_items.filter(
+        (item): item is Record<string, string> =>
+          typeof item === "object" && item !== null && !Array.isArray(item),
+      )
+    : fallback.custom_items;
+  return {
+    enabled: toBoolean(source.enabled, fallback.enabled),
+    custom_items: customItems,
+  };
+};
+
+const mergeSaints = (candidate: unknown): SaintsConfig => {
+  const fallback = createDefaultSaints();
+  const source = (candidate as Partial<SaintsConfig>) ?? {};
+  return {
+    enabled: toBoolean(source.enabled, fallback.enabled),
+    include_namedays: toBoolean(source.include_namedays, fallback.include_namedays),
+    locale: sanitizeString(source.locale, fallback.locale).substring(0, 5),
+  };
+};
+
+const mergeEphemerides = (candidate: unknown): EphemeridesConfig => {
+  const fallback = createDefaultEphemerides();
+  const source = (candidate as Partial<EphemeridesConfig>) ?? {};
+  return {
+    enabled: toBoolean(source.enabled, fallback.enabled),
+    latitude: clampNumber(toNumber(source.latitude, fallback.latitude), -90, 90),
+    longitude: clampNumber(toNumber(source.longitude, fallback.longitude), -180, 180),
+    timezone: sanitizeString(source.timezone, fallback.timezone),
+  };
+};
+
 export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
   if (!payload) {
     return JSON.parse(JSON.stringify(DEFAULT_CONFIG)) as AppConfig;
@@ -354,6 +464,10 @@ export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
   const storm = (payload.storm ?? {}) as Partial<StormModeConfig>;
   const aemet = (payload.aemet ?? {}) as Partial<AEMETConfig>;
   const blitzortung = (payload.blitzortung ?? {}) as Partial<BlitzortungConfig>;
+  const calendar = (payload.calendar ?? {}) as Partial<CalendarConfig>;
+  const harvest = (payload.harvest ?? {}) as Partial<HarvestConfig>;
+  const saints = (payload.saints ?? {}) as Partial<SaintsConfig>;
+  const ephemerides = (payload.ephemerides ?? {}) as Partial<EphemeridesConfig>;
 
   return {
     display: {
@@ -370,14 +484,16 @@ export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
       map: mergeMap(ui.map),
       rotation: mergeRotation(ui.rotation),
     },
-    news: {
-      enabled: toBoolean(news.enabled, DEFAULT_CONFIG.news.enabled),
-    },
+    news: mergeNews(news),
     ai: {
       enabled: toBoolean(ai.enabled, DEFAULT_CONFIG.ai.enabled),
     },
     storm: mergeStormMode(storm),
     aemet: mergeAEMET(aemet),
     blitzortung: mergeBlitzortung(blitzortung),
+    calendar: mergeCalendar(calendar),
+    harvest: mergeHarvest(harvest),
+    saints: mergeSaints(saints),
+    ephemerides: mergeEphemerides(ephemerides),
   };
 };

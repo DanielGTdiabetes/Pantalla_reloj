@@ -53,9 +53,6 @@
       "panels": ["news", "ephemerides", "moon", "forecast", "calendar"]
     }
   },
-  "news": {
-    "enabled": true
-  },
   "ai": {
     "enabled": false
   },
@@ -82,5 +79,35 @@
     "mqtt_topic": "blitzortung/1",
     "ws_enabled": false,
     "ws_url": null
+  },
+  "calendar": {
+    "enabled": true,
+    "google_api_key": null,
+    "google_calendar_id": null,
+    "days_ahead": 14
+  },
+  "harvest": {
+    "enabled": true,
+    "custom_items": []
+  },
+  "saints": {
+    "enabled": true,
+    "include_namedays": true,
+    "locale": "es"
+  },
+  "ephemerides": {
+    "enabled": true,
+    "latitude": 39.986,
+    "longitude": -0.051,
+    "timezone": "Europe/Madrid"
+  },
+  "news": {
+    "enabled": true,
+    "rss_feeds": [
+      "https://www.elperiodicomediterraneo.com/rss",
+      "https://www.xataka.com/feed"
+    ],
+    "max_items_per_feed": 10,
+    "refresh_minutes": 30
   }
 }
