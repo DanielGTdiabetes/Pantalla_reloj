@@ -87,10 +87,40 @@ export type AIConfig = {
   enabled: boolean;
 };
 
+export type StormModeConfig = {
+  enabled: boolean;
+  center_lat: number;
+  center_lng: number;
+  zoom: number;
+  auto_enable: boolean;
+  auto_disable_after_minutes: number;
+};
+
+export type AEMETConfig = {
+  enabled: boolean;
+  api_key: string | null;
+  cap_enabled: boolean;
+  radar_enabled: boolean;
+  satellite_enabled: boolean;
+  cache_minutes: number;
+};
+
+export type BlitzortungConfig = {
+  enabled: boolean;
+  mqtt_host: string;
+  mqtt_port: number;
+  mqtt_topic: string;
+  ws_enabled: boolean;
+  ws_url: string | null;
+};
+
 export type AppConfig = {
   display: DisplayConfig;
   map: MapPreferences;
   ui: UIConfig;
   news: NewsConfig;
   ai: AIConfig;
+  storm: StormModeConfig;
+  aemet: AEMETConfig;
+  blitzortung: BlitzortungConfig;
 };

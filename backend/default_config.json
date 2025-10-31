@@ -58,5 +58,29 @@
   },
   "ai": {
     "enabled": false
+  },
+  "storm": {
+    "enabled": false,
+    "center_lat": 39.986,
+    "center_lng": -0.051,
+    "zoom": 9.0,
+    "auto_enable": false,
+    "auto_disable_after_minutes": 60
+  },
+  "aemet": {
+    "enabled": false,
+    "api_key": null,
+    "cap_enabled": true,
+    "radar_enabled": true,
+    "satellite_enabled": false,
+    "cache_minutes": 15
+  },
+  "blitzortung": {
+    "enabled": false,
+    "mqtt_host": "127.0.0.1",
+    "mqtt_port": 1883,
+    "mqtt_topic": "blitzortung/1",
+    "ws_enabled": false,
+    "ws_url": null
   }
 }

@@ -1,6 +1,8 @@
 import type {
+  AEMETConfig,
   AIConfig,
   AppConfig,
+  BlitzortungConfig,
   DisplayConfig,
   MapCinemaBand,
   MapCinemaConfig,
@@ -11,6 +13,7 @@ import type {
   MapPreferences,
   NewsConfig,
   RotationConfig,
+  StormModeConfig,
   UIConfig,
 } from "../types/config";
 
@@ -242,6 +245,33 @@ const mergeRotation = (candidate: unknown): RotationConfig => {
   };
 };
 
+export const createDefaultStormMode = (): StormModeConfig => ({
+  enabled: false,
+  center_lat: 39.986,
+  center_lng: -0.051,
+  zoom: 9.0,
+  auto_enable: false,
+  auto_disable_after_minutes: 60,
+});
+
+export const createDefaultAEMET = (): AEMETConfig => ({
+  enabled: false,
+  api_key: null,
+  cap_enabled: true,
+  radar_enabled: true,
+  satellite_enabled: false,
+  cache_minutes: 15,
+});
+
+export const createDefaultBlitzortung = (): BlitzortungConfig => ({
+  enabled: false,
+  mqtt_host: "127.0.0.1",
+  mqtt_port: 1883,
+  mqtt_topic: "blitzortung/1",
+  ws_enabled: false,
+  ws_url: null,
+});
+
 export const DEFAULT_CONFIG: AppConfig = {
   display: {
     timezone: "Europe/Madrid",
@@ -259,6 +289,56 @@ export const DEFAULT_CONFIG: AppConfig = {
   ai: {
     enabled: false,
   },
+  storm: createDefaultStormMode(),
+  aemet: createDefaultAEMET(),
+  blitzortung: createDefaultBlitzortung(),
+};
+
+const mergeStormMode = (candidate: unknown): StormModeConfig => {
+  const fallback = createDefaultStormMode();
+  const source = (candidate as Partial<StormModeConfig>) ?? {};
+  return {
+    enabled: toBoolean(source.enabled, fallback.enabled),
+    center_lat: clampNumber(toNumber(source.center_lat, fallback.center_lat), -90, 90),
+    center_lng: clampNumber(toNumber(source.center_lng, fallback.center_lng), -180, 180),
+    zoom: clampNumber(toNumber(source.zoom, fallback.zoom), 1, 20),
+    auto_enable: toBoolean(source.auto_enable, fallback.auto_enable),
+    auto_disable_after_minutes: clampNumber(
+      Math.round(toNumber(source.auto_disable_after_minutes, fallback.auto_disable_after_minutes)),
+      5,
+      1440,
+    ),
+  };
+};
+
+const mergeAEMET = (candidate: unknown): AEMETConfig => {
+  const fallback = createDefaultAEMET();
+  const source = (candidate as Partial<AEMETConfig>) ?? {};
+  return {
+    enabled: toBoolean(source.enabled, fallback.enabled),
+    api_key: sanitizeNullableString(source.api_key, fallback.api_key),
+    cap_enabled: toBoolean(source.cap_enabled, fallback.cap_enabled),
+    radar_enabled: toBoolean(source.radar_enabled, fallback.radar_enabled),
+    satellite_enabled: toBoolean(source.satellite_enabled, fallback.satellite_enabled),
+    cache_minutes: clampNumber(
+      Math.round(toNumber(source.cache_minutes, fallback.cache_minutes)),
+      1,
+      60,
+    ),
+  };
+};
+
+const mergeBlitzortung = (candidate: unknown): BlitzortungConfig => {
+  const fallback = createDefaultBlitzortung();
+  const source = (candidate as Partial<BlitzortungConfig>) ?? {};
+  return {
+    enabled: toBoolean(source.enabled, fallback.enabled),
+    mqtt_host: sanitizeString(source.mqtt_host, fallback.mqtt_host),
+    mqtt_port: clampNumber(Math.round(toNumber(source.mqtt_port, fallback.mqtt_port)), 1, 65535),
+    mqtt_topic: sanitizeString(source.mqtt_topic, fallback.mqtt_topic),
+    ws_enabled: toBoolean(source.ws_enabled, fallback.ws_enabled),
+    ws_url: sanitizeNullableString(source.ws_url, fallback.ws_url),
+  };
 };
 
 export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
@@ -271,6 +351,9 @@ export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
   const ui = (payload.ui ?? {}) as Partial<UIConfig>;
   const news = (payload.news ?? {}) as Partial<NewsConfig>;
   const ai = (payload.ai ?? {}) as Partial<AIConfig>;
+  const storm = (payload.storm ?? {}) as Partial<StormModeConfig>;
+  const aemet = (payload.aemet ?? {}) as Partial<AEMETConfig>;
+  const blitzortung = (payload.blitzortung ?? {}) as Partial<BlitzortungConfig>;
 
   return {
     display: {
@@ -293,5 +376,8 @@ export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
     ai: {
       enabled: toBoolean(ai.enabled, DEFAULT_CONFIG.ai.enabled),
     },
+    storm: mergeStormMode(storm),
+    aemet: mergeAEMET(aemet),
+    blitzortung: mergeBlitzortung(blitzortung),
   };
 };

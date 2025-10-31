@@ -155,6 +155,39 @@ class AI(BaseModel):
     enabled: bool = False
 
 
+class StormMode(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = False
+    center_lat: float = Field(default=39.986, ge=-90, le=90)
+    center_lng: float = Field(default=-0.051, ge=-180, le=180)
+    zoom: float = Field(default=9.0, ge=1, le=20)
+    auto_enable: bool = False
+    auto_disable_after_minutes: int = Field(default=60, ge=5, le=1440)
+
+
+class AEMET(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = False
+    api_key: Optional[str] = Field(default=None, max_length=256)
+    cap_enabled: bool = True
+    radar_enabled: bool = True
+    satellite_enabled: bool = False
+    cache_minutes: int = Field(default=15, ge=1, le=60)
+
+
+class Blitzortung(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = False
+    mqtt_host: str = Field(default="127.0.0.1", min_length=1)
+    mqtt_port: int = Field(default=1883, ge=1, le=65535)
+    mqtt_topic: str = Field(default="blitzortung/1", min_length=1)
+    ws_enabled: bool = False
+    ws_url: Optional[str] = Field(default=None, max_length=512)
+
+
 class MapBackend(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -198,6 +231,9 @@ class AppConfig(BaseModel):
     news: News = Field(default_factory=News)
     ai: AI = Field(default_factory=AI)
     map: MapBackend = Field(default_factory=MapBackend)
+    storm: StormMode = Field(default_factory=StormMode)
+    aemet: AEMET = Field(default_factory=AEMET)
+    blitzortung: Blitzortung = Field(default_factory=Blitzortung)
 
     def to_path(self, path: Path) -> None:
         path.write_text(
@@ -214,7 +250,9 @@ class CachedPayload(BaseModel):
 
 __all__ = [
     "AI",
+    "AEMET",
     "AppConfig",
+    "Blitzortung",
     "CachedPayload",
     "Display",
     "MapBackend",
@@ -225,5 +263,6 @@ __all__ = [
     "MapTheme",
     "News",
     "Rotation",
+    "StormMode",
     "UI",
 ]
