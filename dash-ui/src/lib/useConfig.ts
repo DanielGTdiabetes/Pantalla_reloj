@@ -17,41 +17,57 @@ export function useConfig() {
     try {
       const cfg = await getConfig();
       const newData = withConfigDefaults((cfg ?? {}) as AppConfig);
+      
       setData((prev) => {
-        // Comparar valores clave que pueden cambiar (cinema.enabled, panLngDegPerSec, etc.)
-        if (prev) {
-          const prevCinema = prev.ui?.map?.cinema;
-          const newCinema = newData.ui?.map?.cinema;
-          
-          const prevEnabled = prevCinema?.enabled ?? false;
-          const newEnabled = newCinema?.enabled ?? false;
-          const prevSpeed = prevCinema?.panLngDegPerSec ?? 0;
-          const newSpeed = newCinema?.panLngDegPerSec ?? 0;
-          
-          // Si cambian valores importantes, actualizar siempre
-          if (prevEnabled !== newEnabled || prevSpeed !== newSpeed) {
-            console.log("[useConfig] Detected config change:", { prevEnabled, newEnabled, prevSpeed, newSpeed });
-            return newData;
-          }
-          
-          // Para otros cambios, usar JSON.stringify como fallback
-          if (JSON.stringify(prev) === JSON.stringify(newData)) {
-            return prev;
-          }
+        // Siempre actualizar para forzar re-render si hay cambios
+        // La comparación se hace en los componentes que usan la config
+        if (!prev) {
+          return newData;
         }
-        return newData;
+        
+        // Comparar valores clave que pueden cambiar (cinema.enabled, panLngDegPerSec, etc.)
+        const prevCinema = prev.ui?.map?.cinema;
+        const newCinema = newData.ui?.map?.cinema;
+        
+        const prevEnabled = prevCinema?.enabled ?? false;
+        const newEnabled = newCinema?.enabled ?? false;
+        const prevSpeed = prevCinema?.panLngDegPerSec ?? 0;
+        const newSpeed = newCinema?.panLngDegPerSec ?? 0;
+        
+        // Si cambian valores importantes, actualizar siempre
+        if (prevEnabled !== newEnabled || prevSpeed !== newSpeed) {
+          console.log("[useConfig] Detected config change:", { prevEnabled, newEnabled, prevSpeed, newSpeed });
+          return newData;
+        }
+        
+        // Para otros cambios, comparar JSON pero solo si hay diferencias reales
+        // Usar una comparación más profunda de campos importantes
+        const prevJson = JSON.stringify({
+          cinema: prevCinema,
+          rotation: prev.ui?.rotation
+        });
+        const newJson = JSON.stringify({
+          cinema: newCinema,
+          rotation: newData.ui?.rotation
+        });
+        
+        if (prevJson !== newJson) {
+          console.log("[useConfig] Detected other config changes");
+          return newData;
+        }
+        
+        // Si no hay cambios detectados, mantener la referencia anterior para evitar re-renders
+        return prev;
       });
+      
       setError(null);
-      if (loading) {
-        setLoading(false);
-      }
+      setLoading(false);
     } catch (e) {
+      console.error("[useConfig] Error loading config:", e);
       setError(API_UNREACHABLE);
-      if (loading) {
-        setLoading(false);
-      }
+      setLoading(false);
     }
-  }, [loading]);
+  }, []);
 
   useEffect(() => {
     // Carga inicial

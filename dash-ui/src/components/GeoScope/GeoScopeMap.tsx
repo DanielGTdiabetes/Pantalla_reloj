@@ -703,8 +703,31 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
 };
 
 export default function GeoScopeMap() {
-  const { data: config } = useConfig();
+  const { data: config, reload: reloadConfig } = useConfig();
   const mapFillRef = useRef<HTMLDivElement | null>(null);
+  
+  // Recargar config cuando la página se vuelve visible (después de guardar en /config)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // Recargar config cuando la página vuelve a ser visible
+        reloadConfig();
+      }
+    };
+    
+    const handleFocus = () => {
+      // Recargar config cuando la ventana recupera el foco
+      reloadConfig();
+    };
+    
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+    
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [reloadConfig]);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -1746,19 +1769,17 @@ export default function GeoScopeMap() {
     const cinemaEnabled = Boolean(cinemaSource.enabled);
     const newAllowCinema = cinemaEnabled && panSpeedDegPerSec > 0;
 
-    console.log("[GeoScopeMap] Config changed:", {
-      cinemaEnabled,
-      panSpeedDegPerSec,
-      newAllowCinema,
-      currentAllowCinema: allowCinemaRef.current
-    });
-
     // Si cambió el estado de allowCinema o la velocidad, actualizar
-    const speedChanged = panSpeedDegPerSec !== panSpeedRef.current;
-    if (newAllowCinema !== allowCinemaRef.current || (newAllowCinema && speedChanged)) {
-      console.log("[GeoScopeMap] Updating cinema mode:", {
-        from: allowCinemaRef.current,
-        to: newAllowCinema,
+    const speedChanged = Math.abs(panSpeedDegPerSec - panSpeedRef.current) > 0.001;
+    const cinemaChanged = newAllowCinema !== allowCinemaRef.current;
+    
+    if (cinemaChanged || (newAllowCinema && speedChanged)) {
+      console.log("[GeoScopeMap] Config changed - updating:", {
+        cinemaEnabled,
+        panSpeedDegPerSec,
+        newAllowCinema,
+        currentAllowCinema: allowCinemaRef.current,
+        cinemaChanged,
         speedChanged
       });
       allowCinemaRef.current = newAllowCinema;
@@ -1969,7 +1990,7 @@ export default function GeoScopeMap() {
       panSpeedRef.current = overrideSpeed;
       cinemaRef.current = cloneCinema(cinemaSource);
     }
-  }, [config]);
+  }, [config, reloadConfig]);
 
   return (
     <div className="map-host">
