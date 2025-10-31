@@ -4,7 +4,7 @@ import json
 import os
 import re
 import subprocess
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -23,6 +23,7 @@ from .data_sources import (
     calculate_moon_phase,
     calculate_sun_times,
     fetch_google_calendar_events,
+    get_astronomical_events,
     get_harvest_data,
     get_saints_today,
     parse_rss_feed,
@@ -592,6 +593,93 @@ def get_astronomy() -> Dict[str, Any]:
         
         cache_store.store("astronomy", payload)
         return payload
+
+
+@app.get("/api/astronomy/events")
+def get_astronomical_events_endpoint(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    days_ahead: int = 30
+) -> Dict[str, Any]:
+    """Obtiene eventos astronómicos en un rango de fechas.
+    
+    Endpoint opcional que calcula eventos astronómicos futuros:
+    - Fases lunares significativas (nueva, llena, cuartos)
+    - Solsticios y equinoccios
+    
+    Args (query parameters):
+        start_date: Fecha de inicio (ISO format YYYY-MM-DD), por defecto: hoy
+        end_date: Fecha de fin (ISO format YYYY-MM-DD), por defecto: hoy + days_ahead
+        days_ahead: Días hacia adelante si no se especifica end_date (default: 30)
+    
+    Returns:
+        Diccionario con lista de eventos astronómicos
+    """
+    config = config_manager.read()
+    ephemerides_config = config.ephemerides
+    
+    if not ephemerides_config.enabled:
+        return {
+            "events": [],
+            "message": "Ephemerides not enabled",
+        }
+    
+    # Parsear fechas
+    try:
+        if start_date:
+            start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        else:
+            start = date.today()
+        
+        if end_date:
+            end = datetime.strptime(end_date, "%Y-%m-%d").date()
+        else:
+            end = start + timedelta(days=days_ahead)
+        
+        # Validar que end_date no sea anterior a start_date
+        if end < start:
+            logger.warning("end_date (%s) is earlier than start_date (%s)", end, start)
+            return {
+                "events": [],
+                "error": f"Invalid date range: end_date ({end.isoformat()}) cannot be earlier than start_date ({start.isoformat()})",
+            }
+        
+        # Validar rango (limitar a 1 año máximo)
+        if (end - start).days > 365:
+            end = start + timedelta(days=365)
+            logger.warning("Date range limited to 365 days")
+        
+    except ValueError as exc:
+        logger.warning("Invalid date format: %s", exc)
+        return {
+            "events": [],
+            "error": f"Invalid date format: {exc}",
+        }
+    
+    try:
+        # Calcular eventos
+        events = get_astronomical_events(
+            start_date=start,
+            end_date=end,
+            lat=ephemerides_config.latitude,
+            lng=ephemerides_config.longitude,
+            tz_str=ephemerides_config.timezone,
+        )
+        
+        return {
+            "events": events,
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "total": len(events),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+    
+    except Exception as exc:
+        logger.error("Failed to calculate astronomical events: %s", exc)
+        return {
+            "events": [],
+            "error": str(exc),
+        }
 
 
 @app.get("/api/calendar")

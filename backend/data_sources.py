@@ -965,6 +965,142 @@ def calculate_extended_astronomy(
     return result
 
 
+def get_astronomical_events(
+    start_date: date,
+    end_date: date,
+    lat: float = 39.986,
+    lng: float = -0.051,
+    tz_str: str = "Europe/Madrid"
+) -> List[Dict[str, Any]]:
+    """Calcula eventos astronómicos en un rango de fechas.
+    
+    Incluye fases lunares significativas (nueva, llena, cuartos)
+    y opcionalmente solsticios/equinoccios si están en el rango.
+    
+    Args:
+        start_date: Fecha de inicio
+        end_date: Fecha de fin
+        lat: Latitud para cálculos solares (opcional)
+        lng: Longitud para cálculos solares (opcional)
+        tz_str: Zona horaria (opcional)
+    
+    Returns:
+        Lista de eventos astronómicos con fecha, tipo y descripción
+    """
+    events = []
+    current_date = start_date
+    
+    # Fase lunar anterior para detectar cambios consecutivos
+    # Rastrear la última fase significativa encontrada para evitar duplicados en días consecutivos
+    prev_phase = None
+    prev_phase_date = None
+    
+    while current_date <= end_date:
+        current_dt = datetime.combine(current_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+        moon_data = calculate_moon_phase(current_dt)
+        phase_name = moon_data["moon_phase"]
+        
+        # Detectar cambios de fase significativos
+        significant_phases = [
+            "Luna nueva",
+            "Luna llena",
+            "Cuarto creciente",
+            "Cuarto menguante"
+        ]
+        
+        if phase_name in significant_phases:
+            # Solo agregar si:
+            # 1. Es la primera fase significativa encontrada (prev_phase is None), O
+            # 2. Es un cambio de fase (prev_phase != phase_name), O
+            # 3. Es la misma fase pero han pasado >= 25 días (nuevo ciclo lunar)
+            should_add = False
+            
+            if prev_phase is None:
+                # Primera fase significativa encontrada
+                should_add = True
+            elif prev_phase != phase_name:
+                # Cambio de fase significativa
+                should_add = True
+            elif prev_phase == phase_name and prev_phase_date:
+                # Misma fase - verificar si han pasado suficientes días para un nuevo ciclo
+                # Período sinódico de la luna: ~29.53 días, usar 25 días como umbral seguro
+                days_since_last = (current_date - prev_phase_date).days
+                if days_since_last >= 25:
+                    # Nuevo ciclo lunar - misma fase en ciclo siguiente
+                    should_add = True
+            
+            if should_add:
+                events.append({
+                    "date": current_date.isoformat(),
+                    "type": "moon_phase",
+                    "description": f"{phase_name} ({moon_data['moon_illumination']}% iluminada)",
+                    "illumination": moon_data["moon_illumination"],
+                    "moon_phase": phase_name,
+                })
+                prev_phase = phase_name
+                prev_phase_date = current_date
+        # Nota: No resetear prev_phase cuando encontramos una fase no significativa
+        # Esto permite detectar correctamente cambios cuando vuelve una fase significativa
+        # después de días con fases intermedias
+        
+        # Detectar solsticios y equinoccios (aproximados)
+        # Usar rangos para cubrir años normales y bisiestos
+        month = current_date.month
+        day = current_date.day
+        
+        # Solsticio de verano (hemisferio norte): ~20-22 de junio
+        # Día del año: 171-173 (año normal) o 172-174 (bisiesto)
+        if month == 6 and 20 <= day <= 22:
+            # Usar día específico (21 de junio es más común)
+            if day == 21:
+                events.append({
+                    "date": current_date.isoformat(),
+                    "type": "solstice",
+                    "description": "Solsticio de verano (hemisferio norte)",
+                    "season": "summer",
+                })
+        
+        # Equinoccio de otoño: ~22-24 de septiembre
+        # Día del año: 265-267 (año normal) o 266-268 (bisiesto)
+        elif month == 9 and 22 <= day <= 24:
+            # Usar día específico (23 de septiembre es más común)
+            if day == 23:
+                events.append({
+                    "date": current_date.isoformat(),
+                    "type": "equinox",
+                    "description": "Equinoccio de otoño",
+                    "season": "autumn",
+                })
+        
+        # Solsticio de invierno: ~20-22 de diciembre
+        # Día del año: 354-356 (año normal) o 355-357 (bisiesto)
+        elif month == 12 and 20 <= day <= 22:
+            # Usar día específico (21 de diciembre es más común)
+            if day == 21:
+                events.append({
+                    "date": current_date.isoformat(),
+                    "type": "solstice",
+                    "description": "Solsticio de invierno (hemisferio norte)",
+                    "season": "winter",
+                })
+        
+        # Equinoccio de primavera: ~19-21 de marzo
+        # Día del año: 78-80 (año normal) o 79-81 (bisiesto)
+        elif month == 3 and 19 <= day <= 21:
+            # Usar día específico (20 de marzo es más común)
+            if day == 20:
+                events.append({
+                    "date": current_date.isoformat(),
+                    "type": "equinox",
+                    "description": "Equinoccio de primavera",
+                    "season": "spring",
+                })
+        
+        current_date += timedelta(days=1)
+    
+    return events
+
+
 def fetch_google_calendar_events(
     api_key: str,
     calendar_id: str,
