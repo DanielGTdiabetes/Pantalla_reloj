@@ -1354,6 +1354,187 @@ const ConfigPage: React.FC = () => {
           </div>
         )}
 
+        {supports("storm") && (
+          <div className="config-card">
+            <div>
+              <h2>Modo Tormenta</h2>
+              <p>Configuración para el modo de visualización de tormentas locales con rayos.</p>
+            </div>
+            <div className="config-grid">
+              {supports("storm.enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="storm_enabled">
+                    <input
+                      id="storm_enabled"
+                      type="checkbox"
+                      checked={form.storm.enabled}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          storm: {
+                            ...prev.storm,
+                            enabled,
+                          },
+                        }));
+                        resetErrorsFor("storm.enabled");
+                      }}
+                    />
+                    Activar modo tormenta
+                  </label>
+                  {renderHelp("Activa el modo de visualización para tormentas locales (zoom Castellón/Vila-real)"}
+                </div>
+              )}
+
+              {supports("storm.center_lat") && (
+                <div className="config-field">
+                  <label htmlFor="storm_center_lat">Latitud del centro</label>
+                  <input
+                    id="storm_center_lat"
+                    type="number"
+                    step="0.001"
+                    min="-90"
+                    max="90"
+                    value={form.storm.center_lat}
+                    disabled={disableInputs || !form.storm.enabled}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (!Number.isNaN(value)) {
+                        setForm((prev) => ({
+                          ...prev,
+                          storm: {
+                            ...prev.storm,
+                            center_lat: Math.max(-90, Math.min(90, value)),
+                          },
+                        }));
+                        resetErrorsFor("storm.center_lat");
+                      }
+                    }}
+                  />
+                  {renderHelp("Latitud del punto central del modo tormenta (Castellón: 39.986)")}
+                  {renderFieldError("storm.center_lat")}
+                </div>
+              )}
+
+              {supports("storm.center_lng") && (
+                <div className="config-field">
+                  <label htmlFor="storm_center_lng">Longitud del centro</label>
+                  <input
+                    id="storm_center_lng"
+                    type="number"
+                    step="0.001"
+                    min="-180"
+                    max="180"
+                    value={form.storm.center_lng}
+                    disabled={disableInputs || !form.storm.enabled}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (!Number.isNaN(value)) {
+                        setForm((prev) => ({
+                          ...prev,
+                          storm: {
+                            ...prev.storm,
+                            center_lng: Math.max(-180, Math.min(180, value)),
+                          },
+                        }));
+                        resetErrorsFor("storm.center_lng");
+                      }
+                    }}
+                  />
+                  {renderHelp("Longitud del punto central del modo tormenta (Vila-real: -0.051)")}
+                  {renderFieldError("storm.center_lng")}
+                </div>
+              )}
+
+              {supports("storm.zoom") && (
+                <div className="config-field">
+                  <label htmlFor="storm_zoom">Nivel de zoom</label>
+                  <input
+                    id="storm_zoom"
+                    type="number"
+                    step="0.1"
+                    min="1"
+                    max="20"
+                    value={form.storm.zoom}
+                    disabled={disableInputs || !form.storm.enabled}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (!Number.isNaN(value)) {
+                        setForm((prev) => ({
+                          ...prev,
+                          storm: {
+                            ...prev.storm,
+                            zoom: Math.max(1, Math.min(20, value)),
+                          },
+                        }));
+                        resetErrorsFor("storm.zoom");
+                      }
+                    }}
+                  />
+                  {renderHelp("Nivel de zoom cuando se active el modo tormenta (9.0 = recomendado)")}
+                  {renderFieldError("storm.zoom")}
+                </div>
+              )}
+
+              {supports("storm.auto_enable") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="storm_auto_enable">
+                    <input
+                      id="storm_auto_enable"
+                      type="checkbox"
+                      checked={form.storm.auto_enable}
+                      disabled={disableInputs || !form.storm.enabled}
+                      onChange={(event) => {
+                        const auto_enable = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          storm: {
+                            ...prev.storm,
+                            auto_enable,
+                          },
+                        }));
+                        resetErrorsFor("storm.auto_enable");
+                      }}
+                    />
+                    Activar automáticamente
+                  </label>
+                  {renderHelp("Activa el modo tormenta automáticamente cuando se detecten rayos (requiere Blitzortung)")}
+                </div>
+              )}
+
+              {supports("storm.auto_disable_after_minutes") && (
+                <div className="config-field">
+                  <label htmlFor="storm_auto_disable">Auto-desactivar después de (minutos)</label>
+                  <input
+                    id="storm_auto_disable"
+                    type="number"
+                    min="5"
+                    max="1440"
+                    value={form.storm.auto_disable_after_minutes}
+                    disabled={disableInputs || !form.storm.enabled}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (!Number.isNaN(value)) {
+                        setForm((prev) => ({
+                          ...prev,
+                          storm: {
+                            ...prev.storm,
+                            auto_disable_after_minutes: Math.max(5, Math.min(1440, Math.round(value))),
+                          },
+                        }));
+                        resetErrorsFor("storm.auto_disable_after_minutes");
+                      }
+                    }}
+                  />
+                  {renderHelp("Minutos antes de desactivar automáticamente el modo tormenta (5-1440)")}
+                  {renderFieldError("storm.auto_disable_after_minutes")}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="config-card">
           <div>
             <h2>WiFi</h2>

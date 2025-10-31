@@ -6,6 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import { apiGet } from "../../lib/api";
 import { useConfig } from "../../lib/useConfig";
 import { kioskRuntime } from "../../lib/runtimeFlags";
+import LightningLayer from "./layers/LightningLayer";
+import { LayerRegistry } from "./layers/LayerRegistry";
 import {
   createDefaultMapCinema,
   createDefaultMapIdlePan,
@@ -896,6 +898,9 @@ export default function GeoScopeMap() {
       ? diagnosticsAutopanRef.current.config.force
       : false
   );
+  const lightningLayerRef = useRef<LightningLayer | null>(null);
+  const layerRegistryRef = useRef<LayerRegistry | null>(null);
+  const stormModeActiveRef = useRef(false);
   const lastLogTimeRef = useRef<number>(0);
   const respectDefaultRef = useRef(false);
   const [tintColor, setTintColor] = useState<string | null>(null);
@@ -1739,6 +1744,19 @@ export default function GeoScopeMap() {
         map.on("error", styleErrorHandler);
       }
 
+      // Inicializar sistema de capas cuando el mapa esté listo
+      map.once("load", () => {
+        if (destroyed || !mapRef.current) return;
+        
+        const layerRegistry = new LayerRegistry(map);
+        layerRegistryRef.current = layerRegistry;
+
+        // Inicializar LightningLayer (se habilitará si storm mode está activo)
+        const lightningLayer = new LightningLayer({ enabled: false });
+        layerRegistry.add(lightningLayer);
+        lightningLayerRef.current = lightningLayer;
+      });
+
       setupResizeObserver(host);
 
       if (window.matchMedia) {
@@ -1860,6 +1878,14 @@ export default function GeoScopeMap() {
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", handleVisibilityChange);
       }
+
+      // Limpiar sistema de capas
+      const layerRegistry = layerRegistryRef.current;
+      if (layerRegistry) {
+        layerRegistry.destroy();
+        layerRegistryRef.current = null;
+      }
+      lightningLayerRef.current = null;
 
       const map = mapRef.current;
       if (map) {
@@ -2194,6 +2220,193 @@ export default function GeoScopeMap() {
       }
     }
   }, [config, reloadConfig]);
+
+  // useEffect para manejar cambios en Storm Mode
+  useEffect(() => {
+    if (!config || !mapRef.current) {
+      return;
+    }
+
+    const merged = withConfigDefaults(config);
+    const stormConfig = merged.storm;
+    const stormEnabled = Boolean(stormConfig?.enabled);
+    const prevStormActive = stormModeActiveRef.current;
+
+    // Si cambió el estado de storm mode
+    if (stormEnabled !== prevStormActive) {
+      stormModeActiveRef.current = stormEnabled;
+      const map = mapRef.current;
+      const lightningLayer = lightningLayerRef.current;
+
+      if (stormEnabled) {
+        console.log("[GeoScopeMap] Storm mode activated");
+        
+        // Detener modo cine si está activo - usar refs directamente
+        if (animationFrameRef.current !== null) {
+          cancelAnimationFrame(animationFrameRef.current);
+          animationFrameRef.current = null;
+        }
+        
+        // Detener cualquier animación actual
+        if (fallbackTimerRef.current != null) {
+          window.clearInterval(fallbackTimerRef.current);
+          fallbackTimerRef.current = null;
+        }
+        
+        // Limpiar timers de idle pan
+        if (idlePanTimerRef.current != null) {
+          window.clearInterval(idlePanTimerRef.current);
+          idlePanTimerRef.current = null;
+        }
+        
+        // Cancelar serpentine si está activo
+        const controller = serpentineControllerRef.current;
+        if (controller) {
+          serpentineControllerRef.current = null;
+          try {
+            controller.cancel();
+          } catch {
+            // Ignore
+          }
+        }
+        
+        // Resetear estado de animación
+        lastFrameTimeRef.current = null;
+        lastRepaintTimeRef.current = null;
+        lastLogTimeRef.current = 0;
+
+        // Habilitar LightningLayer
+        if (lightningLayer) {
+          lightningLayer.setEnabled(true);
+        }
+
+        // Zoom a Castellón/Vila-real
+        const centerLat = Number.isFinite(stormConfig.center_lat) ? stormConfig.center_lat : 39.986;
+        const centerLng = Number.isFinite(stormConfig.center_lng) ? stormConfig.center_lng : -0.051;
+        const zoom = Number.isFinite(stormConfig.zoom) ? stormConfig.zoom : 9.0;
+
+        // Actualizar estado de vista
+        viewStateRef.current.lat = centerLat;
+        viewStateRef.current.lng = centerLng;
+        viewStateRef.current.zoom = zoom;
+        viewStateRef.current.bearing = 0;
+        viewStateRef.current.pitch = 0;
+
+        // Aplicar zoom al mapa con animación suave
+        if (map.isStyleLoaded()) {
+          map.easeTo({
+            center: [centerLng, centerLat],
+            zoom,
+            bearing: 0,
+            pitch: 0,
+            duration: 1500
+          });
+        } else {
+          map.once("load", () => {
+            map.easeTo({
+              center: [centerLng, centerLat],
+              zoom,
+              bearing: 0,
+              pitch: 0,
+              duration: 1500
+            });
+          });
+        }
+
+        // Actualizar estado en backend (opcional, para persistencia)
+        apiGet<{ enabled: boolean }>("/api/storm_mode").then((stormMode) => {
+          if (!stormMode.enabled) {
+            // Activar en backend si no está activo
+            fetch("/api/storm_mode", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ enabled: true })
+            }).catch((err) => {
+              console.error("[GeoScopeMap] Failed to update storm mode in backend:", err);
+            });
+          }
+        }).catch(() => {
+          // Ignore
+        });
+      } else {
+        console.log("[GeoScopeMap] Storm mode deactivated");
+        
+        // Deshabilitar LightningLayer
+        if (lightningLayer) {
+          lightningLayer.setEnabled(false);
+        }
+
+        // Restaurar vista al modo normal (volver a la primera banda del cine si está activo)
+        if (allowCinemaRef.current && cinemaRef.current) {
+          const firstBand = cinemaRef.current.bands[0];
+          if (firstBand) {
+            viewStateRef.current.lat = firstBand.lat;
+            viewStateRef.current.lng = -180;
+            viewStateRef.current.zoom = firstBand.zoom;
+            viewStateRef.current.pitch = firstBand.pitch;
+            viewStateRef.current.bearing = 0;
+
+            if (map.isStyleLoaded()) {
+              map.easeTo({
+                center: [-180, firstBand.lat],
+                zoom: firstBand.zoom,
+                pitch: firstBand.pitch,
+                bearing: 0,
+                duration: 1500
+              });
+            }
+          }
+        }
+      }
+    }
+  }, [config]);
+
+  // useEffect para cargar y actualizar datos de rayos cuando storm mode está activo
+  useEffect(() => {
+    if (!config || !mapRef.current || !lightningLayerRef.current) {
+      return;
+    }
+
+    const merged = withConfigDefaults(config);
+    const stormEnabled = Boolean(merged.storm?.enabled);
+
+    if (!stormEnabled) {
+      return;
+    }
+
+    // Cargar datos de rayos periódicamente
+    const loadLightningData = async () => {
+      try {
+        const response = await apiGet<{
+          type: string;
+          features: Array<{
+            type: string;
+            geometry: { type: string; coordinates: [number, number] };
+            properties: { timestamp?: number; intensity?: number };
+          }>;
+        }>("/api/lightning");
+
+        const lightningLayer = lightningLayerRef.current;
+        if (lightningLayer && response && response.type === "FeatureCollection") {
+          lightningLayer.updateData(response);
+        }
+      } catch (error) {
+        console.error("[GeoScopeMap] Failed to load lightning data:", error);
+      }
+    };
+
+    // Cargar inmediatamente
+    void loadLightningData();
+
+    // Cargar cada 5 segundos cuando storm mode está activo
+    const intervalId = setInterval(() => {
+      void loadLightningData();
+    }, 5000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [config]);
 
   return (
     <div className="map-host">

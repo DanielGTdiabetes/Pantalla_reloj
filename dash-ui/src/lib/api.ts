@@ -89,6 +89,41 @@ export async function getSchema() {
   return apiGet<Record<string, unknown> | undefined>("/api/config/schema");
 }
 
+// Storm Mode API
+export type StormModeStatus = {
+  enabled: boolean;
+  last_triggered: string | null;
+  center?: { lat: number; lng: number };
+  zoom?: number;
+};
+
+export async function getStormMode() {
+  return apiGet<StormModeStatus>("/api/storm_mode");
+}
+
+export async function updateStormMode(data: { enabled: boolean; last_triggered?: string | null }) {
+  return apiPost<StormModeStatus>("/api/storm_mode", data);
+}
+
+// Lightning API
+export type LightningData = {
+  features: Array<{
+    type: "Feature";
+    geometry: {
+      type: "Point";
+      coordinates: [number, number]; // [lng, lat]
+    };
+    properties: {
+      timestamp?: number;
+      intensity?: number;
+    };
+  }>;
+};
+
+export async function getLightning() {
+  return apiGet<LightningData>("/api/lightning");
+}
+
 // WiFi API
 export type WiFiNetwork = {
   ssid: string;

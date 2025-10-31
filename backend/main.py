@@ -258,19 +258,80 @@ def get_calendar() -> Dict[str, Any]:
 
 @app.get("/api/storm_mode")
 def get_storm_mode() -> Dict[str, Any]:
-    payload = {
-        "enabled": False,
+    """Obtiene el estado actual del modo tormenta desde la configuración."""
+    config = config_manager.read()
+    storm_config = config.storm
+    
+    # Verificar si hay un estado activo en caché
+    cached = cache_store.load("storm_mode", max_age_minutes=storm_config.auto_disable_after_minutes)
+    if cached:
+        cached_enabled = cached.payload.get("enabled", False)
+        # Si está activo en caché pero la configuración lo desactivó, actualizar
+        if cached_enabled and not storm_config.enabled:
+            cache_store.store("storm_mode", {"enabled": False, "last_triggered": cached.payload.get("last_triggered")})
+            return {"enabled": False, "last_triggered": cached.payload.get("last_triggered")}
+        # Si la configuración está activada, devolver el estado en caché
+        if storm_config.enabled:
+            return cached.payload
+    
+    return {
+        "enabled": storm_config.enabled,
         "last_triggered": None,
+        "center": {
+            "lat": storm_config.center_lat,
+            "lng": storm_config.center_lng
+        },
+        "zoom": storm_config.zoom
     }
-    cache_store.store("storm_mode", payload)
-    return payload
 
 
 @app.post("/api/storm_mode")
 def update_storm_mode(payload: Dict[str, Any]) -> Dict[str, Any]:
-    cache_store.store("storm_mode", payload)
-    logger.info("Storm mode update ignored under config v1.5: %s", payload)
-    return {"enabled": False, "last_triggered": None}
+    """Actualiza el estado del modo tormenta."""
+    config = config_manager.read()
+    storm_config = config.storm
+    
+    enabled = payload.get("enabled", False)
+    last_triggered = payload.get("last_triggered")
+    
+    # Guardar en caché
+    cache_store.store("storm_mode", {
+        "enabled": enabled,
+        "last_triggered": last_triggered or (datetime.now(timezone.utc).isoformat() if enabled else None),
+        "center": {
+            "lat": storm_config.center_lat,
+            "lng": storm_config.center_lng
+        },
+        "zoom": storm_config.zoom
+    })
+    
+    logger.info("Storm mode updated: enabled=%s", enabled)
+    
+    return {
+        "enabled": enabled,
+        "last_triggered": last_triggered or (datetime.now(timezone.utc).isoformat() if enabled else None),
+        "center": {
+            "lat": storm_config.center_lat,
+            "lng": storm_config.center_lng
+        },
+        "zoom": storm_config.zoom
+    }
+
+
+@app.get("/api/lightning")
+def get_lightning() -> Dict[str, Any]:
+    """Obtiene datos de rayos para mostrar en el mapa."""
+    # Por ahora devolver datos vacíos, se conectará a MQTT más adelante
+    cached = cache_store.load("lightning", max_age_minutes=1)
+    if cached:
+        return cached.payload
+    
+    default_data = {
+        "type": "FeatureCollection",
+        "features": []
+    }
+    cache_store.store("lightning", default_data)
+    return default_data
 
 
 # WiFi Configuration

@@ -62,6 +62,23 @@ export default class LightningLayer implements Layer {
     this.applyVisibility();
   }
 
+  updateData(data: FeatureCollection): void {
+    if (!this.map) return;
+    const source = this.map.getSource(this.sourceId);
+    if (source && source.type === "geojson") {
+      source.setData(data);
+    }
+  }
+
+  getData(): FeatureCollection {
+    if (!this.map) return EMPTY;
+    const source = this.map.getSource(this.sourceId);
+    if (source && source.type === "geojson") {
+      return (source.getData() as FeatureCollection) ?? EMPTY;
+    }
+    return EMPTY;
+  }
+
   destroy(): void {
     this.map = undefined;
   }
