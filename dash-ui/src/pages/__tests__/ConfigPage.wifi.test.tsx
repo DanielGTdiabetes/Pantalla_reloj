@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 import { ConfigPage } from "../ConfigPage";
 import { withConfigDefaults } from "../../config/defaults";
@@ -41,7 +41,7 @@ vi.mock("../../lib/api", async (importOriginal) => {
 });
 
 type Mocked<T> = T extends (...args: infer Args) => infer Return
-  ? vi.Mock<Promise<Awaited<Return>>, Args>
+  ? Mock<Promise<Awaited<Return>>, Args>
   : never;
 
 const mockGetConfig = getConfig as Mocked<typeof getConfig>;
