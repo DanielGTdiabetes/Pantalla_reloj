@@ -1658,6 +1658,60 @@ def get_flights(request: Request, bbox: Optional[str] = None, extended: Optional
     if snapshot.stale:
         payload["stale"] = True
 
+    flights_config = config.layers.flights
+    items = payload.get("items")
+    focus_mask = None
+    focus_unavailable = False
+
+    if isinstance(items, list) and flights_config.cine_focus.enabled and config.aemet.enabled:
+        try:
+            mask, from_cache = load_or_build_focus_mask(
+                cache_store,
+                config,
+                flights_config.cine_focus,
+                flights_config.cine_focus.mode,
+            )
+            focus_mask = mask
+            if from_cache:
+                logger.debug("Focus mask loaded from cache for flights")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to load focus mask for flights: %s", exc)
+            focus_unavailable = True
+
+    annotated_items: List[Dict[str, Any]] = []
+    in_focus_count = 0
+    if isinstance(items, list):
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            in_focus = False
+            if focus_mask is not None:
+                lat = item.get("lat")
+                lon = item.get("lon")
+                if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
+                    if abs(lat) <= 90 and abs(lon) <= 180:
+                        in_focus = check_point_in_focus(lat, lon, focus_mask)
+            annotated = dict(item)
+            annotated["in_focus"] = in_focus
+            annotated_items.append(annotated)
+            if in_focus:
+                in_focus_count += 1
+        payload["items"] = annotated_items
+
+    if focus_unavailable:
+        meta = payload.get("meta")
+        if not isinstance(meta, dict):
+            meta = {}
+        meta["focus_unavailable"] = True
+        payload["meta"] = meta
+
+    if annotated_items:
+        logger.info(
+            "[opensky] delivered %d flights (in_focus: %d)",
+            len(annotated_items),
+            in_focus_count,
+        )
+
     response = JSONResponse(payload)
     response.headers["X-OpenSky-Polled"] = "true" if snapshot.polled else "false"
     response.headers["X-OpenSky-Mode"] = snapshot.mode
