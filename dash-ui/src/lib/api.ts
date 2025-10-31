@@ -32,8 +32,22 @@ export class ApiError extends Error {
 }
 
 const apiRequest = async <T>(path: string, init?: RequestInit): Promise<T> => {
+  // Para /api/config, agregar headers anti-cache para asegurar que siempre obtengamos la versión más reciente
+  const isConfigEndpoint = path.includes("/api/config");
+  const cacheHeaders = isConfigEndpoint
+    ? {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        Pragma: "no-cache",
+      }
+    : {};
+
   const response = await fetch(withBase(path), {
-    headers: { Accept: "application/json", ...(init?.headers ?? {}) },
+    headers: {
+      Accept: "application/json",
+      ...cacheHeaders,
+      ...(init?.headers ?? {}),
+    },
+    cache: isConfigEndpoint ? "no-store" : "default",
     ...init,
   });
   if (!response.ok) {

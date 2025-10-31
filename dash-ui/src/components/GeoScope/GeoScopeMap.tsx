@@ -1893,18 +1893,28 @@ export default function GeoScopeMap() {
     const cinemaEnabled = Boolean(cinemaSource.enabled);
     const newAllowCinema = cinemaEnabled && panSpeedDegPerSec > 0;
 
-    // Si cambió el estado de allowCinema o la velocidad, actualizar
+    // Detectar cambios en todos los campos del modo cine
     const speedChanged = Math.abs(panSpeedDegPerSec - panSpeedRef.current) > 0.001;
     const cinemaChanged = newAllowCinema !== allowCinemaRef.current;
     
-    if (cinemaChanged || (newAllowCinema && speedChanged)) {
+    // Comparar bandas actuales vs nuevas
+    const currentCinema = cinemaRef.current;
+    const bandsChanged = currentCinema ? 
+      JSON.stringify(currentCinema.bands) !== JSON.stringify(cinemaSource.bands) : true;
+    const transitionChanged = currentCinema ?
+      currentCinema.bandTransition_sec !== cinemaSource.bandTransition_sec : true;
+    
+    // Actualizar si cambió el estado, velocidad, bandas o tiempo de transición
+    if (cinemaChanged || (newAllowCinema && (speedChanged || bandsChanged || transitionChanged))) {
       console.log("[GeoScopeMap] Config changed - updating:", {
         cinemaEnabled,
         panSpeedDegPerSec,
         newAllowCinema,
         currentAllowCinema: allowCinemaRef.current,
         cinemaChanged,
-        speedChanged
+        speedChanged,
+        bandsChanged,
+        transitionChanged
       });
       allowCinemaRef.current = newAllowCinema;
       
@@ -2159,11 +2169,14 @@ export default function GeoScopeMap() {
         panSpeedRef.current = overrideSpeed;
         cinemaRef.current = cloneCinema(cinemaSource);
       }
-    } else if (newAllowCinema && speedChanged) {
-      // Si solo cambió la velocidad pero el modo sigue activo
-      console.log("[GeoScopeMap] Speed changed:", {
-        from: panSpeedRef.current,
-        to: panSpeedDegPerSec
+    } else if (newAllowCinema && (speedChanged || bandsChanged || transitionChanged)) {
+      // Si cambió la velocidad, bandas o tiempo de transición pero el modo sigue activo
+      console.log("[GeoScopeMap] Cinema config changed:", {
+        speedChanged,
+        bandsChanged,
+        transitionChanged,
+        fromSpeed: panSpeedRef.current,
+        toSpeed: panSpeedDegPerSec
       });
       const overrideSpeed = kioskRuntime.getSpeedOverride(
         panSpeedDegPerSec,
@@ -2171,6 +2184,14 @@ export default function GeoScopeMap() {
       );
       panSpeedRef.current = overrideSpeed;
       cinemaRef.current = cloneCinema(cinemaSource);
+      
+      // Si cambiaron las bandas o el tiempo de transición, reiniciar el índice de banda
+      if (bandsChanged || transitionChanged) {
+        bandIndexRef.current = 0;
+        bandElapsedRef.current = 0;
+        bandTransitionRef.current = null;
+        console.log("[GeoScopeMap] Bands or transition changed, resetting band state");
+      }
     }
   }, [config, reloadConfig]);
 

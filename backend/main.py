@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
@@ -146,17 +147,42 @@ def healthcheck() -> Dict[str, Any]:
     return _health_payload()
 
 
-@app.get("/api/config", response_model=AppConfig)
-def get_config() -> AppConfig:
+@app.get("/api/config")
+def get_config(request: Request) -> JSONResponse:
+    """Obtiene la configuración actual con headers anti-cache."""
     logger.info("Fetching configuration")
-    return config_manager.read()
+    config = config_manager.read()
+    # Agregar headers anti-cache para evitar que el navegador cachee la configuración
+    # Esto asegura que cuando se guarde desde otro PC, el frontend obtenga los cambios
+    from datetime import datetime
+    try:
+        config_mtime = config_manager.config_file.stat().st_mtime
+        config_etag = f'"{config_mtime}"'
+    except OSError:
+        # Si no se puede obtener el tiempo de modificación, usar timestamp actual
+        config_mtime = datetime.now().timestamp()
+        config_etag = f'"{config_mtime}"'
+    
+    # Verificar si el cliente tiene una versión en caché
+    if_none_match = request.headers.get("if-none-match")
+    if if_none_match == config_etag:
+        return Response(status_code=304)  # Not Modified
+    
+    response = JSONResponse(content=config.model_dump(mode="json", exclude_none=True))
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    response.headers["ETag"] = config_etag
+    response.headers["Last-Modified"] = datetime.fromtimestamp(config_mtime).strftime("%a, %d %b %Y %H:%M:%S GMT")
+    
+    return response
 
 
 MAX_CONFIG_PAYLOAD_BYTES = 64 * 1024
 
 
-@app.post("/api/config", response_model=AppConfig)
-async def save_config(request: Request) -> AppConfig:
+@app.post("/api/config")
+async def save_config(request: Request) -> JSONResponse:
     body = await request.body()
     if len(body) > MAX_CONFIG_PAYLOAD_BYTES:
         logger.warning("Configuration payload exceeds size limit")
@@ -182,7 +208,27 @@ async def save_config(request: Request) -> AppConfig:
         logger.exception("Failed to persist configuration: %s", exc)
         raise HTTPException(status_code=500, detail="Unable to persist configuration") from exc
     logger.info("Configuration updated")
-    return updated
+    
+    # Agregar headers anti-cache a la respuesta POST también
+    from datetime import datetime
+    
+    # Obtener el tiempo de modificación del archivo de configuración
+    try:
+        config_mtime = config_manager.config_file.stat().st_mtime
+        config_etag = f'"{config_mtime}"'
+    except OSError:
+        # Si no se puede obtener el tiempo de modificación, usar timestamp actual
+        config_mtime = datetime.now().timestamp()
+        config_etag = f'"{config_mtime}"'
+    
+    response = JSONResponse(content=updated.model_dump(mode="json", exclude_none=True))
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    response.headers["ETag"] = config_etag
+    response.headers["Last-Modified"] = datetime.fromtimestamp(config_mtime).strftime("%a, %d %b %Y %H:%M:%S GMT")
+    
+    return response
 
 
 @app.get("/api/config/schema")
