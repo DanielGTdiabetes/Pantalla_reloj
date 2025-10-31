@@ -32,6 +32,8 @@ from .layer_providers import (
     AISHubProvider,
     AISStreamProvider,
     AviationStackFlightProvider,
+    CustomFlightProvider,
+    CustomShipProvider,
     FlightProvider,
     GenericAISProvider,
     OpenSkyFlightProvider,
@@ -701,6 +703,29 @@ def _get_wifi_interface() -> str:
     return DEFAULT_WIFI_INTERFACE
 
 
+def _validate_wifi_interface(interface: str) -> Tuple[bool, Optional[str]]:  # type: ignore[valid-type]
+    """Valida que la interfaz WiFi existe y es accesible.
+    
+    Returns:
+        Tuple de (existe, mensaje_error)
+    """
+    stdout, stderr, code = _run_nmcli(["device", "status"], timeout=10)
+    if code != 0:
+        return False, f"Cannot check device status: {stderr or stdout or 'Unknown error'}"
+    
+    # Verificar que la interfaz existe en la lista
+    for line in stdout.strip().split("\n"):
+        if interface in line:
+            parts = line.split()
+            if len(parts) >= 2:
+                device_type = parts[1]
+                if device_type != "wifi":
+                    return False, f"Device {interface} is not a WiFi device (type: {device_type})"
+                return True, None
+    
+    return False, f"WiFi device '{interface}' not found. Please check /etc/pantalla-reloj/wifi.conf"
+
+
 def _run_nmcli(args: List[str], timeout: int = 30) -> tuple[str, str, int]:  # type: ignore[valid-type]
     """Run nmcli command and return stdout, stderr, returncode."""
     try:
@@ -749,30 +774,14 @@ def wifi_scan() -> Dict[str, Any]:
     interface = _get_wifi_interface()
     logger.info("Scanning WiFi networks on interface %s", interface)
     
-    # First check if WiFi device exists and is enabled
-    stdout, stderr, code = _run_nmcli(["device", "status"], timeout=10)
-    if code != 0:
-        logger.error("Failed to check device status: stdout=%r, stderr=%r", stdout, stderr)
+    # Validar que la interfaz WiFi existe y es accesible
+    interface_valid, error_msg = _validate_wifi_interface(interface)
+    if not interface_valid:
+        logger.error("WiFi interface validation failed: %s", error_msg)
         raise HTTPException(
-            status_code=500,
-            detail=f"Cannot check WiFi device status: {stderr or stdout or 'Unknown error'}",
+            status_code=400,
+            detail=error_msg or f"WiFi device '{interface}' not found or invalid"
         )
-    
-    # Check if WiFi interface exists
-    device_found = False
-    for line in stdout.strip().split("\n"):
-        if interface in line:
-            device_found = True
-            parts = line.split()
-            if len(parts) >= 2:
-                device_type = parts[1]
-                if device_type != "wifi":
-                    logger.warning("Device %s is not a WiFi device (type: %s)", interface, device_type)
-            break
-    
-    if not device_found:
-        logger.warning("WiFi device %s not found in device list", interface)
-        # Continue anyway, nmcli will report the error
     
     # Enable WiFi radio if needed (this might require root)
     _run_nmcli(["radio", "wifi", "on"], timeout=5)  # Ignore errors, might not have permission
@@ -965,8 +974,24 @@ def wifi_networks() -> Dict[str, Any]:
 @app.post("/api/wifi/connect")
 async def wifi_connect(request: WiFiConnectRequest) -> Dict[str, Any]:
     """Connect to a WiFi network."""
+    # Validar SSID
+    if not request.ssid or not request.ssid.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="SSID cannot be empty"
+        )
+    
     interface = _get_wifi_interface()
     logger.info("Connecting to WiFi network %s on interface %s", request.ssid, interface)
+    
+    # Validar que la interfaz WiFi existe
+    interface_valid, error_msg = _validate_wifi_interface(interface)
+    if not interface_valid:
+        logger.error("WiFi interface validation failed: %s", error_msg)
+        raise HTTPException(
+            status_code=400,
+            detail=error_msg or f"WiFi device '{interface}' not found or invalid"
+        )
     
     # Check if connection already exists
     stdout, stderr, code = _run_nmcli(
@@ -999,9 +1024,18 @@ async def wifi_connect(request: WiFiConnectRequest) -> Dict[str, Any]:
     if code != 0:
         error_msg = stderr or stdout or "Unknown error"
         logger.error("Failed to connect to WiFi: %s", error_msg)
+        
+        # Mejorar mensaje de error según el tipo de fallo
+        if "permission denied" in error_msg.lower() or "permission" in error_msg.lower():
+            detail_msg = f"Permission denied. The backend may need elevated privileges to connect to WiFi: {error_msg}"
+        elif "no secrets" in error_msg.lower() or "authentication" in error_msg.lower():
+            detail_msg = f"Authentication failed. Please check the password: {error_msg}"
+        else:
+            detail_msg = f"Failed to connect to WiFi network: {error_msg}"
+        
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to connect to WiFi network: {error_msg}",
+            detail=detail_msg,
         )
     
     logger.info("Successfully connected to %s", request.ssid)
@@ -1018,6 +1052,21 @@ def wifi_disconnect() -> Dict[str, Any]:
     interface = _get_wifi_interface()
     logger.info("Disconnecting WiFi on interface %s", interface)
     
+    # Validar que la interfaz existe (pero no requerir que sea WiFi para desconectar)
+    stdout, stderr, code = _run_nmcli(["device", "status"], timeout=10)
+    if code != 0:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Cannot check device status: {stderr or stdout or 'Unknown error'}"
+        )
+    
+    device_found = any(interface in line for line in stdout.strip().split("\n"))
+    if not device_found:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Device '{interface}' not found"
+        )
+    
     stdout, stderr, code = _run_nmcli(
         ["device", "disconnect", interface], timeout=10
     )
@@ -1025,9 +1074,16 @@ def wifi_disconnect() -> Dict[str, Any]:
     if code != 0:
         error_msg = stderr or stdout or "Unknown error"
         logger.error("Failed to disconnect WiFi: %s", error_msg)
+        
+        # Mejorar mensaje de error
+        if "permission denied" in error_msg.lower():
+            detail_msg = f"Permission denied. The backend may need elevated privileges: {error_msg}"
+        else:
+            detail_msg = f"Failed to disconnect WiFi: {error_msg}"
+        
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to disconnect WiFi: {error_msg}",
+            detail=detail_msg,
         )
     
     logger.info("Successfully disconnected WiFi")
@@ -1056,6 +1112,8 @@ def _get_flights_provider(config: AppConfig) -> FlightProvider:
             return cached_provider
         elif flights_config.provider == "aviationstack" and isinstance(cached_provider, AviationStackFlightProvider):
             return cached_provider
+        elif flights_config.provider == "custom" and isinstance(cached_provider, CustomFlightProvider):
+            return cached_provider
     
     # Crear nuevo proveedor según configuración
     if flights_config.provider == "opensky":
@@ -1067,6 +1125,11 @@ def _get_flights_provider(config: AppConfig) -> FlightProvider:
         provider = AviationStackFlightProvider(
             base_url=flights_config.aviationstack.base_url,
             api_key=flights_config.aviationstack.api_key
+        )
+    elif flights_config.provider == "custom":
+        provider = CustomFlightProvider(
+            api_url=flights_config.custom.api_url,
+            api_key=flights_config.custom.api_key
         )
     else:
         # Fallback a OpenSky si no se reconoce
@@ -1092,6 +1155,8 @@ def _get_ships_provider(config: AppConfig) -> ShipProvider:
             return cached_provider
         elif ships_config.provider == "aishub" and isinstance(cached_provider, AISHubProvider):
             return cached_provider
+        elif ships_config.provider == "custom" and isinstance(cached_provider, CustomShipProvider):
+            return cached_provider
     
     # Crear nuevo proveedor según configuración
     if ships_config.provider == "ais_generic":
@@ -1109,6 +1174,11 @@ def _get_ships_provider(config: AppConfig) -> ShipProvider:
         provider = AISHubProvider(
             base_url=ships_config.aishub.base_url,
             api_key=ships_config.aishub.api_key
+        )
+    elif ships_config.provider == "custom":
+        provider = CustomShipProvider(
+            api_url=ships_config.custom.api_url,
+            api_key=ships_config.custom.api_key
         )
     else:
         # Fallback a GenericAIS si no se reconoce

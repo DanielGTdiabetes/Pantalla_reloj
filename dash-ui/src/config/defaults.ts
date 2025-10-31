@@ -4,6 +4,8 @@ import type {
   AppConfig,
   BlitzortungConfig,
   CalendarConfig,
+  CustomFlightConfig,
+  CustomShipConfig,
   DisplayConfig,
   EphemeridesConfig,
   FlightsLayerConfig,
@@ -369,6 +371,10 @@ export const DEFAULT_CONFIG: AppConfig = {
         base_url: "http://api.aviationstack.com/v1",
         api_key: null,
       },
+      custom: {
+        api_url: null,
+        api_key: null,
+      },
     },
     ships: {
       enabled: true,
@@ -401,6 +407,10 @@ export const DEFAULT_CONFIG: AppConfig = {
       },
       aishub: {
         base_url: "https://www.aishub.net/api",
+        api_key: null,
+      },
+      custom: {
+        api_url: null,
         api_key: null,
       },
     },
@@ -541,6 +551,30 @@ const mergeEphemerides = (candidate: unknown): EphemeridesConfig => {
   };
 };
 
+const mergeCustomFlight = (candidate: unknown): CustomFlightConfig => {
+  const fallback: CustomFlightConfig = {
+    api_url: null,
+    api_key: null,
+  };
+  const source = (candidate as Partial<CustomFlightConfig>) ?? {};
+  return {
+    api_url: sanitizeNullableString(source.api_url, fallback.api_url),
+    api_key: sanitizeNullableString(source.api_key, fallback.api_key),
+  };
+};
+
+const mergeCustomShip = (candidate: unknown): CustomShipConfig => {
+  const fallback: CustomShipConfig = {
+    api_url: null,
+    api_key: null,
+  };
+  const source = (candidate as Partial<CustomShipConfig>) ?? {};
+  return {
+    api_url: sanitizeNullableString(source.api_url, fallback.api_url),
+    api_key: sanitizeNullableString(source.api_key, fallback.api_key),
+  };
+};
+
 const mergeFlightsLayer = (candidate: unknown): FlightsLayerConfig => {
   const fallback = DEFAULT_CONFIG.layers.flights;
   const source = (candidate as Partial<FlightsLayerConfig>) ?? {};
@@ -551,9 +585,12 @@ const mergeFlightsLayer = (candidate: unknown): FlightsLayerConfig => {
   const openskyFallback = fallback.opensky ?? { username: null, password: null };
   const aviationstackSource = source.aviationstack ?? {};
   const aviationstackFallback = fallback.aviationstack ?? { base_url: "http://api.aviationstack.com/v1", api_key: null };
+  const customSource = source.custom ?? {};
+  const customFallback = fallback.custom ?? { api_url: null, api_key: null };
   
-  const provider = (source.provider === "aviationstack" || source.provider === "custom")
-    ? source.provider
+  const allowedProviders: Array<"opensky" | "aviationstack" | "custom"> = ["opensky", "aviationstack", "custom"];
+  const provider = allowedProviders.includes(source.provider as any)
+    ? (source.provider as "opensky" | "aviationstack" | "custom")
     : "opensky";
   
   return {
@@ -624,6 +661,7 @@ const mergeFlightsLayer = (candidate: unknown): FlightsLayerConfig => {
       base_url: sanitizeNullableString(aviationstackSource.base_url, aviationstackFallback.base_url),
       api_key: sanitizeNullableString(aviationstackSource.api_key, aviationstackFallback.api_key),
     },
+    custom: mergeCustomFlight(customSource ?? customFallback),
   };
 };
 
@@ -639,9 +677,12 @@ const mergeShipsLayer = (candidate: unknown): ShipsLayerConfig => {
   const aisstreamFallback = fallback.aisstream ?? { ws_url: null, api_key: null };
   const aishubSource = source.aishub ?? {};
   const aishubFallback = fallback.aishub ?? { base_url: "https://www.aishub.net/api", api_key: null };
+  const customSource = source.custom ?? {};
+  const customFallback = fallback.custom ?? { api_url: null, api_key: null };
   
-  const provider = (source.provider === "aisstream" || source.provider === "aishub" || source.provider === "custom")
-    ? source.provider
+  const allowedProviders: Array<"ais_generic" | "aisstream" | "aishub" | "custom"> = ["ais_generic", "aisstream", "aishub", "custom"];
+  const provider = allowedProviders.includes(source.provider as any)
+    ? (source.provider as "ais_generic" | "aisstream" | "aishub" | "custom")
     : "ais_generic";
   
   return {
@@ -721,6 +762,7 @@ const mergeShipsLayer = (candidate: unknown): ShipsLayerConfig => {
       base_url: sanitizeNullableString(aishubSource.base_url, aishubFallback.base_url),
       api_key: sanitizeNullableString(aishubSource.api_key, aishubFallback.api_key),
     },
+    custom: mergeCustomShip(source.custom ?? fallback.custom),
   };
 };
 

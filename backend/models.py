@@ -282,6 +282,14 @@ class GenericAISConfig(BaseModel):
     api_key: Optional[str] = Field(default=None, max_length=256)
 
 
+class CustomFlightConfig(BaseModel):
+    """Configuración para proveedor custom de vuelos."""
+    model_config = ConfigDict(extra="ignore")
+
+    api_url: Optional[str] = Field(default=None, max_length=512)
+    api_key: Optional[str] = Field(default=None, max_length=256)
+
+
 class FlightsLayer(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -298,6 +306,15 @@ class FlightsLayer(BaseModel):
     cine_focus: CineFocus = Field(default_factory=CineFocus)
     opensky: OpenSkyAuth = Field(default_factory=OpenSkyAuth)
     aviationstack: AviationStackConfig = Field(default_factory=AviationStackConfig)
+    custom: CustomFlightConfig = Field(default_factory=CustomFlightConfig)
+
+
+class CustomShipConfig(BaseModel):
+    """Configuración para proveedor custom de barcos."""
+    model_config = ConfigDict(extra="ignore")
+
+    api_url: Optional[str] = Field(default=None, max_length=512)
+    api_key: Optional[str] = Field(default=None, max_length=256)
 
 
 class ShipsLayer(BaseModel):
@@ -318,6 +335,7 @@ class ShipsLayer(BaseModel):
     ais_generic: GenericAISConfig = Field(default_factory=GenericAISConfig)
     aisstream: AISStreamConfig = Field(default_factory=AISStreamConfig)
     aishub: AISHubConfig = Field(default_factory=AISHubConfig)
+    custom: CustomShipConfig = Field(default_factory=CustomShipConfig)
 
 
 class GlobalSatelliteLayer(BaseModel):

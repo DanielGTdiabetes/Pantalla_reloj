@@ -146,6 +146,19 @@ main() {
   local chromium_bin
   if ! chromium_bin="$(find_chromium)"; then
     log "ERROR: no se encontró un binario de Chromium disponible"
+    log "ERROR: Instala Chromium o configura CHROMIUM_BIN_OVERRIDE"
+    exit 1
+  fi
+  
+  # Validar que el binario es realmente ejecutable
+  if [[ ! -x "$chromium_bin" ]]; then
+    log "ERROR: Chromium binario encontrado pero no es ejecutable: $chromium_bin"
+    exit 1
+  fi
+  
+  # Verificar que realmente es un binario válido
+  if ! file "$chromium_bin" | grep -qE '(ELF|executable|binary)'; then
+    log "ERROR: $chromium_bin no parece ser un binario ejecutable válido"
     exit 1
   fi
 

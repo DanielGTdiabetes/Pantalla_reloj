@@ -113,6 +113,10 @@
   },
   "layers": {
     "flights": {
+        "custom": {
+            "api_url": null,
+            "api_key": null
+        },
       "enabled": true,
       "opacity": 0.9,
       "provider": "opensky",
@@ -172,6 +176,10 @@
       },
       "aishub": {
         "base_url": "https://www.aishub.net/api",
+        "api_key": null
+      },
+      "custom": {
+        "api_url": null,
         "api_key": null
       }
     },

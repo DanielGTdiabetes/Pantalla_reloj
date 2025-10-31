@@ -264,6 +264,27 @@ if [[ -f "$BACKEND_DEST/requirements.txt" ]]; then
   "$BACKEND_DEST/.venv/bin/pip" install -r "$BACKEND_DEST/requirements.txt"
 fi
 
+# Validar dependencias críticas después de la instalación
+log_info "Validating backend dependencies"
+PYTHON_BIN="$BACKEND_DEST/.venv/bin/python"
+MISSING_DEPS=()
+if ! "$PYTHON_BIN" -c "import fastapi" 2>/dev/null; then
+  MISSING_DEPS+=("fastapi")
+fi
+if ! "$PYTHON_BIN" -c "import uvicorn" 2>/dev/null; then
+  MISSING_DEPS+=("uvicorn")
+fi
+if ! "$PYTHON_BIN" -c "import shapely" 2>/dev/null; then
+  MISSING_DEPS+=("shapely")
+  log_warn "shapely no está instalado - modo 'both' de cine_focus usará fallback"
+fi
+if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
+  log_error "Dependencias faltantes: ${MISSING_DEPS[*]}"
+  log_error "El backend puede fallar. Reintenta la instalación."
+  exit 1
+fi
+SUMMARY+=("[install] dependencias Python validadas")
+
 CONFIG_FILE="$STATE_DIR/config.json"
 if [[ ! -f "$CONFIG_FILE" ]]; then
   install -o "$USER_NAME" -g "$USER_NAME" -m 0644 "$REPO_ROOT/backend/default_config.json" "$CONFIG_FILE"
@@ -417,8 +438,8 @@ configure_nginx() {
   local vhost="$sa/pantalla-reloj.conf"
 
   if ! command -v nginx >/dev/null 2>&1; then
-    log_warn "nginx no está instalado; se omite la configuración del servidor web"
-    return
+    log_error "nginx no está instalado pero es requerido para el frontend"
+    exit 1
   fi
 
   mkdir -p "$sa" "$se"
@@ -444,12 +465,18 @@ configure_nginx() {
 
   systemctl enable --now nginx >/dev/null 2>&1 || true
 
-  if ! (nginx -t && systemctl reload nginx); then
-    log_error "nginx -t && systemctl reload nginx falló"
+  if ! nginx -t 2>/dev/null; then
+    log_error "nginx -t falló - la configuración de Nginx tiene errores"
+    exit 1
+  fi
+
+  if ! systemctl reload nginx 2>/dev/null; then
+    log_error "systemctl reload nginx falló - Nginx no se pudo recargar"
     exit 1
   fi
 
   log_info "Nginx recargado correctamente"
+  SUMMARY+=("[install] Nginx configurado y validado")
 }
 
 configure_nginx

@@ -8,29 +8,62 @@ APP_ROOT="/opt/pantalla-reloj"
 BACKEND_DIR="${APP_ROOT}/backend"
 PY="$BACKEND_DIR/.venv/bin/python"
 
+# Validar que el directorio backend existe
 if [[ ! -d "$BACKEND_DIR" ]]; then
   echo "[backend] ERROR: BACKEND_DIR no existe: $BACKEND_DIR" >&2
   exit 2
 fi
 
+# Validar que el venv existe y es ejecutable
 if [[ ! -x "$PY" ]]; then
-  echo "[backend] ERROR: venv no existe: $PY" >&2
+  echo "[backend] ERROR: venv no existe o no es ejecutable: $PY" >&2
   exit 2
 fi
 
+# Validar dependencias críticas
+echo "[backend] Validando dependencias críticas..."
 cd "$APP_ROOT"
 export PYTHONPATH="$APP_ROOT"
 
+MISSING_DEPS=()
+"$PY" -c "import fastapi" 2>/dev/null || MISSING_DEPS+=("fastapi")
+"$PY" -c "import uvicorn" 2>/dev/null || MISSING_DEPS+=("uvicorn")
+"$PY" -c "import pydantic" 2>/dev/null || MISSING_DEPS+=("pydantic")
+
+if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
+  echo "[backend] ERROR: Dependencias faltantes: ${MISSING_DEPS[*]}" >&2
+  echo "[backend] ERROR: Reinstala las dependencias: $BACKEND_DIR/.venv/bin/pip install -r $BACKEND_DIR/requirements.txt" >&2
+  exit 3
+fi
+
+echo "[backend] Dependencias críticas OK"
+
+# Validar importación del módulo principal
 "$PY" - <<'PYCODE'
-import importlib, sys
+import importlib
+import sys
+
 try:
     m = importlib.import_module("backend.main")
     print("[backend] import OK:", m.__name__)
+except ImportError as e:
+    print("[backend] ERROR: Import falló:", repr(e), file=sys.stderr)
+    print("[backend] ERROR: Revisa que todos los módulos estén instalados", file=sys.stderr)
+    sys.exit(4)
 except Exception as e:
-    print("[backend] import FAIL:", repr(e))
-    sys.exit(3)
+    print("[backend] ERROR: Error inesperado al importar:", repr(e), file=sys.stderr)
+    import traceback
+    traceback.print_exc(file=sys.stderr)
+    sys.exit(5)
 PYCODE
 
+IMPORT_STATUS=$?
+if [[ $IMPORT_STATUS -ne 0 ]]; then
+  echo "[backend] ERROR: Fallo en importación, código: $IMPORT_STATUS" >&2
+  exit $IMPORT_STATUS
+fi
+
+echo "[backend] Iniciando servidor uvicorn..."
 exec "$PY" -m uvicorn backend.main:app \
   --host 127.0.0.1 --port 8081 \
   --proxy-headers --timeout-keep-alive 30

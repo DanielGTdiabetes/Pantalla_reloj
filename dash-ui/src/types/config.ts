@@ -178,6 +178,16 @@ export type GenericAISConfig = {
   api_key?: string | null;
 };
 
+export type CustomFlightConfig = {
+  api_url?: string | null;
+  api_key?: string | null;
+};
+
+export type CustomShipConfig = {
+  api_url?: string | null;
+  api_key?: string | null;
+};
+
 export type FlightsLayerConfig = {
   enabled: boolean;
   opacity: number;
@@ -192,6 +202,7 @@ export type FlightsLayerConfig = {
   cine_focus: CineFocusConfig;
   opensky?: OpenSkyAuthConfig;
   aviationstack?: AviationStackConfig;
+  custom?: CustomFlightConfig;
 };
 
 export type ShipsLayerConfig = {
@@ -210,6 +221,7 @@ export type ShipsLayerConfig = {
   ais_generic?: GenericAISConfig;
   aisstream?: AISStreamConfig;
   aishub?: AISHubConfig;
+  custom?: CustomShipConfig;
 };
 
 export type GlobalSatelliteLayerConfig = {

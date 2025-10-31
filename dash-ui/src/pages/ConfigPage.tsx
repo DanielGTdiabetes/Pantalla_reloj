@@ -2253,6 +2253,71 @@ const ConfigPage: React.FC = () => {
                     </>
                   )}
 
+                  {form.layers.flights.provider === "custom" && (
+                    <div className="config-grid">
+                      {supports("layers.flights.custom.api_url") && (
+                        <div className="config-field">
+                          <label htmlFor="flights_custom_url">URL de API</label>
+                          <input
+                            id="flights_custom_url"
+                            type="url"
+                            value={form.layers.flights.custom?.api_url ?? ""}
+                            disabled={disableInputs || !form.layers.flights.enabled}
+                            onChange={(event) => {
+                              setForm((prev) => ({
+                                ...prev,
+                                layers: {
+                                  ...prev.layers,
+                                  flights: {
+                                    ...prev.layers.flights,
+                                    custom: {
+                                      ...prev.layers.flights.custom,
+                                      api_url: event.target.value || null,
+                                    },
+                                  },
+                                },
+                              }));
+                              resetErrorsFor("layers.flights.custom.api_url");
+                            }}
+                            placeholder="https://api.example.com/flights"
+                          />
+                          {renderHelp("URL del endpoint que devuelve GeoJSON FeatureCollection")}
+                          {renderFieldError("layers.flights.custom.api_url")}
+                        </div>
+                      )}
+                      {supports("layers.flights.custom.api_key") && (
+                        <div className="config-field">
+                          <label htmlFor="flights_custom_key">API Key (opcional)</label>
+                          <input
+                            id="flights_custom_key"
+                            type="password"
+                            value={form.layers.flights.custom?.api_key ?? ""}
+                            disabled={disableInputs || !form.layers.flights.enabled}
+                            onChange={(event) => {
+                              setForm((prev) => ({
+                                ...prev,
+                                layers: {
+                                  ...prev.layers,
+                                  flights: {
+                                    ...prev.layers.flights,
+                                    custom: {
+                                      ...prev.layers.flights.custom,
+                                      api_key: event.target.value || null,
+                                    },
+                                  },
+                                },
+                              }));
+                              resetErrorsFor("layers.flights.custom.api_key");
+                            }}
+                            placeholder="API Key para autenticación"
+                          />
+                          {renderHelp("API Key opcional para autenticación Bearer")}
+                          {renderFieldError("layers.flights.custom.api_key")}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {form.layers.flights.provider === "aviationstack" && (
                     <>
                       <div className="config-field">
@@ -2589,6 +2654,71 @@ const ConfigPage: React.FC = () => {
                         {renderHelp("API key de AISStream (opcional)")}
                       </div>
                     </>
+                  )}
+
+                  {form.layers.ships.provider === "custom" && (
+                    <div className="config-grid">
+                      {supports("layers.ships.custom.api_url") && (
+                        <div className="config-field">
+                          <label htmlFor="ships_custom_url">URL de API</label>
+                          <input
+                            id="ships_custom_url"
+                            type="url"
+                            value={form.layers.ships.custom?.api_url ?? ""}
+                            disabled={disableInputs || !form.layers.ships.enabled}
+                            onChange={(event) => {
+                              setForm((prev) => ({
+                                ...prev,
+                                layers: {
+                                  ...prev.layers,
+                                  ships: {
+                                    ...prev.layers.ships,
+                                    custom: {
+                                      ...prev.layers.ships.custom,
+                                      api_url: event.target.value || null,
+                                    },
+                                  },
+                                },
+                              }));
+                              resetErrorsFor("layers.ships.custom.api_url");
+                            }}
+                            placeholder="https://api.example.com/ships"
+                          />
+                          {renderHelp("URL del endpoint que devuelve GeoJSON FeatureCollection")}
+                          {renderFieldError("layers.ships.custom.api_url")}
+                        </div>
+                      )}
+                      {supports("layers.ships.custom.api_key") && (
+                        <div className="config-field">
+                          <label htmlFor="ships_custom_key">API Key (opcional)</label>
+                          <input
+                            id="ships_custom_key"
+                            type="password"
+                            value={form.layers.ships.custom?.api_key ?? ""}
+                            disabled={disableInputs || !form.layers.ships.enabled}
+                            onChange={(event) => {
+                              setForm((prev) => ({
+                                ...prev,
+                                layers: {
+                                  ...prev.layers,
+                                  ships: {
+                                    ...prev.layers.ships,
+                                    custom: {
+                                      ...prev.layers.ships.custom,
+                                      api_key: event.target.value || null,
+                                    },
+                                  },
+                                },
+                              }));
+                              resetErrorsFor("layers.ships.custom.api_key");
+                            }}
+                            placeholder="API Key para autenticación"
+                          />
+                          {renderHelp("API Key opcional para autenticación Bearer")}
+                          {renderFieldError("layers.ships.custom.api_key")}
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   {form.layers.ships.provider === "aishub" && (

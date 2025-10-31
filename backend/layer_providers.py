@@ -507,3 +507,105 @@ class AISHubProvider(ShipProvider):
             logger.error("AISHubProvider fetch failed: %s", exc)
             return {"type": "FeatureCollection", "features": []}
 
+
+class CustomFlightProvider(FlightProvider):
+    """Proveedor custom de datos de vuelos (acepta URL externa)."""
+    
+    def __init__(self, api_url: Optional[str] = None, api_key: Optional[str] = None):
+        self.api_url = api_url
+        self.api_key = api_key
+        
+    def fetch(
+        self,
+        bounds: Optional[Tuple[float, float, float, float]] = None,
+        since: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """Obtiene vuelos de una URL custom."""
+        if not self.api_url:
+            logger.warning("CustomFlightProvider: api_url not configured")
+            return {"type": "FeatureCollection", "features": []}
+        
+        try:
+            headers = {}
+            if self.api_key:
+                headers["Authorization"] = f"Bearer {self.api_key}"
+            
+            params = {}
+            if bounds:
+                # Pasar bbox como parámetros
+                min_lon, min_lat, max_lon, max_lat = bounds
+                params["bbox"] = f"{min_lon},{min_lat},{max_lon},{max_lat}"
+                # También pasar como parámetros individuales para compatibilidad
+                params["min_lon"] = min_lon
+                params["min_lat"] = min_lat
+                params["max_lon"] = max_lon
+                params["max_lat"] = max_lat
+            
+            response = requests.get(self.api_url, headers=headers, params=params, timeout=15)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            # Esperar GeoJSON FeatureCollection
+            if data.get("type") == "FeatureCollection":
+                return data
+            
+            # Si viene otro formato, intentar convertir (por ahora, devolver vacío)
+            logger.warning("CustomFlightProvider: Response is not GeoJSON FeatureCollection")
+            return {"type": "FeatureCollection", "features": []}
+            
+        except Exception as exc:
+            logger.error("CustomFlightProvider fetch failed: %s", exc)
+            return {"type": "FeatureCollection", "features": []}
+
+
+class CustomShipProvider(ShipProvider):
+    """Proveedor custom de datos de barcos (acepta URL externa)."""
+    
+    def __init__(self, api_url: Optional[str] = None, api_key: Optional[str] = None):
+        self.api_url = api_url
+        self.api_key = api_key
+        
+    def fetch(
+        self,
+        bounds: Optional[Tuple[float, float, float, float]] = None,
+        since: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """Obtiene barcos de una URL custom."""
+        if not self.api_url:
+            logger.warning("CustomShipProvider: api_url not configured")
+            return {"type": "FeatureCollection", "features": []}
+        
+        try:
+            headers = {}
+            if self.api_key:
+                headers["Authorization"] = f"Bearer {self.api_key}"
+            
+            params = {}
+            if bounds:
+                # Pasar bbox como parámetros
+                min_lon, min_lat, max_lon, max_lat = bounds
+                params["bbox"] = f"{min_lon},{min_lat},{max_lon},{max_lat}"
+                # También pasar como parámetros individuales para compatibilidad
+                params["min_lon"] = min_lon
+                params["min_lat"] = min_lat
+                params["max_lon"] = max_lon
+                params["max_lat"] = max_lat
+            
+            response = requests.get(self.api_url, headers=headers, params=params, timeout=15)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            # Esperar GeoJSON FeatureCollection
+            if data.get("type") == "FeatureCollection":
+                return data
+            
+            # Si viene otro formato, intentar convertir (por ahora, devolver vacío)
+            logger.warning("CustomShipProvider: Response is not GeoJSON FeatureCollection")
+            return {"type": "FeatureCollection", "features": []}
+            
+        except Exception as exc:
+            logger.error("CustomShipProvider fetch failed: %s", exc)
+            return {"type": "FeatureCollection", "features": []}
+
