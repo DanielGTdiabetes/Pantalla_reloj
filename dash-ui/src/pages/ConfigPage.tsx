@@ -8,6 +8,12 @@ import {
   getHealth,
   getSchema,
   saveConfig,
+  wifiConnect,
+  wifiDisconnect,
+  wifiScan,
+  wifiStatus,
+  type WiFiNetwork,
+  type WiFiStatusResponse,
 } from "../lib/api";
 import type { AppConfig, MapCinemaBand } from "../types/config";
 
@@ -324,6 +330,14 @@ const ConfigPage: React.FC = () => {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [newPanel, setNewPanel] = useState("");
   const [showMaptilerKey, setShowMaptilerKey] = useState(false);
+  
+  // WiFi state
+  const [wifiNetworks, setWifiNetworks] = useState<WiFiNetwork[]>([]);
+  const [wifiScanning, setWifiScanning] = useState(false);
+  const [wifiStatusData, setWifiStatusData] = useState<WiFiStatusResponse | null>(null);
+  const [wifiConnecting, setWifiConnecting] = useState(false);
+  const [wifiConnectPassword, setWifiConnectPassword] = useState<Record<string, string>>({});
+  const [wifiConnectError, setWifiConnectError] = useState<string | null>(null);
 
   const schemaInspector = useMemo(() => createSchemaInspector(schema ?? undefined), [schema]);
   const supports = useCallback((path: string) => schemaInspector.has(path), [schemaInspector]);
@@ -363,6 +377,90 @@ const ConfigPage: React.FC = () => {
     setForm(withConfigDefaults(cfg ?? undefined));
     setShowMaptilerKey(false);
   }, []);
+
+  // WiFi functions
+  const loadWifiStatus = useCallback(async () => {
+    try {
+      const status = await wifiStatus();
+      setWifiStatusData(status);
+    } catch (error) {
+      console.error("Failed to load WiFi status:", error);
+    }
+  }, []);
+
+  const handleWifiScan = useCallback(async () => {
+    setWifiScanning(true);
+    setWifiConnectError(null);
+    try {
+      const result = await wifiScan();
+      setWifiNetworks(result.networks);
+      await loadWifiStatus();
+    } catch (error) {
+      console.error("Failed to scan WiFi:", error);
+      setWifiConnectError(
+        error instanceof ApiError
+          ? `Error al buscar redes WiFi: ${error.status}`
+          : "Error al buscar redes WiFi"
+      );
+    } finally {
+      setWifiScanning(false);
+    }
+  }, [loadWifiStatus]);
+
+  const handleWifiConnect = useCallback(
+    async (ssid: string) => {
+      setWifiConnecting(true);
+      setWifiConnectError(null);
+      try {
+        const password = wifiConnectPassword[ssid] || undefined;
+        await wifiConnect({ ssid, password });
+        setBanner({ kind: "success", text: `Conectado a ${ssid}` });
+        await loadWifiStatus();
+        // Clear password from state after connection
+        setWifiConnectPassword((prev) => {
+          const next = { ...prev };
+          delete next[ssid];
+          return next;
+        });
+      } catch (error) {
+        console.error("Failed to connect to WiFi:", error);
+        const errorMsg =
+          error instanceof ApiError
+            ? `Error al conectar: ${(error.body as { detail?: string })?.detail || error.status}`
+            : "Error al conectar a la red WiFi";
+        setWifiConnectError(errorMsg);
+        setBanner({ kind: "error", text: errorMsg });
+      } finally {
+        setWifiConnecting(false);
+      }
+    },
+    [wifiConnectPassword, loadWifiStatus]
+  );
+
+  const handleWifiDisconnect = useCallback(async () => {
+    setWifiConnecting(true);
+    setWifiConnectError(null);
+    try {
+      await wifiDisconnect();
+      setBanner({ kind: "success", text: "Desconectado de WiFi" });
+      await loadWifiStatus();
+    } catch (error) {
+      console.error("Failed to disconnect WiFi:", error);
+      const errorMsg =
+        error instanceof ApiError
+          ? `Error al desconectar: ${(error.body as { detail?: string })?.detail || error.status}`
+          : "Error al desconectar de la red WiFi";
+      setWifiConnectError(errorMsg);
+      setBanner({ kind: "error", text: errorMsg });
+    } finally {
+      setWifiConnecting(false);
+    }
+  }, [loadWifiStatus]);
+
+  // Load WiFi status on mount
+  useEffect(() => {
+    void loadWifiStatus();
+  }, [loadWifiStatus]);
 
   const initialize = useCallback(async () => {
     setStatus("loading");
@@ -1255,6 +1353,135 @@ const ConfigPage: React.FC = () => {
             </div>
           </div>
         )}
+
+        <div className="config-card">
+          <div>
+            <h2>WiFi</h2>
+            <p>Gestiona las conexiones de red inalámbrica.</p>
+          </div>
+          <div className="config-grid">
+            <div className="config-field">
+              <div className="config-field-row">
+                <label>Estado de conexión</label>
+                {wifiStatusData && (
+                  <div className="config-field-info">
+                    {wifiStatusData.connected ? (
+                      <>
+                        <span className="config-field-status status-connected">
+                          Conectado a {wifiStatusData.ssid || "red desconocida"}
+                        </span>
+                        {wifiStatusData.ip_address && (
+                          <span className="config-field-detail">IP: {wifiStatusData.ip_address}</span>
+                        )}
+                        {wifiStatusData.signal !== null && (
+                          <span className="config-field-detail">
+                            Señal: {wifiStatusData.signal}%
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="config-field-status status-disconnected">Desconectado</span>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="config-field-actions">
+                <button
+                  type="button"
+                  className="config-button"
+                  disabled={wifiConnecting || disableInputs}
+                  onClick={() => void loadWifiStatus()}
+                >
+                  Actualizar estado
+                </button>
+                {wifiStatusData?.connected && (
+                  <button
+                    type="button"
+                    className="config-button"
+                    disabled={wifiConnecting || disableInputs}
+                    onClick={() => void handleWifiDisconnect()}
+                  >
+                    Desconectar
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="config-field">
+              <div className="config-field-row">
+                <label>Redes disponibles</label>
+                <button
+                  type="button"
+                  className="config-button"
+                  disabled={wifiScanning || wifiConnecting || disableInputs}
+                  onClick={() => void handleWifiScan()}
+                >
+                  {wifiScanning ? "Buscando…" : "Buscar redes"}
+                </button>
+              </div>
+              {wifiConnectError && (
+                <div className="config-field-error">{wifiConnectError}</div>
+              )}
+              {wifiNetworks.length > 0 ? (
+                <div className="config-field-list">
+                  {wifiNetworks.map((network) => (
+                    <div key={network.ssid} className="config-field-item">
+                      <div className="config-field-item-info">
+                        <span className="config-field-item-name">{network.ssid}</span>
+                        <span className="config-field-item-detail">
+                          {network.security !== "none" && network.security !== "--"
+                            ? `🔒 ${network.security}`
+                            : "🔓 Abierta"}
+                          {" · "}
+                          Señal: {network.signal}%
+                        </span>
+                      </div>
+                      {network.security !== "none" && network.security !== "--" && (
+                        <div className="config-field-item-password">
+                          <input
+                            type="password"
+                            placeholder="Contraseña"
+                            value={wifiConnectPassword[network.ssid] || ""}
+                            onChange={(e) => {
+                              setWifiConnectPassword((prev) => ({
+                                ...prev,
+                                [network.ssid]: e.target.value,
+                              }));
+                            }}
+                            disabled={wifiConnecting || disableInputs}
+                            onKeyPress={(e) => {
+                              if (e.key === "Enter") {
+                                void handleWifiConnect(network.ssid);
+                              }
+                            }}
+                          />
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        className="config-button small"
+                        disabled={
+                          wifiConnecting ||
+                          disableInputs ||
+                          (network.security !== "none" &&
+                            network.security !== "--" &&
+                            !wifiConnectPassword[network.ssid])
+                        }
+                        onClick={() => void handleWifiConnect(network.ssid)}
+                      >
+                        {wifiConnecting ? "Conectando…" : "Conectar"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : wifiScanning ? null : (
+                <div className="config-field-hint">
+                  Haz clic en "Buscar redes" para ver las redes WiFi disponibles.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
 
         <div className="config-actions">
           <button type="submit" className="config-button primary" disabled={disableInputs}>

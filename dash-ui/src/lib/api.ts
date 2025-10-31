@@ -74,3 +74,62 @@ export async function saveConfig(data: AppConfig) {
 export async function getSchema() {
   return apiGet<Record<string, unknown> | undefined>("/api/config/schema");
 }
+
+// WiFi API
+export type WiFiNetwork = {
+  ssid: string;
+  signal: number;
+  security: string;
+  mode: string;
+};
+
+export type WiFiScanResponse = {
+  interface: string;
+  networks: WiFiNetwork[];
+  count: number;
+};
+
+export type WiFiStatusResponse = {
+  interface: string;
+  connected: boolean;
+  ssid: string | null;
+  ip_address: string | null;
+  signal: number | null;
+  error?: string;
+};
+
+export type WiFiConnectRequest = {
+  ssid: string;
+  password?: string;
+};
+
+export type WiFiConnectResponse = {
+  success: boolean;
+  message: string;
+  ssid: string;
+};
+
+export type WiFiNetworksResponse = {
+  networks: Array<{ uuid: string; name: string }>;
+  count: number;
+};
+
+export async function wifiScan() {
+  return apiGet<WiFiScanResponse>("/api/wifi/scan");
+}
+
+export async function wifiStatus() {
+  return apiGet<WiFiStatusResponse>("/api/wifi/status");
+}
+
+export async function wifiNetworks() {
+  return apiGet<WiFiNetworksResponse>("/api/wifi/networks");
+}
+
+export async function wifiConnect(request: WiFiConnectRequest) {
+  return apiPost<WiFiConnectResponse>("/api/wifi/connect", request);
+}
+
+export async function wifiDisconnect() {
+  return apiPost<{ success: boolean; message: string }>("/api/wifi/disconnect", {});
+}

@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from .cache import CacheStore
 from .config_manager import ConfigManager
@@ -223,6 +225,311 @@ def update_storm_mode(payload: Dict[str, Any]) -> Dict[str, Any]:
     cache_store.store("storm_mode", payload)
     logger.info("Storm mode update ignored under config v1.5: %s", payload)
     return {"enabled": False, "last_triggered": None}
+
+
+# WiFi Configuration
+WIFI_CONF_PATH = Path("/etc/pantalla-reloj/wifi.conf")
+DEFAULT_WIFI_INTERFACE = "wlp2s0"
+
+
+def _get_wifi_interface() -> str:
+    """Read WiFi interface from config file or use default."""
+    if WIFI_CONF_PATH.exists():
+        try:
+            content = WIFI_CONF_PATH.read_text(encoding="utf-8")
+            match = re.search(r"^WIFI_INTERFACE=(.+)$", content, re.MULTILINE)
+            if match:
+                return match.group(1).strip()
+        except Exception as exc:
+            logger.warning("Failed to read WiFi config: %s", exc)
+    return DEFAULT_WIFI_INTERFACE
+
+
+def _run_nmcli(args: List[str], timeout: int = 30) -> tuple[str, str, int]:  # type: ignore[valid-type]
+    """Run nmcli command and return stdout, stderr, returncode."""
+    try:
+        result = subprocess.run(
+            ["nmcli"] + args,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        return result.stdout, result.stderr, result.returncode
+    except subprocess.TimeoutExpired as exc:
+        logger.error("nmcli command timed out: %s", exc)
+        return "", f"Command timed out after {timeout} seconds", 124
+    except FileNotFoundError:
+        logger.error("nmcli not found, NetworkManager may not be installed")
+        return "", "nmcli not found. NetworkManager may not be installed", 127
+    except Exception as exc:
+        logger.error("Failed to run nmcli: %s", exc)
+        return "", str(exc), 1
+
+
+class WiFiNetwork(BaseModel):
+    ssid: str
+    signal: int
+    security: str
+    mode: str
+
+
+class WiFiConnectRequest(BaseModel):
+    ssid: str
+    password: Optional[str] = None
+
+
+@app.get("/api/wifi/scan")
+def wifi_scan() -> Dict[str, Any]:
+    """Scan for available WiFi networks."""
+    interface = _get_wifi_interface()
+    logger.info("Scanning WiFi networks on interface %s", interface)
+    
+    # Trigger scan
+    stdout, stderr, code = _run_nmcli(["device", "wifi", "rescan"], timeout=10)
+    if code != 0:
+        logger.warning("Failed to trigger WiFi scan: %s (stderr: %s)", stdout, stderr)
+    
+    # Wait a bit for scan to complete
+    import time
+    time.sleep(2)
+    
+    # List available networks
+    stdout, stderr, code = _run_nmcli(
+        [
+            "device",
+            "wifi",
+            "list",
+            "--ifname",
+            interface,
+            "--rescan",
+            "no",
+        ],
+        timeout=15,
+    )
+    
+    if code != 0:
+        logger.error("Failed to list WiFi networks: %s (stderr: %s)", stdout, stderr)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to scan WiFi networks: {stderr or stdout or 'Unknown error'}",
+        )
+    
+    networks: List[WiFiNetwork] = []
+    lines = stdout.strip().split("\n")
+    
+    # Skip header line (first line)
+    if len(lines) > 1:
+        for line in lines[1:]:
+            parts = line.split()
+            if len(parts) >= 4:
+                # Format: SSID MODE CHAN RATE SIGNAL BARS SECURITY
+                # Or: SSID MODE CHAN RATE SIGNAL BARS SECURITY BSSID
+                ssid = parts[0]
+                mode = parts[1] if len(parts) > 1 else "Infra"
+                signal_str = parts[4] if len(parts) > 4 else "0"
+                security = parts[6] if len(parts) > 6 else "none"
+                
+                try:
+                    signal = int(signal_str)
+                except ValueError:
+                    signal = 0
+                
+                networks.append(
+                    WiFiNetwork(
+                        ssid=ssid,
+                        signal=signal,
+                        security=security if security != "--" else "none",
+                        mode=mode,
+                    )
+                )
+    
+    # Sort by signal strength (descending)
+    networks.sort(key=lambda x: x.signal, reverse=True)
+    
+    return {
+        "interface": interface,
+        "networks": [net.model_dump() for net in networks],
+        "count": len(networks),
+    }
+
+
+@app.get("/api/wifi/status")
+def wifi_status() -> Dict[str, Any]:
+    """Get current WiFi connection status."""
+    interface = _get_wifi_interface()
+    
+    # Get connection info
+    stdout, stderr, code = _run_nmcli(
+        ["device", "status"], timeout=10
+    )
+    
+    if code != 0:
+        logger.error("Failed to get device status: %s", stderr)
+        return {
+            "interface": interface,
+            "connected": False,
+            "ssid": None,
+            "ip_address": None,
+            "signal": None,
+            "error": stderr or "Unknown error",
+        }
+    
+    # Check if WiFi device exists and is connected
+    connected = False
+    ssid: Optional[str] = None
+    ip_address: Optional[str] = None
+    signal: Optional[int] = None
+    
+    for line in stdout.strip().split("\n"):
+        if interface in line:
+            parts = line.split()
+            if len(parts) >= 4:
+                state = parts[2]
+                connection = parts[3] if len(parts) > 3 else ""
+                connected = state == "connected" and connection != "--"
+                if connected:
+                    ssid = connection
+    
+    # Get IP address if connected
+    if connected:
+        stdout, stderr, code = _run_nmcli(
+            ["device", "show", interface], timeout=10
+        )
+        if code == 0:
+            for line in stdout.strip().split("\n"):
+                if "IP4.ADDRESS[1]:" in line:
+                    ip_match = re.search(r"(\d+\.\d+\.\d+\.\d+)", line)
+                    if ip_match:
+                        ip_address = ip_match.group(1)
+        
+        # Get signal strength
+        stdout, stderr, code = _run_nmcli(
+            ["device", "wifi", "list", "--ifname", interface], timeout=10
+        )
+        if code == 0:
+            for line in stdout.strip().split("\n"):
+                if ssid and ssid in line:
+                    parts = line.split()
+                    if len(parts) > 4:
+                        try:
+                            signal = int(parts[4])
+                        except ValueError:
+                            pass
+                    break
+    
+    return {
+        "interface": interface,
+        "connected": connected,
+        "ssid": ssid,
+        "ip_address": ip_address,
+        "signal": signal,
+    }
+
+
+@app.get("/api/wifi/networks")
+def wifi_networks() -> Dict[str, Any]:
+    """Get saved WiFi networks."""
+    stdout, stderr, code = _run_nmcli(
+        ["connection", "show"], timeout=10
+    )
+    
+    if code != 0:
+        logger.error("Failed to list connections: %s", stderr)
+        return {
+            "networks": [],
+            "count": 0,
+        }
+    
+    networks: List[Dict[str, str]] = []
+    lines = stdout.strip().split("\n")
+    
+    for line in lines:
+        parts = line.split()
+        if len(parts) >= 4 and parts[2] == "wifi":
+            uuid = parts[0]
+            name = parts[1]
+            networks.append({"uuid": uuid, "name": name})
+    
+    return {
+        "networks": networks,
+        "count": len(networks),
+    }
+
+
+@app.post("/api/wifi/connect")
+async def wifi_connect(request: WiFiConnectRequest) -> Dict[str, Any]:
+    """Connect to a WiFi network."""
+    interface = _get_wifi_interface()
+    logger.info("Connecting to WiFi network %s on interface %s", request.ssid, interface)
+    
+    # Check if connection already exists
+    stdout, stderr, code = _run_nmcli(
+        ["connection", "show", "--active"], timeout=10
+    )
+    
+    if code == 0 and request.ssid in stdout:
+        logger.info("Already connected to %s", request.ssid)
+        return {
+            "success": True,
+            "message": f"Already connected to {request.ssid}",
+            "ssid": request.ssid,
+        }
+    
+    # Try to connect
+    args = [
+        "device",
+        "wifi",
+        "connect",
+        request.ssid,
+        "--ifname",
+        interface,
+    ]
+    
+    if request.password:
+        args.extend(["--password", request.password])
+    
+    stdout, stderr, code = _run_nmcli(args, timeout=30)
+    
+    if code != 0:
+        error_msg = stderr or stdout or "Unknown error"
+        logger.error("Failed to connect to WiFi: %s", error_msg)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to connect to WiFi network: {error_msg}",
+        )
+    
+    logger.info("Successfully connected to %s", request.ssid)
+    return {
+        "success": True,
+        "message": f"Successfully connected to {request.ssid}",
+        "ssid": request.ssid,
+    }
+
+
+@app.post("/api/wifi/disconnect")
+def wifi_disconnect() -> Dict[str, Any]:
+    """Disconnect from current WiFi network."""
+    interface = _get_wifi_interface()
+    logger.info("Disconnecting WiFi on interface %s", interface)
+    
+    stdout, stderr, code = _run_nmcli(
+        ["device", "disconnect", interface], timeout=10
+    )
+    
+    if code != 0:
+        error_msg = stderr or stdout or "Unknown error"
+        logger.error("Failed to disconnect WiFi: %s", error_msg)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to disconnect WiFi: {error_msg}",
+        )
+    
+    logger.info("Successfully disconnected WiFi")
+    return {
+        "success": True,
+        "message": "Successfully disconnected from WiFi",
+    }
 
 
 @app.get("/{full_path:path}", include_in_schema=False)
