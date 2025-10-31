@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -71,11 +72,63 @@ app.add_middleware(
 def _shutdown_services() -> None:
     opensky_service.close()
 
-STATIC_DIR = Path("/opt/pantalla-reloj/frontend/static")
-STATIC_DIR.mkdir(parents=True, exist_ok=True)
+def _ensure_directory(path: Path, description: str, fallback: Optional[Path] = None) -> Path:
+    """Ensure *path* exists, optionally falling back if permissions are denied."""
 
-FRONTEND_DIST_DIR = Path(os.getenv("PANTALLA_UI_DIST", "/var/www/html"))
-FRONTEND_DIST_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except PermissionError as exc:
+        logger.warning(
+            "Failed to create %s at %s due to permissions: %s",
+            description,
+            path,
+            exc,
+        )
+        if fallback is not None:
+            try:
+                fallback.mkdir(parents=True, exist_ok=True)
+            except Exception as fb_exc:  # noqa: BLE001
+                logger.error(
+                    "Could not create fallback %s at %s: %s",
+                    description,
+                    fallback,
+                    fb_exc,
+                )
+            else:
+                logger.warning(
+                    "Using fallback %s at %s",
+                    description,
+                    fallback,
+                )
+                return fallback
+        else:
+            logger.warning("No fallback provided for %s", description)
+    except OSError as exc:
+        logger.error("Failed to ensure %s at %s: %s", description, path, exc)
+    return path
+
+
+_TEMP_STATIC_DIR = Path(tempfile.gettempdir()) / "pantalla-static"
+STATIC_DIR = _ensure_directory(
+    Path("/opt/pantalla-reloj/frontend/static"),
+    "static assets directory",
+    fallback=_TEMP_STATIC_DIR,
+)
+
+_TEMP_FRONTEND_DIR = Path(tempfile.gettempdir()) / "pantalla-frontend"
+FRONTEND_DIST_DIR = _ensure_directory(
+    Path(os.getenv("PANTALLA_UI_DIST", "/var/www/html")),
+    "frontend distribution directory",
+    fallback=_TEMP_FRONTEND_DIR,
+)
+
+if FRONTEND_DIST_DIR == _TEMP_FRONTEND_DIR:
+    index_path = FRONTEND_DIST_DIR / "index.html"
+    if not index_path.exists():
+        index_path.write_text(
+            """<!doctype html><html><head><meta charset='utf-8'><title>Pantalla Reloj</title></head><body><h1>Pantalla Reloj</h1><p>Frontend assets not available. Serving fallback placeholder.</p></body></html>""",
+            encoding="utf-8",
+        )
 
 
 class SPAStaticFiles(StaticFiles):
