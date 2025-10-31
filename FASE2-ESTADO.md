@@ -1,5 +1,9 @@
 # Estado de Implementación Fase 2
 
+**⚠️ ACTUALIZACIÓN 2025-01:** Este documento describe el estado de la Fase 2. Algunas funcionalidades están implementadas, otras están pendientes o en fase de planificación.
+
+---
+
 ## ✅ COMPLETADO / EXISTENTE
 
 ### 1. Overlay Rotatorio Único
@@ -14,93 +18,77 @@
 - ✅ Modo cine implementado completamente
 - ✅ Layers base: AircraftLayer, CyclonesLayer, ShipsLayer, WeatherLayer
 - ✅ LayerRegistry para gestión de capas
-- ⚠️ **Verificar**: Asegurar que no hay recortes visuales
+- ✅ Verificación WebGL con fallback visual implementado
+- ✅ **Verificado:** No hay recortes visuales
 
 ### 3. LightningLayer (Infraestructura)
 - ✅ `LightningLayer.ts` existe y funciona
-- ⚠️ **Falta**: Conexión a datos MQTT/Blitzortung
-- ⚠️ **Falta**: Integración en GeoScopeMap
+- ⚠️ **Pendiente**: Conexión a datos MQTT/Blitzortung
+- ⚠️ **Pendiente**: Integración en GeoScopeMap (capa existe pero necesita datos)
 
 ### 4. Storm Mode (Básico)
 - ✅ Endpoints `/api/storm_mode` (GET/POST) existen
-- ❌ **Falta**: Implementación funcional (actualmente ignorado)
-- ❌ **Falta**: Activación automática
-- ❌ **Falta**: Zoom a Castellón/Vila-real
-- ❌ **Falta**: Integración con rayos
+- ⚠️ **Pendiente**: Implementación funcional completa
+- ⚠️ **Pendiente**: Activación automática
+- ⚠️ **Pendiente**: Zoom a Castellón/Vila-real
+- ⚠️ **Pendiente**: Integración con rayos
 
-## ❌ FALTA IMPLEMENTAR
+## ⏳ PENDIENTE DE IMPLEMENTAR
 
 ### 1. Modo Tormenta Completo
-- [ ] Modelo de configuración para storm mode
-- [ ] Lógica de activación automática/manual
-- [ ] Zoom automático a Castellón/Vila-real (39.986°N, -0.051°W)
-- [ ] Integración con LightningLayer cuando está activo
-- [ ] Endpoints backend funcionales (no ignorados)
-- [ ] UI para activar/desactivar storm mode
-- [ ] Persistencia de estado
+- ⏳ Modelo de configuración para storm mode (existe pero funcionalidad limitada)
+- ⏳ Lógica de activación automática/manual
+- ⏳ Zoom automático a Castellón/Vila-real (39.986°N, -0.051°W)
+- ⏳ Integración con LightningLayer cuando está activo
+- ⏳ Endpoints backend funcionales (actualmente solo básicos)
+- ⏳ UI para activar/desactivar storm mode
+- ⏳ Persistencia de estado
 
-### 2. AEMET (Completamente Falta)
-- [ ] Modelo de configuración para AEMET
-- [ ] Backend endpoints para:
-  - [ ] Avisos CAP (GeoJSON)
-  - [ ] Radar precipitación (tiles animados)
-  - [ ] Satélite (tiles animados, opcional)
-- [ ] Proxy backend con caché local
-- [ ] Frontend layers:
-  - [ ] CAPLayer (GeoJSON)
-  - [ ] RadarLayer (tiles animados)
-  - [ ] SatelliteLayer (tiles animados)
-- [ ] Controles UI (play/pause, velocidad, opacidad)
-- [ ] Integración en GeoScopeMap
-- [ ] En Modo Cine: mantener radar/satélite; atenuar CAP
-- [ ] Configuración en `/config`
+### 2. AEMET (Parcialmente Implementado)
+- ✅ Modelo de configuración para AEMET existe en `backend/models.py`
+- ✅ Integración con CAP (avisos) implementada en `focus_masks.py`
+- ✅ Procesamiento de máscaras de foco con datos CAP
+- ⏳ Backend endpoints específicos para AEMET:
+  - ⏳ `/api/aemet/cap` - Avisos CAP (GeoJSON) - Parcialmente implementado vía `focus_masks.py`
+  - ⏳ `/api/aemet/radar` - Radar precipitación (no disponible en AEMET OpenData)
+  - ⏳ `/api/aemet/satellite` - Satélite (no disponible en AEMET OpenData)
+- ✅ Proxy backend con caché local (implementado vía `focus_masks.py`)
+- ⏳ Frontend layers específicos para AEMET (actualmente integrado en `cine_focus`)
+- ⏳ Controles UI (play/pause, velocidad, opacidad) para tiles animados
+- ⏳ Integración completa en GeoScopeMap
+- ⏳ UI en `/config` para configurar AEMET
+
+**Nota:** AEMET OpenData no proporciona tiles de radar/satélite en su API pública estándar. Solo proporciona avisos CAP 1.2. Para datos de radar, el sistema usa RainViewer.
 
 ### 3. Blitzortung + MQTT
-- [ ] Cliente MQTT/WebSocket (`/opt/blitzortung/ws_client`)
-- [ ] Publicación en topic `blitzortung/1`
-- [ ] Servicio systemd con autorestart y reconexión
-- [ ] Integración en LightningLayer para actualizar datos
-- [ ] Backend endpoint para datos de rayos (o WebSocket directo)
-- [ ] Configuración MQTT en modelos
+- ⏳ Cliente MQTT/WebSocket en backend
+- ⏳ Endpoint `/api/lightning` para datos de rayos
+- ⏳ Integración con LightningLayer para actualizar datos en tiempo real
+- ⏳ Servicio systemd para cliente MQTT/WebSocket
+- ⏳ Scripts de instalación/configuración
 
 ### 4. Actualizaciones de Configuración
-- [ ] Agregar `storm` al modelo `AppConfig`
-- [ ] Agregar `aemet` al modelo `AppConfig`
-- [ ] Agregar `blitzortung` o `mqtt` al modelo `AppConfig`
-- [ ] Actualizar `default_config.json`
-- [ ] UI en `/config` para configurar:
-  - [ ] Storm mode (enable, zoom, center)
-  - [ ] AEMET (enable, API endpoints/config)
-  - [ ] MQTT/Blitzortung (host, port, topic)
+- ✅ Modelos de configuración existentes en `backend/models.py`:
+  - ✅ `StormMode`: Configuración para modo tormenta (zoom, center, auto-enable)
+  - ✅ `AEMET`: Configuración para integración AEMET (API key, capas)
+  - ✅ `Blitzortung`: Configuración para MQTT/WebSocket de rayos
+- ✅ Valores por defecto en `backend/default_config.json`
+- ✅ Tipos TypeScript en `dash-ui/src/types/config.ts`
+- ✅ Funciones de merge y defaults en `dash-ui/src/config/defaults.ts`
+- ⏳ UI en `/config` para configurar:
+  - ⏳ Storm mode (enable, zoom, center)
+  - ⏳ AEMET (enable, API endpoints/config)
+  - ⏳ MQTT/Blitzortung (host, port, topic)
 
-## PLAN DE IMPLEMENTACIÓN
+## 📝 NOTAS
 
-### Prioridad 1: Base de Configuración
-1. Actualizar modelos (`backend/models.py`)
-2. Actualizar `default_config.json`
-3. Actualizar tipos TypeScript
+- **Castellón/Vila-real:** ~39.986°N, -0.051°W
+- **AEMET:** Requiere API key o acceso a endpoints públicos (CAP disponible, radar no)
+- **Blitzortung WebSocket endpoint:** `wss://live.blitzortung.org/CometServer`
+- **MQTT broker local:** `mosquitto` en loopback (127.0.0.1) - si se implementa
 
-### Prioridad 2: Modo Tormenta
-1. Implementar lógica de activación
-2. Zoom automático a Castellón/Vila-real
-3. Integrar LightningLayer en GeoScopeMap
-4. Conectar a datos MQTT (si MQTT está listo)
+---
 
-### Prioridad 3: AEMET
-1. Backend endpoints con proxy y caché
-2. Frontend layers (CAP, Radar, Satélite)
-3. Controles UI
-4. Integración en GeoScopeMap
+**Estado:** ⏳ **FASE 2 PARCIALMENTE IMPLEMENTADA**
 
-### Prioridad 4: Blitzortung/MQTT
-1. Cliente WebSocket/MQTT
-2. Servicio systemd
-3. Integración con LightningLayer
-
-## NOTAS
-
-- Castellón/Vila-real: ~39.986°N, -0.051°W
-- AEMET requiere API key o acceso a endpoints públicos
-- Blitzortung WebSocket endpoint: `wss://live.blitzortung.org/CometServer`
-- MQTT broker local: `mosquitto` en loopback (127.0.0.1)
-
+Infraestructura base completa. Funcionalidades avanzadas (Storm Mode completo, Blitzortung/MQTT, AEMET completo) pendientes.

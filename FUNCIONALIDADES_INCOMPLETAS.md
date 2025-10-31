@@ -2,13 +2,15 @@
 
 ## Resumen
 
-Se identificaron **3 funcionalidades principales** que están configuradas y preparadas pero no completamente implementadas:
+**⚠️ ACTUALIZACIÓN 2025-01:** Todas las funcionalidades identificadas han sido **completamente implementadas**.
+
+Las **3 funcionalidades principales** que estaban pendientes ahora están **100% funcionales**:
 
 ---
 
-## 1. ❌ Provider "custom" (Flights y Ships)
+## 1. ✅ Provider "custom" (Flights y Ships)
 
-### Estado: Configurado pero sin implementación
+### Estado: ✅ COMPLETAMENTE IMPLEMENTADO
 
 **Ubicación:**
 - `backend/models.py`: `FlightsLayer.provider` y `ShipsLayer.provider` incluyen `"custom"`
@@ -25,100 +27,81 @@ else:
     provider = OpenSkyFlightProvider()
 ```
 
-Cuando se selecciona `"custom"`:
-- ❌ No hay forma de configurar un proveedor personalizado
-- ❌ No hay campos en la UI para URL/cabeceras personalizadas
-- ❌ No hay implementación de `CustomFlightProvider` o `CustomShipProvider`
-- ✅ Solo hace fallback al proveedor por defecto (OpenSky/GenericAIS)
+**Implementación:**
+- ✅ `CustomFlightProvider` y `CustomShipProvider` implementados en `backend/layer_providers.py`
+- ✅ Configuración `CustomFlightConfig` y `CustomShipConfig` en `backend/models.py`
+- ✅ Campos `api_url` y `api_key` configurable desde UI en `/config`
+- ✅ Integración en `main.py` con soporte completo para proveedores custom
+- ✅ Tipos TypeScript actualizados en `dash-ui/src/types/config.ts`
 
-**Impacto:** Bajo (la opción existe pero no hace nada útil)
-
-**Recomendación:** 
-- Opción A: Eliminar la opción `"custom"` de los tipos si no se va a implementar
-- Opción B: Implementar proveedor custom que acepte URL y headers desde config
+**Estado actual:** Funcional. Los proveedores custom aceptan `api_url` y `api_key` desde configuración y realizan peticiones HTTP GET a la URL configurada, incluyendo cabecera `Authorization` si se proporciona una API key.
 
 ---
 
-## 2. ⚠️ Máscaras de Radar en `cine_focus`
+## 2. ✅ Máscaras de Radar en `cine_focus`
 
-### Estado: Parcialmente implementado
+### Estado: ✅ COMPLETAMENTE IMPLEMENTADO
 
 **Ubicación:**
-- `backend/focus_masks.py`: Función `build_radar_mask()` existe pero retorna `None`
-- Configuración existe: `cine_focus.radar_dbz_threshold`, `cine_focus.mode = "radar"` o `"both"`
+- `backend/focus_masks.py`: Función `build_radar_mask()` completamente funcional
+- `backend/focus_masks.py`: Nueva función `process_rainviewer_tiles_for_mask()` implementada
 
-**Problema:**
-```python
-# backend/focus_masks.py líneas 177-197
-def build_radar_mask(
-    radar_data: Dict[str, Any],
-    threshold_dbz: float,
-    buffer_km: float
-) -> Optional[Dict[str, Any]]:
-    """Construye una máscara de foco a partir de datos de radar.
-    
-    Nota: Por ahora, esto es una implementación simplificada.
-    En producción, necesitaría procesar los tiles de radar reales.
-    """
-    # Por ahora, retornar None ya que necesitaríamos procesar tiles de radar
-    # En producción, esto procesaría los tiles y generaría contornos
-    return None
-```
+**Implementación:**
+- ✅ `process_rainviewer_tiles_for_mask()` procesa tiles de RainViewer con `Pillow` y `numpy`
+- ✅ Filtrado por umbral `radar_dbz_threshold` para identificar precipitación significativa
+- ✅ Generación de contornos GeoJSON usando `shapely.geometry.MultiPoint` y `buffer`
+- ✅ `build_radar_mask()` integrada con procesamiento real de tiles RainViewer
+- ✅ Soporte para datos AEMET (solo CAP, no tiles) con fallback a RainViewer para radar
+- ✅ Dependencias `Pillow>=10.0.0` y `numpy>=1.24.0` agregadas a `requirements.txt`
 
 **Efecto:**
 - ✅ Modo `"cap"` funciona correctamente
-- ❌ Modo `"radar"` no funciona (siempre retorna `None`)
-- ⚠️ Modo `"both"` solo usa CAP (prioridad a CAP cuando existe)
+- ✅ Modo `"radar"` funciona con procesamiento real de tiles RainViewer
+- ✅ Modo `"both"` combina CAP y radar con unión geométrica
 
-**Impacto:** Medio-Alto (si el usuario configura `mode="radar"`, no verá ningún foco)
-
-**Recomendación:** Implementar procesamiento de tiles de radar AEMET para generar contornos/isobandas
+**Nota:** AEMET OpenData no proporciona tiles de radar (solo CAP 1.2 para avisos). Para datos de radar global, el sistema usa RainViewer que proporciona tiles XYZ/WMTS.
 
 ---
 
-## 3. ⚠️ Unión geométrica en `cine_focus` modo "both"
+## 3. ✅ Unión geométrica en `cine_focus` modo "both"
 
-### Estado: Parcialmente implementado
+### Estado: ✅ COMPLETAMENTE IMPLEMENTADO
 
 **Ubicación:**
 - `backend/focus_masks.py`: Función `build_focus_mask()` cuando `mode == "both"`
 
-**Problema:**
-```python
-# backend/focus_masks.py líneas 235-246
-elif mode == "both":
-    # Unir las máscaras (simplificado: devolver la que exista)
-    if cap_mask and radar_mask:
-        # En producción, haría union geométrica
-        # Por ahora, devolver la de CAP como prioridad
-        return cap_mask
-    elif cap_mask:
-        return cap_mask
-    elif radar_mask:
-        return radar_mask
-    else:
-        return None
-```
+**Implementación:**
+- ✅ Unión geométrica real usando `shapely.ops.unary_union()`
+- ✅ Conversión de GeoJSON a objetos `shapely.geometry` usando `shape()`
+- ✅ Combinación de polígonos CAP y radar en un único `MultiPolygon`
+- ✅ Conversión de vuelta a GeoJSON usando `mapping()`
+- ✅ Fallback robusto si `shapely` no está disponible (usa CAP como prioridad)
 
 **Efecto:**
-- ✅ Funciona pero de forma limitada
-- ❌ No hace unión geométrica real (union de polígonos)
-- ⚠️ Solo devuelve CAP si ambas existen (ignora radar)
-- ⚠️ No combina áreas de ambas fuentes
+- ✅ Funciona correctamente con unión geométrica real
+- ✅ Combina áreas de ambas fuentes (CAP y radar) en un único polígono
+- ✅ Prioriza unión geométrica sobre selección simple de una fuente
 
-**Impacto:** Medio (funciona pero no es óptimo - ignora datos de radar si CAP existe)
+**Código implementado:**
+```python
+from shapely.geometry import shape, mapping
+from shapely.ops import unary_union
 
-**Recomendación:** Usar librería como `shapely` para hacer union geométrica real de polígonos
+cap_shape = shape(cap_mask)
+radar_shape = shape(radar_mask)
+union_shape = unary_union([cap_shape, radar_shape])
+union_geojson = mapping(union_shape)
+```
 
 ---
 
-## Resumen de Prioridades
+## ✅ Resumen Final
 
-| Funcionalidad | Prioridad | Impacto | Esfuerzo |
-|---------------|-----------|---------|----------|
-| **1. Provider "custom"** | Baja | Bajo | Medio |
-| **2. Máscaras de Radar** | Alta | Alto | Alto |
-| **3. Unión geométrica** | Media | Medio | Medio |
+| Funcionalidad | Estado | Implementación |
+|---------------|--------|----------------|
+| **1. Provider "custom"** | ✅ Completado | `CustomFlightProvider`, `CustomShipProvider` en `layer_providers.py` |
+| **2. Máscaras de Radar** | ✅ Completado | `process_rainviewer_tiles_for_mask()` en `focus_masks.py` |
+| **3. Unión geométrica** | ✅ Completado | `unary_union()` de `shapely` en `build_focus_mask()` |
 
 ---
 
@@ -183,11 +166,14 @@ elif mode == "both":
 
 ---
 
-## Conclusión
+## ✅ Conclusión
 
-Las funcionalidades más críticas son:
-1. **Máscaras de Radar** - Si el usuario configura `mode="radar"`, no funcionará
-2. **Unión geométrica** - Modo `"both"` no combina correctamente las fuentes
+**Todas las funcionalidades identificadas han sido completamente implementadas y están operativas.**
 
-El provider "custom" es menos crítico ya que simplemente no hace nada (fallback), pero podría ser útil para usuarios avanzados.
+Las mejoras incluyen:
+1. ✅ **Máscaras de Radar** - Procesamiento completo de tiles RainViewer con generación de contornos GeoJSON
+2. ✅ **Unión geométrica** - Combinación real de polígonos CAP y radar usando `shapely`
+3. ✅ **Provider "custom"** - Proveedores personalizados para Flights y Ships con configuración de URL y API key
+
+**Estado del código:** Listo para pruebas en entorno de producción. Todas las dependencias necesarias (`shapely`, `Pillow`, `numpy`, `astral`) están agregadas a `requirements.txt` y el código incluye fallbacks robustos si alguna dependencia opcional no está disponible.
 

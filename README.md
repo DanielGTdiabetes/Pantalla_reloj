@@ -19,7 +19,7 @@ Pantalla_reloj/
 
 ### Backend (FastAPI)
 - Endpoints: `/api/health`, `/api/config` (GET/PATCH), `/api/weather`, `/api/news`,
-  `/api/astronomy`, `/api/calendar`, `/api/storm_mode` (GET/POST).
+  `/api/astronomy`, `/api/calendar`, `/api/storm_mode` (GET/POST), `/api/astronomy/events`.
 - Persistencia de configuración en `/var/lib/pantalla/config.json` (se crea con
   valores por defecto si no existe) y caché JSON en `/var/lib/pantalla/cache/`.
 - El lanzador `usr/local/bin/pantalla-backend-launch` garantiza que existan
@@ -28,6 +28,14 @@ Pantalla_reloj/
   `/tmp/backend-launch.log` antes de delegar en `uvicorn main:app --host
   127.0.0.1 --port 8081` dentro de un entorno virtual local
   (`/opt/pantalla/backend/.venv`).
+
+#### Funcionalidades Implementadas (2025-01)
+- ✅ **Proveedores personalizados**: `CustomFlightProvider` y `CustomShipProvider` con configuración de URL y API key
+- ✅ **Precisión astronómica**: Cálculos precisos de efemérides usando `astral` (±1 minuto), información extendida (dusk, dawn, solar noon)
+- ✅ **Procesamiento de radar**: Procesamiento de tiles RainViewer con `Pillow` y `numpy` para generar máscaras de foco
+- ✅ **Unión geométrica**: Combinación real de polígonos CAP y radar usando `shapely` para máscaras de foco en modo `"both"`
+- ✅ **Datos enriquecidos**: Santoral con información adicional (type, patron_of, name_days), hortalizas con siembra y cosecha, eventos astronómicos
+- ✅ **Mejoras de fuentes**: `calculate_extended_astronomy()`, `get_astronomical_events()`, datos mejorados de harvest y saints
 
 ### Frontend (React/Vite)
 - Dashboard por defecto en modo `full`: mapa principal con tarjetas de noticias y
