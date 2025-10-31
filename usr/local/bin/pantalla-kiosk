@@ -79,6 +79,13 @@ find_chromium() {
     fi
   done
 
+  local apt_candidate="/usr/lib/chromium-browser/chromium-browser"
+  if [[ -x "$apt_candidate" ]]; then
+    log "INFO: Usando chromium-browser del paquete (${apt_candidate})"
+    printf '%s\n' "$apt_candidate"
+    return 0
+  fi
+
   return 1
 }
 
