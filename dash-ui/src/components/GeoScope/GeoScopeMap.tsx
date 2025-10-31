@@ -2927,7 +2927,11 @@ export default function GeoScopeMap() {
     void loadShipsData();
 
     // Cargar periódicamente según refresh_seconds
-    const intervalMs = shipsConfig.refresh_seconds * 1000;
+    const intervalSeconds =
+      typeof shipsConfig.update_interval === "number" && shipsConfig.update_interval > 0
+        ? shipsConfig.update_interval
+        : shipsConfig.refresh_seconds;
+    const intervalMs = intervalSeconds * 1000;
     const intervalId = setInterval(() => {
       void loadShipsData();
     }, intervalMs);

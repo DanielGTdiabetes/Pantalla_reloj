@@ -194,6 +194,8 @@ export type AviationStackConfig = {
 export type AISStreamConfig = {
   ws_url?: string | null;
   api_key?: string | null;
+  has_api_key?: boolean;
+  api_key_last4?: string | null;
 };
 
 export type AISHubConfig = {
@@ -237,6 +239,7 @@ export type ShipsLayerConfig = {
   enabled: boolean;
   opacity: number;
   provider: "ais_generic" | "aisstream" | "aishub" | "custom";
+  update_interval: number;
   refresh_seconds: number;
   max_age_seconds: number;
   max_items_global: number;

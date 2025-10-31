@@ -103,6 +103,12 @@ export async function updateAemetApiKey(apiKey: string | null) {
   } satisfies AemetSecretRequest);
 }
 
+export async function updateAISStreamApiKey(apiKey: string | null) {
+  return apiPost<undefined>("/api/config/secret/aisstream_api_key", {
+    api_key: apiKey,
+  });
+}
+
 export async function testAemetApiKey(apiKey?: string) {
   const body = apiKey && apiKey.trim().length > 0 ? { api_key: apiKey } : {};
   return apiPost<AemetTestResponse | undefined>("/api/aemet/test_key", body);
@@ -181,6 +187,10 @@ export type StormModeStatus = {
 
 export async function getStormMode() {
   return apiGet<StormModeStatus>("/api/storm_mode");
+}
+
+export async function getShipsLayer() {
+  return apiGet<Record<string, unknown>>("/api/layers/ships");
 }
 
 export async function updateStormMode(data: { enabled: boolean; last_triggered?: string | null }) {

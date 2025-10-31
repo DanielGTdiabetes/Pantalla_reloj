@@ -13,8 +13,10 @@ import {
   saveConfig,
   testAemetApiKey,
   updateAemetApiKey,
+  updateAISStreamApiKey,
   updateOpenSkyClientId,
   updateOpenSkyClientSecret,
+  getShipsLayer,
   wifiConnect,
   wifiDisconnect,
   wifiNetworks as fetchWifiNetworks,
@@ -375,6 +377,13 @@ const validateConfig = (config: AppConfig, supports: SchemaInspector["has"]): Fi
     }
   }
 
+  if (supports("layers.ships.update_interval")) {
+    const value = config.layers.ships.update_interval;
+    if (!Number.isFinite(value) || value < 1 || value > 300) {
+      errors["layers.ships.update_interval"] = "Debe estar entre 1 y 300";
+    }
+  }
+
   return errors;
 };
 
@@ -393,6 +402,11 @@ const ConfigPage: React.FC = () => {
   const [savingAemetKey, setSavingAemetKey] = useState(false);
   const [testingAemetKey, setTestingAemetKey] = useState(false);
   const [aemetTestResult, setAemetTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [showAisstreamKey, setShowAisstreamKey] = useState(false);
+  const [aisstreamKeyInput, setAisstreamKeyInput] = useState("");
+  const [savingAisstreamKey, setSavingAisstreamKey] = useState(false);
+  const [testingShips, setTestingShips] = useState(false);
+  const [shipsTestResult, setShipsTestResult] = useState<{ ok: boolean; message: string; count?: number } | null>(null);
   const [openskyClientIdInput, setOpenSkyClientIdInput] = useState("");
   const [openskyClientSecretInput, setOpenSkyClientSecretInput] = useState("");
   const [openskyClientIdSet, setOpenSkyClientIdSet] = useState(false);
@@ -481,6 +495,29 @@ const ConfigPage: React.FC = () => {
   const canTestAemetKey = showAemetKey ? trimmedAemetKeyInput.length > 0 : hasStoredAemetKey;
   const canPersistAemetKey =
     showAemetKey && !savingAemetKey && (trimmedAemetKeyInput.length > 0 || hasStoredAemetKey);
+
+  const maskedAisstreamKey = useMemo(() => {
+    const aisstream = form.layers.ships.aisstream;
+    if (!aisstream?.has_api_key) {
+      return "";
+    }
+    const last4 = aisstream.api_key_last4;
+    if (typeof last4 === "string" && last4.trim().length > 0) {
+      return `•••• ${last4}`;
+    }
+    return "••••";
+  }, [form.layers.ships.aisstream]);
+
+  const trimmedAisstreamKeyInput = aisstreamKeyInput.trim();
+  const hasStoredAisstreamKey = Boolean(form.layers.ships.aisstream?.has_api_key);
+  const canPersistAisstreamKey =
+    showAisstreamKey && !savingAisstreamKey && (trimmedAisstreamKeyInput.length > 0 || hasStoredAisstreamKey);
+  const canTestShips =
+    form.layers.ships.enabled &&
+    form.layers.ships.provider === "aisstream" &&
+    !showAisstreamKey &&
+    !savingAisstreamKey &&
+    Boolean(form.layers.ships.aisstream?.has_api_key);
 
   const updateCinemaMotion = useCallback(
     (patch: Partial<AppConfig["ui"]["map"]["cinema"]["motion"]>) => {
@@ -633,6 +670,113 @@ const ConfigPage: React.FC = () => {
     }
   }, [aemetKeyInput, form.aemet.has_api_key, showAemetKey, testingAemetKey]);
 
+  const handleToggleAisstreamKeyVisibility = useCallback(() => {
+    setShowAisstreamKey((prev) => {
+      const next = !prev;
+      if (!next) {
+        setAisstreamKeyInput("");
+      }
+      setShipsTestResult(null);
+      return next;
+    });
+  }, []);
+
+  const handleSaveAisstreamKey = useCallback(async () => {
+    if (!isReady || savingAisstreamKey || !showAisstreamKey) {
+      return;
+    }
+    const trimmed = aisstreamKeyInput.trim();
+    setSavingAisstreamKey(true);
+    try {
+      await updateAISStreamApiKey(trimmed ? trimmed : null);
+      setForm((prev) => ({
+        ...prev,
+        layers: {
+          ...prev.layers,
+          ships: {
+            ...prev.layers.ships,
+            aisstream: {
+              ...prev.layers.ships.aisstream,
+              has_api_key: Boolean(trimmed),
+              api_key_last4: trimmed ? trimmed.slice(-4) : null,
+            },
+          },
+        },
+      }));
+      setBanner({
+        kind: "success",
+        text: trimmed ? "API key de AISStream guardada" : "API key de AISStream eliminada",
+      });
+      setShowAisstreamKey(false);
+      setAisstreamKeyInput("");
+      setShipsTestResult(null);
+    } catch (error) {
+      console.error("[ConfigPage] Failed to update AISStream API key", error);
+      const message = resolveApiErrorMessage(error, "No se pudo actualizar la API key de AISStream");
+      setBanner({ kind: "error", text: message });
+    } finally {
+      setSavingAisstreamKey(false);
+    }
+  }, [aisstreamKeyInput, isReady, savingAisstreamKey, setBanner, showAisstreamKey]);
+
+  const handleTestShipsLayer = useCallback(async () => {
+    if (testingShips) {
+      return;
+    }
+    if (!form.layers.ships.enabled) {
+      setShipsTestResult({ ok: false, message: "Activa la capa de barcos antes de probar" });
+      return;
+    }
+    if (form.layers.ships.provider !== "aisstream") {
+      setShipsTestResult({ ok: false, message: "Selecciona AISStream para poder probar" });
+      return;
+    }
+    if (showAisstreamKey) {
+      setShipsTestResult({ ok: false, message: "Guarda la API key de AISStream antes de probar" });
+      return;
+    }
+    if (!form.layers.ships.aisstream?.has_api_key) {
+      setShipsTestResult({ ok: false, message: "Configura la API key de AISStream antes de probar" });
+      return;
+    }
+
+    setTestingShips(true);
+    setShipsTestResult(null);
+    try {
+      const response = await getShipsLayer();
+      const rawFeatures = Array.isArray((response as { features?: unknown[] }).features)
+        ? ((response as { features: unknown[] }).features)
+        : [];
+      const meta = ((response as { meta?: Record<string, unknown> }).meta ?? {}) as Record<string, unknown>;
+      const okFlag = typeof meta.ok === "boolean" ? meta.ok : rawFeatures.length > 0;
+      const count = rawFeatures.length;
+      if (okFlag && count > 0) {
+        setShipsTestResult({ ok: true, message: `Recibidos ${count} barcos de AISStream`, count });
+      } else {
+        const reason = typeof meta.reason === "string" ? meta.reason : "";
+        const reasonMessage: Record<string, string> = {
+          disabled: "La capa está desactivada en el backend",
+          rate_limited: "El backend alcanzó el límite de peticiones para barcos",
+          stream_inactive: "Sin datos de AISStream (revisa la API key o la conexión)",
+        };
+        const message = reasonMessage[reason] ?? "No se recibieron barcos (verifica la API key)";
+        setShipsTestResult({ ok: false, message, count });
+      }
+    } catch (error) {
+      console.error("[ConfigPage] Failed to test AISStream ships", error);
+      const message = resolveApiErrorMessage(error, "No se pudo consultar AISStream");
+      setShipsTestResult({ ok: false, message });
+    } finally {
+      setTestingShips(false);
+    }
+  }, [
+    form.layers.ships.aisstream?.has_api_key,
+    form.layers.ships.enabled,
+    form.layers.ships.provider,
+    showAisstreamKey,
+    testingShips,
+  ]);
+
   const loadOpenSkyMeta = useCallback(async () => {
     try {
       const [clientIdMeta, clientSecretMeta] = await Promise.all([
@@ -715,6 +859,9 @@ const ConfigPage: React.FC = () => {
     setShowAemetKey(false);
     setAemetKeyInput("");
     setAemetTestResult(null);
+    setShowAisstreamKey(false);
+    setAisstreamKeyInput("");
+    setShipsTestResult(null);
     setOpenSkyClientIdInput("");
     setOpenSkyClientSecretInput("");
     setOpenSkyStatusData(null);
@@ -989,12 +1136,24 @@ const ConfigPage: React.FC = () => {
         delete (payload.aemet as { has_api_key?: boolean }).has_api_key;
         delete (payload.aemet as { api_key_last4?: string | null }).api_key_last4;
       }
+      if (payload.layers?.ships) {
+        payload.layers.ships.update_interval = Math.max(1, Math.min(300, Math.round(payload.layers.ships.update_interval)));
+        payload.layers.ships.refresh_seconds = payload.layers.ships.update_interval;
+        if (payload.layers.ships.aisstream) {
+          delete payload.layers.ships.aisstream.api_key;
+          delete (payload.layers.ships.aisstream as { has_api_key?: boolean }).has_api_key;
+          delete (payload.layers.ships.aisstream as { api_key_last4?: string | null }).api_key_last4;
+        }
+      }
       const saved = await saveConfig(payload);
       setForm(withConfigDefaults(saved));
       setShowMaptilerKey(false);
       setShowAemetKey(false);
       setAemetKeyInput("");
       setAemetTestResult(null);
+      setShowAisstreamKey(false);
+      setAisstreamKeyInput("");
+      setShipsTestResult(null);
       setFieldErrors({});
       setBanner({ kind: "success", text: "Guardado" });
     } catch (error) {
@@ -3565,33 +3724,35 @@ const ConfigPage: React.FC = () => {
                   </div>
 
                   <div className="config-field">
-                    <label htmlFor="ships_refresh">Intervalo de actualización (segundos)</label>
+                    <label htmlFor="ships_update_interval">Intervalo de actualización (segundos)</label>
                     <input
-                      id="ships_refresh"
+                      id="ships_update_interval"
                       type="number"
                       min="1"
                       max="300"
-                      value={form.layers.ships.refresh_seconds}
+                      value={form.layers.ships.update_interval}
                       disabled={disableInputs || !form.layers.ships.enabled}
                       onChange={(event) => {
                         const value = Number(event.target.value);
                         if (!Number.isNaN(value)) {
+                          const next = Math.max(1, Math.min(300, Math.round(value)));
                           setForm((prev) => ({
                             ...prev,
                             layers: {
                               ...prev.layers,
                               ships: {
                                 ...prev.layers.ships,
-                                refresh_seconds: Math.max(1, Math.min(300, Math.round(value))),
+                                update_interval: next,
+                                refresh_seconds: next,
                               },
                             },
                           }));
-                          resetErrorsFor("layers.ships.refresh_seconds");
+                          resetErrorsFor("layers.ships.update_interval");
                         }
                       }}
                     />
-                    {renderHelp("Cada cuántos segundos se actualizan los datos de barcos (1-300)")}
-                    {renderFieldError("layers.ships.refresh_seconds")}
+                    {renderHelp("Cada cuántos segundos se sincroniza el buffer de barcos (1-300)")}
+                    {renderFieldError("layers.ships.update_interval")}
                   </div>
 
                   <div className="config-field">
@@ -3748,32 +3909,86 @@ const ConfigPage: React.FC = () => {
                       </div>
 
                       <div className="config-field">
-                        <label htmlFor="ships_aisstream_api_key">API Key AISStream (opcional)</label>
-                        <input
-                          id="ships_aisstream_api_key"
-                          type="text"
-                          maxLength={256}
-                          value={form.layers.ships.aisstream?.api_key || ""}
-                          disabled={disableInputs || !form.layers.ships.enabled}
-                          onChange={(event) => {
-                            const api_key = event.target.value.trim() || null;
-                            setForm((prev) => ({
-                              ...prev,
-                              layers: {
-                                ...prev.layers,
-                                ships: {
-                                  ...prev.layers.ships,
-                                  aisstream: {
-                                    ...prev.layers.ships.aisstream,
-                                    api_key,
-                                  },
-                                },
-                              },
-                            }));
-                            resetErrorsFor("layers.ships.aisstream.api_key");
-                          }}
-                        />
-                        {renderHelp("API key de AISStream (opcional)")}
+                        <label htmlFor="ships_aisstream_api_key">API key de AISStream</label>
+                        <div className="config-field__secret">
+                          {showAisstreamKey ? (
+                            <input
+                              id="ships_aisstream_api_key"
+                              type="text"
+                              value={aisstreamKeyInput}
+                              disabled={disableInputs || !form.layers.ships.enabled}
+                              onChange={(event) => {
+                                setAisstreamKeyInput(event.target.value);
+                                setShipsTestResult(null);
+                              }}
+                              placeholder="Introduce la API key de AISStream"
+                              autoComplete="off"
+                              spellCheck={false}
+                            />
+                          ) : (
+                            <input
+                              id="ships_aisstream_api_key_masked"
+                              type="text"
+                              value={maskedAisstreamKey}
+                              readOnly
+                              disabled
+                              placeholder="Sin clave guardada"
+                            />
+                          )}
+                          <button
+                            type="button"
+                            className="config-button"
+                            onClick={handleToggleAisstreamKeyVisibility}
+                            disabled={disableInputs || !form.layers.ships.enabled}
+                          >
+                            {showAisstreamKey ? "Ocultar" : hasStoredAisstreamKey ? "Mostrar" : "Añadir"}
+                          </button>
+                        </div>
+                        <div className="config-field__hint">
+                          La clave se guarda cifrada en el backend y no se muestra completa.
+                        </div>
+                        <div className="config-field__actions">
+                          {showAisstreamKey && (
+                            <button
+                              type="button"
+                              className="config-button primary"
+                              onClick={() => void handleSaveAisstreamKey()}
+                              disabled={
+                                disableInputs ||
+                                !form.layers.ships.enabled ||
+                                !canPersistAisstreamKey ||
+                                savingAisstreamKey
+                              }
+                            >
+                              Guardar clave
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="config-button"
+                            onClick={() => void handleTestShipsLayer()}
+                            disabled={
+                              disableInputs ||
+                              !form.layers.ships.enabled ||
+                              !canTestShips ||
+                              testingShips
+                            }
+                          >
+                            {testingShips ? "Comprobando…" : "Probar"}
+                          </button>
+                        </div>
+                        {shipsTestResult && (
+                          <div
+                            className={`config-field__hint ${
+                              shipsTestResult.ok
+                                ? "config-field__hint--success"
+                                : "config-field__hint--error"
+                            }`}
+                          >
+                            {shipsTestResult.message}
+                          </div>
+                        )}
+                        {renderFieldError("layers.ships.aisstream.api_key")}
                       </div>
                     </>
                   )}

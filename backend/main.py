@@ -49,6 +49,7 @@ from .secret_store import SecretStore
 from .services.opensky_auth import OpenSkyAuthError
 from .services.opensky_client import OpenSkyClientError
 from .services.opensky_service import OpenSkyService
+from .services.ships_service import AISStreamService
 from .rate_limiter import check_rate_limit
 
 APP_START = datetime.now(timezone.utc)
@@ -57,6 +58,7 @@ config_manager = ConfigManager()
 cache_store = CacheStore()
 secret_store = SecretStore()
 opensky_service = OpenSkyService(secret_store, logger)
+ships_service = AISStreamService(cache_store=cache_store, secret_store=secret_store, logger=logger)
 
 app = FastAPI(title="Pantalla Reloj Backend", version="2025.10.0")
 app.add_middleware(
@@ -71,6 +73,7 @@ app.add_middleware(
 @app.on_event("shutdown")
 def _shutdown_services() -> None:
     opensky_service.close()
+    ships_service.close()
 
 def _ensure_directory(path: Path, description: str, fallback: Optional[Path] = None) -> Path:
     """Ensure *path* exists, optionally falling back if permissions are denied."""
@@ -172,6 +175,10 @@ class AemetTestRequest(BaseModel):
     api_key: Optional[str] = Field(default=None, max_length=256)
 
 
+class AISStreamSecretRequest(BaseModel):
+    api_key: Optional[str] = Field(default=None, max_length=256)
+
+
 def _sanitize_secret(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
@@ -217,6 +224,22 @@ def _build_public_config(config: AppConfig) -> Dict[str, Any]:
     aemet_info.pop("api_key", None)
     aemet_info.update(masked)
     payload["aemet"] = aemet_info
+
+    layers_info = payload.get("layers")
+    if isinstance(layers_info, dict):
+        ships_info = layers_info.get("ships")
+        if isinstance(ships_info, dict):
+            aisstream_info = ships_info.get("aisstream")
+            if isinstance(aisstream_info, dict):
+                aisstream_public = dict(aisstream_info)
+            else:
+                aisstream_public = {}
+            aisstream_public.pop("api_key", None)
+            secret_meta = _mask_secret(secret_store.get_secret("aisstream_api_key"))
+            aisstream_public.update(secret_meta)
+            ships_info["aisstream"] = aisstream_public
+            layers_info["ships"] = ships_info
+            payload["layers"] = layers_info
     return payload
 
 
@@ -374,7 +397,10 @@ def healthcheck_full() -> Dict[str, Any]:
         "status": ships_status,
         "last_fetch": ships_last_fetch,
         "cache_age": ships_cache_age,
-        "items_count": ships_items_count
+        "items_count": ships_items_count,
+        "provider": ships_config.provider,
+        "enabled": ships_config.enabled,
+        "runtime": ships_service.get_status(),
     }
     
     # Información de focus masks
@@ -573,6 +599,7 @@ async def save_config(request: Request) -> JSONResponse:
         logger.exception("Failed to persist configuration: %s", exc)
         raise HTTPException(status_code=500, detail="Unable to persist configuration") from exc
     logger.info("Configuration updated")
+    ships_service.apply_config(updated.layers.ships)
     
     # Agregar headers anti-cache a la respuesta POST también
     from datetime import datetime
@@ -621,6 +648,23 @@ async def update_aemet_secret(request: AemetSecretRequest) -> Response:
         config_manager.write(payload)
     except ValidationError as exc:  # pragma: no cover - defensive
         raise HTTPException(status_code=400, detail=exc.errors()) from exc
+
+    return Response(status_code=204)
+
+
+@app.post("/api/config/secret/aisstream_api_key", status_code=204)
+async def update_aisstream_secret(request: AISStreamSecretRequest) -> Response:
+    api_key = _sanitize_secret(request.api_key)
+    masked = _mask_secret(api_key)
+    logger.info(
+        "Updating AISStream API key (present=%s, last4=%s)",
+        masked.get("has_api_key", False),
+        masked.get("api_key_last4", "****"),
+    )
+    secret_store.set_secret("aisstream_api_key", api_key)
+
+    current = config_manager.read()
+    ships_service.apply_config(current.layers.ships)
 
     return Response(status_code=204)
 
@@ -1765,10 +1809,14 @@ def get_ships(
     """Obtiene datos de barcos en formato GeoJSON."""
     config = config_manager.read()
     ships_config = config.layers.ships
-    
+
     if not ships_config.enabled:
-        return {"type": "FeatureCollection", "features": [], "stale": False}
-    
+        return {
+            "type": "FeatureCollection",
+            "features": [],
+            "meta": {"ok": False, "reason": "disabled", "provider": ships_config.provider},
+        }
+
     # Verificar rate limit
     allowed, remaining = check_rate_limit("ships", ships_config.rate_limit_per_min)
     if not allowed:
@@ -1779,8 +1827,13 @@ def get_ships(
             result = dict(cached.payload)
             result["stale"] = True
             return result
-        return {"type": "FeatureCollection", "features": [], "stale": True}
-    
+        return {
+            "type": "FeatureCollection",
+            "features": [],
+            "stale": True,
+            "meta": {"ok": False, "reason": "rate_limited", "provider": ships_config.provider},
+        }
+
     # Parsear bbox si está presente
     bounds = None
     if bbox:
@@ -1790,22 +1843,41 @@ def get_ships(
                 bounds = (parts[0], parts[1], parts[2], parts[3])
         except (ValueError, IndexError):
             logger.warning("Invalid bbox parameter: %s", bbox)
-    
-    # Verificar caché
-    cached = cache_store.load("ships", max_age_minutes=ships_config.refresh_seconds // 60)
-    if cached:
-        logger.debug("Cache hit for ships")
-        return cached.payload
-    
-    # Fetch de datos
+
+    stream_provider = ships_config.provider == "aisstream"
+    data: Dict[str, Any]
+    used_cache = False
+
     try:
-        provider = _get_ships_provider(config)
-        data = provider.fetch(bounds=bounds)
-        
+        if stream_provider:
+            snapshot = ships_service.get_snapshot()
+            if snapshot is None:
+                cached = cache_store.load("ships", max_age_minutes=None)
+                if cached:
+                    data = dict(cached.payload)
+                    data["stale"] = True
+                    used_cache = True
+                else:
+                    return {
+                        "type": "FeatureCollection",
+                        "features": [],
+                        "meta": {"ok": False, "reason": "stream_inactive", "provider": ships_config.provider},
+                    }
+            else:
+                data = snapshot
+        else:
+            cached = cache_store.load("ships", max_age_minutes=ships_config.refresh_seconds // 60)
+            if cached:
+                logger.debug("Cache hit for ships")
+                return cached.payload
+
+            provider = _get_ships_provider(config)
+            data = provider.fetch(bounds=bounds)
+
         # Filtrar por edad (max_age_seconds), velocidad mínima y límites de densidad
         now = datetime.now(timezone.utc).timestamp()
         filtered_features = []
-        
+
         for feature in data.get("features", []):
             props = feature.get("properties", {})
             timestamp = props.get("timestamp", 0)
@@ -1897,9 +1969,16 @@ def get_ships(
         if focus_unavailable:
             data["properties"] = data.get("properties", {})
             data["properties"]["focus_unavailable"] = True
-        
+
         # Guardar en caché
-        cache_store.store("ships", data)
+        meta = data.setdefault("meta", {})
+        meta.setdefault("provider", ships_config.provider)
+        if stream_provider and not meta.get("ok"):
+            meta["ok"] = len(features_with_focus) > 0
+        if not stream_provider:
+            meta.setdefault("ok", True)
+        if not used_cache:
+            cache_store.store("ships", data)
         logger.info("Fetched %d ships (in_focus: %d)", len(features_with_focus),
                    sum(1 for f in features_with_focus if f.get("properties", {}).get("in_focus", False)))
         return data
@@ -2123,6 +2202,7 @@ def on_startup() -> None:
         config.display.timezone,
         ",".join(config.ui.rotation.panels),
     )
+    ships_service.apply_config(config.layers.ships)
     cache_store.store("health", {"started_at": APP_START.isoformat()})
     logger.info(
         "Configuration path %s (layout=%s, map_style=%s, map_provider=%s)",

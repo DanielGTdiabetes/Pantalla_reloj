@@ -366,6 +366,7 @@ class ShipsLayer(BaseModel):
     enabled: bool = True
     opacity: float = Field(default=0.9, ge=0.0, le=1.0)
     provider: Literal["ais_generic", "aisstream", "aishub", "custom"] = Field(default="ais_generic")
+    update_interval: int = Field(default=10, ge=1, le=300)
     refresh_seconds: int = Field(default=18, ge=1, le=300)
     max_age_seconds: int = Field(default=180, ge=10, le=600)
     max_items_global: int = Field(default=1500, ge=1, le=10000)
@@ -379,6 +380,15 @@ class ShipsLayer(BaseModel):
     aisstream: AISStreamConfig = Field(default_factory=AISStreamConfig)
     aishub: AISHubConfig = Field(default_factory=AISHubConfig)
     custom: CustomShipConfig = Field(default_factory=CustomShipConfig)
+
+    @model_validator(mode="after")
+    def sync_refresh_with_update(self) -> "ShipsLayer":  # type: ignore[override]
+        fields = getattr(self, "model_fields_set", set())
+        if "update_interval" in fields and "refresh_seconds" not in fields:
+            self.refresh_seconds = self.update_interval
+        elif "refresh_seconds" in fields and "update_interval" not in fields:
+            self.update_interval = self.refresh_seconds
+        return self
 
 
 class GlobalSatelliteLayer(BaseModel):
