@@ -3,3 +3,4 @@ uvicorn[standard]
 requests
 pydantic
 aiofiles
+shapely>=2.0.0

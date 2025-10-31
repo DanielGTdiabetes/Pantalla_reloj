@@ -13,6 +13,15 @@ from .models import AEMET, CineFocus
 
 logger = configure_logging()
 
+try:
+    from shapely.geometry import shape, mapping, Point, MultiPolygon, Polygon
+    from shapely.ops import unary_union
+    from shapely.geometry.polygon import LinearRing
+    SHAPELY_AVAILABLE = True
+except ImportError:
+    SHAPELY_AVAILABLE = False
+    logger.warning("Shapely not available - geometric union in 'both' mode will use fallback (prioritize CAP)")
+
 # Cache para focus masks
 FOCUS_CACHE_DIR = Path("/var/cache/pantalla/focus")
 FOCUS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -194,15 +203,45 @@ def build_radar_mask(
     if not radar_data:
         return None
     
-    # Si es metadata de RainViewer, aún no podemos procesar tiles
-    # En el futuro, esto descargaría tiles y generaría contornos
+    # Si es metadata de RainViewer, generar máscara básica basada en bounds
     if radar_data.get("type") == "radar_metadata":
         provider = radar_data.get("provider")
         if provider == "rainviewer":
-            # Por ahora, retornar None (requiere procesamiento de tiles)
-            # TODO: Implementar descarga y procesamiento de tiles RainViewer
-            logger.debug("RainViewer radar mask generation not yet implemented (requires tile processing)")
-            return None
+            # Implementación básica: usar bounds si están disponibles
+            # En el futuro, esto descargaría tiles y generaría contornos reales
+            bounds = radar_data.get("bounds")
+            if bounds:
+                # bounds: (min_lon, min_lat, max_lon, max_lat)
+                min_lon, min_lat, max_lon, max_lat = bounds
+                
+                # Crear un rectángulo simple con buffer
+                # Aplicar buffer aproximado (simplificado)
+                center_lat = (min_lat + max_lat) / 2
+                center_lon = (min_lon + max_lon) / 2
+                
+                # Convertir buffer_km a grados aproximados (1° ≈ 111 km)
+                buffer_deg_lat = buffer_km / 111.0
+                buffer_deg_lon = buffer_km / (111.0 * math.cos(math.radians(center_lat)))
+                
+                # Crear polígono rectangular con buffer
+                polygon = [
+                    [min_lon - buffer_deg_lon, min_lat - buffer_deg_lat],
+                    [max_lon + buffer_deg_lon, min_lat - buffer_deg_lat],
+                    [max_lon + buffer_deg_lon, max_lat + buffer_deg_lat],
+                    [min_lon - buffer_deg_lon, max_lat + buffer_deg_lat],
+                    [min_lon - buffer_deg_lon, min_lat - buffer_deg_lat],  # Cerrar polígono
+                ]
+                
+                logger.debug("RainViewer radar mask: generated bbox-based mask with buffer %.2f km", buffer_km)
+                
+                return {
+                    "type": "Polygon",
+                    "coordinates": [polygon]
+                }
+            else:
+                # Sin bounds, no podemos generar máscara precisa
+                logger.debug("RainViewer radar mask: no bounds available, cannot generate mask")
+                return None
         else:
             return None
     
@@ -282,11 +321,32 @@ def build_focus_mask(
     elif mode == "radar":
         return radar_mask
     elif mode == "both":
-        # Unir las máscaras (simplificado: devolver la que exista)
+        # Unir las máscaras geométricamente si ambas existen
         if cap_mask and radar_mask:
-            # En producción, haría union geométrica
-            # Por ahora, devolver la de CAP como prioridad
-            return cap_mask
+            if SHAPELY_AVAILABLE:
+                try:
+                    # Convertir GeoJSON a Shapely
+                    cap_shape = shape(cap_mask)
+                    radar_shape = shape(radar_mask)
+                    
+                    # Unión geométrica
+                    union_shape = unary_union([cap_shape, radar_shape])
+                    
+                    # Convertir de vuelta a GeoJSON
+                    union_geojson = mapping(union_shape)
+                    
+                    logger.debug("Union geométrica CAP+Radar: %d polígonos combinados", 
+                               len(union_geojson.get("coordinates", [])))
+                    
+                    return union_geojson
+                except Exception as exc:
+                    logger.warning("Failed to perform geometric union, using CAP: %s", exc)
+                    # Fallback: devolver CAP si falla la unión
+                    return cap_mask
+            else:
+                # Fallback si shapely no está disponible: priorizar CAP
+                logger.debug("Shapely not available, using CAP mask as fallback")
+                return cap_mask
         elif cap_mask:
             return cap_mask
         elif radar_mask:
@@ -405,8 +465,12 @@ def load_or_build_focus_mask(
                 try:
                     from .global_providers import RainViewerProvider
                     provider = RainViewerProvider()
-                    # Obtener metadatos para procesamiento
+                    # Pasar bounds globales para generar máscara (el mundo completo)
+                    # En el futuro, esto podría usar el viewport actual del mapa
+                    global_bounds = (-180.0, -90.0, 180.0, 90.0)
+                    # Obtener metadatos para procesamiento con bounds globales
                     radar_data = provider.get_radar_data_for_focus(
+                        bounds=global_bounds,
                         threshold_dbz=cine_focus.radar_dbz_threshold
                     )
                 except Exception as exc:
