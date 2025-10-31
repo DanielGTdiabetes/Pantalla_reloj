@@ -471,10 +471,11 @@ export const DEFAULT_CONFIG: AppConfig = {
       },
     },
     ships: {
-      enabled: true,
+      enabled: false,
       opacity: 0.9,
-      provider: "ais_generic",
-      refresh_seconds: 18,
+      provider: "aisstream",
+      update_interval: 10,
+      refresh_seconds: 10,
       max_age_seconds: 180,
       max_items_global: 1500,
       max_items_view: 300,
@@ -496,8 +497,10 @@ export const DEFAULT_CONFIG: AppConfig = {
         api_key: null,
       },
       aisstream: {
-        ws_url: null,
+        ws_url: "wss://stream.aisstream.io/v0/stream",
         api_key: null,
+        has_api_key: false,
+        api_key_last4: null,
       },
       aishub: {
         base_url: "https://www.aishub.net/api",
@@ -790,7 +793,9 @@ const mergeShipsLayer = (candidate: unknown): ShipsLayerConfig => {
   const aisstreamSource: Partial<AISStreamConfig> = source.aisstream ?? {};
   const aisstreamFallback: Required<AISStreamConfig> = {
     ws_url: fallback.aisstream?.ws_url ?? null,
-    api_key: fallback.aisstream?.api_key ?? null,
+    api_key: null,
+    has_api_key: fallback.aisstream?.has_api_key ?? false,
+    api_key_last4: fallback.aisstream?.api_key_last4 ?? null,
   };
   const aishubSource: Partial<AISHubConfig> = source.aishub ?? {};
   const aishubFallback: Required<AISHubConfig> = {
@@ -803,15 +808,29 @@ const mergeShipsLayer = (candidate: unknown): ShipsLayerConfig => {
     ? (source.provider as "ais_generic" | "aisstream" | "aishub" | "custom")
     : "ais_generic";
 
+  const updateInterval = clampNumber(
+    Math.round(
+      toNumber(
+        source.update_interval,
+        toNumber(source.refresh_seconds, fallback.update_interval ?? fallback.refresh_seconds),
+      ),
+    ),
+    1,
+    300,
+  );
+
+  const refreshSeconds = clampNumber(
+    Math.round(toNumber(source.refresh_seconds, updateInterval)),
+    1,
+    300,
+  );
+
   return {
     enabled: toBoolean(source.enabled, fallback.enabled),
     opacity: clampNumber(toNumber(source.opacity, fallback.opacity), 0.0, 1.0),
     provider,
-    refresh_seconds: clampNumber(
-      Math.round(toNumber(source.refresh_seconds, fallback.refresh_seconds)),
-      1,
-      300,
-    ),
+    update_interval: updateInterval,
+    refresh_seconds: refreshSeconds,
     max_age_seconds: clampNumber(
       Math.round(toNumber(source.max_age_seconds, fallback.max_age_seconds)),
       10,
@@ -874,7 +893,14 @@ const mergeShipsLayer = (candidate: unknown): ShipsLayerConfig => {
     },
     aisstream: {
       ws_url: sanitizeNullableString(aisstreamSource.ws_url, aisstreamFallback.ws_url ?? null),
-      api_key: sanitizeNullableString(aisstreamSource.api_key, aisstreamFallback.api_key ?? null),
+      api_key: null,
+      has_api_key: Boolean(
+        aisstreamSource.has_api_key ?? aisstreamFallback.has_api_key ?? false,
+      ),
+      api_key_last4: sanitizeNullableString(
+        aisstreamSource.api_key_last4,
+        aisstreamFallback.api_key_last4 ?? null,
+      ),
     },
     aishub: {
       base_url: sanitizeNullableString(aishubSource.base_url, aishubFallback.base_url ?? null),

@@ -167,10 +167,11 @@
       }
     },
     "ships": {
-      "enabled": true,
+      "enabled": false,
       "opacity": 0.9,
-      "provider": "ais_generic",
-      "refresh_seconds": 18,
+      "provider": "aisstream",
+      "update_interval": 10,
+      "refresh_seconds": 10,
       "max_age_seconds": 180,
       "max_items_global": 1500,
       "max_items_view": 300,
@@ -192,7 +193,7 @@
         "api_key": null
       },
       "aisstream": {
-        "ws_url": null,
+        "ws_url": "wss://stream.aisstream.io/v0/stream",
         "api_key": null
       },
       "aishub": {
