@@ -1,14 +1,9 @@
 import asyncio
-import importlib
 import json
-import sys
 from pathlib import Path
-from typing import Dict, Generator, Tuple
+from typing import Dict, Tuple
 
 import pytest
-
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "default_config.json"
-
 
 class DummyResponse:
     def __init__(self, status_code: int, payload: Dict[str, object] | None = None) -> None:
@@ -19,25 +14,6 @@ class DummyResponse:
         if self._payload is None:
             raise ValueError("no json payload")
         return self._payload
-
-
-@pytest.fixture()
-def app_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[Tuple[object, Path], None, None]:
-    state_dir = tmp_path / "state"
-    state_dir.mkdir()
-    config_file = state_dir / "config.json"
-    config_file.write_text(DEFAULT_CONFIG_PATH.read_text(encoding="utf-8"), encoding="utf-8")
-
-    monkeypatch.setenv("PANTALLA_STATE_DIR", str(state_dir))
-    monkeypatch.setenv("PANTALLA_CONFIG_FILE", str(config_file))
-    monkeypatch.setenv("PANTALLA_DEFAULT_CONFIG_FILE", str(DEFAULT_CONFIG_PATH))
-
-    if "backend.main" in sys.modules:
-        del sys.modules["backend.main"]
-
-    module = importlib.import_module("backend.main")
-    yield module, config_file
-
 
 def _write_aemet_key(module: object, api_key: str | None) -> None:
     config = module.config_manager.read()

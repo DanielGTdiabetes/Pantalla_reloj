@@ -1180,33 +1180,46 @@ def wifi_scan() -> Dict[str, Any]:
 
     # Trigger scan using nmcli with proper syntax and fallback without interface
     attempts = [
-        (["device", "wifi", "rescan", "ifname", interface], "ifname"),
-        (["device", "wifi", "rescan"], "fallback"),
+        (["dev", "wifi", "rescan", "ifname", interface], "ifname"),
+        (["dev", "wifi", "rescan"], "fallback"),
     ]
 
     last_stdout = ""
     last_stderr = ""
-    last_code = 0
+    last_label = "ifname"
 
     for args, label in attempts:
         stdout, stderr, code = _run_nmcli(args, timeout=8)
-        last_stdout, last_stderr, last_code = stdout, stderr, code
+        last_stdout, last_stderr, last_label = stdout, stderr, label
         if code == 0:
             logger.info("Triggered WiFi scan on %s using nmcli (%s)", interface, label)
-            return {"status": "ok"}
+            return {
+                "ok": True,
+                "count": 0,
+                "networks": [],
+                "meta": {
+                    "stdout": stdout.strip(),
+                    "stderr": stderr.strip(),
+                    "attempt": label,
+                },
+            }
         logger.warning(
             "nmcli rescan attempt failed (%s): stdout=%r, stderr=%r", label, stdout, stderr
         )
 
-    error_detail = last_stderr or last_stdout or "Unknown error"
+    error_detail = (last_stderr or last_stdout or "Unknown error").strip()
     logger.warning("Failed to trigger WiFi scan after retries: %s", error_detail)
-    raise HTTPException(
-        status_code=502,
-        detail={
-            "error": "Failed to trigger WiFi scan",
+    return {
+        "ok": False,
+        "count": 0,
+        "networks": [],
+        "meta": {
             "stderr": error_detail,
+            "stdout": last_stdout.strip(),
+            "reason": "scan_failed",
+            "attempt": last_label,
         },
-    )
+    }
 
 
 @app.get("/api/wifi/status")
@@ -1320,18 +1333,32 @@ def wifi_networks() -> Dict[str, Any]:
 
     attempts = [
         (
-            ["-t", "-f", "SSID,SIGNAL,BARS", "device", "wifi", "list", "ifname", interface],
+            [
+                "-t",
+                "-f",
+                "SSID,SIGNAL,BARS,SECURITY,MODE",
+                "device",
+                "wifi",
+                "list",
+                "ifname",
+                interface,
+            ],
             "ifname",
         ),
-        (["-t", "-f", "SSID,SIGNAL,BARS", "device", "wifi", "list"], "fallback"),
+        (
+            ["-t", "-f", "SSID,SIGNAL,BARS,SECURITY,MODE", "device", "wifi", "list"],
+            "fallback",
+        ),
     ]
 
     stdout = ""
     stderr = ""
     code = 0
+    used_label = "ifname"
 
     for args, label in attempts:
         stdout, stderr, code = _run_nmcli(args, timeout=12)
+        used_label = label
         if code == 0:
             logger.info("Listed WiFi networks using nmcli (%s)", label)
             break
@@ -1339,15 +1366,18 @@ def wifi_networks() -> Dict[str, Any]:
             "nmcli list networks attempt failed (%s): stdout=%r, stderr=%r", label, stdout, stderr
         )
     else:
-        error_detail = stderr or stdout or "Unknown error"
+        error_detail = (stderr or stdout or "Unknown error").strip()
         logger.error("Failed to list WiFi networks after retries: %s", error_detail)
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "error": "Failed to list WiFi networks",
+        return {
+            "interface": interface,
+            "networks": [],
+            "count": 0,
+            "meta": {
                 "stderr": error_detail,
+                "reason": "list_failed",
+                "attempt": used_label,
             },
-        )
+        }
 
     lines = [line for line in stdout.strip().split("\n") if line.strip()]
     networks: List[Dict[str, Any]] = []
@@ -1356,9 +1386,11 @@ def wifi_networks() -> Dict[str, Any]:
         parts = line.split(":")
         if len(parts) < 3:
             continue
-        ssid = parts[0].strip()
+        ssid = parts[0].replace("\\:", ":").strip()
         signal_raw = parts[1].strip() if len(parts) > 1 else ""
         bars = parts[2].strip() if len(parts) > 2 else ""
+        security = parts[3].strip() if len(parts) > 3 else ""
+        mode = parts[4].strip() if len(parts) > 4 else ""
 
         if not ssid or ssid == "--":
             continue
@@ -1372,15 +1404,20 @@ def wifi_networks() -> Dict[str, Any]:
             "ssid": ssid,
             "signal": signal,
             "bars": bars,
+            "security": security,
+            "mode": mode,
         })
 
     networks.sort(key=lambda item: item.get("signal", 0), reverse=True)
 
-    return {
+    payload: Dict[str, Any] = {
         "interface": interface,
         "networks": networks,
         "count": len(networks),
     }
+    if used_label:
+        payload["meta"] = {"attempt": used_label}
+    return payload
 
 
 @app.post("/api/wifi/connect")

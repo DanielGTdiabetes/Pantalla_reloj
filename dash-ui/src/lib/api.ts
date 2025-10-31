@@ -210,14 +210,21 @@ export async function getLightning() {
 export type WiFiNetwork = {
   ssid: string;
   signal: number;
-  security: string;
-  mode: string;
+  security?: string;
+  mode?: string;
+  bars?: string;
 };
 
 export type WiFiScanResponse = {
-  interface: string;
-  networks: WiFiNetwork[];
+  ok: boolean;
   count: number;
+  networks: WiFiNetwork[];
+  meta?: {
+    stdout?: string;
+    stderr?: string;
+    reason?: string;
+    attempt?: string;
+  };
 };
 
 export type WiFiStatusResponse = {
@@ -241,8 +248,14 @@ export type WiFiConnectResponse = {
 };
 
 export type WiFiNetworksResponse = {
-  networks: Array<{ uuid: string; name: string }>;
+  interface?: string;
+  networks: WiFiNetwork[];
   count: number;
+  meta?: {
+    stderr?: string;
+    reason?: string;
+    attempt?: string;
+  };
 };
 
 export async function wifiScan() {
