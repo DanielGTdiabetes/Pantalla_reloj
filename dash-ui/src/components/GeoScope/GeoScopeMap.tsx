@@ -4,6 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
 
 import { apiGet } from "../../lib/api";
+import { useConfig } from "../../lib/useConfig";
 import { kioskRuntime } from "../../lib/runtimeFlags";
 import {
   createDefaultMapCinema,
@@ -654,7 +655,9 @@ const buildRuntimePreferences = (
     0,
     Number.isFinite(cinema.panLngDegPerSec) ? cinema.panLngDegPerSec : 0
   );
-  const allowCinema = rotationEnabled && cinema.enabled && panSpeedDegPerSec > 0;
+  // El modo horizontal funciona independientemente de rotation.enabled
+  // Solo requiere cinema.enabled y panSpeedDegPerSec > 0
+  const allowCinema = cinema.enabled && panSpeedDegPerSec > 0;
 
   const initialLng = 0;
 
@@ -700,6 +703,7 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
 };
 
 export default function GeoScopeMap() {
+  const { data: config } = useConfig();
   const mapFillRef = useRef<HTMLDivElement | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -975,12 +979,13 @@ export default function GeoScopeMap() {
   };
 
   const updateMapView = (map: maplibregl.Map) => {
-    const { lng, lat, zoom, pitch, bearing } = viewStateRef.current;
+    const { lng, lat, zoom, pitch } = viewStateRef.current;
+    // Siempre mantener bearing en 0 (sin rotación)
     map.jumpTo({
       center: [lng, lat],
       zoom,
       pitch,
-      bearing
+      bearing: 0
     });
   };
 
@@ -1610,6 +1615,73 @@ export default function GeoScopeMap() {
     }
 
     void initializeMap();
+
+    // Escuchar cambios en la configuración y reaccionar inmediatamente
+    useEffect(() => {
+      if (!config || !mapRef.current) {
+        return;
+      }
+
+      const merged = withConfigDefaults(config);
+      const mapSettings = merged.ui.map;
+      const cinemaSource = mapSettings.cinema ?? createDefaultMapCinema();
+      const panSpeedDegPerSec = Math.max(
+        0,
+        Number.isFinite(cinemaSource.panLngDegPerSec) ? cinemaSource.panLngDegPerSec : 0
+      );
+      const cinemaEnabled = Boolean(cinemaSource.enabled);
+      const newAllowCinema = cinemaEnabled && panSpeedDegPerSec > 0;
+
+      // Si cambió el estado de allowCinema, actualizar
+      if (newAllowCinema !== allowCinemaRef.current) {
+        allowCinemaRef.current = newAllowCinema;
+        
+        // Detener cualquier animación actual
+        stopPan();
+        clearIdlePanTimer();
+        cancelSerpentine();
+
+        if (newAllowCinema) {
+          // Actualizar velocidad y reiniciar si corresponde
+          const overrideSpeed = kioskRuntime.getSpeedOverride(
+            panSpeedDegPerSec,
+            FALLBACK_ROTATION_DEG_PER_SEC
+          );
+          panSpeedRef.current = overrideSpeed;
+          
+          // Reiniciar el mapa con nueva configuración
+          cinemaRef.current = cloneCinema(cinemaSource);
+          recomputeAutopanActivation();
+          
+          // Reiniciar animación si el mapa está listo
+          const map = mapRef.current;
+          if (map && map.isStyleLoaded() && !document.hidden) {
+            startPan();
+          }
+        } else {
+          // Si se desactiva, asegurar que el bearing sea 0
+          panSpeedRef.current = 0;
+          viewStateRef.current.bearing = 0;
+          const map = mapRef.current;
+          if (map) {
+            map.jumpTo({
+              center: [viewStateRef.current.lng, viewStateRef.current.lat],
+              zoom: viewStateRef.current.zoom,
+              pitch: viewStateRef.current.pitch,
+              bearing: 0
+            });
+          }
+        }
+      } else if (newAllowCinema && panSpeedRef.current !== panSpeedDegPerSec) {
+        // Si la velocidad cambió pero el modo sigue activo
+        const overrideSpeed = kioskRuntime.getSpeedOverride(
+          panSpeedDegPerSec,
+          FALLBACK_ROTATION_DEG_PER_SEC
+        );
+        panSpeedRef.current = overrideSpeed;
+        cinemaRef.current = cloneCinema(cinemaSource);
+      }
+    }, [config]);
 
     return () => {
       destroyed = true;

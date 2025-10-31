@@ -336,7 +336,8 @@ const ConfigPage: React.FC = () => {
   const isReady = status === "ready";
   const disableInputs = !isReady || saving;
 
-  const cinemaBlocked = !form.ui.rotation.enabled || !form.ui.map.cinema.enabled;
+  // El modo cine horizontal ya no requiere rotation.enabled
+  const cinemaBlocked = !form.ui.map.cinema.enabled;
   const disableCinemaControls = disableInputs || cinemaBlocked;
   const disableIdlePanControls =
     disableInputs || cinemaBlocked || !form.ui.map.idlePan.enabled;
@@ -733,7 +734,7 @@ const ConfigPage: React.FC = () => {
                     Activar modo cine
                   </label>
                   {renderHelp(
-                    "Habilita las panorámicas automáticas del mapa (requiere la rotación del kiosco)"
+                    "Habilita el desplazamiento horizontal automático del mapa (modo película)"
                   )}
                 </div>
               )}
