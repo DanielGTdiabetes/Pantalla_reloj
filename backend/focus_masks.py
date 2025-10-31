@@ -4,8 +4,11 @@ from __future__ import annotations
 import json
 import math
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+import requests
 
 from .cache import CacheStore
 from .logging_utils import configure_logging
@@ -21,6 +24,14 @@ try:
 except ImportError:
     SHAPELY_AVAILABLE = False
     logger.warning("Shapely not available - geometric union in 'both' mode will use fallback (prioritize CAP)")
+
+try:
+    from PIL import Image
+    import numpy as np
+    PILLOW_AVAILABLE = True
+except ImportError:
+    PILLOW_AVAILABLE = False
+    logger.warning("Pillow/numpy not available - radar tile processing will use bounds-based fallback")
 
 # Cache para focus masks
 FOCUS_CACHE_DIR = Path("/var/cache/pantalla/focus")
@@ -137,6 +148,165 @@ def apply_buffer_simple(
     return buffered
 
 
+def process_rainviewer_tiles_for_mask(
+    bounds: Tuple[float, float, float, float],
+    timestamp: int,
+    threshold_dbz: float,
+    zoom_level: int = 7,
+    tile_base_url: str = "https://api.rainviewer.com"
+) -> Optional[Dict[str, Any]]:
+    """Procesa tiles de RainViewer para generar máscara de foco.
+    
+    Descarga tiles de radar en el área especificada, identifica píxeles
+    que exceden el umbral dBZ y genera contornos GeoJSON.
+    
+    Args:
+        bounds: (min_lon, min_lat, max_lon, max_lat) área a procesar
+        timestamp: Unix timestamp del frame de radar
+        threshold_dbz: Umbral de dBZ (0-70 típicamente)
+        zoom_level: Nivel de zoom para tiles (7-10 recomendado)
+        tile_base_url: URL base del proveedor
+    
+    Returns:
+        GeoJSON Polygon/MultiPolygon con contornos o None si falla
+    """
+    if not PILLOW_AVAILABLE:
+        logger.debug("Pillow not available, cannot process RainViewer tiles")
+        return None
+    
+    try:
+        min_lon, min_lat, max_lon, max_lat = bounds
+        
+        # Calcular tiles necesarios para cubrir el área
+        # Fórmula de conversión lat/lon a tile coordinates (Web Mercator)
+        def deg2num(lat_deg: float, lon_deg: float, zoom: int) -> Tuple[int, int]:
+            """Convierte lat/lon a coordenadas de tile (x, y)."""
+            lat_rad = math.radians(lat_deg)
+            n = 2.0 ** zoom
+            x = int((lon_deg + 180.0) / 360.0 * n)
+            y = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
+            return (x, y)
+        
+        # Calcular rango de tiles
+        x_min, y_max = deg2num(max_lat, min_lon, zoom_level)
+        x_max, y_min = deg2num(min_lat, max_lon, zoom_level)
+        
+        # Limitar número de tiles para evitar sobrecarga (máx 10x10 = 100 tiles)
+        max_tiles = 100
+        num_tiles = (x_max - x_min + 1) * (y_max - y_min + 1)
+        if num_tiles > max_tiles:
+            logger.warning(
+                "Too many tiles for radar processing (%d > %d), using bounds-based fallback",
+                num_tiles,
+                max_tiles
+            )
+            return None
+        
+        # Descargar y procesar tiles
+        significant_pixels = []  # Lista de (lat, lon) donde hay precipitación significativa
+        
+        for x in range(x_min, x_max + 1):
+            for y in range(y_min, y_max + 1):
+                try:
+                    # Construir URL del tile RainViewer
+                    tile_url = f"{tile_base_url}/public/weather-maps/{timestamp}/{zoom_level}/{x}/{y}/4/1/0.png"
+                    
+                    # Descargar tile
+                    response = requests.get(tile_url, timeout=5, stream=True)
+                    if response.status_code != 200:
+                        continue
+                    
+                    # Procesar imagen
+                    img = Image.open(BytesIO(response.content))
+                    img_array = np.array(img)
+                    
+                    # RainViewer usa esquema de color:
+                    # - Transparente/negro = sin precipitación
+                    # - Colores (azul→verde→amarillo→rojo) = intensidad creciente
+                    # Aproximación: convertir colores RGB a intensidad aproximada
+                    # y mapear a dBZ aproximados
+                    
+                    # Filtrar píxeles con suficiente intensidad
+                    if len(img_array.shape) == 3:
+                        # Imagen RGB/RGBA
+                        alpha = img_array[:, :, 3] if img_array.shape[2] == 4 else np.ones((img_array.shape[0], img_array.shape[1]), dtype=np.uint8) * 255
+                        rgb = img_array[:, :, :3]
+                        
+                        # Calcular intensidad (brightness + saturation)
+                        brightness = np.mean(rgb, axis=2).astype(np.float32)
+                        
+                        # Filtro: píxeles no transparentes con suficiente intensidad
+                        # Aproximación: umbral de brillo basado en threshold_dbz
+                        # RainViewer escala: ~0 dBZ = negro, ~70 dBZ = rojo brillante
+                        # Usar brightness como proxy de dBZ (ajustar según threshold)
+                        intensity_threshold = (threshold_dbz / 70.0) * 255 * 0.5  # Aproximación
+                        mask = (alpha > 50) & (brightness > intensity_threshold)
+                        
+                        # Convertir píxeles significativos a coordenadas geográficas
+                        if np.any(mask):
+                            # Convertir índices de píxel a lat/lon
+                            tile_lat_min = math.degrees(math.pi - 2.0 * math.pi * (y + 1) / (2.0 ** zoom_level))
+                            tile_lat_max = math.degrees(math.pi - 2.0 * math.pi * y / (2.0 ** zoom_level))
+                            tile_lon_min = (x / (2.0 ** zoom_level)) * 360.0 - 180.0
+                            tile_lon_max = ((x + 1) / (2.0 ** zoom_level)) * 360.0 - 180.0
+                            
+                            # Muestrear píxeles (cada N píxel para reducir densidad)
+                            # Limitar a ~100 píxeles por tile
+                            mask_count = int(np.sum(mask))
+                            sample_rate = max(1, mask_count // 100) if mask_count > 0 else 1
+                            pixel_y, pixel_x = np.where(mask)
+                            for idx in range(0, len(pixel_y), sample_rate):
+                                py, px = pixel_y[idx], pixel_x[idx]
+                                lat = tile_lat_max - (py / img_array.shape[0]) * (tile_lat_max - tile_lat_min)
+                                lon = tile_lon_min + (px / img_array.shape[1]) * (tile_lon_max - tile_lon_min)
+                                
+                                # Verificar que está dentro de bounds
+                                if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
+                                    significant_pixels.append((lat, lon))
+                
+                except Exception as exc:
+                    logger.debug("Failed to process RainViewer tile %d/%d: %s", x, y, exc)
+                    continue
+        
+        if not significant_pixels:
+            logger.debug("No significant precipitation pixels found in RainViewer tiles")
+            return None
+        
+        # Agrupar píxeles cercanos y generar contornos
+        # Usar clustering simple o generar polígonos convexos
+        if SHAPELY_AVAILABLE and len(significant_pixels) > 3:
+            try:
+                # Crear MultiPoint y generar convex hull o buffer para crear polígonos
+                from shapely.geometry import MultiPoint
+                points = MultiPoint([(lon, lat) for lat, lon in significant_pixels])
+                
+                # Aplicar buffer para crear polígono (aproximado)
+                # Usar buffer de ~5 km como mínimo para crear contornos continuos
+                buffer_degrees = 5.0 / 111.0  # ~5 km en grados
+                buffered = points.buffer(buffer_degrees)
+                
+                # Simplificar para reducir complejidad
+                simplified = buffered.simplify(0.01)
+                
+                # Convertir a GeoJSON
+                geojson = mapping(simplified)
+                
+                polygon_count = count_polygons_in_geojson(geojson)
+                logger.debug("RainViewer radar mask: generated from %d pixels, %d polygons", len(significant_pixels), polygon_count)
+                return geojson
+            
+            except Exception as exc:
+                logger.warning("Failed to generate contours from RainViewer pixels: %s", exc)
+                return None
+        
+        # Fallback: retornar None si no hay shapely o muy pocos píxeles
+        return None
+    
+    except Exception as exc:
+        logger.error("Failed to process RainViewer tiles for mask: %s", exc)
+        return None
+
+
 def build_cap_mask(
     cap_warnings: List[Dict[str, Any]],
     min_severity: str,
@@ -209,10 +379,15 @@ def build_radar_mask(
 ) -> Optional[Dict[str, Any]]:
     """Construye una máscara de foco a partir de datos de radar.
     
-    Soporta tanto datos de AEMET (regional) como RainViewer (global).
+    Soporta RainViewer (global) para datos de radar. AEMET OpenData no proporciona
+    tiles de radar/satélite en su API pública estándar (opendata.aemet.es), solo avisos
+    CAP 1.2 (Meteoalerta) y feeds RSS/ATOM.
+    
+    Para radar regional de España, se requeriría usar otra fuente WMTS externa
+    (p. ej. IGN/MITECO) o datos preprocesados.
     
     Args:
-        radar_data: Datos de radar (metadatos o tiles procesados)
+        radar_data: Datos de radar (metadatos o tiles procesados de RainViewer)
         threshold_dbz: Umbral de dBZ
         buffer_km: Buffer en km
         
@@ -222,19 +397,45 @@ def build_radar_mask(
     if not radar_data:
         return None
     
-    # Si es metadata de RainViewer, generar máscara básica basada en bounds
+    # Si es metadata de RainViewer, procesar tiles reales si es posible
     if radar_data.get("type") == "radar_metadata":
         provider = radar_data.get("provider")
         if provider == "rainviewer":
-            # Implementación básica: usar bounds si están disponibles
-            # En el futuro, esto descargaría tiles y generaría contornos reales
             bounds = radar_data.get("bounds")
-            if bounds:
-                # bounds: (min_lon, min_lat, max_lon, max_lat)
+            timestamp = radar_data.get("latest_timestamp")
+            tile_base_url = radar_data.get("tile_base_url", "https://api.rainviewer.com")
+            
+            if bounds and timestamp:
+                # Intentar procesamiento real de tiles
+                processed_mask = process_rainviewer_tiles_for_mask(
+                    bounds=bounds,
+                    timestamp=timestamp,
+                    threshold_dbz=threshold_dbz,
+                    zoom_level=7,  # Zoom moderado para balance entre precisión y rendimiento
+                    tile_base_url=tile_base_url
+                )
+                
+                if processed_mask:
+                    # Aplicar buffer a la máscara procesada
+                    if SHAPELY_AVAILABLE and buffer_km > 0:
+                        try:
+                            from shapely.geometry import shape
+                            mask_shape = shape(processed_mask)
+                            buffer_degrees = buffer_km / 111.0  # Aproximado
+                            buffered_shape = mask_shape.buffer(buffer_degrees)
+                            from shapely.geometry import mapping
+                            processed_mask = mapping(buffered_shape)
+                        except Exception as exc:
+                            logger.warning("Failed to apply buffer to processed radar mask: %s", exc)
+                    
+                    logger.debug("RainViewer radar mask: processed from tiles with threshold %.1f dBZ", threshold_dbz)
+                    return processed_mask
+                
+                # Fallback: usar bounds si el procesamiento de tiles falla
+                logger.debug("RainViewer radar mask: tile processing failed, using bbox-based fallback")
                 min_lon, min_lat, max_lon, max_lat = bounds
                 
                 # Crear un rectángulo simple con buffer
-                # Aplicar buffer aproximado (simplificado)
                 center_lat = (min_lat + max_lat) / 2
                 center_lon = (min_lon + max_lon) / 2
                 
@@ -258,8 +459,32 @@ def build_radar_mask(
                     "coordinates": [polygon]
                 }
             else:
-                # Sin bounds, no podemos generar máscara precisa
-                logger.debug("RainViewer radar mask: no bounds available, cannot generate mask")
+                # Sin bounds o timestamp, no podemos generar máscara precisa
+                logger.debug("RainViewer radar mask: missing bounds or timestamp, cannot generate mask")
+                return None
+        elif provider == "aemet":
+            # Nota: AEMET OpenData no proporciona tiles de radar/satélite en su API pública.
+            # Solo proporciona avisos CAP 1.2 (Meteoalerta).
+            # Si se recibe datos AEMET con geometría procesada (desde otra fuente o preprocesados),
+            # se pueden usar directamente.
+            if radar_data.get("geometry"):
+                # Datos AEMET ya procesados con geometría (probablemente de fuente externa)
+                geom = radar_data["geometry"]
+                if SHAPELY_AVAILABLE and buffer_km > 0:
+                    try:
+                        from shapely.geometry import shape
+                        mask_shape = shape(geom)
+                        buffer_degrees = buffer_km / 111.0
+                        buffered_shape = mask_shape.buffer(buffer_degrees)
+                        from shapely.geometry import mapping
+                        return mapping(buffered_shape)
+                    except Exception as exc:
+                        logger.warning("Failed to apply buffer to AEMET radar mask: %s", exc)
+                        return geom
+                return geom
+            else:
+                # AEMET OpenData no proporciona tiles de radar - usar RainViewer para radar
+                logger.debug("AEMET radar mask: AEMET OpenData does not provide radar tiles, use RainViewer for radar data")
                 return None
         else:
             return None
@@ -432,14 +657,15 @@ def load_or_build_focus_mask(
         return None, False
     
     # Verificar si hay fuentes de datos disponibles
-    # Para "cap": requiere AEMET
-    # Para "radar": puede usar AEMET o RainViewer global
+    # Para "cap": requiere AEMET (CAP 1.2 avisos)
+    # Para "radar": requiere RainViewer global (AEMET no proporciona tiles de radar)
+    # Para "both": requiere AEMET (CAP) Y RainViewer (radar)
     aemet_config = config.aemet
     if mode_key == "cap" and not (aemet_config.enabled and aemet_config.cap_enabled):
         return None, False
-    if mode_key == "radar" and not aemet_config.enabled and not config.layers.global_layers.radar.enabled:
+    if mode_key == "radar" and not config.layers.global_layers.radar.enabled:
         return None, False
-    if mode_key == "both" and not aemet_config.enabled and not config.layers.global_layers.radar.enabled:
+    if mode_key == "both" and not ((aemet_config.enabled and aemet_config.cap_enabled) and config.layers.global_layers.radar.enabled):
         return None, False
     
     # Determinar TTL según refresh de CAP/Radar
@@ -469,23 +695,21 @@ def load_or_build_focus_mask(
                 if isinstance(warnings_data, dict) and "features" in warnings_data:
                     cap_warnings = warnings_data["features"]
         
-        # Obtener datos Radar (AEMET regional o global RainViewer)
+        # Obtener datos Radar (RainViewer global)
+        # Nota: AEMET OpenData solo proporciona avisos CAP 1.2 (Meteoalerta), no tiles de radar/satélite.
+        # Para radar/satélite, usamos RainViewer como fuente global.
+        # Si se necesita radar regional de España, se requeriría usar otra fuente (IGN/MITECO WMTS)
+        # o datos preprocesados.
         radar_data = None
         if mode_key in ["radar", "both"]:
-            # Prioridad: AEMET si está habilitado y configurado (solo España)
-            # Fallback: RainViewer global
-            if aemet_config.enabled and aemet_config.radar_enabled:
-                # Intentar cargar desde caché de AEMET
-                aemet_radar_cached = cache_store.load("aemet_radar", max_age_minutes=None)
-                if aemet_radar_cached and aemet_radar_cached.payload:
-                    radar_data = aemet_radar_cached.payload
-            else:
-                # Usar RainViewer global
+            # Usar RainViewer global para datos de radar
+            # AEMET no proporciona tiles de radar en su API OpenData pública
+            if config.layers.global_layers.radar.enabled:
                 try:
                     from .global_providers import RainViewerProvider
                     provider = RainViewerProvider()
                     # Pasar bounds globales para generar máscara (el mundo completo)
-                    # En el futuro, esto podría usar el viewport actual del mapa
+                    # En el futuro, esto podría usar el viewport actual del mapa o bounds regionales
                     global_bounds = (-180.0, -90.0, 180.0, 90.0)
                     # Obtener metadatos para procesamiento con bounds globales
                     radar_data = provider.get_radar_data_for_focus(
@@ -495,6 +719,9 @@ def load_or_build_focus_mask(
                 except Exception as exc:
                     logger.warning("Failed to get RainViewer radar data: %s", exc)
                     radar_data = None
+            else:
+                logger.debug("Global radar layer disabled, cannot build radar focus mask")
+                radar_data = None
         
         # Construir máscara
         mask = build_focus_mask(
