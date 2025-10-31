@@ -27,6 +27,25 @@ FOCUS_CACHE_DIR = Path("/var/cache/pantalla/focus")
 FOCUS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def count_polygons_in_geojson(geojson: Dict[str, Any]) -> int:
+    """Cuenta el número de polígonos en un GeoJSON (Polygon o MultiPolygon).
+    
+    Args:
+        geojson: GeoJSON Polygon o MultiPolygon
+        
+    Returns:
+        Número de polígonos (1 para Polygon, N para MultiPolygon)
+    """
+    geom_type = geojson.get("type")
+    if geom_type == "Polygon":
+        return 1
+    elif geom_type == "MultiPolygon":
+        coords = geojson.get("coordinates", [])
+        return len(coords)
+    else:
+        return 0
+
+
 def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calcula distancia en km entre dos puntos usando fórmula de Haversine."""
     R = 6371.0  # Radio de la Tierra en km
@@ -335,8 +354,8 @@ def build_focus_mask(
                     # Convertir de vuelta a GeoJSON
                     union_geojson = mapping(union_shape)
                     
-                    logger.debug("Union geométrica CAP+Radar: %d polígonos combinados", 
-                               len(union_geojson.get("coordinates", [])))
+                    polygon_count = count_polygons_in_geojson(union_geojson)
+                    logger.debug("Union geométrica CAP+Radar: %d polígonos combinados", polygon_count)
                     
                     return union_geojson
                 except Exception as exc:
@@ -490,8 +509,8 @@ def load_or_build_focus_mask(
         if mask:
             # Guardar en caché
             cache_store.store(cache_key, mask)
-            logger.info("Focus mask built and cached: %s (polygons: %d)", mode_key, 
-                       len(mask.get("coordinates", [])))
+            polygon_count = count_polygons_in_geojson(mask)
+            logger.info("Focus mask built and cached: %s (polygons: %d)", mode_key, polygon_count)
         
         return mask, False
     except Exception as exc:
