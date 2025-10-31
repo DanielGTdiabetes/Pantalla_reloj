@@ -6,8 +6,10 @@ import { useEffect, useRef, useState } from "react";
 import { apiGet, saveConfig } from "../../lib/api";
 import { useConfig } from "../../lib/useConfig";
 import { kioskRuntime } from "../../lib/runtimeFlags";
+import AircraftLayer from "./layers/AircraftLayer";
 import LightningLayer from "./layers/LightningLayer";
 import { LayerRegistry } from "./layers/LayerRegistry";
+import ShipsLayer from "./layers/ShipsLayer";
 import {
   createDefaultMapCinema,
   createDefaultMapIdlePan,
@@ -898,8 +900,10 @@ export default function GeoScopeMap() {
       ? diagnosticsAutopanRef.current.config.force
       : false
   );
+  const aircraftLayerRef = useRef<AircraftLayer | null>(null);
   const lightningLayerRef = useRef<LightningLayer | null>(null);
   const layerRegistryRef = useRef<LayerRegistry | null>(null);
+  const shipsLayerRef = useRef<ShipsLayer | null>(null);
   const stormModeActiveRef = useRef(false);
   const lastLogTimeRef = useRef<number>(0);
   const respectDefaultRef = useRef(false);
@@ -1755,6 +1759,40 @@ export default function GeoScopeMap() {
         const lightningLayer = new LightningLayer({ enabled: true });
         layerRegistry.add(lightningLayer);
         lightningLayerRef.current = lightningLayer;
+
+        // Inicializar AircraftLayer y ShipsLayer según configuración
+        // Usar defaults si config aún no está disponible
+        const mergedConfig = config ? withConfigDefaults(config) : withConfigDefaults();
+        
+          // AircraftLayer
+          const flightsConfig = mergedConfig.layers.flights;
+          const aircraftLayer = new AircraftLayer({
+            enabled: flightsConfig.enabled,
+            opacity: flightsConfig.opacity,
+            maxAgeSeconds: flightsConfig.max_age_seconds,
+            cineFocus: flightsConfig.cine_focus?.enabled ? {
+              enabled: flightsConfig.cine_focus.enabled,
+              outsideDimOpacity: flightsConfig.cine_focus.outside_dim_opacity,
+              hardHideOutside: flightsConfig.cine_focus.hard_hide_outside,
+            } : undefined,
+          });
+          layerRegistry.add(aircraftLayer);
+          aircraftLayerRef.current = aircraftLayer;
+
+          // ShipsLayer
+          const shipsConfig = mergedConfig.layers.ships;
+          const shipsLayer = new ShipsLayer({
+            enabled: shipsConfig.enabled,
+            opacity: shipsConfig.opacity,
+            maxAgeSeconds: shipsConfig.max_age_seconds,
+            cineFocus: shipsConfig.cine_focus?.enabled ? {
+              enabled: shipsConfig.cine_focus.enabled,
+              outsideDimOpacity: shipsConfig.cine_focus.outside_dim_opacity,
+              hardHideOutside: shipsConfig.cine_focus.hard_hide_outside,
+            } : undefined,
+          });
+          layerRegistry.add(shipsLayer);
+          shipsLayerRef.current = shipsLayer;
       });
 
       setupResizeObserver(host);
@@ -1885,7 +1923,9 @@ export default function GeoScopeMap() {
         layerRegistry.destroy();
         layerRegistryRef.current = null;
       }
+      aircraftLayerRef.current = null;
       lightningLayerRef.current = null;
+      shipsLayerRef.current = null;
 
       const map = mapRef.current;
       if (map) {
@@ -2458,6 +2498,202 @@ export default function GeoScopeMap() {
       clearInterval(intervalId);
     };
   }, [config, reloadConfig]);
+
+  // useEffect para actualizar configuración de layers (enabled, opacity)
+  useEffect(() => {
+    if (!config || !mapRef.current) {
+      return;
+    }
+
+    const merged = withConfigDefaults(config);
+    const flightsConfig = merged.layers.flights;
+    const shipsConfig = merged.layers.ships;
+
+    // Actualizar AircraftLayer
+    const aircraftLayer = aircraftLayerRef.current;
+    if (aircraftLayer) {
+      aircraftLayer.setEnabled(flightsConfig.enabled);
+      aircraftLayer.setOpacity(flightsConfig.opacity);
+      aircraftLayer.setMaxAgeSeconds(flightsConfig.max_age_seconds);
+      // Actualizar cine_focus si está disponible (requeriría método setCineFocus)
+      // Por ahora, se actualiza con updateData que lee in_focus del payload
+    }
+
+    // Actualizar ShipsLayer
+    const shipsLayer = shipsLayerRef.current;
+    if (shipsLayer) {
+      shipsLayer.setEnabled(shipsConfig.enabled);
+      shipsLayer.setOpacity(shipsConfig.opacity);
+      shipsLayer.setMaxAgeSeconds(shipsConfig.max_age_seconds);
+      // Actualizar cine_focus si está disponible
+    }
+  }, [config]);
+
+  // useEffect para cargar datos de flights periódicamente
+  useEffect(() => {
+    if (!config || !mapRef.current || !aircraftLayerRef.current) {
+      return;
+    }
+
+    const merged = withConfigDefaults(config);
+    const flightsConfig = merged.layers.flights;
+
+    if (!flightsConfig.enabled) {
+      return;
+    }
+
+    const loadFlightsData = async () => {
+      try {
+        // Calcular bbox del mapa actual
+        const map = mapRef.current;
+        let bbox: string | undefined;
+        let maxItemsView: number | undefined;
+        
+        if (map && map.isStyleLoaded()) {
+          const bounds = map.getBounds();
+          const sw = bounds.getSouthWest();
+          const ne = bounds.getNorthEast();
+          bbox = `${sw.lng},${sw.lat},${ne.lng},${ne.lat}`;
+          maxItemsView = flightsConfig.max_items_view;
+        }
+        
+        // Construir URL con parámetros
+        let url = "/api/layers/flights";
+        const params = new URLSearchParams();
+        if (bbox) {
+          params.append("bbox", bbox);
+        }
+        if (maxItemsView) {
+          params.append("max_items_view", String(maxItemsView));
+        }
+        if (params.toString()) {
+          url += `?${params.toString()}`;
+        }
+        
+        const response = await apiGet<{
+          type: string;
+          features: Array<{
+            type: string;
+            geometry: { type: string; coordinates: [number, number] };
+            properties: {
+              icao24?: string;
+              callsign?: string;
+              alt_baro?: number;
+              track?: number;
+              speed?: number;
+              timestamp?: number;
+              in_focus?: boolean;
+            };
+          }>;
+          stale?: boolean;
+          properties?: { focus_unavailable?: boolean };
+        }>(url);
+
+        const aircraftLayer = aircraftLayerRef.current;
+        if (aircraftLayer && response && response.type === "FeatureCollection") {
+          aircraftLayer.updateData(response as any);
+        }
+      } catch (error) {
+        console.error("[GeoScopeMap] Failed to load flights data:", error);
+      }
+    };
+
+    // Cargar inmediatamente
+    void loadFlightsData();
+
+    // Cargar periódicamente según refresh_seconds
+    const intervalMs = flightsConfig.refresh_seconds * 1000;
+    const intervalId = setInterval(() => {
+      void loadFlightsData();
+    }, intervalMs);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [config]);
+
+  // useEffect para cargar datos de ships periódicamente
+  useEffect(() => {
+    if (!config || !mapRef.current || !shipsLayerRef.current) {
+      return;
+    }
+
+    const merged = withConfigDefaults(config);
+    const shipsConfig = merged.layers.ships;
+
+    if (!shipsConfig.enabled) {
+      return;
+    }
+
+    const loadShipsData = async () => {
+      try {
+        // Calcular bbox del mapa actual
+        const map = mapRef.current;
+        let bbox: string | undefined;
+        let maxItemsView: number | undefined;
+        
+        if (map && map.isStyleLoaded()) {
+          const bounds = map.getBounds();
+          const sw = bounds.getSouthWest();
+          const ne = bounds.getNorthEast();
+          bbox = `${sw.lng},${sw.lat},${ne.lng},${ne.lat}`;
+          maxItemsView = shipsConfig.max_items_view;
+        }
+        
+        // Construir URL con parámetros
+        let url = "/api/layers/ships";
+        const params = new URLSearchParams();
+        if (bbox) {
+          params.append("bbox", bbox);
+        }
+        if (maxItemsView) {
+          params.append("max_items_view", String(maxItemsView));
+        }
+        if (params.toString()) {
+          url += `?${params.toString()}`;
+        }
+        
+        const response = await apiGet<{
+          type: string;
+          features: Array<{
+            type: string;
+            geometry: { type: string; coordinates: [number, number] };
+            properties: {
+              mmsi?: string;
+              name?: string;
+              course?: number;
+              speed?: number;
+              timestamp?: number;
+              type?: string;
+              in_focus?: boolean;
+            };
+          }>;
+          stale?: boolean;
+          properties?: { focus_unavailable?: boolean };
+        }>(url);
+
+        const shipsLayer = shipsLayerRef.current;
+        if (shipsLayer && response && response.type === "FeatureCollection") {
+          shipsLayer.updateData(response as any);
+        }
+      } catch (error) {
+        console.error("[GeoScopeMap] Failed to load ships data:", error);
+      }
+    };
+
+    // Cargar inmediatamente
+    void loadShipsData();
+
+    // Cargar periódicamente según refresh_seconds
+    const intervalMs = shipsConfig.refresh_seconds * 1000;
+    const intervalId = setInterval(() => {
+      void loadShipsData();
+    }, intervalMs);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [config]);
 
   return (
     <div className="map-host">

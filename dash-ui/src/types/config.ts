@@ -71,6 +71,7 @@ export type UIConfig = {
   layout: "grid-2-1";
   map: MapConfig;
   rotation: RotationConfig;
+  cineMode?: boolean;
 };
 
 export type DisplayModule = {
@@ -142,6 +143,50 @@ export type BlitzortungConfig = {
   ws_url: string | null;
 };
 
+export type CineFocusConfig = {
+  enabled: boolean;
+  mode: "cap" | "radar" | "both";
+  min_severity: "yellow" | "orange" | "red";
+  radar_dbz_threshold: number;
+  buffer_km: number;
+  outside_dim_opacity: number;
+  hard_hide_outside: boolean;
+};
+
+export type FlightsLayerConfig = {
+  enabled: boolean;
+  opacity: number;
+  provider: "opensky" | "custom";
+  refresh_seconds: number;
+  max_age_seconds: number;
+  max_items_global: number;
+  max_items_view: number;
+  rate_limit_per_min: number;
+  decimate: "grid" | "none";
+  grid_px: number;
+  cine_focus: CineFocusConfig;
+};
+
+export type ShipsLayerConfig = {
+  enabled: boolean;
+  opacity: number;
+  provider: "ais_generic" | "custom";
+  refresh_seconds: number;
+  max_age_seconds: number;
+  max_items_global: number;
+  max_items_view: number;
+  min_speed_knots: number;
+  rate_limit_per_min: number;
+  decimate: "grid" | "none";
+  grid_px: number;
+  cine_focus: CineFocusConfig;
+};
+
+export type LayersConfig = {
+  flights: FlightsLayerConfig;
+  ships: ShipsLayerConfig;
+};
+
 export type AppConfig = {
   display: DisplayConfig;
   map: MapPreferences;
@@ -155,4 +200,5 @@ export type AppConfig = {
   harvest: HarvestConfig;
   saints: SaintsConfig;
   ephemerides: EphemeridesConfig;
+  layers: LayersConfig;
 };

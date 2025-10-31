@@ -5,6 +5,13 @@ import type { Layer } from "./LayerRegistry";
 
 interface ShipsLayerOptions {
   enabled?: boolean;
+  opacity?: number;
+  maxAgeSeconds?: number;
+  cineFocus?: {
+    enabled: boolean;
+    outsideDimOpacity: number;
+    hardHideOutside: boolean;
+  };
 }
 
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
@@ -14,11 +21,17 @@ export default class ShipsLayer implements Layer {
   public readonly zIndex = 30;
 
   private enabled: boolean;
+  private opacity: number;
+  private maxAgeSeconds: number;
+  private cineFocus?: ShipsLayerOptions["cineFocus"];
   private map?: maplibregl.Map;
   private readonly sourceId = "geoscope-ships-source";
 
   constructor(options: ShipsLayerOptions = {}) {
     this.enabled = options.enabled ?? false;
+    this.opacity = options.opacity ?? 1.0;
+    this.maxAgeSeconds = options.maxAgeSeconds ?? 180;
+    this.cineFocus = options.cineFocus;
   }
 
   add(map: maplibregl.Map): void {
@@ -36,15 +49,87 @@ export default class ShipsLayer implements Layer {
         type: "circle",
         source: this.sourceId,
         paint: {
-          "circle-radius": 4,
+          "circle-radius": 5,
           "circle-color": "#38bdf8",
           "circle-stroke-color": "#0f172a",
-          "circle-stroke-width": 1
+          "circle-stroke-width": 1,
+          "circle-opacity": [
+            "interpolate",
+            ["linear"],
+            ["get", "age_seconds"],
+            0,
+            [
+              "case",
+              ["get", "in_focus"],
+              this.opacity,
+              this.cineFocus?.enabled
+                ? this.opacity * this.cineFocus.outsideDimOpacity
+                : this.opacity
+            ],
+            this.maxAgeSeconds / 2,
+            [
+              "case",
+              ["get", "in_focus"],
+              this.opacity * 0.5,
+              this.cineFocus?.enabled
+                ? this.opacity * this.cineFocus.outsideDimOpacity * 0.5
+                : this.opacity * 0.5
+            ],
+            this.maxAgeSeconds,
+            0.0
+          ]
+        }
+      });
+
+      // Tooltip en hover
+      let hoveredId: string | null = null;
+      map.on("mouseenter", this.id, (e) => {
+        if (e.features && e.features.length > 0) {
+          map.getCanvas().style.cursor = "pointer";
+          const feature = e.features[0];
+          if (feature.properties) {
+            hoveredId = feature.id as string;
+            const name = feature.properties.name || feature.properties.mmsi || "N/A";
+            const mmsi = feature.properties.mmsi || "N/A";
+            const speed = feature.properties.speed ? `${Math.round(feature.properties.speed)} knots` : "N/A";
+            const course = feature.properties.course ? `${Math.round(feature.properties.course)}°` : "N/A";
+            const timestamp = feature.properties.timestamp 
+              ? new Date(feature.properties.timestamp * 1000).toLocaleTimeString()
+              : "N/A";
+            const content = `<strong>${name}</strong><br/>MMSI: ${mmsi}<br/>Velocidad: ${speed}<br/>Curso: ${course}<br/>Última actualización: ${timestamp}`;
+            
+            // Crear popup si no existe
+            if (!map.getPopup()) {
+              new maplibregl.Popup({ closeOnClick: false, closeButton: true })
+                .setLngLat(e.lngLat)
+                .setHTML(content)
+                .addTo(map);
+            }
+          }
+        }
+      });
+
+      map.on("mouseleave", this.id, () => {
+        map.getCanvas().style.cursor = "";
+        const popup = map.getPopup();
+        if (popup) {
+          popup.remove();
+        }
+        hoveredId = null;
+      });
+
+      map.on("mousemove", this.id, (e) => {
+        if (e.features && e.features.length > 0 && hoveredId) {
+          const popup = map.getPopup();
+          if (popup) {
+            popup.setLngLat(e.lngLat);
+          }
         }
       });
     }
 
     this.applyVisibility();
+    this.applyOpacity();
   }
 
   remove(map: maplibregl.Map): void {
@@ -62,6 +147,64 @@ export default class ShipsLayer implements Layer {
     this.applyVisibility();
   }
 
+  setOpacity(opacity: number): void {
+    this.opacity = Math.max(0, Math.min(1, opacity));
+    this.applyOpacity();
+  }
+
+  setMaxAgeSeconds(seconds: number): void {
+    this.maxAgeSeconds = seconds;
+    // Necesitaría recargar el layer para actualizar la expresión de opacity
+    if (this.map) {
+      const data = this.getData();
+      this.updateData(data);
+    }
+  }
+
+  updateData(data: FeatureCollection): void {
+    if (!this.map) return;
+    
+    // Calcular edad para cada feature y aplicar dimming según in_focus
+    const now = Math.floor(Date.now() / 1000);
+    const featuresWithAge = {
+      ...data,
+      features: data.features.map((feature) => {
+        const props = feature.properties || {};
+        const timestamp = props.timestamp || now;
+        const ageSeconds = Math.max(0, now - timestamp);
+        const inFocus = Boolean(props.in_focus);
+        
+        // Si hard_hide_outside está activado y no está en foco, ocultar
+        if (this.cineFocus?.enabled && this.cineFocus.hardHideOutside && !inFocus) {
+          return null; // Filtrar después
+        }
+        
+        return {
+          ...feature,
+          properties: {
+            ...props,
+            age_seconds: ageSeconds,
+            in_focus: inFocus
+          }
+        };
+      }).filter((f): f is NonNullable<typeof f> => f !== null)
+    };
+
+    const source = this.map.getSource(this.sourceId);
+    if (source && source.type === "geojson") {
+      source.setData(featuresWithAge);
+    }
+  }
+
+  getData(): FeatureCollection {
+    if (!this.map) return EMPTY;
+    const source = this.map.getSource(this.sourceId);
+    if (source && source.type === "geojson") {
+      return (source.getData() as FeatureCollection) ?? EMPTY;
+    }
+    return EMPTY;
+  }
+
   destroy(): void {
     this.map = undefined;
   }
@@ -72,5 +215,10 @@ export default class ShipsLayer implements Layer {
     if (this.map.getLayer(this.id)) {
       this.map.setLayoutProperty(this.id, "visibility", visibility);
     }
+  }
+
+  private applyOpacity() {
+    if (!this.map || !this.map.getLayer(this.id)) return;
+    // La opacidad se aplica en la expresión paint
   }
 }

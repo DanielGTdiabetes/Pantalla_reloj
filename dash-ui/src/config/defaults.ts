@@ -6,7 +6,9 @@ import type {
   CalendarConfig,
   DisplayConfig,
   EphemeridesConfig,
+  FlightsLayerConfig,
   HarvestConfig,
+  LayersConfig,
   MapCinemaBand,
   MapCinemaConfig,
   MapConfig,
@@ -17,6 +19,7 @@ import type {
   NewsConfig,
   RotationConfig,
   SaintsConfig,
+  ShipsLayerConfig,
   StormModeConfig,
   UIConfig,
 } from "../types/config";
@@ -321,6 +324,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     layout: "grid-2-1",
     map: createDefaultMapSettings(),
     rotation: mergeRotation(undefined),
+    cineMode: true,
   },
   news: createDefaultNews(),
   ai: {
@@ -333,6 +337,51 @@ export const DEFAULT_CONFIG: AppConfig = {
   harvest: createDefaultHarvest(),
   saints: createDefaultSaints(),
   ephemerides: createDefaultEphemerides(),
+  layers: {
+    flights: {
+      enabled: true,
+      opacity: 0.9,
+      provider: "opensky",
+      refresh_seconds: 12,
+      max_age_seconds: 120,
+      max_items_global: 2000,
+      max_items_view: 360,
+      rate_limit_per_min: 6,
+      decimate: "grid",
+      grid_px: 28,
+      cine_focus: {
+        enabled: true,
+        mode: "both",
+        min_severity: "orange",
+        radar_dbz_threshold: 30.0,
+        buffer_km: 25.0,
+        outside_dim_opacity: 0.25,
+        hard_hide_outside: false,
+      },
+    },
+    ships: {
+      enabled: true,
+      opacity: 0.9,
+      provider: "ais_generic",
+      refresh_seconds: 18,
+      max_age_seconds: 180,
+      max_items_global: 1500,
+      max_items_view: 300,
+      min_speed_knots: 2.0,
+      rate_limit_per_min: 4,
+      decimate: "grid",
+      grid_px: 28,
+      cine_focus: {
+        enabled: true,
+        mode: "both",
+        min_severity: "yellow",
+        radar_dbz_threshold: 20.0,
+        buffer_km: 20.0,
+        outside_dim_opacity: 0.30,
+        hard_hide_outside: false,
+      },
+    },
+  },
 };
 
 const mergeStormMode = (candidate: unknown): StormModeConfig => {
@@ -451,6 +500,149 @@ const mergeEphemerides = (candidate: unknown): EphemeridesConfig => {
   };
 };
 
+const mergeFlightsLayer = (candidate: unknown): FlightsLayerConfig => {
+  const fallback = DEFAULT_CONFIG.layers.flights;
+  const source = (candidate as Partial<FlightsLayerConfig>) ?? {};
+  const cineFocusSource = source.cine_focus ?? {};
+  const cineFocusFallback = fallback.cine_focus;
+  
+  return {
+    enabled: toBoolean(source.enabled, fallback.enabled),
+    opacity: clampNumber(toNumber(source.opacity, fallback.opacity), 0.0, 1.0),
+    provider: source.provider === "custom" ? "custom" : "opensky",
+    refresh_seconds: clampNumber(
+      Math.round(toNumber(source.refresh_seconds, fallback.refresh_seconds)),
+      1,
+      300,
+    ),
+    max_age_seconds: clampNumber(
+      Math.round(toNumber(source.max_age_seconds, fallback.max_age_seconds)),
+      10,
+      600,
+    ),
+    max_items_global: clampNumber(
+      Math.round(toNumber(source.max_items_global, fallback.max_items_global)),
+      1,
+      10000,
+    ),
+    max_items_view: clampNumber(
+      Math.round(toNumber(source.max_items_view, fallback.max_items_view)),
+      1,
+      2000,
+    ),
+    rate_limit_per_min: clampNumber(
+      Math.round(toNumber(source.rate_limit_per_min, fallback.rate_limit_per_min)),
+      1,
+      60,
+    ),
+    decimate: source.decimate === "none" ? "none" : "grid",
+    grid_px: clampNumber(
+      Math.round(toNumber(source.grid_px, fallback.grid_px)),
+      8,
+      128,
+    ),
+    cine_focus: {
+      enabled: toBoolean(cineFocusSource.enabled, cineFocusFallback.enabled),
+      mode: (cineFocusSource.mode === "cap" || cineFocusSource.mode === "radar") 
+        ? cineFocusSource.mode 
+        : "both",
+      min_severity: (cineFocusSource.min_severity === "yellow" || cineFocusSource.min_severity === "red")
+        ? cineFocusSource.min_severity
+        : "orange",
+      radar_dbz_threshold: clampNumber(
+        toNumber(cineFocusSource.radar_dbz_threshold, cineFocusFallback.radar_dbz_threshold),
+        0.0,
+        100.0,
+      ),
+      buffer_km: clampNumber(
+        toNumber(cineFocusSource.buffer_km, cineFocusFallback.buffer_km),
+        0.0,
+        500.0,
+      ),
+      outside_dim_opacity: clampNumber(
+        toNumber(cineFocusSource.outside_dim_opacity, cineFocusFallback.outside_dim_opacity),
+        0.0,
+        1.0,
+      ),
+      hard_hide_outside: toBoolean(cineFocusSource.hard_hide_outside, cineFocusFallback.hard_hide_outside),
+    },
+  };
+};
+
+const mergeShipsLayer = (candidate: unknown): ShipsLayerConfig => {
+  const fallback = DEFAULT_CONFIG.layers.ships;
+  const source = (candidate as Partial<ShipsLayerConfig>) ?? {};
+  const cineFocusSource = source.cine_focus ?? {};
+  const cineFocusFallback = fallback.cine_focus;
+  
+  return {
+    enabled: toBoolean(source.enabled, fallback.enabled),
+    opacity: clampNumber(toNumber(source.opacity, fallback.opacity), 0.0, 1.0),
+    provider: source.provider === "custom" ? "custom" : "ais_generic",
+    refresh_seconds: clampNumber(
+      Math.round(toNumber(source.refresh_seconds, fallback.refresh_seconds)),
+      1,
+      300,
+    ),
+    max_age_seconds: clampNumber(
+      Math.round(toNumber(source.max_age_seconds, fallback.max_age_seconds)),
+      10,
+      600,
+    ),
+    max_items_global: clampNumber(
+      Math.round(toNumber(source.max_items_global, fallback.max_items_global)),
+      1,
+      10000,
+    ),
+    max_items_view: clampNumber(
+      Math.round(toNumber(source.max_items_view, fallback.max_items_view)),
+      1,
+      2000,
+    ),
+    min_speed_knots: clampNumber(
+      toNumber(source.min_speed_knots, fallback.min_speed_knots),
+      0.0,
+      50.0,
+    ),
+    rate_limit_per_min: clampNumber(
+      Math.round(toNumber(source.rate_limit_per_min, fallback.rate_limit_per_min)),
+      1,
+      60,
+    ),
+    decimate: source.decimate === "none" ? "none" : "grid",
+    grid_px: clampNumber(
+      Math.round(toNumber(source.grid_px, fallback.grid_px)),
+      8,
+      128,
+    ),
+    cine_focus: {
+      enabled: toBoolean(cineFocusSource.enabled, cineFocusFallback.enabled),
+      mode: (cineFocusSource.mode === "cap" || cineFocusSource.mode === "radar") 
+        ? cineFocusSource.mode 
+        : "both",
+      min_severity: (cineFocusSource.min_severity === "yellow" || cineFocusSource.min_severity === "red")
+        ? cineFocusSource.min_severity
+        : "yellow",
+      radar_dbz_threshold: clampNumber(
+        toNumber(cineFocusSource.radar_dbz_threshold, cineFocusFallback.radar_dbz_threshold),
+        0.0,
+        100.0,
+      ),
+      buffer_km: clampNumber(
+        toNumber(cineFocusSource.buffer_km, cineFocusFallback.buffer_km),
+        0.0,
+        500.0,
+      ),
+      outside_dim_opacity: clampNumber(
+        toNumber(cineFocusSource.outside_dim_opacity, cineFocusFallback.outside_dim_opacity),
+        0.0,
+        1.0,
+      ),
+      hard_hide_outside: toBoolean(cineFocusSource.hard_hide_outside, cineFocusFallback.hard_hide_outside),
+    },
+  };
+};
+
 export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
   if (!payload) {
     return JSON.parse(JSON.stringify(DEFAULT_CONFIG)) as AppConfig;
@@ -468,6 +660,7 @@ export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
   const harvest = (payload.harvest ?? {}) as Partial<HarvestConfig>;
   const saints = (payload.saints ?? {}) as Partial<SaintsConfig>;
   const ephemerides = (payload.ephemerides ?? {}) as Partial<EphemeridesConfig>;
+  const layers = (payload.layers ?? {}) as Partial<LayersConfig>;
 
   return {
     display: {
@@ -483,6 +676,7 @@ export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
       layout: "grid-2-1",
       map: mergeMap(ui.map),
       rotation: mergeRotation(ui.rotation),
+      cineMode: toBoolean(ui.cineMode, DEFAULT_CONFIG.ui.cineMode),
     },
     news: mergeNews(news),
     ai: {
@@ -495,5 +689,9 @@ export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
     harvest: mergeHarvest(harvest),
     saints: mergeSaints(saints),
     ephemerides: mergeEphemerides(ephemerides),
+    layers: {
+      flights: mergeFlightsLayer(layers.flights),
+      ships: mergeShipsLayer(layers.ships),
+    },
   };
 };

@@ -141,6 +141,7 @@ class UI(BaseModel):
     layout: Literal["grid-2-1"] = "grid-2-1"
     map: MapConfig = Field(default_factory=MapConfig)
     rotation: Rotation = Field(default_factory=Rotation)
+    cine_mode: bool = Field(default=True, alias="cineMode")
 
 
 class News(BaseModel):
@@ -229,6 +230,58 @@ class Ephemerides(BaseModel):
     timezone: str = Field(default="Europe/Madrid", min_length=1)
 
 
+class CineFocus(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = True
+    mode: Literal["cap", "radar", "both"] = Field(default="both")
+    min_severity: Literal["yellow", "orange", "red"] = Field(default="orange")
+    radar_dbz_threshold: float = Field(default=30.0, ge=0.0, le=100.0)
+    buffer_km: float = Field(default=25.0, ge=0.0, le=500.0)
+    outside_dim_opacity: float = Field(default=0.25, ge=0.0, le=1.0)
+    hard_hide_outside: bool = False
+
+
+class FlightsLayer(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = True
+    opacity: float = Field(default=0.9, ge=0.0, le=1.0)
+    provider: Literal["opensky", "custom"] = Field(default="opensky")
+    refresh_seconds: int = Field(default=12, ge=1, le=300)
+    max_age_seconds: int = Field(default=120, ge=10, le=600)
+    max_items_global: int = Field(default=2000, ge=1, le=10000)
+    max_items_view: int = Field(default=360, ge=1, le=2000)
+    rate_limit_per_min: int = Field(default=6, ge=1, le=60)
+    decimate: Literal["grid", "none"] = Field(default="grid")
+    grid_px: int = Field(default=28, ge=8, le=128)
+    cine_focus: CineFocus = Field(default_factory=CineFocus)
+
+
+class ShipsLayer(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = True
+    opacity: float = Field(default=0.9, ge=0.0, le=1.0)
+    provider: Literal["ais_generic", "custom"] = Field(default="ais_generic")
+    refresh_seconds: int = Field(default=18, ge=1, le=300)
+    max_age_seconds: int = Field(default=180, ge=10, le=600)
+    max_items_global: int = Field(default=1500, ge=1, le=10000)
+    max_items_view: int = Field(default=300, ge=1, le=2000)
+    min_speed_knots: float = Field(default=2.0, ge=0.0, le=50.0)
+    rate_limit_per_min: int = Field(default=4, ge=1, le=60)
+    decimate: Literal["grid", "none"] = Field(default="grid")
+    grid_px: int = Field(default=28, ge=8, le=128)
+    cine_focus: CineFocus = Field(default_factory=CineFocus)
+
+
+class LayersConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    flights: FlightsLayer = Field(default_factory=FlightsLayer)
+    ships: ShipsLayer = Field(default_factory=ShipsLayer)
+
+
 class MapBackend(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -279,6 +332,7 @@ class AppConfig(BaseModel):
     harvest: Harvest = Field(default_factory=Harvest)
     saints: Saints = Field(default_factory=Saints)
     ephemerides: Ephemerides = Field(default_factory=Ephemerides)
+    layers: LayersConfig = Field(default_factory=LayersConfig)
 
     def to_path(self, path: Path) -> None:
         path.write_text(

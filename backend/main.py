@@ -24,8 +24,11 @@ from .data_sources import (
     get_saints_today,
     parse_rss_feed,
 )
+from .focus_masks import check_point_in_focus, load_or_build_focus_mask
+from .layer_providers import GenericAISProvider, OpenSkyFlightProvider
 from .logging_utils import configure_logging
 from .models import AppConfig
+from .rate_limiter import check_rate_limit
 
 APP_START = datetime.now(timezone.utc)
 logger = configure_logging()
@@ -153,6 +156,124 @@ def ui_healthcheck() -> Dict[str, str]:
 def healthcheck() -> Dict[str, Any]:
     logger.debug("Health check requested")
     return _health_payload()
+
+
+@app.get("/api/health/full")
+def healthcheck_full() -> Dict[str, Any]:
+    """Health check completo con información de todas las capas."""
+    logger.debug("Full health check requested")
+    payload = _health_payload()
+    
+    config = config_manager.read()
+    
+    # Información de flights
+    flights_config = config.layers.flights
+    flights_cached = cache_store.load("flights", max_age_minutes=None)
+    flights_status = "down"
+    flights_last_fetch = None
+    flights_cache_age = None
+    flights_items_count = 0
+    
+    if flights_config.enabled:
+        if flights_cached:
+            flights_status = "ok"
+            flights_last_fetch = flights_cached.fetched_at.isoformat()
+            age = datetime.now(timezone.utc) - flights_cached.fetched_at
+            flights_cache_age = int(age.total_seconds())
+            features = flights_cached.payload.get("features", [])
+            flights_items_count = len(features)
+        else:
+            flights_status = "degraded"
+    
+    payload["flights"] = {
+        "status": flights_status,
+        "last_fetch": flights_last_fetch,
+        "cache_age": flights_cache_age,
+        "items_count": flights_items_count
+    }
+    
+    # Información de ships
+    ships_config = config.layers.ships
+    ships_cached = cache_store.load("ships", max_age_minutes=None)
+    ships_status = "down"
+    ships_last_fetch = None
+    ships_cache_age = None
+    ships_items_count = 0
+    
+    if ships_config.enabled:
+        if ships_cached:
+            ships_status = "ok"
+            ships_last_fetch = ships_cached.fetched_at.isoformat()
+            age = datetime.now(timezone.utc) - ships_cached.fetched_at
+            ships_cache_age = int(age.total_seconds())
+            features = ships_cached.payload.get("features", [])
+            ships_items_count = len(features)
+        else:
+            ships_status = "degraded"
+    
+    payload["ships"] = {
+        "status": ships_status,
+        "last_fetch": ships_last_fetch,
+        "cache_age": ships_cache_age,
+        "items_count": ships_items_count
+    }
+    
+    # Información de focus masks
+    flights_config = config.layers.flights
+    ships_config = config.layers.ships
+    aemet_config = config.aemet
+    
+    focus_status = "down"
+    focus_last_build = None
+    focus_source = None
+    focus_area_km2 = None
+    focus_cache_age = None
+    
+    if (flights_config.cine_focus.enabled or ships_config.cine_focus.enabled) and aemet_config.enabled:
+        try:
+            # Usar el modo de flights como referencia (o ambos si está configurado)
+            focus_mode = flights_config.cine_focus.mode if flights_config.cine_focus.enabled else ships_config.cine_focus.mode
+            focus_config = flights_config.cine_focus if flights_config.cine_focus.enabled else ships_config.cine_focus
+            
+            mask, from_cache = load_or_build_focus_mask(
+                cache_store,
+                config,
+                focus_config,
+                focus_mode
+            )
+            
+            if mask:
+                focus_status = "ok"
+                focus_source = focus_mode
+                
+                # Intentar obtener timestamp de construcción
+                focus_cached = cache_store.load(f"focus_mask_{focus_mode}", max_age_minutes=None)
+                if focus_cached:
+                    focus_last_build = focus_cached.fetched_at.isoformat()
+                    age = datetime.now(timezone.utc) - focus_cached.fetched_at
+                    focus_cache_age = int(age.total_seconds())
+                
+                # Calcular área aproximada (simplificado)
+                coords = mask.get("coordinates", [])
+                if coords:
+                    # Estimación simplificada del área (por ahora, usar número de polígonos)
+                    num_polygons = len(coords) if mask.get("type") == "MultiPolygon" else 1
+                    focus_area_km2 = num_polygons * 1000  # Estimación aproximada
+            else:
+                focus_status = "degraded"
+        except Exception as exc:
+            logger.warning("Failed to check focus mask in health: %s", exc)
+            focus_status = "degraded"
+    
+    payload["focus"] = {
+        "status": focus_status,
+        "last_build": focus_last_build,
+        "source": focus_source,
+        "area_km2": focus_area_km2,
+        "cache_age": focus_cache_age
+    }
+    
+    return payload
 
 
 @app.get("/api/config")
@@ -834,6 +955,338 @@ def wifi_disconnect() -> Dict[str, Any]:
         "success": True,
         "message": "Successfully disconnected from WiFi",
     }
+
+
+# Rate limiters y proveedores para layers
+_flights_provider: Optional[OpenSkyFlightProvider] = None
+_ships_provider: Optional[GenericAISProvider] = None
+
+
+def _get_flights_provider() -> OpenSkyFlightProvider:
+    """Obtiene o crea el proveedor de vuelos."""
+    global _flights_provider
+    if _flights_provider is None:
+        _flights_provider = OpenSkyFlightProvider()
+    return _flights_provider
+
+
+def _get_ships_provider() -> GenericAISProvider:
+    """Obtiene o crea el proveedor de barcos."""
+    global _ships_provider
+    if _ships_provider is None:
+        _ships_provider = GenericAISProvider(demo_enabled=True)
+    return _ships_provider
+
+
+@app.get("/api/layers/flights")
+def get_flights(
+    request: Request,
+    bbox: Optional[str] = None,
+    max_items_view: Optional[int] = None
+) -> Dict[str, Any]:
+    """Obtiene datos de vuelos en formato GeoJSON."""
+    config = config_manager.read()
+    flights_config = config.layers.flights
+    
+    if not flights_config.enabled:
+        return {"type": "FeatureCollection", "features": [], "stale": False}
+    
+    # Verificar rate limit
+    allowed, remaining = check_rate_limit("flights", flights_config.rate_limit_per_min)
+    if not allowed:
+        logger.warning("Rate limit exceeded for flights, remaining: %d seconds", remaining)
+        # Servir caché si existe (stale)
+        cached = cache_store.load("flights", max_age_minutes=None)
+        if cached:
+            result = dict(cached.payload)
+            result["stale"] = True
+            return result
+        return {"type": "FeatureCollection", "features": [], "stale": True}
+    
+    # Parsear bbox si está presente (minLon,minLat,maxLon,maxLat)
+    bounds = None
+    if bbox:
+        try:
+            parts = [float(x.strip()) for x in bbox.split(",")]
+            if len(parts) == 4:
+                bounds = (parts[0], parts[1], parts[2], parts[3])
+        except (ValueError, IndexError):
+            logger.warning("Invalid bbox parameter: %s", bbox)
+    
+    # Verificar caché
+    cached = cache_store.load("flights", max_age_minutes=flights_config.refresh_seconds // 60)
+    if cached:
+        logger.debug("Cache hit for flights")
+        return cached.payload
+    
+    # Fetch de datos
+    try:
+        provider = _get_flights_provider()
+        data = provider.fetch(bounds=bounds)
+        
+        # Filtrar por edad (max_age_seconds) y límites de densidad
+        now = datetime.now(timezone.utc).timestamp()
+        filtered_features = []
+        
+        for feature in data.get("features", []):
+            props = feature.get("properties", {})
+            timestamp = props.get("timestamp", 0)
+            age = now - timestamp
+            
+            # Filtrar por edad
+            if flights_config.max_age_seconds > 0 and age > flights_config.max_age_seconds:
+                continue
+            
+            filtered_features.append(feature)
+        
+        # Aplicar límite global (max_items_global)
+        if flights_config.max_items_global > 0 and len(filtered_features) > flights_config.max_items_global:
+            # Ordenar por timestamp (más recientes primero) y limitar
+            filtered_features.sort(key=lambda f: f.get("properties", {}).get("timestamp", 0), reverse=True)
+            filtered_features = filtered_features[:flights_config.max_items_global]
+        
+        # Si hay bbox, filtrar por viewport también
+        if bounds:
+            viewport_features = []
+            for feature in filtered_features:
+                geometry = feature.get("geometry", {})
+                if geometry.get("type") == "Point":
+                    coords = geometry.get("coordinates", [])
+                    if len(coords) >= 2:
+                        lon, lat = coords[0], coords[1]
+                        # Verificar si está dentro del bbox
+                        if (bounds[0] <= lon <= bounds[2] and bounds[1] <= lat <= bounds[3]):
+                            viewport_features.append(feature)
+            
+            # Aplicar límite de viewport (max_items_view, puede venir del query o de config)
+            viewport_limit = max_items_view if max_items_view else flights_config.max_items_view
+            if viewport_limit > 0 and len(viewport_features) > viewport_limit:
+                # Ordenar por timestamp y limitar
+                viewport_features.sort(key=lambda f: f.get("properties", {}).get("timestamp", 0), reverse=True)
+                viewport_features = viewport_features[:viewport_limit]
+            
+            filtered_features = viewport_features
+        
+        # Aplicar máscara de foco y etiquetar in_focus
+        focus_mask = None
+        focus_unavailable = False
+        
+        if flights_config.cine_focus.enabled and config.aemet.enabled:
+            try:
+                mask, from_cache = load_or_build_focus_mask(
+                    cache_store,
+                    config,
+                    flights_config.cine_focus,
+                    flights_config.cine_focus.mode
+                )
+                focus_mask = mask
+                if from_cache:
+                    logger.debug("Focus mask loaded from cache for flights")
+            except Exception as exc:
+                logger.warning("Failed to load focus mask for flights: %s", exc)
+                focus_unavailable = True
+        
+        # Etiquetar features con in_focus
+        features_with_focus = []
+        for feature in filtered_features:
+            props = feature.get("properties", {})
+            geometry = feature.get("geometry", {})
+            
+            in_focus = False
+            if focus_mask and geometry.get("type") == "Point":
+                coords = geometry.get("coordinates", [])
+                if len(coords) >= 2:
+                    lon, lat = coords[0], coords[1]
+                    if abs(lat) <= 90 and abs(lon) <= 180:
+                        in_focus = check_point_in_focus(lat, lon, focus_mask)
+            
+            features_with_focus.append({
+                **feature,
+                "properties": {
+                    **props,
+                    "in_focus": in_focus
+                }
+            })
+        
+        data["features"] = features_with_focus
+        
+        # Añadir metadata si focus no está disponible
+        if focus_unavailable:
+            data["properties"] = data.get("properties", {})
+            data["properties"]["focus_unavailable"] = True
+        
+        # Guardar en caché
+        cache_store.store("flights", data)
+        logger.info("Fetched %d flights (in_focus: %d)", len(features_with_focus),
+                   sum(1 for f in features_with_focus if f.get("properties", {}).get("in_focus", False)))
+        return data
+    except Exception as exc:
+        logger.error("Failed to fetch flights: %s", exc)
+        # Fallback: servir caché stale si existe
+        cached = cache_store.load("flights", max_age_minutes=None)
+        if cached:
+            result = dict(cached.payload)
+            result["stale"] = True
+            return result
+        return {"type": "FeatureCollection", "features": [], "stale": True}
+
+
+@app.get("/api/layers/ships")
+def get_ships(
+    request: Request,
+    bbox: Optional[str] = None,
+    max_items_view: Optional[int] = None
+) -> Dict[str, Any]:
+    """Obtiene datos de barcos en formato GeoJSON."""
+    config = config_manager.read()
+    ships_config = config.layers.ships
+    
+    if not ships_config.enabled:
+        return {"type": "FeatureCollection", "features": [], "stale": False}
+    
+    # Verificar rate limit
+    allowed, remaining = check_rate_limit("ships", ships_config.rate_limit_per_min)
+    if not allowed:
+        logger.warning("Rate limit exceeded for ships, remaining: %d seconds", remaining)
+        # Servir caché si existe (stale)
+        cached = cache_store.load("ships", max_age_minutes=None)
+        if cached:
+            result = dict(cached.payload)
+            result["stale"] = True
+            return result
+        return {"type": "FeatureCollection", "features": [], "stale": True}
+    
+    # Parsear bbox si está presente
+    bounds = None
+    if bbox:
+        try:
+            parts = [float(x.strip()) for x in bbox.split(",")]
+            if len(parts) == 4:
+                bounds = (parts[0], parts[1], parts[2], parts[3])
+        except (ValueError, IndexError):
+            logger.warning("Invalid bbox parameter: %s", bbox)
+    
+    # Verificar caché
+    cached = cache_store.load("ships", max_age_minutes=ships_config.refresh_seconds // 60)
+    if cached:
+        logger.debug("Cache hit for ships")
+        return cached.payload
+    
+    # Fetch de datos
+    try:
+        provider = _get_ships_provider()
+        data = provider.fetch(bounds=bounds)
+        
+        # Filtrar por edad (max_age_seconds), velocidad mínima y límites de densidad
+        now = datetime.now(timezone.utc).timestamp()
+        filtered_features = []
+        
+        for feature in data.get("features", []):
+            props = feature.get("properties", {})
+            timestamp = props.get("timestamp", 0)
+            age = now - timestamp
+            
+            # Filtrar por edad
+            if ships_config.max_age_seconds > 0 and age > ships_config.max_age_seconds:
+                continue
+            
+            # Filtrar por velocidad mínima (ships)
+            speed = props.get("speed", 0)  # knots
+            if ships_config.min_speed_knots > 0 and speed < ships_config.min_speed_knots:
+                continue
+            
+            filtered_features.append(feature)
+        
+        # Aplicar límite global (max_items_global)
+        if ships_config.max_items_global > 0 and len(filtered_features) > ships_config.max_items_global:
+            # Ordenar por timestamp (más recientes primero) y limitar
+            filtered_features.sort(key=lambda f: f.get("properties", {}).get("timestamp", 0), reverse=True)
+            filtered_features = filtered_features[:ships_config.max_items_global]
+        
+        # Si hay bbox, filtrar por viewport también
+        if bounds:
+            viewport_features = []
+            for feature in filtered_features:
+                geometry = feature.get("geometry", {})
+                if geometry.get("type") == "Point":
+                    coords = geometry.get("coordinates", [])
+                    if len(coords) >= 2:
+                        lon, lat = coords[0], coords[1]
+                        # Verificar si está dentro del bbox
+                        if (bounds[0] <= lon <= bounds[2] and bounds[1] <= lat <= bounds[3]):
+                            viewport_features.append(feature)
+            
+            # Aplicar límite de viewport (max_items_view, puede venir del query o de config)
+            viewport_limit = max_items_view if max_items_view else ships_config.max_items_view
+            if viewport_limit > 0 and len(viewport_features) > viewport_limit:
+                # Ordenar por timestamp y limitar
+                viewport_features.sort(key=lambda f: f.get("properties", {}).get("timestamp", 0), reverse=True)
+                viewport_features = viewport_features[:viewport_limit]
+            
+            filtered_features = viewport_features
+        
+        # Aplicar máscara de foco y etiquetar in_focus
+        focus_mask = None
+        focus_unavailable = False
+        
+        if ships_config.cine_focus.enabled and config.aemet.enabled:
+            try:
+                mask, from_cache = load_or_build_focus_mask(
+                    cache_store,
+                    config,
+                    ships_config.cine_focus,
+                    ships_config.cine_focus.mode
+                )
+                focus_mask = mask
+                if from_cache:
+                    logger.debug("Focus mask loaded from cache for ships")
+            except Exception as exc:
+                logger.warning("Failed to load focus mask for ships: %s", exc)
+                focus_unavailable = True
+        
+        # Etiquetar features con in_focus
+        features_with_focus = []
+        for feature in filtered_features:
+            props = feature.get("properties", {})
+            geometry = feature.get("geometry", {})
+            
+            in_focus = False
+            if focus_mask and geometry.get("type") == "Point":
+                coords = geometry.get("coordinates", [])
+                if len(coords) >= 2:
+                    lon, lat = coords[0], coords[1]
+                    if abs(lat) <= 90 and abs(lon) <= 180:
+                        in_focus = check_point_in_focus(lat, lon, focus_mask)
+            
+            features_with_focus.append({
+                **feature,
+                "properties": {
+                    **props,
+                    "in_focus": in_focus
+                }
+            })
+        
+        data["features"] = features_with_focus
+        
+        # Añadir metadata si focus no está disponible
+        if focus_unavailable:
+            data["properties"] = data.get("properties", {})
+            data["properties"]["focus_unavailable"] = True
+        
+        # Guardar en caché
+        cache_store.store("ships", data)
+        logger.info("Fetched %d ships (in_focus: %d)", len(features_with_focus),
+                   sum(1 for f in features_with_focus if f.get("properties", {}).get("in_focus", False)))
+        return data
+    except Exception as exc:
+        logger.error("Failed to fetch ships: %s", exc)
+        # Fallback: servir caché stale si existe
+        cached = cache_store.load("ships", max_age_minutes=None)
+        if cached:
+            result = dict(cached.payload)
+            result["stale"] = True
+            return result
+        return {"type": "FeatureCollection", "features": [], "stale": True}
 
 
 @app.get("/{full_path:path}", include_in_schema=False)

@@ -222,6 +222,18 @@ else
   rm -rf "$STATE_RUNTIME"
 fi
 
+# Limpiar directorios de caché de layers y focus masks
+if [[ $PURGE_CONFIG -eq 1 ]] || [[ $PURGE_VENV -eq 1 ]]; then
+  log_info "Limpiando cachés de layers y focus masks"
+  if [[ -d /var/cache/pantalla/focus ]]; then
+    rm -rf /var/cache/pantalla/focus/* >/dev/null 2>&1 || true
+  fi
+  if [[ -d /var/cache/pantalla ]]; then
+    find /var/cache/pantalla -maxdepth 1 -type f \( -name "flights.*" -o -name "ships.*" \) -delete >/dev/null 2>&1 || true
+  fi
+  log_ok "Cachés de layers y focus limpiadas"
+fi
+
 HOME_AUTH="/home/${USER_NAME}/.Xauthority"
 HOME_AUTH_BACKUP="${HOME_AUTH}.bak"
 

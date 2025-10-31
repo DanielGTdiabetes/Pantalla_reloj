@@ -269,6 +269,10 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
   install -o "$USER_NAME" -g "$USER_NAME" -m 0644 "$REPO_ROOT/backend/default_config.json" "$CONFIG_FILE"
 fi
 install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$STATE_DIR/cache"
+# Crear directorios de caché para layers (flights/ships) y focus masks
+install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 /var/cache/pantalla
+install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 /var/cache/pantalla/focus
+SUMMARY+=("[install] directorios de caché creados en /var/cache/pantalla/")
 
 install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$USER_HOME/.config/openbox"
 AUTO_FILE="$USER_HOME/.config/openbox/autostart"

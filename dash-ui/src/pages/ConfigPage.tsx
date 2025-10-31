@@ -2035,6 +2035,260 @@ const ConfigPage: React.FC = () => {
           </div>
         )}
 
+        {supports("layers") && (
+          <div className="config-card">
+            <div>
+              <h2>Capas en Tiempo Real</h2>
+              <p>Configura las capas de aviones (flights) y barcos (ships) en tiempo real.</p>
+            </div>
+            <div className="config-grid">
+              {supports("layers.flights") && (
+                <>
+                  <div className="config-field config-field--checkbox">
+                    <label htmlFor="flights_enabled">
+                      <input
+                        id="flights_enabled"
+                        type="checkbox"
+                        checked={form.layers.flights.enabled}
+                        disabled={disableInputs}
+                        onChange={(event) => {
+                          const enabled = event.target.checked;
+                          setForm((prev) => ({
+                            ...prev,
+                            layers: {
+                              ...prev.layers,
+                              flights: {
+                                ...prev.layers.flights,
+                                enabled,
+                              },
+                            },
+                          }));
+                          resetErrorsFor("layers.flights.enabled");
+                        }}
+                      />
+                      Activar capa de aviones
+                    </label>
+                    {renderHelp("Muestra aviones en tiempo real en el mapa")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="flights_opacity">Opacidad</label>
+                    <input
+                      id="flights_opacity"
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={form.layers.flights.opacity}
+                      disabled={disableInputs || !form.layers.flights.enabled}
+                      onChange={(event) => {
+                        const opacity = Number(event.target.value);
+                        if (!Number.isNaN(opacity)) {
+                          setForm((prev) => ({
+                            ...prev,
+                            layers: {
+                              ...prev.layers,
+                              flights: {
+                                ...prev.layers.flights,
+                                opacity: Math.max(0, Math.min(1, opacity)),
+                              },
+                            },
+                          }));
+                          resetErrorsFor("layers.flights.opacity");
+                        }
+                      }}
+                    />
+                    <span>{Math.round(form.layers.flights.opacity * 100)}%</span>
+                    {renderHelp("Opacidad de la capa de aviones (0.0 - 1.0)")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="flights_refresh">Intervalo de actualización (segundos)</label>
+                    <input
+                      id="flights_refresh"
+                      type="number"
+                      min="1"
+                      max="300"
+                      value={form.layers.flights.refresh_seconds}
+                      disabled={disableInputs || !form.layers.flights.enabled}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isNaN(value)) {
+                          setForm((prev) => ({
+                            ...prev,
+                            layers: {
+                              ...prev.layers,
+                              flights: {
+                                ...prev.layers.flights,
+                                refresh_seconds: Math.max(1, Math.min(300, Math.round(value))),
+                              },
+                            },
+                          }));
+                          resetErrorsFor("layers.flights.refresh_seconds");
+                        }
+                      }}
+                    />
+                    {renderHelp("Cada cuántos segundos se actualizan los datos de aviones (1-300)")}
+                    {renderFieldError("layers.flights.refresh_seconds")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="flights_max_age">Máxima edad de datos (segundos)</label>
+                    <input
+                      id="flights_max_age"
+                      type="number"
+                      min="10"
+                      max="600"
+                      value={form.layers.flights.max_age_seconds}
+                      disabled={disableInputs || !form.layers.flights.enabled}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isNaN(value)) {
+                          setForm((prev) => ({
+                            ...prev,
+                            layers: {
+                              ...prev.layers,
+                              flights: {
+                                ...prev.layers.flights,
+                                max_age_seconds: Math.max(10, Math.min(600, Math.round(value))),
+                              },
+                            },
+                          }));
+                          resetErrorsFor("layers.flights.max_age_seconds");
+                        }
+                      }}
+                    />
+                    {renderHelp("Tiempo máximo antes de ocultar datos antiguos (10-600)")}
+                    {renderFieldError("layers.flights.max_age_seconds")}
+                  </div>
+                </>
+              )}
+
+              {supports("layers.ships") && (
+                <>
+                  <div className="config-field config-field--checkbox">
+                    <label htmlFor="ships_enabled">
+                      <input
+                        id="ships_enabled"
+                        type="checkbox"
+                        checked={form.layers.ships.enabled}
+                        disabled={disableInputs}
+                        onChange={(event) => {
+                          const enabled = event.target.checked;
+                          setForm((prev) => ({
+                            ...prev,
+                            layers: {
+                              ...prev.layers,
+                              ships: {
+                                ...prev.layers.ships,
+                                enabled,
+                              },
+                            },
+                          }));
+                          resetErrorsFor("layers.ships.enabled");
+                        }}
+                      />
+                      Activar capa de barcos
+                    </label>
+                    {renderHelp("Muestra barcos en tiempo real en el mapa (AIS)")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="ships_opacity">Opacidad</label>
+                    <input
+                      id="ships_opacity"
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={form.layers.ships.opacity}
+                      disabled={disableInputs || !form.layers.ships.enabled}
+                      onChange={(event) => {
+                        const opacity = Number(event.target.value);
+                        if (!Number.isNaN(opacity)) {
+                          setForm((prev) => ({
+                            ...prev,
+                            layers: {
+                              ...prev.layers,
+                              ships: {
+                                ...prev.layers.ships,
+                                opacity: Math.max(0, Math.min(1, opacity)),
+                              },
+                            },
+                          }));
+                          resetErrorsFor("layers.ships.opacity");
+                        }
+                      }}
+                    />
+                    <span>{Math.round(form.layers.ships.opacity * 100)}%</span>
+                    {renderHelp("Opacidad de la capa de barcos (0.0 - 1.0)")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="ships_refresh">Intervalo de actualización (segundos)</label>
+                    <input
+                      id="ships_refresh"
+                      type="number"
+                      min="1"
+                      max="300"
+                      value={form.layers.ships.refresh_seconds}
+                      disabled={disableInputs || !form.layers.ships.enabled}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isNaN(value)) {
+                          setForm((prev) => ({
+                            ...prev,
+                            layers: {
+                              ...prev.layers,
+                              ships: {
+                                ...prev.layers.ships,
+                                refresh_seconds: Math.max(1, Math.min(300, Math.round(value))),
+                              },
+                            },
+                          }));
+                          resetErrorsFor("layers.ships.refresh_seconds");
+                        }
+                      }}
+                    />
+                    {renderHelp("Cada cuántos segundos se actualizan los datos de barcos (1-300)")}
+                    {renderFieldError("layers.ships.refresh_seconds")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="ships_max_age">Máxima edad de datos (segundos)</label>
+                    <input
+                      id="ships_max_age"
+                      type="number"
+                      min="10"
+                      max="600"
+                      value={form.layers.ships.max_age_seconds}
+                      disabled={disableInputs || !form.layers.ships.enabled}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isNaN(value)) {
+                          setForm((prev) => ({
+                            ...prev,
+                            layers: {
+                              ...prev.layers,
+                              ships: {
+                                ...prev.layers.ships,
+                                max_age_seconds: Math.max(10, Math.min(600, Math.round(value))),
+                              },
+                            },
+                          }));
+                          resetErrorsFor("layers.ships.max_age_seconds");
+                        }
+                      }}
+                    />
+                    {renderHelp("Tiempo máximo antes de ocultar datos antiguos (10-600)")}
+                    {renderFieldError("layers.ships.max_age_seconds")}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="config-card">
           <div>
             <h2>WiFi</h2>

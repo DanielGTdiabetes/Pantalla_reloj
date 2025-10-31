@@ -51,7 +51,8 @@
       "enabled": false,
       "duration_sec": 10,
       "panels": ["news", "ephemerides", "moon", "forecast", "calendar"]
-    }
+    },
+    "cineMode": true
   },
   "ai": {
     "enabled": false
@@ -109,5 +110,50 @@
     ],
     "max_items_per_feed": 10,
     "refresh_minutes": 30
+  },
+  "layers": {
+    "flights": {
+      "enabled": true,
+      "opacity": 0.9,
+      "provider": "opensky",
+      "refresh_seconds": 12,
+      "max_age_seconds": 120,
+      "max_items_global": 2000,
+      "max_items_view": 360,
+      "rate_limit_per_min": 6,
+      "decimate": "grid",
+      "grid_px": 28,
+      "cine_focus": {
+        "enabled": true,
+        "mode": "both",
+        "min_severity": "orange",
+        "radar_dbz_threshold": 30.0,
+        "buffer_km": 25.0,
+        "outside_dim_opacity": 0.25,
+        "hard_hide_outside": false
+      }
+    },
+    "ships": {
+      "enabled": true,
+      "opacity": 0.9,
+      "provider": "ais_generic",
+      "refresh_seconds": 18,
+      "max_age_seconds": 180,
+      "max_items_global": 1500,
+      "max_items_view": 300,
+      "min_speed_knots": 2.0,
+      "rate_limit_per_min": 4,
+      "decimate": "grid",
+      "grid_px": 28,
+      "cine_focus": {
+        "enabled": true,
+        "mode": "both",
+        "min_severity": "yellow",
+        "radar_dbz_threshold": 20.0,
+        "buffer_km": 20.0,
+        "outside_dim_opacity": 0.30,
+        "hard_hide_outside": false
+      }
+    }
   }
 }
