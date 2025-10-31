@@ -255,15 +255,23 @@ def _run_nmcli(args: List[str], timeout: int = 30) -> tuple[str, str, int]:  # t
             timeout=timeout,
             check=False,
         )
+        if result.returncode != 0:
+            logger.debug(
+                "nmcli command failed: args=%r, returncode=%d, stdout=%r, stderr=%r",
+                args,
+                result.returncode,
+                result.stdout,
+                result.stderr,
+            )
         return result.stdout, result.stderr, result.returncode
     except subprocess.TimeoutExpired as exc:
-        logger.error("nmcli command timed out: %s", exc)
+        logger.error("nmcli command timed out: %s (args=%r)", exc, args)
         return "", f"Command timed out after {timeout} seconds", 124
     except FileNotFoundError:
         logger.error("nmcli not found, NetworkManager may not be installed")
         return "", "nmcli not found. NetworkManager may not be installed", 127
     except Exception as exc:
-        logger.error("Failed to run nmcli: %s", exc)
+        logger.error("Failed to run nmcli: %s (args=%r)", exc, args)
         return "", str(exc), 1
 
 
@@ -285,18 +293,50 @@ def wifi_scan() -> Dict[str, Any]:
     interface = _get_wifi_interface()
     logger.info("Scanning WiFi networks on interface %s", interface)
     
-    # Trigger scan
-    stdout, stderr, code = _run_nmcli(["device", "wifi", "rescan"], timeout=10)
+    # First check if WiFi device exists and is enabled
+    stdout, stderr, code = _run_nmcli(["device", "status"], timeout=10)
     if code != 0:
-        logger.warning("Failed to trigger WiFi scan: %s (stderr: %s)", stdout, stderr)
+        logger.error("Failed to check device status: stdout=%r, stderr=%r", stdout, stderr)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Cannot check WiFi device status: {stderr or stdout or 'Unknown error'}",
+        )
+    
+    # Check if WiFi interface exists
+    device_found = False
+    for line in stdout.strip().split("\n"):
+        if interface in line:
+            device_found = True
+            parts = line.split()
+            if len(parts) >= 2:
+                device_type = parts[1]
+                if device_type != "wifi":
+                    logger.warning("Device %s is not a WiFi device (type: %s)", interface, device_type)
+            break
+    
+    if not device_found:
+        logger.warning("WiFi device %s not found in device list", interface)
+        # Continue anyway, nmcli will report the error
+    
+    # Enable WiFi radio if needed (this might require root)
+    _run_nmcli(["radio", "wifi", "on"], timeout=5)  # Ignore errors, might not have permission
+    
+    # Trigger scan
+    stdout, stderr, code = _run_nmcli(["device", "wifi", "rescan", "--ifname", interface], timeout=10)
+    if code != 0:
+        logger.warning("Failed to trigger WiFi scan: stdout=%r, stderr=%r", stdout, stderr)
+        # Continue anyway, we can still try to list existing scan results
     
     # Wait a bit for scan to complete
     import time
     time.sleep(2)
     
-    # List available networks
+    # List available networks using tabular format for easier parsing
     stdout, stderr, code = _run_nmcli(
         [
+            "-t",
+            "-f",
+            "ssid,signal,security,mode",
             "device",
             "wifi",
             "list",
@@ -309,43 +349,51 @@ def wifi_scan() -> Dict[str, Any]:
     )
     
     if code != 0:
-        logger.error("Failed to list WiFi networks: %s (stderr: %s)", stdout, stderr)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to scan WiFi networks: {stderr or stdout or 'Unknown error'}",
-        )
+        logger.error("Failed to list WiFi networks: stdout=%r, stderr=%r, code=%d", stdout, stderr, code)
+        # Provide more helpful error message
+        error_detail = stderr or stdout or "Unknown error"
+        if "permission denied" in error_detail.lower() or "permission" in error_detail.lower():
+            error_msg = f"Permission denied. The backend may need to run with elevated privileges to access WiFi: {error_detail}"
+        elif "device" in error_detail.lower() and "not found" in error_detail.lower():
+            error_msg = f"WiFi device '{interface}' not found. Please check /etc/pantalla-reloj/wifi.conf: {error_detail}"
+        else:
+            error_msg = f"Failed to scan WiFi networks: {error_detail}"
+        raise HTTPException(status_code=500, detail=error_msg)
     
     networks: List[WiFiNetwork] = []
     lines = stdout.strip().split("\n")
     
-    # Skip header line (first line)
-    if len(lines) > 1:
-        for line in lines[1:]:
-            parts = line.split()
-            if len(parts) >= 4:
-                # Format: SSID MODE CHAN RATE SIGNAL BARS SECURITY
-                # Or: SSID MODE CHAN RATE SIGNAL BARS SECURITY BSSID
-                ssid = parts[0]
-                mode = parts[1] if len(parts) > 1 else "Infra"
-                signal_str = parts[4] if len(parts) > 4 else "0"
-                security = parts[6] if len(parts) > 6 else "none"
-                
-                try:
-                    signal = int(signal_str)
-                except ValueError:
-                    signal = 0
-                
+    # Parse tabular format: SSID:SIGNAL:SECURITY:MODE
+    for line in lines:
+        if not line.strip():
+            continue
+        parts = line.split(":")
+        if len(parts) >= 4:
+            ssid = parts[0] or "Unknown"
+            signal_str = parts[1] if len(parts) > 1 else "0"
+            security = parts[2] if len(parts) > 2 else "none"
+            mode = parts[3] if len(parts) > 3 else "Infra"
+            
+            try:
+                signal = int(signal_str) if signal_str else 0
+            except ValueError:
+                signal = 0
+            
+            # Skip empty SSIDs
+            if ssid and ssid != "--":
                 networks.append(
                     WiFiNetwork(
                         ssid=ssid,
                         signal=signal,
-                        security=security if security != "--" else "none",
-                        mode=mode,
+                        security=security if security and security != "--" else "none",
+                        mode=mode if mode and mode != "--" else "Infra",
                     )
                 )
     
     # Sort by signal strength (descending)
     networks.sort(key=lambda x: x.signal, reverse=True)
+    
+    logger.info("Found %d WiFi networks", len(networks))
     
     return {
         "interface": interface,
@@ -385,11 +433,12 @@ def wifi_status() -> Dict[str, Any]:
         if interface in line:
             parts = line.split()
             if len(parts) >= 4:
-                state = parts[2]
+                state = parts[2] if len(parts) > 2 else ""
                 connection = parts[3] if len(parts) > 3 else ""
                 connected = state == "connected" and connection != "--"
                 if connected:
                     ssid = connection
+                break
     
     # Get IP address if connected
     if connected:
