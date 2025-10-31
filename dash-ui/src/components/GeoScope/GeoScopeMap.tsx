@@ -1793,7 +1793,7 @@ export default function GeoScopeMap() {
         // Reiniciar el mapa con nueva configuración
         cinemaRef.current = cloneCinema(cinemaSource);
         
-        // Reiniciar animación si el mapa está listo - usar setTimeout para asegurar que el mapa esté listo
+        // Reiniciar animación si el mapa está listo
         const map = mapRef.current;
         if (map && map.isStyleLoaded() && !document.hidden && autopanModeRef.current === "rotate") {
           // Usar un pequeño delay para asegurar que todo esté listo
@@ -1804,14 +1804,117 @@ export default function GeoScopeMap() {
               lastRepaintTimeRef.current = null;
               const now = typeof performance !== "undefined" ? performance.now() : Date.now();
               lastLogTimeRef.current = now - AUTOPAN_LOG_INTERVAL_MS;
+              
+              // Función inline para iniciar el ciclo de animación
               const stepPan = (timestamp: number) => {
-                if (animationFrameRef.current === null) {
+                const map = mapRef.current;
+                if (animationFrameRef.current === null || !map || !allowCinemaRef.current) {
                   return;
                 }
-                runPanTick(timestamp);
+                if (autopanModeRef.current !== "rotate") {
+                  return;
+                }
+                
+                const lastFrame = lastFrameTimeRef.current;
+                const effectiveLast = lastFrame ?? timestamp - FRAME_MIN_INTERVAL_MS;
+                const deltaMs = timestamp - effectiveLast;
+                if (deltaMs < FRAME_MIN_INTERVAL_MS) {
+                  animationFrameRef.current = requestAnimationFrame(stepPan);
+                  return;
+                }
+
+                lastFrameTimeRef.current = timestamp;
+
+                let elapsedSeconds = deltaMs / 1000;
+                if (elapsedSeconds > MAX_DELTA_SECONDS) {
+                  elapsedSeconds = MAX_DELTA_SECONDS;
+                }
+
+                const cinema = cinemaRef.current;
+                const totalBands = cinema.bands.length;
+                if (!totalBands) {
+                  animationFrameRef.current = requestAnimationFrame(stepPan);
+                  return;
+                }
+
+                // Obtener la banda actual
+                const currentIndex = ((bandIndexRef.current % totalBands) + totalBands) % totalBands;
+                const currentBand = cinema.bands[currentIndex];
+                if (!currentBand) {
+                  animationFrameRef.current = requestAnimationFrame(stepPan);
+                  return;
+                }
+
+                // Aplicar la configuración de la banda actual
+                viewStateRef.current.lat = currentBand.lat;
+                viewStateRef.current.zoom = currentBand.zoom;
+                viewStateRef.current.pitch = currentBand.pitch;
+                viewStateRef.current.bearing = 0;
+                const minZoom = Math.min(
+                  Number.isFinite(currentBand.minZoom) ? currentBand.minZoom : currentBand.zoom,
+                  currentBand.zoom
+                );
+                currentMinZoomRef.current = minZoom;
+
+                // Mover horizontalmente
+                const deltaLng = panSpeedRef.current * elapsedSeconds * horizontalDirectionRef.current;
+                let newLng = viewStateRef.current.lng + deltaLng;
+
+                // Verificar si llegamos al final horizontal
+                const reachedEast = newLng >= 180;
+                const reachedWest = newLng <= -180;
+
+                if (reachedEast || reachedWest) {
+                  newLng = reachedEast ? 180 : -180;
+                  const nextIndex = currentIndex + verticalDirectionRef.current;
+
+                  if (nextIndex < 0) {
+                    verticalDirectionRef.current = 1;
+                    horizontalDirectionRef.current = horizontalDirectionRef.current === 1 ? -1 : 1;
+                    newLng = horizontalDirectionRef.current === 1 ? -180 : 180;
+                    bandIndexRef.current = 0;
+                  } else if (nextIndex >= totalBands) {
+                    verticalDirectionRef.current = -1;
+                    horizontalDirectionRef.current = horizontalDirectionRef.current === 1 ? -1 : 1;
+                    newLng = horizontalDirectionRef.current === 1 ? -180 : 180;
+                    bandIndexRef.current = totalBands - 1;
+                  } else {
+                    bandIndexRef.current = nextIndex;
+                    horizontalDirectionRef.current = horizontalDirectionRef.current === 1 ? -1 : 1;
+                    newLng = horizontalDirectionRef.current === 1 ? -180 : 180;
+                  }
+                }
+
+                viewStateRef.current.lng = normalizeLng(newLng);
+                map.setMinZoom(minZoom);
+                
+                const { lng, lat, zoom, pitch } = viewStateRef.current;
+                map.jumpTo({
+                  center: [lng, lat],
+                  zoom,
+                  pitch,
+                  bearing: 0
+                });
+                
+                lastRepaintTimeRef.current = timestamp;
+                map.triggerRepaint();
+                
+                if (typeof window !== "undefined") {
+                  window.dispatchEvent(
+                    new CustomEvent(GEO_SCOPE_AUTOPAN_EVENT, {
+                      detail: {
+                        mode: "horizontal",
+                        lng: viewStateRef.current.lng,
+                        lat: viewStateRef.current.lat,
+                        band: currentIndex
+                      }
+                    })
+                  );
+                }
+
                 animationFrameRef.current = requestAnimationFrame(stepPan);
               };
-              runPanTick(now);
+              
               animationFrameRef.current = requestAnimationFrame(stepPan);
             }
           }, 100);
