@@ -1617,7 +1617,7 @@ export default function GeoScopeMap() {
     void initializeMap();
 
     // Escuchar cambios en la configuración y reaccionar inmediatamente
-    useEffect(() => {
+    const checkConfigChanges = () => {
       if (!config || !mapRef.current) {
         return;
       }
@@ -1681,7 +1681,7 @@ export default function GeoScopeMap() {
         panSpeedRef.current = overrideSpeed;
         cinemaRef.current = cloneCinema(cinemaSource);
       }
-    }, [config]);
+    };
 
     return () => {
       destroyed = true;
@@ -1729,6 +1729,118 @@ export default function GeoScopeMap() {
       }
     };
   }, []);
+
+  // useEffect separado para escuchar cambios en la configuración
+  useEffect(() => {
+    if (!config || !mapRef.current) {
+      return;
+    }
+
+    const merged = withConfigDefaults(config);
+    const mapSettings = merged.ui.map;
+    const cinemaSource = mapSettings.cinema ?? createDefaultMapCinema();
+    const panSpeedDegPerSec = Math.max(
+      0,
+      Number.isFinite(cinemaSource.panLngDegPerSec) ? cinemaSource.panLngDegPerSec : 0
+    );
+    const cinemaEnabled = Boolean(cinemaSource.enabled);
+    const newAllowCinema = cinemaEnabled && panSpeedDegPerSec > 0;
+
+    // Si cambió el estado de allowCinema, actualizar
+    if (newAllowCinema !== allowCinemaRef.current) {
+      allowCinemaRef.current = newAllowCinema;
+      
+      // Detener cualquier animación actual
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      
+      // Limpiar timers
+      if (fallbackTimerRef.current != null) {
+        window.clearInterval(fallbackTimerRef.current);
+        fallbackTimerRef.current = null;
+      }
+      
+      if (idlePanTimerRef.current != null) {
+        window.clearInterval(idlePanTimerRef.current);
+        idlePanTimerRef.current = null;
+      }
+      
+      lastFrameTimeRef.current = null;
+      lastRepaintTimeRef.current = null;
+      lastLogTimeRef.current = 0;
+
+      // Cancelar serpentine si está activo
+      const controller = serpentineControllerRef.current;
+      if (controller) {
+        serpentineControllerRef.current = null;
+        try {
+          controller.cancel();
+        } catch {
+          // Ignore
+        }
+      }
+
+      if (newAllowCinema) {
+        // Actualizar velocidad y reiniciar si corresponde
+        const overrideSpeed = kioskRuntime.getSpeedOverride(
+          panSpeedDegPerSec,
+          FALLBACK_ROTATION_DEG_PER_SEC
+        );
+        panSpeedRef.current = overrideSpeed;
+        
+        // Reiniciar el mapa con nueva configuración
+        cinemaRef.current = cloneCinema(cinemaSource);
+        
+        // Reiniciar animación si el mapa está listo - usar setTimeout para asegurar que el mapa esté listo
+        const map = mapRef.current;
+        if (map && map.isStyleLoaded() && !document.hidden && autopanModeRef.current === "rotate") {
+          // Usar un pequeño delay para asegurar que todo esté listo
+          setTimeout(() => {
+            const map = mapRef.current;
+            if (map && map.isStyleLoaded() && !document.hidden && allowCinemaRef.current && animationFrameRef.current === null) {
+              lastFrameTimeRef.current = null;
+              lastRepaintTimeRef.current = null;
+              const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+              lastLogTimeRef.current = now - AUTOPAN_LOG_INTERVAL_MS;
+              const stepPan = (timestamp: number) => {
+                if (animationFrameRef.current === null) {
+                  return;
+                }
+                runPanTick(timestamp);
+                animationFrameRef.current = requestAnimationFrame(stepPan);
+              };
+              runPanTick(now);
+              animationFrameRef.current = requestAnimationFrame(stepPan);
+            }
+          }, 100);
+        }
+      } else {
+        // Si se desactiva, asegurar que el bearing sea 0
+        panSpeedRef.current = 0;
+        viewStateRef.current.bearing = 0;
+        const map = mapRef.current;
+        if (map) {
+          map.jumpTo({
+            center: [viewStateRef.current.lng, viewStateRef.current.lat],
+            zoom: viewStateRef.current.zoom,
+            pitch: viewStateRef.current.pitch,
+            bearing: 0
+          });
+        }
+      }
+    } else if (newAllowCinema && panSpeedRef.current !== panSpeedDegPerSec) {
+      // Si la velocidad cambió pero el modo sigue activo
+      const overrideSpeed = kioskRuntime.getSpeedOverride(
+        panSpeedDegPerSec,
+        FALLBACK_ROTATION_DEG_PER_SEC
+      );
+      panSpeedRef.current = overrideSpeed;
+      cinemaRef.current = cloneCinema(cinemaSource);
+    }
+  }, [config]);
+
   return (
     <div className="map-host">
       <div ref={mapFillRef} className="map-fill" />
