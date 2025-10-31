@@ -20,6 +20,7 @@ import type {
   LayersConfig,
   MapCinemaBand,
   MapCinemaConfig,
+  MapCinemaMotionConfig,
   MapConfig,
   MapIdlePanConfig,
   MapThemeConfig,
@@ -91,6 +92,14 @@ const DEFAULT_THEME: MapThemeConfig = {
   tint: "rgba(0,170,255,0.06)",
 };
 
+const DEFAULT_CINEMA_MOTION: MapCinemaMotionConfig = {
+  speedPreset: "medium",
+  amplitudeDeg: 60,
+  easing: "ease-in-out",
+  pauseWithOverlay: true,
+  phaseOffsetDeg: 25,
+};
+
 const DEFAULT_MAPTILER: MaptilerConfig = {
   key: null,
   styleUrlDark: "https://api.maptiler.com/maps/dark/style.json",
@@ -118,6 +127,7 @@ export const createDefaultMapCinema = (): MapCinemaConfig => ({
   enabled: false,
   panLngDegPerSec: 0,
   bandTransition_sec: 8,
+  motion: { ...DEFAULT_CINEMA_MOTION },
   bands: DEFAULT_CINEMA_BANDS.map((band) => ({ ...band })),
 });
 
@@ -181,10 +191,47 @@ const mergeCinema = (candidate: unknown): MapCinemaConfig => {
   const source = (candidate as Partial<MapCinemaConfig>) ?? {};
   const bandsSource = Array.isArray(source.bands) ? source.bands : [];
   const bands = DEFAULT_CINEMA_BANDS.map((band, index) => mergeCinemaBand(bandsSource[index], band));
+  const fallbackMotion = { ...DEFAULT_CINEMA_MOTION };
+  const motionSource = (source.motion ?? {}) as Partial<MapCinemaMotionConfig>;
+
+  const derivePreset = (): MapCinemaMotionConfig["speedPreset"] => {
+    const speed = Math.max(0, toNumber(source.panLngDegPerSec, fallback.panLngDegPerSec));
+    if (speed <= 3) {
+      return "slow";
+    }
+    if (speed <= 7) {
+      return "medium";
+    }
+    return "fast";
+  };
+
+  const motion: MapCinemaMotionConfig = {
+    speedPreset:
+      motionSource.speedPreset === "slow" || motionSource.speedPreset === "medium" || motionSource.speedPreset === "fast"
+        ? motionSource.speedPreset
+        : derivePreset(),
+    amplitudeDeg: clampNumber(
+      toNumber(motionSource.amplitudeDeg, fallbackMotion.amplitudeDeg),
+      1,
+      180
+    ),
+    easing: motionSource.easing === "linear" ? "linear" : "ease-in-out",
+    pauseWithOverlay: toBoolean(
+      motionSource.pauseWithOverlay,
+      fallbackMotion.pauseWithOverlay
+    ),
+    phaseOffsetDeg: clampNumber(
+      toNumber(motionSource.phaseOffsetDeg, fallbackMotion.phaseOffsetDeg),
+      0,
+      360
+    ),
+  };
+
   return {
     enabled: toBoolean(source.enabled, fallback.enabled),
     panLngDegPerSec: Math.max(0, toNumber(source.panLngDegPerSec, fallback.panLngDegPerSec)),
     bandTransition_sec: Math.max(1, Math.round(toNumber(source.bandTransition_sec, fallback.bandTransition_sec))),
+    motion,
     bands,
   };
 };
@@ -301,6 +348,8 @@ export const createDefaultAEMET = (): AEMETConfig => ({
   radar_enabled: true,
   satellite_enabled: false,
   cache_minutes: 15,
+  has_api_key: false,
+  api_key_last4: null,
 });
 
 export const createDefaultBlitzortung = (): BlitzortungConfig => ({
@@ -466,9 +515,15 @@ const mergeStormMode = (candidate: unknown): StormModeConfig => {
 const mergeAEMET = (candidate: unknown): AEMETConfig => {
   const fallback = createDefaultAEMET();
   const source = (candidate as Partial<AEMETConfig>) ?? {};
+  const sanitizedKey = sanitizeNullableString(source.api_key, null);
+  const hasKeyExplicit = typeof source.has_api_key === "boolean" ? source.has_api_key : undefined;
+  const derivedHasKey = hasKeyExplicit ?? Boolean(sanitizedKey);
+  const last4 = typeof source.api_key_last4 === "string" && source.api_key_last4.trim().length > 0
+    ? source.api_key_last4.trim()
+    : (sanitizedKey && sanitizedKey.length > 0 ? sanitizedKey.slice(-4) : null);
   return {
     enabled: toBoolean(source.enabled, fallback.enabled),
-    api_key: sanitizeNullableString(source.api_key, fallback.api_key),
+    api_key: sanitizedKey,
     cap_enabled: toBoolean(source.cap_enabled, fallback.cap_enabled),
     radar_enabled: toBoolean(source.radar_enabled, fallback.radar_enabled),
     satellite_enabled: toBoolean(source.satellite_enabled, fallback.satellite_enabled),
@@ -477,6 +532,8 @@ const mergeAEMET = (candidate: unknown): AEMETConfig => {
       1,
       60,
     ),
+    has_api_key: derivedHasKey,
+    api_key_last4: derivedHasKey ? last4 : null,
   };
 };
 

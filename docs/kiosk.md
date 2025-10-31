@@ -43,7 +43,7 @@ sudo systemctl enable --now pantalla-openbox@dani.service
 sudo systemctl enable --now pantalla-kiosk@dani.service
 ```
 
-`pantalla-kiosk@.service` invoca `/usr/local/bin/pantalla-kiosk`, que prioriza Chromium y recurre a Firefox si no hay binario Chromium disponible. El perfil persistente vive en `/var/lib/pantalla-reloj/state/chromium-kiosk` y las trazas se escriben en `/var/log/pantalla/browser-kiosk.log`.
+`pantalla-kiosk@.service` invoca `/usr/local/bin/pantalla-kiosk`, que prioriza Chromium y recurre a Firefox si no hay binario Chromium disponible. El perfil persistente vive en `/var/lib/pantalla-reloj/state/chromium-kiosk`. Cada arranque deja un log temporal en `/tmp/pantalla-chromium.XXXXXX.log` y replica la salida en `/var/log/pantalla/browser-kiosk.log` (rotado a ~4000 líneas en cada arranque). Para habilitar los mensajes verbosos (`--v=1`) exporta `PANTALLA_CHROMIUM_VERBOSE=1` antes de reiniciar el servicio.
 
 Las variables `KIOSK_URL`, `CHROME_BIN_OVERRIDE`, `FIREFOX_BIN_OVERRIDE`, `CHROMIUM_PROFILE_DIR` y `FIREFOX_PROFILE_DIR` se definen en `/var/lib/pantalla-reloj/state/kiosk.env`. Tras cualquier cambio reinicia el servicio con `sudo systemctl restart pantalla-kiosk@dani`.
 
@@ -55,12 +55,30 @@ Openbox no lanza navegadores automáticamente y el servicio de kiosk elimina ins
 wmctrl -lx | grep pantalla-kiosk
 ```
 
-Si hay más de una, ciérralas con `wmctrl -ic <ID>` y revisa que no existan otros lanzadores activos.
+Si hay más de una, ciérralas con `wmctrl -ic <ID>` y revisa que no existan otros lanzadores activos. Un `wmctrl -lx` limpio no debe listar entradas `chrome.chromium` ni `chromium-browser.Chromium-browser`; si aparecen indica que quedó la ventana 10×10 residual.
+
+Para comprobar que el proceso usa ANGLE (EGL) ejecuta:
+
+```bash
+pgrep -af -- '--class=pantalla-kiosk'
+```
+
+Debe aparecer `--use-gl=egl-angle` en la línea de comandos. Si falta, reinicia el servicio y revisa los logs del kiosk.
 
 ### Troubleshooting de video
 
 * `DISPLAY=:0 xrandr --query` debe mostrar la resolución actual `1920 x 480` y el modo `480x1920` asociado a `HDMI-1` con rotación izquierda. Si no aparece, revisa [`xorg/10-monitor.conf`](../xorg/10-monitor.conf).
 * Asegúrate de que `wmctrl -lx` sólo liste una ventana con clase `pantalla-kiosk`.
+
+### SwiftShader opcional
+
+Chromium se lanza con ANGLE (EGL) y bloquea el fallback software. Si el hardware no soporta WebGL, habilita temporalmente SwiftShader con:
+
+```bash
+PANTALLA_ALLOW_SWIFTSHADER=1 sudo systemctl restart pantalla-kiosk@dani
+```
+
+El script intentará de nuevo con `--enable-unsafe-swiftshader` sólo cuando el arranque estándar falle; el valor por defecto (sin variable) mantiene el modo seguro.
 
 ## Servicios opcionales
 

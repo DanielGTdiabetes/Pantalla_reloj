@@ -11,6 +11,14 @@ export type MapCinemaBand = {
   duration_sec: number;
 };
 
+export type MapCinemaMotionConfig = {
+  speedPreset: "slow" | "medium" | "fast";
+  amplitudeDeg: number;
+  easing: "linear" | "ease-in-out";
+  pauseWithOverlay: boolean;
+  phaseOffsetDeg: number;
+};
+
 export type UIScrollSpeed = number | "slow" | "normal" | "fast";
 
 export type MapCinemaConfig = {
@@ -18,6 +26,7 @@ export type MapCinemaConfig = {
   panLngDegPerSec: number;
   bandTransition_sec: number;
   bands: MapCinemaBand[];
+  motion: MapCinemaMotionConfig;
 };
 
 export type MapIdlePanConfig = {
@@ -127,11 +136,13 @@ export type StormModeConfig = {
 
 export type AEMETConfig = {
   enabled: boolean;
-  api_key: string | null;
+  api_key?: string | null;
   cap_enabled: boolean;
   radar_enabled: boolean;
   satellite_enabled: boolean;
   cache_minutes: number;
+  has_api_key?: boolean;
+  api_key_last4?: string | null;
 };
 
 export type BlitzortungConfig = {

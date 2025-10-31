@@ -88,6 +88,26 @@ export async function saveConfig(data: AppConfig) {
   return apiPost<AppConfig>("/api/config", data);
 }
 
+export type AemetSecretRequest = {
+  api_key: string | null;
+};
+
+export type AemetTestResponse = {
+  ok: boolean;
+  reason?: string;
+};
+
+export async function updateAemetApiKey(apiKey: string | null) {
+  return apiPost<undefined>("/api/config/secret/aemet_api_key", {
+    api_key: apiKey,
+  } satisfies AemetSecretRequest);
+}
+
+export async function testAemetApiKey(apiKey?: string) {
+  const body = apiKey && apiKey.trim().length > 0 ? { api_key: apiKey } : {};
+  return apiPost<AemetTestResponse | undefined>("/api/aemet/test_key", body);
+}
+
 export async function getSchema() {
   return apiGet<Record<string, unknown> | undefined>("/api/config/schema");
 }
