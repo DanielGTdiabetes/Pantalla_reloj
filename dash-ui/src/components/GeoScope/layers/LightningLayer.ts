@@ -17,6 +17,7 @@ export default class LightningLayer implements Layer {
   private enabled: boolean;
   private map?: maplibregl.Map;
   private readonly sourceId = "geoscope-lightning-source";
+  private lastData: FeatureCollection = EMPTY;
 
   constructor(options: LightningLayerOptions = {}) {
     this.enabled = options.enabled ?? true;
@@ -27,8 +28,13 @@ export default class LightningLayer implements Layer {
     if (!map.getSource(this.sourceId)) {
       map.addSource(this.sourceId, {
         type: "geojson",
-        data: EMPTY
+        data: this.lastData
       });
+    }
+
+    const source = map.getSource(this.sourceId);
+    if (isGeoJSONSource(source)) {
+      source.setData(this.lastData);
     }
 
     if (!map.getLayer(this.id)) {
@@ -64,20 +70,16 @@ export default class LightningLayer implements Layer {
   }
 
   updateData(data: FeatureCollection): void {
+    this.lastData = data ?? EMPTY;
     if (!this.map) return;
     const source = this.map.getSource(this.sourceId);
     if (isGeoJSONSource(source)) {
-      source.setData(data);
+      source.setData(this.lastData);
     }
   }
 
   getData(): FeatureCollection {
-    if (!this.map) return EMPTY;
-    const source = this.map.getSource(this.sourceId);
-    if (isGeoJSONSource(source)) {
-      return (source.getData() as FeatureCollection) ?? EMPTY;
-    }
-    return EMPTY;
+    return this.lastData;
   }
 
   destroy(): void {
