@@ -96,6 +96,33 @@ Pantalla_reloj/
 - `GET /api/config` nunca devuelve la clave completa; expone `has_api_key` y
   `api_key_last4` para saber si se ha cargado correctamente.
 
+### Integración OpenSky
+
+- Crea un cliente OAuth2 en el portal de [OpenSky Network](https://opensky-network.org/)
+  (sección *API Access → OAuth2 client credentials*). El formulario devuelve un
+  `client_id` y `client_secret` válidos para `grant_type=client_credentials`.
+- El backend solicita tokens en
+  `https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token`
+  enviando ambos valores como `application/x-www-form-urlencoded`. Los tokens
+  duran ~30 minutos y se renuevan automáticamente 60 segundos antes de expirar.
+- Desde la tarjeta **OpenSky** de `/config` puedes:
+  - Habilitar/deshabilitar la capa de vuelos sin tocar el resto del dashboard.
+  - Definir el *bounding box* (Castellón por defecto) o cambiar a modo global.
+  - Ajustar `poll_seconds` (mínimo 10 s en modo anónimo, 5 s con credenciales).
+  - Limitar el número máximo de aeronaves (`max_aircraft`) y activar el clustering.
+  - Solicitar el modo extendido (`extended=1`) para obtener categoría y squawk.
+- Los secretos se guardan en `/var/lib/pantalla/secrets/opensky_client_*` via
+  `PUT /api/config/secret/opensky_client_id` y
+  `PUT /api/config/secret/opensky_client_secret`. Las respuestas `GET` sólo
+  exponen `{"set": true|false}` para confirmar si existe un valor persistido.
+- La UI incluye un botón «Probar conexión» que consulta `/api/opensky/status` y
+  muestra: validez del token, edad del último sondeo, conteo de aeronaves
+  cacheadas y cualquier error reciente (401, 429, backoff en curso, etc.).
+- El endpoint público `/api/layers/flights` devuelve `items[]` normalizados
+  (lon/lat, velocidad, rumbo, país, última recepción) y se apoya en una caché
+  en memoria con TTL = `poll_seconds` (nunca <5 s). Si OpenSky responde con 429
+  o 5xx se reutiliza el último snapshot marcándolo como `stale=true`.
+
 ### Nginx (reverse proxy `/api`)
 
 - El virtual host `etc/nginx/sites-available/pantalla-reloj.conf` debe quedar

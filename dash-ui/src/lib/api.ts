@@ -112,6 +112,65 @@ export async function getSchema() {
   return apiGet<Record<string, unknown> | undefined>("/api/config/schema");
 }
 
+type SecretMeta = {
+  set: boolean;
+};
+
+export type OpenSkyStatus = {
+  enabled: boolean;
+  mode: "bbox" | "global";
+  configured_poll?: number;
+  effective_poll?: number;
+  has_credentials?: boolean;
+  token_set?: boolean;
+  token_valid?: boolean;
+  expires_in?: number | null;
+  backoff_active?: boolean;
+  backoff_seconds?: number;
+  last_fetch_ok?: boolean | null;
+  last_fetch_ts?: number | null;
+  last_fetch_iso?: string | null;
+  last_fetch_age?: number | null;
+  last_error?: string | null;
+  items_count?: number;
+  bbox: { lamin: number; lamax: number; lomin: number; lomax: number };
+  max_aircraft: number;
+  extended: number;
+  cluster: boolean;
+  poll_warning?: string;
+};
+
+const sendSecretUpdate = async (path: string, value: string | null) => {
+  const payload = value ? value.trim() : "";
+  return apiRequest<undefined>(path, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "text/plain;charset=utf-8",
+    },
+    body: payload,
+  });
+};
+
+export async function updateOpenSkyClientId(value: string | null) {
+  return sendSecretUpdate("/api/config/secret/opensky_client_id", value);
+}
+
+export async function updateOpenSkyClientSecret(value: string | null) {
+  return sendSecretUpdate("/api/config/secret/opensky_client_secret", value);
+}
+
+export async function getOpenSkyClientIdMeta() {
+  return apiGet<SecretMeta>("/api/config/secret/opensky_client_id");
+}
+
+export async function getOpenSkyClientSecretMeta() {
+  return apiGet<SecretMeta>("/api/config/secret/opensky_client_secret");
+}
+
+export async function getOpenSkyStatus() {
+  return apiGet<OpenSkyStatus>("/api/opensky/status");
+}
+
 // Storm Mode API
 export type StormModeStatus = {
   enabled: boolean;

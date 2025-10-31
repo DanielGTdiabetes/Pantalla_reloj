@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -43,12 +44,18 @@ from .layer_providers import (
 )
 from .logging_utils import configure_logging
 from .models import AppConfig
+from .secret_store import SecretStore
+from .services.opensky_auth import OpenSkyAuthError
+from .services.opensky_client import OpenSkyClientError
+from .services.opensky_service import OpenSkyService
 from .rate_limiter import check_rate_limit
 
 APP_START = datetime.now(timezone.utc)
 logger = configure_logging()
 config_manager = ConfigManager()
 cache_store = CacheStore()
+secret_store = SecretStore()
+opensky_service = OpenSkyService(secret_store, logger)
 
 app = FastAPI(title="Pantalla Reloj Backend", version="2025.10.0")
 app.add_middleware(
@@ -58,6 +65,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("shutdown")
+def _shutdown_services() -> None:
+    opensky_service.close()
 
 STATIC_DIR = Path("/opt/pantalla-reloj/frontend/static")
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -119,6 +131,29 @@ def _mask_secret(value: Optional[str]) -> Dict[str, Any]:
         return {"has_api_key": False, "api_key_last4": None}
     visible = value[-4:] if len(value) >= 4 else value
     return {"has_api_key": True, "api_key_last4": visible}
+
+
+async def _read_secret_value(request: Request) -> Optional[str]:
+    body = await request.body()
+    if not body:
+        return None
+    text = body.decode("utf-8").strip()
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type.lower():
+        try:
+            parsed = json.loads(text or "null")
+        except json.JSONDecodeError:
+            return text or None
+        if isinstance(parsed, dict):
+            for key in ("value", "secret", "client_id", "client_secret"):
+                candidate = parsed.get(key)
+                if candidate is not None:
+                    return str(candidate).strip() or None
+            return None
+        if isinstance(parsed, str):
+            return parsed.strip() or None
+        return None
+    return text or None
 
 
 def _build_public_config(config: AppConfig) -> Dict[str, Any]:
@@ -219,30 +254,48 @@ def healthcheck_full() -> Dict[str, Any]:
     
     config = config_manager.read()
     
-    # Información de flights
-    flights_config = config.layers.flights
-    flights_cached = cache_store.load("flights", max_age_minutes=None)
+    opensky_cfg = config.opensky
+    opensky_status = opensky_service.get_status(config)
+    snapshot = opensky_service.get_last_snapshot()
+    last_fetch_iso = opensky_status.get("last_fetch_iso")
+    last_fetch_ts = opensky_status.get("last_fetch_ts")
+    last_fetch_age = int(time.time() - last_fetch_ts) if last_fetch_ts else None
+    items_count = 0
+    if snapshot and isinstance(snapshot.payload.get("count"), int):
+        items_count = int(snapshot.payload["count"])
+
+    opensky_block = {
+        "enabled": opensky_cfg.enabled,
+        "mode": opensky_cfg.mode,
+        "effective_poll": opensky_status.get("effective_poll"),
+        "configured_poll": opensky_status.get("configured_poll"),
+        "token_set": opensky_status.get("token_set"),
+        "token_valid": opensky_status.get("token_valid"),
+        "expires_in": opensky_status.get("expires_in"),
+        "last_fetch_ok": opensky_status.get("last_fetch_ok"),
+        "last_fetch": last_fetch_iso,
+        "last_fetch_age": last_fetch_age,
+        "last_error": opensky_status.get("last_error"),
+        "backoff_active": opensky_status.get("backoff_active"),
+        "backoff_seconds": opensky_status.get("backoff_seconds"),
+        "items_count": items_count,
+        "bbox": opensky_cfg.bbox.model_dump(),
+        "max_aircraft": opensky_cfg.max_aircraft,
+    }
+    payload["opensky"] = opensky_block
+
     flights_status = "down"
-    flights_last_fetch = None
-    flights_cache_age = None
-    flights_items_count = 0
-    
-    if flights_config.enabled:
-        if flights_cached:
+    if opensky_cfg.enabled:
+        if opensky_status.get("last_fetch_ok"):
             flights_status = "ok"
-            flights_last_fetch = flights_cached.fetched_at.isoformat()
-            age = datetime.now(timezone.utc) - flights_cached.fetched_at
-            flights_cache_age = int(age.total_seconds())
-            features = flights_cached.payload.get("features", [])
-            flights_items_count = len(features)
-        else:
+        elif snapshot:
             flights_status = "degraded"
-    
+
     payload["flights"] = {
         "status": flights_status,
-        "last_fetch": flights_last_fetch,
-        "cache_age": flights_cache_age,
-        "items_count": flights_items_count
+        "last_fetch": last_fetch_iso,
+        "cache_age": last_fetch_age,
+        "items_count": items_count,
     }
     
     # Información de ships
@@ -519,6 +572,34 @@ async def update_aemet_secret(request: AemetSecretRequest) -> Response:
     return Response(status_code=204)
 
 
+async def _update_opensky_secret(name: str, request: Request) -> Response:
+    value = await _read_secret_value(request)
+    secret_store.set_secret(name, value)
+    opensky_service.reset()
+    logger.info("[opensky] secret %s updated (set=%s)", name, bool(value))
+    return Response(status_code=204)
+
+
+@app.put("/api/config/secret/opensky_client_id", status_code=204)
+async def update_opensky_client_id(request: Request) -> Response:
+    return await _update_opensky_secret("opensky_client_id", request)
+
+
+@app.put("/api/config/secret/opensky_client_secret", status_code=204)
+async def update_opensky_client_secret(request: Request) -> Response:
+    return await _update_opensky_secret("opensky_client_secret", request)
+
+
+@app.get("/api/config/secret/opensky_client_id")
+def get_opensky_client_id_meta() -> Dict[str, bool]:
+    return {"set": secret_store.has_secret("opensky_client_id")}
+
+
+@app.get("/api/config/secret/opensky_client_secret")
+def get_opensky_client_secret_meta() -> Dict[str, bool]:
+    return {"set": secret_store.has_secret("opensky_client_secret")}
+
+
 @app.post("/api/aemet/test_key")
 def test_aemet_key(payload: AemetTestRequest) -> Dict[str, Any]:
     candidate = _sanitize_secret(payload.api_key)
@@ -558,6 +639,22 @@ def test_aemet_key(payload: AemetTestRequest) -> Dict[str, Any]:
         return {"ok": False, "reason": "unauthorized"}
 
     return {"ok": True}
+
+
+@app.get("/api/opensky/status")
+def get_opensky_status() -> Dict[str, Any]:
+    config = config_manager.read()
+    status = opensky_service.get_status(config)
+    now = time.time()
+    last_fetch_ts = status.get("last_fetch_ts")
+    status["last_fetch_age"] = int(now - last_fetch_ts) if last_fetch_ts else None
+    status["bbox"] = config.opensky.bbox.model_dump()
+    status["max_aircraft"] = int(config.opensky.max_aircraft)
+    status["extended"] = int(config.opensky.extended)
+    status["cluster"] = bool(config.opensky.cluster)
+    if not status.get("has_credentials") and status.get("effective_poll", 0) < 10:
+        status["poll_warning"] = "anonymous_minimum_enforced"
+    return status
 
 
 @app.get("/api/weather")
@@ -1502,157 +1599,71 @@ def _get_ships_provider(config: AppConfig) -> ShipProvider:
     return provider
 
 
-@app.get("/api/layers/flights")
-def get_flights(
-    request: Request,
-    bbox: Optional[str] = None,
-    max_items_view: Optional[int] = None
-) -> Dict[str, Any]:
-    """Obtiene datos de vuelos en formato GeoJSON."""
-    config = config_manager.read()
-    flights_config = config.layers.flights
-    
-    if not flights_config.enabled:
-        return {"type": "FeatureCollection", "features": [], "stale": False}
-    
-    # Verificar rate limit
-    allowed, remaining = check_rate_limit("flights", flights_config.rate_limit_per_min)
-    if not allowed:
-        logger.warning("Rate limit exceeded for flights, remaining: %d seconds", remaining)
-        # Servir caché si existe (stale)
-        cached = cache_store.load("flights", max_age_minutes=None)
-        if cached:
-            result = dict(cached.payload)
-            result["stale"] = True
-            return result
-        return {"type": "FeatureCollection", "features": [], "stale": True}
-    
-    # Parsear bbox si está presente (minLon,minLat,maxLon,maxLat)
-    bounds = None
-    if bbox:
-        try:
-            parts = [float(x.strip()) for x in bbox.split(",")]
-            if len(parts) == 4:
-                bounds = (parts[0], parts[1], parts[2], parts[3])
-        except (ValueError, IndexError):
-            logger.warning("Invalid bbox parameter: %s", bbox)
-    
-    # Verificar caché
-    cached = cache_store.load("flights", max_age_minutes=flights_config.refresh_seconds // 60)
-    if cached:
-        logger.debug("Cache hit for flights")
-        return cached.payload
-    
-    # Fetch de datos
+def _parse_bbox_param(raw: Optional[str]) -> Optional[Tuple[float, float, float, float]]:
+    if not raw:
+        return None
     try:
-        provider = _get_flights_provider(config)
-        data = provider.fetch(bounds=bounds)
-        
-        # Filtrar por edad (max_age_seconds) y límites de densidad
-        now = datetime.now(timezone.utc).timestamp()
-        filtered_features = []
-        
-        for feature in data.get("features", []):
-            props = feature.get("properties", {})
-            timestamp = props.get("timestamp", 0)
-            age = now - timestamp
-            
-            # Filtrar por edad
-            if flights_config.max_age_seconds > 0 and age > flights_config.max_age_seconds:
-                continue
-            
-            filtered_features.append(feature)
-        
-        # Aplicar límite global (max_items_global)
-        if flights_config.max_items_global > 0 and len(filtered_features) > flights_config.max_items_global:
-            # Ordenar por timestamp (más recientes primero) y limitar
-            filtered_features.sort(key=lambda f: f.get("properties", {}).get("timestamp", 0), reverse=True)
-            filtered_features = filtered_features[:flights_config.max_items_global]
-        
-        # Si hay bbox, filtrar por viewport también
-        if bounds:
-            viewport_features = []
-            for feature in filtered_features:
-                geometry = feature.get("geometry", {})
-                if geometry.get("type") == "Point":
-                    coords = geometry.get("coordinates", [])
-                    if len(coords) >= 2:
-                        lon, lat = coords[0], coords[1]
-                        # Verificar si está dentro del bbox
-                        if (bounds[0] <= lon <= bounds[2] and bounds[1] <= lat <= bounds[3]):
-                            viewport_features.append(feature)
-            
-            # Aplicar límite de viewport (max_items_view, puede venir del query o de config)
-            viewport_limit = max_items_view if max_items_view else flights_config.max_items_view
-            if viewport_limit > 0 and len(viewport_features) > viewport_limit:
-                # Ordenar por timestamp y limitar
-                viewport_features.sort(key=lambda f: f.get("properties", {}).get("timestamp", 0), reverse=True)
-                viewport_features = viewport_features[:viewport_limit]
-            
-            filtered_features = viewport_features
-        
-        # Aplicar máscara de foco y etiquetar in_focus
-        focus_mask = None
-        focus_unavailable = False
-        
-        if flights_config.cine_focus.enabled and config.aemet.enabled:
-            try:
-                mask, from_cache = load_or_build_focus_mask(
-                    cache_store,
-                    config,
-                    flights_config.cine_focus,
-                    flights_config.cine_focus.mode
-                )
-                focus_mask = mask
-                if from_cache:
-                    logger.debug("Focus mask loaded from cache for flights")
-            except Exception as exc:
-                logger.warning("Failed to load focus mask for flights: %s", exc)
-                focus_unavailable = True
-        
-        # Etiquetar features con in_focus
-        features_with_focus = []
-        for feature in filtered_features:
-            props = feature.get("properties", {})
-            geometry = feature.get("geometry", {})
-            
-            in_focus = False
-            if focus_mask and geometry.get("type") == "Point":
-                coords = geometry.get("coordinates", [])
-                if len(coords) >= 2:
-                    lon, lat = coords[0], coords[1]
-                    if abs(lat) <= 90 and abs(lon) <= 180:
-                        in_focus = check_point_in_focus(lat, lon, focus_mask)
-            
-            features_with_focus.append({
-                **feature,
-                "properties": {
-                    **props,
-                    "in_focus": in_focus
-                }
-            })
-        
-        data["features"] = features_with_focus
-        
-        # Añadir metadata si focus no está disponible
-        if focus_unavailable:
-            data["properties"] = data.get("properties", {})
-            data["properties"]["focus_unavailable"] = True
-        
-        # Guardar en caché
-        cache_store.store("flights", data)
-        logger.info("Fetched %d flights (in_focus: %d)", len(features_with_focus),
-                   sum(1 for f in features_with_focus if f.get("properties", {}).get("in_focus", False)))
-        return data
-    except Exception as exc:
-        logger.error("Failed to fetch flights: %s", exc)
-        # Fallback: servir caché stale si existe
-        cached = cache_store.load("flights", max_age_minutes=None)
-        if cached:
-            result = dict(cached.payload)
-            result["stale"] = True
-            return result
-        return {"type": "FeatureCollection", "features": [], "stale": True}
+        parts = [float(part.strip()) for part in raw.split(",")]
+    except (ValueError, AttributeError):
+        logger.warning("[opensky] invalid bbox parameter: %s", raw)
+        return None
+    if len(parts) != 4:
+        logger.warning("[opensky] bbox must contain 4 comma-separated numbers, got %s", raw)
+        return None
+    lamin, lamax, lomin, lomax = parts
+    if lamax <= lamin or lomax <= lomin:
+        logger.warning("[opensky] bbox has invalid bounds: %s", raw)
+        return None
+    return lamin, lamax, lomin, lomax
+
+
+@app.get("/api/layers/flights")
+def get_flights(request: Request, bbox: Optional[str] = None, extended: Optional[int] = None) -> JSONResponse:
+    config = config_manager.read()
+    opensky_cfg = config.opensky
+
+    if not opensky_cfg.enabled:
+        return JSONResponse({"count": 0, "disabled": True})
+
+    bbox_override = _parse_bbox_param(bbox)
+    extended_override = None
+    if extended is not None:
+        extended_override = 1 if int(extended) == 1 else 0
+
+    try:
+        snapshot = opensky_service.get_snapshot(config, bbox_override, extended_override)
+    except OpenSkyAuthError as exc:
+        logger.error("[opensky] auth error during fetch: %s", exc)
+        payload = {"count": 0, "items": [], "stale": True, "ts": int(time.time()), "error": "auth"}
+        response = JSONResponse(payload, status_code=200)
+        response.headers["X-OpenSky-Polled"] = "false"
+        response.headers["X-OpenSky-Mode"] = opensky_cfg.mode
+        return response
+    except OpenSkyClientError as exc:
+        logger.error("[opensky] client error during fetch: %s", exc)
+        payload = {"count": 0, "items": [], "stale": True, "ts": int(time.time()), "error": "client"}
+        response = JSONResponse(payload, status_code=200)
+        response.headers["X-OpenSky-Polled"] = "false"
+        response.headers["X-OpenSky-Mode"] = opensky_cfg.mode
+        return response
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[opensky] unexpected error during fetch: %s", exc)
+        payload = {"count": 0, "items": [], "stale": True, "ts": int(time.time()), "error": "unexpected"}
+        response = JSONResponse(payload, status_code=200)
+        response.headers["X-OpenSky-Polled"] = "false"
+        response.headers["X-OpenSky-Mode"] = opensky_cfg.mode
+        return response
+
+    payload = dict(snapshot.payload)
+    if snapshot.stale:
+        payload["stale"] = True
+
+    response = JSONResponse(payload)
+    response.headers["X-OpenSky-Polled"] = "true" if snapshot.polled else "false"
+    response.headers["X-OpenSky-Mode"] = snapshot.mode
+    if snapshot.remaining is not None:
+        response.headers["X-OpenSky-Remaining"] = snapshot.remaining
+    return response
 
 
 @app.get("/api/layers/ships")
