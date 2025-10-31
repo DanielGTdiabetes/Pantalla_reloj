@@ -1746,8 +1746,21 @@ export default function GeoScopeMap() {
     const cinemaEnabled = Boolean(cinemaSource.enabled);
     const newAllowCinema = cinemaEnabled && panSpeedDegPerSec > 0;
 
-    // Si cambió el estado de allowCinema, actualizar
-    if (newAllowCinema !== allowCinemaRef.current) {
+    console.log("[GeoScopeMap] Config changed:", {
+      cinemaEnabled,
+      panSpeedDegPerSec,
+      newAllowCinema,
+      currentAllowCinema: allowCinemaRef.current
+    });
+
+    // Si cambió el estado de allowCinema o la velocidad, actualizar
+    const speedChanged = panSpeedDegPerSec !== panSpeedRef.current;
+    if (newAllowCinema !== allowCinemaRef.current || (newAllowCinema && speedChanged)) {
+      console.log("[GeoScopeMap] Updating cinema mode:", {
+        from: allowCinemaRef.current,
+        to: newAllowCinema,
+        speedChanged
+      });
       allowCinemaRef.current = newAllowCinema;
       
       // Detener cualquier animación actual
@@ -1933,8 +1946,22 @@ export default function GeoScopeMap() {
           });
         }
       }
-    } else if (newAllowCinema && panSpeedRef.current !== panSpeedDegPerSec) {
-      // Si la velocidad cambió pero el modo sigue activo
+      
+      // Actualizar velocidad siempre que cambie
+      if (speedChanged) {
+        const overrideSpeed = kioskRuntime.getSpeedOverride(
+          panSpeedDegPerSec,
+          FALLBACK_ROTATION_DEG_PER_SEC
+        );
+        panSpeedRef.current = overrideSpeed;
+        cinemaRef.current = cloneCinema(cinemaSource);
+      }
+    } else if (newAllowCinema && speedChanged) {
+      // Si solo cambió la velocidad pero el modo sigue activo
+      console.log("[GeoScopeMap] Speed changed:", {
+        from: panSpeedRef.current,
+        to: panSpeedDegPerSec
+      });
       const overrideSpeed = kioskRuntime.getSpeedOverride(
         panSpeedDegPerSec,
         FALLBACK_ROTATION_DEG_PER_SEC

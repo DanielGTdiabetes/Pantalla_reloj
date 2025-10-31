@@ -6,7 +6,7 @@ import { API_ORIGIN, getConfig } from "./api";
 
 const API_UNREACHABLE = `No se pudo conectar con el backend en ${API_ORIGIN}`;
 
-const CONFIG_POLL_INTERVAL_MS = 2000; // Poll cada 2 segundos para detectar cambios
+const CONFIG_POLL_INTERVAL_MS = 1500; // Poll cada 1.5 segundos para detectar cambios más rápido
 
 export function useConfig() {
   const [data, setData] = useState<AppConfig | null>(null);
@@ -18,9 +18,26 @@ export function useConfig() {
       const cfg = await getConfig();
       const newData = withConfigDefaults((cfg ?? {}) as AppConfig);
       setData((prev) => {
-        // Solo actualizar si realmente cambió (para evitar re-renders innecesarios)
-        if (prev && JSON.stringify(prev) === JSON.stringify(newData)) {
-          return prev;
+        // Comparar valores clave que pueden cambiar (cinema.enabled, panLngDegPerSec, etc.)
+        if (prev) {
+          const prevCinema = prev.ui?.map?.cinema;
+          const newCinema = newData.ui?.map?.cinema;
+          
+          const prevEnabled = prevCinema?.enabled ?? false;
+          const newEnabled = newCinema?.enabled ?? false;
+          const prevSpeed = prevCinema?.panLngDegPerSec ?? 0;
+          const newSpeed = newCinema?.panLngDegPerSec ?? 0;
+          
+          // Si cambian valores importantes, actualizar siempre
+          if (prevEnabled !== newEnabled || prevSpeed !== newSpeed) {
+            console.log("[useConfig] Detected config change:", { prevEnabled, newEnabled, prevSpeed, newSpeed });
+            return newData;
+          }
+          
+          // Para otros cambios, usar JSON.stringify como fallback
+          if (JSON.stringify(prev) === JSON.stringify(newData)) {
+            return prev;
+          }
         }
         return newData;
       });
