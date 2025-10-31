@@ -544,41 +544,183 @@ log_info "Disabling portal service"
 systemctl disable --now "pantalla-portal@${USER_NAME}.service" 2>/dev/null || true
 systemctl mask "pantalla-portal@${USER_NAME}.service" 2>/dev/null || true
 
+# Validar que Nginx esté funcionando antes de habilitar servicios
+log_info "Verificando que Nginx esté funcionando"
+if ! systemctl is-active --quiet nginx 2>/dev/null; then
+  log_error "Nginx no está activo. Iniciando..."
+  if ! systemctl start nginx 2>/dev/null; then
+    log_error "No se pudo iniciar Nginx. Revisa los logs: journalctl -u nginx"
+    exit 1
+  fi
+fi
+
+# Validar que Nginx responde
+if ! curl -sf --max-time 5 http://127.0.0.1/ui-healthz >/dev/null 2>&1; then
+  log_warn "Nginx no responde en http://127.0.0.1/ui-healthz, pero continuando..."
+else
+  log_ok "Nginx responde correctamente"
+fi
+
+# Validar Chromium antes de habilitar servicios kiosk
+log_info "Verificando que Chromium esté disponible"
+CHROMIUM_FOUND=0
+if command -v chromium-browser >/dev/null 2>&1; then
+  CHROMIUM_FOUND=1
+  log_ok "chromium-browser encontrado: $(command -v chromium-browser)"
+elif command -v chromium >/dev/null 2>&1; then
+  CHROMIUM_FOUND=1
+  log_ok "chromium encontrado: $(command -v chromium)"
+elif [[ -x /snap/bin/chromium ]]; then
+  CHROMIUM_FOUND=1
+  log_ok "chromium (snap) encontrado: /snap/bin/chromium"
+elif [[ -x /snap/chromium/current/usr/lib/chromium-browser/chrome ]]; then
+  CHROMIUM_FOUND=1
+  log_ok "chromium (snap) encontrado: /snap/chromium/current/usr/lib/chromium-browser/chrome"
+fi
+
+if [[ $CHROMIUM_FOUND -eq 0 ]]; then
+  log_warn "No se encontró Chromium instalado"
+  log_warn "El servicio kiosk no funcionará hasta que se instale Chromium"
+  SUMMARY+=('[install] WARN: Chromium no encontrado - servicio kiosk no funcionará')
+else
+  log_ok "Chromium disponible para kiosk"
+  SUMMARY+=('[install] Chromium verificado y disponible')
+fi
+
+# Validar permisos de caché
+log_info "Verificando permisos de directorios de caché"
+if [[ ! -w /var/cache/pantalla ]]; then
+  log_warn "No se puede escribir en /var/cache/pantalla, corrigiendo permisos..."
+  chown -R "$USER_NAME:$USER_NAME" /var/cache/pantalla 2>/dev/null || true
+fi
+if [[ ! -w /var/lib/pantalla/cache ]]; then
+  log_warn "No se puede escribir en /var/lib/pantalla/cache, corrigiendo permisos..."
+  chown -R "$USER_NAME:$USER_NAME" /var/lib/pantalla/cache 2>/dev/null || true
+fi
+
 log_info "Enabling services"
 systemctl enable --now "pantalla-xorg@${USER_NAME}.service" || true
 systemctl enable --now pantalla-dash-backend@${USER_NAME}.service || true
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" /var/lib/pantalla || true
-systemctl enable --now "pantalla-openbox@${USER_NAME}.service" || true
 
 # Crear /run/user/<uid> correcto para el usuario kiosk (no asumir 1000)
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "/run/user/${USER_UID}"
 
 # Asegurar XAUTHORITY real (no symlink) con la cookie actual
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "/home/${USER_NAME}"
-if [ -f /var/lib/pantalla-reloj/.Xauthority ]; then
-  cp -f /var/lib/pantalla-reloj/.Xauthority "/home/${USER_NAME}/.Xauthority"
-  chown "$USER_NAME:$USER_NAME" "/home/${USER_NAME}/.Xauthority"
-  chmod 600 "/home/${USER_NAME}/.Xauthority"
+HOME_XAUTH="/home/${USER_NAME}/.Xauthority"
+STATE_XAUTH="/var/lib/pantalla-reloj/.Xauthority"
+
+# Esperar a que xorg-launch.sh genere el .Xauthority si no existe
+if [[ ! -f "$STATE_XAUTH" ]]; then
+  log_info "Esperando a que Xorg genere .Xauthority..."
+  sleep 2
 fi
 
+if [[ -f "$STATE_XAUTH" ]]; then
+  cp -f "$STATE_XAUTH" "$HOME_XAUTH"
+  chown "$USER_NAME:$USER_NAME" "$HOME_XAUTH"
+  chmod 600 "$HOME_XAUTH"
+  log_ok "XAUTHORITY copiado a ${HOME_XAUTH}"
+  
+  # Validar que el archivo sea legible
+  if [[ ! -r "$HOME_XAUTH" ]]; then
+    log_error "XAUTHORITY no es legible por ${USER_NAME}"
+    exit 1
+  fi
+else
+  log_warn "No se encontró XAUTHORITY en ${STATE_XAUTH}, se generará al arrancar Xorg"
+fi
+
+systemctl enable --now "pantalla-openbox@${USER_NAME}.service" || true
+
 systemctl daemon-reload
+
+# Asegurar que solo uno de los servicios kiosk esté habilitado
 systemctl disable --now "pantalla-kiosk@${USER_NAME}.service" 2>/dev/null || true
-systemctl enable --now "pantalla-kiosk-chromium@${USER_NAME}.service" || true
+
+# Solo habilitar kiosk-chromium si Chromium está disponible
+if [[ $CHROMIUM_FOUND -eq 1 ]]; then
+  systemctl enable --now "pantalla-kiosk-chromium@${USER_NAME}.service" || true
+  SUMMARY+=('[install] servicio kiosk-chromium habilitado')
+else
+  log_warn "No se habilitó pantalla-kiosk-chromium@${USER_NAME}.service - Chromium no disponible"
+  systemctl disable --now "pantalla-kiosk-chromium@${USER_NAME}.service" 2>/dev/null || true
+  SUMMARY+=('[install] WARN: servicio kiosk-chromium NO habilitado - Chromium no disponible')
+fi
 
 log_info "Ensuring watchdog disabled"
 systemctl disable --now "pantalla-kiosk-watchdog@${USER_NAME}.timer" "pantalla-kiosk-watchdog@${USER_NAME}.service" 2>/dev/null || true
 
 log_info "Restarting Pantalla services"
-systemctl restart "pantalla-xorg@${USER_NAME}.service"
+
+# Restart Xorg primero
+log_info "Reiniciando pantalla-xorg@${USER_NAME}.service"
+if systemctl restart "pantalla-xorg@${USER_NAME}.service"; then
+  log_ok "pantalla-xorg@${USER_NAME}.service reiniciado"
+  # Esperar a que Xorg se inicie y genere .Xauthority
+  sleep 3
+  if [[ -f "$STATE_XAUTH" ]]; then
+    cp -f "$STATE_XAUTH" "$HOME_XAUTH"
+    chown "$USER_NAME:$USER_NAME" "$HOME_XAUTH"
+    chmod 600 "$HOME_XAUTH"
+    log_ok "XAUTHORITY actualizado después de reiniciar Xorg"
+  fi
+else
+  log_error "No se pudo reiniciar pantalla-xorg@${USER_NAME}.service"
+  SUMMARY+=('[install] ERROR: fallo al reiniciar pantalla-xorg')
+fi
+
 if stat_output=$(stat -c '%U:%G %a %n' /var/lib/pantalla-reloj/.Xauthority 2>/dev/null); then
   SUMMARY+=("[install] permisos XAUTHORITY: ${stat_output}")
 else
   SUMMARY+=('[install] permisos XAUTHORITY: no disponible')
 fi
-systemctl restart pantalla-openbox@${USER_NAME}.service
-sleep 1
-systemctl restart pantalla-kiosk-chromium@${USER_NAME}.service
-sleep 2
+
+# Restart backend y esperar a que esté listo
+log_info "Reiniciando pantalla-dash-backend@${USER_NAME}.service"
+if systemctl restart pantalla-dash-backend@${USER_NAME}.service; then
+  log_ok "pantalla-dash-backend@${USER_NAME}.service reiniciado"
+  # Esperar a que el backend responda
+  log_info "Esperando a que el backend esté listo..."
+  if wait_for_backend_ready; then
+    log_ok "Backend está listo y respondiendo"
+  else
+    log_error "Backend no responde tras la espera configurada"
+    log_error "La instalación no puede completarse sin un backend funcional"
+    SUMMARY+=('[install] ERROR: backend /api/health no responde tras la espera configurada')
+    exit 1
+  fi
+else
+  log_error "No se pudo reiniciar pantalla-dash-backend@${USER_NAME}.service"
+  log_error "La instalación no puede completarse sin un backend funcional"
+  SUMMARY+=('[install] ERROR: fallo al reiniciar pantalla-dash-backend')
+  exit 1
+fi
+
+# Restart Openbox
+log_info "Reiniciando pantalla-openbox@${USER_NAME}.service"
+if systemctl restart pantalla-openbox@${USER_NAME}.service; then
+  log_ok "pantalla-openbox@${USER_NAME}.service reiniciado"
+  sleep 2
+else
+  log_error "No se pudo reiniciar pantalla-openbox@${USER_NAME}.service"
+  SUMMARY+=('[install] ERROR: fallo al reiniciar pantalla-openbox')
+fi
+
+# Restart kiosk solo si Chromium está disponible y el backend está listo
+if [[ $CHROMIUM_FOUND -eq 1 ]]; then
+  log_info "Reiniciando pantalla-kiosk-chromium@${USER_NAME}.service"
+  if systemctl restart pantalla-kiosk-chromium@${USER_NAME}.service; then
+    log_ok "pantalla-kiosk-chromium@${USER_NAME}.service reiniciado"
+    sleep 2
+  else
+    log_error "No se pudo reiniciar pantalla-kiosk-chromium@${USER_NAME}.service"
+    SUMMARY+=('[install] ERROR: fallo al reiniciar pantalla-kiosk-chromium')
+  fi
+else
+  log_warn "No se reinició pantalla-kiosk-chromium@${USER_NAME}.service - Chromium no disponible"
+fi
 
 log_info "Running post-install checks"
 
@@ -603,11 +745,8 @@ else
   SUMMARY+=('[install] geometría HDMI-1 no detectada')
 fi
 
-systemctl restart pantalla-dash-backend@${USER_NAME}.service
-if ! wait_for_backend_ready; then
-  SUMMARY+=('[install] backend /api/health no responde tras la espera configurada')
-  exit 1
-fi
+# Este reinicio ya se hace arriba con mejor manejo de errores
+# Eliminamos esta línea duplicada para evitar reinicios innecesarios
 
 log_info "Ejecutando verificador post-deploy"
 if ! VERIFY_USER="$USER_NAME" "$REPO_ROOT/scripts/verify_api.sh"; then

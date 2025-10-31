@@ -143,6 +143,36 @@ launch_chromium() {
 }
 
 main() {
+  # Validar que XAUTHORITY existe y es legible
+  if [[ -z "${XAUTHORITY:-}" ]]; then
+    log "ERROR: XAUTHORITY no está definido"
+    exit 1
+  fi
+  
+  if [[ ! -r "$XAUTHORITY" ]]; then
+    log "ERROR: XAUTHORITY no es legible: $XAUTHORITY"
+    exit 1
+  fi
+  
+  # Validar que DISPLAY está configurado
+  if [[ -z "${DISPLAY:-}" ]]; then
+    log "ERROR: DISPLAY no está definido"
+    exit 1
+  fi
+  
+  # Validar que el servidor X está accesible
+  if ! xset q >/dev/null 2>&1; then
+    log "ERROR: No se puede acceder al servidor X en $DISPLAY"
+    log "ERROR: Verifica que pantalla-xorg@ está ejecutándose"
+    exit 1
+  fi
+  
+  # Validar que el backend está respondiendo (con timeout)
+  if ! curl -sf --max-time 5 http://127.0.0.1:8081/api/health >/dev/null 2>&1; then
+    log "WARN: Backend no responde en http://127.0.0.1:8081/api/health"
+    log "WARN: Continuando de todas formas, pero el frontend puede no funcionar"
+  fi
+  
   local chromium_bin
   if ! chromium_bin="$(find_chromium)"; then
     log "ERROR: no se encontró un binario de Chromium disponible"

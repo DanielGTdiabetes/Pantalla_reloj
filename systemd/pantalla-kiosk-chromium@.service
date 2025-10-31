@@ -1,7 +1,7 @@
 [Unit]
 Description=Pantalla_reloj Kiosk (Chromium) for user %i
-After=pantalla-openbox@%i.service
-Wants=pantalla-openbox@%i.service
+After=pantalla-openbox@%i.service pantalla-dash-backend@%i.service
+Wants=pantalla-openbox@%i.service pantalla-dash-backend@%i.service
 
 [Service]
 User=%i
@@ -15,12 +15,16 @@ Environment=CHROMIUM_USER_DATA_DIR=/home/%i/snap/chromium/common/pantalla-reloj/
 Environment=CHROMIUM_CACHE_DIR=/home/%i/snap/chromium/common/pantalla-reloj/cache
 EnvironmentFile=-/var/lib/pantalla-reloj/state/kiosk.env
 
+ExecStartPre=/bin/sh -c 'i=0; while [ $i -lt 10 ]; do if test -r "$XAUTHORITY"; then exit 0; fi; sleep 1; i=$((i+1)); done; echo "XAUTHORITY no es legible tras 10 segundos: $XAUTHORITY" >&2; exit 1'
 ExecStartPre=/bin/sh -lc 'xset -dpms; xset s off; xset s noblank || true'
 ExecStartPre=/bin/sh -lc 'wmctrl -lx | awk '\''/pantalla-kiosk/ {print $1}'\'' | xargs -r -n1 wmctrl -ic || true'
+ExecStartPre=/bin/sh -c 'curl -sf --max-time 5 http://127.0.0.1:8081/api/health >/dev/null || echo "WARN: Backend no responde, pero continuando (el script tolera backend ausente)" >&2 || true'
 
 ExecStart=/usr/local/bin/pantalla-kiosk-chromium
-Restart=always
-RestartSec=2
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=3
 
 [Install]
 WantedBy=multi-user.target
