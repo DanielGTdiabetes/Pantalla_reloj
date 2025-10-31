@@ -3,7 +3,7 @@ import type { MapLibreEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
 
-import { apiGet } from "../../lib/api";
+import { apiGet, saveConfig } from "../../lib/api";
 import { useConfig } from "../../lib/useConfig";
 import { kioskRuntime } from "../../lib/runtimeFlags";
 import LightningLayer from "./layers/LightningLayer";
@@ -1751,8 +1751,8 @@ export default function GeoScopeMap() {
         const layerRegistry = new LayerRegistry(map);
         layerRegistryRef.current = layerRegistry;
 
-        // Inicializar LightningLayer (se habilitará si storm mode está activo)
-        const lightningLayer = new LightningLayer({ enabled: false });
+        // Inicializar LightningLayer (siempre habilitado si hay datos)
+        const lightningLayer = new LightningLayer({ enabled: true });
         layerRegistry.add(lightningLayer);
         lightningLayerRef.current = lightningLayer;
       });
@@ -2275,11 +2275,6 @@ export default function GeoScopeMap() {
         lastRepaintTimeRef.current = null;
         lastLogTimeRef.current = 0;
 
-        // Habilitar LightningLayer
-        if (lightningLayer) {
-          lightningLayer.setEnabled(true);
-        }
-
         // Zoom a Castellón/Vila-real
         const centerLat = Number.isFinite(stormConfig.center_lat) ? stormConfig.center_lat : 39.986;
         const centerLng = Number.isFinite(stormConfig.center_lng) ? stormConfig.center_lng : -0.051;
@@ -2330,11 +2325,6 @@ export default function GeoScopeMap() {
         });
       } else {
         console.log("[GeoScopeMap] Storm mode deactivated");
-        
-        // Deshabilitar LightningLayer
-        if (lightningLayer) {
-          lightningLayer.setEnabled(false);
-        }
 
         // Restaurar vista al modo normal (volver a la primera banda del cine si está activo)
         if (allowCinemaRef.current && cinemaRef.current) {
@@ -2361,16 +2351,30 @@ export default function GeoScopeMap() {
     }
   }, [config]);
 
-  // useEffect para cargar y actualizar datos de rayos cuando storm mode está activo
+  // Función auxiliar para calcular distancia entre dos puntos en km (Haversine)
+  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371; // Radio de la Tierra en km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  // useEffect para cargar y actualizar datos de rayos siempre (en todo el mapa)
   useEffect(() => {
     if (!config || !mapRef.current || !lightningLayerRef.current) {
       return;
     }
 
     const merged = withConfigDefaults(config);
-    const stormEnabled = Boolean(merged.storm?.enabled);
+    const blitzortungEnabled = Boolean(merged.blitzortung?.enabled);
 
-    if (!stormEnabled) {
+    // Solo cargar si Blitzortung está habilitado (aunque aún no tenga datos)
+    if (!blitzortungEnabled) {
       return;
     }
 
@@ -2389,6 +2393,53 @@ export default function GeoScopeMap() {
         const lightningLayer = lightningLayerRef.current;
         if (lightningLayer && response && response.type === "FeatureCollection") {
           lightningLayer.updateData(response);
+
+          // Verificar auto-activación del modo tormenta
+          const stormConfig = merged.storm;
+          const stormEnabled = Boolean(stormConfig?.enabled);
+          const autoEnable = Boolean(stormConfig?.auto_enable);
+
+          // Si auto-enable está activo pero el modo tormenta no está activo
+          if (autoEnable && !stormEnabled && response.features && response.features.length > 0) {
+            // Verificar si hay rayos cerca de Castellón/Vila-real
+            const centerLat = Number.isFinite(stormConfig.center_lat) ? stormConfig.center_lat : 39.986;
+            const centerLng = Number.isFinite(stormConfig.center_lng) ? stormConfig.center_lng : -0.051;
+            const maxDistance = 50; // Radio de 50 km
+
+            const hasNearbyLightning = response.features.some((feature) => {
+              if (!feature.geometry || feature.geometry.type !== "Point") {
+                return false;
+              }
+              const [lng, lat] = feature.geometry.coordinates;
+              if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                return false;
+              }
+              const distance = calculateDistance(centerLat, centerLng, lat, lng);
+              return distance <= maxDistance;
+            });
+
+            if (hasNearbyLightning) {
+              console.log("[GeoScopeMap] Detected lightning near Castellón/Vila-real, auto-enabling storm mode");
+              
+              // Activar modo tormenta actualizando la configuración
+              const updatedConfig = {
+                ...merged,
+                storm: {
+                  ...stormConfig,
+                  enabled: true
+                }
+              };
+
+              // Guardar configuración para activar el modo tormenta
+              saveConfig(updatedConfig).then(() => {
+                console.log("[GeoScopeMap] Storm mode auto-enabled");
+                // Recargar configuración para que el useEffect de storm mode reaccione
+                reloadConfig();
+              }).catch((err) => {
+                console.error("[GeoScopeMap] Failed to auto-enable storm mode:", err);
+              });
+            }
+          }
         }
       } catch (error) {
         console.error("[GeoScopeMap] Failed to load lightning data:", error);
@@ -2398,7 +2449,7 @@ export default function GeoScopeMap() {
     // Cargar inmediatamente
     void loadLightningData();
 
-    // Cargar cada 5 segundos cuando storm mode está activo
+    // Cargar cada 5 segundos
     const intervalId = setInterval(() => {
       void loadLightningData();
     }, 5000);
@@ -2406,7 +2457,7 @@ export default function GeoScopeMap() {
     return () => {
       clearInterval(intervalId);
     };
-  }, [config]);
+  }, [config, reloadConfig]);
 
   return (
     <div className="map-host">
