@@ -28,6 +28,7 @@ import type {
   MapPreferences,
   NewsConfig,
   OpenSkyAuthConfig,
+  OpenSkyConfig,
   RotationConfig,
   SaintsConfig,
   ShipsLayerConfig,
@@ -396,6 +397,21 @@ export const createDefaultEphemerides = (): EphemeridesConfig => ({
   timezone: "Europe/Madrid",
 });
 
+export const createDefaultOpenSky = (): OpenSkyConfig => ({
+  enabled: false,
+  mode: "bbox",
+  bbox: {
+    lamin: 39.5,
+    lamax: 41.0,
+    lomin: -1.0,
+    lomax: 1.5,
+  },
+  poll_seconds: 10,
+  extended: 0,
+  max_aircraft: 400,
+  cluster: true,
+});
+
 export const DEFAULT_CONFIG: AppConfig = {
   display: {
     timezone: "Europe/Madrid",
@@ -419,6 +435,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   harvest: createDefaultHarvest(),
   saints: createDefaultSaints(),
   ephemerides: createDefaultEphemerides(),
+  opensky: createDefaultOpenSky(),
   layers: {
     flights: {
       enabled: true,
@@ -616,6 +633,28 @@ const mergeEphemerides = (candidate: unknown): EphemeridesConfig => {
     latitude: clampNumber(toNumber(source.latitude, fallback.latitude), -90, 90),
     longitude: clampNumber(toNumber(source.longitude, fallback.longitude), -180, 180),
     timezone: sanitizeString(source.timezone, fallback.timezone),
+  };
+};
+
+const mergeOpenSky = (candidate: unknown): OpenSkyConfig => {
+  const fallback = DEFAULT_CONFIG.opensky ?? createDefaultOpenSky();
+  const source = (candidate as Partial<OpenSkyConfig>) ?? {};
+  const bboxSource = (source.bbox ?? {}) as Partial<OpenSkyConfig["bbox"]>;
+  const bboxFallback = fallback.bbox;
+
+  return {
+    enabled: toBoolean(source.enabled, fallback.enabled),
+    mode: source.mode === "global" ? "global" : "bbox",
+    bbox: {
+      lamin: clampNumber(toNumber(bboxSource.lamin, bboxFallback.lamin), -90, 90),
+      lamax: clampNumber(toNumber(bboxSource.lamax, bboxFallback.lamax), -90, 90),
+      lomin: clampNumber(toNumber(bboxSource.lomin, bboxFallback.lomin), -180, 180),
+      lomax: clampNumber(toNumber(bboxSource.lomax, bboxFallback.lomax), -180, 180),
+    },
+    poll_seconds: clampNumber(Math.round(toNumber(source.poll_seconds, fallback.poll_seconds)), 5, 3600),
+    extended: source.extended === 1 ? 1 : 0,
+    max_aircraft: clampNumber(Math.round(toNumber(source.max_aircraft, fallback.max_aircraft)), 100, 1000),
+    cluster: toBoolean(source.cluster, fallback.cluster),
   };
 };
 
@@ -926,6 +965,7 @@ export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
   const harvest = (payload.harvest ?? {}) as Partial<HarvestConfig>;
   const saints = (payload.saints ?? {}) as Partial<SaintsConfig>;
   const ephemerides = (payload.ephemerides ?? {}) as Partial<EphemeridesConfig>;
+  const opensky = (payload.opensky ?? {}) as Partial<OpenSkyConfig>;
   const layers = (payload.layers ?? {}) as Partial<LayersConfig>;
 
   return {
@@ -955,6 +995,7 @@ export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
     harvest: mergeHarvest(harvest),
     saints: mergeSaints(saints),
     ephemerides: mergeEphemerides(ephemerides),
+    opensky: mergeOpenSky(opensky),
     layers: {
       flights: mergeFlightsLayer(layers.flights),
       ships: mergeShipsLayer(layers.ships),

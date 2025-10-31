@@ -169,6 +169,23 @@ export type OpenSkyAuthConfig = {
   password?: string | null;
 };
 
+export type OpenSkyBBoxConfig = {
+  lamin: number;
+  lamax: number;
+  lomin: number;
+  lomax: number;
+};
+
+export type OpenSkyConfig = {
+  enabled: boolean;
+  mode: "bbox" | "global";
+  bbox: OpenSkyBBoxConfig;
+  poll_seconds: number;
+  extended: 0 | 1;
+  max_aircraft: number;
+  cluster: boolean;
+};
+
 export type AviationStackConfig = {
   base_url?: string | null;
   api_key?: string | null;
@@ -277,5 +294,6 @@ export type AppConfig = {
   harvest: HarvestConfig;
   saints: SaintsConfig;
   ephemerides: EphemeridesConfig;
+  opensky: OpenSkyConfig;
   layers: LayersConfig;
 };

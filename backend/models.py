@@ -257,6 +257,34 @@ class CineFocus(BaseModel):
     hard_hide_outside: bool = False
 
 
+class OpenSkyBBox(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    lamin: float = Field(default=39.5, ge=-90.0, le=90.0)
+    lamax: float = Field(default=41.0, ge=-90.0, le=90.0)
+    lomin: float = Field(default=-1.0, ge=-180.0, le=180.0)
+    lomax: float = Field(default=1.5, ge=-180.0, le=180.0)
+
+    @model_validator(mode="after")
+    def validate_bounds(cls, values: "OpenSkyBBox") -> "OpenSkyBBox":  # type: ignore[override]
+        if values.lamax <= values.lamin:
+            raise ValueError("lamax debe ser mayor que lamin")
+        if values.lomax <= values.lomin:
+            raise ValueError("lomax debe ser mayor que lomin")
+        return values
+
+
+class OpenSkyConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = False
+    mode: Literal["bbox", "global"] = Field(default="bbox")
+    bbox: OpenSkyBBox = Field(default_factory=OpenSkyBBox)
+    poll_seconds: int = Field(default=10, ge=5, le=3600)
+    extended: Literal[0, 1] = Field(default=0)
+    max_aircraft: int = Field(default=400, ge=50, le=1000)
+    cluster: bool = True
+
 class OpenSkyAuth(BaseModel):
     """Configuración de autenticación OpenSky."""
     model_config = ConfigDict(extra="ignore")
@@ -443,6 +471,7 @@ class AppConfig(BaseModel):
     harvest: Harvest = Field(default_factory=Harvest)
     saints: Saints = Field(default_factory=Saints)
     ephemerides: Ephemerides = Field(default_factory=Ephemerides)
+    opensky: OpenSkyConfig = Field(default_factory=OpenSkyConfig)
     layers: LayersConfig = Field(default_factory=LayersConfig)
 
     def to_path(self, path: Path) -> None:
@@ -475,6 +504,8 @@ __all__ = [
     "MapIdlePan",
     "MapTheme",
     "News",
+    "OpenSkyBBox",
+    "OpenSkyConfig",
     "Rotation",
     "Saints",
     "Ephemerides",

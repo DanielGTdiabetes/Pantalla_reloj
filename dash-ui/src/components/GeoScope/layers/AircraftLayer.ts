@@ -13,6 +13,7 @@ interface AircraftLayerOptions {
     outsideDimOpacity: number;
     hardHideOutside: boolean;
   };
+  cluster?: boolean;
 }
 
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
@@ -28,117 +29,235 @@ export default class AircraftLayer implements Layer {
   private map?: maplibregl.Map;
   private readonly sourceId = "geoscope-aircraft-source";
   private lastData: FeatureCollection = EMPTY;
+  private clusterEnabled: boolean;
+  private readonly clusterLayerId: string;
+  private readonly clusterCountLayerId: string;
 
   constructor(options: AircraftLayerOptions = {}) {
     this.enabled = options.enabled ?? false;
     this.opacity = options.opacity ?? 1.0;
     this.maxAgeSeconds = options.maxAgeSeconds ?? 120;
     this.cineFocus = options.cineFocus;
+    this.clusterEnabled = options.cluster ?? false;
+    this.clusterLayerId = `${this.id}-clusters`;
+    this.clusterCountLayerId = `${this.id}-cluster-count`;
   }
 
   add(map: maplibregl.Map): void {
     this.map = map;
-    if (!map.getSource(this.sourceId)) {
-      map.addSource(this.sourceId, {
-        type: "geojson",
-        data: this.lastData
-      });
+    this.ensureSource();
+    this.ensureLayers();
+    this.applyVisibility();
+    this.applyOpacity();
+
+    let hoveredId: string | null = null;
+    map.on("mouseenter", this.id, (event) => {
+      if (event.features && event.features.length > 0) {
+        map.getCanvas().style.cursor = "pointer";
+        const feature = event.features[0];
+        const properties = (feature.properties ?? {}) as Record<string, unknown>;
+        hoveredId = feature.id as string;
+        const callsign = (properties.callsign as string | undefined)?.trim();
+        const icao24 = (properties.icao24 as string | undefined)?.trim();
+        const altitude = typeof properties.alt_baro === "number" ? Math.round(properties.alt_baro as number) : null;
+        const speed = typeof properties.speed === "number" ? (properties.speed as number) : null;
+        const origin = (properties.origin_country as string | undefined) ?? "N/A";
+        const timestamp = (properties.timestamp as number | undefined) ?? (properties.last_contact as number | undefined);
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        const age = typeof timestamp === "number" ? Math.max(0, nowSeconds - timestamp) : null;
+        const content = `
+          <strong>${callsign || icao24 || "Sin identificador"}</strong><br/>
+          ICAO24: ${icao24 || "N/A"}<br/>
+          Altitud: ${altitude !== null ? `${altitude} m` : "N/A"}<br/>
+          Velocidad: ${speed !== null ? `${Math.round(speed)} m/s (${Math.round(speed * 3.6)} km/h)` : "N/A"}<br/>
+          País: ${origin}<br/>
+          Último contacto: ${age !== null ? `hace ${age}s` : "sin datos"}
+        `;
+
+        if (!getExistingPopup(map)) {
+          new maplibregl.Popup({ closeOnClick: false, closeButton: true })
+            .setLngLat(event.lngLat)
+            .setHTML(content)
+            .addTo(map);
+        }
+      }
+    });
+
+    map.on("mouseleave", this.id, () => {
+      map.getCanvas().style.cursor = "";
+      const popup = getExistingPopup(map);
+      if (popup) {
+        popup.remove();
+      }
+      hoveredId = null;
+    });
+
+    map.on("mousemove", this.id, (event) => {
+      if (event.features && event.features.length > 0 && hoveredId) {
+        const popup = getExistingPopup(map);
+        if (popup) {
+          popup.setLngLat(event.lngLat);
+        }
+      }
+    });
+  }
+
+  private ensureSource(): void {
+    if (!this.map) {
+      return;
+    }
+    const map = this.map;
+    const existing = map.getSource(this.sourceId);
+    const expectedCluster = this.clusterEnabled;
+    if (existing) {
+      const anySource = existing as maplibregl.GeoJSONSource & { cluster?: boolean };
+      const isCluster = Boolean(anySource.cluster);
+      if (isCluster !== expectedCluster) {
+        this.removeLayers(map);
+        map.removeSource(this.sourceId);
+      }
     }
 
-    const source = map.getSource(this.sourceId);
-    if (isGeoJSONSource(source)) {
-      source.setData(this.lastData);
+    if (!map.getSource(this.sourceId)) {
+      const sourceInit: maplibregl.GeoJSONSourceRaw = {
+        type: "geojson",
+        data: this.lastData,
+      };
+      if (expectedCluster) {
+        sourceInit.cluster = true;
+        sourceInit.clusterRadius = 40;
+        sourceInit.clusterMaxZoom = 10;
+      }
+      map.addSource(this.sourceId, sourceInit);
+    } else {
+      const source = map.getSource(this.sourceId);
+      if (isGeoJSONSource(source)) {
+        source.setData(this.lastData);
+      }
+    }
+  }
+
+  private ensureLayers(): void {
+    if (!this.map) {
+      return;
+    }
+    const map = this.map;
+    this.removeLayers(map);
+
+    if (this.clusterEnabled) {
+      if (!map.getLayer(this.clusterLayerId)) {
+        map.addLayer({
+          id: this.clusterLayerId,
+          type: "circle",
+          source: this.sourceId,
+          filter: ["has", "point_count"],
+          paint: {
+            "circle-radius": 18,
+            "circle-color": "rgba(249,115,22,0.7)",
+            "circle-stroke-width": 1,
+            "circle-stroke-color": "#111827",
+          },
+        });
+      }
+
+      if (!map.getLayer(this.clusterCountLayerId)) {
+        map.addLayer({
+          id: this.clusterCountLayerId,
+          type: "symbol",
+          source: this.sourceId,
+          filter: ["has", "point_count"],
+          layout: {
+            "text-field": "{point_count_abbreviated}",
+            "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+            "text-size": 12,
+          },
+          paint: {
+            "text-color": "#ffffff",
+          },
+        });
+      }
     }
 
     if (!map.getLayer(this.id)) {
       map.addLayer({
         id: this.id,
-        type: "circle",
+        type: "symbol",
         source: this.sourceId,
+        filter: ["!", ["has", "point_count"]],
+        layout: {
+          "icon-image": "airport-15",
+          "icon-size": 1.2,
+          "icon-allow-overlap": true,
+          "icon-rotate": ["coalesce", ["get", "track"], 0],
+          "icon-rotation-alignment": "map",
+        },
         paint: {
-          "circle-radius": 5,
-          "circle-color": "#f97316",
-          "circle-stroke-color": "#111827",
-          "circle-stroke-width": 1,
-          "circle-opacity": [
-            "interpolate",
-            ["linear"],
-            ["get", "age_seconds"],
-            0,
-            [
-              "case",
-              ["get", "in_focus"],
-              this.opacity,
-              this.cineFocus?.enabled
-                ? this.opacity * this.cineFocus.outsideDimOpacity
-                : this.opacity
-            ],
-            this.maxAgeSeconds / 2,
-            [
-              "case",
-              ["get", "in_focus"],
-              this.opacity * 0.5,
-              this.cineFocus?.enabled
-                ? this.opacity * this.cineFocus.outsideDimOpacity * 0.5
-                : this.opacity * 0.5
-            ],
-            this.maxAgeSeconds,
-            0.0
-          ]
-        }
-      });
-
-      // Tooltip en hover
-      let hoveredId: string | null = null;
-      map.on("mouseenter", this.id, (e) => {
-        if (e.features && e.features.length > 0) {
-          map.getCanvas().style.cursor = "pointer";
-          const feature = e.features[0];
-          if (feature.properties) {
-            hoveredId = feature.id as string;
-            const callsign = feature.properties.callsign || "N/A";
-            const alt = feature.properties.alt_baro || "N/A";
-            const speed = feature.properties.speed ? `${Math.round(feature.properties.speed * 3.6)} km/h` : "N/A";
-            const content = `<strong>${callsign}</strong><br/>Altitud: ${alt}m<br/>Velocidad: ${speed}`;
-            
-            // Crear popup si no existe
-            if (!getExistingPopup(map)) {
-              new maplibregl.Popup({ closeOnClick: false, closeButton: true })
-                .setLngLat(e.lngLat)
-                .setHTML(content)
-                .addTo(map);
-            }
-          }
-        }
-      });
-
-      map.on("mouseleave", this.id, () => {
-        map.getCanvas().style.cursor = "";
-        const popup = getExistingPopup(map);
-        if (popup) {
-          popup.remove();
-        }
-        hoveredId = null;
-      });
-
-      map.on("mousemove", this.id, (e) => {
-        if (e.features && e.features.length > 0 && hoveredId) {
-          const popup = getExistingPopup(map);
-          if (popup) {
-            popup.setLngLat(e.lngLat);
-          }
-        }
+          "icon-color": "#f97316",
+          "icon-halo-color": "#111827",
+          "icon-halo-width": 0.25,
+        },
       });
     }
-
-    this.applyVisibility();
-    this.applyOpacity();
   }
 
-  remove(map: maplibregl.Map): void {
+  private removeLayers(map: maplibregl.Map): void {
+    if (map.getLayer(this.clusterCountLayerId)) {
+      map.removeLayer(this.clusterCountLayerId);
+    }
+    if (map.getLayer(this.clusterLayerId)) {
+      map.removeLayer(this.clusterLayerId);
+    }
     if (map.getLayer(this.id)) {
       map.removeLayer(this.id);
     }
+  }
+
+  private getOpacityExpression(): maplibregl.Expression {
+    return [
+      "interpolate",
+      ["linear"],
+      ["get", "age_seconds"],
+      0,
+      [
+        "case",
+        ["get", "in_focus"],
+        this.opacity,
+        this.cineFocus?.enabled ? this.opacity * this.cineFocus.outsideDimOpacity : this.opacity,
+      ],
+      this.maxAgeSeconds / 2,
+      [
+        "case",
+        ["get", "in_focus"],
+        this.opacity * 0.5,
+        this.cineFocus?.enabled
+          ? this.opacity * this.cineFocus.outsideDimOpacity * 0.5
+          : this.opacity * 0.5,
+      ],
+      this.maxAgeSeconds,
+      0.0,
+    ];
+  }
+
+  setCluster(enabled: boolean): void {
+    if (this.clusterEnabled === enabled) {
+      return;
+    }
+    this.clusterEnabled = enabled;
+    if (this.map) {
+      const map = this.map;
+      this.removeLayers(map);
+      if (map.getSource(this.sourceId)) {
+        map.removeSource(this.sourceId);
+      }
+      this.ensureSource();
+      this.ensureLayers();
+      this.applyVisibility();
+      this.applyOpacity();
+    }
+  }
+
+  remove(map: maplibregl.Map): void {
+    this.removeLayers(map);
     if (map.getSource(this.sourceId)) {
       map.removeSource(this.sourceId);
     }
@@ -162,6 +281,7 @@ export default class AircraftLayer implements Layer {
       const data = this.getData();
       this.updateData(data);
     }
+    this.applyOpacity();
   }
 
   updateData(data: FeatureCollection): void {
@@ -217,12 +337,23 @@ export default class AircraftLayer implements Layer {
     if (this.map.getLayer(this.id)) {
       this.map.setLayoutProperty(this.id, "visibility", visibility);
     }
+    if (this.map.getLayer(this.clusterLayerId)) {
+      this.map.setLayoutProperty(this.clusterLayerId, "visibility", visibility);
+    }
+    if (this.map.getLayer(this.clusterCountLayerId)) {
+      this.map.setLayoutProperty(this.clusterCountLayerId, "visibility", visibility);
+    }
   }
 
   private applyOpacity() {
     if (!this.map || !this.map.getLayer(this.id)) return;
-    // La opacidad se aplica en la expresión paint, pero podemos actualizar el maxAgeSeconds en la expresión
-    // Por ahora, solo actualizamos la opacidad base si la expresión lo permite
-    // En un futuro, podríamos hacer que la expresión use this.opacity directamente
+    const expression = this.getOpacityExpression();
+    this.map.setPaintProperty(this.id, "icon-opacity", expression);
+    if (this.map.getLayer(this.clusterLayerId)) {
+      this.map.setPaintProperty(this.clusterLayerId, "circle-opacity", this.opacity);
+    }
+    if (this.map.getLayer(this.clusterCountLayerId)) {
+      this.map.setPaintProperty(this.clusterCountLayerId, "text-opacity", this.opacity);
+    }
   }
 }

@@ -7,15 +7,21 @@ import {
   getConfig,
   getHealth,
   getSchema,
+  getOpenSkyClientIdMeta,
+  getOpenSkyClientSecretMeta,
+  getOpenSkyStatus,
   saveConfig,
   testAemetApiKey,
   updateAemetApiKey,
+  updateOpenSkyClientId,
+  updateOpenSkyClientSecret,
   wifiConnect,
   wifiDisconnect,
   wifiScan,
   wifiStatus,
   type WiFiNetwork,
   type WiFiStatusResponse,
+  type OpenSkyStatus,
 } from "../lib/api";
 import type { AppConfig, MapCinemaBand } from "../types/config";
 
@@ -386,6 +392,15 @@ const ConfigPage: React.FC = () => {
   const [savingAemetKey, setSavingAemetKey] = useState(false);
   const [testingAemetKey, setTestingAemetKey] = useState(false);
   const [aemetTestResult, setAemetTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [openskyClientIdInput, setOpenSkyClientIdInput] = useState("");
+  const [openskyClientSecretInput, setOpenSkyClientSecretInput] = useState("");
+  const [openskyClientIdSet, setOpenSkyClientIdSet] = useState(false);
+  const [openskyClientSecretSet, setOpenSkyClientSecretSet] = useState(false);
+  const [savingOpenSkyClientId, setSavingOpenSkyClientId] = useState(false);
+  const [savingOpenSkyClientSecret, setSavingOpenSkyClientSecret] = useState(false);
+  const [testingOpenSky, setTestingOpenSky] = useState(false);
+  const [openskyStatusData, setOpenSkyStatusData] = useState<OpenSkyStatus | null>(null);
+  const [openskyStatusError, setOpenSkyStatusError] = useState<string | null>(null);
   
   // WiFi state
   const [wifiNetworks, setWifiNetworks] = useState<WiFiNetwork[]>([]);
@@ -411,6 +426,8 @@ const ConfigPage: React.FC = () => {
   const disableCinemaControls = disableInputs || cinemaBlocked;
   const disableIdlePanControls =
     disableInputs || cinemaBlocked || !form.ui.map.idlePan.enabled;
+  const openskyCredentialsConfigured = openskyClientIdSet && openskyClientSecretSet;
+  const openskyMinPoll = openskyCredentialsConfigured ? 5 : 10;
 
   const resetErrorsFor = useCallback((pathPrefix: string) => {
     setFieldErrors((prev) => {
@@ -604,6 +621,81 @@ const ConfigPage: React.FC = () => {
     }
   }, [aemetKeyInput, form.aemet.has_api_key, showAemetKey, testingAemetKey]);
 
+  const loadOpenSkyMeta = useCallback(async () => {
+    try {
+      const [clientIdMeta, clientSecretMeta] = await Promise.all([
+        getOpenSkyClientIdMeta(),
+        getOpenSkyClientSecretMeta(),
+      ]);
+      setOpenSkyClientIdSet(Boolean(clientIdMeta?.set));
+      setOpenSkyClientSecretSet(Boolean(clientSecretMeta?.set));
+    } catch (error) {
+      console.error("[ConfigPage] Failed to load OpenSky secret metadata", error);
+    }
+  }, []);
+
+  const handleSaveOpenSkyClientId = useCallback(async () => {
+    if (savingOpenSkyClientId) {
+      return;
+    }
+    const trimmed = openskyClientIdInput.trim();
+    setSavingOpenSkyClientId(true);
+    try {
+      await updateOpenSkyClientId(trimmed || null);
+      await loadOpenSkyMeta();
+      setOpenSkyClientIdInput("");
+      setBanner({ kind: "success", text: trimmed ? "Client ID guardado" : "Client ID eliminado" });
+    } catch (error) {
+      console.error("[ConfigPage] Failed to update OpenSky client ID", error);
+      const message = resolveApiErrorMessage(error, "No se pudo actualizar el client ID de OpenSky");
+      setBanner({ kind: "error", text: message });
+    } finally {
+      setSavingOpenSkyClientId(false);
+    }
+  }, [openskyClientIdInput, savingOpenSkyClientId, loadOpenSkyMeta, setBanner]);
+
+  const handleSaveOpenSkyClientSecret = useCallback(async () => {
+    if (savingOpenSkyClientSecret) {
+      return;
+    }
+    const trimmed = openskyClientSecretInput.trim();
+    setSavingOpenSkyClientSecret(true);
+    try {
+      await updateOpenSkyClientSecret(trimmed || null);
+      await loadOpenSkyMeta();
+      setOpenSkyClientSecretInput("");
+      setBanner({ kind: "success", text: trimmed ? "Client secret guardado" : "Client secret eliminado" });
+    } catch (error) {
+      console.error("[ConfigPage] Failed to update OpenSky client secret", error);
+      const message = resolveApiErrorMessage(error, "No se pudo actualizar el client secret de OpenSky");
+      setBanner({ kind: "error", text: message });
+    } finally {
+      setSavingOpenSkyClientSecret(false);
+    }
+  }, [openskyClientSecretInput, savingOpenSkyClientSecret, loadOpenSkyMeta, setBanner]);
+
+  const handleTestOpenSky = useCallback(async () => {
+    if (testingOpenSky) {
+      return;
+    }
+    setTestingOpenSky(true);
+    setOpenSkyStatusError(null);
+    try {
+      const statusResponse = await getOpenSkyStatus();
+      setOpenSkyStatusData(statusResponse ?? null);
+      if (!statusResponse) {
+        setOpenSkyStatusError("Sin respuesta del backend");
+      }
+    } catch (error) {
+      console.error("[ConfigPage] Failed to get OpenSky status", error);
+      const message = resolveApiErrorMessage(error, "No se pudo obtener el estado de OpenSky");
+      setOpenSkyStatusError(message);
+      setOpenSkyStatusData(null);
+    } finally {
+      setTestingOpenSky(false);
+    }
+  }, [testingOpenSky]);
+
   const refreshConfig = useCallback(async () => {
     const cfg = await getConfig();
     setForm(withConfigDefaults(cfg ?? undefined));
@@ -611,7 +703,12 @@ const ConfigPage: React.FC = () => {
     setShowAemetKey(false);
     setAemetKeyInput("");
     setAemetTestResult(null);
-  }, []);
+    setOpenSkyClientIdInput("");
+    setOpenSkyClientSecretInput("");
+    setOpenSkyStatusData(null);
+    setOpenSkyStatusError(null);
+    await loadOpenSkyMeta();
+  }, [loadOpenSkyMeta]);
 
   // WiFi functions
   const loadWifiStatus = useCallback(async () => {
@@ -2541,6 +2638,407 @@ const ConfigPage: React.FC = () => {
                   {renderFieldError("ephemerides.timezone")}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {supports("opensky") && (
+          <div className="config-card">
+            <div>
+              <h2>OpenSky</h2>
+              <p>Configura las credenciales y el área de la integración con OpenSky Network.</p>
+            </div>
+            <div className="config-grid">
+              {supports("opensky.enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="opensky_enabled">
+                    <input
+                      id="opensky_enabled"
+                      type="checkbox"
+                      checked={form.opensky.enabled}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          opensky: {
+                            ...prev.opensky,
+                            enabled,
+                          },
+                        }));
+                        resetErrorsFor("opensky.enabled");
+                      }}
+                    />
+                    Activar OpenSky
+                  </label>
+                  {renderHelp("Habilita la capa de vuelos en tiempo real con datos de OpenSky")}
+                </div>
+              )}
+
+              {supports("opensky.poll_seconds") && (
+                <div className="config-field">
+                  <label htmlFor="opensky_poll_seconds">Intervalo de sondeo (segundos)</label>
+                  <input
+                    id="opensky_poll_seconds"
+                    type="number"
+                    min={openskyMinPoll}
+                    max={3600}
+                    value={form.opensky.poll_seconds}
+                    disabled={disableInputs || !form.opensky.enabled}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (Number.isNaN(value)) {
+                        return;
+                      }
+                      const clamped = Math.max(openskyMinPoll, Math.min(3600, Math.round(value)));
+                      setForm((prev) => ({
+                        ...prev,
+                        opensky: {
+                          ...prev.opensky,
+                          poll_seconds: clamped,
+                        },
+                      }));
+                      resetErrorsFor("opensky.poll_seconds");
+                    }}
+                  />
+                  {renderHelp(
+                    openskyCredentialsConfigured
+                      ? "Mínimo 5s con credenciales OAuth válidas"
+                      : "Mínimo 10s en modo anónimo"
+                  )}
+                  {renderFieldError("opensky.poll_seconds")}
+                </div>
+              )}
+
+              {supports("opensky.mode") && (
+                <div className="config-field">
+                  <label htmlFor="opensky_mode">Modo de cobertura</label>
+                  <select
+                    id="opensky_mode"
+                    value={form.opensky.mode}
+                    disabled={disableInputs || !form.opensky.enabled}
+                    onChange={(event) => {
+                      const mode = event.target.value === "global" ? "global" : "bbox";
+                      setForm((prev) => ({
+                        ...prev,
+                        opensky: {
+                          ...prev.opensky,
+                          mode,
+                        },
+                      }));
+                      resetErrorsFor("opensky.mode");
+                    }}
+                  >
+                    <option value="bbox">Área limitada (bbox)</option>
+                    <option value="global">Global</option>
+                  </select>
+                  {renderHelp("Limita la consulta a un rectángulo geográfico o consulta global")}
+                  {renderFieldError("opensky.mode")}
+                </div>
+              )}
+
+              {form.opensky.mode === "bbox" && (
+                <>
+                  {supports("opensky.bbox.lamin") && (
+                    <div className="config-field">
+                      <label htmlFor="opensky_lamin">Latitud mínima</label>
+                      <input
+                        id="opensky_lamin"
+                        type="number"
+                        step={0.1}
+                        min={-90}
+                        max={90}
+                        value={form.opensky.bbox.lamin}
+                        disabled={disableInputs || !form.opensky.enabled}
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          if (Number.isNaN(value)) {
+                            return;
+                          }
+                          setForm((prev) => ({
+                            ...prev,
+                            opensky: {
+                              ...prev.opensky,
+                              bbox: {
+                                ...prev.opensky.bbox,
+                                lamin: Math.max(-90, Math.min(90, value)),
+                              },
+                            },
+                          }));
+                          resetErrorsFor("opensky.bbox.lamin");
+                        }}
+                      />
+                      {renderFieldError("opensky.bbox.lamin")}
+                    </div>
+                  )}
+
+                  {supports("opensky.bbox.lamax") && (
+                    <div className="config-field">
+                      <label htmlFor="opensky_lamax">Latitud máxima</label>
+                      <input
+                        id="opensky_lamax"
+                        type="number"
+                        step={0.1}
+                        min={-90}
+                        max={90}
+                        value={form.opensky.bbox.lamax}
+                        disabled={disableInputs || !form.opensky.enabled}
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          if (Number.isNaN(value)) {
+                            return;
+                          }
+                          setForm((prev) => ({
+                            ...prev,
+                            opensky: {
+                              ...prev.opensky,
+                              bbox: {
+                                ...prev.opensky.bbox,
+                                lamax: Math.max(-90, Math.min(90, value)),
+                              },
+                            },
+                          }));
+                          resetErrorsFor("opensky.bbox.lamax");
+                        }}
+                      />
+                      {renderFieldError("opensky.bbox.lamax")}
+                    </div>
+                  )}
+
+                  {supports("opensky.bbox.lomin") && (
+                    <div className="config-field">
+                      <label htmlFor="opensky_lomin">Longitud mínima</label>
+                      <input
+                        id="opensky_lomin"
+                        type="number"
+                        step={0.1}
+                        min={-180}
+                        max={180}
+                        value={form.opensky.bbox.lomin}
+                        disabled={disableInputs || !form.opensky.enabled}
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          if (Number.isNaN(value)) {
+                            return;
+                          }
+                          setForm((prev) => ({
+                            ...prev,
+                            opensky: {
+                              ...prev.opensky,
+                              bbox: {
+                                ...prev.opensky.bbox,
+                                lomin: Math.max(-180, Math.min(180, value)),
+                              },
+                            },
+                          }));
+                          resetErrorsFor("opensky.bbox.lomin");
+                        }}
+                      />
+                      {renderFieldError("opensky.bbox.lomin")}
+                    </div>
+                  )}
+
+                  {supports("opensky.bbox.lomax") && (
+                    <div className="config-field">
+                      <label htmlFor="opensky_lomax">Longitud máxima</label>
+                      <input
+                        id="opensky_lomax"
+                        type="number"
+                        step={0.1}
+                        min={-180}
+                        max={180}
+                        value={form.opensky.bbox.lomax}
+                        disabled={disableInputs || !form.opensky.enabled}
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          if (Number.isNaN(value)) {
+                            return;
+                          }
+                          setForm((prev) => ({
+                            ...prev,
+                            opensky: {
+                              ...prev.opensky,
+                              bbox: {
+                                ...prev.opensky.bbox,
+                                lomax: Math.max(-180, Math.min(180, value)),
+                              },
+                            },
+                          }));
+                          resetErrorsFor("opensky.bbox.lomax");
+                        }}
+                      />
+                      {renderFieldError("opensky.bbox.lomax")}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {supports("opensky.max_aircraft") && (
+                <div className="config-field">
+                  <label htmlFor="opensky_max_aircraft">Máximo de aeronaves</label>
+                  <input
+                    id="opensky_max_aircraft"
+                    type="number"
+                    min={100}
+                    max={1000}
+                    value={form.opensky.max_aircraft}
+                    disabled={disableInputs || !form.opensky.enabled}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (Number.isNaN(value)) {
+                        return;
+                      }
+                      const clamped = Math.max(100, Math.min(1000, Math.round(value)));
+                      setForm((prev) => ({
+                        ...prev,
+                        opensky: {
+                          ...prev.opensky,
+                          max_aircraft: clamped,
+                        },
+                      }));
+                      resetErrorsFor("opensky.max_aircraft");
+                    }}
+                  />
+                  {renderHelp("Número máximo de aeronaves a mostrar en simultáneo (100-1000)")}
+                  {renderFieldError("opensky.max_aircraft")}
+                </div>
+              )}
+
+              {supports("opensky.cluster") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="opensky_cluster">
+                    <input
+                      id="opensky_cluster"
+                      type="checkbox"
+                      checked={form.opensky.cluster}
+                      disabled={disableInputs || !form.opensky.enabled}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          opensky: {
+                            ...prev.opensky,
+                            cluster: enabled,
+                          },
+                        }));
+                        resetErrorsFor("opensky.cluster");
+                      }}
+                    />
+                    Activar clustering en el mapa
+                  </label>
+                  {renderHelp("Agrupa aeronaves cercanas para mejorar la legibilidad")}
+                </div>
+              )}
+
+              {supports("opensky.extended") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="opensky_extended">
+                    <input
+                      id="opensky_extended"
+                      type="checkbox"
+                      checked={form.opensky.extended === 1}
+                      disabled={disableInputs || !form.opensky.enabled}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          opensky: {
+                            ...prev.opensky,
+                            extended: enabled ? 1 : 0,
+                          },
+                        }));
+                        resetErrorsFor("opensky.extended");
+                      }}
+                    />
+                    Solicitar datos extendidos
+                  </label>
+                  {renderHelp("Incluye información adicional como categoría y origen")}
+                </div>
+              )}
+
+              <div className="config-field">
+                <label htmlFor="opensky_client_id">Client ID OAuth2</label>
+                <div className="config-field__secret">
+                  <input
+                    id="opensky_client_id"
+                    type="text"
+                    value={openskyClientIdInput}
+                    disabled={disableInputs}
+                    onChange={(event) => setOpenSkyClientIdInput(event.target.value)}
+                    placeholder="Introduce el client_id proporcionado por OpenSky"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <button
+                    type="button"
+                    className="config-button"
+                    disabled={disableInputs || savingOpenSkyClientId}
+                    onClick={handleSaveOpenSkyClientId}
+                  >
+                    Guardar
+                  </button>
+                </div>
+                {renderHelp(openskyClientIdSet ? "Guardado ✓" : "No establecido ✗")}
+              </div>
+
+              <div className="config-field">
+                <label htmlFor="opensky_client_secret">Client secret OAuth2</label>
+                <div className="config-field__secret">
+                  <input
+                    id="opensky_client_secret"
+                    type="password"
+                    value={openskyClientSecretInput}
+                    disabled={disableInputs}
+                    onChange={(event) => setOpenSkyClientSecretInput(event.target.value)}
+                    placeholder="Introduce el client_secret proporcionado por OpenSky"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <button
+                    type="button"
+                    className="config-button"
+                    disabled={disableInputs || savingOpenSkyClientSecret}
+                    onClick={handleSaveOpenSkyClientSecret}
+                  >
+                    Guardar
+                  </button>
+                </div>
+                {renderHelp(openskyClientSecretSet ? "Guardado ✓" : "No establecido ✗")}
+              </div>
+
+              <div className="config-field">
+                <label>Diagnóstico</label>
+                <div className="config-field__actions">
+                  <button
+                    type="button"
+                    className="config-button"
+                    onClick={handleTestOpenSky}
+                    disabled={disableInputs || testingOpenSky}
+                  >
+                    {testingOpenSky ? "Comprobando..." : "Probar conexión"}
+                  </button>
+                </div>
+                {openskyStatusError && <p className="config-error">{openskyStatusError}</p>}
+                {openskyStatusData && (
+                  <ul className="config-status-list">
+                    <li>
+                      Estado token: {openskyStatusData.token_valid ? "válido" : openskyStatusData.token_set ? "expirado" : "no configurado"}
+                    </li>
+                    <li>
+                      Última respuesta: {openskyStatusData.last_fetch_iso ? new Date(openskyStatusData.last_fetch_iso).toLocaleString() : "sin datos"}
+                    </li>
+                    <li>
+                      Aeronaves cacheadas: {openskyStatusData.items_count ?? 0}
+                    </li>
+                    {openskyStatusData.last_error && <li>Error reciente: {openskyStatusData.last_error}</li>}
+                    <li>
+                      Área configurada: {openskyStatusData.bbox.lamin.toFixed(2)} / {openskyStatusData.bbox.lamax.toFixed(2)} lat,
+                      {" "}
+                      {openskyStatusData.bbox.lomin.toFixed(2)} / {openskyStatusData.bbox.lomax.toFixed(2)} lon
+                    </li>
+                  </ul>
+                )}
+              </div>
             </div>
           </div>
         )}

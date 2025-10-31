@@ -1,6 +1,6 @@
 import maplibregl from "maplibre-gl";
 import type { MapLibreEvent } from "maplibre-gl";
-import type { FeatureCollection, GeoJsonProperties, Geometry, Point } from "geojson";
+import type { Feature, FeatureCollection, GeoJsonProperties, Geometry, Point } from "geojson";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 
@@ -111,7 +111,38 @@ type FlightFeatureProperties = {
   track?: number;
   speed?: number;
   timestamp?: number;
+  origin_country?: string;
+  on_ground?: boolean;
+  category?: string | number | null;
+  vertical_rate?: number | null;
+  squawk?: string | null;
+  last_contact?: number | null;
   in_focus?: boolean;
+};
+
+type FlightsApiItem = {
+  id: string;
+  icao24?: string | null;
+  callsign?: string | null;
+  origin_country?: string | null;
+  lon: number;
+  lat: number;
+  alt?: number | null;
+  velocity?: number | null;
+  vertical_rate?: number | null;
+  track?: number | null;
+  on_ground?: boolean;
+  category?: string | number | null;
+  squawk?: string | null;
+  last_contact?: number | null;
+};
+
+type FlightsApiResponse = {
+  count: number;
+  ts?: number;
+  stale?: boolean;
+  disabled?: boolean;
+  items: FlightsApiItem[];
 };
 
 type ShipFeatureProperties = {
@@ -133,6 +164,45 @@ const isFeatureCollection = <G extends Geometry, P extends GeoJsonProperties = G
 
   const candidate = value as FeatureCollection<G, P>;
   return candidate.type === "FeatureCollection" && Array.isArray(candidate.features);
+};
+
+const flightsResponseToGeoJSON = (payload: FlightsApiResponse): FeatureCollection<Point, FlightFeatureProperties> => {
+  const timestampFallback = typeof payload.ts === "number" ? payload.ts : Math.floor(Date.now() / 1000);
+  const features: Array<Feature<Point, FlightFeatureProperties>> = [];
+
+  for (const item of payload.items) {
+    if (!Number.isFinite(item.lon) || !Number.isFinite(item.lat)) {
+      continue;
+    }
+    const timestamp = typeof item.last_contact === "number" ? item.last_contact : timestampFallback;
+    features.push({
+      type: "Feature",
+      id: item.id,
+      geometry: {
+        type: "Point",
+        coordinates: [item.lon, item.lat],
+      },
+      properties: {
+        icao24: item.icao24 ?? undefined,
+        callsign: item.callsign ?? undefined,
+        alt_baro: typeof item.alt === "number" ? item.alt : undefined,
+        track: typeof item.track === "number" ? item.track : undefined,
+        speed: typeof item.velocity === "number" ? item.velocity : undefined,
+        origin_country: item.origin_country ?? undefined,
+        on_ground: Boolean(item.on_ground),
+        category: item.category ?? null,
+        vertical_rate: typeof item.vertical_rate === "number" ? item.vertical_rate : undefined,
+        squawk: item.squawk ?? null,
+        timestamp,
+        last_contact: typeof item.last_contact === "number" ? item.last_contact : undefined,
+      },
+    });
+  }
+
+  return {
+    type: "FeatureCollection",
+    features,
+  };
 };
 
 const applyVectorTheme = (map: maplibregl.Map, theme: MapThemeConfig) => {
@@ -1962,6 +2032,7 @@ export default function GeoScopeMap() {
 
           // AircraftLayer
           const flightsConfig = mergedConfig.layers.flights;
+          const openskyConfig = mergedConfig.opensky;
           const aircraftLayer = new AircraftLayer({
             enabled: flightsConfig.enabled,
             opacity: flightsConfig.opacity,
@@ -1971,6 +2042,7 @@ export default function GeoScopeMap() {
               outsideDimOpacity: flightsConfig.cine_focus.outside_dim_opacity,
               hardHideOutside: flightsConfig.cine_focus.hard_hide_outside,
             } : undefined,
+            cluster: openskyConfig.cluster,
           });
           layerRegistry.add(aircraftLayer);
           aircraftLayerRef.current = aircraftLayer;
@@ -2708,13 +2780,15 @@ export default function GeoScopeMap() {
     const merged = withConfigDefaults(config);
     const flightsConfig = merged.layers.flights;
     const shipsConfig = merged.layers.ships;
+    const openskyConfig = merged.opensky;
 
     // Actualizar AircraftLayer
     const aircraftLayer = aircraftLayerRef.current;
     if (aircraftLayer) {
-      aircraftLayer.setEnabled(flightsConfig.enabled);
+      aircraftLayer.setEnabled(flightsConfig.enabled && openskyConfig.enabled);
       aircraftLayer.setOpacity(flightsConfig.opacity);
       aircraftLayer.setMaxAgeSeconds(flightsConfig.max_age_seconds);
+      aircraftLayer.setCluster(openskyConfig.cluster);
       // Actualizar cine_focus si está disponible (requeriría método setCineFocus)
       // Por ahora, se actualiza con updateData que lee in_focus del payload
     }
@@ -2737,8 +2811,9 @@ export default function GeoScopeMap() {
 
     const merged = withConfigDefaults(config);
     const flightsConfig = merged.layers.flights;
+    const openskyConfig = merged.opensky;
 
-    if (!flightsConfig.enabled) {
+    if (!flightsConfig.enabled || !openskyConfig.enabled) {
       return;
     }
 
@@ -2747,34 +2822,34 @@ export default function GeoScopeMap() {
         // Calcular bbox del mapa actual
         const map = mapRef.current;
         let bbox: string | undefined;
-        let maxItemsView: number | undefined;
-        
+
         if (map && map.isStyleLoaded()) {
           const bounds = map.getBounds();
           const sw = bounds.getSouthWest();
           const ne = bounds.getNorthEast();
-          bbox = `${sw.lng},${sw.lat},${ne.lng},${ne.lat}`;
-          maxItemsView = flightsConfig.max_items_view;
+          const lamin = Math.min(sw.lat, ne.lat);
+          const lamax = Math.max(sw.lat, ne.lat);
+          const lomin = Math.min(sw.lng, ne.lng);
+          const lomax = Math.max(sw.lng, ne.lng);
+          bbox = `${lamin},${lamax},${lomin},${lomax}`;
         }
-        
+
         // Construir URL con parámetros
         let url = "/api/layers/flights";
         const params = new URLSearchParams();
         if (bbox) {
           params.append("bbox", bbox);
         }
-        if (maxItemsView) {
-          params.append("max_items_view", String(maxItemsView));
-        }
         if (params.toString()) {
           url += `?${params.toString()}`;
         }
-        
-        const response = await apiGet<unknown>(url);
+
+        const response = await apiGet<FlightsApiResponse | undefined>(url);
 
         const aircraftLayer = aircraftLayerRef.current;
-        if (aircraftLayer && isFeatureCollection<Point, FlightFeatureProperties>(response)) {
-          aircraftLayer.updateData(response);
+        if (aircraftLayer && response && !response.disabled) {
+          const featureCollection = flightsResponseToGeoJSON(response);
+          aircraftLayer.updateData(featureCollection);
         }
       } catch (error) {
         console.error("[GeoScopeMap] Failed to load flights data:", error);
@@ -2785,7 +2860,8 @@ export default function GeoScopeMap() {
     void loadFlightsData();
 
     // Cargar periódicamente según refresh_seconds
-    const intervalMs = flightsConfig.refresh_seconds * 1000;
+    const intervalSeconds = Math.max(5, openskyConfig.poll_seconds);
+    const intervalMs = intervalSeconds * 1000;
     const intervalId = setInterval(() => {
       void loadFlightsData();
     }, intervalMs);
