@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { DEFAULT_CONFIG, createDefaultGlobalLayers, createDefaultMapCinema, withConfigDefaults } from "../config/defaults";
 import {
@@ -17,6 +17,7 @@ import {
   updateOpenSkyClientSecret,
   wifiConnect,
   wifiDisconnect,
+  wifiNetworks as fetchWifiNetworks,
   wifiScan,
   wifiStatus,
   type WiFiNetwork,
@@ -403,12 +404,23 @@ const ConfigPage: React.FC = () => {
   const [openskyStatusError, setOpenSkyStatusError] = useState<string | null>(null);
   
   // WiFi state
-  const [wifiNetworks, setWifiNetworks] = useState<WiFiNetwork[]>([]);
+  const [wifiNetworkList, setWifiNetworkList] = useState<WiFiNetwork[]>([]);
+  const [wifiNetworksCount, setWifiNetworksCount] = useState(0);
+  const [wifiNetworksLoaded, setWifiNetworksLoaded] = useState(false);
   const [wifiScanning, setWifiScanning] = useState(false);
   const [wifiStatusData, setWifiStatusData] = useState<WiFiStatusResponse | null>(null);
   const [wifiConnecting, setWifiConnecting] = useState(false);
   const [wifiConnectPassword, setWifiConnectPassword] = useState<Record<string, string>>({});
   const [wifiConnectError, setWifiConnectError] = useState<string | null>(null);
+  const [wifiScanNotice, setWifiScanNotice] = useState<string | null>(null);
+
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const schemaInspector = useMemo(() => createSchemaInspector(schema ?? undefined), [schema]);
   const supports = useCallback((path: string) => schemaInspector.has(path), [schemaInspector]);
@@ -714,26 +726,111 @@ const ConfigPage: React.FC = () => {
   const loadWifiStatus = useCallback(async () => {
     try {
       const status = await wifiStatus();
+      if (!isMountedRef.current) {
+        return;
+      }
       setWifiStatusData(status);
     } catch (error) {
       console.error("Failed to load WiFi status:", error);
     }
   }, []);
 
+  const sanitizeWifiNetworks = useCallback((value: unknown): WiFiNetwork[] => {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value
+      .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+      .map((item) => {
+        const record = item as Record<string, unknown>;
+        const ssidValue = typeof record.ssid === "string" ? record.ssid.trim() : "";
+        const rawSignal = record.signal;
+
+        let signal = 0;
+        if (typeof rawSignal === "number" && Number.isFinite(rawSignal)) {
+          signal = rawSignal;
+        } else if (typeof rawSignal === "string") {
+          const parsed = Number.parseInt(rawSignal, 10);
+          if (!Number.isNaN(parsed)) {
+            signal = parsed;
+          }
+        }
+
+        const security = typeof record.security === "string" ? record.security : "";
+        const mode = typeof record.mode === "string" ? record.mode : undefined;
+        const bars = typeof record.bars === "string" ? record.bars : undefined;
+
+        return {
+          ssid: ssidValue,
+          signal,
+          security,
+          mode,
+          bars,
+        } satisfies WiFiNetwork;
+      })
+      .filter((network) => network.ssid.length > 0);
+  }, []);
+
+  const refreshWifiNetworks = useCallback(async () => {
+    try {
+      const response = await fetchWifiNetworks();
+      if (!isMountedRef.current) {
+        return;
+      }
+      const list = sanitizeWifiNetworks(response?.networks);
+      const count =
+        typeof response?.count === "number" && Number.isFinite(response.count)
+          ? response.count
+          : list.length;
+      setWifiNetworkList(list);
+      setWifiNetworksCount(count);
+      setWifiNetworksLoaded(true);
+    } catch (error) {
+      console.error("Failed to load WiFi networks:", error);
+      if (!isMountedRef.current) {
+        return;
+      }
+      setWifiNetworkList([]);
+      setWifiNetworksCount(0);
+      setWifiNetworksLoaded(true);
+      setWifiScanNotice((previous) => previous ?? "No se pudo cargar la lista de redes WiFi");
+    }
+  }, [fetchWifiNetworks, sanitizeWifiNetworks]);
+
   const handleWifiScan = useCallback(async () => {
     setWifiScanning(true);
     setWifiConnectError(null);
+    setWifiScanNotice(null);
     try {
       const result = await wifiScan();
-      setWifiNetworks(result.networks);
-      await loadWifiStatus();
+      if (isMountedRef.current) {
+        const hasReason = typeof result?.meta?.reason === "string";
+        if (!result?.ok || hasReason) {
+          const reason = hasReason ? String(result.meta?.reason) : "scan_failed";
+          const message =
+            reason === "scan_failed"
+              ? "No se pudo completar el escaneo de redes WiFi. Inténtalo de nuevo."
+              : `No se pudo escanear redes WiFi (${reason}).`;
+          setWifiScanNotice(message);
+          setBanner({ kind: "error", text: message });
+        }
+      }
     } catch (error) {
       console.error("Failed to scan WiFi:", error);
-      setWifiConnectError(resolveApiErrorMessage(error, "Error al buscar redes WiFi"));
+      if (isMountedRef.current) {
+        const message = resolveApiErrorMessage(error, "Error al buscar redes WiFi");
+        setWifiScanNotice(message);
+        setBanner({ kind: "error", text: message });
+      }
     } finally {
-      setWifiScanning(false);
+      if (isMountedRef.current) {
+        await refreshWifiNetworks();
+        await loadWifiStatus();
+        setWifiScanning(false);
+      }
     }
-  }, [loadWifiStatus]);
+  }, [loadWifiStatus, refreshWifiNetworks, setBanner]);
 
   const handleWifiConnect = useCallback(
     async (ssid: string) => {
@@ -742,8 +839,14 @@ const ConfigPage: React.FC = () => {
       try {
         const password = wifiConnectPassword[ssid] || undefined;
         await wifiConnect({ ssid, password });
+        if (!isMountedRef.current) {
+          return;
+        }
         setBanner({ kind: "success", text: `Conectado a ${ssid}` });
         await loadWifiStatus();
+        if (!isMountedRef.current) {
+          return;
+        }
         // Clear password from state after connection
         setWifiConnectPassword((prev) => {
           const next = { ...prev };
@@ -752,11 +855,15 @@ const ConfigPage: React.FC = () => {
         });
       } catch (error) {
         console.error("Failed to connect to WiFi:", error);
-        const errorMsg = resolveApiErrorMessage(error, "Error al conectar a la red WiFi");
-        setWifiConnectError(errorMsg);
-        setBanner({ kind: "error", text: errorMsg });
+        if (isMountedRef.current) {
+          const errorMsg = resolveApiErrorMessage(error, "Error al conectar a la red WiFi");
+          setWifiConnectError(errorMsg);
+          setBanner({ kind: "error", text: errorMsg });
+        }
       } finally {
-        setWifiConnecting(false);
+        if (isMountedRef.current) {
+          setWifiConnecting(false);
+        }
       }
     },
     [wifiConnectPassword, loadWifiStatus]
@@ -767,15 +874,22 @@ const ConfigPage: React.FC = () => {
     setWifiConnectError(null);
     try {
       await wifiDisconnect();
+      if (!isMountedRef.current) {
+        return;
+      }
       setBanner({ kind: "success", text: "Desconectado de WiFi" });
       await loadWifiStatus();
     } catch (error) {
       console.error("Failed to disconnect WiFi:", error);
-      const errorMsg = resolveApiErrorMessage(error, "Error al desconectar de la red WiFi");
-      setWifiConnectError(errorMsg);
-      setBanner({ kind: "error", text: errorMsg });
+      if (isMountedRef.current) {
+        const errorMsg = resolveApiErrorMessage(error, "Error al desconectar de la red WiFi");
+        setWifiConnectError(errorMsg);
+        setBanner({ kind: "error", text: errorMsg });
+      }
     } finally {
-      setWifiConnecting(false);
+      if (isMountedRef.current) {
+        setWifiConnecting(false);
+      }
     }
   }, [loadWifiStatus]);
 
@@ -4252,7 +4366,12 @@ const ConfigPage: React.FC = () => {
 
             <div className="config-field">
               <div className="config-field-row">
-                <label>Redes disponibles</label>
+                <label>
+                  Redes disponibles
+                  {wifiNetworksLoaded ? (
+                    <span className="config-field-detail"> ({wifiNetworksCount})</span>
+                  ) : null}
+                </label>
                 <button
                   type="button"
                   className="config-button"
@@ -4265,24 +4384,34 @@ const ConfigPage: React.FC = () => {
               {wifiConnectError && (
                 <div className="config-field-error">{wifiConnectError}</div>
               )}
+              {wifiScanNotice && (
+                <div className="config-field-error">{wifiScanNotice}</div>
+              )}
               {wifiScanning && (
                 <div className="config-field-hint">Buscando redes…</div>
               )}
-              {wifiNetworks.length > 0 ? (
+              {wifiNetworkList.length > 0 ? (
                 <div className="config-field-list">
-                  {wifiNetworks.map((network) => (
-                    <div key={network.ssid} className="config-field-item">
-                      <div className="config-field-item-info">
-                        <span className="config-field-item-name">{network.ssid}</span>
-                        <span className="config-field-item-detail">
-                          {network.security !== "none" && network.security !== "--"
-                            ? `🔒 ${network.security}`
-                            : "🔓 Abierta"}
-                          {" · "}
-                          Señal: {network.signal}%
-                        </span>
-                      </div>
-                      {network.security !== "none" && network.security !== "--" && (
+                  {wifiNetworkList.map((network) => {
+                    const securityValue = (network.security ?? "").toLowerCase();
+                    const isSecure = securityValue.length > 0 && securityValue !== "none" && securityValue !== "--";
+                    const securityLabel = isSecure ? `🔒 ${network.security}` : "🔓 Abierta";
+                    const disableConnect =
+                      wifiConnecting ||
+                      disableInputs ||
+                      (isSecure && !wifiConnectPassword[network.ssid]);
+
+                    return (
+                      <div key={network.ssid} className="config-field-item">
+                        <div className="config-field-item-info">
+                          <span className="config-field-item-name">{network.ssid}</span>
+                          <span className="config-field-item-detail">
+                            {securityLabel}
+                            {" · "}
+                            Señal: {Number.isFinite(network.signal) ? network.signal : 0}%
+                          </span>
+                        </div>
+                      {isSecure && (
                         <div className="config-field-item-password">
                           <input
                             type="password"
@@ -4306,21 +4435,28 @@ const ConfigPage: React.FC = () => {
                       <button
                         type="button"
                         className="config-button small"
-                        disabled={
-                          wifiConnecting ||
-                          disableInputs ||
-                          (network.security !== "none" &&
-                            network.security !== "--" &&
-                            !wifiConnectPassword[network.ssid])
-                        }
+                        disabled={disableConnect}
                         onClick={() => void handleWifiConnect(network.ssid)}
                       >
                         {wifiConnecting ? "Conectando…" : "Conectar"}
                       </button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
-              ) : wifiScanning ? null : (
+              ) : wifiScanning ? null : wifiNetworksLoaded ? (
+                <div className="config-field-hint">
+                  <p>No se han encontrado redes. Reintenta o acerca el equipo al AP.</p>
+                  <button
+                    type="button"
+                    className="config-button small"
+                    disabled={wifiScanning || wifiConnecting || disableInputs}
+                    onClick={() => void handleWifiScan()}
+                  >
+                    Reintentar
+                  </button>
+                </div>
+              ) : (
                 <div className="config-field-hint">
                   Haz clic en "Buscar redes" para ver las redes WiFi disponibles.
                 </div>
