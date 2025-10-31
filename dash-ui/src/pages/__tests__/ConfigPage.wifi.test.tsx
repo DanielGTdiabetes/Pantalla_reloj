@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
-import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ConfigPage } from "../ConfigPage";
 import { withConfigDefaults } from "../../config/defaults";
@@ -40,21 +40,15 @@ vi.mock("../../lib/api", async (importOriginal) => {
   } satisfies Partial<typeof actual>;
 });
 
-type Mocked<T> = T extends (...args: infer Args) => infer Return
-  ? Mock<Promise<Awaited<Return>>, Args>
-  : never;
-
-const mockGetConfig = getConfig as Mocked<typeof getConfig>;
-const mockGetHealth = getHealth as Mocked<typeof getHealth>;
-const mockGetSchema = getSchema as Mocked<typeof getSchema>;
-const mockGetOpenSkyClientIdMeta = getOpenSkyClientIdMeta as Mocked<typeof getOpenSkyClientIdMeta>;
-const mockGetOpenSkyClientSecretMeta = getOpenSkyClientSecretMeta as Mocked<
-  typeof getOpenSkyClientSecretMeta
->;
-const mockGetOpenSkyStatus = getOpenSkyStatus as Mocked<typeof getOpenSkyStatus>;
-const mockWifiScan = wifiScan as Mocked<typeof wifiScan>;
-const mockWifiNetworks = wifiNetworks as Mocked<typeof wifiNetworks>;
-const mockWifiStatus = wifiStatus as Mocked<typeof wifiStatus>;
+const mockGetConfig = vi.mocked(getConfig);
+const mockGetHealth = vi.mocked(getHealth);
+const mockGetSchema = vi.mocked(getSchema);
+const mockGetOpenSkyClientIdMeta = vi.mocked(getOpenSkyClientIdMeta);
+const mockGetOpenSkyClientSecretMeta = vi.mocked(getOpenSkyClientSecretMeta);
+const mockGetOpenSkyStatus = vi.mocked(getOpenSkyStatus);
+const mockWifiScan = vi.mocked(wifiScan);
+const mockWifiNetworks = vi.mocked(wifiNetworks);
+const mockWifiStatus = vi.mocked(wifiStatus);
 
 const renderConfigPage = async () => {
   render(<ConfigPage />);
