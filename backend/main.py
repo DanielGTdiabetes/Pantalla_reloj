@@ -16,7 +16,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from threading import Lock
 
 from .cache import CacheStore
 from .config_manager import ConfigManager
@@ -66,6 +67,61 @@ secret_store = SecretStore()
 opensky_service = OpenSkyService(secret_store, logger)
 ships_service = AISStreamService(cache_store=cache_store, secret_store=secret_store, logger=logger)
 map_reset_counter = 0
+
+CINEMA_TELEMETRY_TTL = timedelta(seconds=45)
+_cinema_runtime_state: Dict[str, Any] | None = None
+_cinema_runtime_expires_at: datetime | None = None
+_cinema_state_lock = Lock()
+
+
+class CinemaTelemetryPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    state: Literal[
+        "IDLE",
+        "LOADING_STYLE",
+        "READY",
+        "PANNING",
+        "PAUSED",
+        "ERROR",
+        "DISABLED",
+    ]
+    last_pan_tick_iso: datetime = Field(alias="lastPanTickIso")
+    reduced_motion: Optional[bool] = Field(default=None, alias="reducedMotion")
+
+
+def _normalize_timestamp(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    else:
+        value = value.astimezone(timezone.utc)
+    return value.isoformat()
+
+
+def _set_cinema_runtime_state(payload: CinemaTelemetryPayload) -> None:
+    global _cinema_runtime_state, _cinema_runtime_expires_at
+    normalized = {
+        "state": payload.state,
+        "lastPanTickIso": _normalize_timestamp(payload.last_pan_tick_iso),
+        "reducedMotion": payload.reduced_motion,
+    }
+    with _cinema_state_lock:
+        _cinema_runtime_state = normalized
+        _cinema_runtime_expires_at = datetime.now(timezone.utc) + CINEMA_TELEMETRY_TTL
+
+
+def _get_cinema_runtime_state() -> Dict[str, Any]:
+    global _cinema_runtime_state, _cinema_runtime_expires_at
+    with _cinema_state_lock:
+        if (
+            _cinema_runtime_state is not None
+            and _cinema_runtime_expires_at is not None
+            and datetime.now(timezone.utc) <= _cinema_runtime_expires_at
+        ):
+            return dict(_cinema_runtime_state)
+        _cinema_runtime_state = None
+        _cinema_runtime_expires_at = None
+    return {}
 
 app = FastAPI(title="Pantalla Reloj Backend", version="2025.10.0")
 app.add_middleware(
@@ -429,11 +485,25 @@ def _migrate_public_secrets_to_store() -> None:
 
 
 def _health_payload() -> Dict[str, Any]:
+    config = config_manager.read()
     uptime = datetime.now(timezone.utc) - APP_START
+    cinema_config = config.ui.map.cinema
+    cinema_block: Dict[str, Any] = {
+        "enabled": cinema_config.enabled,
+        "state": None,
+        "panLngDegPerSec": cinema_config.panLngDegPerSec,
+        "lastPanTickIso": None,
+        "reducedMotion": None,
+    }
+    runtime_state = _get_cinema_runtime_state()
+    if runtime_state:
+        cinema_block.update(runtime_state)
+
     payload = {
         "status": "ok",
         "uptime_seconds": int(uptime.total_seconds()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "cinema": cinema_block,
     }
     cache_store.store("health", payload)
     return payload
@@ -449,6 +519,13 @@ def healthcheck_root() -> Dict[str, Any]:
 def ui_healthcheck() -> Dict[str, str]:
     logger.debug("UI health probe requested")
     return {"ui": "ok"}
+
+
+@app.post("/api/telemetry/cinema", status_code=204)
+async def update_cinema_telemetry(payload: CinemaTelemetryPayload) -> Response:
+    logger.debug("Received cinema telemetry update: state=%s", payload.state)
+    _set_cinema_runtime_state(payload)
+    return Response(status_code=204)
 
 
 @app.get("/api/health")
