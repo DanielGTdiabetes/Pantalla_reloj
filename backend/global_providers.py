@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import requests
 
@@ -238,4 +239,76 @@ class RainViewerProvider:
         except Exception as exc:
             logger.error("RainViewerProvider get_radar_data_for_focus failed: %s", exc)
             return {"type": "radar_metadata", "frames": []}
+
+
+class OpenWeatherMapApiKeyError(RuntimeError):
+    """Raised when an OpenWeatherMap operation requires an API key but it is missing."""
+
+
+class OpenWeatherMapRadarProvider:
+    """Proveedor de radar global utilizando los tiles de precipitación de OpenWeatherMap."""
+
+    BASE_URL = "https://tile.openweathermap.org/map"
+    DEFAULT_LAYER = "precipitation_new"
+
+    def __init__(
+        self,
+        api_key_resolver: Callable[[], Optional[str]],
+        layer: Optional[str] = None,
+    ) -> None:
+        self._api_key_resolver = api_key_resolver
+        candidate_layer = (layer or self.DEFAULT_LAYER).strip() or self.DEFAULT_LAYER
+        # Solo permitimos las capas documentadas
+        if candidate_layer not in {"precipitation_new", "precipitation"}:
+            candidate_layer = self.DEFAULT_LAYER
+        self._layer = candidate_layer
+
+    def resolve_api_key(self) -> Optional[str]:
+        value = self._api_key_resolver()
+        if not value:
+            return None
+        trimmed = value.strip()
+        return trimmed or None
+
+    def get_available_frames(
+        self,
+        history_minutes: int = 90,
+        frame_step: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """Genera una lista sintética de frames disponibles.
+
+        OpenWeatherMap no expone un timeline real, así que fabricamos timestamps
+        estables basados en el `frame_step` configurado para favorecer el caché.
+        """
+
+        if frame_step <= 0:
+            frame_step = 5
+        step_seconds = max(frame_step * 60, 60)
+        anchor_ts = int(time.time())
+        anchor_ts -= anchor_ts % step_seconds
+        anchor_dt = datetime.fromtimestamp(anchor_ts, tz=timezone.utc)
+
+        # Aunque podríamos generar varios frames, mantener uno simplifica la integración
+        return [
+            {
+                "timestamp": anchor_ts,
+                "iso": anchor_dt.isoformat(),
+            }
+        ]
+
+    def get_tile_url(self, timestamp: int, z: int, x: int, y: int) -> str:
+        """Devuelve la URL del tile ignorando el timestamp solicitado."""
+
+        api_key = self.resolve_api_key()
+        if not api_key:
+            raise OpenWeatherMapApiKeyError("OWM API key missing")
+        return f"{self.BASE_URL}/{self._layer}/{z}/{x}/{y}.png?appid={api_key}"
+
+
+__all__ = [
+    "GIBSProvider",
+    "RainViewerProvider",
+    "OpenWeatherMapRadarProvider",
+    "OpenWeatherMapApiKeyError",
+]
 
