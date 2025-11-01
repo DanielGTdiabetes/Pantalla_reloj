@@ -457,12 +457,13 @@ export const DEFAULT_CONFIG: AppConfig = {
       opacity: 0.9,
       provider: "opensky",
       refresh_seconds: 12,
-      max_age_seconds: 120,
+      max_age_seconds: 90,
       max_items_global: 2000,
-      max_items_view: 360,
+      max_items_view: 480,
       rate_limit_per_min: 6,
       decimate: "grid",
-      grid_px: 28,
+      grid_px: 24,
+      styleScale: 1.4,
       cine_focus: {
         enabled: true,
         mode: "both",
@@ -493,11 +494,12 @@ export const DEFAULT_CONFIG: AppConfig = {
       refresh_seconds: 10,
       max_age_seconds: 180,
       max_items_global: 1500,
-      max_items_view: 300,
+      max_items_view: 420,
       min_speed_knots: 2.0,
       rate_limit_per_min: 4,
       decimate: "grid",
-      grid_px: 28,
+      grid_px: 24,
+      styleScale: 1.4,
       cine_focus: {
         enabled: true,
         mode: "both",
@@ -757,6 +759,7 @@ const mergeFlightsLayer = (candidate: unknown): FlightsLayerConfig => {
       8,
       128,
     ),
+    styleScale: clampNumber(toNumber(source.styleScale, fallback.styleScale), 0.1, 4.0),
     cine_focus: {
       enabled: toBoolean(cineFocusSource.enabled, cineFocusFallback.enabled),
       mode: (cineFocusSource.mode === "cap" || cineFocusSource.mode === "radar")
@@ -877,6 +880,7 @@ const mergeShipsLayer = (candidate: unknown): ShipsLayerConfig => {
       8,
       128,
     ),
+    styleScale: clampNumber(toNumber(source.styleScale, fallback.styleScale), 0.1, 4.0),
     cine_focus: {
       enabled: toBoolean(cineFocusSource.enabled, cineFocusFallback.enabled),
       mode: (cineFocusSource.mode === "cap" || cineFocusSource.mode === "radar")

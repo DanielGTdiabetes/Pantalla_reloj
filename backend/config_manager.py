@@ -134,14 +134,22 @@ class ConfigManager:
             raw = self.default_config_file.read_text(encoding="utf-8")
         except OSError as exc:
             self.logger.warning("Could not read default config template %s: %s", self.default_config_file, exc)
-            return AppConfig().model_dump(mode="json", by_alias=True)
+            return AppConfig().model_dump(mode="json")
         try:
-            return json.loads(raw)
+            data = json.loads(raw)
         except json.JSONDecodeError as exc:
             self.logger.warning(
                 "Default config template %s is invalid JSON: %s", self.default_config_file, exc
             )
-            return AppConfig().model_dump(mode="json", by_alias=True)
+            return AppConfig().model_dump(mode="json")
+        try:
+            defaults_model = AppConfig.model_validate(data)
+        except ValidationError as exc:
+            self.logger.warning(
+                "Default config template %s could not be parsed: %s", self.default_config_file, exc
+            )
+            return AppConfig().model_dump(mode="json")
+        return defaults_model.model_dump(mode="json")
 
     def _merge_missing_dict_keys(
         self, source: Any, defaults: Any

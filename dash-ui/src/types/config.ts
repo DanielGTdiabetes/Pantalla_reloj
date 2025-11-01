@@ -230,6 +230,7 @@ export type FlightsLayerConfig = {
   rate_limit_per_min: number;
   decimate: "grid" | "none";
   grid_px: number;
+  styleScale: number;
   cine_focus: CineFocusConfig;
   opensky?: OpenSkyAuthConfig;
   aviationstack?: AviationStackConfig;
@@ -249,6 +250,7 @@ export type ShipsLayerConfig = {
   rate_limit_per_min: number;
   decimate: "grid" | "none";
   grid_px: number;
+  styleScale: number;
   cine_focus: CineFocusConfig;
   ais_generic?: GenericAISConfig;
   aisstream?: AISStreamConfig;

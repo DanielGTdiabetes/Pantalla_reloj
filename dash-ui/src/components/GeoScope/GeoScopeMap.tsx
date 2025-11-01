@@ -119,6 +119,7 @@ type FlightFeatureProperties = {
   squawk?: string | null;
   last_contact?: number | null;
   in_focus?: boolean;
+  stale?: boolean;
 };
 
 type FlightsApiItem = {
@@ -136,6 +137,7 @@ type FlightsApiItem = {
   category?: string | number | null;
   squawk?: string | null;
   last_contact?: number | null;
+  stale?: boolean | null;
 };
 
 type FlightsApiResponse = {
@@ -154,6 +156,7 @@ type ShipFeatureProperties = {
   timestamp?: number;
   type?: string;
   in_focus?: boolean;
+  stale?: boolean;
 };
 
 const isFeatureCollection = <G extends Geometry, P extends GeoJsonProperties = GeoJsonProperties>(
@@ -176,6 +179,7 @@ const flightsResponseToGeoJSON = (payload: FlightsApiResponse): FeatureCollectio
       continue;
     }
     const timestamp = typeof item.last_contact === "number" ? item.last_contact : timestampFallback;
+    const isStale = item.stale === true;
     features.push({
       type: "Feature",
       id: item.id,
@@ -196,6 +200,7 @@ const flightsResponseToGeoJSON = (payload: FlightsApiResponse): FeatureCollectio
         squawk: item.squawk ?? null,
         timestamp,
         last_contact: typeof item.last_contact === "number" ? item.last_contact : undefined,
+        stale: isStale ? true : undefined,
       },
     });
   }
@@ -3122,6 +3127,7 @@ export default function GeoScopeMap() {
       aircraftLayer.setOpacity(flightsConfig.opacity);
       aircraftLayer.setMaxAgeSeconds(flightsConfig.max_age_seconds);
       aircraftLayer.setCluster(openskyConfig.cluster);
+      aircraftLayer.setStyleScale(flightsConfig.styleScale ?? 1);
       // Actualizar cine_focus si está disponible (requeriría método setCineFocus)
       // Por ahora, se actualiza con updateData que lee in_focus del payload
     }
@@ -3132,6 +3138,7 @@ export default function GeoScopeMap() {
       shipsLayer.setEnabled(shipsConfig.enabled);
       shipsLayer.setOpacity(shipsConfig.opacity);
       shipsLayer.setMaxAgeSeconds(shipsConfig.max_age_seconds);
+      shipsLayer.setStyleScale(shipsConfig.styleScale ?? 1);
       // Actualizar cine_focus si está disponible
     }
   }, [config]);
