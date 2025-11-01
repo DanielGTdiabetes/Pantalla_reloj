@@ -13,6 +13,7 @@ interface ShipsLayerOptions {
     outsideDimOpacity: number;
     hardHideOutside: boolean;
   };
+  styleScale?: number;
 }
 
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
@@ -28,12 +29,14 @@ export default class ShipsLayer implements Layer {
   private map?: maplibregl.Map;
   private readonly sourceId = "geoscope-ships-source";
   private lastData: FeatureCollection = EMPTY;
+  private styleScale: number;
 
   constructor(options: ShipsLayerOptions = {}) {
     this.enabled = options.enabled ?? false;
     this.opacity = options.opacity ?? 1.0;
     this.maxAgeSeconds = options.maxAgeSeconds ?? 180;
     this.cineFocus = options.cineFocus;
+    this.styleScale = options.styleScale ?? 1.0;
   }
 
   add(map: maplibregl.Map): void {
@@ -56,7 +59,7 @@ export default class ShipsLayer implements Layer {
         type: "circle",
         source: this.sourceId,
         paint: {
-          "circle-radius": 5,
+          "circle-radius": this.getCircleRadiusExpression(),
           "circle-color": "#38bdf8",
           "circle-stroke-color": "#0f172a",
           "circle-stroke-width": 1,
@@ -137,6 +140,7 @@ export default class ShipsLayer implements Layer {
 
     this.applyVisibility();
     this.applyOpacity();
+    this.applyStyleScale();
   }
 
   remove(map: maplibregl.Map): void {
@@ -147,6 +151,33 @@ export default class ShipsLayer implements Layer {
       map.removeSource(this.sourceId);
     }
     this.map = undefined;
+  }
+
+  private getCircleRadiusExpression(): maplibregl.ExpressionSpecification {
+    const baseRadius = 5;
+    const scale = Math.max(0.1, Math.min(this.styleScale, 4));
+    return [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      0,
+      baseRadius,
+      3,
+      baseRadius * scale,
+      4,
+      baseRadius,
+      22,
+      baseRadius,
+    ];
+  }
+
+  private applyStyleScale(): void {
+    if (!this.map) {
+      return;
+    }
+    if (this.map.getLayer(this.id)) {
+      this.map.setPaintProperty(this.id, "circle-radius", this.getCircleRadiusExpression());
+    }
   }
 
   setEnabled(on: boolean): void {
@@ -168,6 +199,15 @@ export default class ShipsLayer implements Layer {
     }
   }
 
+  setStyleScale(scale: number): void {
+    const clamped = Math.max(0.1, Math.min(scale, 4));
+    if (this.styleScale === clamped) {
+      return;
+    }
+    this.styleScale = clamped;
+    this.applyStyleScale();
+  }
+
   updateData(data: FeatureCollection): void {
     // Calcular edad para cada feature y aplicar dimming según in_focus
     const now = Math.floor(Date.now() / 1000);
@@ -179,6 +219,7 @@ export default class ShipsLayer implements Layer {
           const timestamp = props.timestamp || now;
           const ageSeconds = Math.max(0, now - timestamp);
           const inFocus = Boolean(props.in_focus);
+          const isStale = props.stale === true;
 
           // Si hard_hide_outside está activado y no está en foco, ocultar
           if (this.cineFocus?.enabled && this.cineFocus.hardHideOutside && !inFocus) {
@@ -190,7 +231,8 @@ export default class ShipsLayer implements Layer {
             properties: {
               ...props,
               age_seconds: ageSeconds,
-              in_focus: inFocus
+              in_focus: inFocus,
+              stale: isStale ? true : undefined
             }
           };
         })

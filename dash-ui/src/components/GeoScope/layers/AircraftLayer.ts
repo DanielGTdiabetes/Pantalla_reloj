@@ -14,6 +14,7 @@ interface AircraftLayerOptions {
     hardHideOutside: boolean;
   };
   cluster?: boolean;
+  styleScale?: number;
 }
 
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
@@ -32,6 +33,7 @@ export default class AircraftLayer implements Layer {
   private clusterEnabled: boolean;
   private readonly clusterLayerId: string;
   private readonly clusterCountLayerId: string;
+  private styleScale: number;
 
   constructor(options: AircraftLayerOptions = {}) {
     this.enabled = options.enabled ?? false;
@@ -41,6 +43,7 @@ export default class AircraftLayer implements Layer {
     this.clusterEnabled = options.cluster ?? false;
     this.clusterLayerId = `${this.id}-clusters`;
     this.clusterCountLayerId = `${this.id}-cluster-count`;
+    this.styleScale = options.styleScale ?? 1.0;
   }
 
   add(map: maplibregl.Map): void {
@@ -49,6 +52,7 @@ export default class AircraftLayer implements Layer {
     this.ensureLayers();
     this.applyVisibility();
     this.applyOpacity();
+    this.applyStyleScale();
 
     let hoveredId: string | null = null;
     map.on("mouseenter", this.id, (event) => {
@@ -186,7 +190,7 @@ export default class AircraftLayer implements Layer {
         filter: ["!", ["has", "point_count"]],
         layout: {
           "icon-image": "airport-15",
-          "icon-size": 1.2,
+          "icon-size": this.getIconSizeExpression(),
           "icon-allow-overlap": true,
           "icon-rotate": ["coalesce", ["get", "track"], 0],
           "icon-rotation-alignment": "map",
@@ -238,6 +242,33 @@ export default class AircraftLayer implements Layer {
     ];
   }
 
+  private getIconSizeExpression(): maplibregl.ExpressionSpecification {
+    const baseSize = 1.2;
+    const scale = Math.max(0.1, Math.min(this.styleScale, 4));
+    return [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      0,
+      baseSize,
+      3,
+      baseSize * scale,
+      4,
+      baseSize,
+      22,
+      baseSize,
+    ];
+  }
+
+  private applyStyleScale(): void {
+    if (!this.map) {
+      return;
+    }
+    if (this.map.getLayer(this.id)) {
+      this.map.setLayoutProperty(this.id, "icon-size", this.getIconSizeExpression());
+    }
+  }
+
   setCluster(enabled: boolean): void {
     if (this.clusterEnabled === enabled) {
       return;
@@ -253,6 +284,7 @@ export default class AircraftLayer implements Layer {
       this.ensureLayers();
       this.applyVisibility();
       this.applyOpacity();
+      this.applyStyleScale();
     }
   }
 
@@ -284,6 +316,15 @@ export default class AircraftLayer implements Layer {
     this.applyOpacity();
   }
 
+  setStyleScale(scale: number): void {
+    const clamped = Math.max(0.1, Math.min(scale, 4));
+    if (this.styleScale === clamped) {
+      return;
+    }
+    this.styleScale = clamped;
+    this.applyStyleScale();
+  }
+
   updateData(data: FeatureCollection): void {
     // Calcular edad para cada feature y aplicar dimming según in_focus
     const now = Math.floor(Date.now() / 1000);
@@ -295,6 +336,7 @@ export default class AircraftLayer implements Layer {
           const timestamp = props.timestamp || now;
           const ageSeconds = Math.max(0, now - timestamp);
           const inFocus = Boolean(props.in_focus);
+          const isStale = props.stale === true;
 
           // Si hard_hide_outside está activado y no está en foco, ocultar
           if (this.cineFocus?.enabled && this.cineFocus.hardHideOutside && !inFocus) {
@@ -306,7 +348,8 @@ export default class AircraftLayer implements Layer {
             properties: {
               ...props,
               age_seconds: ageSeconds,
-              in_focus: inFocus
+              in_focus: inFocus,
+              stale: isStale ? true : undefined
             }
           };
         })

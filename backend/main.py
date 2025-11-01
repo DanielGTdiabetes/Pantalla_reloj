@@ -8,7 +8,7 @@ import tempfile
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Literal
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Literal, TypeVar
 
 import requests
 
@@ -505,6 +505,44 @@ def _health_payload() -> Dict[str, Any]:
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "cinema": cinema_block,
     }
+    flights_layer = {"items": None, "stale": False}
+    ships_layer = {"items": None, "stale": False}
+
+    try:
+        flights_cfg = config.layers.flights
+        snapshot = opensky_service.get_last_snapshot()
+        if snapshot:
+            processed_items, stats = _prepare_flights_items(
+                snapshot.payload.get("items", []),
+                flights_cfg,
+                snapshot.bbox,
+            )
+            flights_layer["items"] = len(processed_items)
+            flights_layer["stale"] = bool(snapshot.payload.get("stale")) or bool(stats.get("stale_features"))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Unable to summarize flights layer for health: %s", exc)
+
+    try:
+        cached_ships = cache_store.load("ships", max_age_minutes=None)
+        if cached_ships:
+            payload_cached = cached_ships.payload
+            features = payload_cached.get("features", [])
+            ships_layer["items"] = len(features)
+            stale_features = sum(
+                1
+                for feature in features
+                if isinstance(feature, dict)
+                and isinstance(feature.get("properties"), dict)
+                and feature["properties"].get("stale")
+            )
+            ships_layer["stale"] = bool(payload_cached.get("stale")) or stale_features > 0
+        else:
+            ships_layer["items"] = None
+            ships_layer["stale"] = False
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Unable to summarize ships layer for health: %s", exc)
+
+    payload["layers"] = {"flights": flights_layer, "ships": ships_layer}
     cache_store.store("health", payload)
     return payload
 
@@ -2174,6 +2212,342 @@ def _parse_bbox_param(raw: Optional[str]) -> Optional[Tuple[float, float, float,
     return lamin, lamax, lomin, lomax
 
 
+_GLOBAL_VIEWPORT_WIDTH = 1920
+_GLOBAL_VIEWPORT_HEIGHT = 480
+_GLOBAL_LAT_MIN = -85.0
+_GLOBAL_LAT_MAX = 85.0
+
+T = TypeVar("T")
+
+
+def _clamp(value: float, minimum: float, maximum: float) -> float:
+    if value < minimum:
+        return minimum
+    if value > maximum:
+        return maximum
+    return value
+
+
+def _normalize_flights_bounds(
+    bbox: Optional[Tuple[float, float, float, float]]
+) -> Tuple[float, float, float, float]:
+    if not bbox:
+        return (-180.0, _GLOBAL_LAT_MIN, 180.0, _GLOBAL_LAT_MAX)
+    lamin, lamax, lomin, lomax = bbox
+    min_lat = _clamp(float(lamin), _GLOBAL_LAT_MIN, _GLOBAL_LAT_MAX)
+    max_lat = _clamp(float(lamax), min_lat, _GLOBAL_LAT_MAX)
+    min_lon = _clamp(float(lomin), -180.0, 180.0)
+    max_lon = _clamp(float(lomax), min_lon, 180.0)
+    return min_lon, min_lat, max_lon, max_lat
+
+
+def _normalize_generic_bounds(
+    bounds: Optional[Tuple[float, float, float, float]]
+) -> Tuple[float, float, float, float]:
+    if not bounds:
+        return (-180.0, _GLOBAL_LAT_MIN, 180.0, _GLOBAL_LAT_MAX)
+    min_lon, min_lat, max_lon, max_lat = bounds
+    min_lat = _clamp(float(min_lat), _GLOBAL_LAT_MIN, _GLOBAL_LAT_MAX)
+    max_lat = _clamp(float(max_lat), min_lat, _GLOBAL_LAT_MAX)
+    min_lon = _clamp(float(min_lon), -180.0, 180.0)
+    max_lon = _clamp(float(max_lon), min_lon, 180.0)
+    return min_lon, min_lat, max_lon, max_lat
+
+
+def _grid_cell_counts(grid_px: int) -> Tuple[int, int]:
+    size = max(1, grid_px)
+    cols = max(1, int(round(_GLOBAL_VIEWPORT_WIDTH / float(size))))
+    rows = max(1, int(round(_GLOBAL_VIEWPORT_HEIGHT / float(size))))
+    return cols, rows
+
+
+def _grid_decimate_entries(
+    entries: Iterable[T],
+    grid_px: int,
+    bounds: Tuple[float, float, float, float],
+    coord_getter: Callable[[T], Tuple[Optional[float], Optional[float]]],
+    priority_getter: Callable[[T], Tuple[Any, ...]],
+    max_items: Optional[int] = None,
+) -> Tuple[List[T], Dict[str, Any]]:
+    items_list = list(entries)
+    if not items_list or grid_px <= 0:
+        kept = list(items_list)
+        summary = {
+            "strategy": "none",
+            "grid_px": grid_px,
+            "input": len(items_list),
+            "kept": len(kept),
+            "collisions": 0,
+        }
+        if max_items:
+            summary["max_items_view"] = max_items
+            summary["truncated"] = max(0, len(kept) - max_items)
+        return kept, summary
+
+    min_lon, min_lat, max_lon, max_lat = bounds
+    lon_range = max(max_lon - min_lon, 1e-6)
+    lat_range = max(max_lat - min_lat, 1e-6)
+    cols, rows = _grid_cell_counts(grid_px)
+    cell_width = lon_range / cols
+    cell_height = lat_range / rows
+
+    buckets: Dict[Tuple[int, int], T] = {}
+    collisions = 0
+    for entry in items_list:
+        raw_lon, raw_lat = coord_getter(entry)
+        if raw_lon is None or raw_lat is None:
+            continue
+        try:
+            lon = float(raw_lon)
+            lat = float(raw_lat)
+        except (TypeError, ValueError):
+            continue
+
+        lon = _clamp(lon, min_lon, max_lon)
+        lat = _clamp(lat, min_lat, max_lat)
+        ix = int((lon - min_lon) / cell_width) if cell_width > 0 else 0
+        iy = int((lat - min_lat) / cell_height) if cell_height > 0 else 0
+        if ix >= cols:
+            ix = cols - 1
+        if iy >= rows:
+            iy = rows - 1
+        key = (ix, iy)
+        existing = buckets.get(key)
+        if existing is None:
+            buckets[key] = entry
+        else:
+            collisions += 1
+            if priority_getter(entry) < priority_getter(existing):
+                buckets[key] = entry
+
+    selected = list(buckets.values())
+    selected.sort(key=priority_getter)
+
+    truncated = 0
+    if max_items and max_items > 0 and len(selected) > max_items:
+        truncated = len(selected) - max_items
+        selected = selected[:max_items]
+
+    summary = {
+        "strategy": "grid",
+        "grid_px": grid_px,
+        "cells": {"cols": cols, "rows": rows},
+        "input": len(items_list),
+        "kept": len(selected),
+        "collisions": collisions,
+    }
+    if max_items and max_items > 0:
+        summary["max_items_view"] = max_items
+        summary["truncated"] = truncated
+
+    return selected, summary
+
+
+def _prepare_flights_items(
+    items: Iterable[Dict[str, Any]],
+    config: Any,
+    bbox: Optional[Tuple[float, float, float, float]],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    now = int(time.time())
+    input_count = 0
+    invalid_count = 0
+    processed: List[Dict[str, Any]] = []
+
+    for raw in items or []:
+        input_count += 1
+        if not isinstance(raw, dict):
+            invalid_count += 1
+            continue
+        lon = raw.get("lon")
+        lat = raw.get("lat")
+        if lon is None or lat is None:
+            invalid_count += 1
+            continue
+        try:
+            lon_f = float(lon)
+            lat_f = float(lat)
+        except (TypeError, ValueError):
+            invalid_count += 1
+            continue
+
+        item = dict(raw)
+        item["lon"] = lon_f
+        item["lat"] = lat_f
+
+        timestamp_raw = item.get("last_contact")
+        ts = None
+        if isinstance(timestamp_raw, (int, float)):
+            ts = int(timestamp_raw)
+            item["last_contact"] = ts
+        elif isinstance(timestamp_raw, str) and timestamp_raw.isdigit():
+            ts = int(timestamp_raw)
+            item["last_contact"] = ts
+
+        age_seconds = None
+        if ts is not None:
+            age_seconds = max(0, now - ts)
+
+        stale_flag = False
+        if age_seconds is not None and getattr(config, "max_age_seconds", 0) > 0:
+            stale_flag = age_seconds > int(config.max_age_seconds)
+
+        if stale_flag:
+            item["stale"] = True
+        else:
+            item.pop("stale", None)
+
+        processed.append(item)
+
+    valid_count = len(processed)
+    stale_candidates = sum(1 for item in processed if item.get("stale"))
+    max_view = int(getattr(config, "max_items_view", 0) or 0)
+
+    decimation_meta: Dict[str, Any]
+    if getattr(config, "decimate", "grid") == "grid" and int(getattr(config, "grid_px", 0)) > 0:
+        bounds = _normalize_flights_bounds(bbox)
+        decimated, decimation_meta = _grid_decimate_entries(
+            processed,
+            int(config.grid_px),
+            bounds,
+            lambda item: (item.get("lon"), item.get("lat")),
+            lambda item: (
+                1 if item.get("stale") else 0,
+                -int(item.get("last_contact") or 0),
+            ),
+            max_view if max_view > 0 else None,
+        )
+    else:
+        decimated = list(processed)
+        if max_view > 0 and len(decimated) > max_view:
+            decimated.sort(
+                key=lambda item: (
+                    1 if item.get("stale") else 0,
+                    -int(item.get("last_contact") or 0),
+                )
+            )
+            decimated = decimated[:max_view]
+            truncated = valid_count - len(decimated)
+        else:
+            truncated = 0
+        decimation_meta = {
+            "strategy": "none",
+            "grid_px": int(getattr(config, "grid_px", 0) or 0),
+            "input": valid_count,
+            "kept": len(decimated),
+            "collisions": 0,
+        }
+        if max_view > 0:
+            decimation_meta["max_items_view"] = max_view
+            decimation_meta["truncated"] = max(0, truncated)
+
+    decimated.sort(
+        key=lambda item: (
+            1 if item.get("stale") else 0,
+            -int(item.get("last_contact") or 0),
+        )
+    )
+
+    stale_final = sum(1 for item in decimated if item.get("stale"))
+
+    meta = {
+        "input": input_count,
+        "valid": valid_count,
+        "invalid": invalid_count,
+        "stale_candidates": stale_candidates,
+        "stale_features": stale_final,
+        "decimation": decimation_meta,
+    }
+    return decimated, meta
+
+
+def _prepare_ship_features(
+    features: Iterable[Dict[str, Any]],
+    config: Any,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    now = int(time.time())
+    input_count = 0
+    processed: List[Dict[str, Any]] = []
+    invalid_count = 0
+    stale_candidates = 0
+
+    for raw in features or []:
+        input_count += 1
+        if not isinstance(raw, dict):
+            invalid_count += 1
+            continue
+        geometry = raw.get("geometry", {})
+        if not isinstance(geometry, dict) or geometry.get("type") != "Point":
+            invalid_count += 1
+            continue
+        coords = geometry.get("coordinates")
+        if not isinstance(coords, (list, tuple)) or len(coords) < 2:
+            invalid_count += 1
+            continue
+        lon, lat = coords[0], coords[1]
+        if lon is None or lat is None:
+            invalid_count += 1
+            continue
+        try:
+            lon_f = float(lon)
+            lat_f = float(lat)
+        except (TypeError, ValueError):
+            invalid_count += 1
+            continue
+
+        props = dict(raw.get("properties", {}))
+        timestamp_raw = props.get("timestamp")
+        ts = None
+        if isinstance(timestamp_raw, (int, float)):
+            ts = int(timestamp_raw)
+        elif isinstance(timestamp_raw, str) and timestamp_raw.isdigit():
+            ts = int(timestamp_raw)
+
+        age_seconds = None
+        if ts is not None:
+            age_seconds = max(0, now - ts)
+
+        stale_flag = False
+        max_age = int(getattr(config, "max_age_seconds", 0) or 0)
+        if age_seconds is not None and max_age > 0:
+            stale_flag = age_seconds > max_age
+
+        if stale_flag:
+            props["stale"] = True
+            stale_candidates += 1
+        else:
+            props.pop("stale", None)
+
+        speed = props.get("speed")
+        try:
+            speed_value = float(speed) if speed is not None else 0.0
+        except (TypeError, ValueError):
+            speed_value = 0.0
+        if getattr(config, "min_speed_knots", 0.0) and speed_value < float(config.min_speed_knots):
+            continue
+
+        feature = {
+            **raw,
+            "geometry": {"type": "Point", "coordinates": [lon_f, lat_f]},
+            "properties": props,
+        }
+        processed.append(feature)
+
+    if getattr(config, "max_items_global", 0):
+        global_limit = int(config.max_items_global)
+        if global_limit > 0 and len(processed) > global_limit:
+            processed.sort(
+                key=lambda feat: -int(feat.get("properties", {}).get("timestamp") or 0)
+            )
+            processed = processed[:global_limit]
+
+    meta = {
+        "input": input_count,
+        "valid": len(processed),
+        "invalid": invalid_count,
+        "stale_candidates": stale_candidates,
+    }
+    return processed, meta
+
 def _augment_flights_payload(payload: Dict[str, Any], metadata: Dict[str, Any]) -> None:
     """Attach GeoJSON feature data to the flights payload in-place."""
 
@@ -2207,6 +2581,8 @@ def _augment_flights_payload(payload: Dict[str, Any], metadata: Dict[str, Any]) 
             "source": "opensky",
             "in_focus": False,
         }
+        if it.get("stale"):
+            props["stale"] = True
         features.append(
             {
                 "type": "Feature",
@@ -2217,7 +2593,12 @@ def _augment_flights_payload(payload: Dict[str, Any], metadata: Dict[str, Any]) 
 
     payload["type"] = "FeatureCollection"
     payload["features"] = features
-    payload["meta"] = metadata
+    existing_meta = payload.get("meta")
+    combined_meta: Dict[str, Any] = {}
+    if isinstance(existing_meta, dict):
+        combined_meta.update(existing_meta)
+    combined_meta.update(metadata)
+    payload["meta"] = combined_meta
 
 
 @app.get("/api/layers/flights")
@@ -2290,6 +2671,33 @@ def get_flights(request: Request, bbox: Optional[str] = None, extended: Optional
     payload = dict(snapshot.payload)
     if snapshot.stale:
         payload["stale"] = True
+
+    flights_cfg = config.layers.flights
+    processed_items, stats = _prepare_flights_items(payload.get("items", []), flights_cfg, snapshot.bbox)
+    payload["items"] = processed_items
+    payload["count"] = len(processed_items)
+    if stats.get("stale_features"):
+        payload["stale"] = True
+
+    meta_block: Dict[str, Any]
+    base_meta = payload.get("meta")
+    if isinstance(base_meta, dict):
+        meta_block = dict(base_meta)
+    else:
+        meta_block = {}
+    meta_block.update(
+        {
+            "input_items": stats.get("input", 0),
+            "valid_items": stats.get("valid", 0),
+            "invalid_items": stats.get("invalid", 0),
+            "stale_candidates": stats.get("stale_candidates", 0),
+            "stale_features": stats.get("stale_features", 0),
+            "decimation": stats.get("decimation"),
+        }
+    )
+    if stats.get("stale_features"):
+        meta_block["stale"] = True
+    payload["meta"] = meta_block
 
     _augment_flights_payload(
         payload,
@@ -2406,53 +2814,23 @@ def get_ships(
             provider = _get_ships_provider(config)
             data = provider.fetch(bounds=bounds)
 
-        # Filtrar por edad (max_age_seconds), velocidad mínima y límites de densidad
-        now = datetime.now(timezone.utc).timestamp()
-        filtered_features = []
+        filtered_features, stats = _prepare_ship_features(data.get("features", []), ships_config)
 
-        for feature in data.get("features", []):
-            props = feature.get("properties", {})
-            timestamp = props.get("timestamp", 0)
-            age = now - timestamp
-            
-            # Filtrar por edad
-            if ships_config.max_age_seconds > 0 and age > ships_config.max_age_seconds:
-                continue
-            
-            # Filtrar por velocidad mínima (ships)
-            speed = props.get("speed", 0)  # knots
-            if ships_config.min_speed_knots > 0 and speed < ships_config.min_speed_knots:
-                continue
-            
-            filtered_features.append(feature)
-        
-        # Aplicar límite global (max_items_global)
-        if ships_config.max_items_global > 0 and len(filtered_features) > ships_config.max_items_global:
-            # Ordenar por timestamp (más recientes primero) y limitar
-            filtered_features.sort(key=lambda f: f.get("properties", {}).get("timestamp", 0), reverse=True)
-            filtered_features = filtered_features[:ships_config.max_items_global]
-        
-        # Si hay bbox, filtrar por viewport también
+        bounds_normalized = _normalize_generic_bounds(bounds)
+        viewport_features = filtered_features
         if bounds:
             viewport_features = []
             for feature in filtered_features:
                 geometry = feature.get("geometry", {})
-                if geometry.get("type") == "Point":
-                    coords = geometry.get("coordinates", [])
-                    if len(coords) >= 2:
-                        lon, lat = coords[0], coords[1]
-                        # Verificar si está dentro del bbox
-                        if (bounds[0] <= lon <= bounds[2] and bounds[1] <= lat <= bounds[3]):
-                            viewport_features.append(feature)
-            
-            # Aplicar límite de viewport (max_items_view, puede venir del query o de config)
-            viewport_limit = max_items_view if max_items_view else ships_config.max_items_view
-            if viewport_limit > 0 and len(viewport_features) > viewport_limit:
-                # Ordenar por timestamp y limitar
-                viewport_features.sort(key=lambda f: f.get("properties", {}).get("timestamp", 0), reverse=True)
-                viewport_features = viewport_features[:viewport_limit]
-            
-            filtered_features = viewport_features
+                if not isinstance(geometry, dict) or geometry.get("type") != "Point":
+                    continue
+                coords = geometry.get("coordinates", [])
+                if isinstance(coords, (list, tuple)) and len(coords) >= 2:
+                    lon, lat = coords[0], coords[1]
+                    if bounds[0] <= lon <= bounds[2] and bounds[1] <= lat <= bounds[3]:
+                        viewport_features.append(feature)
+
+        features_for_focus = viewport_features
         
         # Aplicar máscara de foco y etiquetar in_focus
         focus_mask = None
@@ -2474,11 +2852,11 @@ def get_ships(
                 focus_unavailable = True
         
         # Etiquetar features con in_focus
-        features_with_focus = []
-        for feature in filtered_features:
+        features_with_focus: List[Dict[str, Any]] = []
+        for feature in features_for_focus:
             props = feature.get("properties", {})
             geometry = feature.get("geometry", {})
-            
+
             in_focus = False
             if focus_mask and geometry.get("type") == "Point":
                 coords = geometry.get("coordinates", [])
@@ -2486,7 +2864,7 @@ def get_ships(
                     lon, lat = coords[0], coords[1]
                     if abs(lat) <= 90 and abs(lon) <= 180:
                         in_focus = check_point_in_focus(lat, lon, focus_mask)
-            
+
             features_with_focus.append({
                 **feature,
                 "properties": {
@@ -2494,8 +2872,62 @@ def get_ships(
                     "in_focus": in_focus
                 }
             })
-        
-        data["features"] = features_with_focus
+
+        max_view_limit = max_items_view if max_items_view else ships_config.max_items_view
+
+        def priority_fn(feat: Dict[str, Any]) -> Tuple[int, int, int, float]:
+            props = feat.get("properties", {})
+            in_focus_rank = 0 if props.get("in_focus") else 1
+            stale_rank = 0 if not props.get("stale") else 1
+            timestamp_rank = -int(props.get("timestamp") or 0)
+            speed_raw = props.get("speed")
+            try:
+                speed_rank = -float(speed_raw) if speed_raw is not None else 0.0
+            except (TypeError, ValueError):
+                speed_rank = 0.0
+            return (in_focus_rank, stale_rank, timestamp_rank, speed_rank)
+
+        if ships_config.decimate == "grid" and int(ships_config.grid_px) > 0:
+            final_features, decimation_meta = _grid_decimate_entries(
+                features_with_focus,
+                int(ships_config.grid_px),
+                bounds_normalized,
+                lambda feat: (
+                    feat.get("geometry", {}).get("coordinates", [None, None])[0],
+                    feat.get("geometry", {}).get("coordinates", [None, None])[1],
+                ),
+                priority_fn,
+                max_view_limit if max_view_limit and max_view_limit > 0 else None,
+            )
+        else:
+            final_features = list(features_with_focus)
+            truncated = 0
+            if max_view_limit and max_view_limit > 0 and len(final_features) > max_view_limit:
+                final_features.sort(key=priority_fn)
+                truncated = len(final_features) - max_view_limit
+                final_features = final_features[:max_view_limit]
+            decimation_meta = {
+                "strategy": "none",
+                "grid_px": int(getattr(ships_config, "grid_px", 0) or 0),
+                "input": len(features_with_focus),
+                "kept": len(final_features),
+                "collisions": 0,
+            }
+            if max_view_limit and max_view_limit > 0:
+                decimation_meta["max_items_view"] = max_view_limit
+                decimation_meta["truncated"] = max(0, truncated)
+
+        final_features.sort(key=priority_fn)
+
+        stale_final = sum(1 for feat in final_features if feat.get("properties", {}).get("stale"))
+        stats.update(
+            {
+                "stale_features": stale_final,
+                "decimation": decimation_meta,
+            }
+        )
+
+        data["features"] = final_features
         
         # Añadir metadata si focus no está disponible
         if focus_unavailable:
@@ -2505,14 +2937,30 @@ def get_ships(
         # Guardar en caché
         meta = data.setdefault("meta", {})
         meta.setdefault("provider", ships_config.provider)
+        meta.update(
+            {
+                "input_items": stats.get("input", 0),
+                "valid_items": stats.get("valid", 0),
+                "invalid_items": stats.get("invalid", 0),
+                "stale_candidates": stats.get("stale_candidates", 0),
+                "stale_features": stats.get("stale_features", 0),
+                "decimation": stats.get("decimation"),
+            }
+        )
         if stream_provider and not meta.get("ok"):
-            meta["ok"] = len(features_with_focus) > 0
+            meta["ok"] = len(final_features) > 0
         if not stream_provider:
             meta.setdefault("ok", True)
+        if stats.get("stale_features"):
+            data["stale"] = True
+            meta["stale"] = True
         if not used_cache:
             cache_store.store("ships", data)
-        logger.info("Fetched %d ships (in_focus: %d)", len(features_with_focus),
-                   sum(1 for f in features_with_focus if f.get("properties", {}).get("in_focus", False)))
+        logger.info(
+            "Fetched %d ships (in_focus: %d)",
+            len(final_features),
+            sum(1 for f in final_features if f.get("properties", {}).get("in_focus", False)),
+        )
         return data
     except Exception as exc:
         logger.error("Failed to fetch ships: %s", exc)
