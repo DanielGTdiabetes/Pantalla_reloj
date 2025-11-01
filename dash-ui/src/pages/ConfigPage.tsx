@@ -7,16 +7,12 @@ import {
   getConfig,
   getHealth,
   getSchema,
-  getOpenSkyClientIdMeta,
-  getOpenSkyClientSecretMeta,
   getOpenSkyStatus,
   saveConfig,
   testAemetApiKey,
   updateAemetApiKey,
   updateAISStreamApiKey,
   updateOpenWeatherMapApiKey,
-  updateOpenSkyClientId,
-  updateOpenSkyClientSecret,
   getShipsLayer,
   wifiConnect,
   wifiDisconnect,
@@ -420,12 +416,6 @@ const ConfigPage: React.FC = () => {
   const [savingOpenWeatherKey, setSavingOpenWeatherKey] = useState(false);
   const [testingShips, setTestingShips] = useState(false);
   const [shipsTestResult, setShipsTestResult] = useState<{ ok: boolean; message: string; count?: number } | null>(null);
-  const [openskyClientIdInput, setOpenSkyClientIdInput] = useState("");
-  const [openskyClientSecretInput, setOpenSkyClientSecretInput] = useState("");
-  const [openskyClientIdSet, setOpenSkyClientIdSet] = useState(false);
-  const [openskyClientSecretSet, setOpenSkyClientSecretSet] = useState(false);
-  const [savingOpenSkyClientId, setSavingOpenSkyClientId] = useState(false);
-  const [savingOpenSkyClientSecret, setSavingOpenSkyClientSecret] = useState(false);
   const [testingOpenSky, setTestingOpenSky] = useState(false);
   const [openskyStatusData, setOpenSkyStatusData] = useState<OpenSkyStatus | null>(null);
   const [openskyStatusError, setOpenSkyStatusError] = useState<string | null>(null);
@@ -465,7 +455,13 @@ const ConfigPage: React.FC = () => {
   const disableCinemaControls = disableInputs || cinemaBlocked;
   const disableIdlePanControls =
     disableInputs || cinemaBlocked || !form.ui.map.idlePan.enabled;
-  const openskyCredentialsConfigured = openskyClientIdSet && openskyClientSecretSet;
+  const openskyAuthState = form.opensky.oauth2;
+  const pendingOpenSkyClientId = openskyAuthState?.client_id ?? "";
+  const pendingOpenSkyClientSecret = openskyAuthState?.client_secret ?? "";
+  const storedOpenSkyCredentials = Boolean(openskyAuthState?.has_credentials);
+  const pendingOpenSkyCredentials =
+    pendingOpenSkyClientId.trim().length > 0 && pendingOpenSkyClientSecret.trim().length > 0;
+  const openskyCredentialsConfigured = storedOpenSkyCredentials || pendingOpenSkyCredentials;
   const openskyMinPoll = openskyCredentialsConfigured ? 5 : 10;
 
   const resetErrorsFor = useCallback((pathPrefix: string) => {
@@ -520,6 +516,17 @@ const ConfigPage: React.FC = () => {
     }
     return "••••";
   }, [form.layers.ships.aisstream]);
+
+  const openskyCredentialHelp = useMemo(() => {
+    if (!openskyAuthState?.has_credentials) {
+      return "No hay credenciales guardadas";
+    }
+    const last4 = openskyAuthState.client_id_last4;
+    if (typeof last4 === "string" && last4.trim().length > 0) {
+      return `Credenciales guardadas (•••• ${last4.trim()})`;
+    }
+    return "Credenciales guardadas (••••)";
+  }, [openskyAuthState?.has_credentials, openskyAuthState?.client_id_last4]);
 
   const trimmedAisstreamKeyInput = aisstreamKeyInput.trim();
   const hasStoredAisstreamKey = Boolean(form.layers.ships.aisstream?.has_api_key);
@@ -875,59 +882,6 @@ const ConfigPage: React.FC = () => {
     testingShips,
   ]);
 
-  const loadOpenSkyMeta = useCallback(async () => {
-    try {
-      const [clientIdMeta, clientSecretMeta] = await Promise.all([
-        getOpenSkyClientIdMeta(),
-        getOpenSkyClientSecretMeta(),
-      ]);
-      setOpenSkyClientIdSet(Boolean(clientIdMeta?.set));
-      setOpenSkyClientSecretSet(Boolean(clientSecretMeta?.set));
-    } catch (error) {
-      console.error("[ConfigPage] Failed to load OpenSky secret metadata", error);
-    }
-  }, []);
-
-  const handleSaveOpenSkyClientId = useCallback(async () => {
-    if (savingOpenSkyClientId) {
-      return;
-    }
-    const trimmed = openskyClientIdInput.trim();
-    setSavingOpenSkyClientId(true);
-    try {
-      await updateOpenSkyClientId(trimmed || null);
-      await loadOpenSkyMeta();
-      setOpenSkyClientIdInput("");
-      setBanner({ kind: "success", text: trimmed ? "Client ID guardado" : "Client ID eliminado" });
-    } catch (error) {
-      console.error("[ConfigPage] Failed to update OpenSky client ID", error);
-      const message = resolveApiErrorMessage(error, "No se pudo actualizar el client ID de OpenSky");
-      setBanner({ kind: "error", text: message });
-    } finally {
-      setSavingOpenSkyClientId(false);
-    }
-  }, [openskyClientIdInput, savingOpenSkyClientId, loadOpenSkyMeta, setBanner]);
-
-  const handleSaveOpenSkyClientSecret = useCallback(async () => {
-    if (savingOpenSkyClientSecret) {
-      return;
-    }
-    const trimmed = openskyClientSecretInput.trim();
-    setSavingOpenSkyClientSecret(true);
-    try {
-      await updateOpenSkyClientSecret(trimmed || null);
-      await loadOpenSkyMeta();
-      setOpenSkyClientSecretInput("");
-      setBanner({ kind: "success", text: trimmed ? "Client secret guardado" : "Client secret eliminado" });
-    } catch (error) {
-      console.error("[ConfigPage] Failed to update OpenSky client secret", error);
-      const message = resolveApiErrorMessage(error, "No se pudo actualizar el client secret de OpenSky");
-      setBanner({ kind: "error", text: message });
-    } finally {
-      setSavingOpenSkyClientSecret(false);
-    }
-  }, [openskyClientSecretInput, savingOpenSkyClientSecret, loadOpenSkyMeta, setBanner]);
-
   const handleTestOpenSky = useCallback(async () => {
     if (testingOpenSky) {
       return;
@@ -962,12 +916,9 @@ const ConfigPage: React.FC = () => {
     setShipsTestResult(null);
     setShowOpenWeatherKey(false);
     setOpenWeatherKeyInput("");
-    setOpenSkyClientIdInput("");
-    setOpenSkyClientSecretInput("");
     setOpenSkyStatusData(null);
     setOpenSkyStatusError(null);
-    await loadOpenSkyMeta();
-  }, [loadOpenSkyMeta]);
+  }, []);
 
   // WiFi functions
   const loadWifiStatus = useCallback(async () => {
@@ -1248,6 +1199,33 @@ const ConfigPage: React.FC = () => {
       if (payload.layers?.global?.radar) {
         delete (payload.layers.global.radar as { has_api_key?: boolean }).has_api_key;
         delete (payload.layers.global.radar as { api_key_last4?: string | null }).api_key_last4;
+      }
+      if (payload.opensky?.oauth2) {
+        const oauthPayload = payload.opensky.oauth2 as {
+          token_url?: string | null;
+          client_id?: string | null;
+          client_secret?: string | null;
+          scope?: string | null;
+          has_credentials?: boolean;
+          client_id_last4?: string | null;
+        };
+        if (typeof oauthPayload.token_url === "string") {
+          oauthPayload.token_url = oauthPayload.token_url.trim();
+        }
+        if (typeof oauthPayload.client_id === "string") {
+          const trimmedId = oauthPayload.client_id.trim();
+          oauthPayload.client_id = trimmedId.length > 0 ? trimmedId : null;
+        }
+        if (typeof oauthPayload.client_secret === "string") {
+          const trimmedSecret = oauthPayload.client_secret.trim();
+          oauthPayload.client_secret = trimmedSecret.length > 0 ? trimmedSecret : null;
+        }
+        if (typeof oauthPayload.scope === "string") {
+          const trimmedScope = oauthPayload.scope.trim();
+          oauthPayload.scope = trimmedScope.length > 0 ? trimmedScope : null;
+        }
+        oauthPayload.has_credentials = Boolean(form.opensky.oauth2.has_credentials);
+        oauthPayload.client_id_last4 = form.opensky.oauth2.client_id_last4 ?? null;
       }
       const saved = await saveConfig(payload);
       setForm(withConfigDefaults(saved));
@@ -3372,52 +3350,58 @@ const ConfigPage: React.FC = () => {
 
               <div className="config-field">
                 <label htmlFor="opensky_client_id">Client ID OAuth2</label>
-                <div className="config-field__secret">
-                  <input
-                    id="opensky_client_id"
-                    type="text"
-                    value={openskyClientIdInput}
-                    disabled={disableInputs}
-                    onChange={(event) => setOpenSkyClientIdInput(event.target.value)}
-                    placeholder="Introduce el client_id proporcionado por OpenSky"
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                  <button
-                    type="button"
-                    className="config-button"
-                    disabled={disableInputs || savingOpenSkyClientId}
-                    onClick={handleSaveOpenSkyClientId}
-                  >
-                    Guardar
-                  </button>
-                </div>
-                {renderHelp(openskyClientIdSet ? "Guardado ✓" : "No establecido ✗")}
+                <input
+                  id="opensky_client_id"
+                  type="password"
+                  value={form.opensky.oauth2.client_id ?? ""}
+                  disabled={disableInputs}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setForm((prev) => ({
+                      ...prev,
+                      opensky: {
+                        ...prev.opensky,
+                        oauth2: {
+                          ...prev.opensky.oauth2,
+                          client_id: value,
+                        },
+                      },
+                    }));
+                    resetErrorsFor("opensky.oauth2.client_id");
+                  }}
+                  placeholder="Introduce el client_id proporcionado por OpenSky"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                {renderHelp(openskyCredentialHelp)}
               </div>
 
               <div className="config-field">
                 <label htmlFor="opensky_client_secret">Client secret OAuth2</label>
-                <div className="config-field__secret">
-                  <input
-                    id="opensky_client_secret"
-                    type="password"
-                    value={openskyClientSecretInput}
-                    disabled={disableInputs}
-                    onChange={(event) => setOpenSkyClientSecretInput(event.target.value)}
-                    placeholder="Introduce el client_secret proporcionado por OpenSky"
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                  <button
-                    type="button"
-                    className="config-button"
-                    disabled={disableInputs || savingOpenSkyClientSecret}
-                    onClick={handleSaveOpenSkyClientSecret}
-                  >
-                    Guardar
-                  </button>
-                </div>
-                {renderHelp(openskyClientSecretSet ? "Guardado ✓" : "No establecido ✗")}
+                <input
+                  id="opensky_client_secret"
+                  type="password"
+                  value={form.opensky.oauth2.client_secret ?? ""}
+                  disabled={disableInputs}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setForm((prev) => ({
+                      ...prev,
+                      opensky: {
+                        ...prev.opensky,
+                        oauth2: {
+                          ...prev.opensky.oauth2,
+                          client_secret: value,
+                        },
+                      },
+                    }));
+                    resetErrorsFor("opensky.oauth2.client_secret");
+                  }}
+                  placeholder="Introduce el client_secret proporcionado por OpenSky"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                {renderHelp("Introduce client_id y client_secret y pulsa Guardar configuración para aplicarlos")}
               </div>
 
               <div className="config-field">
@@ -3436,14 +3420,25 @@ const ConfigPage: React.FC = () => {
                 {openskyStatusData && (
                   <ul className="config-status-list">
                     <li>
-                      Estado token: {openskyStatusData.token_valid ? "válido" : openskyStatusData.token_set ? "expirado" : "no configurado"}
+                      Estado proveedor: {openskyStatusData.status ?? (openskyStatusData.has_credentials ? "stale" : "sin credenciales")}
+                    </li>
+                    <li>
+                      Token en caché: {(() => {
+                        const auth = openskyStatusData.auth;
+                        const cached = auth?.token_cached ?? openskyStatusData.token_cached ?? false;
+                        const expires = auth?.expires_in_sec ?? openskyStatusData.expires_in_sec ?? openskyStatusData.expires_in;
+                        return `${cached ? "sí" : "no"}${typeof expires === "number" && expires > 0 ? ` (expira en ${expires} s)` : ""}`;
+                      })()}
                     </li>
                     <li>
                       Última respuesta: {openskyStatusData.last_fetch_iso ? new Date(openskyStatusData.last_fetch_iso).toLocaleString() : "sin datos"}
                     </li>
                     <li>
-                      Aeronaves cacheadas: {openskyStatusData.items_count ?? 0}
+                      Aeronaves cacheadas: {openskyStatusData.items ?? openskyStatusData.items_count ?? 0}
                     </li>
+                    {openskyStatusData.rate_limit_hint && (
+                      <li>Rate limit restante (pista): {openskyStatusData.rate_limit_hint}</li>
+                    )}
                     {openskyStatusData.last_error && <li>Error reciente: {openskyStatusData.last_error}</li>}
                     <li>
                       Área configurada: {openskyStatusData.bbox.lamin.toFixed(2)} / {openskyStatusData.bbox.lamax.toFixed(2)} lat,

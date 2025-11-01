@@ -52,10 +52,9 @@ from .layer_providers import (
 from .logging_utils import configure_logging
 from .models import AppConfig
 from .secret_store import SecretStore
-from .services.opensky_auth import OpenSkyAuthError
+from .services.opensky_auth import DEFAULT_TOKEN_URL, OpenSkyAuthError
 from .services.opensky_client import OpenSkyClientError
 from .services.opensky_service import OpenSkyService
-from .services.opensky_auth import OpenSkyAuthenticator
 from .services.ships_service import AISStreamService
 from .rate_limiter import check_rate_limit
 
@@ -299,6 +298,24 @@ def _build_public_config(config: AppConfig) -> Dict[str, Any]:
     aemet_info.update(masked)
     payload["aemet"] = aemet_info
 
+    opensky_info = payload.get("opensky")
+    if isinstance(opensky_info, dict):
+        oauth_info = opensky_info.get("oauth2")
+        if isinstance(oauth_info, dict):
+            oauth_public = dict(oauth_info)
+        else:
+            oauth_public = {}
+        oauth_public.pop("client_secret", None)
+        oauth_public.pop("client_id", None)
+        stored_id = secret_store.get_secret("opensky_client_id")
+        stored_secret = secret_store.get_secret("opensky_client_secret")
+        oauth_public["has_credentials"] = bool(stored_id and stored_secret)
+        oauth_public["client_id_last4"] = (
+            stored_id[-4:] if stored_id and len(stored_id) >= 4 else stored_id
+        )
+        opensky_info["oauth2"] = oauth_public
+        payload["opensky"] = opensky_info
+
     layers_info = payload.get("layers")
     if isinstance(layers_info, dict):
         ships_info = layers_info.get("ships")
@@ -325,8 +342,33 @@ def _build_public_config(config: AppConfig) -> Dict[str, Any]:
             radar_public.update(radar_secret_meta)
             global_layers_info["radar"] = radar_public
             layers_info["global"] = global_layers_info
-        payload["layers"] = layers_info
+    payload["layers"] = layers_info
     return payload
+
+
+def _refresh_opensky_oauth_metadata() -> None:
+    try:
+        config = config_manager.read()
+        payload = config.model_dump(mode="json", by_alias=True)
+        opensky_info = payload.get("opensky")
+        if not isinstance(opensky_info, dict):
+            return
+        oauth_info = opensky_info.get("oauth2")
+        if not isinstance(oauth_info, dict):
+            oauth_info = {}
+        stored_id = secret_store.get_secret("opensky_client_id")
+        stored_secret = secret_store.get_secret("opensky_client_secret")
+        oauth_info["client_id"] = None
+        oauth_info["client_secret"] = None
+        oauth_info["has_credentials"] = bool(stored_id and stored_secret)
+        oauth_info["client_id_last4"] = (
+            stored_id[-4:] if stored_id and len(stored_id) >= 4 else stored_id
+        )
+        opensky_info["oauth2"] = oauth_info
+        payload["opensky"] = opensky_info
+        config_manager.write(payload)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Skipping OpenSky OAuth metadata refresh: %s", exc)
 
 
 AEMET_TEST_ENDPOINT = (
@@ -543,6 +585,38 @@ def _health_payload() -> Dict[str, Any]:
         logger.debug("Unable to summarize ships layer for health: %s", exc)
 
     payload["layers"] = {"flights": flights_layer, "ships": ships_layer}
+
+    try:
+        opensky_status = opensky_service.get_status(config)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Unable to gather OpenSky status for health: %s", exc)
+        opensky_status = {
+            "enabled": config.opensky.enabled,
+            "status": "error" if config.opensky.enabled else "stale",
+        }
+    auth_block = opensky_status.get("auth")
+    if not isinstance(auth_block, dict):
+        auth_block = {
+            "has_credentials": opensky_status.get("has_credentials", False),
+            "token_cached": opensky_status.get("token_cached", False),
+            "expires_in_sec": opensky_status.get("expires_in"),
+        }
+    providers = {
+        "opensky": {
+            "enabled": bool(opensky_status.get("enabled", False)),
+            "auth": {
+                "has_credentials": bool(auth_block.get("has_credentials", False)),
+                "token_cached": bool(auth_block.get("token_cached", False)),
+                "expires_in_sec": auth_block.get("expires_in_sec"),
+            },
+            "status": opensky_status.get("status"),
+            "last_fetch_iso": opensky_status.get("last_fetch_iso"),
+            "items": opensky_status.get("items"),
+            "rate_limit_hint": opensky_status.get("rate_limit_hint"),
+        }
+    }
+    payload["providers"] = providers
+
     cache_store.store("health", payload)
     return payload
 
@@ -590,20 +664,29 @@ def healthcheck_full() -> Dict[str, Any]:
     if snapshot and isinstance(snapshot.payload.get("count"), int):
         items_count = int(snapshot.payload["count"])
 
+    auth_details = opensky_status.get("auth")
+    if not isinstance(auth_details, dict):
+        auth_details = {
+            "has_credentials": opensky_status.get("has_credentials"),
+            "token_cached": opensky_status.get("token_cached"),
+            "expires_in_sec": opensky_status.get("expires_in"),
+        }
     opensky_block = {
         "enabled": opensky_cfg.enabled,
         "mode": opensky_cfg.mode,
         "effective_poll": opensky_status.get("effective_poll"),
         "configured_poll": opensky_status.get("configured_poll"),
-        "token_set": opensky_status.get("token_set"),
-        "token_valid": opensky_status.get("token_valid"),
-        "expires_in": opensky_status.get("expires_in"),
+        "has_credentials": auth_details.get("has_credentials"),
+        "token_cached": auth_details.get("token_cached"),
+        "expires_in_sec": auth_details.get("expires_in_sec"),
+        "status": opensky_status.get("status"),
         "last_fetch_ok": opensky_status.get("last_fetch_ok"),
         "last_fetch": last_fetch_iso,
         "last_fetch_age": last_fetch_age,
         "last_error": opensky_status.get("last_error"),
         "backoff_active": opensky_status.get("backoff_active"),
         "backoff_seconds": opensky_status.get("backoff_seconds"),
+        "rate_limit_hint": opensky_status.get("rate_limit_hint"),
         "items_count": items_count,
         "bbox": opensky_cfg.bbox.model_dump(),
         "max_aircraft": opensky_cfg.max_aircraft,
@@ -905,6 +988,80 @@ async def save_config(request: Request) -> JSONResponse:
         if "api_key" not in incoming_aemet:
             incoming_aemet["api_key"] = current_config.aemet.api_key
 
+        incoming_opensky = payload.get("opensky")
+        if not isinstance(incoming_opensky, dict):
+            incoming_opensky = {}
+            payload["opensky"] = incoming_opensky
+        oauth_block = incoming_opensky.get("oauth2")
+        if not isinstance(oauth_block, dict):
+            oauth_block = {}
+            incoming_opensky["oauth2"] = oauth_block
+        current_oauth = getattr(current_config.opensky, "oauth2", None)
+
+        if "token_url" in oauth_block:
+            token_candidate = oauth_block.get("token_url")
+            if isinstance(token_candidate, str):
+                sanitized = token_candidate.strip()
+                if not sanitized and current_oauth is not None:
+                    oauth_block["token_url"] = current_oauth.token_url
+                elif not sanitized:
+                    oauth_block["token_url"] = DEFAULT_TOKEN_URL
+                else:
+                    oauth_block["token_url"] = sanitized
+            elif token_candidate is None and current_oauth is not None:
+                oauth_block["token_url"] = current_oauth.token_url
+        elif current_oauth is not None:
+            oauth_block["token_url"] = current_oauth.token_url
+
+        if "scope" in oauth_block:
+            scope_candidate = oauth_block.get("scope")
+            if isinstance(scope_candidate, str):
+                sanitized_scope = scope_candidate.strip()
+                oauth_block["scope"] = sanitized_scope or None
+            elif scope_candidate is None:
+                oauth_block["scope"] = None
+            else:
+                oauth_block["scope"] = None
+        elif current_oauth is not None:
+            oauth_block["scope"] = current_oauth.scope
+
+        client_id_update = False
+        client_secret_update = False
+        if "client_id" in oauth_block:
+            client_id_update = True
+            client_candidate = oauth_block.get("client_id")
+            if isinstance(client_candidate, str):
+                sanitized_id = _sanitize_secret(client_candidate)
+            elif client_candidate is None:
+                sanitized_id = None
+            else:
+                sanitized_id = _sanitize_secret(str(client_candidate))
+            secret_store.set_secret("opensky_client_id", sanitized_id)
+        if "client_secret" in oauth_block:
+            client_secret_update = True
+            secret_candidate = oauth_block.get("client_secret")
+            if isinstance(secret_candidate, str):
+                sanitized_secret = _sanitize_secret(secret_candidate)
+            elif secret_candidate is None:
+                sanitized_secret = None
+            else:
+                sanitized_secret = _sanitize_secret(str(secret_candidate))
+            secret_store.set_secret("opensky_client_secret", sanitized_secret)
+
+        oauth_block["client_id"] = None
+        oauth_block["client_secret"] = None
+        stored_client_id = secret_store.get_secret("opensky_client_id")
+        stored_client_secret = secret_store.get_secret("opensky_client_secret")
+        oauth_block["has_credentials"] = bool(stored_client_id and stored_client_secret)
+        oauth_block["client_id_last4"] = (
+            stored_client_id[-4:] if stored_client_id and len(stored_client_id) >= 4 else stored_client_id
+        )
+
+        if not client_id_update and current_oauth is not None:
+            oauth_block.setdefault("client_id", None)
+        if not client_secret_update and current_oauth is not None:
+            oauth_block.setdefault("client_secret", None)
+
         updated = config_manager.write(payload)
     except ValidationError as exc:
         logger.debug("Configuration validation error: %s", exc.errors())
@@ -1047,6 +1204,7 @@ async def _update_opensky_secret(name: str, request: Request) -> Response:
     secret_store.set_secret(name, value)
     opensky_service.reset()
     logger.info("[opensky] secret %s updated (set=%s)", name, bool(value))
+    _refresh_opensky_oauth_metadata()
     return Response(status_code=204)
 
 
@@ -1155,6 +1313,14 @@ def get_opensky_status() -> Dict[str, Any]:
     now = time.time()
     last_fetch_ts = status.get("last_fetch_ts")
     status["last_fetch_age"] = int(now - last_fetch_ts) if last_fetch_ts else None
+    auth_details = status.get("auth")
+    if isinstance(auth_details, dict):
+        status["has_credentials"] = bool(auth_details.get("has_credentials"))
+        status["token_cached"] = bool(auth_details.get("token_cached"))
+        status["expires_in_sec"] = auth_details.get("expires_in_sec")
+    else:
+        status["has_credentials"] = bool(status.get("has_credentials"))
+        status["token_cached"] = bool(status.get("token_cached"))
     status["bbox"] = config.opensky.bbox.model_dump()
     status["max_aircraft"] = int(config.opensky.max_aircraft)
     status["extended"] = int(config.opensky.extended)
@@ -1176,7 +1342,11 @@ def test_opensky_credentials() -> Dict[str, Any]:
         _set_opensky_error("missing_credentials")
         return {"ok": False, "reason": "missing_credentials"}
 
-    result = opensky_service.force_refresh_token()
+    config = config_manager.read()
+    oauth_cfg = getattr(config.opensky, "oauth2", None)
+    token_url = getattr(oauth_cfg, "token_url", None) if oauth_cfg else None
+    scope_value = getattr(oauth_cfg, "scope", None) if oauth_cfg else None
+    result = opensky_service.force_refresh_token(token_url=token_url, scope=scope_value)
     if not result.get("ok"):
         _set_opensky_error("auth_error")
         return {"ok": False, "error": "auth_error"}
@@ -2396,6 +2566,9 @@ def _prepare_flights_items(
         else:
             item.pop("stale", None)
 
+        if age_seconds is not None:
+            item["age_sec"] = age_seconds
+
         processed.append(item)
 
     valid_count = len(processed)
@@ -2578,6 +2751,7 @@ def _augment_flights_payload(payload: Dict[str, Any], metadata: Dict[str, Any]) 
             "squawk": it.get("squawk"),
             "category": it.get("category"),
             "last_contact": it.get("last_contact"),
+            "age_sec": it.get("age_sec"),
             "source": "opensky",
             "in_focus": False,
         }
