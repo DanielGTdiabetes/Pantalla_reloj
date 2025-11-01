@@ -192,6 +192,11 @@ export type OpenSkyConfig = {
   oauth2: OpenSkyOAuthConfig;
 };
 
+export type OpenSkyAuthConfig = {
+  username?: string | null;
+  password?: string | null;
+};
+
 export type AviationStackConfig = {
   base_url?: string | null;
   api_key?: string | null;
@@ -237,6 +242,7 @@ export type FlightsLayerConfig = {
   grid_px: number;
   styleScale: number;
   cine_focus: CineFocusConfig;
+  opensky?: OpenSkyAuthConfig;
   aviationstack?: AviationStackConfig;
   custom?: CustomFlightConfig;
 };
