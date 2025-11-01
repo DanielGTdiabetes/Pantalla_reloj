@@ -169,11 +169,11 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 class AemetSecretRequest(BaseModel):
-    api_key: Optional[str] = Field(default=None, max_length=256)
+    api_key: Optional[str] = Field(default=None, max_length=2048)
 
 
 class AemetTestRequest(BaseModel):
-    api_key: Optional[str] = Field(default=None, max_length=256)
+    api_key: Optional[str] = Field(default=None, max_length=2048)
 
 
 class AISStreamSecretRequest(BaseModel):

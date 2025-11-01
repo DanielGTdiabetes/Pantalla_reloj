@@ -152,3 +152,24 @@ def test_cinema_motion_serialization(app_module: Tuple[object, Path]) -> None:
     assert pytest.approx(stored_motion.amplitude_deg) == 120
     assert stored_motion.pause_with_overlay is False
     assert pytest.approx(stored_motion.phase_offset_deg) == 90
+
+
+def test_test_key_allows_long_api_key(monkeypatch: pytest.MonkeyPatch, app_module: Tuple[object, Path]) -> None:
+    module, _ = app_module
+
+    # Construir una api_key de longitud ~1024
+    long_key = ("tok_" + "A" * 1020)[:1024]
+
+    # Mockear requests.get para devolver 200 con payload sin estado 401/403
+    def fake_get(url: str, *, headers: Dict[str, str], timeout: float):  # type: ignore[override]
+        # No comprobar contenido de headers aquí; solo simular OK upstream
+        return DummyResponse(200, {})
+
+    monkeypatch.setattr(module.requests, "get", fake_get)
+
+    # No debe lanzar ValidationError al construir request con key larga
+    request = module.AemetTestRequest(api_key=long_key)
+    result = module.test_aemet_key(request)
+
+    # Con 200 sin estado 401/403, debe considerarse ok
+    assert result == {"ok": True}
