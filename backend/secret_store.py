@@ -16,7 +16,8 @@ class SecretStore:
     """
 
     def __init__(self, file_path: Path | None = None) -> None:
-        default_path = Path(os.getenv("PANTALLA_SECRETS_FILE", "/opt/pantalla-reloj/secrets.json"))
+        state_dir = Path(os.getenv("PANTALLA_STATE_DIR", "/var/lib/pantalla"))
+        default_path = Path(os.getenv("PANTALLA_SECRETS_FILE", str(state_dir / "secrets.json")))
         self._file = file_path or default_path
         self._file.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()

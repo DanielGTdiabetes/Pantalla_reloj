@@ -253,15 +253,23 @@ _ALLOWED_SECRET_KEYS = {
     "aemet_api_key",
     "opensky_client_id",
     "opensky_client_secret",
+    # Compat (schema usa una sola 's')
     "aistream_api_key",
+    # Canónica utilizada por servicios internos
+    "aisstream_api_key",
 }
+
+def _canonical_secret_key(key: str) -> str:
+    # Alias: aceptar 'aistream_api_key' pero guardar en 'aisstream_api_key'
+    return "aisstream_api_key" if key == "aistream_api_key" else key
 
 
 @app.get("/api/config/secret/{key}")
 def get_secret_meta(key: str) -> Dict[str, bool]:
     if key not in _ALLOWED_SECRET_KEYS:
         raise HTTPException(status_code=404, detail="Unknown secret key")
-    return {"exists": secret_store.has_secret(key)}
+    canonical = _canonical_secret_key(key)
+    return {"exists": secret_store.has_secret(canonical)}
 
 
 @app.post("/api/config/secret/{key}")
@@ -269,8 +277,20 @@ async def set_secret_value(key: str, request: Request) -> Dict[str, bool]:
     if key not in _ALLOWED_SECRET_KEYS:
         raise HTTPException(status_code=404, detail="Unknown secret key")
     value = await _read_secret_value(request)
-    secret_store.set_secret(key, _sanitize_secret(value))
-    logger.info("[secrets] updated key=%s (exists=%s)", key, secret_store.has_secret(key))
+    canonical = _canonical_secret_key(key)
+    secret_store.set_secret(canonical, _sanitize_secret(value))
+    logger.info("[secrets] updated key=%s (exists=%s)", canonical, secret_store.has_secret(canonical))
+    # Efectos colaterales para servicios que dependen de secretos
+    try:
+        if canonical in ("opensky_client_id", "opensky_client_secret"):
+            opensky_service.reset()
+            logger.info("[opensky] credentials updated -> token cache reset")
+        elif canonical == "aisstream_api_key":
+            current = config_manager.read()
+            ships_service.apply_config(current.layers.ships)
+            logger.info("[ships] AISStream key updated -> service reconfigured")
+    except Exception:  # noqa: BLE001
+        logger.debug("post-secret side effects failed", exc_info=True)
     return {"ok": True}
 
 
@@ -358,7 +378,8 @@ def _migrate_public_secrets_to_store() -> None:
         except Exception:
             ai_key = None
         if ai_key:
-            secret_store.set_secret("aistream_api_key", _sanitize_secret(ai_key))
+            # Usar clave canónica para AISStream
+            secret_store.set_secret("aisstream_api_key", _sanitize_secret(ai_key))
             payload = config.model_dump(mode="python", by_alias=True)
             try:
                 if isinstance(payload.get("layers"), dict):
