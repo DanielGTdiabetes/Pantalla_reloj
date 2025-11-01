@@ -948,30 +948,44 @@ _opensky_last_error: Optional[str] = None
 
 @app.get("/api/opensky/test")
 def test_opensky_credentials() -> Dict[str, Any]:
-    """Intenta obtener un token OAuth2 con credenciales guardadas."""
+    """Intenta obtener un token OAuth2 con credenciales guardadas (autenticador compartido)."""
     client_id = secret_store.get_secret("opensky_client_id")
     client_secret = secret_store.get_secret("opensky_client_secret")
     if not client_id or not client_secret:
         _set_opensky_error("missing_credentials")
         return {"ok": False, "reason": "missing_credentials"}
 
-    # Usar autenticador directo para forzar solicitud de token
-    authenticator = OpenSkyAuthenticator(secret_store=secret_store, logger=logger)
-    try:
-        token = authenticator.get_token(force_refresh=True)
-    except Exception as exc:  # noqa: BLE001
-        args = getattr(exc, "args", ())
-        reason = str(args[0]) if isinstance(args, (list, tuple)) and len(args) > 0 else "auth_error"
-        _set_opensky_error(reason)
-        authenticator.close()
+    result = opensky_service.force_refresh_token()
+    if not result.get("ok"):
+        _set_opensky_error("auth_error")
         return {"ok": False, "error": "auth_error"}
-    info = authenticator.describe()
-    authenticator.close()
+
     _set_opensky_error(None)
     return {
         "ok": True,
-        "token_valid": bool(token),
-        "expires_in": int(info.get("expires_in", 0)) if info else None,
+        "token_valid": bool(result.get("token_valid")),
+        "expires_in": result.get("expires_in"),
+    }
+
+
+@app.get("/api/opensky/refresh")
+def refresh_opensky_and_status() -> Dict[str, Any]:
+    """Fuerza refresh de token y devuelve el estado actualizado en un único paso."""
+    refresh_result = opensky_service.force_refresh_token()
+    config = config_manager.read()
+    status = opensky_service.get_status(config)
+    now = time.time()
+    last_fetch_ts = status.get("last_fetch_ts")
+    status["last_fetch_age"] = int(now - last_fetch_ts) if last_fetch_ts else None
+    status["bbox"] = config.opensky.bbox.model_dump()
+    status["max_aircraft"] = int(config.opensky.max_aircraft)
+    status["extended"] = int(config.opensky.extended)
+    status["cluster"] = bool(config.opensky.cluster)
+    if not status.get("has_credentials") and status.get("effective_poll", 0) < 10:
+        status["poll_warning"] = "anonymous_minimum_enforced"
+    return {
+        "refresh": refresh_result,
+        "status": status,
     }
 
 

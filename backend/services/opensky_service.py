@@ -257,5 +257,23 @@ class OpenSkyService:
             self._snapshots.clear()
         self._auth.invalidate()
 
+    def force_refresh_token(self) -> Dict[str, Optional[int | bool]]:
+        """Fuerza la obtención/renovación del token en el autenticador compartido.
+
+        Devuelve un dict resumido con el resultado y el TTL restante.
+        """
+        try:
+            token = self._auth.get_token(force_refresh=True)
+            info = self._auth.describe() or {}
+            expires_in = int(info.get("expires_in", 0)) if info else 0
+            return {
+                "ok": bool(token),
+                "token_valid": bool(token),
+                "expires_in": expires_in if expires_in > 0 else None,
+            }
+        except Exception as exc:  # noqa: BLE001
+            self._logger.warning("[opensky] force_refresh_token failed: %s", exc)
+            return {"ok": False, "token_valid": False, "expires_in": None}
+
 
 __all__ = ["OpenSkyService", "Snapshot"]
