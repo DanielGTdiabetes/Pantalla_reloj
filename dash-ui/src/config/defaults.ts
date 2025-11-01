@@ -29,6 +29,7 @@ import type {
   NewsConfig,
   OpenSkyOAuthConfig,
   OpenSkyConfig,
+  OpenSkyAuthConfig,
   RotationConfig,
   SaintsConfig,
   ShipsLayerConfig,
@@ -481,6 +482,10 @@ export const DEFAULT_CONFIG: AppConfig = {
         outside_dim_opacity: 0.25,
         hard_hide_outside: false,
       },
+      opensky: {
+        username: null,
+        password: null,
+      },
       aviationstack: {
         base_url: "http://api.aviationstack.com/v1",
         api_key: null,
@@ -725,6 +730,12 @@ const mergeFlightsLayer = (candidate: unknown): FlightsLayerConfig => {
   const cineFocusSource: Partial<FlightsLayerConfig["cine_focus"]> = source.cine_focus ?? {};
   const cineFocusFallback = fallback.cine_focus;
 
+  const openskySource: Partial<OpenSkyAuthConfig> = source.opensky ?? {};
+  const openskyFallback: Required<OpenSkyAuthConfig> = {
+    username: fallback.opensky?.username ?? null,
+    password: fallback.opensky?.password ?? null,
+  };
+
   const aviationstackSource: Partial<AviationStackConfig> = source.aviationstack ?? {};
   const aviationstackFallback: Required<AviationStackConfig> = {
     base_url: fallback.aviationstack?.base_url ?? "http://api.aviationstack.com/v1",
@@ -798,8 +809,8 @@ const mergeFlightsLayer = (candidate: unknown): FlightsLayerConfig => {
       hard_hide_outside: toBoolean(cineFocusSource.hard_hide_outside, cineFocusFallback.hard_hide_outside),
     },
     opensky: {
-      username: sanitizeNullableString(openskySource.username, openskyFallback.username ?? null),
-      password: sanitizeNullableString(openskySource.password, openskyFallback.password ?? null),
+      username: sanitizeNullableString(openskySource.username, openskyFallback.username),
+      password: sanitizeNullableString(openskySource.password, openskyFallback.password),
     },
     aviationstack: {
       base_url: sanitizeNullableString(aviationstackSource.base_url, aviationstackFallback.base_url ?? null),
