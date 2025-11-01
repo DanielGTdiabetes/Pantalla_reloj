@@ -90,12 +90,12 @@ const sanitizeRadarProvider = (
 };
 
 const DEFAULT_CINEMA_BANDS: readonly MapCinemaBand[] = [
-  { lat: 0, zoom: 2.8, pitch: 10, minZoom: 2.6, duration_sec: 900 },
-  { lat: 18, zoom: 3.0, pitch: 8, minZoom: 2.8, duration_sec: 720 },
-  { lat: 32, zoom: 3.3, pitch: 6, minZoom: 3.0, duration_sec: 600 },
-  { lat: 42, zoom: 3.6, pitch: 6, minZoom: 3.2, duration_sec: 480 },
-  { lat: -18, zoom: 3.0, pitch: 8, minZoom: 2.8, duration_sec: 720 },
-  { lat: -32, zoom: 3.3, pitch: 6, minZoom: 3.0, duration_sec: 600 },
+  { lat: 0, zoom: 3.1, pitch: 10, minZoom: 2.9, duration_sec: 900 },
+  { lat: 18, zoom: 3.3, pitch: 8, minZoom: 3.1, duration_sec: 720 },
+  { lat: 32, zoom: 3.6, pitch: 6, minZoom: 3.3, duration_sec: 600 },
+  { lat: 42, zoom: 3.9, pitch: 6, minZoom: 3.5, duration_sec: 480 },
+  { lat: -18, zoom: 3.3, pitch: 8, minZoom: 3.1, duration_sec: 720 },
+  { lat: -32, zoom: 3.6, pitch: 6, minZoom: 3.3, duration_sec: 600 },
 ];
 
 const DEFAULT_THEME: MapThemeConfig = {
@@ -138,9 +138,10 @@ export const createDefaultMapPreferences = (): MapPreferences => ({
 });
 
 export const createDefaultMapCinema = (): MapCinemaConfig => ({
-  enabled: false,
-  panLngDegPerSec: 0,
+  enabled: true,
+  panLngDegPerSec: 1.1,
   bandTransition_sec: 8,
+  fsmEnabled: true,
   motion: { ...DEFAULT_CINEMA_MOTION },
   bands: DEFAULT_CINEMA_BANDS.map((band) => ({ ...band })),
 });
@@ -245,6 +246,7 @@ const mergeCinema = (candidate: unknown): MapCinemaConfig => {
     enabled: toBoolean(source.enabled, fallback.enabled),
     panLngDegPerSec: Math.max(0, toNumber(source.panLngDegPerSec, fallback.panLngDegPerSec)),
     bandTransition_sec: Math.max(1, Math.round(toNumber(source.bandTransition_sec, fallback.bandTransition_sec))),
+    fsmEnabled: toBoolean((source as { fsmEnabled?: unknown })?.fsmEnabled, fallback.fsmEnabled),
     motion,
     bands,
   };

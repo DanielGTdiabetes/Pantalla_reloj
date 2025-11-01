@@ -6,7 +6,7 @@ import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from pydantic import ValidationError
 
@@ -64,6 +64,7 @@ class ConfigManager:
             config = AppConfig()
             self._atomic_write(config)
             return config
+        data, migrated = self._migrate_missing_keys(data)
         try:
             config = AppConfig.model_validate(data)
         except ValidationError as exc:
@@ -71,6 +72,10 @@ class ConfigManager:
             config = AppConfig()
             self._atomic_write(config)
             return config
+        if migrated:
+            self.logger.info("Applied configuration migrations for missing defaults")
+            self._atomic_write(config)
+            self._write_snapshot(config)
         return config
 
     def write(self, payload: Dict[str, Any]) -> AppConfig:
@@ -123,6 +128,46 @@ class ConfigManager:
             )
         except OSError as exc:
             self.logger.warning("Failed to write configuration snapshot %s: %s", snapshot_file, exc)
+
+    def _load_default_template(self) -> Dict[str, Any]:
+        try:
+            raw = self.default_config_file.read_text(encoding="utf-8")
+        except OSError as exc:
+            self.logger.warning("Could not read default config template %s: %s", self.default_config_file, exc)
+            return AppConfig().model_dump(mode="json", by_alias=True)
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as exc:
+            self.logger.warning(
+                "Default config template %s is invalid JSON: %s", self.default_config_file, exc
+            )
+            return AppConfig().model_dump(mode="json", by_alias=True)
+
+    def _merge_missing_dict_keys(
+        self, source: Any, defaults: Any
+    ) -> Tuple[Any, bool]:
+        if not isinstance(source, dict) or not isinstance(defaults, dict):
+            return source, False
+        changed = False
+        merged: Dict[str, Any] = dict(source)
+        for key, default_value in defaults.items():
+            if key not in merged:
+                merged[key] = default_value
+                changed = True
+                continue
+            existing_value = merged[key]
+            if isinstance(existing_value, dict) and isinstance(default_value, dict):
+                merged_child, child_changed = self._merge_missing_dict_keys(
+                    existing_value, default_value
+                )
+                if child_changed:
+                    merged[key] = merged_child
+                    changed = True
+        return merged, changed
+
+    def _migrate_missing_keys(self, data: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
+        defaults = self._load_default_template()
+        return self._merge_missing_dict_keys(data, defaults)
 
 
 __all__ = ["ConfigManager"]

@@ -739,8 +739,12 @@ const cloneCinema = (cinema: MapCinemaConfig): MapCinemaConfig => {
     ),
   };
 
+  const fallbackFsmEnabled = typeof FALLBACK_CINEMA.fsmEnabled === "boolean" ? FALLBACK_CINEMA.fsmEnabled : true;
+  const fsmEnabled = typeof cinema.fsmEnabled === "boolean" ? cinema.fsmEnabled : fallbackFsmEnabled;
+
   return {
     ...cinema,
+    fsmEnabled,
     panLngDegPerSec,
     bandTransition_sec,
     bands,
@@ -788,6 +792,135 @@ type TransitionState = {
   elapsed: number;
 };
 
+type MapLifecycleState = "IDLE" | "LOADING_STYLE" | "READY" | "PANNING";
+
+type MapStateMachine = {
+  getState(): MapLifecycleState;
+  notifyStyleLoading: (reason: string) => void;
+  notifyStyleData: (source?: string) => void;
+  notifyIdle: (source?: string) => void;
+  canBeginPan: () => boolean;
+  beginPan: (start: () => void, reason?: string) => boolean;
+  pausePan: (stop: () => void, reason?: string) => boolean;
+  reset: (reason?: string) => void;
+};
+
+type MapStateMachineOptions = {
+  isStyleLoaded: () => boolean;
+  onReady?: (source: string) => void;
+  onWatchdog?: (reason: string) => void | Promise<void>;
+  logger?: Pick<Console, "debug" | "warn" | "info" | "error">;
+  windowRef?: Window | undefined;
+};
+
+const WATCHDOG_TIMEOUT_MS = 10_000;
+
+const createMapStateMachine = (options: MapStateMachineOptions): MapStateMachine => {
+  const logger = options.logger ?? console;
+  const win = options.windowRef ?? (typeof window !== "undefined" ? window : undefined);
+  let state: MapLifecycleState = "IDLE";
+  let styleDataSeen = false;
+  let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const clearWatchdog = () => {
+    if (watchdogTimer != null) {
+      clearTimeout(watchdogTimer);
+      watchdogTimer = null;
+    }
+  };
+
+  const armWatchdog = (reason: string) => {
+    if (!win) {
+      return;
+    }
+    clearWatchdog();
+    watchdogTimer = win.setTimeout(() => {
+      logger.warn?.(`[map:fsm] watchdog expired (${reason})`);
+      watchdogTimer = null;
+      styleDataSeen = false;
+      state = "IDLE";
+      void options.onWatchdog?.(reason);
+    }, WATCHDOG_TIMEOUT_MS);
+  };
+
+  const maybeReady = (source: string) => {
+    if (state !== "LOADING_STYLE") {
+      return;
+    }
+    if (!styleDataSeen) {
+      logger.debug?.(`[map:fsm] waiting for styledata before ready (${source})`);
+      return;
+    }
+    if (!options.isStyleLoaded()) {
+      logger.debug?.(`[map:fsm] waiting for style load completion (${source})`);
+      return;
+    }
+    clearWatchdog();
+    state = "READY";
+    logger.debug?.(`[map:fsm] -> READY (${source})`);
+    options.onReady?.(source);
+  };
+
+  return {
+    getState: () => state,
+    notifyStyleLoading: (reason: string) => {
+      if (state === "PANNING") {
+        state = "READY";
+      }
+      state = "LOADING_STYLE";
+      styleDataSeen = false;
+      logger.debug?.(`[map:fsm] -> LOADING_STYLE (${reason})`);
+      armWatchdog(reason);
+    },
+    notifyStyleData: (source = "styledata") => {
+      if (state !== "LOADING_STYLE") {
+        return;
+      }
+      styleDataSeen = true;
+      logger.debug?.(`[map:fsm] styledata acknowledged (${source})`);
+      maybeReady(source);
+    },
+    notifyIdle: (source = "idle") => {
+      maybeReady(source);
+    },
+    canBeginPan: () => state === "READY",
+    beginPan: (start, reason = "auto") => {
+      if (state !== "READY") {
+        logger.debug?.(`[map:fsm] cannot begin pan from state ${state} (${reason})`);
+        return false;
+      }
+      state = "PANNING";
+      clearWatchdog();
+      logger.debug?.(`[map:fsm] -> PANNING (${reason})`);
+      start();
+      return true;
+    },
+    pausePan: (stop, reason = "pause") => {
+      if (state === "PANNING") {
+        state = "READY";
+        logger.debug?.(`[map:fsm] -> READY (pause:${reason})`);
+        stop();
+        return true;
+      }
+      if (state === "LOADING_STYLE") {
+        stop();
+        return true;
+      }
+      if (state === "READY") {
+        stop();
+        return true;
+      }
+      return false;
+    },
+    reset: (reason = "reset") => {
+      clearWatchdog();
+      state = "IDLE";
+      styleDataSeen = false;
+      logger.debug?.(`[map:fsm] -> IDLE (${reason})`);
+    },
+  };
+};
+
 type RuntimePreferences = {
   cinema: MapCinemaConfig;
   renderWorldCopies: boolean;
@@ -801,6 +934,7 @@ type RuntimePreferences = {
   rotationEnabled: boolean;
   allowCinema: boolean;
   panSpeedDegPerSec: number;
+  fsmEnabled: boolean;
 };
 
 const buildRuntimePreferences = (
@@ -827,6 +961,7 @@ const buildRuntimePreferences = (
   // El modo horizontal funciona independientemente de rotation.enabled
   // Solo requiere cinema.enabled y panSpeedDegPerSec > 0
   const allowCinema = cinema.enabled && panSpeedDegPerSec > 0;
+  const fsmEnabled = typeof cinema.fsmEnabled === "boolean" ? cinema.fsmEnabled : true;
 
   const initialLng = 0;
 
@@ -845,7 +980,8 @@ const buildRuntimePreferences = (
     idlePan,
     rotationEnabled,
     allowCinema,
-    panSpeedDegPerSec
+    panSpeedDegPerSec,
+    fsmEnabled
   };
 };
 
@@ -1115,6 +1251,10 @@ export default function GeoScopeMap() {
   const horizontalDirectionRef = useRef<1 | -1>(1); // 1 = Este (derecha), -1 = Oeste (izquierda)
   const verticalDirectionRef = useRef<1 | -1>(1); // 1 = hacia abajo, -1 = hacia arriba
   const motionProgressRef = useRef(0.5);
+  const mapStateMachineRef = useRef<MapStateMachine | null>(null);
+  const cinemaFsmEnabledRef = useRef(false);
+  const runtimeRef = useRef<RuntimePreferences | null>(null);
+  const machineFactoryRef = useRef<((map: maplibregl.Map, reason: string) => void) | null>(null);
 
   const clearIdlePanTimer = () => {
     if (idlePanTimerRef.current != null) {
@@ -1435,7 +1575,7 @@ export default function GeoScopeMap() {
       }
     };
 
-    const stopPan = () => {
+    const stopPanInternal = () => {
       console.debug("[map] pause: stopping auto-pan");
       if (animationFrameRef.current !== null) {
         cancelAnimationFrame(animationFrameRef.current);
@@ -1447,7 +1587,7 @@ export default function GeoScopeMap() {
       lastLogTimeRef.current = 0;
     };
 
-    const startPan = () => {
+    const startPanInternal = () => {
       if (!allowCinemaRef.current) {
         return;
       }
@@ -1468,6 +1608,31 @@ export default function GeoScopeMap() {
       lastLogTimeRef.current = now - AUTOPAN_LOG_INTERVAL_MS;
       animationFrameRef.current = requestAnimationFrame(stepPan);
       ensureFallbackTimer();
+    };
+
+    const stopPan = (reason?: string) => {
+      if (cinemaFsmEnabledRef.current) {
+        const machine = mapStateMachineRef.current;
+        if (machine?.pausePan(() => stopPanInternal(), reason)) {
+          return;
+        }
+      }
+      stopPanInternal();
+    };
+
+    const startPan = (reason?: string) => {
+      if (cinemaFsmEnabledRef.current) {
+        const machine = mapStateMachineRef.current;
+        if (!machine) {
+          startPanInternal();
+          return;
+        }
+        if (!machine.beginPan(() => startPanInternal(), reason)) {
+          return;
+        }
+        return;
+      }
+      startPanInternal();
     };
 
     const recomputeAutopanActivation = () => {
@@ -1523,6 +1688,71 @@ export default function GeoScopeMap() {
         motionOverrideLoggedRef.current = false;
       }
     };
+
+    const requestBackendReset = async (reason: string) => {
+      try {
+        await fetch("/api/map/reset", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ reason }),
+        });
+      } catch (error) {
+        console.warn("[map] failed to notify backend reset endpoint", error);
+      }
+    };
+
+    const handleWatchdogReset = async (reason: string) => {
+      const map = mapRef.current;
+      const runtimeSnapshot = runtimeRef.current;
+      if (!map || !runtimeSnapshot) {
+        return;
+      }
+      console.warn(`[map] watchdog triggered, reloading style (${reason})`);
+      stopPan(`watchdog:${reason}`);
+      await requestBackendReset(reason);
+      const useFallback = fallbackAppliedRef.current && runtimeSnapshot.fallbackStyle;
+      const targetStyle = useFallback
+        ? runtimeSnapshot.fallbackStyle?.style
+        : runtimeSnapshot.style.style;
+      if (targetStyle) {
+        map.setStyle(targetStyle);
+        mapStateMachineRef.current?.notifyStyleLoading(`watchdog:${reason}`);
+      }
+    };
+
+    const attachStateMachine = (map: maplibregl.Map, reason: string) => {
+      mapStateMachineRef.current?.reset("reinitialize");
+      if (!cinemaFsmEnabledRef.current) {
+        mapStateMachineRef.current = null;
+        return;
+      }
+      const machine = createMapStateMachine({
+        isStyleLoaded: () => Boolean(mapRef.current?.isStyleLoaded()),
+        onReady: (source) => {
+          if (!allowCinemaRef.current || autopanModeRef.current !== "rotate") {
+            return;
+          }
+          if (typeof document !== "undefined" && document.hidden) {
+            pendingAnimationRef.current = true;
+            return;
+          }
+          pendingAnimationRef.current = false;
+          autopanEnabledRef.current = true;
+          startPan(`fsm-ready:${source}`);
+        },
+        onWatchdog: handleWatchdogReset,
+        logger: console,
+        windowRef: typeof window !== "undefined" ? window : undefined,
+      });
+      mapStateMachineRef.current = machine;
+      machine.notifyStyleLoading(reason);
+      if (map.isStyleLoaded()) {
+        machine.notifyStyleData("immediate");
+        machine.notifyIdle("immediate");
+      }
+    };
+
+    machineFactoryRef.current = attachStateMachine;
 
     const runPanTick = (timestamp: number, options?: { force?: boolean }) => {
       const map = mapRef.current;
@@ -1768,6 +1998,8 @@ export default function GeoScopeMap() {
         applyThemeToMap(map, styleTypeRef.current, themeRef.current);
       }
       safeFit();
+      mapStateMachineRef.current?.notifyStyleData("load");
+      mapStateMachineRef.current?.notifyIdle("load");
       // Forzar inicio de animación si está permitido por la configuración
       if (allowCinemaRef.current && autopanModeRef.current === "rotate" && map?.isStyleLoaded()) {
         console.debug("[map] init rotor: starting auto-pan on load");
@@ -1785,6 +2017,11 @@ export default function GeoScopeMap() {
         applyThemeToMap(map, styleTypeRef.current, themeRef.current);
       }
       safeFit();
+      mapStateMachineRef.current?.notifyStyleData();
+    };
+
+    const handleIdle = () => {
+      mapStateMachineRef.current?.notifyIdle();
     };
 
     const handleContextLost = (
@@ -1854,6 +2091,8 @@ export default function GeoScopeMap() {
       setWebglError(null);
       const hostPromise = waitForStableSize();
       const runtime = await loadRuntimePreferences();
+      runtimeRef.current = runtime;
+      cinemaFsmEnabledRef.current = runtime.fsmEnabled !== false;
       respectDefaultRef.current = Boolean(runtime.respectReducedMotion);
       allowCinemaRef.current = runtime.allowCinema;
       idlePanConfigRef.current = {
@@ -1944,6 +2183,8 @@ export default function GeoScopeMap() {
       map.setMinZoom(firstBand.minZoom);
       refreshRuntimePolicy(runtime.respectReducedMotion);
 
+      attachStateMachine(map, "initial-style");
+
       const applyFallbackStyle = (reason?: unknown) => {
         if (fallbackAppliedRef.current) {
           return;
@@ -1961,6 +2202,7 @@ export default function GeoScopeMap() {
         const bearing = 0;
         console.debug("[map] applyStyle (fallback) preserving view", { center, zoom, pitch });
         map.setStyle(fallbackStyle.style);
+        mapStateMachineRef.current?.notifyStyleLoading("fallback-style");
         // Reaplicar vista tras style load
         map.once("load", () => {
           map.jumpTo({ center, zoom, pitch, bearing });
@@ -2006,6 +2248,7 @@ export default function GeoScopeMap() {
 
       map.on("load", handleLoad);
       map.on("styledata", handleStyleData);
+      map.on("idle", handleIdle);
       map.on("webglcontextlost", handleWebGLContextLost);
       map.on("webglcontextrestored", handleContextRestored);
       map.on("error", handleMapError);
@@ -2117,11 +2360,36 @@ export default function GeoScopeMap() {
       );
       const cinemaEnabled = Boolean(cinemaSource.enabled);
       const newAllowCinema = cinemaEnabled && panSpeedDegPerSec > 0;
+      const newFsmEnabled = typeof cinemaSource.fsmEnabled === "boolean" ? cinemaSource.fsmEnabled : true;
+      const previousFsmEnabled = cinemaFsmEnabledRef.current;
+      const fsmChanged = newFsmEnabled !== previousFsmEnabled;
+
+      if (runtimeRef.current) {
+        runtimeRef.current = {
+          ...runtimeRef.current,
+          cinema: cloneCinema(cinemaSource),
+          allowCinema: newAllowCinema,
+          panSpeedDegPerSec,
+          fsmEnabled: newFsmEnabled,
+        };
+      }
+
+      if (fsmChanged) {
+        cinemaFsmEnabledRef.current = newFsmEnabled;
+        const map = mapRef.current;
+        if (map) {
+          if (newFsmEnabled) {
+            machineFactoryRef.current?.(map, "config-toggle");
+          } else {
+            mapStateMachineRef.current = null;
+          }
+        }
+      }
 
       // Si cambió el estado de allowCinema, actualizar
       if (newAllowCinema !== allowCinemaRef.current) {
         allowCinemaRef.current = newAllowCinema;
-        
+
         // Detener cualquier animación actual
         stopPan();
         clearIdlePanTimer();
@@ -2234,6 +2502,7 @@ export default function GeoScopeMap() {
       if (map) {
         map.off("load", handleLoad);
         map.off("styledata", handleStyleData);
+        map.off("idle", handleIdle);
         map.off("webglcontextlost", handleWebGLContextLost);
         map.off("webglcontextrestored", handleContextRestored);
         map.off("error", handleMapError);
@@ -2241,6 +2510,8 @@ export default function GeoScopeMap() {
         map.remove();
         mapRef.current = null;
       }
+      mapStateMachineRef.current = null;
+      machineFactoryRef.current = null;
     };
   }, []);
 
@@ -2259,10 +2530,35 @@ export default function GeoScopeMap() {
     );
     const cinemaEnabled = Boolean(cinemaSource.enabled);
     const newAllowCinema = cinemaEnabled && panSpeedDegPerSec > 0;
+    const newFsmEnabled = typeof cinemaSource.fsmEnabled === "boolean" ? cinemaSource.fsmEnabled : true;
+    const previousFsmEnabled = cinemaFsmEnabledRef.current;
+    const fsmChanged = newFsmEnabled !== previousFsmEnabled;
+
+    if (runtimeRef.current) {
+      runtimeRef.current = {
+        ...runtimeRef.current,
+        cinema: cloneCinema(cinemaSource),
+        allowCinema: newAllowCinema,
+        panSpeedDegPerSec,
+        fsmEnabled: newFsmEnabled,
+      };
+    }
+
+    if (fsmChanged) {
+      cinemaFsmEnabledRef.current = newFsmEnabled;
+      const map = mapRef.current;
+      if (map) {
+        if (newFsmEnabled) {
+          machineFactoryRef.current?.(map, "config-toggle");
+        } else {
+          mapStateMachineRef.current = null;
+        }
+      }
+    }
 
     // Detectar cambios en todos los campos del modo cine
     const speedChanged = Math.abs(panSpeedDegPerSec - panSpeedRef.current) > 0.001;
-    const cinemaChanged = newAllowCinema !== allowCinemaRef.current;
+    const cinemaChanged = newAllowCinema !== allowCinemaRef.current || fsmChanged;
     
     // Comparar bandas actuales vs nuevas
     const currentCinema = cinemaRef.current;

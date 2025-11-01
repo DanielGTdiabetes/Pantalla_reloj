@@ -23,8 +23,8 @@
       "interactive": false,
       "controls": false,
       "cinema": {
-        "enabled": false,
-        "panLngDegPerSec": 0,
+        "enabled": true,
+        "panLngDegPerSec": 1.1,
         "bandTransition_sec": 8,
         "motion": {
           "speedPreset": "medium",
@@ -33,13 +33,14 @@
           "pauseWithOverlay": true,
           "phaseOffsetDeg": 25
         },
+        "fsmEnabled": true,
         "bands": [
-          { "lat": 0.0, "zoom": 2.8, "pitch": 10.0, "minZoom": 2.6, "duration_sec": 900 },
-          { "lat": 18.0, "zoom": 3.0, "pitch": 8.0, "minZoom": 2.8, "duration_sec": 720 },
-          { "lat": 32.0, "zoom": 3.3, "pitch": 6.0, "minZoom": 3.0, "duration_sec": 600 },
-          { "lat": 42.0, "zoom": 3.6, "pitch": 6.0, "minZoom": 3.2, "duration_sec": 480 },
-          { "lat": -18.0, "zoom": 3.0, "pitch": 8.0, "minZoom": 2.8, "duration_sec": 720 },
-          { "lat": -32.0, "zoom": 3.3, "pitch": 6.0, "minZoom": 3.0, "duration_sec": 600 }
+          { "lat": 0.0, "zoom": 3.1, "pitch": 10.0, "minZoom": 2.9, "duration_sec": 900 },
+          { "lat": 18.0, "zoom": 3.3, "pitch": 8.0, "minZoom": 3.1, "duration_sec": 720 },
+          { "lat": 32.0, "zoom": 3.6, "pitch": 6.0, "minZoom": 3.3, "duration_sec": 600 },
+          { "lat": 42.0, "zoom": 3.9, "pitch": 6.0, "minZoom": 3.5, "duration_sec": 480 },
+          { "lat": -18.0, "zoom": 3.3, "pitch": 8.0, "minZoom": 3.1, "duration_sec": 720 },
+          { "lat": -32.0, "zoom": 3.6, "pitch": 6.0, "minZoom": 3.3, "duration_sec": 600 }
         ]
       },
       "idlePan": {

@@ -25,6 +25,7 @@ export type MapCinemaConfig = {
   enabled: boolean;
   panLngDegPerSec: number;
   bandTransition_sec: number;
+  fsmEnabled: boolean;
   bands: MapCinemaBand[];
   motion: MapCinemaMotionConfig;
 };
