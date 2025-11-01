@@ -27,7 +27,7 @@ import type {
   MaptilerConfig,
   MapPreferences,
   NewsConfig,
-  OpenSkyAuthConfig,
+  OpenSkyOAuthConfig,
   OpenSkyConfig,
   RotationConfig,
   SaintsConfig,
@@ -425,6 +425,14 @@ export const createDefaultOpenSky = (): OpenSkyConfig => ({
   extended: 0,
   max_aircraft: 400,
   cluster: true,
+  oauth2: {
+    token_url: "https://auth.opensky-network.org/oauth/token",
+    client_id: null,
+    client_secret: null,
+    scope: null,
+    has_credentials: false,
+    client_id_last4: null,
+  },
 });
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -472,10 +480,6 @@ export const DEFAULT_CONFIG: AppConfig = {
         buffer_km: 25.0,
         outside_dim_opacity: 0.25,
         hard_hide_outside: false,
-      },
-      opensky: {
-        username: null,
-        password: null,
       },
       aviationstack: {
         base_url: "http://api.aviationstack.com/v1",
@@ -661,6 +665,8 @@ const mergeOpenSky = (candidate: unknown): OpenSkyConfig => {
   const source = (candidate as Partial<OpenSkyConfig>) ?? {};
   const bboxSource = (source.bbox ?? {}) as Partial<OpenSkyConfig["bbox"]>;
   const bboxFallback = fallback.bbox;
+  const oauthSource = (source.oauth2 ?? {}) as Partial<OpenSkyOAuthConfig>;
+  const oauthFallback = fallback.oauth2;
 
   return {
     enabled: toBoolean(source.enabled, fallback.enabled),
@@ -675,6 +681,17 @@ const mergeOpenSky = (candidate: unknown): OpenSkyConfig => {
     extended: source.extended === 1 ? 1 : 0,
     max_aircraft: clampNumber(Math.round(toNumber(source.max_aircraft, fallback.max_aircraft)), 100, 1000),
     cluster: toBoolean(source.cluster, fallback.cluster),
+    oauth2: {
+      token_url: sanitizeString(oauthSource.token_url, oauthFallback.token_url),
+      client_id: sanitizeNullableString(oauthSource.client_id, null),
+      client_secret: sanitizeNullableString(oauthSource.client_secret, null),
+      scope: sanitizeNullableString(oauthSource.scope, oauthFallback.scope ?? null),
+      has_credentials: toBoolean(oauthSource.has_credentials, oauthFallback.has_credentials),
+      client_id_last4:
+        typeof oauthSource.client_id_last4 === "string" && oauthSource.client_id_last4.trim().length > 0
+          ? oauthSource.client_id_last4.trim()
+          : oauthFallback.client_id_last4 ?? null,
+    },
   };
 };
 
@@ -708,11 +725,6 @@ const mergeFlightsLayer = (candidate: unknown): FlightsLayerConfig => {
   const cineFocusSource: Partial<FlightsLayerConfig["cine_focus"]> = source.cine_focus ?? {};
   const cineFocusFallback = fallback.cine_focus;
 
-  const openskySource: Partial<OpenSkyAuthConfig> = source.opensky ?? {};
-  const openskyFallback: Required<OpenSkyAuthConfig> = {
-    username: fallback.opensky?.username ?? null,
-    password: fallback.opensky?.password ?? null,
-  };
   const aviationstackSource: Partial<AviationStackConfig> = source.aviationstack ?? {};
   const aviationstackFallback: Required<AviationStackConfig> = {
     base_url: fallback.aviationstack?.base_url ?? "http://api.aviationstack.com/v1",

@@ -5,17 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ConfigPage } from "../ConfigPage";
 import { withConfigDefaults } from "../../config/defaults";
-import {
-  getConfig,
-  getHealth,
-  getOpenSkyClientIdMeta,
-  getOpenSkyClientSecretMeta,
-  getOpenSkyStatus,
-  getSchema,
-  wifiNetworks,
-  wifiScan,
-  wifiStatus,
-} from "../../lib/api";
+import { getConfig, getHealth, getOpenSkyStatus, getSchema, wifiNetworks, wifiScan, wifiStatus } from "../../lib/api";
 
 vi.mock("../../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/api")>();
@@ -24,8 +14,6 @@ vi.mock("../../lib/api", async (importOriginal) => {
     getConfig: vi.fn(),
     getHealth: vi.fn(),
     getSchema: vi.fn(),
-    getOpenSkyClientIdMeta: vi.fn(),
-    getOpenSkyClientSecretMeta: vi.fn(),
     getOpenSkyStatus: vi.fn(),
     wifiScan: vi.fn(),
     wifiNetworks: vi.fn(),
@@ -35,16 +23,12 @@ vi.mock("../../lib/api", async (importOriginal) => {
     saveConfig: vi.fn(),
     testAemetApiKey: vi.fn(),
     updateAemetApiKey: vi.fn(),
-    updateOpenSkyClientId: vi.fn(),
-    updateOpenSkyClientSecret: vi.fn(),
   } satisfies Partial<typeof actual>;
 });
 
 const mockGetConfig = vi.mocked(getConfig);
 const mockGetHealth = vi.mocked(getHealth);
 const mockGetSchema = vi.mocked(getSchema);
-const mockGetOpenSkyClientIdMeta = vi.mocked(getOpenSkyClientIdMeta);
-const mockGetOpenSkyClientSecretMeta = vi.mocked(getOpenSkyClientSecretMeta);
 const mockGetOpenSkyStatus = vi.mocked(getOpenSkyStatus);
 const mockWifiScan = vi.mocked(wifiScan);
 const mockWifiNetworks = vi.mocked(wifiNetworks);
@@ -65,8 +49,6 @@ describe("ConfigPage WiFi panel", () => {
     mockGetConfig.mockResolvedValue(defaultConfig);
     mockGetHealth.mockResolvedValue({});
     mockGetSchema.mockResolvedValue({});
-    mockGetOpenSkyClientIdMeta.mockResolvedValue({ set: false });
-    mockGetOpenSkyClientSecretMeta.mockResolvedValue({ set: false });
     mockGetOpenSkyStatus.mockResolvedValue(null);
     mockWifiStatus.mockResolvedValue({
       interface: "wlp2s0",

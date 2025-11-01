@@ -165,9 +165,13 @@ export type CineFocusConfig = {
   hard_hide_outside: boolean;
 };
 
-export type OpenSkyAuthConfig = {
-  username?: string | null;
-  password?: string | null;
+export type OpenSkyOAuthConfig = {
+  token_url: string;
+  client_id: string | null;
+  client_secret: string | null;
+  scope: string | null;
+  has_credentials: boolean;
+  client_id_last4: string | null;
 };
 
 export type OpenSkyBBoxConfig = {
@@ -185,6 +189,7 @@ export type OpenSkyConfig = {
   extended: 0 | 1;
   max_aircraft: number;
   cluster: boolean;
+  oauth2: OpenSkyOAuthConfig;
 };
 
 export type AviationStackConfig = {
@@ -232,7 +237,6 @@ export type FlightsLayerConfig = {
   grid_px: number;
   styleScale: number;
   cine_focus: CineFocusConfig;
-  opensky?: OpenSkyAuthConfig;
   aviationstack?: AviationStackConfig;
   custom?: CustomFlightConfig;
 };

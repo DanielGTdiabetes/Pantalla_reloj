@@ -10,7 +10,7 @@ import httpx
 
 from ..secret_store import SecretStore
 
-TOKEN_URL = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
+DEFAULT_TOKEN_URL = "https://auth.opensky-network.org/oauth/token"
 
 
 @dataclass
@@ -18,6 +18,8 @@ class TokenInfo:
     token: str
     expires_at: float
     obtained_at: float
+    token_url: str
+    scope: Optional[str]
 
 
 class OpenSkyAuthError(Exception):
@@ -72,18 +74,31 @@ class OpenSkyAuthenticator:
         self._backoff_step = 0
         self._backoff_until = 0.0
 
-    def get_token(self, force_refresh: bool = False) -> Optional[str]:
+    def get_token(
+        self,
+        *,
+        token_url: Optional[str] = None,
+        scope: Optional[str] = None,
+        force_refresh: bool = False,
+    ) -> Optional[str]:
         if not self.credentials_configured():
             return None
         now = time.time()
         if now < self._backoff_until:
             raise OpenSkyAuthError("backoff_active", retry_after=int(self._backoff_until - now))
         with self._lock:
+            resolved_url = (token_url or DEFAULT_TOKEN_URL).strip() or DEFAULT_TOKEN_URL
+            resolved_scope = scope.strip() if isinstance(scope, str) and scope.strip() else None
+            if self._token_info and (
+                self._token_info.token_url != resolved_url
+                or self._token_info.scope != resolved_scope
+            ):
+                self._token_info = None
             if not force_refresh and self._token_info:
                 if self._token_info.expires_at - 60 > now:
                     return self._token_info.token
             try:
-                token = self._perform_token_request()
+                token = self._perform_token_request(resolved_url, resolved_scope)
             except OpenSkyAuthError:
                 raise
             except Exception as exc:  # noqa: BLE001
@@ -97,7 +112,7 @@ class OpenSkyAuthenticator:
             self._reset_backoff()
             return token
 
-    def _perform_token_request(self) -> str:
+    def _perform_token_request(self, token_url: str, scope: Optional[str]) -> str:
         client_id = self._secret_store.get_secret("opensky_client_id")
         client_secret = self._secret_store.get_secret("opensky_client_secret")
         if not client_id or not client_secret:
@@ -107,7 +122,9 @@ class OpenSkyAuthenticator:
             "client_id": client_id,
             "client_secret": client_secret,
         }
-        response = self._http_client.post(TOKEN_URL, data=data)
+        if scope:
+            data["scope"] = scope
+        response = self._http_client.post(token_url, data=data)
         if response.status_code >= 500:
             self._logger.warning("[opensky] auth upstream error %s", response.status_code)
             self._schedule_backoff()
@@ -126,23 +143,30 @@ class OpenSkyAuthenticator:
         if not token or expires_in <= 0:
             raise OpenSkyAuthError("invalid_token_response")
         now = time.time()
-        self._token_info = TokenInfo(token=token, expires_at=now + expires_in, obtained_at=now)
+        self._token_info = TokenInfo(
+            token=token,
+            expires_at=now + expires_in,
+            obtained_at=now,
+            token_url=token_url,
+            scope=scope,
+        )
         self._logger.info("[opensky] obtained access token valid for %ds", expires_in)
         return token
 
     def describe(self) -> dict[str, Optional[float | bool | str]]:
+        now = time.time()
         info = {
-            "token_set": self.credentials_configured(),
-            "token_valid": False,
-            "expires_in": None,
+            "has_credentials": self.credentials_configured(),
+            "token_cached": False,
+            "expires_in_sec": None,
             "last_error": self._last_error,
             "last_error_at": self._last_error_at,
-            "backoff_until": self._backoff_until if self._backoff_until > time.time() else None,
+            "backoff_until": self._backoff_until if self._backoff_until > now else None,
         }
         if self._token_info:
-            remaining = max(0, int(self._token_info.expires_at - time.time()))
-            info["token_valid"] = remaining > 0
-            info["expires_in"] = remaining
+            remaining = max(0, int(self._token_info.expires_at - now))
+            info["token_cached"] = remaining > 0
+            info["expires_in_sec"] = remaining if remaining > 0 else 0
         return info
 
 

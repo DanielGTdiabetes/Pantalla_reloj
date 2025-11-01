@@ -122,7 +122,15 @@
     "poll_seconds": 10,
     "extended": 0,
     "max_aircraft": 400,
-    "cluster": true
+    "cluster": true,
+    "oauth2": {
+      "token_url": "https://auth.opensky-network.org/oauth/token",
+      "client_id": null,
+      "client_secret": null,
+      "scope": null,
+      "has_credentials": false,
+      "client_id_last4": null
+    }
   },
   "news": {
     "enabled": true,

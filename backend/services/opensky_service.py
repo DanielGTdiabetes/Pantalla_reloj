@@ -46,6 +46,7 @@ class OpenSkyService:
         self._last_error_at: Optional[float] = None
         self._backoff_until: float = 0.0
         self._backoff_step: int = 0
+        self._last_rate_limit_hint: Optional[str] = None
 
     def _build_key(self, bbox: Optional[Tuple[float, float, float, float]], extended: int, max_aircraft: int) -> str:
         bbox_part = "global" if not bbox else ",".join(f"{value:.4f}" for value in bbox)
@@ -132,9 +133,15 @@ class OpenSkyService:
             snapshot = self._snapshots.get(cache_key)
             try:
                 token = None
+                oauth_cfg = getattr(opensky_cfg, "oauth2", None)
+                token_endpoint = getattr(oauth_cfg, "token_url", None) if oauth_cfg else None
+                scope_value = getattr(oauth_cfg, "scope", None) if oauth_cfg else None
                 if has_token:
                     try:
-                        token = self._auth.get_token()
+                        token = self._auth.get_token(
+                            token_url=token_endpoint,
+                            scope=scope_value,
+                        )
                     except OpenSkyAuthError as exc:
                         self._last_error = f"auth:{exc}" if exc.status else str(exc)
                         self._last_error_at = now
@@ -151,6 +158,8 @@ class OpenSkyService:
                 self._last_fetch_at = now
                 self._last_error = f"client:{exc.status}" if exc.status else str(exc)
                 self._last_error_at = now
+                if exc.status == 429:
+                    self._last_rate_limit_hint = "0"
                 if exc.status == 429:
                     self._schedule_backoff(override=30)
                 elif exc.status in {401, 403} and has_token:
@@ -189,6 +198,7 @@ class OpenSkyService:
             }
             ttl = self._ttl_for(poll_seconds, has_token)
             remaining = headers.get("X-Rate-Limit-Remaining")
+            self._last_rate_limit_hint = remaining or self._last_rate_limit_hint
             snapshot = Snapshot(
                 payload=result_payload,
                 fetched_at=now,
@@ -216,29 +226,54 @@ class OpenSkyService:
 
     def get_status(self, config: AppConfig) -> Dict[str, object]:
         now = time.time()
-        status = self._auth.describe()
+        auth_info = self._auth.describe()
         poll_seconds, has_token = self._compute_poll_seconds(config)
         cfg = getattr(config, "opensky")
         snapshot = self.get_last_snapshot()
-        status.update(
-            {
-                "enabled": cfg.enabled,
-                "mode": cfg.mode,
-                "configured_poll": int(cfg.poll_seconds),
-                "effective_poll": poll_seconds,
-                "has_credentials": has_token,
-                "backoff_active": now < self._backoff_until,
-                "backoff_seconds": max(0, int(self._backoff_until - now)) if now < self._backoff_until else 0,
-                "last_fetch_ok": self._last_fetch_ok,
-                "last_fetch_ts": self._last_fetch_at,
-                "last_fetch_iso": datetime.fromtimestamp(self._last_fetch_at, tz=timezone.utc).isoformat() if self._last_fetch_at else None,
-                "last_error": self._last_error,
-                "last_error_at": self._last_error_at,
-                "cluster": bool(getattr(cfg, "cluster", False)),
-                "items_count": snapshot.payload.get("count") if snapshot else 0,
-            }
+        items_count: Optional[int] = None
+        if snapshot and isinstance(snapshot.payload.get("count"), int):
+            items_count = int(snapshot.payload["count"])
+        last_iso = (
+            datetime.fromtimestamp(self._last_fetch_at, tz=timezone.utc).isoformat()
+            if self._last_fetch_at
+            else None
         )
-        return status
+        status_value = "stale"
+        if cfg.enabled:
+            if self._last_fetch_ok is False:
+                status_value = "error"
+            elif snapshot and self._last_fetch_at:
+                freshness = now - self._last_fetch_at
+                freshness_limit = max(poll_seconds * 2, poll_seconds + 30)
+                status_value = "ok" if freshness <= freshness_limit else "stale"
+        has_credentials = bool(auth_info.get("has_credentials")) or has_token
+        auth_block = {
+            "has_credentials": has_credentials,
+            "token_cached": bool(auth_info.get("token_cached")),
+            "expires_in_sec": auth_info.get("expires_in_sec"),
+        }
+        return {
+            "enabled": cfg.enabled,
+            "mode": cfg.mode,
+            "configured_poll": int(cfg.poll_seconds),
+            "effective_poll": poll_seconds,
+            "auth": auth_block,
+            "status": status_value,
+            "last_fetch_ok": self._last_fetch_ok,
+            "last_fetch_ts": self._last_fetch_at,
+            "last_fetch_iso": last_iso,
+            "last_error": self._last_error,
+            "last_error_at": self._last_error_at,
+            "backoff_active": now < self._backoff_until,
+            "backoff_seconds": max(0, int(self._backoff_until - now)) if now < self._backoff_until else 0,
+            "items": items_count,
+            "items_count": items_count,
+            "rate_limit_hint": self._last_rate_limit_hint,
+            "cluster": bool(getattr(cfg, "cluster", False)),
+            "has_credentials": has_credentials,
+            "token_cached": bool(auth_info.get("token_cached")),
+            "expires_in": auth_block.get("expires_in_sec"),
+        }
 
     def close(self) -> None:
         self._client.close()
@@ -255,17 +290,22 @@ class OpenSkyService:
         with self._lock:
             self._cache.clear()
             self._snapshots.clear()
+            self._last_rate_limit_hint = None
         self._auth.invalidate()
 
-    def force_refresh_token(self) -> Dict[str, Optional[int | bool]]:
+    def force_refresh_token(
+        self,
+        token_url: Optional[str] = None,
+        scope: Optional[str] = None,
+    ) -> Dict[str, Optional[int | bool]]:
         """Fuerza la obtención/renovación del token en el autenticador compartido.
 
         Devuelve un dict resumido con el resultado y el TTL restante.
         """
         try:
-            token = self._auth.get_token(force_refresh=True)
+            token = self._auth.get_token(token_url=token_url, scope=scope, force_refresh=True)
             info = self._auth.describe() or {}
-            expires_in = int(info.get("expires_in", 0)) if info else 0
+            expires_in = int(info.get("expires_in_sec", 0)) if info else 0
             return {
                 "ok": bool(token),
                 "token_valid": bool(token),

@@ -275,6 +275,20 @@ class OpenSkyBBox(BaseModel):
         return values
 
 
+class OpenSkyOAuthConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    token_url: str = Field(
+        default="https://auth.opensky-network.org/oauth/token",
+        max_length=512,
+    )
+    client_id: Optional[str] = Field(default=None, max_length=256)
+    client_secret: Optional[str] = Field(default=None, max_length=256)
+    scope: Optional[str] = Field(default=None, max_length=256)
+    has_credentials: bool = False
+    client_id_last4: Optional[str] = Field(default=None, max_length=16)
+
+
 class OpenSkyConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -285,6 +299,7 @@ class OpenSkyConfig(BaseModel):
     extended: Literal[0, 1] = Field(default=0)
     max_aircraft: int = Field(default=400, ge=50, le=1000)
     cluster: bool = True
+    oauth2: OpenSkyOAuthConfig = Field(default_factory=OpenSkyOAuthConfig)
 
 class OpenSkyAuth(BaseModel):
     """Configuración de autenticación OpenSky."""
@@ -518,6 +533,7 @@ __all__ = [
     "MapTheme",
     "News",
     "OpenSkyBBox",
+    "OpenSkyOAuthConfig",
     "OpenSkyConfig",
     "Rotation",
     "Saints",
