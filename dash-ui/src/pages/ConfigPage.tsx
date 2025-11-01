@@ -27,7 +27,7 @@ import {
   type WiFiStatusResponse,
   type OpenSkyStatus,
 } from "../lib/api";
-import type { AppConfig, MapCinemaBand } from "../types/config";
+import type { AppConfig, GlobalLayersConfig, MapCinemaBand } from "../types/config";
 
 type LoadStatus = "loading" | "ready" | "error";
 type Banner = { kind: "success" | "error"; text: string } | null;
@@ -4233,7 +4233,8 @@ const ConfigPage: React.FC = () => {
         {supports("layers.global") && (() => {
           // Helper para obtener valores de global con defaults completos
           const getGlobalWithDefaults = (prev: AppConfig) => {
-            const defaultGlobal = DEFAULT_CONFIG.layers.global ?? createDefaultGlobalLayers();
+            const defaultGlobal: GlobalLayersConfig =
+              DEFAULT_CONFIG.layers.global ?? createDefaultGlobalLayers();
             const currentGlobal = prev.layers.global;
             
             return {
