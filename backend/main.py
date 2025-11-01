@@ -1991,6 +1991,52 @@ def _parse_bbox_param(raw: Optional[str]) -> Optional[Tuple[float, float, float,
     return lamin, lamax, lomin, lomax
 
 
+def _augment_flights_payload(payload: Dict[str, Any], metadata: Dict[str, Any]) -> None:
+    """Attach GeoJSON feature data to the flights payload in-place."""
+
+    items = payload.get("items", []) or []
+    features: List[Dict[str, Any]] = []
+    for it in items:
+        lon = it.get("lon")
+        lat = it.get("lat")
+        if lon is None or lat is None:
+            continue
+
+        try:
+            lon_f = float(lon)
+            lat_f = float(lat)
+        except (TypeError, ValueError):
+            continue
+
+        props = {
+            "id": it.get("id"),
+            "icao24": it.get("icao24"),
+            "callsign": it.get("callsign"),
+            "origin_country": it.get("origin_country"),
+            "alt": it.get("alt"),
+            "velocity": it.get("velocity"),
+            "vertical_rate": it.get("vertical_rate"),
+            "track": it.get("track"),
+            "on_ground": it.get("on_ground"),
+            "squawk": it.get("squawk"),
+            "category": it.get("category"),
+            "last_contact": it.get("last_contact"),
+            "source": "opensky",
+            "in_focus": False,
+        }
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [lon_f, lat_f]},
+                "properties": {k: v for k, v in props.items() if v is not None},
+            }
+        )
+
+    payload["type"] = "FeatureCollection"
+    payload["features"] = features
+    payload["meta"] = metadata
+
+
 @app.get("/api/layers/flights")
 def get_flights(request: Request, bbox: Optional[str] = None, extended: Optional[int] = None) -> JSONResponse:
     config = config_manager.read()
@@ -2009,6 +2055,16 @@ def get_flights(request: Request, bbox: Optional[str] = None, extended: Optional
     except OpenSkyAuthError as exc:
         logger.error("[opensky] auth error during fetch: %s", exc)
         payload = {"count": 0, "items": [], "stale": True, "ts": int(time.time()), "error": "auth"}
+        _augment_flights_payload(
+            payload,
+            {
+                "provider": "opensky",
+                "mode": opensky_cfg.mode,
+                "bbox": bbox_override,
+                "remaining": None,
+                "polled": False,
+            },
+        )
         response = JSONResponse(payload, status_code=200)
         response.headers["X-OpenSky-Polled"] = "false"
         response.headers["X-OpenSky-Mode"] = opensky_cfg.mode
@@ -2016,6 +2072,16 @@ def get_flights(request: Request, bbox: Optional[str] = None, extended: Optional
     except OpenSkyClientError as exc:
         logger.error("[opensky] client error during fetch: %s", exc)
         payload = {"count": 0, "items": [], "stale": True, "ts": int(time.time()), "error": "client"}
+        _augment_flights_payload(
+            payload,
+            {
+                "provider": "opensky",
+                "mode": opensky_cfg.mode,
+                "bbox": bbox_override,
+                "remaining": None,
+                "polled": False,
+            },
+        )
         response = JSONResponse(payload, status_code=200)
         response.headers["X-OpenSky-Polled"] = "false"
         response.headers["X-OpenSky-Mode"] = opensky_cfg.mode
@@ -2023,6 +2089,16 @@ def get_flights(request: Request, bbox: Optional[str] = None, extended: Optional
     except Exception as exc:  # noqa: BLE001
         logger.exception("[opensky] unexpected error during fetch: %s", exc)
         payload = {"count": 0, "items": [], "stale": True, "ts": int(time.time()), "error": "unexpected"}
+        _augment_flights_payload(
+            payload,
+            {
+                "provider": "opensky",
+                "mode": opensky_cfg.mode,
+                "bbox": bbox_override,
+                "remaining": None,
+                "polled": False,
+            },
+        )
         response = JSONResponse(payload, status_code=200)
         response.headers["X-OpenSky-Polled"] = "false"
         response.headers["X-OpenSky-Mode"] = opensky_cfg.mode
@@ -2032,45 +2108,16 @@ def get_flights(request: Request, bbox: Optional[str] = None, extended: Optional
     if snapshot.stale:
         payload["stale"] = True
 
-    # Construir salida GeoJSON (sin romper compatibilidad con count/items/stale/ts)
-    items = payload.get("items", []) or []
-    features: List[Dict[str, Any]] = []
-    for it in items:
-        lon = it.get("lon")
-        lat = it.get("lat")
-        if lon is None or lat is None:
-            continue
-        props = {
-            "id": it.get("id"),
-            "icao24": it.get("icao24"),
-            "callsign": it.get("callsign"),
-            "origin_country": it.get("origin_country"),
-            "alt": it.get("alt"),
-            "velocity": it.get("velocity"),
-            "vertical_rate": it.get("vertical_rate"),
-            "track": it.get("track"),
-            "on_ground": it.get("on_ground"),
-            "squawk": it.get("squawk"),
-            "category": it.get("category"),
-            "last_contact": it.get("last_contact"),
-            "source": "opensky",
-            "in_focus": False,
-        }
-        features.append({
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [float(lon), float(lat)]},
-            "properties": {k: v for k, v in props.items() if v is not None},
-        })
-
-    payload["type"] = "FeatureCollection"
-    payload["features"] = features
-    payload["meta"] = {
-        "provider": "opensky",
-        "mode": snapshot.mode,
-        "bbox": snapshot.bbox,
-        "remaining": snapshot.remaining,
-        "polled": snapshot.polled,
-    }
+    _augment_flights_payload(
+        payload,
+        {
+            "provider": "opensky",
+            "mode": snapshot.mode,
+            "bbox": snapshot.bbox,
+            "remaining": snapshot.remaining,
+            "polled": snapshot.polled,
+        },
+    )
 
     response = JSONResponse(payload)
     response.headers["X-OpenSky-Polled"] = "true" if snapshot.polled else "false"
