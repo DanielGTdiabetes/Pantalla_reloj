@@ -58,7 +58,8 @@ class MapCinema(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = True
-    panLngDegPerSec: float = Field(default=1.1, ge=0)
+    panLngDegPerSec: float = Field(default=0.9, ge=0)
+    debug: bool = False
     bandTransition_sec: int = Field(default=8, ge=1)
     fsm_enabled: bool = Field(default=True, alias="fsmEnabled")
     bands: List[MapCinemaBand] = Field(
@@ -119,6 +120,7 @@ class MapConfig(BaseModel):
     renderWorldCopies: bool = True
     interactive: bool = False
     controls: bool = False
+    respectReducedMotion: bool = False
     cinema: MapCinema = Field(default_factory=MapCinema)
     idlePan: MapIdlePan = Field(default_factory=MapIdlePan)
     theme: MapTheme = Field(default_factory=MapTheme)

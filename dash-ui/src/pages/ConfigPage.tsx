@@ -649,6 +649,7 @@ const ConfigPage: React.FC = () => {
             ...prev.ui.map.cinema,
             enabled: defaults.enabled,
             panLngDegPerSec: defaults.panLngDegPerSec,
+            debug: defaults.debug,
             bandTransition_sec: defaults.bandTransition_sec,
             fsmEnabled: defaults.fsmEnabled,
             motion: { ...defaults.motion },

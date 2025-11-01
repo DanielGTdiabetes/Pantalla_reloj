@@ -22,9 +22,11 @@
       "renderWorldCopies": true,
       "interactive": false,
       "controls": false,
+      "respectReducedMotion": false,
       "cinema": {
         "enabled": true,
-        "panLngDegPerSec": 1.1,
+        "panLngDegPerSec": 0.9,
+        "debug": false,
         "bandTransition_sec": 8,
         "motion": {
           "speedPreset": "medium",

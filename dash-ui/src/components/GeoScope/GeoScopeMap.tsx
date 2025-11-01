@@ -39,14 +39,23 @@ import {
 export const GEO_SCOPE_AUTOPAN_EVENT = "geoscope:auto-pan-bearing";
 
 const FALLBACK_CINEMA = createDefaultMapCinema();
+const CINEMA_BAND_ZOOM_SEED_OFFSET = 0.3;
+const FLOAT_TOLERANCE = 1e-6;
+const isApproximatelyEqual = (a: number, b: number) => Math.abs(a - b) <= FLOAT_TOLERANCE;
+
+const FALLBACK_FIRST_BAND = FALLBACK_CINEMA.bands[0];
 const DEFAULT_VIEW = {
   lng: 0,
-  lat: FALLBACK_CINEMA.bands[0]?.lat ?? 0,
-  zoom: FALLBACK_CINEMA.bands[0]?.zoom ?? 2.6,
+  lat: FALLBACK_FIRST_BAND?.lat ?? 0,
+  zoom:
+    (FALLBACK_FIRST_BAND?.zoom ?? 2.6) +
+    (FALLBACK_FIRST_BAND ? CINEMA_BAND_ZOOM_SEED_OFFSET : 0),
   bearing: 0,
-  pitch: FALLBACK_CINEMA.bands[0]?.pitch ?? 0
+  pitch: FALLBACK_FIRST_BAND?.pitch ?? 0
 };
-const DEFAULT_MIN_ZOOM = FALLBACK_CINEMA.bands[0]?.minZoom ?? 2.4;
+const DEFAULT_MIN_ZOOM =
+  (FALLBACK_FIRST_BAND?.minZoom ?? 2.4) +
+  (FALLBACK_FIRST_BAND ? CINEMA_BAND_ZOOM_SEED_OFFSET : 0);
 const FALLBACK_ROTATION_DEG_PER_SEC = 6 / 60;
 const DEFAULT_PAN_SPEED = Math.max(
   Number.isFinite(FALLBACK_CINEMA.panLngDegPerSec)
@@ -712,6 +721,7 @@ const cloneCinema = (cinema: MapCinemaConfig): MapCinemaConfig => {
   const fallbackPan = FALLBACK_CINEMA.panLngDegPerSec;
   const fallbackTransition = FALLBACK_CINEMA.bandTransition_sec;
   const fallbackMotion = FALLBACK_CINEMA.motion;
+  const fallbackDebug = typeof FALLBACK_CINEMA.debug === "boolean" ? FALLBACK_CINEMA.debug : false;
   const sourceMotion = cinema.motion ?? fallbackMotion;
 
   const panLngDegPerSec = Number.isFinite(cinema.panLngDegPerSec)
@@ -720,6 +730,7 @@ const cloneCinema = (cinema: MapCinemaConfig): MapCinemaConfig => {
   const bandTransition_sec = Number.isFinite(cinema.bandTransition_sec)
     ? Math.max(cinema.bandTransition_sec, 0)
     : fallbackTransition;
+  const debug = typeof cinema.debug === "boolean" ? cinema.debug : fallbackDebug;
 
   const motion: MapCinemaConfig["motion"] = {
     speedPreset:
@@ -748,12 +759,34 @@ const cloneCinema = (cinema: MapCinemaConfig): MapCinemaConfig => {
   const fallbackFsmEnabled = typeof FALLBACK_CINEMA.fsmEnabled === "boolean" ? FALLBACK_CINEMA.fsmEnabled : true;
   const fsmEnabled = typeof cinema.fsmEnabled === "boolean" ? cinema.fsmEnabled : fallbackFsmEnabled;
 
+  const hasDefaultZoom =
+    fallbackBands.length === bands.length &&
+    bands.every((band, index) => {
+      const fallbackBand = fallbackBands[index];
+      if (!fallbackBand) {
+        return false;
+      }
+      return (
+        isApproximatelyEqual(band.zoom, fallbackBand.zoom) &&
+        isApproximatelyEqual(band.minZoom, fallbackBand.minZoom)
+      );
+    });
+
+  const seededBands = hasDefaultZoom
+    ? bands.map((band) => {
+        const zoom = band.zoom + CINEMA_BAND_ZOOM_SEED_OFFSET;
+        const minZoom = Math.min(band.minZoom + CINEMA_BAND_ZOOM_SEED_OFFSET, zoom);
+        return { ...band, zoom, minZoom };
+      })
+    : bands;
+
   return {
     ...cinema,
     fsmEnabled,
+    debug,
     panLngDegPerSec,
     bandTransition_sec,
-    bands,
+    bands: seededBands,
     motion
   };
 };

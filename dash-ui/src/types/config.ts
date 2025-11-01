@@ -24,6 +24,7 @@ export type UIScrollSpeed = number | "slow" | "normal" | "fast";
 export type MapCinemaConfig = {
   enabled: boolean;
   panLngDegPerSec: number;
+  debug: boolean;
   bandTransition_sec: number;
   fsmEnabled: boolean;
   bands: MapCinemaBand[];
