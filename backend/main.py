@@ -1028,25 +1028,27 @@ async def save_config(request: Request) -> JSONResponse:
         client_id_update = False
         client_secret_update = False
         if "client_id" in oauth_block:
-            client_id_update = True
             client_candidate = oauth_block.get("client_id")
-            if isinstance(client_candidate, str):
-                sanitized_id = _sanitize_secret(client_candidate)
-            elif client_candidate is None:
-                sanitized_id = None
+            if client_candidate is None:
+                oauth_block.pop("client_id", None)
             else:
-                sanitized_id = _sanitize_secret(str(client_candidate))
-            secret_store.set_secret("opensky_client_id", sanitized_id)
+                if isinstance(client_candidate, str):
+                    sanitized_id = _sanitize_secret(client_candidate)
+                else:
+                    sanitized_id = _sanitize_secret(str(client_candidate))
+                secret_store.set_secret("opensky_client_id", sanitized_id)
+                client_id_update = True
         if "client_secret" in oauth_block:
-            client_secret_update = True
             secret_candidate = oauth_block.get("client_secret")
-            if isinstance(secret_candidate, str):
-                sanitized_secret = _sanitize_secret(secret_candidate)
-            elif secret_candidate is None:
-                sanitized_secret = None
+            if secret_candidate is None:
+                oauth_block.pop("client_secret", None)
             else:
-                sanitized_secret = _sanitize_secret(str(secret_candidate))
-            secret_store.set_secret("opensky_client_secret", sanitized_secret)
+                if isinstance(secret_candidate, str):
+                    sanitized_secret = _sanitize_secret(secret_candidate)
+                else:
+                    sanitized_secret = _sanitize_secret(str(secret_candidate))
+                secret_store.set_secret("opensky_client_secret", sanitized_secret)
+                client_secret_update = True
 
         oauth_block["client_id"] = None
         oauth_block["client_secret"] = None
