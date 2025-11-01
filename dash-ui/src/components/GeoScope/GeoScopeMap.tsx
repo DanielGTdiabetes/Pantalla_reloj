@@ -65,6 +65,7 @@ const WATCHDOG_INTERVAL_MS = 3000;
 const WATCHDOG_BEARING_DELTA = 0.75;
 const FALLBACK_TICK_INTERVAL_MS = 1000;
 const AUTOPAN_LOG_INTERVAL_MS = 5000;
+const CINEMA_HEARTBEAT_INTERVAL_MS = 8000;
 
 const FALLBACK_THEME = createDefaultMapSettings().theme ?? {};
 
@@ -793,6 +794,14 @@ type TransitionState = {
 };
 
 type MapLifecycleState = "IDLE" | "LOADING_STYLE" | "READY" | "PANNING";
+type CinemaTelemetryState =
+  | "IDLE"
+  | "LOADING_STYLE"
+  | "READY"
+  | "PANNING"
+  | "PAUSED"
+  | "ERROR"
+  | "DISABLED";
 
 type MapStateMachine = {
   getState(): MapLifecycleState;
@@ -1185,12 +1194,16 @@ export default function GeoScopeMap() {
     
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("focus", handleFocus);
-    
+
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", handleFocus);
     };
   }, [reloadConfig]);
+
+  useEffect(() => {
+    webglErrorRef.current = webglError;
+  }, [webglError]);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -1209,6 +1222,7 @@ export default function GeoScopeMap() {
   const fallbackAppliedRef = useRef(false);
   const fallbackTimerRef = useRef<number | null>(null);
   const lastRepaintTimeRef = useRef<number | null>(null);
+  const lastPanTickIsoRef = useRef<string | null>(null);
   const respectReducedMotionRef = useRef(false);
   const reducedMotionMediaRef = useRef<MediaQueryList | null>(null);
   const reducedMotionActiveRef = useRef(false);
@@ -1223,6 +1237,8 @@ export default function GeoScopeMap() {
   const idlePanDirectionRef = useRef<1 | -1>(1);
   const idlePanDeltaRef = useRef(0.5);
   const autopanEnabledRef = useRef(true);
+  const cinemaHeartbeatTimerRef = useRef<number | null>(null);
+  const webglErrorRef = useRef<string | null>(null);
   const diagnosticsAutopanRef = useRef<DiagnosticsAutopanConfig>(
     parseDiagnosticsAutopanConfig()
   );
@@ -1875,7 +1891,8 @@ export default function GeoScopeMap() {
       updateMapView(map);
       lastRepaintTimeRef.current = timestamp;
       map.triggerRepaint();
-      
+      lastPanTickIsoRef.current = new Date().toISOString();
+
       // Emitir evento con la posición actual (sin bearing)
       if (typeof window !== "undefined") {
         window.dispatchEvent(
@@ -3406,6 +3423,97 @@ export default function GeoScopeMap() {
       clearInterval(refreshTimer);
     };
   }, [config]);
+
+  const resolveCinemaTelemetryState = (
+    runtime: RuntimePreferences
+  ): CinemaTelemetryState => {
+    if (webglErrorRef.current) {
+      return "ERROR";
+    }
+    if (!runtime.allowCinema) {
+      return "DISABLED";
+    }
+    if (cinemaFsmEnabledRef.current) {
+      const machine = mapStateMachineRef.current;
+      if (machine) {
+        return machine.getState();
+      }
+      return "IDLE";
+    }
+    if (autopanModeRef.current === "serpentine") {
+      if (!autopanEnabledRef.current) {
+        return "PAUSED";
+      }
+      return serpentineControllerRef.current ? "PANNING" : "READY";
+    }
+    if (autopanModeRef.current !== "rotate") {
+      return "PAUSED";
+    }
+    if (!autopanEnabledRef.current) {
+      return "PAUSED";
+    }
+    return animationFrameRef.current != null ? "PANNING" : "READY";
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof fetch !== "function") {
+      return;
+    }
+
+    let cancelled = false;
+
+    const sendHeartbeat = async () => {
+      if (cancelled) {
+        return;
+      }
+      const runtime = runtimeRef.current;
+      if (!runtime) {
+        return;
+      }
+
+      const state = resolveCinemaTelemetryState(runtime);
+      const nowIso = new Date().toISOString();
+      const lastPanTickIso = lastPanTickIsoRef.current ?? nowIso;
+      if (lastPanTickIsoRef.current == null) {
+        lastPanTickIsoRef.current = lastPanTickIso;
+      }
+
+      const payload = {
+        state,
+        lastPanTickIso,
+        reducedMotion:
+          respectReducedMotionRef.current && reducedMotionActiveRef.current ? true : false,
+      };
+
+      try {
+        const response = await fetch("/api/telemetry/cinema", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok && response.status !== 204) {
+          // Respuesta inesperada: ignorar en silencio
+        }
+      } catch {
+        // Silencioso: errores en telemetría no deben afectar al mapa
+      }
+    };
+
+    cinemaHeartbeatTimerRef.current = window.setInterval(() => {
+      void sendHeartbeat();
+    }, CINEMA_HEARTBEAT_INTERVAL_MS);
+
+    void sendHeartbeat();
+
+    return () => {
+      cancelled = true;
+      const timer = cinemaHeartbeatTimerRef.current;
+      if (timer != null) {
+        window.clearInterval(timer);
+        cinemaHeartbeatTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Mostrar error si WebGL no está disponible o el mapa falló
   if (webglError) {
