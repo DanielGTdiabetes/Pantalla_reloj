@@ -76,6 +76,19 @@ const sanitizeNullableString = (value: unknown, fallback: string | null): string
   return fallback;
 };
 
+const sanitizeRadarProvider = (
+  value: unknown,
+  fallback: GlobalRadarLayerConfig["provider"],
+): GlobalRadarLayerConfig["provider"] => {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "rainviewer" || normalized === "openweathermap") {
+      return normalized as GlobalRadarLayerConfig["provider"];
+    }
+  }
+  return fallback;
+};
+
 const DEFAULT_CINEMA_BANDS: readonly MapCinemaBand[] = [
   { lat: 0, zoom: 2.8, pitch: 10, minZoom: 2.6, duration_sec: 900 },
   { lat: 18, zoom: 3.0, pitch: 8, minZoom: 2.8, duration_sec: 720 },
@@ -941,10 +954,12 @@ const mergeGlobalRadarLayer = (candidate: unknown): GlobalRadarLayerConfig => {
   const globalFallback = DEFAULT_CONFIG.layers.global ?? createDefaultGlobalLayers();
   const fallback = globalFallback.radar;
   const source = (candidate as Partial<GlobalRadarLayerConfig>) ?? {};
-  
+  const fallbackHasKey = typeof fallback.has_api_key === "boolean" ? fallback.has_api_key : false;
+  const fallbackLast4 = typeof fallback.api_key_last4 === "string" ? fallback.api_key_last4 : null;
+
   return {
     enabled: toBoolean(source.enabled, fallback.enabled),
-    provider: "rainviewer", // Solo un proveedor por ahora
+    provider: sanitizeRadarProvider(source.provider, fallback.provider),
     refresh_minutes: clampNumber(
       Math.round(toNumber(source.refresh_minutes, fallback.refresh_minutes)),
       1,
@@ -961,6 +976,14 @@ const mergeGlobalRadarLayer = (candidate: unknown): GlobalRadarLayerConfig => {
       1440,
     ),
     opacity: clampNumber(toNumber(source.opacity, fallback.opacity), 0.0, 1.0),
+    has_api_key:
+      typeof (source as { has_api_key?: unknown }).has_api_key === "boolean"
+        ? Boolean((source as { has_api_key?: unknown }).has_api_key)
+        : fallbackHasKey,
+    api_key_last4: sanitizeNullableString(
+      (source as { api_key_last4?: unknown }).api_key_last4,
+      fallbackLast4,
+    ),
   };
 };
 

@@ -14,7 +14,7 @@ import requests
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
@@ -31,7 +31,12 @@ from .data_sources import (
     parse_rss_feed,
 )
 from .focus_masks import check_point_in_focus, load_or_build_focus_mask
-from .global_providers import GIBSProvider, RainViewerProvider
+from .global_providers import (
+    GIBSProvider,
+    OpenWeatherMapApiKeyError,
+    OpenWeatherMapRadarProvider,
+    RainViewerProvider,
+)
 from .layer_providers import (
     AISHubProvider,
     AISStreamProvider,
@@ -180,6 +185,10 @@ class AISStreamSecretRequest(BaseModel):
     api_key: Optional[str] = Field(default=None, max_length=256)
 
 
+class OpenWeatherMapSecretRequest(BaseModel):
+    api_key: Optional[str] = Field(default=None, max_length=256)
+
+
 def _sanitize_secret(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
@@ -241,7 +250,19 @@ def _build_public_config(config: AppConfig) -> Dict[str, Any]:
             aisstream_public.update(secret_meta)
             ships_info["aisstream"] = aisstream_public
             layers_info["ships"] = ships_info
-            payload["layers"] = layers_info
+        global_layers_info = layers_info.get("global")
+        if isinstance(global_layers_info, dict):
+            radar_info = global_layers_info.get("radar")
+            if isinstance(radar_info, dict):
+                radar_public = dict(radar_info)
+            else:
+                radar_public = {}
+            radar_public.pop("api_key", None)
+            radar_secret_meta = _mask_secret(secret_store.get_secret("openweathermap_api_key"))
+            radar_public.update(radar_secret_meta)
+            global_layers_info["radar"] = radar_public
+            layers_info["global"] = global_layers_info
+        payload["layers"] = layers_info
     return payload
 
 
@@ -257,6 +278,7 @@ _ALLOWED_SECRET_KEYS = {
     "aistream_api_key",
     # Canónica utilizada por servicios internos
     "aisstream_api_key",
+    "openweathermap_api_key",
 }
 
 def _canonical_secret_key(key: str) -> str:
@@ -634,32 +656,67 @@ def healthcheck_full() -> Dict[str, Any]:
     global_radar_frames_count = 0
     global_radar_last_fetch = None
     global_radar_cache_age = None
-    
+    global_radar_last_error = None
+    radar_provider = global_config.radar.provider
+
     if global_config.radar.enabled:
-        try:
-            frames = _rainviewer_provider.get_available_frames(
-                history_minutes=global_config.radar.history_minutes,
-                frame_step=global_config.radar.frame_step
-            )
-            if frames:
-                global_radar_status = "ok"
-                global_radar_frames_count = len(frames)
-                # Obtener timestamp del último frame
+        if radar_provider == "openweathermap":
+            api_key = _openweather_provider.resolve_api_key()
+            if not api_key:
+                global_radar_last_error = "OWM API key missing"
+                global_radar_status = "down"
+            else:
+                try:
+                    frames = _openweather_provider.get_available_frames(
+                        history_minutes=global_config.radar.history_minutes,
+                        frame_step=global_config.radar.frame_step,
+                    )
+                    if frames:
+                        global_radar_status = "ok"
+                        global_radar_frames_count = len(frames)
+                        latest_frame = frames[-1]
+                        timestamp = latest_frame.get("timestamp")
+                        if isinstance(timestamp, (int, float)):
+                            global_radar_last_fetch = datetime.fromtimestamp(
+                                int(timestamp), tz=timezone.utc
+                            ).isoformat()
+                        else:
+                            global_radar_last_fetch = datetime.now(timezone.utc).isoformat()
+                    else:
+                        global_radar_status = "degraded"
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Failed to get OpenWeatherMap radar status: %s", exc)
+                    global_radar_status = "degraded"
+                    global_radar_last_error = str(exc)
+        else:
+            try:
+                frames = _rainviewer_provider.get_available_frames(
+                    history_minutes=global_config.radar.history_minutes,
+                    frame_step=global_config.radar.frame_step
+                )
                 if frames:
+                    global_radar_status = "ok"
+                    global_radar_frames_count = len(frames)
                     latest_frame = frames[-1]
-                    global_radar_last_fetch = datetime.fromtimestamp(
-                        latest_frame["timestamp"], tz=timezone.utc
-                    ).isoformat()
-        except Exception as exc:
-            logger.warning("Failed to get global radar status: %s", exc)
-            global_radar_status = "degraded"
-    
+                    timestamp = latest_frame.get("timestamp")
+                    if isinstance(timestamp, (int, float)):
+                        global_radar_last_fetch = datetime.fromtimestamp(
+                            int(timestamp), tz=timezone.utc
+                        ).isoformat()
+                else:
+                    global_radar_status = "degraded"
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Failed to get global radar status: %s", exc)
+                global_radar_status = "degraded"
+                global_radar_last_error = str(exc)
+
     payload["global_radar"] = {
         "status": global_radar_status,
         "frames_count": global_radar_frames_count,
-        "provider": global_config.radar.provider,
+        "provider": radar_provider,
         "last_fetch": global_radar_last_fetch,
-        "cache_age": global_radar_cache_age
+        "cache_age": global_radar_cache_age,
+        "last_error": global_radar_last_error,
     }
     
     return payload
@@ -771,6 +828,11 @@ def get_config_schema() -> Dict[str, Any]:
         {"key": "opensky_client_id", "masked": True},
         {"key": "opensky_client_secret", "masked": True},
         {"key": "aistream_api_key", "masked": True},
+        {
+            "key": "openweathermap_api_key",
+            "masked": True,
+            "description": "API key para tiles de precipitación de OpenWeatherMap",
+        },
     ]
     return schema
 
@@ -819,6 +881,30 @@ async def update_aisstream_secret_raw(request: Request) -> Response:
     current = config_manager.read()
     ships_service.apply_config(current.layers.ships)
     return Response(status_code=204)
+
+
+@app.get("/api/config/secret/openweathermap_api_key")
+def get_openweather_secret_meta() -> Dict[str, Any]:
+    return _mask_secret(secret_store.get_secret("openweathermap_api_key"))
+
+
+@app.post("/api/config/secret/openweathermap_api_key", status_code=204)
+async def update_openweather_secret(request: OpenWeatherMapSecretRequest) -> Response:
+    api_key = _sanitize_secret(request.api_key)
+    secret_store.set_secret("openweathermap_api_key", api_key)
+    masked = _mask_secret(api_key)
+    logger.info(
+        "Updating OpenWeatherMap API key (present=%s, last4=%s)",
+        masked.get("has_api_key", False),
+        masked.get("api_key_last4", "****"),
+    )
+    return Response(status_code=204)
+
+
+@app.get("/api/config/secret/openweathermap_api_key/raw")
+def get_openweather_secret_raw() -> PlainTextResponse:
+    value = secret_store.get_secret("openweathermap_api_key") or ""
+    return PlainTextResponse(content=value)
 
 
 async def _update_opensky_secret(name: str, request: Request) -> Response:
@@ -2353,6 +2439,10 @@ async def serve_frontend(full_path: str, request: Request):
 # Proveedores globales
 _gibs_provider = GIBSProvider()
 _rainviewer_provider = RainViewerProvider()
+_openweather_provider = OpenWeatherMapRadarProvider(
+    api_key_resolver=lambda: secret_store.get_secret("openweathermap_api_key"),
+    layer=os.getenv("PANTALLA_GLOBAL_RADAR_LAYER", "precipitation_new"),
+)
 
 
 @app.get("/api/global/satellite/frames")
@@ -2384,23 +2474,48 @@ def get_global_radar_frames() -> Dict[str, Any]:
     """Obtiene lista de frames disponibles de radar global."""
     config = config_manager.read()
     global_config = config.layers.global_layers.radar
-    
+
+    provider_name = global_config.provider
+
     if not global_config.enabled:
-        return {"frames": []}
-    
+        return {"frames": [], "count": 0, "provider": provider_name, "status": "down"}
+
     try:
-        frames = _rainviewer_provider.get_available_frames(
-            history_minutes=global_config.history_minutes,
-            frame_step=global_config.frame_step
-        )
+        if provider_name == "openweathermap":
+            frames = _openweather_provider.get_available_frames(
+                history_minutes=global_config.history_minutes,
+                frame_step=global_config.frame_step,
+            )
+        else:
+            frames = _rainviewer_provider.get_available_frames(
+                history_minutes=global_config.history_minutes,
+                frame_step=global_config.frame_step,
+            )
+        status = "ok" if frames else "degraded"
         return {
             "frames": frames,
             "count": len(frames),
-            "provider": global_config.provider
+            "provider": provider_name,
+            "status": status,
         }
-    except Exception as exc:
-        logger.error("Failed to get global radar frames: %s", exc)
-        return {"frames": [], "error": str(exc)}
+    except OpenWeatherMapApiKeyError as exc:
+        logger.warning("OpenWeatherMap radar frames unavailable: %s", exc)
+        return {
+            "frames": [],
+            "count": 0,
+            "provider": provider_name,
+            "status": "down",
+            "error": str(exc),
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to get global radar frames: %s", exc)
+        return {
+            "frames": [],
+            "count": 0,
+            "provider": provider_name,
+            "status": "degraded",
+            "error": str(exc),
+        }
 
 
 @app.get("/api/global/satellite/tiles/{timestamp:int}/{z:int}/{x:int}/{y:int}.png")
@@ -2487,12 +2602,14 @@ async def get_global_radar_tile(
     
     if not global_config.enabled:
         raise HTTPException(status_code=404, detail="Global radar layer disabled")
-    
+
     # Caché de tiles en disco
     cache_dir = Path("/var/cache/pantalla/global/radar")
     cache_dir.mkdir(parents=True, exist_ok=True)
     tile_path = cache_dir / f"{timestamp}_{z}_{x}_{y}.png"
-    
+
+    provider_name = global_config.provider
+
     # Verificar caché en disco
     if tile_path.exists():
         tile_age = datetime.now(timezone.utc).timestamp() - tile_path.stat().st_mtime
@@ -2506,18 +2623,21 @@ async def get_global_radar_tile(
                     "ETag": f'"{timestamp}_{z}_{x}_{y}"'
                 }
             )
-    
+
     # Descargar tile
     try:
-        tile_url = _rainviewer_provider.get_tile_url(timestamp, z, x, y)
+        if provider_name == "openweathermap":
+            tile_url = _openweather_provider.get_tile_url(timestamp, z, x, y)
+        else:
+            tile_url = _rainviewer_provider.get_tile_url(timestamp, z, x, y)
         response = requests.get(tile_url, timeout=10, stream=True)
         response.raise_for_status()
-        
+
         tile_data = response.content
-        
+
         # Guardar en caché en disco
         tile_path.write_bytes(tile_data)
-        
+
         return Response(
             content=tile_data,
             media_type=response.headers.get("Content-Type", "image/png"),
@@ -2526,8 +2646,11 @@ async def get_global_radar_tile(
                 "ETag": f'"{timestamp}_{z}_{x}_{y}"'
             }
         )
+    except OpenWeatherMapApiKeyError as exc:
+        logger.warning("OpenWeatherMap radar tile requested but API key missing")
+        raise HTTPException(status_code=502, detail="OWM API key missing") from exc
     except Exception as exc:
-        logger.error("Failed to fetch global radar tile: %s", exc)
+        logger.warning("Failed to fetch global radar tile: %s", exc)
         # Intentar servir desde caché aunque sea stale
         if tile_path.exists():
             tile_data = tile_path.read_bytes()

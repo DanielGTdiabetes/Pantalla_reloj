@@ -266,11 +266,13 @@ export type GlobalSatelliteLayerConfig = {
 
 export type GlobalRadarLayerConfig = {
   enabled: boolean;
-  provider: "rainviewer";
+  provider: "rainviewer" | "openweathermap";
   refresh_minutes: number;
   history_minutes: number;
   frame_step: number;
   opacity: number;
+  has_api_key?: boolean;
+  api_key_last4?: string | null;
 };
 
 export type GlobalLayersConfig = {

@@ -14,6 +14,7 @@ import {
   testAemetApiKey,
   updateAemetApiKey,
   updateAISStreamApiKey,
+  updateOpenWeatherMapApiKey,
   updateOpenSkyClientId,
   updateOpenSkyClientSecret,
   getShipsLayer,
@@ -384,6 +385,13 @@ const validateConfig = (config: AppConfig, supports: SchemaInspector["has"]): Fi
     }
   }
 
+  if (supports("layers.global.radar.provider")) {
+    const provider = config.layers.global?.radar?.provider;
+    if (provider !== "rainviewer" && provider !== "openweathermap") {
+      errors["layers.global.radar.provider"] = "Selecciona un proveedor válido";
+    }
+  }
+
   return errors;
 };
 
@@ -405,6 +413,9 @@ const ConfigPage: React.FC = () => {
   const [showAisstreamKey, setShowAisstreamKey] = useState(false);
   const [aisstreamKeyInput, setAisstreamKeyInput] = useState("");
   const [savingAisstreamKey, setSavingAisstreamKey] = useState(false);
+  const [showOpenWeatherKey, setShowOpenWeatherKey] = useState(false);
+  const [openWeatherKeyInput, setOpenWeatherKeyInput] = useState("");
+  const [savingOpenWeatherKey, setSavingOpenWeatherKey] = useState(false);
   const [testingShips, setTestingShips] = useState(false);
   const [shipsTestResult, setShipsTestResult] = useState<{ ok: boolean; message: string; count?: number } | null>(null);
   const [openskyClientIdInput, setOpenSkyClientIdInput] = useState("");
@@ -518,6 +529,26 @@ const ConfigPage: React.FC = () => {
     !showAisstreamKey &&
     !savingAisstreamKey &&
     Boolean(form.layers.ships.aisstream?.has_api_key);
+
+  const maskedOpenWeatherKey = useMemo(() => {
+    const radar = form.layers.global?.radar;
+    if (!radar?.has_api_key) {
+      return "";
+    }
+    const last4 = radar.api_key_last4;
+    if (typeof last4 === "string" && last4.trim().length > 0) {
+      return `•••• ${last4}`;
+    }
+    return "••••";
+  }, [form.layers.global?.radar]);
+
+  const trimmedOpenWeatherKeyInput = openWeatherKeyInput.trim();
+  const hasStoredOpenWeatherKey = Boolean(form.layers.global?.radar?.has_api_key);
+  const canPersistOpenWeatherKey =
+    showOpenWeatherKey &&
+    !savingOpenWeatherKey &&
+    (trimmedOpenWeatherKeyInput.length > 0 || hasStoredOpenWeatherKey);
+  const openWeatherSelected = form.layers.global?.radar?.provider === "openweathermap";
 
   const updateCinemaMotion = useCallback(
     (patch: Partial<AppConfig["ui"]["map"]["cinema"]["motion"]>) => {
@@ -719,6 +750,70 @@ const ConfigPage: React.FC = () => {
     }
   }, [aisstreamKeyInput, isReady, savingAisstreamKey, setBanner, showAisstreamKey]);
 
+  const handleToggleOpenWeatherKeyVisibility = useCallback(() => {
+    setShowOpenWeatherKey((prev) => {
+      const next = !prev;
+      if (!next) {
+        setOpenWeatherKeyInput("");
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSaveOpenWeatherKey = useCallback(async () => {
+    if (!isReady || savingOpenWeatherKey || !showOpenWeatherKey) {
+      return;
+    }
+    const trimmed = openWeatherKeyInput.trim();
+    setSavingOpenWeatherKey(true);
+    try {
+      await updateOpenWeatherMapApiKey(trimmed ? trimmed : null);
+      setForm((prev) => {
+        const defaults = createDefaultGlobalLayers();
+        const prevGlobal = prev.layers.global ?? defaults;
+        const prevRadar = prevGlobal.radar ?? defaults.radar;
+        return {
+          ...prev,
+          layers: {
+            ...prev.layers,
+            global: {
+              ...prevGlobal,
+              radar: {
+                ...prevRadar,
+                has_api_key: Boolean(trimmed),
+                api_key_last4: trimmed ? trimmed.slice(-4) : null,
+              },
+            },
+          },
+        };
+      });
+      setBanner({
+        kind: "success",
+        text: trimmed
+          ? "API key de OpenWeatherMap guardada"
+          : "API key de OpenWeatherMap eliminada",
+      });
+      setShowOpenWeatherKey(false);
+      setOpenWeatherKeyInput("");
+    } catch (error) {
+      console.error("[ConfigPage] Failed to update OpenWeatherMap API key", error);
+      const message = resolveApiErrorMessage(
+        error,
+        "No se pudo actualizar la API key de OpenWeatherMap",
+      );
+      setBanner({ kind: "error", text: message });
+    } finally {
+      setSavingOpenWeatherKey(false);
+    }
+  }, [
+    isReady,
+    openWeatherKeyInput,
+    savingOpenWeatherKey,
+    setBanner,
+    setForm,
+    showOpenWeatherKey,
+  ]);
+
   const handleTestShipsLayer = useCallback(async () => {
     if (testingShips) {
       return;
@@ -862,6 +957,8 @@ const ConfigPage: React.FC = () => {
     setShowAisstreamKey(false);
     setAisstreamKeyInput("");
     setShipsTestResult(null);
+    setShowOpenWeatherKey(false);
+    setOpenWeatherKeyInput("");
     setOpenSkyClientIdInput("");
     setOpenSkyClientSecretInput("");
     setOpenSkyStatusData(null);
@@ -1145,6 +1242,10 @@ const ConfigPage: React.FC = () => {
           delete (payload.layers.ships.aisstream as { api_key_last4?: string | null }).api_key_last4;
         }
       }
+      if (payload.layers?.global?.radar) {
+        delete (payload.layers.global.radar as { has_api_key?: boolean }).has_api_key;
+        delete (payload.layers.global.radar as { api_key_last4?: string | null }).api_key_last4;
+      }
       const saved = await saveConfig(payload);
       setForm(withConfigDefaults(saved));
       setShowMaptilerKey(false);
@@ -1154,6 +1255,8 @@ const ConfigPage: React.FC = () => {
       setShowAisstreamKey(false);
       setAisstreamKeyInput("");
       setShipsTestResult(null);
+      setShowOpenWeatherKey(false);
+      setOpenWeatherKeyInput("");
       setFieldErrors({});
       setBanner({ kind: "success", text: "Guardado" });
     } catch (error) {
@@ -4144,11 +4247,14 @@ const ConfigPage: React.FC = () => {
               },
               radar: {
                 enabled: currentGlobal?.radar?.enabled ?? defaultGlobal.radar.enabled,
-                provider: "rainviewer" as const,
+                provider:
+                  (currentGlobal?.radar?.provider ?? defaultGlobal.radar.provider ?? "rainviewer") as AppConfig["layers"]["global"]["radar"]["provider"],
                 refresh_minutes: currentGlobal?.radar?.refresh_minutes ?? defaultGlobal.radar.refresh_minutes,
                 history_minutes: currentGlobal?.radar?.history_minutes ?? defaultGlobal.radar.history_minutes,
                 frame_step: currentGlobal?.radar?.frame_step ?? defaultGlobal.radar.frame_step,
                 opacity: currentGlobal?.radar?.opacity ?? defaultGlobal.radar.opacity,
+                has_api_key: currentGlobal?.radar?.has_api_key ?? defaultGlobal.radar.has_api_key ?? false,
+                api_key_last4: currentGlobal?.radar?.api_key_last4 ?? defaultGlobal.radar.api_key_last4 ?? null,
               },
             };
           };
@@ -4374,7 +4480,97 @@ const ConfigPage: React.FC = () => {
                       />
                       Activar capa de radar global
                     </label>
-                    {renderHelp("Muestra radar de precipitación global (RainViewer)")}
+                    {renderHelp("Muestra radar de precipitación global (RainViewer u OpenWeatherMap)")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="global_radar_provider">Proveedor</label>
+                    <select
+                      id="global_radar_provider"
+                      value={form.layers.global?.radar.provider ?? "rainviewer"}
+                      disabled={disableInputs || !form.layers.global?.radar.enabled}
+                      onChange={(event) => {
+                        const provider = event.target.value as AppConfig["layers"]["global"]["radar"]["provider"];
+                        setForm((prev) => {
+                          const globalWithDefaults = getGlobalWithDefaults(prev);
+                          return {
+                            ...prev,
+                            layers: {
+                              ...prev.layers,
+                              global: {
+                                ...globalWithDefaults,
+                                radar: {
+                                  ...globalWithDefaults.radar,
+                                  provider,
+                                },
+                              },
+                            },
+                          };
+                        });
+                        setShowOpenWeatherKey(false);
+                        setOpenWeatherKeyInput("");
+                        resetErrorsFor("layers.global.radar.provider");
+                      }}
+                    >
+                      <option value="rainviewer">RainViewer (sin clave)</option>
+                      <option value="openweathermap">OpenWeatherMap</option>
+                    </select>
+                    {renderHelp("Elige la fuente del radar global. OpenWeatherMap requiere API key y ofrece 1000 llamadas/día gratis.")}
+                    {renderFieldError("layers.global.radar.provider")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="global_radar_openweathermap_key">OpenWeatherMap API key</label>
+                    <div className="config-field__secret">
+                      {showOpenWeatherKey ? (
+                        <input
+                          id="global_radar_openweathermap_key"
+                          type="text"
+                          value={openWeatherKeyInput}
+                          disabled={disableInputs || !openWeatherSelected}
+                          onChange={(event) => setOpenWeatherKeyInput(event.target.value)}
+                          placeholder="Introduce la clave de OpenWeatherMap"
+                          autoComplete="off"
+                          spellCheck={false}
+                        />
+                      ) : (
+                        <input
+                          id="global_radar_openweathermap_key_masked"
+                          type="text"
+                          value={maskedOpenWeatherKey}
+                          readOnly
+                          disabled
+                          placeholder="Sin clave guardada"
+                        />
+                      )}
+                      <button
+                        type="button"
+                        className="config-button"
+                        onClick={handleToggleOpenWeatherKeyVisibility}
+                        disabled={disableInputs || !openWeatherSelected}
+                      >
+                        {showOpenWeatherKey
+                          ? "Ocultar"
+                          : hasStoredOpenWeatherKey
+                          ? "Mostrar"
+                          : "Añadir"}
+                      </button>
+                    </div>
+                    <div className="config-field__hint">
+                      OpenWeatherMap incluye 1000 peticiones de tiles al día en su plan gratuito.
+                    </div>
+                    <div className="config-field__actions">
+                      {showOpenWeatherKey && (
+                        <button
+                          type="button"
+                          className="config-button primary"
+                          onClick={() => void handleSaveOpenWeatherKey()}
+                          disabled={disableInputs || !openWeatherSelected || !canPersistOpenWeatherKey}
+                        >
+                          Guardar clave
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="config-field">

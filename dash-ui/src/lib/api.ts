@@ -97,6 +97,11 @@ export type AemetTestResponse = {
   reason?: string;
 };
 
+export type MaskedSecretMeta = {
+  has_api_key: boolean;
+  api_key_last4: string | null;
+};
+
 export async function updateAemetApiKey(apiKey: string | null) {
   return apiPost<undefined>("/api/config/secret/aemet_api_key", {
     api_key: apiKey,
@@ -112,6 +117,14 @@ export async function updateAISStreamApiKey(apiKey: string | null) {
 export async function testAemetApiKey(apiKey?: string) {
   const body = apiKey && apiKey.trim().length > 0 ? { api_key: apiKey } : {};
   return apiPost<AemetTestResponse | undefined>("/api/aemet/test_key", body);
+}
+
+export async function updateOpenWeatherMapApiKey(apiKey: string | null) {
+  return apiPost<undefined>("/api/config/secret/openweathermap_api_key", { api_key: apiKey });
+}
+
+export async function getOpenWeatherMapApiKeyMeta() {
+  return apiGet<MaskedSecretMeta>("/api/config/secret/openweathermap_api_key");
 }
 
 export async function getSchema() {
