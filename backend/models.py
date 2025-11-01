@@ -8,12 +8,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 DEFAULT_CINEMA_BANDS: List[Dict[str, float | int]] = [
-    {"lat": 0.0, "zoom": 2.8, "pitch": 10.0, "minZoom": 2.6, "duration_sec": 900},
-    {"lat": 18.0, "zoom": 3.0, "pitch": 8.0, "minZoom": 2.8, "duration_sec": 720},
-    {"lat": 32.0, "zoom": 3.3, "pitch": 6.0, "minZoom": 3.0, "duration_sec": 600},
-    {"lat": 42.0, "zoom": 3.6, "pitch": 6.0, "minZoom": 3.2, "duration_sec": 480},
-    {"lat": -18.0, "zoom": 3.0, "pitch": 8.0, "minZoom": 2.8, "duration_sec": 720},
-    {"lat": -32.0, "zoom": 3.3, "pitch": 6.0, "minZoom": 3.0, "duration_sec": 600},
+    {"lat": 0.0, "zoom": 3.1, "pitch": 10.0, "minZoom": 2.9, "duration_sec": 900},
+    {"lat": 18.0, "zoom": 3.3, "pitch": 8.0, "minZoom": 3.1, "duration_sec": 720},
+    {"lat": 32.0, "zoom": 3.6, "pitch": 6.0, "minZoom": 3.3, "duration_sec": 600},
+    {"lat": 42.0, "zoom": 3.9, "pitch": 6.0, "minZoom": 3.5, "duration_sec": 480},
+    {"lat": -18.0, "zoom": 3.3, "pitch": 8.0, "minZoom": 3.1, "duration_sec": 720},
+    {"lat": -32.0, "zoom": 3.6, "pitch": 6.0, "minZoom": 3.3, "duration_sec": 600},
 ]
 
 
@@ -57,9 +57,10 @@ class MapCinemaMotion(BaseModel):
 class MapCinema(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    enabled: bool = False
-    panLngDegPerSec: float = Field(default=0.0, ge=0)
+    enabled: bool = True
+    panLngDegPerSec: float = Field(default=1.1, ge=0)
     bandTransition_sec: int = Field(default=8, ge=1)
+    fsm_enabled: bool = Field(default=True, alias="fsmEnabled")
     bands: List[MapCinemaBand] = Field(
         default_factory=lambda: [MapCinemaBand(**band) for band in DEFAULT_CINEMA_BANDS]
     )

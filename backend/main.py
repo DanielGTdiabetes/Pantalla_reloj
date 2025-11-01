@@ -8,7 +8,7 @@ import tempfile
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Literal
 
 import requests
 
@@ -65,6 +65,7 @@ cache_store = CacheStore()
 secret_store = SecretStore()
 opensky_service = OpenSkyService(secret_store, logger)
 ships_service = AISStreamService(cache_store=cache_store, secret_store=secret_store, logger=logger)
+map_reset_counter = 0
 
 app = FastAPI(title="Pantalla Reloj Backend", version="2025.10.0")
 app.add_middleware(
@@ -187,6 +188,12 @@ class AISStreamSecretRequest(BaseModel):
 
 class OpenWeatherMapSecretRequest(BaseModel):
     api_key: Optional[str] = Field(default=None, max_length=256)
+
+
+class MapResetResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+    reset_counter: int
+    reset_at: datetime
 
 
 def _sanitize_secret(value: Optional[str]) -> Optional[str]:
@@ -811,8 +818,21 @@ async def save_config(request: Request) -> JSONResponse:
     response.headers["Expires"] = "0"
     response.headers["ETag"] = config_etag
     response.headers["Last-Modified"] = datetime.fromtimestamp(config_mtime).strftime("%a, %d %b %Y %H:%M:%S GMT")
-    
+
     return response
+
+
+@app.post("/api/map/reset", response_model=MapResetResponse)
+def reset_map_endpoint() -> MapResetResponse:
+    """Signal the UI to rebuild MapLibre state without restarting the backend."""
+
+    global map_reset_counter
+    map_reset_counter += 1
+    logger.info("Map reset requested (counter=%d)", map_reset_counter)
+    return MapResetResponse(
+        reset_counter=map_reset_counter,
+        reset_at=datetime.now(timezone.utc),
+    )
 
 
 @app.get("/api/config/schema")

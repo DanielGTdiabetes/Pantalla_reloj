@@ -624,6 +624,7 @@ const ConfigPage: React.FC = () => {
             enabled: defaults.enabled,
             panLngDegPerSec: defaults.panLngDegPerSec,
             bandTransition_sec: defaults.bandTransition_sec,
+            fsmEnabled: defaults.fsmEnabled,
             motion: { ...defaults.motion },
           },
         },
@@ -1626,6 +1627,39 @@ const ConfigPage: React.FC = () => {
                     Pausar cuando haya overlays informativos
                   </label>
                   {renderHelp("Detiene el movimiento si se muestra el modo tormenta u otros paneles prioritarios")}
+                </div>
+              )}
+
+              {supports("ui.map.cinema.fsmEnabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="cinema_fsm_toggle">
+                    <input
+                      id="cinema_fsm_toggle"
+                      type="checkbox"
+                      checked={form.ui.map.cinema.fsmEnabled}
+                      disabled={disableCinemaControls}
+                      onChange={(event) => {
+                        const { checked } = event.target;
+                        setForm((prev) => ({
+                          ...prev,
+                          ui: {
+                            ...prev.ui,
+                            map: {
+                              ...prev.ui.map,
+                              cinema: {
+                                ...prev.ui.map.cinema,
+                                fsmEnabled: checked,
+                              },
+                            },
+                          },
+                        }));
+                      }}
+                    />
+                    Estabilizador del modo cine (nuevo)
+                  </label>
+                  {renderHelp(
+                    "Activa la máquina de estados para evitar congelaciones al cambiar de estilo. Desactiva para volver al comportamiento clásico."
+                  )}
                 </div>
               )}
 
