@@ -309,7 +309,8 @@ def _build_public_config(config: AppConfig) -> Dict[str, Any]:
         oauth_public.pop("client_id", None)
         stored_id = secret_store.get_secret("opensky_client_id")
         stored_secret = secret_store.get_secret("opensky_client_secret")
-        oauth_public["has_credentials"] = bool(stored_id and stored_secret)
+        has_credentials = bool(stored_id and stored_secret)
+        oauth_public["has_credentials"] = has_credentials
         oauth_public["client_id_last4"] = (
             stored_id[-4:] if stored_id and len(stored_id) >= 4 else stored_id
         )
@@ -354,17 +355,24 @@ def _refresh_opensky_oauth_metadata() -> None:
         if not isinstance(opensky_info, dict):
             return
         oauth_info = opensky_info.get("oauth2")
-        if not isinstance(oauth_info, dict):
-            oauth_info = {}
+        if isinstance(oauth_info, dict):
+            oauth_public = dict(oauth_info)
+        else:
+            oauth_public = {}
+        oauth_public.pop("client_id", None)
+        oauth_public.pop("client_secret", None)
+        if not isinstance(oauth_public.get("token_url"), str) or not oauth_public["token_url"].strip():
+            oauth_public["token_url"] = DEFAULT_TOKEN_URL
+        if "scope" not in oauth_public:
+            oauth_public["scope"] = None
         stored_id = secret_store.get_secret("opensky_client_id")
         stored_secret = secret_store.get_secret("opensky_client_secret")
-        oauth_info["client_id"] = None
-        oauth_info["client_secret"] = None
-        oauth_info["has_credentials"] = bool(stored_id and stored_secret)
-        oauth_info["client_id_last4"] = (
+        has_credentials = bool(stored_id and stored_secret)
+        oauth_public["has_credentials"] = has_credentials
+        oauth_public["client_id_last4"] = (
             stored_id[-4:] if stored_id and len(stored_id) >= 4 else stored_id
         )
-        opensky_info["oauth2"] = oauth_info
+        opensky_info["oauth2"] = oauth_public
         payload["opensky"] = opensky_info
         config_manager.write(payload)
     except Exception as exc:  # noqa: BLE001
@@ -1025,42 +1033,54 @@ async def save_config(request: Request) -> JSONResponse:
         elif current_oauth is not None:
             oauth_block["scope"] = current_oauth.scope
 
-        client_id_update = False
-        client_secret_update = False
-        if "client_id" in oauth_block:
-            client_id_update = True
-            client_candidate = oauth_block.get("client_id")
-            if isinstance(client_candidate, str):
-                sanitized_id = _sanitize_secret(client_candidate)
-            elif client_candidate is None:
-                sanitized_id = None
-            else:
-                sanitized_id = _sanitize_secret(str(client_candidate))
-            secret_store.set_secret("opensky_client_id", sanitized_id)
-        if "client_secret" in oauth_block:
-            client_secret_update = True
-            secret_candidate = oauth_block.get("client_secret")
-            if isinstance(secret_candidate, str):
-                sanitized_secret = _sanitize_secret(secret_candidate)
-            elif secret_candidate is None:
-                sanitized_secret = None
-            else:
-                sanitized_secret = _sanitize_secret(str(secret_candidate))
-            secret_store.set_secret("opensky_client_secret", sanitized_secret)
+        existing_client_id = secret_store.get_secret("opensky_client_id")
+        existing_client_secret = secret_store.get_secret("opensky_client_secret")
+        credentials_updated = False
 
-        oauth_block["client_id"] = None
-        oauth_block["client_secret"] = None
+        _sentinel = object()
+        client_id_raw = oauth_block.get("client_id", _sentinel)
+        if client_id_raw is None:
+            if existing_client_id is not None:
+                secret_store.set_secret("opensky_client_id", None)
+                credentials_updated = True
+        elif client_id_raw is not _sentinel:
+            sanitized_id = _sanitize_secret(str(client_id_raw))
+            if sanitized_id:
+                if sanitized_id != existing_client_id:
+                    secret_store.set_secret("opensky_client_id", sanitized_id)
+                    credentials_updated = True
+            # Ignore empty submissions to avoid clearing stored values
+
+        client_secret_raw = oauth_block.get("client_secret", _sentinel)
+        if client_secret_raw is None:
+            if existing_client_secret is not None:
+                secret_store.set_secret("opensky_client_secret", None)
+                credentials_updated = True
+        elif client_secret_raw is not _sentinel:
+            sanitized_secret = _sanitize_secret(str(client_secret_raw))
+            if sanitized_secret:
+                if sanitized_secret != existing_client_secret:
+                    secret_store.set_secret("opensky_client_secret", sanitized_secret)
+                    credentials_updated = True
+            # Ignore empty submissions to avoid clearing stored values
+
+        oauth_block.pop("client_id", None)
+        oauth_block.pop("client_secret", None)
+
         stored_client_id = secret_store.get_secret("opensky_client_id")
         stored_client_secret = secret_store.get_secret("opensky_client_secret")
-        oauth_block["has_credentials"] = bool(stored_client_id and stored_client_secret)
+        has_credentials = bool(stored_client_id and stored_client_secret)
+        oauth_block["has_credentials"] = has_credentials
         oauth_block["client_id_last4"] = (
             stored_client_id[-4:] if stored_client_id and len(stored_client_id) >= 4 else stored_client_id
         )
 
-        if not client_id_update and current_oauth is not None:
-            oauth_block.setdefault("client_id", None)
-        if not client_secret_update and current_oauth is not None:
-            oauth_block.setdefault("client_secret", None)
+        if credentials_updated:
+            try:
+                opensky_service.reset()
+                logger.info("[opensky] credentials updated -> token cache reset")
+            except Exception:  # noqa: BLE001
+                logger.debug("post-secret side effects failed", exc_info=True)
 
         updated = config_manager.write(payload)
     except ValidationError as exc:

@@ -167,11 +167,11 @@ export type CineFocusConfig = {
 
 export type OpenSkyOAuthConfig = {
   token_url: string;
-  client_id: string | null;
-  client_secret: string | null;
   scope: string | null;
   has_credentials: boolean;
   client_id_last4: string | null;
+  client_id?: string | null;
+  client_secret?: string | null;
 };
 
 export type OpenSkyBBoxConfig = {

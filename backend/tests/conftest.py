@@ -8,7 +8,10 @@ import pytest
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "default_config.json"
 
+_REAL_HTTPX = importlib.import_module("httpx")
 _DUMMY_HTTPX = types.ModuleType("httpx")
+for _attr in dir(_REAL_HTTPX):
+    setattr(_DUMMY_HTTPX, _attr, getattr(_REAL_HTTPX, _attr))
 
 
 class _DummyTimeout:

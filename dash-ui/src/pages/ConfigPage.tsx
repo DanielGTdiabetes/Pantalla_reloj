@@ -518,15 +518,34 @@ const ConfigPage: React.FC = () => {
   }, [form.layers.ships.aisstream]);
 
   const openskyCredentialHelp = useMemo(() => {
-    if (!openskyAuthState?.has_credentials) {
-      return "No hay credenciales guardadas";
+    if (openskyAuthState?.has_credentials) {
+      return "Las credenciales están guardadas en el backend. Introduce nuevos valores para reemplazarlas.";
     }
-    const last4 = openskyAuthState.client_id_last4;
-    if (typeof last4 === "string" && last4.trim().length > 0) {
-      return `Credenciales guardadas (•••• ${last4.trim()})`;
+    return "Introduce client_id y client_secret proporcionados por OpenSky Network y pulsa Guardar configuración.";
+  }, [openskyAuthState?.has_credentials]);
+
+  const openskyCredentialBadge = useMemo(() => {
+    if (!isReady) {
+      return null;
     }
-    return "Credenciales guardadas (••••)";
-  }, [openskyAuthState?.has_credentials, openskyAuthState?.client_id_last4]);
+    if (!openskyAuthState) {
+      return <span className="config-badge config-badge--warning">Sin credenciales</span>;
+    }
+    if (openskyAuthState.has_credentials) {
+      const last4 =
+        typeof openskyAuthState.client_id_last4 === "string"
+          ? openskyAuthState.client_id_last4.trim()
+          : "";
+      const masked = last4.length > 0 ? `•••• ${last4}` : "••••";
+      return (
+        <span className="config-badge config-badge--success" title="Credenciales guardadas en el backend">
+          Guardado
+          <span className="config-badge__code">{masked}</span>
+        </span>
+      );
+    }
+    return <span className="config-badge config-badge--warning">Sin credenciales</span>;
+  }, [isReady, openskyAuthState]);
 
   const trimmedAisstreamKeyInput = aisstreamKeyInput.trim();
   const hasStoredAisstreamKey = Boolean(form.layers.ships.aisstream?.has_api_key);
@@ -1214,18 +1233,30 @@ const ConfigPage: React.FC = () => {
         }
         if (typeof oauthPayload.client_id === "string") {
           const trimmedId = oauthPayload.client_id.trim();
-          oauthPayload.client_id = trimmedId.length > 0 ? trimmedId : null;
+          if (trimmedId.length > 0) {
+            oauthPayload.client_id = trimmedId;
+          } else {
+            delete oauthPayload.client_id;
+          }
+        } else if (oauthPayload.client_id === null) {
+          delete oauthPayload.client_id;
         }
         if (typeof oauthPayload.client_secret === "string") {
           const trimmedSecret = oauthPayload.client_secret.trim();
-          oauthPayload.client_secret = trimmedSecret.length > 0 ? trimmedSecret : null;
+          if (trimmedSecret.length > 0) {
+            oauthPayload.client_secret = trimmedSecret;
+          } else {
+            delete oauthPayload.client_secret;
+          }
+        } else if (oauthPayload.client_secret === null) {
+          delete oauthPayload.client_secret;
         }
         if (typeof oauthPayload.scope === "string") {
           const trimmedScope = oauthPayload.scope.trim();
           oauthPayload.scope = trimmedScope.length > 0 ? trimmedScope : null;
         }
-        oauthPayload.has_credentials = Boolean(form.opensky.oauth2.has_credentials);
-        oauthPayload.client_id_last4 = form.opensky.oauth2.client_id_last4 ?? null;
+        delete oauthPayload.has_credentials;
+        delete oauthPayload.client_id_last4;
       }
       const saved = await saveConfig(payload);
       setForm(withConfigDefaults(saved));
@@ -3349,7 +3380,10 @@ const ConfigPage: React.FC = () => {
               )}
 
               <div className="config-field">
-                <label htmlFor="opensky_client_id">Client ID OAuth2</label>
+                <label htmlFor="opensky_client_id">
+                  Client ID OAuth2
+                  {openskyCredentialBadge}
+                </label>
                 <input
                   id="opensky_client_id"
                   type="password"
@@ -3401,7 +3435,9 @@ const ConfigPage: React.FC = () => {
                   autoComplete="off"
                   spellCheck={false}
                 />
-                {renderHelp("Introduce client_id y client_secret y pulsa Guardar configuración para aplicarlos")}
+                {renderHelp(
+                  "Introduce el client_secret proporcionado por OpenSky Network y pulsa Guardar configuración para actualizarlo."
+                )}
               </div>
 
               <div className="config-field">
