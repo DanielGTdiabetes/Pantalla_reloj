@@ -140,7 +140,8 @@ export const createDefaultMapPreferences = (): MapPreferences => ({
 
 export const createDefaultMapCinema = (): MapCinemaConfig => ({
   enabled: true,
-  panLngDegPerSec: 1.1,
+  panLngDegPerSec: 0.9,
+  debug: false,
   bandTransition_sec: 8,
   fsmEnabled: true,
   motion: { ...DEFAULT_CINEMA_MOTION },
@@ -246,6 +247,7 @@ const mergeCinema = (candidate: unknown): MapCinemaConfig => {
   return {
     enabled: toBoolean(source.enabled, fallback.enabled),
     panLngDegPerSec: Math.max(0, toNumber(source.panLngDegPerSec, fallback.panLngDegPerSec)),
+    debug: toBoolean((source as { debug?: unknown })?.debug, fallback.debug),
     bandTransition_sec: Math.max(1, Math.round(toNumber(source.bandTransition_sec, fallback.bandTransition_sec))),
     fsmEnabled: toBoolean((source as { fsmEnabled?: unknown })?.fsmEnabled, fallback.fsmEnabled),
     motion,
