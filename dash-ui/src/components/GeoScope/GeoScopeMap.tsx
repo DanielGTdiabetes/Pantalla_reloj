@@ -1014,17 +1014,14 @@ function checkWebGLSupport(): { supported: boolean; reason?: string } {
     const gl =
       (canvas.getContext("webgl") as WebGLRenderingContext | null) ||
       (canvas.getContext("experimental-webgl") as WebGLRenderingContext | null);
-    
+
     if (!gl) {
       return { supported: false, reason: "WebGL no está disponible en este navegador" };
     }
-    
-    // Verificar que WebGL esté realmente funcional
-    const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
-    if (!debugInfo) {
-      return { supported: false, reason: "WebGL no está completamente funcional" };
-    }
-    
+
+    // El soporte de WebGL_debug_renderer_info es opcional y su ausencia no
+    // significa que WebGL esté roto. Si llegamos hasta aquí el contexto es
+    // válido y podemos considerar WebGL como soportado.
     return { supported: true };
   } catch (error) {
     return { supported: false, reason: `Error verificando WebGL: ${error}` };
