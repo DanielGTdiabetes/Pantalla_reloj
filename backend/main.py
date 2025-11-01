@@ -935,6 +935,30 @@ def healthcheck_full() -> Dict[str, Any]:
     return payload
 
 
+@app.post("/api/providers/opensky/refresh")
+def opensky_manual_refresh() -> Dict[str, Any]:
+    """Fuerza la renovación del token OAuth y un fetch inmediato de OpenSky."""
+
+    logger.info("Manual OpenSky refresh requested")
+    config = config_manager.read()
+    try:
+        result = opensky_service.force_refresh(config)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Manual OpenSky refresh failed unexpectedly: %s", exc)
+        mode = getattr(config.opensky, "mode", "bbox") if hasattr(config, "opensky") else "bbox"
+        return {
+            "auth": {"token_cached": False, "expires_in_sec": None},
+            "fetch": {
+                "status": "error",
+                "items": 0,
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "mode": mode,
+            },
+            "error": "unexpected_refresh_error",
+        }
+    return result
+
+
 @app.get("/api/config")
 def get_config(request: Request) -> JSONResponse:
     """Obtiene la configuración actual con headers anti-cache."""

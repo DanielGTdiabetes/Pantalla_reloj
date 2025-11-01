@@ -46,7 +46,11 @@ class OpenSkyClient:
         headers = {}
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        response = self._client.get("/states/all", params=params, headers=headers)
+        try:
+            response = self._client.get("/states/all", params=params, headers=headers)
+        except httpx.HTTPError as exc:  # pragma: no cover - network errors are rare but important
+            self._logger.warning("[opensky] fetch failed due to network error: %s", exc)
+            raise OpenSkyClientError("network_error") from exc
         remaining_header = response.headers.get("X-Rate-Limit-Remaining")
         headers_out = {}
         if remaining_header is not None:
@@ -55,13 +59,26 @@ class OpenSkyClient:
             self._logger.warning("[opensky] rate limit reached (429)")
             raise OpenSkyClientError("rate_limit", status=429)
         if response.status_code in {401, 403}:
+            self._logger.warning(
+                "[opensky] unauthorized response from states endpoint (status %s)",
+                response.status_code,
+            )
             raise OpenSkyClientError("unauthorized", status=response.status_code)
         if response.status_code >= 500:
+            self._logger.warning(
+                "[opensky] upstream error from states endpoint (status %s)",
+                response.status_code,
+            )
             raise OpenSkyClientError("upstream_error", status=response.status_code)
         if response.status_code >= 400:
+            self._logger.warning(
+                "[opensky] client error from states endpoint (status %s)",
+                response.status_code,
+            )
             raise OpenSkyClientError("client_error", status=response.status_code)
         payload = response.json()
         if not isinstance(payload, dict):
+            self._logger.warning("[opensky] invalid payload received from states endpoint")
             raise OpenSkyClientError("invalid_payload")
         return payload, headers_out
 
