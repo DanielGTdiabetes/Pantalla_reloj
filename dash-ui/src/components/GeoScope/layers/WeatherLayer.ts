@@ -1,6 +1,7 @@
 import maplibregl from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
 
+import GeoScopeLayerOrder from "./layerOrder";
 import type { Layer } from "./LayerRegistry";
 
 interface WeatherLayerOptions {
@@ -11,7 +12,7 @@ const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 
 export default class WeatherLayer implements Layer {
   public readonly id = "geoscope-weather";
-  public readonly zIndex = 10;
+  public readonly zIndex = GeoScopeLayerOrder.Radar;
 
   private enabled: boolean;
   private map?: maplibregl.Map;

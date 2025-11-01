@@ -1,6 +1,7 @@
 import maplibregl from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
 
+import GeoScopeLayerOrder from "./layerOrder";
 import type { Layer } from "./LayerRegistry";
 import { isGeoJSONSource } from "./layerUtils";
 
@@ -12,7 +13,7 @@ const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 
 export default class LightningLayer implements Layer {
   public readonly id = "geoscope-lightning";
-  public readonly zIndex = 50;
+  public readonly zIndex = GeoScopeLayerOrder.Lightning;
 
   private enabled: boolean;
   private map?: maplibregl.Map;

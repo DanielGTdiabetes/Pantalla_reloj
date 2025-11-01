@@ -87,6 +87,25 @@ const readBooleanFlags = (...keys: string[]): boolean | undefined => {
   return undefined;
 };
 
+const readEnvBoolean = (key: string): boolean | undefined => {
+  if (typeof import.meta === "undefined" || typeof import.meta.env === "undefined") {
+    return undefined;
+  }
+  const raw = (import.meta.env as Record<string, string | undefined>)[key];
+  if (typeof raw !== "string") {
+    return undefined;
+  }
+  return parseBoolean(raw);
+};
+
+const getFlightsDummyOverride = (): boolean | undefined => {
+  const runtimeValue = readBooleanFlags("flights_dummy", "flightsDummy", "dummyFlights");
+  if (typeof runtimeValue === "boolean") {
+    return runtimeValue;
+  }
+  return readEnvBoolean("VITE_FLIGHTS_DUMMY");
+};
+
 const readNumberFlag = (key: string): number | undefined => {
   const params = getSearchParams();
   const fromQuery = parseNumber(params.get(key));
@@ -261,6 +280,12 @@ export const kioskRuntime = {
       return reducedOverride === false;
     }
     return true;
+  }
+};
+
+export const runtimeFeatures = {
+  isFlightsDummyEnabled(): boolean {
+    return getFlightsDummyOverride() ?? false;
   }
 };
 

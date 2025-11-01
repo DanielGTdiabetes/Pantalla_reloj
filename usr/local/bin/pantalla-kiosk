@@ -137,11 +137,17 @@ launch_chromium() {
     "$binary"
     --class=pantalla-kiosk
     --kiosk
+    "--app=${url}"
     --no-first-run
     --no-default-browser-check
     --password-store=basic
+    --use-gl=angle
+    --use-angle=egl
+    --ozone-platform=x11
+    --disable-features=CalculateNativeWinOcclusion,InfiniteSessionRestore,HardwareMediaKeyHandling
+    --disable-renderer-backgrounding
+    --disable-background-timer-throttling
     "--user-data-dir=${profile_dir}"
-    "$url"
   )
 
   log "chromium_bin: ${binary}"

@@ -41,6 +41,9 @@ Pantalla_reloj/
 - Dashboard por defecto en modo `full`: mapa principal con tarjetas de noticias y
   eventos, más panel lateral derecho con métricas de clima, rotación y estado de
   tormenta.
+- La shell principal usa CSS Grid con altura base de 480 px (`--dashboard-height`) y
+  reserva una columna fija de 420 px (`--panel-width`) para el panel rotatorio. El
+  mapa ocupa el resto del ancho sin solapes y los scrolls quedan confinados al panel.
 - El panel lateral puede moverse a la izquierda y el carrusel de módulos (modo demo)
   puede activarse desde `/config`; por defecto ambos permanecen deshabilitados.
 - `/config` expone la administración completa (rotación, API keys, MQTT, Wi-Fi y
@@ -54,6 +57,8 @@ Pantalla_reloj/
   muestra enmascarado (•••• 1234), el botón «Mostrar» habilita la edición en
   claro y el botón «Probar clave» ejecuta `/api/aemet/test_key` para validar la
   credencial sin exponerla al resto del formulario.
+- El panel derecho incorpora el bloque **Capas**, que permite activar o desactivar la
+  capa de aviones desde la UI sin abandonar `/`.
 - Compilado con `npm run build` y servido por Nginx desde `/var/www/html`.
 
 #### Autopan y diagnósticos
@@ -122,6 +127,11 @@ Pantalla_reloj/
   (lon/lat, velocidad, rumbo, país, última recepción) y se apoya en una caché
   en memoria con TTL = `poll_seconds` (nunca <5 s). Si OpenSky responde con 429
   o 5xx se reutiliza el último snapshot marcándolo como `stale=true`.
+- El frontend fuerza el orden de render en `GeoScopeLayerOrder` (satélite/radar →
+  barcos → aviones → HUD) para evitar solapes inesperados. Cuando no hay datos reales
+  o el backend está vacío puede activarse el modo sintético con `VITE_FLIGHTS_DUMMY=1`
+  (también disponible vía `?flights_dummy=1`), lo que genera 10‑20 aeronaves de
+  prueba visibles inmediatamente.
 
 ### Nginx (reverse proxy `/api`)
 

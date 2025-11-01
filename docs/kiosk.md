@@ -47,6 +47,8 @@ sudo systemctl enable --now pantalla-kiosk@dani.service
 
 Las variables `KIOSK_URL`, `CHROME_BIN_OVERRIDE`, `FIREFOX_BIN_OVERRIDE`, `CHROMIUM_PROFILE_DIR` y `FIREFOX_PROFILE_DIR` se definen en `/var/lib/pantalla-reloj/state/kiosk.env`. Tras cualquier cambio reinicia el servicio con `sudo systemctl restart pantalla-kiosk@dani`.
 
+El wrapper de Chromium lanza la instancia única en modo `--app=<URL>` y fuerza ANGLE sobre EGL (`--use-gl=angle --use-angle=egl --ozone-platform=x11`). También deshabilita `CalculateNativeWinOcclusion`, `InfiniteSessionRestore` y `HardwareMediaKeyHandling`, además de los throttling en segundo plano para evitar pérdidas de FPS en la pantalla 1920×480.
+
 ### Evitar ventanas duplicadas
 
 Openbox no lanza navegadores automáticamente y el servicio de kiosk elimina instancias previas por clase de ventana (`wmctrl -lx`). Si aparece una ventana blanca o se percibe una "doble pantalla", verifica que sólo exista una ventana con clase `pantalla-kiosk`:
@@ -63,7 +65,8 @@ Para comprobar que el proceso usa ANGLE (EGL) ejecuta:
 pgrep -af -- '--class=pantalla-kiosk'
 ```
 
-Debe aparecer `--use-gl=egl-angle` en la línea de comandos. Si falta, reinicia el servicio y revisa los logs del kiosk.
+Debe aparecer la combinación `--app=http://… --use-gl=angle --use-angle=egl --ozone-platform=x11` en la línea de comandos. Si
+falta, reinicia el servicio y revisa los logs del kiosk.
 
 ### Troubleshooting de video
 
