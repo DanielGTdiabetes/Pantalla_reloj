@@ -23,6 +23,24 @@ export class LayerRegistry {
     layer.add(this.map);
   }
 
+  reapply() {
+    for (const layer of this.layers) {
+      try {
+        layer.remove(this.map);
+      } catch (err) {
+        console.warn(`[LayerRegistry] Failed to remove layer ${layer.id}`, err);
+      }
+    }
+
+    for (const layer of this.layers) {
+      try {
+        layer.add(this.map);
+      } catch (err) {
+        console.warn(`[LayerRegistry] Failed to reapply layer ${layer.id}`, err);
+      }
+    }
+  }
+
   destroy() {
     for (const layer of this.layers) {
       try {

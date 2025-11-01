@@ -1,5 +1,6 @@
 import type { StyleSpecification } from "maplibre-gl";
 
+import { getBaseStyle } from "../../config/mapProviders";
 import type { MapPreferences, UIMapSettings } from "../../types/config";
 
 const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
@@ -31,19 +32,19 @@ const determineVariant = (styleName: string): MapStyleVariant => {
   return "dark";
 };
 
-const createOsmStyle = (): StyleSpecification => ({
+const createRasterStyle = (tileUrl: string, attribution: string, name: string): StyleSpecification => ({
   version: 8,
-  name: "OpenStreetMap",
+  name,
   glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
   sources: {
-    osm: {
+    base: {
       type: "raster",
-      tiles: [OSM_TILES],
+      tiles: [tileUrl],
       tileSize: 256,
-      attribution: OSM_ATTRIBUTION
+      attribution
     }
   },
-  layers: [{ id: "osm", type: "raster", source: "osm" }]
+  layers: [{ id: "base", type: "raster", source: "base" }]
 });
 
 const ensureStyleName = (mapSettings: UIMapSettings): string => {
@@ -70,41 +71,6 @@ const sanitizeApiKey = (value?: string | null): string | null => {
   return /^[A-Za-z0-9._-]+$/.test(trimmed) ? trimmed : null;
 };
 
-const selectMaptilerUrl = (
-  mapSettings: UIMapSettings,
-  variant: MapStyleVariant
-): string | null => {
-  const config = mapSettings.maptiler;
-  if (!config) {
-    return null;
-  }
-
-  if (variant === "dark") {
-    return sanitizeOptionalString(config.styleUrlDark) ?? sanitizeOptionalString(config.styleUrlLight);
-  }
-
-  if (variant === "bright") {
-    return (
-      sanitizeOptionalString(config.styleUrlBright) ??
-      sanitizeOptionalString(config.styleUrlLight) ??
-      sanitizeOptionalString(config.styleUrlDark)
-    );
-  }
-
-  return sanitizeOptionalString(config.styleUrlLight) ?? sanitizeOptionalString(config.styleUrlDark);
-};
-
-const injectKeyIntoUrl = (baseUrl: string, key: string): string => {
-  try {
-    const url = new URL(baseUrl);
-    url.searchParams.set("key", key);
-    return url.toString();
-  } catch {
-    const delimiter = baseUrl.includes("?") ? "&" : "?";
-    return `${baseUrl}${delimiter}key=${encodeURIComponent(key)}`;
-  }
-};
-
 const injectKeyPlaceholders = (payload: string, key: string): string => {
   if (!key) {
     return payload;
@@ -120,47 +86,57 @@ export const loadMapStyle = async (
   const variant = determineVariant(styleName);
   const fallbackStyle: MapStyleDefinition = {
     type: "raster",
-    style: createOsmStyle(),
+    style: createRasterStyle(OSM_TILES, OSM_ATTRIBUTION, "OpenStreetMap"),
     variant,
     name: styleName
   };
 
   let resolvedStyle = fallbackStyle;
-  let usedFallback = mapPreferences.provider !== "maptiler";
+  let usedFallback = true;
 
-  if (mapPreferences.provider === "maptiler") {
-    if (styleName.startsWith("vector-")) {
-      const key =
-        sanitizeApiKey(mapPreferences.maptiler_api_key) ?? sanitizeApiKey(mapSettings.maptiler?.key) ?? null;
-      const baseUrl = selectMaptilerUrl(mapSettings, variant);
+  const intendedProvider = (mapSettings.provider ?? mapPreferences.provider ?? "").toLowerCase();
 
-      if (key && baseUrl) {
-        const styleUrl = injectKeyIntoUrl(baseUrl, key);
-        try {
-          const response = await fetch(styleUrl);
-          if (!response.ok) {
-            throw new Error(`Failed to load style: HTTP ${response.status}`);
-          }
-          const styleText = await response.text();
-          const parsed = JSON.parse(injectKeyPlaceholders(styleText, key)) as StyleSpecification;
-          resolvedStyle = {
-            type: "vector",
-            style: parsed,
-            variant,
-            name: styleName
-          };
-          usedFallback = false;
-        } catch (error) {
-          console.warn("[map] MapTiler style failed, using OpenStreetMap fallback", error);
-          usedFallback = true;
-        }
-      } else {
-        console.warn("[map] MapTiler requiere una API key válida, usando OpenStreetMap");
-        usedFallback = true;
+  const sanitizedKey =
+    sanitizeApiKey(mapPreferences.maptiler_api_key) ?? sanitizeApiKey(mapSettings.maptiler?.key) ?? null;
+
+  const providerBase = getBaseStyle({
+    provider: mapSettings.provider ?? mapPreferences.provider,
+    style: styleName,
+    model: (mapSettings as unknown as { model?: string | null })?.model ?? null,
+    apiKeys: { maptiler: sanitizedKey },
+  });
+
+  if (providerBase.type === "maplibre" && providerBase.styleUrl) {
+    try {
+      const response = await fetch(providerBase.styleUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to load style: HTTP ${response.status}`);
       }
-    } else {
+      const styleText = await response.text();
+      const parsed = JSON.parse(
+        sanitizedKey ? injectKeyPlaceholders(styleText, sanitizedKey) : styleText
+      ) as StyleSpecification;
+      resolvedStyle = {
+        type: "vector",
+        style: parsed,
+        variant,
+        name: providerBase.name,
+      };
+      usedFallback = false;
+    } catch (error) {
+      console.warn("[map] MapTiler style failed, using OpenStreetMap fallback", error);
       usedFallback = true;
     }
+  } else if (providerBase.type === "maplibre" && providerBase.tileUrl) {
+    resolvedStyle = {
+      type: "raster",
+      style: createRasterStyle(providerBase.tileUrl, providerBase.attribution, providerBase.name),
+      variant,
+      name: providerBase.name,
+    };
+    const isOsmTile = providerBase.tileUrl === OSM_TILES;
+    const intendedOsm = intendedProvider === "osm" || intendedProvider === "openstreetmap";
+    usedFallback = isOsmTile ? !intendedOsm : false;
   }
 
   return {
