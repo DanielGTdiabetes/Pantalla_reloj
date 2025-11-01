@@ -1030,7 +1030,9 @@ async def save_config(request: Request) -> JSONResponse:
         if "client_id" in oauth_block:
             client_candidate = oauth_block.get("client_id")
             if client_candidate is None:
+                secret_store.set_secret("opensky_client_id", None)
                 oauth_block.pop("client_id", None)
+                client_id_update = True
             else:
                 if isinstance(client_candidate, str):
                     sanitized_id = _sanitize_secret(client_candidate)
@@ -1041,7 +1043,9 @@ async def save_config(request: Request) -> JSONResponse:
         if "client_secret" in oauth_block:
             secret_candidate = oauth_block.get("client_secret")
             if secret_candidate is None:
+                secret_store.set_secret("opensky_client_secret", None)
                 oauth_block.pop("client_secret", None)
+                client_secret_update = True
             else:
                 if isinstance(secret_candidate, str):
                     sanitized_secret = _sanitize_secret(secret_candidate)
