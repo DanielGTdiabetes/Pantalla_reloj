@@ -220,7 +220,8 @@ def _build_public_config(config: AppConfig) -> Dict[str, Any]:
     payload = config.model_dump(mode="json", exclude_none=True, by_alias=True)
     aemet_info = payload.get("aemet", {})
 
-    masked = _mask_secret(config.aemet.api_key)
+    # Enmascarar AEMET usando SecretStore (fuente única)
+    masked = _mask_secret(secret_store.get_secret("aemet_api_key"))
     aemet_info.pop("api_key", None)
     aemet_info.update(masked)
     payload["aemet"] = aemet_info
@@ -291,6 +292,56 @@ def _load_or_default(endpoint: str) -> Dict[str, Any]:
     default_payload = _default_payload(endpoint)
     cache_store.store(endpoint, default_payload)
     return default_payload
+
+
+def _migrate_public_secrets_to_store() -> None:
+    """Migra secretos que pudieran estar en config pública al SecretStore.
+
+    - aemet.api_key -> secret_store['aemet_api_key']
+    - layers.ships.aisstream.api_key -> secret_store['aistream_api_key']
+    """
+    try:
+        config = config_manager.read()
+        mutated = False
+
+        # AEMET
+        try:
+            aemet_key = getattr(config.aemet, "api_key", None)
+        except Exception:
+            aemet_key = None
+        if aemet_key:
+            secret_store.set_secret("aemet_api_key", _sanitize_secret(aemet_key))
+            # Limpiar de la config pública
+            payload = config.model_dump(mode="python", by_alias=True)
+            if isinstance(payload.get("aemet"), dict):
+                payload["aemet"].pop("api_key", None)
+                mutated = True
+            if mutated:
+                config = config_manager.write(payload)
+
+        # AISStream
+        ai_key = None
+        try:
+            ai_key = getattr(config.layers.ships.aisstream, "api_key", None)
+        except Exception:
+            ai_key = None
+        if ai_key:
+            secret_store.set_secret("aistream_api_key", _sanitize_secret(ai_key))
+            payload = config.model_dump(mode="python", by_alias=True)
+            try:
+                if isinstance(payload.get("layers"), dict):
+                    ships = payload["layers"].get("ships")
+                    if isinstance(ships, dict) and isinstance(ships.get("aisstream"), dict):
+                        ships["aisstream"].pop("api_key", None)
+                        mutated = True
+            except Exception:
+                pass
+            if mutated:
+                config_manager.write(payload)
+        if mutated:
+            logger.info("Secrets migrated from public config to SecretStore")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Secret migration skipped due to error: %s", exc)
 
 
 def _health_payload() -> Dict[str, Any]:
@@ -401,6 +452,19 @@ def healthcheck_full() -> Dict[str, Any]:
         "provider": ships_config.provider,
         "enabled": ships_config.enabled,
         "runtime": ships_service.get_status(),
+    }
+
+    # Resumen de integraciones
+    runtime = ships_service.get_status()
+    payload.setdefault("integrations", {})
+    payload["integrations"]["ships"] = {
+        "enabled": bool(ships_config.enabled),
+        "provider": ships_config.provider,
+        "last_fetch_ok": bool(runtime.get("ws_connected") and runtime.get("buffer_size", 0) > 0)
+        if ships_config.provider == "aisstream"
+        else (ships_status == "ok"),
+        "last_error": runtime.get("last_error"),
+        "items_count": int(ships_items_count),
     }
     
     # Información de focus masks
@@ -625,11 +689,24 @@ async def save_config(request: Request) -> JSONResponse:
 
 @app.get("/api/config/schema")
 def get_config_schema() -> Dict[str, Any]:
-    return AppConfig.model_json_schema()
+    """Devuelve el schema de configuración y el listado de secretos enmascarados.
+
+    El bloque `.secrets` incluye únicamente claves que se gestionan vía endpoints de secreto
+    y nunca se exponen en GET /api/config.
+    """
+    schema = AppConfig.model_json_schema()
+    schema["secrets"] = [
+        {"key": "aemet_api_key", "masked": True},
+        {"key": "opensky_client_id", "masked": True},
+        {"key": "opensky_client_secret", "masked": True},
+        {"key": "aistream_api_key", "masked": True},
+    ]
+    return schema
 
 
 @app.post("/api/config/secret/aemet_api_key", status_code=204)
 async def update_aemet_secret(request: AemetSecretRequest) -> Response:
+    """Guarda/elimina la API key de AEMET en el SecretStore (no en config pública)."""
     api_key = _sanitize_secret(request.api_key)
     masked = _mask_secret(api_key)
     logger.info(
@@ -637,18 +714,15 @@ async def update_aemet_secret(request: AemetSecretRequest) -> Response:
         masked.get("has_api_key", False),
         masked.get("api_key_last4", "****"),
     )
+    secret_store.set_secret("aemet_api_key", api_key)
+    return Response(status_code=204)
 
-    current = config_manager.read()
-    payload = current.model_dump(mode="python", exclude_none=False)
-    aemet_section = payload.get("aemet") or {}
-    aemet_section["api_key"] = api_key
-    payload["aemet"] = aemet_section
 
-    try:
-        config_manager.write(payload)
-    except ValidationError as exc:  # pragma: no cover - defensive
-        raise HTTPException(status_code=400, detail=exc.errors()) from exc
-
+@app.post("/api/config/secret/aemet_api_key/raw", status_code=204)
+async def update_aemet_secret_raw(request: Request) -> Response:
+    """Alias alternativo que acepta text/plain, x-www-form-urlencoded o JSON {value}."""
+    value = await _read_secret_value(request)
+    secret_store.set_secret("aemet_api_key", _sanitize_secret(value))
     return Response(status_code=204)
 
 
@@ -662,10 +736,17 @@ async def update_aisstream_secret(request: AISStreamSecretRequest) -> Response:
         masked.get("api_key_last4", "****"),
     )
     secret_store.set_secret("aisstream_api_key", api_key)
-
     current = config_manager.read()
     ships_service.apply_config(current.layers.ships)
+    return Response(status_code=204)
 
+
+@app.post("/api/config/secret/aisstream_api_key/raw", status_code=204)
+async def update_aisstream_secret_raw(request: Request) -> Response:
+    value = await _read_secret_value(request)
+    secret_store.set_secret("aisstream_api_key", _sanitize_secret(value))
+    current = config_manager.read()
+    ships_service.apply_config(current.layers.ships)
     return Response(status_code=204)
 
 
@@ -677,13 +758,24 @@ async def _update_opensky_secret(name: str, request: Request) -> Response:
     return Response(status_code=204)
 
 
+# Mantener PUT por compatibilidad; añadir POST por especificación
 @app.put("/api/config/secret/opensky_client_id", status_code=204)
 async def update_opensky_client_id(request: Request) -> Response:
     return await _update_opensky_secret("opensky_client_id", request)
 
 
+@app.post("/api/config/secret/opensky_client_id", status_code=204)
+async def update_opensky_client_id_post(request: Request) -> Response:
+    return await _update_opensky_secret("opensky_client_id", request)
+
+
 @app.put("/api/config/secret/opensky_client_secret", status_code=204)
 async def update_opensky_client_secret(request: Request) -> Response:
+    return await _update_opensky_secret("opensky_client_secret", request)
+
+
+@app.post("/api/config/secret/opensky_client_secret", status_code=204)
+async def update_opensky_client_secret_post(request: Request) -> Response:
     return await _update_opensky_secret("opensky_client_secret", request)
 
 
@@ -699,9 +791,10 @@ def get_opensky_client_secret_meta() -> Dict[str, bool]:
 
 @app.post("/api/aemet/test_key")
 def test_aemet_key(payload: AemetTestRequest) -> Dict[str, Any]:
+    """Compatibilidad: prueba una key candidata o la guardada si no se pasa ninguna."""
     candidate = _sanitize_secret(payload.api_key)
-    config = config_manager.read()
-    api_key = candidate or config.aemet.api_key
+    stored = secret_store.get_secret("aemet_api_key")
+    api_key = candidate or stored
 
     if not api_key:
         return {"ok": False, "reason": "missing_api_key"}
@@ -736,6 +829,15 @@ def test_aemet_key(payload: AemetTestRequest) -> Dict[str, Any]:
         return {"ok": False, "reason": "unauthorized"}
 
     return {"ok": True}
+
+
+@app.get("/api/aemet/test")
+def test_aemet_key_saved() -> Dict[str, Any]:
+    """Prueba la key de AEMET guardada en el SecretStore."""
+    stored = secret_store.get_secret("aemet_api_key")
+    if not stored:
+        return {"ok": False, "reason": "missing_api_key"}
+    return test_aemet_key(AemetTestRequest(api_key=stored))
 
 
 @app.get("/api/opensky/status")
@@ -2196,6 +2298,8 @@ async def get_global_radar_tile(
 
 @app.on_event("startup")
 def on_startup() -> None:
+    # Migrar secretos desde config pública si existieran
+    _migrate_public_secrets_to_store()
     config = config_manager.read()
     logger.info(
         "Pantalla backend started (timezone=%s, rotation_panels=%s)",

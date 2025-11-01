@@ -16,10 +16,8 @@ class DummyResponse:
         return self._payload
 
 def _write_aemet_key(module: object, api_key: str | None) -> None:
-    config = module.config_manager.read()
-    payload = config.model_dump(mode="json", by_alias=True)
-    payload.setdefault("aemet", {})["api_key"] = api_key
-    module.config_manager.write(payload)
+    # Escribir directamente en SecretStore para tests
+    module.secret_store.set_secret("aemet_api_key", api_key)
 
 
 def test_config_masks_aemet_secret(app_module: Tuple[object, Path]) -> None:
@@ -35,12 +33,11 @@ def test_config_masks_aemet_secret(app_module: Tuple[object, Path]) -> None:
 
 
 def test_update_aemet_secret_persists(app_module: Tuple[object, Path]) -> None:
-    module, config_path = app_module
+    module, _ = app_module
 
     asyncio.run(module.update_aemet_secret(module.AemetSecretRequest(api_key="AEMET123456")))
 
-    raw = json.loads(config_path.read_text(encoding="utf-8"))
-    assert raw["aemet"]["api_key"] == "AEMET123456"
+    assert module.secret_store.get_secret("aemet_api_key") == "AEMET123456"
 
     public = module._build_public_config(module.config_manager.read())["aemet"]
     assert public["has_api_key"] is True
@@ -48,13 +45,12 @@ def test_update_aemet_secret_persists(app_module: Tuple[object, Path]) -> None:
 
 
 def test_update_aemet_secret_allows_clearing(app_module: Tuple[object, Path]) -> None:
-    module, config_path = app_module
+    module, _ = app_module
     _write_aemet_key(module, "ABCD9876")
 
     asyncio.run(module.update_aemet_secret(module.AemetSecretRequest(api_key=None)))
 
-    raw = json.loads(config_path.read_text(encoding="utf-8"))
-    assert "api_key" not in raw["aemet"]
+    assert module.secret_store.get_secret("aemet_api_key") is None
 
     public = module._build_public_config(module.config_manager.read())["aemet"]
     assert public["has_api_key"] is False

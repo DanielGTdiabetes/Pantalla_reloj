@@ -1436,6 +1436,7 @@ export default function GeoScopeMap() {
     };
 
     const stopPan = () => {
+      console.debug("[map] pause: stopping auto-pan");
       if (animationFrameRef.current !== null) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
@@ -1460,6 +1461,7 @@ export default function GeoScopeMap() {
         return;
       }
 
+      console.debug("[map] resume: starting auto-pan");
       lastFrameTimeRef.current = null;
       lastRepaintTimeRef.current = null;
       const now = typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -1766,8 +1768,15 @@ export default function GeoScopeMap() {
         applyThemeToMap(map, styleTypeRef.current, themeRef.current);
       }
       safeFit();
-      recomputeAutopanActivation();
-      scheduleIdlePan();
+      // Forzar inicio de animación si está permitido por la configuración
+      if (allowCinemaRef.current && autopanModeRef.current === "rotate" && map?.isStyleLoaded()) {
+        console.debug("[map] init rotor: starting auto-pan on load");
+        autopanEnabledRef.current = true;
+        startPan();
+      } else {
+        recomputeAutopanActivation();
+        scheduleIdlePan();
+      }
     };
 
     const handleStyleData = () => {
@@ -1946,7 +1955,16 @@ export default function GeoScopeMap() {
         fallbackAppliedRef.current = true;
         styleTypeRef.current = fallbackStyle.type;
         console.warn("[map] vector style failed, using raster fallback", reason);
+        const center = map.getCenter();
+        const zoom = map.getZoom();
+        const pitch = map.getPitch();
+        const bearing = 0;
+        console.debug("[map] applyStyle (fallback) preserving view", { center, zoom, pitch });
         map.setStyle(fallbackStyle.style);
+        // Reaplicar vista tras style load
+        map.once("load", () => {
+          map.jumpTo({ center, zoom, pitch, bearing });
+        });
       };
 
       styleErrorHandler = (event: MapLibreEvent & { error?: unknown }) => {
@@ -2116,6 +2134,7 @@ export default function GeoScopeMap() {
             FALLBACK_ROTATION_DEG_PER_SEC
           );
           panSpeedRef.current = overrideSpeed;
+          console.debug("[map] applySpeed: initial pan speed", { degPerSec: overrideSpeed });
 
           // Reiniciar el mapa con nueva configuración
           cinemaRef.current = cloneCinema(cinemaSource);
@@ -2157,6 +2176,7 @@ export default function GeoScopeMap() {
           FALLBACK_ROTATION_DEG_PER_SEC
         );
         panSpeedRef.current = overrideSpeed;
+        console.debug("[map] applySpeed: updated pan speed", { degPerSec: overrideSpeed });
         cinemaRef.current = cloneCinema(cinemaSource);
         const motionInit = initializeMotionState(
           cinemaRef.current,

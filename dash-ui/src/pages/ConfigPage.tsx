@@ -1189,6 +1189,8 @@ const ConfigPage: React.FC = () => {
     return <span className="config-field__hint">{text}</span>;
   };
 
+  const SHOW_FLIGHTS_CONTROLS = false; // Unificar en sección única “Aviones (OpenSky)”
+
   return (
     <div className="config-page">
       {banner && (
@@ -2323,7 +2325,7 @@ const ConfigPage: React.FC = () => {
 
               {supports("aemet.api_key") && (
                 <div className="config-field">
-                  <label htmlFor="aemet_api_key">API key de AEMET</label>
+                  <label htmlFor="aemet_api_key">AEMET API key (oculta)</label>
                   <div className="config-field__secret">
                     {showAemetKey ? (
                       <input
@@ -2918,7 +2920,7 @@ const ConfigPage: React.FC = () => {
         {supports("opensky") && (
           <div className="config-card">
             <div>
-              <h2>OpenSky</h2>
+              <h2>Aviones (OpenSky)</h2>
               <p>Configura las credenciales y el área de la integración con OpenSky Network.</p>
             </div>
             <div className="config-grid">
@@ -3323,7 +3325,7 @@ const ConfigPage: React.FC = () => {
               <p>Configura las capas de aviones (flights) y barcos (ships) en tiempo real.</p>
             </div>
             <div className="config-grid">
-              {supports("layers.flights") && (
+              {SHOW_FLIGHTS_CONTROLS && supports("layers.flights") && (
                 <>
                   <div className="config-field config-field--checkbox">
                     <label htmlFor="flights_enabled">
