@@ -58,6 +58,7 @@ const MAP_BACKEND_PROVIDERS: AppConfig["map"]["provider"][] = ["maptiler", "osm"
 const MAP_PROVIDER_LABELS: Record<AppConfig["map"]["provider"], string> = {
   maptiler: "MapTiler",
   osm: "OpenStreetMap",
+  openstreetmap: "OpenStreetMap",
 };
 const MAPTILER_KEY_PATTERN = /^[A-Za-z0-9._-]+$/;
 const MAPTILER_DOCS_TEXT = "Obtén la clave en docs.maptiler.com/cloud/api-keys";

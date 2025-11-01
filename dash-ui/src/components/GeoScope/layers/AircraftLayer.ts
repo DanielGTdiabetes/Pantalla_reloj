@@ -1,5 +1,5 @@
 import maplibregl from "maplibre-gl";
-import type { MapLayerMouseEvent } from "maplibregl";
+import type { MapLayerMouseEvent } from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
 
 import type { Layer } from "./LayerRegistry";
