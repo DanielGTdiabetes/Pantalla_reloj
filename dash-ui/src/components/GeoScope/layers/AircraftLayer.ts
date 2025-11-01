@@ -1,6 +1,7 @@
 import maplibregl from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
 
+import GeoScopeLayerOrder from "./layerOrder";
 import type { Layer } from "./LayerRegistry";
 import { getExistingPopup, isGeoJSONSource } from "./layerUtils";
 
@@ -21,7 +22,7 @@ const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 
 export default class AircraftLayer implements Layer {
   public readonly id = "geoscope-aircraft";
-  public readonly zIndex = 40;
+  public readonly zIndex = GeoScopeLayerOrder.Aircraft;
 
   private enabled: boolean;
   private opacity: number;
@@ -189,7 +190,7 @@ export default class AircraftLayer implements Layer {
         source: this.sourceId,
         filter: ["!", ["has", "point_count"]],
         layout: {
-          "icon-image": "airport-15",
+          "icon-image": "triangle-11",
           "icon-size": this.getIconSizeExpression(),
           "icon-allow-overlap": true,
           "icon-rotate": ["coalesce", ["get", "track"], 0],
@@ -198,7 +199,7 @@ export default class AircraftLayer implements Layer {
         paint: {
           "icon-color": "#f97316",
           "icon-halo-color": "#111827",
-          "icon-halo-width": 0.25,
+          "icon-halo-width": 0.35,
         },
       });
     }
@@ -243,20 +244,19 @@ export default class AircraftLayer implements Layer {
   }
 
   private getIconSizeExpression(): maplibregl.ExpressionSpecification {
-    const baseSize = 1.2;
-    const scale = Math.max(0.1, Math.min(this.styleScale, 4));
+    const baseSize = 1.1;
+    const scale = Math.max(0.5, Math.min(this.styleScale, 2));
+    const scaled = baseSize * scale;
     return [
       "interpolate",
       ["linear"],
       ["zoom"],
       0,
-      baseSize,
-      3,
-      baseSize * scale,
-      4,
-      baseSize,
+      scaled,
+      6,
+      scaled,
       22,
-      baseSize,
+      scaled,
     ];
   }
 
@@ -317,7 +317,7 @@ export default class AircraftLayer implements Layer {
   }
 
   setStyleScale(scale: number): void {
-    const clamped = Math.max(0.1, Math.min(scale, 4));
+    const clamped = Math.max(0.5, Math.min(scale, 2));
     if (this.styleScale === clamped) {
       return;
     }

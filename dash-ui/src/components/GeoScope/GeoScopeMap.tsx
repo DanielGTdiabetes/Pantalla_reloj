@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type MutableRefObject } from "react";
 
 import { apiGet, saveConfig } from "../../lib/api";
 import { useConfig } from "../../lib/useConfig";
-import { kioskRuntime } from "../../lib/runtimeFlags";
+import { kioskRuntime, runtimeFeatures } from "../../lib/runtimeFlags";
 import AircraftLayer from "./layers/AircraftLayer";
 import GlobalRadarLayer from "./layers/GlobalRadarLayer";
 import GlobalSatelliteLayer from "./layers/GlobalSatelliteLayer";
@@ -218,6 +218,51 @@ const flightsResponseToGeoJSON = (payload: FlightsApiResponse): FeatureCollectio
     type: "FeatureCollection",
     features,
   };
+};
+
+const EMPTY_FLIGHTS: FeatureCollection<Point, FlightFeatureProperties> = {
+  type: "FeatureCollection",
+  features: [],
+};
+
+const createDummyFlights = (count = 16): FeatureCollection<Point, FlightFeatureProperties> => {
+  const total = Math.max(10, Math.min(count, 20));
+  const columns = 4;
+  const now = Math.floor(Date.now() / 1000);
+  const features: Array<Feature<Point, FlightFeatureProperties>> = [];
+
+  for (let index = 0; index < total; index += 1) {
+    const row = Math.floor(index / columns);
+    const column = index % columns;
+    const latSeed = -60 + row * 30;
+    const lonSeed = -150 + column * 90;
+    const lat = clampLatitude(latSeed + (index % 2 === 0 ? 7 : -7));
+    const lon = normalizeLng(lonSeed + (row % 2 === 0 ? 12 : -12));
+    const track = (index * 27) % 360;
+    const altitude = 9500 + row * 1200 + column * 250;
+    const speed = 220 + ((index * 13) % 90);
+    const hex = (index + 1).toString(16).toUpperCase().padStart(6, "0");
+
+    features.push({
+      type: "Feature",
+      id: `dummy-flight-${index}`,
+      geometry: {
+        type: "Point",
+        coordinates: [lon, lat],
+      },
+      properties: {
+        icao24: hex,
+        callsign: `DUMMY${(index + 1).toString().padStart(2, "0")}`,
+        alt_baro: altitude,
+        track,
+        speed,
+        origin_country: "Simulado",
+        timestamp: now,
+      },
+    });
+  }
+
+  return { type: "FeatureCollection", features };
 };
 
 const applyVectorTheme = (map: maplibregl.Map, theme: MapThemeConfig) => {
@@ -1293,6 +1338,7 @@ export default function GeoScopeMap() {
       : false
   );
   const aircraftLayerRef = useRef<AircraftLayer | null>(null);
+  const flightsDummyEnabledRef = useRef(runtimeFeatures.isFlightsDummyEnabled());
   const globalRadarLayerRef = useRef<GlobalRadarLayer | null>(null);
   const globalSatelliteLayerRef = useRef<GlobalSatelliteLayer | null>(null);
   const lightningLayerRef = useRef<LightningLayer | null>(null);
@@ -3156,11 +3202,24 @@ export default function GeoScopeMap() {
     // Actualizar AircraftLayer
     const aircraftLayer = aircraftLayerRef.current;
     if (aircraftLayer) {
-      aircraftLayer.setEnabled(flightsConfig.enabled && openskyConfig.enabled);
+      const flightsDummyActive = flightsDummyEnabledRef.current;
+      const flightsAllowed = flightsConfig.enabled && (openskyConfig.enabled || flightsDummyActive);
+      const usingDummyOnly = flightsDummyActive && !openskyConfig.enabled;
+
+      aircraftLayer.setEnabled(flightsAllowed);
       aircraftLayer.setOpacity(flightsConfig.opacity);
       aircraftLayer.setMaxAgeSeconds(flightsConfig.max_age_seconds);
-      aircraftLayer.setCluster(openskyConfig.cluster);
+      aircraftLayer.setCluster(openskyConfig.enabled ? openskyConfig.cluster : false);
       aircraftLayer.setStyleScale(flightsConfig.styleScale ?? 1);
+
+      const currentData = aircraftLayer.getData();
+      if (!flightsAllowed) {
+        if (currentData.features.length > 0) {
+          aircraftLayer.updateData(EMPTY_FLIGHTS);
+        }
+      } else if (usingDummyOnly && currentData.features.length === 0) {
+        aircraftLayer.updateData(createDummyFlights());
+      }
       // Actualizar cine_focus si está disponible (requeriría método setCineFocus)
       // Por ahora, se actualiza con updateData que lee in_focus del payload
     }
@@ -3185,8 +3244,43 @@ export default function GeoScopeMap() {
     const merged = withConfigDefaults(config);
     const flightsConfig = merged.layers.flights;
     const openskyConfig = merged.opensky;
+    const flightsDummyActive = flightsDummyEnabledRef.current;
+    const flightsAllowed = flightsConfig.enabled && (openskyConfig.enabled || flightsDummyActive);
+    const useApi = flightsConfig.enabled && openskyConfig.enabled;
 
-    if (!flightsConfig.enabled || !openskyConfig.enabled) {
+    if (!flightsAllowed) {
+      return;
+    }
+
+    const applyFlightsData = (payload: FlightsApiResponse | null | undefined) => {
+      const aircraftLayer = aircraftLayerRef.current;
+      if (!aircraftLayer) {
+        return;
+      }
+
+      const hasValidPayload = payload && !payload.disabled;
+      if (hasValidPayload) {
+        const items = Array.isArray(payload!.items) ? payload!.items : [];
+        if (items.length > 0) {
+          const featureCollection = flightsResponseToGeoJSON({
+            ...payload!,
+            items,
+          });
+        aircraftLayer.updateData(featureCollection);
+        return;
+      }
+      }
+
+      if (flightsDummyActive) {
+        aircraftLayer.updateData(createDummyFlights());
+        return;
+      }
+
+      aircraftLayer.updateData(EMPTY_FLIGHTS);
+    };
+
+    if (!useApi) {
+      applyFlightsData(null);
       return;
     }
 
@@ -3218,14 +3312,12 @@ export default function GeoScopeMap() {
         }
 
         const response = await apiGet<FlightsApiResponse | undefined>(url);
-
-        const aircraftLayer = aircraftLayerRef.current;
-        if (aircraftLayer && response && !response.disabled) {
-          const featureCollection = flightsResponseToGeoJSON(response);
-          aircraftLayer.updateData(featureCollection);
-        }
+        applyFlightsData(response);
       } catch (error) {
         console.error("[GeoScopeMap] Failed to load flights data:", error);
+        if (flightsDummyActive) {
+          applyFlightsData(null);
+        }
       }
     };
 
