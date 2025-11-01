@@ -986,6 +986,37 @@ main {
   font-weight: 600;
 }
 
+.config-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid rgba(78, 201, 255, 0.28);
+  background: rgba(78, 201, 255, 0.15);
+  color: var(--text-primary);
+}
+
+.config-badge--success {
+  color: var(--success);
+  border-color: rgba(78, 201, 255, 0.45);
+  background: rgba(78, 201, 255, 0.2);
+}
+
+.config-badge--warning {
+  color: #ffe6b3;
+  border-color: rgba(255, 198, 134, 0.38);
+  background: rgba(255, 198, 134, 0.18);
+}
+
+.config-badge__code {
+  font-family: "SFMono-Regular", "JetBrains Mono", monospace;
+  letter-spacing: 0.08em;
+}
+
 .config-field input,
 .config-field select,
 .config-field textarea {
