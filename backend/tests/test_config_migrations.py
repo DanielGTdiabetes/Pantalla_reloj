@@ -4,6 +4,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -21,7 +23,9 @@ def _load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def test_cinema_defaults_seed_when_missing(tmp_path: Path) -> None:
+def test_cinema_defaults_seed_when_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     raw = _load_json(DEFAULT_CONFIG_PATH)
     cinema = raw["ui"]["map"]["cinema"]
     cinema.pop("panLngDegPerSec", None)
@@ -30,6 +34,10 @@ def test_cinema_defaults_seed_when_missing(tmp_path: Path) -> None:
     config_file = tmp_path / "config.json"
     config_file.parent.mkdir(parents=True, exist_ok=True)
     _write_json(config_file, raw)
+
+    state_dir = tmp_path / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("PANTALLA_STATE_DIR", str(state_dir))
 
     manager = ConfigManager(config_file=config_file, default_config_file=DEFAULT_CONFIG_PATH)
     config = manager.read()
@@ -42,7 +50,9 @@ def test_cinema_defaults_seed_when_missing(tmp_path: Path) -> None:
     assert updated_raw["ui"]["map"]["cinema"]["debug"] is False
 
 
-def test_cinema_defaults_respect_existing_values(tmp_path: Path) -> None:
+def test_cinema_defaults_respect_existing_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     raw = _load_json(DEFAULT_CONFIG_PATH)
     cinema = raw["ui"]["map"]["cinema"]
     cinema["panLngDegPerSec"] = 1.7
@@ -52,6 +62,10 @@ def test_cinema_defaults_respect_existing_values(tmp_path: Path) -> None:
     config_file = tmp_path / "config.json"
     config_file.parent.mkdir(parents=True, exist_ok=True)
     _write_json(config_file, raw)
+
+    state_dir = tmp_path / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("PANTALLA_STATE_DIR", str(state_dir))
 
     manager = ConfigManager(config_file=config_file, default_config_file=DEFAULT_CONFIG_PATH)
     config = manager.read()
