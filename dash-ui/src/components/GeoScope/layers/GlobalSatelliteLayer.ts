@@ -1,6 +1,5 @@
 import maplibregl from "maplibre-gl";
 
-import GeoScopeLayerOrder from "./layerOrder";
 import type { Layer } from "./LayerRegistry";
 
 interface GlobalSatelliteLayerOptions {
@@ -12,7 +11,7 @@ interface GlobalSatelliteLayerOptions {
 
 export default class GlobalSatelliteLayer implements Layer {
   public readonly id = "geoscope-global-satellite";
-  public readonly zIndex = GeoScopeLayerOrder.Satellite;
+  public readonly zIndex = 10; // Debajo de AEMET (15), por encima del mapa base (0)
 
   private enabled: boolean;
   private opacity: number;

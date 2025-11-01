@@ -80,7 +80,6 @@ export type RotationConfig = {
 
 export type UIConfig = {
   layout: "grid-2-1";
-  isInteractive: boolean;
   map: MapConfig;
   rotation: RotationConfig;
   cineMode?: boolean;
