@@ -939,7 +939,9 @@ def test_opensky_credentials() -> Dict[str, Any]:
     try:
         token = authenticator.get_token(force_refresh=True)
     except Exception as exc:  # noqa: BLE001
-        _set_opensky_error(str(getattr(exc, "args", ["auth_error"])[0]))
+        args = getattr(exc, "args", ())
+        reason = str(args[0]) if isinstance(args, (list, tuple)) and len(args) > 0 else "auth_error"
+        _set_opensky_error(reason)
         authenticator.close()
         return {"ok": False, "error": "auth_error"}
     info = authenticator.describe()
