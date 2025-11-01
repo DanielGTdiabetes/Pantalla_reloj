@@ -49,6 +49,7 @@ from .secret_store import SecretStore
 from .services.opensky_auth import OpenSkyAuthError
 from .services.opensky_client import OpenSkyClientError
 from .services.opensky_service import OpenSkyService
+from .services.opensky_auth import OpenSkyAuthenticator
 from .services.ships_service import AISStreamService
 from .rate_limiter import check_rate_limit
 
@@ -247,6 +248,31 @@ def _build_public_config(config: AppConfig) -> Dict[str, Any]:
 AEMET_TEST_ENDPOINT = (
     "https://opendata.aemet.es/opendata/api/observacion/convencional/todas"
 )
+# ------------------------ Secret endpoints (generic) ------------------------
+_ALLOWED_SECRET_KEYS = {
+    "aemet_api_key",
+    "opensky_client_id",
+    "opensky_client_secret",
+    "aistream_api_key",
+}
+
+
+@app.get("/api/config/secret/{key}")
+def get_secret_meta(key: str) -> Dict[str, bool]:
+    if key not in _ALLOWED_SECRET_KEYS:
+        raise HTTPException(status_code=404, detail="Unknown secret key")
+    return {"exists": secret_store.has_secret(key)}
+
+
+@app.post("/api/config/secret/{key}")
+async def set_secret_value(key: str, request: Request) -> Dict[str, bool]:
+    if key not in _ALLOWED_SECRET_KEYS:
+        raise HTTPException(status_code=404, detail="Unknown secret key")
+    value = await _read_secret_value(request)
+    secret_store.set_secret(key, _sanitize_secret(value))
+    logger.info("[secrets] updated key=%s (exists=%s)", key, secret_store.has_secret(key))
+    return {"ok": True}
+
 
 
 def _default_payload(endpoint: str) -> Dict[str, Any]:
@@ -465,6 +491,22 @@ def healthcheck_full() -> Dict[str, Any]:
     # Resumen de integraciones
     runtime = ships_service.get_status()
     payload.setdefault("integrations", {})
+    # AEMET integration
+    payload["integrations"]["aemet"] = {
+        "enabled": bool(config.aemet.enabled),
+        "has_key": secret_store.has_secret("aemet_api_key"),
+        "last_test_ok": _aemet_last_ok,
+        "last_error": _aemet_last_error,
+    }
+    # OpenSky integration
+    opensky_status = opensky_service.get_status(config)
+    payload["integrations"]["opensky"] = {
+        "enabled": bool(config.opensky.enabled),
+        "token_set": bool(opensky_status.get("token_set")),
+        "token_valid": opensky_status.get("token_valid"),
+        "expires_in": opensky_status.get("expires_in"),
+        "last_error": opensky_status.get("last_error") or _opensky_last_error,
+    }
     payload["integrations"]["ships"] = {
         "enabled": bool(ships_config.enabled),
         "provider": ships_config.provider,
@@ -839,13 +881,29 @@ def test_aemet_key(payload: AemetTestRequest) -> Dict[str, Any]:
     return {"ok": True}
 
 
+_aemet_last_ok: Optional[bool] = None
+_aemet_last_error: Optional[str] = None
+
+
 @app.get("/api/aemet/test")
 def test_aemet_key_saved() -> Dict[str, Any]:
     """Prueba la key de AEMET guardada en el SecretStore."""
     stored = secret_store.get_secret("aemet_api_key")
     if not stored:
+        _update_aemet_health(False, "missing_api_key")
         return {"ok": False, "reason": "missing_api_key"}
-    return test_aemet_key(AemetTestRequest(api_key=stored))
+    result = test_aemet_key(AemetTestRequest(api_key=stored))
+    if result.get("ok"):
+        _update_aemet_health(True, None)
+    else:
+        _update_aemet_health(False, str(result.get("reason") or result.get("error") or "unknown"))
+    return result
+
+
+def _update_aemet_health(ok: bool, error: Optional[str]) -> None:
+    global _aemet_last_ok, _aemet_last_error
+    _aemet_last_ok = ok
+    _aemet_last_error = error
 
 
 @app.get("/api/opensky/status")
@@ -862,6 +920,41 @@ def get_opensky_status() -> Dict[str, Any]:
     if not status.get("has_credentials") and status.get("effective_poll", 0) < 10:
         status["poll_warning"] = "anonymous_minimum_enforced"
     return status
+
+
+_opensky_last_error: Optional[str] = None
+
+
+@app.get("/api/opensky/test")
+def test_opensky_credentials() -> Dict[str, Any]:
+    """Intenta obtener un token OAuth2 con credenciales guardadas."""
+    client_id = secret_store.get_secret("opensky_client_id")
+    client_secret = secret_store.get_secret("opensky_client_secret")
+    if not client_id or not client_secret:
+        _set_opensky_error("missing_credentials")
+        return {"ok": False, "reason": "missing_credentials"}
+
+    # Usar autenticador directo para forzar solicitud de token
+    authenticator = OpenSkyAuthenticator(secret_store=secret_store, logger=logger)
+    try:
+        token = authenticator.get_token(force_refresh=True)
+    except Exception as exc:  # noqa: BLE001
+        _set_opensky_error(str(getattr(exc, "args", ["auth_error"])[0]))
+        authenticator.close()
+        return {"ok": False, "error": "auth_error"}
+    info = authenticator.describe()
+    authenticator.close()
+    _set_opensky_error(None)
+    return {
+        "ok": True,
+        "token_valid": bool(token),
+        "expires_in": int(info.get("expires_in", 0)) if info else None,
+    }
+
+
+def _set_opensky_error(message: Optional[str]) -> None:
+    global _opensky_last_error
+    _opensky_last_error = message
 
 
 @app.get("/api/weather")
