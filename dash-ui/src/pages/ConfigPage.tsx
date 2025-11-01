@@ -29,6 +29,8 @@ import {
 } from "../lib/api";
 import type { AppConfig, GlobalLayersConfig, MapCinemaBand } from "../types/config";
 
+type GlobalLayers = NonNullable<AppConfig["layers"]["global"]>;
+
 type LoadStatus = "loading" | "ready" | "error";
 type Banner = { kind: "success" | "error"; text: string } | null;
 type FieldErrors = Record<string, string>;
@@ -4249,7 +4251,7 @@ const ConfigPage: React.FC = () => {
               radar: {
                 enabled: currentGlobal?.radar?.enabled ?? defaultGlobal.radar.enabled,
                 provider:
-                  (currentGlobal?.radar?.provider ?? defaultGlobal.radar.provider ?? "rainviewer") as AppConfig["layers"]["global"]["radar"]["provider"],
+                  (currentGlobal?.radar?.provider ?? defaultGlobal.radar.provider ?? "rainviewer") as GlobalLayers["radar"]["provider"],
                 refresh_minutes: currentGlobal?.radar?.refresh_minutes ?? defaultGlobal.radar.refresh_minutes,
                 history_minutes: currentGlobal?.radar?.history_minutes ?? defaultGlobal.radar.history_minutes,
                 frame_step: currentGlobal?.radar?.frame_step ?? defaultGlobal.radar.frame_step,
@@ -4491,7 +4493,7 @@ const ConfigPage: React.FC = () => {
                       value={form.layers.global?.radar.provider ?? "rainviewer"}
                       disabled={disableInputs || !form.layers.global?.radar.enabled}
                       onChange={(event) => {
-                        const provider = event.target.value as AppConfig["layers"]["global"]["radar"]["provider"];
+                        const provider = event.target.value as GlobalLayers["radar"]["provider"];
                         setForm((prev) => {
                           const globalWithDefaults = getGlobalWithDefaults(prev);
                           return {
