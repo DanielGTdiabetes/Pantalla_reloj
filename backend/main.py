@@ -2032,6 +2032,46 @@ def get_flights(request: Request, bbox: Optional[str] = None, extended: Optional
     if snapshot.stale:
         payload["stale"] = True
 
+    # Construir salida GeoJSON (sin romper compatibilidad con count/items/stale/ts)
+    items = payload.get("items", []) or []
+    features: List[Dict[str, Any]] = []
+    for it in items:
+        lon = it.get("lon")
+        lat = it.get("lat")
+        if lon is None or lat is None:
+            continue
+        props = {
+            "id": it.get("id"),
+            "icao24": it.get("icao24"),
+            "callsign": it.get("callsign"),
+            "origin_country": it.get("origin_country"),
+            "alt": it.get("alt"),
+            "velocity": it.get("velocity"),
+            "vertical_rate": it.get("vertical_rate"),
+            "track": it.get("track"),
+            "on_ground": it.get("on_ground"),
+            "squawk": it.get("squawk"),
+            "category": it.get("category"),
+            "last_contact": it.get("last_contact"),
+            "source": "opensky",
+            "in_focus": False,
+        }
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [float(lon), float(lat)]},
+            "properties": {k: v for k, v in props.items() if v is not None},
+        })
+
+    payload["type"] = "FeatureCollection"
+    payload["features"] = features
+    payload["meta"] = {
+        "provider": "opensky",
+        "mode": snapshot.mode,
+        "bbox": snapshot.bbox,
+        "remaining": snapshot.remaining,
+        "polled": snapshot.polled,
+    }
+
     response = JSONResponse(payload)
     response.headers["X-OpenSky-Polled"] = "true" if snapshot.polled else "false"
     response.headers["X-OpenSky-Mode"] = snapshot.mode
@@ -2039,6 +2079,28 @@ def get_flights(request: Request, bbox: Optional[str] = None, extended: Optional
         response.headers["X-OpenSky-Remaining"] = snapshot.remaining
     return response
 
+
+@app.get("/api/layers/flights.geojson")
+def get_flights_geojson(request: Request, bbox: Optional[str] = None, extended: Optional[int] = None) -> JSONResponse:
+    """Devuelve solo GeoJSON (FeatureCollection) reutilizando la lógica de get_flights."""
+    base_response = get_flights(request, bbox, extended)
+    try:
+        content = json.loads(base_response.body.decode("utf-8"))
+    except Exception:
+        content = {}
+
+    geojson_only = {
+        "type": content.get("type", "FeatureCollection"),
+        "features": content.get("features", []),
+        "meta": content.get("meta", {}),
+    }
+
+    response = JSONResponse(geojson_only)
+    # Propagar cabeceras relevantes
+    for header in ("X-OpenSky-Polled", "X-OpenSky-Mode", "X-OpenSky-Remaining"):
+        if header in base_response.headers:
+            response.headers[header] = base_response.headers[header]
+    return response
 
 @app.get("/api/layers/ships")
 def get_ships(
