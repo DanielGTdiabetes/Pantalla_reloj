@@ -157,6 +157,7 @@ class UI(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     layout: Literal["grid-2-1"] = "grid-2-1"
+    is_interactive: bool = Field(default=False, alias="isInteractive")
     map: MapConfig = Field(default_factory=MapConfig)
     rotation: Rotation = Field(default_factory=Rotation)
     cine_mode: bool = Field(default=True, alias="cineMode")

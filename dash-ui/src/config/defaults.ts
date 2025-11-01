@@ -446,6 +446,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   map: createDefaultMapPreferences(),
   ui: {
     layout: "grid-2-1",
+    isInteractive: false,
     map: createDefaultMapSettings(),
     rotation: mergeRotation(undefined),
     cineMode: true,
@@ -1060,6 +1061,7 @@ export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
     map: mergeMapPreferences(map),
     ui: {
       layout: "grid-2-1",
+      isInteractive: toBoolean(ui.isInteractive, DEFAULT_CONFIG.ui.isInteractive),
       map: mergeMap(ui.map),
       rotation: mergeRotation(ui.rotation),
       cineMode: toBoolean(ui.cineMode, DEFAULT_CONFIG.ui.cineMode ?? true),
