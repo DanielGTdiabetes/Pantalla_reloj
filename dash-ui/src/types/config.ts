@@ -53,8 +53,18 @@ export type MaptilerConfig = {
 
 export type MapConfig = {
   engine: "maplibre";
-  style: "vector-dark" | "vector-light" | "vector-bright" | "raster-carto-dark" | "raster-carto-light";
-  provider: "maptiler" | "osm";
+  style:
+    | "vector-dark"
+    | "vector-light"
+    | "vector-bright"
+    | "raster-carto-dark"
+    | "raster-carto-light"
+    | "dark"
+    | "light"
+    | "bright"
+    | "streets"
+    | "satellite";
+  provider: "maptiler" | "osm" | "openstreetmap";
   maptiler: MaptilerConfig;
   renderWorldCopies: boolean;
   interactive: boolean;
@@ -63,13 +73,15 @@ export type MapConfig = {
   cinema: MapCinemaConfig;
   idlePan: MapIdlePanConfig;
   theme: MapThemeConfig;
+  model?: string | null;
 };
 
 export type UIMapSettings = MapConfig;
 
 export type MapPreferences = {
-  provider: "maptiler" | "osm";
+  provider: "maptiler" | "osm" | "openstreetmap";
   maptiler_api_key: string | null;
+  model?: string | null;
 };
 
 export type RotationConfig = {

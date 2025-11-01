@@ -298,7 +298,7 @@ const mergeMap = (candidate: unknown): MapConfig => {
     "raster-carto-dark",
     "raster-carto-light",
   ];
-  const allowedProviders: MapConfig["provider"][] = ["maptiler", "osm"];
+  const allowedProviders: MapConfig["provider"][] = ["maptiler", "osm", "openstreetmap"];
   const style = allowedStyles.includes(source.style ?? fallback.style)
     ? (source.style as MapConfig["style"])
     : fallback.style;
@@ -326,7 +326,12 @@ const mergeMap = (candidate: unknown): MapConfig => {
 const mergeMapPreferences = (candidate: unknown): MapPreferences => {
   const fallback = createDefaultMapPreferences();
   const source = (candidate as Partial<MapPreferences>) ?? {};
-  const provider: MapPreferences["provider"] = source.provider === "maptiler" ? "maptiler" : fallback.provider;
+  const provider: MapPreferences["provider"] =
+    source.provider === "maptiler"
+      ? "maptiler"
+      : source.provider === "openstreetmap"
+      ? "openstreetmap"
+      : fallback.provider;
   const key = sanitizeApiKey(source.maptiler_api_key);
   return {
     provider,

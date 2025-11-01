@@ -13,6 +13,7 @@ import GlobalSatelliteLayer from "./layers/GlobalSatelliteLayer";
 import LightningLayer from "./layers/LightningLayer";
 import { LayerRegistry } from "./layers/LayerRegistry";
 import ShipsLayer from "./layers/ShipsLayer";
+import MapSpinner from "../MapSpinner";
 import {
   createDefaultMapCinema,
   createDefaultMapIdlePan,
@@ -1079,9 +1080,10 @@ function checkWebGLSupport(): { supported: boolean; reason?: string } {
 }
 
 export default function GeoScopeMap() {
-  const { data: config, reload: reloadConfig } = useConfig();
+  const { data: config, reload: reloadConfig, mapStyleVersion } = useConfig();
   const mapFillRef = useRef<HTMLDivElement | null>(null);
   const [webglError, setWebglError] = useState<string | null>(null);
+  const [styleChangeInProgress, setStyleChangeInProgress] = useState(false);
   
   // Guardar estado de si necesitamos iniciar animación cuando la página esté visible
   const pendingAnimationRef = useRef(false);
@@ -2570,6 +2572,118 @@ export default function GeoScopeMap() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!config || !mapRef.current) {
+      return;
+    }
+    if (mapStyleVersion === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const map = mapRef.current;
+    let cleanup: (() => void) | null = null;
+
+    const applyStyleChange = async () => {
+      if (!map) {
+        return;
+      }
+
+      setStyleChangeInProgress(true);
+      mapStateMachineRef.current?.notifyStyleLoading("config-style-change");
+
+      const currentCenter = map.getCenter();
+      const currentZoom = map.getZoom();
+      const currentBearing = map.getBearing();
+      const currentPitch = map.getPitch();
+      const previousMinZoom = map.getMinZoom();
+
+      try {
+        const merged = withConfigDefaults(config);
+        const mapSettings = merged.ui.map;
+        const mapPreferences = merged.map ?? createDefaultMapPreferences();
+
+        const styleResult = await loadMapStyle(mapSettings, mapPreferences);
+        if (cancelled || !mapRef.current) {
+          return;
+        }
+
+        runtimeRef.current = runtimeRef.current
+          ? {
+              ...runtimeRef.current,
+              style: styleResult.resolved,
+              fallbackStyle: styleResult.fallback,
+              styleWasFallback: styleResult.usedFallback,
+              theme: cloneTheme(mapSettings.theme),
+              renderWorldCopies:
+                typeof mapSettings.renderWorldCopies === "boolean"
+                  ? mapSettings.renderWorldCopies
+                  : runtimeRef.current.renderWorldCopies,
+            }
+          : runtimeRef.current;
+
+        themeRef.current = cloneTheme(mapSettings.theme);
+        styleTypeRef.current = styleResult.resolved.type;
+        fallbackStyleRef.current = styleResult.fallback;
+        fallbackAppliedRef.current = styleResult.usedFallback || styleResult.resolved.type !== "vector";
+
+        const tintCandidate = mapSettings.theme?.tint ?? null;
+        if (typeof tintCandidate === "string" && tintCandidate.trim().length > 0) {
+          setTintColor(tintCandidate);
+        } else {
+          setTintColor(null);
+        }
+
+        const mapWithCopies = map as maplibregl.Map & {
+          setRenderWorldCopies?: (value: boolean) => void;
+        };
+        try {
+          mapWithCopies.setRenderWorldCopies?.(mapSettings.renderWorldCopies ?? true);
+        } catch {
+          // Ignorar si el motor no soporta esta API.
+        }
+
+        const handleStyleLoad = () => {
+          if (cancelled || !mapRef.current) {
+            return;
+          }
+          map.off("style.load", handleStyleLoad);
+          map.setMinZoom(currentMinZoomRef.current ?? previousMinZoom);
+          map.jumpTo({
+            center: currentCenter,
+            zoom: currentZoom,
+            bearing: currentBearing,
+            pitch: currentPitch,
+          });
+          applyThemeToMap(map, styleTypeRef.current, themeRef.current);
+          layerRegistryRef.current?.reapply();
+          mapStateMachineRef.current?.notifyStyleData("config-style-change");
+          setStyleChangeInProgress(false);
+        };
+
+        cleanup = () => {
+          map.off("style.load", handleStyleLoad);
+        };
+
+        map.once("style.load", handleStyleLoad);
+        map.setStyle(styleResult.resolved.style, { diff: true });
+      } catch (error) {
+        if (!cancelled) {
+          console.error("[GeoScopeMap] Error applying live style change", error);
+          setStyleChangeInProgress(false);
+        }
+      }
+    };
+
+    void applyStyleChange();
+
+    return () => {
+      cancelled = true;
+      cleanup?.();
+      setStyleChangeInProgress(false);
+    };
+  }, [config, mapStyleVersion]);
+
   // useEffect separado para escuchar cambios en la configuración
   useEffect(() => {
     if (!config || !mapRef.current) {
@@ -3573,6 +3687,7 @@ export default function GeoScopeMap() {
   return (
     <div className="map-host">
       <div ref={mapFillRef} className="map-fill" />
+      {styleChangeInProgress ? <MapSpinner /> : null}
       {tintColor ? (
         <div className="map-tint" style={{ background: tintColor }} aria-hidden="true" />
       ) : null}

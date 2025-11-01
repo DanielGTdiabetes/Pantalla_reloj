@@ -1,4 +1,5 @@
 import maplibregl from "maplibre-gl";
+import type { MapLayerMouseEvent } from "maplibregl";
 import type { FeatureCollection } from "geojson";
 
 import type { Layer } from "./LayerRegistry";
@@ -34,6 +35,11 @@ export default class AircraftLayer implements Layer {
   private readonly clusterLayerId: string;
   private readonly clusterCountLayerId: string;
   private styleScale: number;
+  private eventsRegistered = false;
+  private onMouseEnter?: (event: MapLayerMouseEvent) => void;
+  private onMouseLeave?: (event: MapLayerMouseEvent) => void;
+  private onMouseMove?: (event: MapLayerMouseEvent) => void;
+  private hoveredFeatureId: string | null = null;
 
   constructor(options: AircraftLayerOptions = {}) {
     this.enabled = options.enabled ?? false;
@@ -54,56 +60,7 @@ export default class AircraftLayer implements Layer {
     this.applyOpacity();
     this.applyStyleScale();
 
-    let hoveredId: string | null = null;
-    map.on("mouseenter", this.id, (event) => {
-      if (event.features && event.features.length > 0) {
-        map.getCanvas().style.cursor = "pointer";
-        const feature = event.features[0];
-        const properties = (feature.properties ?? {}) as Record<string, unknown>;
-        hoveredId = feature.id as string;
-        const callsign = (properties.callsign as string | undefined)?.trim();
-        const icao24 = (properties.icao24 as string | undefined)?.trim();
-        const altitude = typeof properties.alt_baro === "number" ? Math.round(properties.alt_baro as number) : null;
-        const speed = typeof properties.speed === "number" ? (properties.speed as number) : null;
-        const origin = (properties.origin_country as string | undefined) ?? "N/A";
-        const timestamp = (properties.timestamp as number | undefined) ?? (properties.last_contact as number | undefined);
-        const nowSeconds = Math.floor(Date.now() / 1000);
-        const age = typeof timestamp === "number" ? Math.max(0, nowSeconds - timestamp) : null;
-        const content = `
-          <strong>${callsign || icao24 || "Sin identificador"}</strong><br/>
-          ICAO24: ${icao24 || "N/A"}<br/>
-          Altitud: ${altitude !== null ? `${altitude} m` : "N/A"}<br/>
-          Velocidad: ${speed !== null ? `${Math.round(speed)} m/s (${Math.round(speed * 3.6)} km/h)` : "N/A"}<br/>
-          País: ${origin}<br/>
-          Último contacto: ${age !== null ? `hace ${age}s` : "sin datos"}
-        `;
-
-        if (!getExistingPopup(map)) {
-          new maplibregl.Popup({ closeOnClick: false, closeButton: true })
-            .setLngLat(event.lngLat)
-            .setHTML(content)
-            .addTo(map);
-        }
-      }
-    });
-
-    map.on("mouseleave", this.id, () => {
-      map.getCanvas().style.cursor = "";
-      const popup = getExistingPopup(map);
-      if (popup) {
-        popup.remove();
-      }
-      hoveredId = null;
-    });
-
-    map.on("mousemove", this.id, (event) => {
-      if (event.features && event.features.length > 0 && hoveredId) {
-        const popup = getExistingPopup(map);
-        if (popup) {
-          popup.setLngLat(event.lngLat);
-        }
-      }
-    });
+    this.registerEvents(map);
   }
 
   private ensureSource(): void {
@@ -289,6 +246,7 @@ export default class AircraftLayer implements Layer {
   }
 
   remove(map: maplibregl.Map): void {
+    this.unregisterEvents(map);
     this.removeLayers(map);
     if (map.getSource(this.sourceId)) {
       map.removeSource(this.sourceId);
@@ -372,6 +330,95 @@ export default class AircraftLayer implements Layer {
 
   destroy(): void {
     this.map = undefined;
+  }
+
+  private registerEvents(map: maplibregl.Map) {
+    if (this.eventsRegistered) {
+      return;
+    }
+
+    this.onMouseEnter = (event) => {
+      if (!(event.features && event.features.length > 0)) {
+        return;
+      }
+      map.getCanvas().style.cursor = "pointer";
+      const feature = event.features[0];
+      const properties = (feature.properties ?? {}) as Record<string, unknown>;
+      this.hoveredFeatureId = feature.id as string;
+      const callsign = (properties.callsign as string | undefined)?.trim();
+      const icao24 = (properties.icao24 as string | undefined)?.trim();
+      const altitude = typeof properties.alt_baro === "number" ? Math.round(properties.alt_baro as number) : null;
+      const speed = typeof properties.speed === "number" ? (properties.speed as number) : null;
+      const origin = (properties.origin_country as string | undefined) ?? "N/A";
+      const timestamp =
+        (properties.timestamp as number | undefined) ?? (properties.last_contact as number | undefined);
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const age = typeof timestamp === "number" ? Math.max(0, nowSeconds - timestamp) : null;
+      const content = `
+          <strong>${callsign || icao24 || "Sin identificador"}</strong><br/>
+          ICAO24: ${icao24 || "N/A"}<br/>
+          Altitud: ${altitude !== null ? `${altitude} m` : "N/A"}<br/>
+          Velocidad: ${speed !== null ? `${Math.round(speed)} m/s (${Math.round(speed * 3.6)} km/h)` : "N/A"}<br/>
+          País: ${origin}<br/>
+          Último contacto: ${age !== null ? `hace ${age}s` : "sin datos"}
+        `;
+
+      if (!getExistingPopup(map)) {
+        new maplibregl.Popup({ closeOnClick: false, closeButton: true })
+          .setLngLat(event.lngLat)
+          .setHTML(content)
+          .addTo(map);
+      }
+    };
+
+    this.onMouseLeave = () => {
+      map.getCanvas().style.cursor = "";
+      const popup = getExistingPopup(map);
+      if (popup) {
+        popup.remove();
+      }
+      this.hoveredFeatureId = null;
+    };
+
+    this.onMouseMove = (event) => {
+      if (!(event.features && event.features.length > 0 && this.hoveredFeatureId)) {
+        return;
+      }
+      const popup = getExistingPopup(map);
+      if (popup) {
+        popup.setLngLat(event.lngLat);
+      }
+    };
+
+    map.on("mouseenter", this.id, this.onMouseEnter);
+    map.on("mouseleave", this.id, this.onMouseLeave);
+    map.on("mousemove", this.id, this.onMouseMove);
+    this.eventsRegistered = true;
+  }
+
+  private unregisterEvents(map: maplibregl.Map) {
+    if (!this.eventsRegistered) {
+      return;
+    }
+    if (this.onMouseEnter) {
+      map.off("mouseenter", this.id, this.onMouseEnter);
+    }
+    if (this.onMouseLeave) {
+      map.off("mouseleave", this.id, this.onMouseLeave);
+    }
+    if (this.onMouseMove) {
+      map.off("mousemove", this.id, this.onMouseMove);
+    }
+    map.getCanvas().style.cursor = "";
+    const popup = getExistingPopup(map);
+    if (popup) {
+      popup.remove();
+    }
+    this.hoveredFeatureId = null;
+    this.onMouseEnter = undefined;
+    this.onMouseLeave = undefined;
+    this.onMouseMove = undefined;
+    this.eventsRegistered = false;
   }
 
   private applyVisibility() {

@@ -117,6 +117,47 @@ body {
   mix-blend-mode: normal;
 }
 
+.map-style-spinner {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.78);
+  color: #f9fafb;
+  font-size: 0.85rem;
+  line-height: 1.2;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  z-index: 5;
+}
+
+.map-style-spinner__dot {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+  animation: map-style-spinner-rotate 0.8s linear infinite;
+}
+
+.map-style-spinner__text {
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+@keyframes map-style-spinner-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .maplibregl-canvas-container,
 .maplibregl-canvas {
   width: 100% !important;
