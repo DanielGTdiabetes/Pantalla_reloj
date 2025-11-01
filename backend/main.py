@@ -303,6 +303,7 @@ def _migrate_public_secrets_to_store() -> None:
     try:
         config = config_manager.read()
         mutated = False
+        mutated_any = False
 
         # AEMET
         try:
@@ -318,6 +319,11 @@ def _migrate_public_secrets_to_store() -> None:
                 mutated = True
             if mutated:
                 config = config_manager.write(payload)
+        # Acumular estado de migración tras AEMET
+        mutated_any = mutated_any or mutated
+
+        # Resetear bandera de mutación antes de procesar AISStream
+        mutated = False
 
         # AISStream
         ai_key = None
@@ -338,7 +344,9 @@ def _migrate_public_secrets_to_store() -> None:
                 pass
             if mutated:
                 config_manager.write(payload)
-        if mutated:
+        # Acumular estado de migración tras AISStream
+        mutated_any = mutated_any or mutated
+        if mutated_any:
             logger.info("Secrets migrated from public config to SecretStore")
     except Exception as exc:  # noqa: BLE001
         logger.warning("Secret migration skipped due to error: %s", exc)
