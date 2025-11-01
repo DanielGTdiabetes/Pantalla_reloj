@@ -6,11 +6,12 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
+from urllib.parse import urlparse
 
 from ..models import AppConfig
 from ..secret_store import SecretStore
 from .cache import TTLCache
-from .opensky_auth import OpenSkyAuthError, OpenSkyAuthenticator
+from .opensky_auth import DEFAULT_TOKEN_URL, OpenSkyAuthError, OpenSkyAuthenticator
 from .opensky_client import OpenSkyClient, OpenSkyClientError
 
 
@@ -203,11 +204,11 @@ class OpenSkyService:
                 payload=result_payload,
                 fetched_at=now,
                 stale=False,
-                remaining=remaining,
-                polled=True,
-                mode=effective_mode,
-                bbox=bbox_to_use,
-            )
+            remaining=remaining,
+            polled=True,
+            mode=effective_mode,
+            bbox=bbox_to_use,
+        )
             self._cache.set(cache_key, snapshot, ttl)
             self._snapshots[cache_key] = snapshot
             self._last_fetch_ok = True
@@ -278,6 +279,166 @@ class OpenSkyService:
     def close(self) -> None:
         self._client.close()
         self._auth.close()
+
+    @staticmethod
+    def _format_auth_error(exc: OpenSkyAuthError) -> str:
+        base = exc.args[0] if exc.args else "auth_error"
+        if exc.status:
+            return f"{base}:{exc.status}"
+        if exc.retry_after:
+            return f"{base}:retry"
+        return str(base)
+
+    @staticmethod
+    def _format_client_error(exc: OpenSkyClientError) -> str:
+        base = exc.args[0] if exc.args else "client_error"
+        if exc.status:
+            return f"{base}:{exc.status}"
+        return str(base)
+
+    def force_refresh(self, config: AppConfig) -> Dict[str, Any]:
+        opensky_cfg = getattr(config, "opensky")
+        poll_seconds, has_token = self._compute_poll_seconds(config)
+        bbox_to_use: Optional[Tuple[float, float, float, float]]
+        if opensky_cfg.mode == "bbox":
+            area = opensky_cfg.bbox
+            bbox_to_use = (
+                float(area.lamin),
+                float(area.lamax),
+                float(area.lomin),
+                float(area.lomax),
+            )
+        else:
+            bbox_to_use = None
+        effective_mode = "global" if bbox_to_use is None else "bbox"
+        extended = 1 if int(opensky_cfg.extended) else 0
+        cache_key = self._build_key(bbox_to_use, extended, int(opensky_cfg.max_aircraft))
+        oauth_cfg = getattr(opensky_cfg, "oauth2", None)
+        raw_token_url = getattr(oauth_cfg, "token_url", None) if oauth_cfg else None
+        scope_value = getattr(oauth_cfg, "scope", None) if oauth_cfg else None
+        resolved_token_url = (raw_token_url or DEFAULT_TOKEN_URL).strip() or DEFAULT_TOKEN_URL
+        parsed_url = urlparse(resolved_token_url)
+        if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+            self._logger.warning(
+                "[opensky] invalid token_url configured (%s); falling back to default",
+                resolved_token_url,
+            )
+            resolved_token_url = DEFAULT_TOKEN_URL
+        token: Optional[str] = None
+        auth_error: Optional[str] = None
+        if has_token:
+            try:
+                token = self._auth.get_token(
+                    token_url=resolved_token_url,
+                    scope=scope_value,
+                    force_refresh=True,
+                )
+            except OpenSkyAuthError as exc:
+                auth_error = self._format_auth_error(exc)
+                self._logger.warning("[opensky] manual token refresh failed: %s", auth_error)
+            except Exception as exc:  # noqa: BLE001
+                auth_error = "auth_unexpected"
+                self._logger.warning("[opensky] unexpected token refresh error: %s", exc)
+        fetch_summary: Dict[str, Any] = {
+            "status": "error",
+            "items": 0,
+            "ts": None,
+            "mode": effective_mode,
+        }
+        fetch_error: Optional[str] = None
+        payload: Optional[Dict[str, Any]] = None
+        headers: Dict[str, str] = {}
+        delays = [0.0, 0.5, 2.0, 5.0]
+        now = time.time()
+        for attempt, delay in enumerate(delays):
+            if delay:
+                time.sleep(delay)
+            try:
+                payload, headers = self._client.fetch_states(bbox_to_use, extended, token)
+            except OpenSkyClientError as exc:
+                fetch_error = self._format_client_error(exc)
+                if exc.status == 429:
+                    self._last_rate_limit_hint = "0"
+                if exc.status in {401, 403} and has_token:
+                    self._auth.invalidate()
+                self._logger.warning(
+                    "[opensky] manual fetch failed (attempt %d/%d): %s",
+                    attempt + 1,
+                    len(delays),
+                    fetch_error,
+                )
+            except Exception as exc:  # noqa: BLE001
+                fetch_error = "unexpected_fetch_error"
+                self._logger.warning(
+                    "[opensky] manual fetch encountered unexpected error (attempt %d/%d): %s",
+                    attempt + 1,
+                    len(delays),
+                    exc,
+                )
+            else:
+                fetch_error = None
+                break
+            if attempt == len(delays) - 1:
+                payload = None
+        auth_error = auth_error or None
+        if payload is not None:
+            ts, count, items = OpenSkyClient.sanitize_states(payload, int(opensky_cfg.max_aircraft))
+            iso_ts = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+            remaining = headers.get("X-Rate-Limit-Remaining")
+            snapshot = Snapshot(
+                payload={"count": count, "items": items, "stale": False, "ts": ts},
+                fetched_at=now,
+                stale=False,
+                remaining=remaining,
+                polled=True,
+                mode=effective_mode,
+                bbox=bbox_to_use,
+            )
+            ttl = self._ttl_for(poll_seconds, has_token)
+            with self._lock:
+                self._cache.set(cache_key, snapshot, ttl)
+                self._snapshots[cache_key] = snapshot
+                self._last_fetch_ok = True
+                self._last_fetch_at = now
+                self._last_error = None
+                self._last_error_at = None
+                if remaining:
+                    self._last_rate_limit_hint = remaining
+                self._reset_backoff()
+            fetch_summary.update({
+                "status": "ok",
+                "items": count,
+                "ts": iso_ts,
+            })
+        else:
+            error_to_store = fetch_error or auth_error or "refresh_failed"
+            iso_now = datetime.fromtimestamp(now, tz=timezone.utc).isoformat()
+            with self._lock:
+                snapshot = self._snapshots.get(cache_key)
+                if snapshot:
+                    snapshot.stale = True
+                    snapshot.payload["stale"] = True
+                    snapshot.polled = False
+                self._last_fetch_ok = False
+                self._last_fetch_at = now
+                self._last_error = error_to_store
+                self._last_error_at = now
+            fetch_summary.update({
+                "status": "error",
+                "items": 0,
+                "ts": iso_now,
+            })
+        auth_info = self._auth.describe() or {}
+        auth_summary = {
+            "token_cached": bool(auth_info.get("token_cached")),
+            "expires_in_sec": auth_info.get("expires_in_sec"),
+        }
+        response_error = fetch_error or auth_error
+        return {
+            "auth": auth_summary,
+            "fetch": fetch_summary,
+            "error": response_error,
+        }
 
     def get_last_snapshot(self) -> Optional[Snapshot]:
         with self._lock:
