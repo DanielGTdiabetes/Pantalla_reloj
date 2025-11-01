@@ -231,9 +231,9 @@ class AISStreamService:
     ) -> None:
         subscription = {
             "APIKey": api_key,
-            "BoundingBoxes": [[-90.0, -180.0, 90.0, 180.0]],
-            "FiltersShipType": [],
-            "FiltersMessageType": ["PositionReport"],
+            "BoundingBoxes": [[[-90.0, -180.0], [90.0, 180.0]]],
+            "FilterShipTypes": [],
+            "FilterMessageTypes": ["PositionReport"],
         }
         await ws.send(json.dumps(subscription))
         self._logger.info("AISStream subscription sent")
@@ -257,7 +257,13 @@ class AISStreamService:
                     continue
             if not isinstance(message, str):
                 continue
+            # Log de diagnóstico al primer mensaje válido
+            first_message = False
+            with self._lock:
+                first_message = self._last_message_ts is None
             self._handle_message(message)
+            if first_message:
+                self._logger.debug("AISStream first message received")
 
         with self._lock:
             self._ws_connected = False
