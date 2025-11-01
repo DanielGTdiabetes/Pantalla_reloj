@@ -57,12 +57,8 @@ Pantalla_reloj/
   muestra enmascarado (•••• 1234), el botón «Mostrar» habilita la edición en
   claro y el botón «Probar clave» ejecuta `/api/aemet/test_key` para validar la
   credencial sin exponerla al resto del formulario.
-- Cuando `ui.isInteractive` es `true`, el panel derecho incorpora el bloque **Capas**
-  para activar o desactivar la capa de aviones sin abandonar `/`. En modo kiosk
-  (`ui.isInteractive=false`) se oculta para liberar espacio en la tarjeta rotatoria.
-- El flag `ui.isInteractive` (expuesto por `/api/config`) gobierna la visibilidad
-  de cualquier control interactivo en producción: mantenlo en `false` en kiosk y
-  actívalo (`true`) solo en entornos de configuración o desarrollo.
+- El panel derecho incorpora el bloque **Capas**, que permite activar o desactivar la
+  capa de aviones desde la UI sin abandonar `/`.
 - Compilado con `npm run build` y servido por Nginx desde `/var/www/html`.
 
 #### Autopan y diagnósticos

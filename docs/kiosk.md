@@ -10,10 +10,6 @@ Con esta configuración, al iniciar `pantalla-xorg.service` se obtiene un arranq
 
 Chromium se ejecuta desde el usuario normal y necesita la cookie real de Xauthority. Asegúrate de que `~/.Xauthority` exista y sea un archivo regular (`-rw-------`) perteneciente a `dani:dani`. El servicio de Xorg ya se inicia con `-auth /home/dani/.Xauthority`, por lo que no es necesario crear enlaces simbólicos en `/var/lib`.
 
-## Controles interactivos
-
-Los elementos táctiles/interactivos del dashboard se gobiernan con `ui.isInteractive` en `config.json`. El backend lo expone vía `/api/config` y su valor por defecto es `false`. Mantén ese valor en kiosk para ocultar el interruptor de capa de aviones (y futuros controles) y permitir que la tarjeta rotatoria ocupe todo el panel. Solo en entornos de configuración o desarrollo debe activarse (`true`) para mostrar los controles.
-
 ## Arranque determinista (X11 + navegador kiosk)
 
 ### Requisitos
