@@ -97,6 +97,11 @@ export type AemetTestResponse = {
   reason?: string;
 };
 
+export type MaskedSecretMeta = {
+  has_api_key: boolean;
+  api_key_last4: string | null;
+};
+
 export async function updateAemetApiKey(apiKey: string | null) {
   return apiPost<undefined>("/api/config/secret/aemet_api_key", {
     api_key: apiKey,

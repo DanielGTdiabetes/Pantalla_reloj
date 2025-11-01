@@ -408,7 +408,7 @@ class GlobalRadarLayer(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = True
-    provider: Literal["rainviewer"] = Field(default="rainviewer")
+    provider: Literal["rainviewer", "openmeteo"] = Field(default="rainviewer")
     refresh_minutes: int = Field(default=5, ge=1, le=1440)
     history_minutes: int = Field(default=90, ge=1, le=1440)
     frame_step: int = Field(default=5, ge=1, le=1440)

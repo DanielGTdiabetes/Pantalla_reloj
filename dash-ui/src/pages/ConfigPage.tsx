@@ -384,6 +384,13 @@ const validateConfig = (config: AppConfig, supports: SchemaInspector["has"]): Fi
     }
   }
 
+  if (supports("layers.global.radar.provider")) {
+    const provider = config.layers.global?.radar?.provider;
+    if (provider !== "rainviewer" && provider !== "openmeteo") {
+      errors["layers.global.radar.provider"] = "Selecciona un proveedor válido";
+    }
+  }
+
   return errors;
 };
 
@@ -4144,7 +4151,8 @@ const ConfigPage: React.FC = () => {
               },
               radar: {
                 enabled: currentGlobal?.radar?.enabled ?? defaultGlobal.radar.enabled,
-                provider: "rainviewer" as const,
+                provider:
+                  (currentGlobal?.radar?.provider ?? defaultGlobal.radar.provider ?? "rainviewer") as AppConfig["layers"]["global"]["radar"]["provider"],
                 refresh_minutes: currentGlobal?.radar?.refresh_minutes ?? defaultGlobal.radar.refresh_minutes,
                 history_minutes: currentGlobal?.radar?.history_minutes ?? defaultGlobal.radar.history_minutes,
                 frame_step: currentGlobal?.radar?.frame_step ?? defaultGlobal.radar.frame_step,
@@ -4374,7 +4382,41 @@ const ConfigPage: React.FC = () => {
                       />
                       Activar capa de radar global
                     </label>
-                    {renderHelp("Muestra radar de precipitación global (RainViewer)")}
+                    {renderHelp("Muestra radar de precipitación global (RainViewer u Open-Meteo)")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="global_radar_provider">Proveedor</label>
+                    <select
+                      id="global_radar_provider"
+                      value={form.layers.global?.radar.provider ?? "rainviewer"}
+                      disabled={disableInputs || !form.layers.global?.radar.enabled}
+                      onChange={(event) => {
+                        const provider = event.target.value as AppConfig["layers"]["global"]["radar"]["provider"];
+                        setForm((prev) => {
+                          const globalWithDefaults = getGlobalWithDefaults(prev);
+                          return {
+                            ...prev,
+                            layers: {
+                              ...prev.layers,
+                              global: {
+                                ...globalWithDefaults,
+                                radar: {
+                                  ...globalWithDefaults.radar,
+                                  provider,
+                                },
+                              },
+                            },
+                          };
+                        });
+                        resetErrorsFor("layers.global.radar.provider");
+                      }}
+                    >
+                      <option value="rainviewer">RainViewer (sin clave)</option>
+                      <option value="openmeteo">Open-Meteo (sin clave)</option>
+                    </select>
+                    {renderHelp("Elige la fuente del radar global. Open-Meteo no requiere clave y ofrece cobertura mundial.")}
+                    {renderFieldError("layers.global.radar.provider")}
                   </div>
 
                   <div className="config-field">

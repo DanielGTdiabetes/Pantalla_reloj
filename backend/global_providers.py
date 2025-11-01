@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+from urllib.parse import urlencode
 
 import requests
 
@@ -238,4 +241,61 @@ class RainViewerProvider:
         except Exception as exc:
             logger.error("RainViewerProvider get_radar_data_for_focus failed: %s", exc)
             return {"type": "radar_metadata", "frames": []}
+
+
+class OpenMeteoRadarProvider:
+    """Proveedor de radar global utilizando los tiles de precipitación de Open-Meteo."""
+
+    BASE_URL = "https://tile.open-meteo.com/map"
+    DEFAULT_LAYER = "precipitation"
+
+    def __init__(
+        self,
+        layer: Optional[str] = None,
+    ) -> None:
+        candidate_layer = (layer or self.DEFAULT_LAYER).strip() or self.DEFAULT_LAYER
+        allowed_layers = {
+            "precipitation",
+            "precipitation_new",
+            "precipitation_rate",
+        }
+        if candidate_layer not in allowed_layers:
+            candidate_layer = self.DEFAULT_LAYER
+        self._layer = candidate_layer
+
+    def get_available_frames(
+        self,
+        history_minutes: int = 90,
+        frame_step: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """Genera una lista sintética de frames disponibles para Open-Meteo."""
+
+        if frame_step <= 0:
+            frame_step = 5
+        step_seconds = max(frame_step * 60, 60)
+        anchor_ts = int(time.time())
+        anchor_ts -= anchor_ts % step_seconds
+        anchor_dt = datetime.fromtimestamp(anchor_ts, tz=timezone.utc)
+
+        return [
+            {
+                "timestamp": anchor_ts,
+                "iso": anchor_dt.isoformat(),
+            }
+        ]
+
+    def get_tile_url(self, timestamp: int, z: int, x: int, y: int) -> str:
+        """Construye la URL del tile utilizando el timestamp para fijar el parámetro `time`."""
+
+        dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+        iso = dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        query = urlencode({"time": iso})
+        return f"{self.BASE_URL}/{self._layer}/{z}/{x}/{y}.png?{query}"
+
+
+__all__ = [
+    "GIBSProvider",
+    "RainViewerProvider",
+    "OpenMeteoRadarProvider",
+]
 

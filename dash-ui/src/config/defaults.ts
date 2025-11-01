@@ -76,6 +76,19 @@ const sanitizeNullableString = (value: unknown, fallback: string | null): string
   return fallback;
 };
 
+const sanitizeRadarProvider = (
+  value: unknown,
+  fallback: GlobalRadarLayerConfig["provider"],
+): GlobalRadarLayerConfig["provider"] => {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "rainviewer" || normalized === "openmeteo") {
+      return normalized as GlobalRadarLayerConfig["provider"];
+    }
+  }
+  return fallback;
+};
+
 const DEFAULT_CINEMA_BANDS: readonly MapCinemaBand[] = [
   { lat: 0, zoom: 2.8, pitch: 10, minZoom: 2.6, duration_sec: 900 },
   { lat: 18, zoom: 3.0, pitch: 8, minZoom: 2.8, duration_sec: 720 },
@@ -941,10 +954,10 @@ const mergeGlobalRadarLayer = (candidate: unknown): GlobalRadarLayerConfig => {
   const globalFallback = DEFAULT_CONFIG.layers.global ?? createDefaultGlobalLayers();
   const fallback = globalFallback.radar;
   const source = (candidate as Partial<GlobalRadarLayerConfig>) ?? {};
-  
+
   return {
     enabled: toBoolean(source.enabled, fallback.enabled),
-    provider: "rainviewer", // Solo un proveedor por ahora
+    provider: sanitizeRadarProvider(source.provider, fallback.provider),
     refresh_minutes: clampNumber(
       Math.round(toNumber(source.refresh_minutes, fallback.refresh_minutes)),
       1,
