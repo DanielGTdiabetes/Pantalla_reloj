@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 import { withConfigDefaults } from "../config/defaults";
 import { apiGet } from "../lib/api";
-import type { useConfig } from "../lib/useConfig";
+import { useConfig } from "../lib/useConfig";
 import { dayjs } from "../utils/dayjs";
 import { ensurePlainText, sanitizeRichText } from "../utils/sanitize";
 import type { RotatingCardItem } from "./RotatingCard";
@@ -99,14 +99,8 @@ const extractStrings = (value: unknown): string[] => {
   return [];
 };
 
-type ConfigState = ReturnType<typeof useConfig>;
-
-type OverlayRotatorProps = {
-  configState: ConfigState;
-};
-
-export const OverlayRotator: React.FC<OverlayRotatorProps> = ({ configState }) => {
-  const { data, loading } = configState;
+export const OverlayRotator: React.FC = () => {
+  const { data, loading } = useConfig();
   const config = useMemo(() => data ?? withConfigDefaults(), [data]);
   const [payload, setPayload] = useState<DashboardPayload>({});
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);

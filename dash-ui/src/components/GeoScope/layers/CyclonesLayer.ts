@@ -1,7 +1,6 @@
 import maplibregl from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
 
-import GeoScopeLayerOrder from "./layerOrder";
 import type { Layer } from "./LayerRegistry";
 
 interface CyclonesLayerOptions {
@@ -12,7 +11,7 @@ const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 
 export default class CyclonesLayer implements Layer {
   public readonly id = "geoscope-cyclones";
-  public readonly zIndex = GeoScopeLayerOrder.Radar;
+  public readonly zIndex = 20;
 
   private enabled: boolean;
   private map?: maplibregl.Map;

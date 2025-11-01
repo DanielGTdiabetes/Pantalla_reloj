@@ -1,7 +1,6 @@
 import maplibregl from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
 
-import GeoScopeLayerOrder from "./layerOrder";
 import type { Layer } from "./LayerRegistry";
 import { getExistingPopup, isGeoJSONSource } from "./layerUtils";
 
@@ -21,7 +20,7 @@ const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 
 export default class ShipsLayer implements Layer {
   public readonly id = "geoscope-ships";
-  public readonly zIndex = GeoScopeLayerOrder.Ships;
+  public readonly zIndex = 30;
 
   private enabled: boolean;
   private opacity: number;
