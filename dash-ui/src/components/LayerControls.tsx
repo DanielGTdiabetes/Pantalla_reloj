@@ -22,6 +22,7 @@ export const LayerControls: React.FC<LayerControlsProps> = ({ configState }) => 
   const [localError, setLocalError] = useState<string | null>(null);
 
   const flightsEnabled = data?.layers.flights.enabled ?? false;
+  const isInteractive = data?.ui?.isInteractive ?? false;
 
   const disabled = loading || pending || !data;
 
@@ -57,6 +58,10 @@ export const LayerControls: React.FC<LayerControlsProps> = ({ configState }) => 
   }, [data, flightsEnabled, pending, reload]);
 
   if (!data) {
+    return null;
+  }
+
+  if (!isInteractive) {
     return null;
   }
 

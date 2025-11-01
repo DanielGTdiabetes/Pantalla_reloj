@@ -9,6 +9,7 @@
   },
   "ui": {
     "layout": "grid-2-1",
+    "isInteractive": false,
     "map": {
       "engine": "maplibre",
       "style": "vector-dark",
