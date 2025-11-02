@@ -10,6 +10,7 @@ import { kioskRuntime } from "../../lib/runtimeFlags";
 import AircraftLayer from "./layers/AircraftLayer";
 import GlobalRadarLayer from "./layers/GlobalRadarLayer";
 import GlobalSatelliteLayer from "./layers/GlobalSatelliteLayer";
+import AEMETWarningsLayer from "./layers/AEMETWarningsLayer";
 import LightningLayer from "./layers/LightningLayer";
 import { LayerRegistry } from "./layers/LayerRegistry";
 import ShipsLayer from "./layers/ShipsLayer";
@@ -1355,6 +1356,7 @@ export default function GeoScopeMap() {
   const aircraftLayerRef = useRef<AircraftLayer | null>(null);
   const globalRadarLayerRef = useRef<GlobalRadarLayer | null>(null);
   const globalSatelliteLayerRef = useRef<GlobalSatelliteLayer | null>(null);
+  const aemetWarningsLayerRef = useRef<AEMETWarningsLayer | null>(null);
   const lightningLayerRef = useRef<LightningLayer | null>(null);
   const layerRegistryRef = useRef<LayerRegistry | null>(null);
   const shipsLayerRef = useRef<ShipsLayer | null>(null);
@@ -2498,6 +2500,15 @@ export default function GeoScopeMap() {
       map.on("styledata", handleEnsureFlightsLayer);
       map.on("load", handleEnsureFlightsLayer);
 
+      const handleEnsureAEMETWarningsLayer = async () => {
+        const aemetLayer = aemetWarningsLayerRef.current;
+        if (aemetLayer) {
+          await aemetLayer.ensureWarningsLayer();
+        }
+      };
+      map.on("styledata", handleEnsureAEMETWarningsLayer);
+      map.on("load", handleEnsureAEMETWarningsLayer);
+
       // Guardar referencia para cleanup
       const ensureFlightsLayerHandler = handleEnsureFlightsLayer;
 
@@ -2537,6 +2548,19 @@ export default function GeoScopeMap() {
             });
             layerRegistry.add(globalRadarLayer);
             globalRadarLayerRef.current = globalRadarLayer;
+          }
+
+          // AEMET Warnings Layer (z-index 15, entre radar y vuelos)
+          const aemetConfig = mergedConfig.aemet;
+          if (aemetConfig?.enabled && aemetConfig?.cap_enabled) {
+            const aemetWarningsLayer = new AEMETWarningsLayer({
+              enabled: true,
+              opacity: 0.6,
+              minSeverity: "moderate",
+              refreshSeconds: (aemetConfig.cache_minutes ?? 15) * 60,
+            });
+            layerRegistry.add(aemetWarningsLayer);
+            aemetWarningsLayerRef.current = aemetWarningsLayer;
           }
 
           // AircraftLayer

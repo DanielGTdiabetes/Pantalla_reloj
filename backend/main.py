@@ -56,6 +56,7 @@ from .services.opensky_auth import DEFAULT_TOKEN_URL, OpenSkyAuthError
 from .services.opensky_client import OpenSkyClientError
 from .services.opensky_service import OpenSkyService
 from .services.ships_service import AISStreamService
+from .services.aemet_service import fetch_aemet_warnings, AEMETServiceError
 from .rate_limiter import check_rate_limit
 
 APP_START = datetime.now(timezone.utc)
@@ -1348,6 +1349,93 @@ def _update_aemet_health(ok: bool, error: Optional[str]) -> None:
     global _aemet_last_ok, _aemet_last_error
     _aemet_last_ok = ok
     _aemet_last_error = error
+
+
+@app.get("/api/aemet/warnings")
+def get_aemet_warnings() -> Dict[str, Any]:
+    """Obtiene avisos CAP de AEMET (Meteoalerta) en formato GeoJSON."""
+    config = config_manager.read()
+    aemet_config = config.aemet
+    
+    if not aemet_config.enabled or not aemet_config.cap_enabled:
+        return {
+            "type": "FeatureCollection",
+            "features": [],
+            "metadata": {
+                "source": "aemet",
+                "enabled": False,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        }
+    
+    api_key = secret_store.get_secret("aemet_api_key")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="API key de AEMET no configurada")
+    
+    # Intentar cargar desde caché
+    cached = cache_store.load("aemet_warnings", max_age_minutes=aemet_config.cache_minutes)
+    if cached and cached.payload:
+        logger.debug("Returning cached AEMET warnings")
+        return cached.payload
+    
+    # Obtener datos frescos
+    try:
+        warnings_data = fetch_aemet_warnings(api_key)
+        
+        # Guardar en caché
+        cache_store.store("aemet_warnings", warnings_data)
+        
+        return warnings_data
+    except AEMETServiceError as e:
+        logger.error("Error fetching AEMET warnings: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error("Unexpected error fetching AEMET warnings: %s", e)
+        raise HTTPException(status_code=500, detail="Error al obtener avisos de AEMET")
+
+
+@app.get("/api/aemet/radar/tiles/{z}/{x}/{y}.png")
+def get_aemet_radar_tile(z: int, x: int, y: int) -> Response:
+    """
+    Retorna tiles de radar de AEMET (si están disponibles).
+    
+    Nota: AEMET OpenData no proporciona tiles de radar en su API pública.
+    Este endpoint retorna 501 (Not Implemented) como indicación.
+    Para radar, se debe usar RainViewer (global_layers.radar).
+    """
+    config = config_manager.read()
+    aemet_config = config.aemet
+    
+    if not aemet_config.enabled or not aemet_config.radar_enabled:
+        raise HTTPException(status_code=404, detail="Radar de AEMET no habilitado")
+    
+    # AEMET OpenData no proporciona tiles de radar
+    raise HTTPException(
+        status_code=501,
+        detail="AEMET OpenData no proporciona tiles de radar. Use RainViewer para datos de radar."
+    )
+
+
+@app.get("/api/aemet/sat/tiles/{z}/{x}/{y}.png")
+def get_aemet_sat_tile(z: int, x: int, y: int) -> Response:
+    """
+    Retorna tiles de satélite de AEMET (si están disponibles).
+    
+    Nota: AEMET OpenData no proporciona tiles de satélite en su API pública.
+    Este endpoint retorna 501 (Not Implemented) como indicación.
+    Para satélite, se debe usar GIBS (global_layers.satellite).
+    """
+    config = config_manager.read()
+    aemet_config = config.aemet
+    
+    if not aemet_config.enabled or not aemet_config.satellite_enabled:
+        raise HTTPException(status_code=404, detail="Satélite de AEMET no habilitado")
+    
+    # AEMET OpenData no proporciona tiles de satélite
+    raise HTTPException(
+        status_code=501,
+        detail="AEMET OpenData no proporciona tiles de satélite. Use GIBS para datos de satélite."
+    )
 
 
 @app.get("/api/opensky/status")
