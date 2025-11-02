@@ -2425,10 +2425,10 @@ export default function GeoScopeMap() {
       map.on("error", handleMapError);
 
       // Asegurar que la capa de vuelos se reestablezca después de cambios de estilo
-      const handleEnsureFlightsLayer = () => {
+      const handleEnsureFlightsLayer = async () => {
         const aircraftLayer = aircraftLayerRef.current;
         if (aircraftLayer) {
-          aircraftLayer.ensureFlightsLayer();
+          await aircraftLayer.ensureFlightsLayer();
         }
       };
       map.on("styledata", handleEnsureFlightsLayer);
@@ -2506,6 +2506,7 @@ export default function GeoScopeMap() {
               styleScale: flightsConfig.styleScale ?? 1,
               renderMode: flightsConfig.render_mode ?? "auto",
               circle: flightsConfig.circle,
+              symbol: flightsConfig.symbol,
               spriteAvailable,
             });
             layerRegistry.add(aircraftLayer);
@@ -3508,6 +3509,7 @@ export default function GeoScopeMap() {
     if (aircraftLayer) {
       aircraftLayer.setRenderMode(flightsConfig.render_mode ?? "auto");
       aircraftLayer.setCircleOptions(flightsConfig.circle);
+      aircraftLayer.setSymbolOptions(flightsConfig.symbol);
       aircraftLayer.setEnabled(flightsConfig.enabled && openskyConfig.enabled);
       aircraftLayer.setOpacity(flightsConfig.opacity);
       aircraftLayer.setMaxAgeSeconds(flightsConfig.max_age_seconds);

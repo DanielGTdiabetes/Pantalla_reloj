@@ -2,11 +2,12 @@ import maplibregl from "maplibre-gl";
 import type { MapLayerMouseEvent } from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
 
-import type { FlightsLayerCircleConfig, FlightsLayerRenderMode } from "../../../types/config";
+import type { FlightsLayerCircleConfig, FlightsLayerRenderMode, FlightsLayerSymbolConfig } from "../../../types/config";
 import type { Layer } from "./LayerRegistry";
 import { getExistingPopup, isGeoJSONSource } from "./layerUtils";
+import { registerPlaneIcon } from "../utils/planeIcon";
 
-type EffectiveRenderMode = "symbol" | "circle";
+type EffectiveRenderMode = "symbol" | "symbol_custom" | "circle";
 
 type CircleOptions = {
   radiusBase: number;
@@ -30,6 +31,7 @@ interface AircraftLayerOptions {
   styleScale?: number;
   renderMode?: FlightsLayerRenderMode;
   circle?: FlightsLayerCircleConfig;
+  symbol?: FlightsLayerSymbolConfig;
   spriteAvailable?: boolean;
   iconImage?: string;
 }
@@ -109,8 +111,10 @@ export default class AircraftLayer implements Layer {
   private renderMode: FlightsLayerRenderMode;
   private spriteAvailable: boolean;
   private circleOptions: CircleOptions;
+  private symbolOptions: FlightsLayerSymbolConfig | undefined;
   private iconImage: string;
   private currentRenderMode: EffectiveRenderMode;
+  private planeIconRegistered: boolean = false;
   private eventsRegistered = false;
   private onMouseEnter?: (event: MapLayerMouseEvent) => void;
   private onMouseLeave?: (event: MapLayerMouseEvent) => void;
@@ -129,6 +133,7 @@ export default class AircraftLayer implements Layer {
     this.renderMode = options.renderMode ?? "auto";
     this.spriteAvailable = options.spriteAvailable ?? false;
     this.circleOptions = normalizeCircleOptions(options.circle);
+    this.symbolOptions = options.symbol;
     this.iconImage = options.iconImage ?? DEFAULT_ICON_IMAGE;
     this.currentRenderMode = this.determineRenderMode(false);
   }
@@ -143,14 +148,21 @@ export default class AircraftLayer implements Layer {
    * Asegura que la capa de vuelos esté inicializada después de cambios de estilo.
    * Debe ser llamado en eventos 'styledata' y 'load'.
    */
-  ensureFlightsLayer(): void {
+  async ensureFlightsLayer(): Promise<void> {
     if (!this.map || !this.enabled) {
       return;
     }
+    // Intentar registrar el icono custom si es necesario
+    if (this.renderMode === "symbol_custom" || (this.renderMode === "auto" && !this.spriteAvailable)) {
+      const registered = await registerPlaneIcon(this.map);
+      if (registered) {
+        this.planeIconRegistered = true;
+      }
+    }
     // Asegurar que el source existe
     this.ensureSource();
-    // Asegurar que las capas existen y están correctamente posicionadas
-    this.updateRenderState(false);
+    // Actualizar estado de renderizado (ahora con modo async)
+    await this.updateRenderStateAsync(false);
   }
 
   remove(map: maplibregl.Map): void {
@@ -217,6 +229,18 @@ export default class AircraftLayer implements Layer {
     this.applyOpacity();
   }
 
+  setSymbolOptions(symbol: FlightsLayerSymbolConfig | undefined): void {
+    this.symbolOptions = symbol;
+    if (this.map && this.currentRenderMode === "symbol_custom" && this.map.getLayer(this.id)) {
+      this.map.setLayoutProperty(this.id, "icon-size", this.getCustomSymbolSizeExpression());
+      this.map.setLayoutProperty(
+        this.id,
+        "icon-allow-overlap",
+        symbol?.allow_overlap ?? true,
+      );
+    }
+  }
+
   setSpriteAvailability(available: boolean): void {
     if (this.spriteAvailable === available) {
       return;
@@ -268,8 +292,8 @@ export default class AircraftLayer implements Layer {
     return this.lastData;
   }
 
-  private updateRenderState(shouldLog: boolean): void {
-    const nextMode = this.determineRenderMode(shouldLog);
+  private async updateRenderStateAsync(shouldLog: boolean): Promise<void> {
+    const nextMode = await this.determineRenderModeAsync(shouldLog);
     const modeChanged = nextMode !== this.currentRenderMode;
     this.currentRenderMode = nextMode;
 
@@ -278,12 +302,10 @@ export default class AircraftLayer implements Layer {
     }
 
     this.ensureSource();
-    if (modeChanged) {
-      this.ensureLayers();
-      this.applyVisibility();
-    }
-
-    if (!modeChanged && !this.map.getLayer(this.id)) {
+    const layerExists = Boolean(this.map.getLayer(this.id));
+    
+    // Si cambió el modo o no existe la capa, recrearla
+    if (modeChanged || !layerExists) {
       this.ensureLayers();
       this.applyVisibility();
     }
@@ -293,8 +315,47 @@ export default class AircraftLayer implements Layer {
     this.applyStyleScale();
   }
 
-  private determineRenderMode(shouldLog: boolean): EffectiveRenderMode {
+  private updateRenderState(shouldLog: boolean): void {
+    // Versión síncrona para compatibilidad
+    const nextMode = this.determineRenderMode(shouldLog);
+    const modeChanged = nextMode !== this.currentRenderMode;
+    this.currentRenderMode = nextMode;
+
+    if (!this.map) {
+      return;
+    }
+
+    this.ensureSource();
+    const layerExists = Boolean(this.map.getLayer(this.id));
+    
+    // Si cambió el modo o no existe la capa, recrearla
+    if (modeChanged || !layerExists) {
+      this.ensureLayers();
+      this.applyVisibility();
+    }
+
+    this.applyCirclePaintProperties();
+    this.applyOpacity();
+    this.applyStyleScale();
+  }
+
+  private async determineRenderModeAsync(shouldLog: boolean): Promise<EffectiveRenderMode> {
     if (this.renderMode === "circle") {
+      return "circle";
+    }
+    if (this.renderMode === "symbol_custom") {
+      // Intentar registrar el icono custom
+      if (!this.map) {
+        return "circle";
+      }
+      const registered = await registerPlaneIcon(this.map);
+      if (registered) {
+        this.planeIconRegistered = true;
+        return "symbol_custom";
+      }
+      if (shouldLog) {
+        console.warn("Flights: no se pudo registrar icono custom; usando circle");
+      }
       return "circle";
     }
     if (this.renderMode === "symbol") {
@@ -307,12 +368,55 @@ export default class AircraftLayer implements Layer {
       }
       return "circle";
     }
+    // render_mode === "auto"
     if (this.spriteAvailable) {
       return "symbol";
+    }
+    // Intentar usar icono custom como fallback
+    if (this.map) {
+      const registered = await registerPlaneIcon(this.map);
+      if (registered) {
+        this.planeIconRegistered = true;
+        return "symbol_custom";
+      }
     }
     if (shouldLog && !AircraftLayer.autoSpriteWarned) {
       console.warn("Flights: sprite no disponible; usando fallback circle");
       AircraftLayer.autoSpriteWarned = true;
+    }
+    return "circle";
+  }
+
+  private determineRenderMode(shouldLog: boolean): EffectiveRenderMode {
+    // Versión síncrona (para compatibilidad inicial)
+    if (this.renderMode === "circle") {
+      return "circle";
+    }
+    if (this.renderMode === "symbol_custom") {
+      // En modo síncrono, verificar si ya está registrado
+      if (this.planeIconRegistered && this.map?.hasImage("plane")) {
+        return "symbol_custom";
+      }
+      // Si no está registrado, usar circle temporalmente hasta que se registre
+      return "circle";
+    }
+    if (this.renderMode === "symbol") {
+      if (this.spriteAvailable) {
+        return "symbol";
+      }
+      if (shouldLog && !AircraftLayer.forcedSymbolWarned) {
+        console.warn("Flights: sprite no disponible con mode=symbol; degradando a circle");
+        AircraftLayer.forcedSymbolWarned = true;
+      }
+      return "circle";
+    }
+    // render_mode === "auto"
+    if (this.spriteAvailable) {
+      return "symbol";
+    }
+    // Para auto sin sprite, verificar si el icono custom ya está registrado
+    if (this.planeIconRegistered && this.map?.hasImage("plane")) {
+      return "symbol_custom";
     }
     return "circle";
   }
@@ -426,16 +530,24 @@ export default class AircraftLayer implements Layer {
     }
 
     if (!map.getLayer(this.id)) {
-      if (this.currentRenderMode === "symbol") {
+      if (this.currentRenderMode === "symbol" || this.currentRenderMode === "symbol_custom") {
+        const iconImage = this.currentRenderMode === "symbol_custom" ? "plane" : this.iconImage;
+        const allowOverlap = this.currentRenderMode === "symbol_custom"
+          ? (this.symbolOptions?.allow_overlap ?? true)
+          : true;
+        const sizeExpression = this.currentRenderMode === "symbol_custom"
+          ? this.getCustomSymbolSizeExpression()
+          : this.getIconSizeExpression();
+
         map.addLayer({
           id: this.id,
           type: "symbol",
           source: this.sourceId,
           filter: ["!", ["has", "point_count"]],
           layout: {
-            "icon-image": this.iconImage,
-            "icon-size": this.getIconSizeExpression(),
-            "icon-allow-overlap": true,
+            "icon-image": iconImage,
+            "icon-size": sizeExpression,
+            "icon-allow-overlap": allowOverlap,
             "icon-rotate": ["coalesce", ["get", "track"], 0],
             "icon-rotation-alignment": "map",
             visibility: this.enabled ? "visible" : "none",
@@ -444,6 +556,7 @@ export default class AircraftLayer implements Layer {
             "icon-color": "#f97316",
             "icon-halo-color": "#111827",
             "icon-halo-width": 0.25,
+            "icon-opacity": this.opacity,
           },
         }, beforeId);
       } else {
@@ -479,7 +592,7 @@ export default class AircraftLayer implements Layer {
   }
 
   private shouldUseClusters(): boolean {
-    return this.clusterEnabled && this.currentRenderMode === "symbol";
+    return this.clusterEnabled && (this.currentRenderMode === "symbol" || this.currentRenderMode === "symbol_custom");
   }
 
   private getFeatureOpacityExpression(baseOpacity: number): maplibregl.ExpressionSpecification {
@@ -510,11 +623,11 @@ export default class AircraftLayer implements Layer {
 
   private applyOpacity(): void {
     if (!this.map || !this.map.getLayer(this.id)) return;
-    const baseOpacity = this.currentRenderMode === "symbol"
+    const baseOpacity = (this.currentRenderMode === "symbol" || this.currentRenderMode === "symbol_custom")
       ? this.opacity
       : this.opacity * this.circleOptions.opacity;
     const expression = this.getFeatureOpacityExpression(baseOpacity);
-    if (this.currentRenderMode === "symbol") {
+    if (this.currentRenderMode === "symbol" || this.currentRenderMode === "symbol_custom") {
       this.map.setPaintProperty(this.id, "icon-opacity", expression);
     } else {
       this.map.setPaintProperty(this.id, "circle-opacity", expression);
@@ -575,11 +688,15 @@ export default class AircraftLayer implements Layer {
   }
 
   private applyStyleScale(): void {
-    if (!this.map || this.currentRenderMode !== "symbol") {
+    if (!this.map || (this.currentRenderMode !== "symbol" && this.currentRenderMode !== "symbol_custom")) {
       return;
     }
     if (this.map.getLayer(this.id)) {
-      this.map.setLayoutProperty(this.id, "icon-size", this.getIconSizeExpression());
+      if (this.currentRenderMode === "symbol_custom") {
+        this.map.setLayoutProperty(this.id, "icon-size", this.getCustomSymbolSizeExpression());
+      } else {
+        this.map.setLayoutProperty(this.id, "icon-size", this.getIconSizeExpression());
+      }
     }
   }
 

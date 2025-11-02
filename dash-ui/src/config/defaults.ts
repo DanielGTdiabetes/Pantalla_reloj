@@ -13,6 +13,7 @@ import type {
   EphemeridesConfig,
   FlightsLayerConfig,
   FlightsLayerCircleConfig,
+  FlightsLayerSymbolConfig,
   FlightsLayerRenderMode,
   GenericAISConfig,
   GlobalLayersConfig,
@@ -100,16 +101,32 @@ const sanitizeRenderMode = (
   value: unknown,
   fallback: FlightsLayerRenderMode,
 ): FlightsLayerRenderMode => {
-  if (value === "auto" || value === "symbol" || value === "circle") {
-    return value;
-  }
-  if (typeof value === "string") {
-    const normalized = value.trim().toLowerCase();
-    if (normalized === "auto" || normalized === "symbol" || normalized === "circle") {
-      return normalized as FlightsLayerRenderMode;
+  if (value === "auto" || value === "symbol" || value === "symbol_custom" || value === "circle") {
+      return value;
+    }
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === "auto" || normalized === "symbol" || normalized === "symbol_custom" || normalized === "circle") {
+        return normalized as FlightsLayerRenderMode;
     }
   }
   return fallback;
+};
+
+const mergeSymbolOptions = (
+  source: Partial<FlightsLayerSymbolConfig> | undefined,
+  fallback: FlightsLayerSymbolConfig,
+): FlightsLayerSymbolConfig => {
+  const candidate = source ?? {};
+  return {
+    size_base: clampNumber(toNumber(candidate.size_base, fallback.size_base), 0.1, 4.0),
+    size_zoom_scale: clampNumber(
+      toNumber(candidate.size_zoom_scale, fallback.size_zoom_scale),
+      0.25,
+      8.0,
+    ),
+    allow_overlap: toBoolean(candidate.allow_overlap, fallback.allow_overlap),
+  };
 };
 
 const mergeCircleOptions = (
@@ -543,6 +560,11 @@ export const DEFAULT_CONFIG: AppConfig = {
         stroke_color: "#002A33",
         stroke_width: 1.0,
       },
+      symbol: {
+        size_base: 0.7,
+        size_zoom_scale: 1.2,
+        allow_overlap: true,
+      },
       cine_focus: {
         enabled: true,
         mode: "both",
@@ -822,6 +844,13 @@ const mergeFlightsLayer = (candidate: unknown): FlightsLayerConfig => {
     stroke_width: 1.0,
   };
 
+  const symbolSource: Partial<FlightsLayerSymbolConfig> = source.symbol ?? {};
+  const symbolFallback: FlightsLayerSymbolConfig = fallback.symbol ?? {
+    size_base: 0.7,
+    size_zoom_scale: 1.2,
+    allow_overlap: true,
+  };
+
   const allowedProviders: Array<"opensky" | "aviationstack" | "custom"> = ["opensky", "aviationstack", "custom"];
   const provider = allowedProviders.includes(source.provider as any)
     ? (source.provider as "opensky" | "aviationstack" | "custom")
@@ -865,6 +894,7 @@ const mergeFlightsLayer = (candidate: unknown): FlightsLayerConfig => {
     styleScale: clampNumber(toNumber(source.styleScale, fallback.styleScale), 0.1, 4.0),
     render_mode: sanitizeRenderMode(source.render_mode, fallback.render_mode ?? "auto"),
     circle: mergeCircleOptions(circleSource, circleFallback),
+    symbol: mergeSymbolOptions(symbolSource, symbolFallback),
     cine_focus: {
       enabled: toBoolean(cineFocusSource.enabled, cineFocusFallback.enabled),
       mode: (cineFocusSource.mode === "cap" || cineFocusSource.mode === "radar")
