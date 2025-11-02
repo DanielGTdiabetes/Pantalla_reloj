@@ -58,9 +58,8 @@ const createRasterStyle = (
     base: baseSource,
   };
 
-  const layers: NonNullable<StyleSpecification["layers"]> = [
-    { id: "base", type: "raster", source: "base" }
-  ];
+  const baseLayer: { id: string; type: "raster"; source: string } = { id: "base", type: "raster", source: "base" };
+  const layers = [baseLayer];
 
   // Añadir overlay de etiquetas OSM si está habilitado
   if (labelsOverlay) {
@@ -74,7 +73,7 @@ const createRasterStyle = (
     };
     layers.push({
       id: "labels-overlay",
-      type: "raster",
+      type: "raster" as const,
       source: "labels",
       minzoom: 0,
       maxzoom: 18,
@@ -86,7 +85,7 @@ const createRasterStyle = (
     name,
     glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
     sources: sources as StyleSpecification["sources"],
-    layers,
+    layers: layers as StyleSpecification["layers"],
   };
 };
 
