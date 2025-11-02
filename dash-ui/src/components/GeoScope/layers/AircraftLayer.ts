@@ -924,6 +924,22 @@ export default class AircraftLayer implements Layer {
     ];
   }
 
+  private getCustomSymbolSizeExpression(): maplibregl.ExpressionSpecification {
+    const base = this.symbolOptions?.size_base ?? 0.7;
+    const scale = this.symbolOptions?.size_zoom_scale ?? 1.2;
+    return [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      2,
+      base,
+      8,
+      base * scale,
+      22,
+      base * scale,
+    ];
+  }
+
   private applyStyleScale(): void {
     if (!this.map || (this.currentRenderMode !== "symbol" && this.currentRenderMode !== "symbol_custom")) {
       return;

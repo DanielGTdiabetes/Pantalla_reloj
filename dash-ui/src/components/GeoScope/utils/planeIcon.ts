@@ -94,11 +94,11 @@ export async function registerPlaneIcon(map: maplibregl.Map): Promise<boolean> {
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
       // Registrar el icono en el mapa
+      // MapLibre-GL acepta ImageData directamente, el pixelRatio ya está en el canvas
       map.addImage("plane", {
         width: canvas.width,
         height: canvas.height,
-        data: imageData.data,
-        pixelRatio: pixelRatio,
+        data: new Uint8Array(imageData.data),
       });
 
       return true;
