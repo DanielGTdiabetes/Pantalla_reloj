@@ -8,7 +8,7 @@ import { withConfigDefaults } from "../../config/defaults";
 import { getConfig, getHealth, getOpenSkyStatus, getSchema, wifiNetworks, wifiScan, wifiStatus } from "../../lib/api";
 
 vi.mock("../../lib/api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../lib/api")>();
+  const actual = await importOriginal();
   return {
     ...actual,
     getConfig: vi.fn(),
@@ -26,13 +26,13 @@ vi.mock("../../lib/api", async (importOriginal) => {
   } satisfies Partial<typeof actual>;
 });
 
-const mockGetConfig = vi.mocked(getConfig);
-const mockGetHealth = vi.mocked(getHealth);
-const mockGetSchema = vi.mocked(getSchema);
-const mockGetOpenSkyStatus = vi.mocked(getOpenSkyStatus);
-const mockWifiScan = vi.mocked(wifiScan);
-const mockWifiNetworks = vi.mocked(wifiNetworks);
-const mockWifiStatus = vi.mocked(wifiStatus);
+const mockGetConfig = getConfig as ReturnType<typeof vi.fn>;
+const mockGetHealth = getHealth as ReturnType<typeof vi.fn>;
+const mockGetSchema = getSchema as ReturnType<typeof vi.fn>;
+const mockGetOpenSkyStatus = getOpenSkyStatus as ReturnType<typeof vi.fn>;
+const mockWifiScan = wifiScan as ReturnType<typeof vi.fn>;
+const mockWifiNetworks = wifiNetworks as ReturnType<typeof vi.fn>;
+const mockWifiStatus = wifiStatus as ReturnType<typeof vi.fn>;
 
 const renderConfigPage = async () => {
   render(<ConfigPage />);

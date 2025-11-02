@@ -1,10 +1,11 @@
-import type { PropsWithChildren } from "react";
+import type { ReactNode } from "react";
 
 import "../styles/map-frame.css";
 
-type MapFrameProps = PropsWithChildren<{
+type MapFrameProps = {
   className?: string;
-}>;
+  children?: ReactNode;
+};
 
 /**
  * TODO: Explore alternate clipping strategies (e.g., SVG clipPath or CSS mask-image)
