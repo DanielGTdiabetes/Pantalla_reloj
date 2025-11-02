@@ -422,9 +422,59 @@ class ConfigManager:
                     changed = True
         return merged, changed
 
+    def _purge_cinema_keys(self, data: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
+        """Elimina todas las claves relacionadas con Cinema del diccionario de configuración.
+        
+        Args:
+            data: Diccionario de configuración
+            
+        Returns:
+            Tuple de (data_sin_cinema, was_changed)
+        """
+        changed = False
+        purged = dict(data)
+        
+        # Eliminar claves top-level relacionadas con cinema
+        cinema_keys_to_remove = []
+        for key in purged.keys():
+            key_lower = str(key).lower()
+            if "cinema" in key_lower or "cinemode" in key_lower:
+                cinema_keys_to_remove.append(key)
+        
+        for key in cinema_keys_to_remove:
+            del purged[key]
+            changed = True
+            self.logger.info("[config] Removed cinema-related key: %s", key)
+        
+        # Recursivamente purgar dentro de estructuras anidadas
+        if "ui" in purged and isinstance(purged["ui"], dict):
+            if "map" in purged["ui"] and isinstance(purged["ui"]["map"], dict):
+                # Eliminar ui.map.cinema
+                if "cinema" in purged["ui"]["map"]:
+                    del purged["ui"]["map"]["cinema"]
+                    changed = True
+                    self.logger.info("[config] Removed ui.map.cinema")
+                # Eliminar ui.map.idlePan si depende de cinema (por ahora lo mantenemos)
+        
+        # Eliminar cine_focus de layers si existe
+        if "layers" in purged and isinstance(purged["layers"], dict):
+            for layer_type in ["flights", "ships"]:
+                if layer_type in purged["layers"] and isinstance(purged["layers"][layer_type], dict):
+                    if "cine_focus" in purged["layers"][layer_type]:
+                        del purged["layers"][layer_type]["cine_focus"]
+                        changed = True
+                        self.logger.info("[config] Removed layers.%s.cine_focus", layer_type)
+        
+        return purged, changed
+    
     def _migrate_missing_keys(self, data: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
-        defaults = self._load_default_template()
-        return self._merge_missing_dict_keys(data, defaults)
+        # Primero purgar claves cinema
+        purged_data, cinema_removed = self._purge_cinema_keys(data)
+        
+        # Luego aplicar migración de claves faltantes
+        merged_data, keys_added = self._merge_missing_dict_keys(purged_data, self._load_default_template())
+        
+        return merged_data, cinema_removed or keys_added
 
 
 __all__ = ["ConfigManager"]

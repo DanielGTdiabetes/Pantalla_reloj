@@ -2579,7 +2579,7 @@ const ConfigPage: React.FC = () => {
                     />
                     Activar rotación automática
                   </label>
-                  {renderHelp("Permite alternar los módulos y habilita el modo cine del mapa")}
+                  {renderHelp("Permite alternar los módulos en orden secuencial")}
                 </div>
               )}
 

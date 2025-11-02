@@ -368,8 +368,6 @@ def _check_v1_keys(payload: Dict[str, Any]) -> List[str]:
         v1_keys.append("ui.map")
     if any(k for k in payload.keys() if "maptiler" in k.lower()):
         v1_keys.append("maptiler")
-    if any(k for k in payload.keys() if "cinema" in k.lower()):
-        v1_keys.append("cinema")
     if "global" in payload:
         v1_keys.append("global")
     
@@ -670,17 +668,6 @@ def _get_local_day_range() -> Tuple[datetime, datetime]:
 def _health_payload() -> Dict[str, Any]:
     config = config_manager.read()
     uptime = datetime.now(timezone.utc) - APP_START
-    cinema_config = config.ui.map.cinema
-    cinema_block: Dict[str, Any] = {
-        "enabled": cinema_config.enabled,
-        "state": None,
-        "panLngDegPerSec": cinema_config.panLngDegPerSec,
-        "lastPanTickIso": None,
-        "reducedMotion": None,
-    }
-    runtime_state = _get_cinema_runtime_state()
-    if runtime_state:
-        cinema_block.update(runtime_state)
 
     # Metadatos de configuración
     config_metadata = config_manager.get_config_metadata()
@@ -695,13 +682,18 @@ def _health_payload() -> Dict[str, Any]:
         "status": "ok",
         "uptime_seconds": int(uptime.total_seconds()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "cinema": cinema_block,
         "config_path": config_metadata["config_path"],
         "config_source": config_metadata["config_source"],
         "has_timezone": config_metadata["has_timezone"],
         "config_loaded_at": config_metadata.get("config_loaded_at"),
         "timezone": tz_str,
         "now_local_iso": now_local_iso,
+        "storm": {
+            "enabled": config.storm.enabled,
+            "center_lat": config.storm.center_lat,
+            "center_lng": config.storm.center_lng,
+            "zoom": config.storm.zoom,
+        },
     }
     flights_layer = {"items": None, "stale": False}
     ships_layer = {"items": None, "stale": False}
@@ -848,11 +840,6 @@ def ui_healthcheck() -> Dict[str, str]:
     return {"ui": "ok"}
 
 
-@app.post("/api/telemetry/cinema", status_code=204)
-async def update_cinema_telemetry(payload: CinemaTelemetryPayload) -> Response:
-    logger.debug("Received cinema telemetry update: state=%s", payload.state)
-    _set_cinema_runtime_state(payload)
-    return Response(status_code=204)
 
 
 @app.get("/api/health")

@@ -338,106 +338,138 @@ export const OverlayRotator: React.FC = () => {
     });
   }, [weather.forecast, weather.daily, weather.weekly]);
 
+  // Leer configuración de rotación desde config
+  const rotationConfig = useMemo(() => {
+    const uiConfig = config.ui || (config as unknown as { ui?: { rotation?: { enabled?: boolean; duration_sec?: number; panels?: string[] } } }).ui;
+    const rotation = uiConfig?.rotation || {};
+    return {
+      enabled: rotation.enabled ?? false,
+      duration_sec: Math.max(3, Math.min(3600, rotation.duration_sec ?? 10)),
+      panels: Array.isArray(rotation.panels) && rotation.panels.length > 0
+        ? rotation.panels.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+        : ["time", "weather", "calendar", "news", "moon", "ephemerides", "harvest"]
+    };
+  }, [config]);
+
   const rotatingCards = useMemo<RotatingCardItem[]>(
     () => {
-      const cards: RotatingCardItem[] = [
-        {
-          id: "time",
-          duration: 8000,
-          render: () => <TimeCard timezone={timezone} />
-        },
-        {
-          id: "weather",
-          duration: 10000,
-          render: () => (
-            <WeatherCard
-              temperatureLabel={`${temperature.value}${temperature.unit}`}
-              feelsLikeLabel={feelsLikeValue ? `${feelsLikeValue.value}${feelsLikeValue.unit}` : null}
-              condition={condition}
-              humidity={humidity}
-              wind={wind}
-              unit={temperature.unit}
-            />
-          )
+      const allCardsMap = new Map<string, RotatingCardItem>();
+      
+      // Mapa de todos los cards disponibles
+      allCardsMap.set("time", {
+        id: "time",
+        duration: rotationConfig.duration_sec * 1000,
+        render: () => <TimeCard timezone={timezone} />
+      });
+      
+      allCardsMap.set("weather", {
+        id: "weather",
+        duration: rotationConfig.duration_sec * 1000,
+        render: () => (
+          <WeatherCard
+            temperatureLabel={`${temperature.value}${temperature.unit}`}
+            feelsLikeLabel={feelsLikeValue ? `${feelsLikeValue.value}${feelsLikeValue.unit}` : null}
+            condition={condition}
+            humidity={humidity}
+            wind={wind}
+            unit={temperature.unit}
+          />
+        )
+      });
+
+      // Calendar card
+      allCardsMap.set("calendar", {
+        id: "calendar",
+        duration: rotationConfig.duration_sec * 1000,
+        render: () => <CalendarCard events={calendarEvents} timezone={timezone} />
+      });
+
+      // Moon card
+      allCardsMap.set("moon", {
+        id: "moon",
+        duration: rotationConfig.duration_sec * 1000,
+        render: () => <MoonCard moonPhase={moonPhase} illumination={moonIllumination} />
+      });
+
+      // Harvest card
+      allCardsMap.set("harvest", {
+        id: "harvest",
+        duration: rotationConfig.duration_sec * 1000,
+        render: () => <HarvestCard items={harvestItems} />
+      });
+
+      // Saints card
+      allCardsMap.set("saints", {
+        id: "saints",
+        duration: rotationConfig.duration_sec * 1000,
+        render: () => <SaintsCard saints={saintsEntries} />
+      });
+
+      // News card
+      allCardsMap.set("news", {
+        id: "news",
+        duration: rotationConfig.duration_sec * 1000,
+        render: () => <NewsCard items={newsItems} />
+      });
+
+      // Ephemerides card
+      allCardsMap.set("ephemerides", {
+        id: "ephemerides",
+        duration: rotationConfig.duration_sec * 1000,
+        render: () => (
+          <EphemeridesCard
+            sunrise={sunrise}
+            sunset={sunset}
+            moonPhase={moonPhase}
+            events={ephemeridesEvents}
+          />
+        )
+      });
+
+      // Weather Forecast card (alias "forecast")
+      allCardsMap.set("forecast", {
+        id: "forecast",
+        duration: rotationConfig.duration_sec * 1000,
+        render: () => (
+          <WeatherForecastCard
+            forecast={forecastDays}
+            unit={temperature.unit}
+          />
+        )
+      });
+
+      // Si rotation está deshabilitado, mostrar solo el primer card de la lista o todos si no hay lista
+      if (!rotationConfig.enabled) {
+        const defaultCard = allCardsMap.get(rotationConfig.panels[0]) || allCardsMap.get("time");
+        return defaultCard ? [defaultCard] : [];
+      }
+
+      // Si rotation está habilitado, filtrar cards según panels configurado
+      const filteredCards: RotatingCardItem[] = [];
+      for (const panelId of rotationConfig.panels) {
+        const card = allCardsMap.get(panelId);
+        if (card) {
+          // Filtrar cards según disponibilidad de datos
+          if (panelId === "calendar" && !config.calendar?.enabled) continue;
+          if (panelId === "harvest" && (config.harvest?.enabled === false || harvestItems.length === 0)) continue;
+          if (panelId === "saints" && (config.saints?.enabled === false || saintsEntries.length === 0)) continue;
+          if (panelId === "news" && (config.news?.enabled === false || newsItems.length === 0)) continue;
+          if (panelId === "ephemerides" && (config.ephemerides?.enabled === false || (!sunrise && !sunset && !moonPhase && ephemeridesEvents.length === 0))) continue;
+          if (panelId === "forecast" && forecastDays.length === 0) continue;
+          
+          filteredCards.push(card);
         }
-      ];
-
-      // Calendar card - solo si está habilitado
-      if (config.calendar?.enabled) {
-        cards.push({
-          id: "calendar",
-          duration: 10000,
-          render: () => <CalendarCard events={calendarEvents} timezone={timezone} />
-        });
       }
 
-      // Moon card - solo si efemérides está habilitado
-      if (config.ephemerides?.enabled !== false) {
-        cards.push({
-          id: "moon",
-          duration: 10000,
-          render: () => <MoonCard moonPhase={moonPhase} illumination={moonIllumination} />
-        });
+      // Si no hay cards filtrados, mostrar al menos el primero disponible
+      if (filteredCards.length === 0) {
+        const fallbackCard = allCardsMap.get("time") || allCardsMap.get("weather");
+        if (fallbackCard) {
+          return [fallbackCard];
+        }
       }
 
-      // Harvest card - solo si está habilitado y hay items
-      if (config.harvest?.enabled !== false && harvestItems.length > 0) {
-        cards.push({
-          id: "harvest",
-          duration: 12000,
-          render: () => <HarvestCard items={harvestItems} />
-        });
-      }
-
-      // Saints card - solo si está habilitado y hay entradas
-      if (config.saints?.enabled !== false && saintsEntries.length > 0) {
-        cards.push({
-          id: "saints",
-          duration: 12000,
-          render: () => <SaintsCard saints={saintsEntries} />
-        });
-      }
-
-      // News card - solo si está habilitado y hay items
-      if (config.news?.enabled !== false && newsItems.length > 0) {
-        cards.push({
-          id: "news",
-          duration: 20000,
-          render: () => <NewsCard items={newsItems} />
-        });
-      }
-
-      // Ephemerides card - solo si está habilitado y hay datos
-      if (config.ephemerides?.enabled !== false && (sunrise || sunset || moonPhase || ephemeridesEvents.length > 0)) {
-        cards.push({
-          id: "ephemerides",
-          duration: 20000,
-          render: () => (
-            <EphemeridesCard
-              sunrise={sunrise}
-              sunset={sunset}
-              moonPhase={moonPhase}
-              events={ephemeridesEvents}
-            />
-          )
-        });
-      }
-
-      // Weather Forecast card - si hay datos de pronóstico
-      if (forecastDays.length > 0) {
-        cards.push({
-          id: "weather-forecast",
-          duration: 20000,
-          render: () => (
-            <WeatherForecastCard
-              forecast={forecastDays}
-              unit={temperature.unit}
-            />
-          )
-        });
-      }
-
-      return cards;
+      return filteredCards.length > 0 ? filteredCards : [];
     }, [
       calendarEvents,
       condition,

@@ -68,7 +68,7 @@ def migrate_v1_to_v2(
     else:
         v2["ui_map"]["region"] = {"postalCode": "12001"}
     
-    # Vista fija: extraer de cinema o fixed
+    # Vista fija: extraer de fixed (ya no usar cinema)
     fixed_center = None
     fixed_zoom = 7.8
     fixed_bearing = 0
@@ -83,15 +83,6 @@ def migrate_v1_to_v2(
         fixed_zoom = fixed_data.get("zoom", 7.8)
         fixed_bearing = fixed_data.get("bearing", 0)
         fixed_pitch = fixed_data.get("pitch", 0)
-    elif map_v1.get("cinema") and map_v1["cinema"].get("bands"):
-        # Usar primera banda de cinema
-        first_band = map_v1["cinema"]["bands"][0]
-        fixed_center = {
-            "lat": first_band.get("lat", 39.98),
-            "lon": first_band.get("lon", 0.20)
-        }
-        fixed_zoom = first_band.get("zoom", 7.8)
-        fixed_pitch = first_band.get("pitch", 0)
     
     if not fixed_center:
         fixed_center = {"lat": 39.98, "lon": 0.20}  # Castellón por defecto
@@ -103,24 +94,8 @@ def migrate_v1_to_v2(
         "pitch": fixed_pitch
     }
     
-    # AOI Cycle: extraer de cinema si existe (pero por defecto fixed)
-    if map_v1.get("cinema") and map_v1["cinema"].get("enabled") and len(map_v1["cinema"].get("bands", [])) > 1:
-        cinema = map_v1["cinema"]
-        bands = cinema.get("bands", [])
-        stops = []
-        for band in bands:
-            stops.append({
-                "center": {"lat": band.get("lat", 39.98), "lon": band.get("lon", 0.20)},
-                "zoom": band.get("zoom", 7.8),
-                "bearing": band.get("bearing", 0),
-                "pitch": band.get("pitch", 0),
-                "duration_sec": band.get("duration_sec")
-            })
-        v2["ui_map"]["aoiCycle"] = {
-            "intervalSec": cinema.get("interval_sec", 25),
-            "stops": stops
-        }
-        v2["ui_map"]["viewMode"] = "aoiCycle"
+    # AOI Cycle: ya no se migra desde cinema (solo desde viewMode explícito)
+    # Por defecto siempre es "fixed"
     
     # === UI Global ===
     # global.satellite v1 → ui_global.satellite v2

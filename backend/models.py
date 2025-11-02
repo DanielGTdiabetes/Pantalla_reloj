@@ -7,74 +7,11 @@ from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-DEFAULT_CINEMA_BANDS: List[Dict[str, float | int]] = [
-    {"lat": 0.0, "zoom": 3.1, "pitch": 10.0, "minZoom": 2.9, "duration_sec": 900},
-    {"lat": 18.0, "zoom": 3.3, "pitch": 8.0, "minZoom": 3.1, "duration_sec": 720},
-    {"lat": 32.0, "zoom": 3.6, "pitch": 6.0, "minZoom": 3.3, "duration_sec": 600},
-    {"lat": 42.0, "zoom": 3.9, "pitch": 6.0, "minZoom": 3.5, "duration_sec": 480},
-    {"lat": -18.0, "zoom": 3.3, "pitch": 8.0, "minZoom": 3.1, "duration_sec": 720},
-    {"lat": -32.0, "zoom": 3.6, "pitch": 6.0, "minZoom": 3.3, "duration_sec": 600},
-]
-
-
 class Display(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     timezone: str = Field(default="Europe/Madrid", min_length=1)
     module_cycle_seconds: int = Field(default=20, ge=5, le=600)
-
-
-class MapCinemaBand(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    lat: float
-    zoom: float
-    pitch: float
-    minZoom: float
-    duration_sec: int = Field(ge=1)
-
-    @model_validator(mode="after")
-    def validate_zoom(cls, values: "MapCinemaBand") -> "MapCinemaBand":  # type: ignore[override]
-        if values.minZoom > values.zoom:
-            raise ValueError("minZoom must be less than or equal to zoom")
-        return values
-
-
-class MapCinemaMotion(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True)
-
-    speed_preset: Literal["slow", "medium", "fast"] = Field(
-        default="medium", alias="speedPreset"
-    )
-    amplitude_deg: float = Field(default=60.0, ge=1.0, le=180.0, alias="amplitudeDeg")
-    easing: Literal["linear", "ease-in-out"] = "ease-in-out"
-    pause_with_overlay: bool = Field(default=True, alias="pauseWithOverlay")
-    phase_offset_deg: float = Field(
-        default=25.0, ge=0.0, le=360.0, alias="phaseOffsetDeg"
-    )
-
-
-class MapCinema(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    enabled: bool = True
-    panLngDegPerSec: float = Field(default=0.9, ge=0)
-    debug: bool = False
-    bandTransition_sec: int = Field(default=8, ge=1)
-    fsm_enabled: bool = Field(default=True, alias="fsmEnabled")
-    bands: List[MapCinemaBand] = Field(
-        default_factory=lambda: [MapCinemaBand(**band) for band in DEFAULT_CINEMA_BANDS]
-    )
-    motion: MapCinemaMotion = Field(default_factory=MapCinemaMotion)
-
-    @model_validator(mode="after")
-    def validate_bands(cls, values: "MapCinema") -> "MapCinema":  # type: ignore[override]
-        bands = values.bands
-        if len(bands) != len(DEFAULT_CINEMA_BANDS):
-            raise ValueError(
-                f"cinema must define exactly {len(DEFAULT_CINEMA_BANDS)} bands"
-            )
-        return values
 
 
 class MapIdlePan(BaseModel):
@@ -121,7 +58,6 @@ class MapConfig(BaseModel):
     interactive: bool = False
     controls: bool = False
     respectReducedMotion: bool = False
-    cinema: MapCinema = Field(default_factory=MapCinema)
     idlePan: MapIdlePan = Field(default_factory=MapIdlePan)
     theme: MapTheme = Field(default_factory=MapTheme)
 
@@ -159,7 +95,6 @@ class UI(BaseModel):
     layout: Literal["grid-2-1"] = "grid-2-1"
     map: MapConfig = Field(default_factory=MapConfig)
     rotation: Rotation = Field(default_factory=Rotation)
-    cine_mode: bool = Field(default=True, alias="cineMode")
 
 
 class News(BaseModel):
