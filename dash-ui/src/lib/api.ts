@@ -1,4 +1,5 @@
 import type { AppConfig } from "../types/config";
+import type { AppConfigV2 } from "../types/config_v2";
 
 const BASE = window.location.origin;
 
@@ -86,6 +87,50 @@ export async function getConfig() {
 
 export async function saveConfig(data: AppConfig) {
   return apiPost<AppConfig>("/api/config", data);
+}
+
+// V2 API functions
+export async function getConfigV2(): Promise<AppConfigV2> {
+  const config = await apiGet<AppConfigV2>("/api/config");
+  
+  // Verificar que no contiene claves v1
+  if (config && typeof config === 'object') {
+    const v1Keys = ['ui', 'map', 'cinema', 'maptiler'];
+    const hasV1Keys = v1Keys.some(key => {
+      if (key === 'ui' && 'ui' in config && config.ui && typeof config.ui === 'object' && 'map' in config.ui) {
+        return true;
+      }
+      return key in config;
+    });
+    
+    if (hasV1Keys) {
+      throw new ApiError(400, { error: "v1 keys not allowed", message: "Config contains v1 keys" });
+    }
+  }
+  
+  return config;
+}
+
+export async function saveConfigV2(config: AppConfigV2): Promise<AppConfigV2> {
+  // Verificar que es v2
+  if (config.version !== 2) {
+    throw new ApiError(400, { error: "Only v2 config allowed", version: config.version });
+  }
+  
+  // Verificar que no contiene claves v1
+  const v1Keys = ['ui', 'map', 'cinema', 'maptiler'];
+  const hasV1Keys = v1Keys.some(key => {
+    if (key === 'ui' && 'ui' in config && config.ui && typeof config.ui === 'object') {
+      return 'map' in config.ui || 'cinema' in config.ui || 'maptiler' in config.ui;
+    }
+    return key in config;
+  });
+  
+  if (hasV1Keys) {
+    throw new ApiError(400, { error: "v1 keys not allowed", v1_keys: v1Keys.filter(k => k in config) });
+  }
+  
+  return apiPost<AppConfigV2>("/api/config", config);
 }
 
 export type AemetSecretRequest = {
@@ -320,4 +365,89 @@ export type MigrateConfigResponse = {
 
 export async function migrateConfig(to: number = 2, backup: boolean = true) {
   return apiPost<MigrateConfigResponse>(`/api/config/migrate?to=${to}&backup=${backup ? "true" : "false"}`, {});
+}
+
+// Weather API
+export type WeatherWeeklyResponse = {
+  ok: boolean;
+  reason?: string;
+  daily: Array<{
+    date: string;
+    temp_max: number;
+    temp_min: number;
+    condition: string;
+    icon: string;
+    humidity?: number;
+    wind_speed?: number;
+  }>;
+  location?: { lat: number; lon: number };
+};
+
+export async function getWeatherWeekly(lat: number, lon: number): Promise<WeatherWeeklyResponse> {
+  return apiGet<WeatherWeeklyResponse>(`/api/weather/weekly?lat=${lat}&lon=${lon}`);
+}
+
+// News RSS API
+export type NewsRSSRequest = {
+  feeds: string[];
+};
+
+export type NewsRSSItem = {
+  title: string;
+  link: string;
+  source: string;
+  published: string;
+};
+
+export type NewsRSSResponse = {
+  items: NewsRSSItem[];
+};
+
+export async function getNewsRSS(feeds: string[]): Promise<NewsRSSResponse> {
+  return apiPost<NewsRSSResponse>("/api/news/rss", { feeds });
+}
+
+// Calendar API
+export type CalendarEvent = {
+  title: string;
+  start: string;
+  end: string;
+  location: string;
+};
+
+export async function getCalendarEvents(from: string, to: string): Promise<CalendarEvent[]> {
+  return apiGet<CalendarEvent[]>(`/api/calendar/events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+}
+
+// AEMET Warnings API
+export type AemetWarningFeature = {
+  type: "Feature";
+  geometry: {
+    type: "Polygon" | "MultiPolygon";
+    coordinates: number[][][] | number[][][][];
+  };
+  properties: {
+    id?: string;
+    severity: string;
+    status?: string;
+    event: string;
+    source: string;
+    onset?: string;
+    expires?: string;
+  };
+};
+
+export type AemetWarningsResponse = {
+  type: "FeatureCollection";
+  features: AemetWarningFeature[];
+  metadata?: {
+    source: string;
+    enabled?: boolean;
+    error?: string;
+    timestamp: string;
+  };
+};
+
+export async function getAemetWarnings(): Promise<AemetWarningsResponse> {
+  return apiGet<AemetWarningsResponse>("/api/aemet/warnings");
 }

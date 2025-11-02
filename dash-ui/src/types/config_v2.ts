@@ -46,8 +46,8 @@ export type MapRegion = {
 
 export type MapConfigV2 = {
   engine: "maplibre";
-  provider: "xyz";
-  xyz: XyzConfig;
+  provider: "xyz" | "osm";
+  xyz?: XyzConfig;
   labelsOverlay?: LabelsOverlayConfig;
   viewMode: "fixed" | "aoiCycle";
   fixed?: MapFixedView;
@@ -55,63 +55,26 @@ export type MapConfigV2 = {
   region?: MapRegion;
 };
 
-export type AemetWarningsConfig = {
+export type SatelliteConfig = {
   enabled: boolean;
-  min_severity: "yellow" | "orange" | "red" | "extreme";
-};
-
-export type AemetRadarConfig = {
-  enabled: boolean;
-  opacity: number;
-  speed: number;
-};
-
-export type AemetSatConfig = {
-  enabled: boolean;
+  provider: "gibs";
   opacity: number;
 };
 
-export type AemetConfigV2 = {
+export type RadarConfig = {
   enabled: boolean;
-  warnings?: AemetWarningsConfig;
-  radar?: AemetRadarConfig;
-  sat?: AemetSatConfig;
+  provider: "rainviewer" | "aemet";
 };
 
-export type PanelRotateConfig = {
-  enabled: boolean;
-  order: string[];
-  intervalSec: number;
-};
-
-export type PanelNewsConfig = {
-  feeds: string[];
-};
-
-export type PanelEphemeridesConfig = {
-  source: "built-in" | "api";
-};
-
-export type PanelConfig = {
-  rotate?: PanelRotateConfig;
-  news?: PanelNewsConfig;
-  efemerides?: PanelEphemeridesConfig;
-};
-
-export type UIConfigV2 = {
-  layout: "grid-2-1" | "grid-1-1" | "full";
-  map: MapConfigV2;
-  aemet?: AemetConfigV2;
-  panel?: PanelConfig;
-};
-
-export type FlightsLayerSymbolConfigV2 = {
-  size_vh: number;
-  allow_overlap: boolean;
+export type UIGlobalConfigV2 = {
+  satellite?: SatelliteConfig;
+  radar?: RadarConfig;
 };
 
 export type FlightsLayerCircleConfigV2 = {
-  radius_vh: number;
+  radius_base: number;
+  radius_zoom_scale: number;
+  opacity: number;
   color: string;
   stroke_color: string;
   stroke_width: number;
@@ -120,37 +83,57 @@ export type FlightsLayerCircleConfigV2 = {
 export type FlightsLayerConfigV2 = {
   enabled: boolean;
   provider: "opensky" | "aviationstack" | "custom";
-  render_mode: "auto" | "symbol" | "symbol_custom" | "circle";
+  refresh_seconds: number;
+  max_age_seconds: number;
+  max_items_global: number;
   max_items_view: number;
-  symbol?: FlightsLayerSymbolConfigV2;
+  rate_limit_per_min: number;
+  decimate: "none" | "grid";
+  grid_px: number;
+  styleScale: number;
+  render_mode: "circle" | "symbol" | "symbol_custom" | "auto";
   circle?: FlightsLayerCircleConfigV2;
-};
-
-export type ShipsLayerSymbolConfigV2 = {
-  size_vh: number;
-  allow_overlap: boolean;
-};
-
-export type ShipsLayerCircleConfigV2 = {
-  radius_vh: number;
-  color: string;
-  stroke_color: string;
-  stroke_width: number;
 };
 
 export type ShipsLayerConfigV2 = {
   enabled: boolean;
   provider: "aisstream" | "aishub" | "ais_generic" | "custom";
+  refresh_seconds: number;
+  max_age_seconds: number;
+  max_items_global: number;
+  max_items_view: number;
   decimate: "grid" | "none";
   grid_px: number;
-  max_items_view: number;
-  symbol?: ShipsLayerSymbolConfigV2;
-  circle?: ShipsLayerCircleConfigV2;
+  styleScale: number;
 };
 
 export type LayersConfigV2 = {
   flights?: FlightsLayerConfigV2;
   ships?: ShipsLayerConfigV2;
+};
+
+export type PanelWeatherWeeklyConfig = {
+  enabled: boolean;
+};
+
+export type PanelEphemeridesConfig = {
+  enabled: boolean;
+};
+
+export type PanelNewsConfig = {
+  enabled: boolean;
+  feeds: string[];
+};
+
+export type PanelCalendarConfig = {
+  enabled: boolean;
+};
+
+export type PanelsConfigV2 = {
+  weatherWeekly?: PanelWeatherWeeklyConfig;
+  ephemerides?: PanelEphemeridesConfig;
+  news?: PanelNewsConfig;
+  calendar?: PanelCalendarConfig;
 };
 
 export type SecretsConfig = {
@@ -161,8 +144,9 @@ export type SecretsConfig = {
 
 export type AppConfigV2 = {
   version: 2;
-  ui: UIConfigV2;
+  ui_map: MapConfigV2;
+  ui_global?: UIGlobalConfigV2;
   layers?: LayersConfigV2;
+  panels?: PanelsConfigV2;
   secrets?: SecretsConfig;
 };
-
