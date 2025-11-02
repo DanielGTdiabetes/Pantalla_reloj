@@ -228,7 +228,7 @@ export const OverlayRotator: React.FC = () => {
       }
 
       // Moon card - solo si efemérides está habilitado
-      if (config.ephemerides?.enabled) {
+      if (config.ephemerides?.enabled !== false) {
         cards.push({
           id: "moon",
           duration: 10000,
@@ -255,7 +255,7 @@ export const OverlayRotator: React.FC = () => {
       }
 
       // News card - solo si está habilitado
-      if (config.news?.enabled) {
+      if (config.news?.enabled !== false) {
         cards.push({
           id: "news",
           duration: 20000,
@@ -264,7 +264,7 @@ export const OverlayRotator: React.FC = () => {
       }
 
       // Ephemerides card - solo si está habilitado
-      if (config.ephemerides?.enabled) {
+      if (config.ephemerides?.enabled !== false) {
         cards.push({
           id: "ephemerides",
           duration: 20000,
