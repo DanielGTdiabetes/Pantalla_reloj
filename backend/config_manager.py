@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import grp
 import hashlib
 import json
 import logging
 import os
+import pwd
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -262,7 +264,16 @@ class ConfigManager:
         try:
             raw_text = self.config_file.read_text(encoding="utf-8")
             config_data = json.loads(raw_text)
-            
+
+            if isinstance(config_data, dict) and config_data.get("version") == 2:
+                self.config_loaded_at = datetime.now(timezone.utc).isoformat()
+                self.config_source = "file"
+                self.logger.info(
+                    "[config] Reloaded v2 configuration from %s (metadata refreshed only)",
+                    self.config_file,
+                )
+                return AppConfig(), True
+
             # Normalizar timezone
             config_data = self._normalize_timezone(config_data)
             
@@ -357,7 +368,37 @@ class ConfigManager:
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(tmp_path, self.config_file)
-            os.chmod(self.config_file, 0o644)
+            try:
+                user = pwd.getpwnam("dani")
+                uid = user.pw_uid
+            except KeyError:
+                uid = -1
+            try:
+                gid = grp.getgrnam("dani").gr_gid
+            except KeyError:
+                gid = user.pw_gid if "user" in locals() else -1
+
+            if uid >= 0 or gid >= 0:
+                try:
+                    os.chown(
+                        self.config_file,
+                        uid if uid >= 0 else -1,
+                        gid if gid >= 0 else -1,
+                    )
+                except (PermissionError, OSError) as exc:
+                    self.logger.debug(
+                        "[config] Could not chown %s to dani:dani: %s",
+                        self.config_file,
+                        exc,
+                    )
+            try:
+                os.chmod(self.config_file, 0o644)
+            except (PermissionError, OSError) as exc:
+                self.logger.debug(
+                    "[config] Could not chmod %s to 0644: %s",
+                    self.config_file,
+                    exc,
+                )
         finally:
             try:
                 if os.path.exists(tmp_path):
