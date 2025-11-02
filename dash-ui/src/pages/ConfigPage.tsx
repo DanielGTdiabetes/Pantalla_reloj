@@ -1560,24 +1560,33 @@ const ConfigPage: React.FC = () => {
                         disabled={disableInputs}
                         onChange={(event) => {
                           const urlTemplate = event.target.value.trim();
-                          setForm((prev) => ({
-                            ...prev,
-                            ui: {
-                              ...prev.ui,
-                              map: {
-                                ...prev.ui.map,
-                                xyz: {
-                                  ...prev.ui.map.xyz,
-                                  urlTemplate,
-                                  attribution: prev.ui.map.xyz?.attribution || "",
-                                  minzoom: prev.ui.map.xyz?.minzoom ?? 0,
-                                  maxzoom: prev.ui.map.xyz?.maxzoom ?? 19,
-                                  tileSize: prev.ui.map.xyz?.tileSize ?? 256,
-                                  labelsOverlay: prev.ui.map.xyz?.labelsOverlay ?? false,
+                          setForm((prev) => {
+                            const currentXyz = prev.ui.map.xyz ?? {
+                              urlTemplate: "",
+                              attribution: "",
+                              minzoom: 0,
+                              maxzoom: 19,
+                              tileSize: 256,
+                              labelsOverlay: false,
+                            };
+                            return {
+                              ...prev,
+                              ui: {
+                                ...prev.ui,
+                                map: {
+                                  ...prev.ui.map,
+                                  xyz: {
+                                    urlTemplate,
+                                    attribution: currentXyz.attribution,
+                                    minzoom: currentXyz.minzoom,
+                                    maxzoom: currentXyz.maxzoom,
+                                    tileSize: currentXyz.tileSize,
+                                    labelsOverlay: currentXyz.labelsOverlay,
+                                  },
                                 },
                               },
-                            },
-                          }));
+                            };
+                          });
                           resetErrorsFor("ui.map.xyz.urlTemplate");
                         }}
                         placeholder="https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
@@ -1597,19 +1606,33 @@ const ConfigPage: React.FC = () => {
                         disabled={disableInputs}
                         onChange={(event) => {
                           const attribution = event.target.value.trim();
-                          setForm((prev) => ({
-                            ...prev,
-                            ui: {
-                              ...prev.ui,
-                              map: {
-                                ...prev.ui.map,
-                                xyz: {
-                                  ...prev.ui.map.xyz,
-                                  attribution,
+                          setForm((prev) => {
+                            const currentXyz = prev.ui.map.xyz ?? {
+                              urlTemplate: prev.ui.map.xyz?.urlTemplate || "",
+                              attribution: "",
+                              minzoom: 0,
+                              maxzoom: 19,
+                              tileSize: 256,
+                              labelsOverlay: false,
+                            };
+                            return {
+                              ...prev,
+                              ui: {
+                                ...prev.ui,
+                                map: {
+                                  ...prev.ui.map,
+                                  xyz: {
+                                    urlTemplate: currentXyz.urlTemplate,
+                                    attribution,
+                                    minzoom: currentXyz.minzoom,
+                                    maxzoom: currentXyz.maxzoom,
+                                    tileSize: currentXyz.tileSize,
+                                    labelsOverlay: currentXyz.labelsOverlay,
+                                  },
                                 },
                               },
-                            },
-                          }));
+                            };
+                          });
                           resetErrorsFor("ui.map.xyz.attribution");
                         }}
                         placeholder="© Esri, Maxar, GeoEye..."
@@ -1632,19 +1655,33 @@ const ConfigPage: React.FC = () => {
                         onChange={(event) => {
                           const minzoom = Number(event.target.value);
                           if (!Number.isNaN(minzoom)) {
-                            setForm((prev) => ({
-                              ...prev,
-                              ui: {
-                                ...prev.ui,
-                                map: {
-                                  ...prev.ui.map,
-                                  xyz: {
-                                    ...prev.ui.map.xyz,
-                                    minzoom,
+                            setForm((prev) => {
+                              const currentXyz = prev.ui.map.xyz ?? {
+                                urlTemplate: prev.ui.map.xyz?.urlTemplate || "",
+                                attribution: prev.ui.map.xyz?.attribution || "",
+                                minzoom: 0,
+                                maxzoom: 19,
+                                tileSize: 256,
+                                labelsOverlay: false,
+                              };
+                              return {
+                                ...prev,
+                                ui: {
+                                  ...prev.ui,
+                                  map: {
+                                    ...prev.ui.map,
+                                    xyz: {
+                                      urlTemplate: currentXyz.urlTemplate,
+                                      attribution: currentXyz.attribution,
+                                      minzoom,
+                                      maxzoom: currentXyz.maxzoom,
+                                      tileSize: currentXyz.tileSize,
+                                      labelsOverlay: currentXyz.labelsOverlay,
+                                    },
                                   },
                                 },
-                              },
-                            }));
+                              };
+                            });
                             resetErrorsFor("ui.map.xyz.minzoom");
                           }
                         }}
@@ -1667,19 +1704,33 @@ const ConfigPage: React.FC = () => {
                         onChange={(event) => {
                           const maxzoom = Number(event.target.value);
                           if (!Number.isNaN(maxzoom)) {
-                            setForm((prev) => ({
-                              ...prev,
-                              ui: {
-                                ...prev.ui,
-                                map: {
-                                  ...prev.ui.map,
-                                  xyz: {
-                                    ...prev.ui.map.xyz,
-                                    maxzoom,
+                            setForm((prev) => {
+                              const currentXyz = prev.ui.map.xyz ?? {
+                                urlTemplate: prev.ui.map.xyz?.urlTemplate || "",
+                                attribution: prev.ui.map.xyz?.attribution || "",
+                                minzoom: prev.ui.map.xyz?.minzoom ?? 0,
+                                maxzoom: 19,
+                                tileSize: 256,
+                                labelsOverlay: false,
+                              };
+                              return {
+                                ...prev,
+                                ui: {
+                                  ...prev.ui,
+                                  map: {
+                                    ...prev.ui.map,
+                                    xyz: {
+                                      urlTemplate: currentXyz.urlTemplate,
+                                      attribution: currentXyz.attribution,
+                                      minzoom: currentXyz.minzoom,
+                                      maxzoom,
+                                      tileSize: currentXyz.tileSize,
+                                      labelsOverlay: currentXyz.labelsOverlay,
+                                    },
                                   },
                                 },
-                              },
-                            }));
+                              };
+                            });
                             resetErrorsFor("ui.map.xyz.maxzoom");
                           }
                         }}
@@ -1703,19 +1754,33 @@ const ConfigPage: React.FC = () => {
                         onChange={(event) => {
                           const tileSize = Number(event.target.value);
                           if (!Number.isNaN(tileSize)) {
-                            setForm((prev) => ({
-                              ...prev,
-                              ui: {
-                                ...prev.ui,
-                                map: {
-                                  ...prev.ui.map,
-                                  xyz: {
-                                    ...prev.ui.map.xyz,
-                                    tileSize,
+                            setForm((prev) => {
+                              const currentXyz = prev.ui.map.xyz ?? {
+                                urlTemplate: prev.ui.map.xyz?.urlTemplate || "",
+                                attribution: prev.ui.map.xyz?.attribution || "",
+                                minzoom: prev.ui.map.xyz?.minzoom ?? 0,
+                                maxzoom: prev.ui.map.xyz?.maxzoom ?? 19,
+                                tileSize: 256,
+                                labelsOverlay: false,
+                              };
+                              return {
+                                ...prev,
+                                ui: {
+                                  ...prev.ui,
+                                  map: {
+                                    ...prev.ui.map,
+                                    xyz: {
+                                      urlTemplate: currentXyz.urlTemplate,
+                                      attribution: currentXyz.attribution,
+                                      minzoom: currentXyz.minzoom,
+                                      maxzoom: currentXyz.maxzoom,
+                                      tileSize,
+                                      labelsOverlay: currentXyz.labelsOverlay,
+                                    },
                                   },
                                 },
-                              },
-                            }));
+                              };
+                            });
                             resetErrorsFor("ui.map.xyz.tileSize");
                           }
                         }}
@@ -1735,19 +1800,33 @@ const ConfigPage: React.FC = () => {
                           disabled={disableInputs}
                           onChange={(event) => {
                             const labelsOverlay = event.target.checked;
-                            setForm((prev) => ({
-                              ...prev,
-                              ui: {
-                                ...prev.ui,
-                                map: {
-                                  ...prev.ui.map,
-                                  xyz: {
-                                    ...prev.ui.map.xyz,
-                                    labelsOverlay,
+                            setForm((prev) => {
+                              const currentXyz = prev.ui.map.xyz ?? {
+                                urlTemplate: prev.ui.map.xyz?.urlTemplate || "",
+                                attribution: prev.ui.map.xyz?.attribution || "",
+                                minzoom: prev.ui.map.xyz?.minzoom ?? 0,
+                                maxzoom: prev.ui.map.xyz?.maxzoom ?? 19,
+                                tileSize: prev.ui.map.xyz?.tileSize ?? 256,
+                                labelsOverlay: false,
+                              };
+                              return {
+                                ...prev,
+                                ui: {
+                                  ...prev.ui,
+                                  map: {
+                                    ...prev.ui.map,
+                                    xyz: {
+                                      urlTemplate: currentXyz.urlTemplate,
+                                      attribution: currentXyz.attribution,
+                                      minzoom: currentXyz.minzoom,
+                                      maxzoom: currentXyz.maxzoom,
+                                      tileSize: currentXyz.tileSize,
+                                      labelsOverlay,
+                                    },
                                   },
                                 },
-                              },
-                            }));
+                              };
+                            });
                             resetErrorsFor("ui.map.xyz.labelsOverlay");
                           }}
                         />

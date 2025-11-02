@@ -58,7 +58,7 @@ const createRasterStyle = (
     base: baseSource,
   };
 
-  const layers: StyleSpecification["layers"] = [
+  const layers: Array<StyleSpecification["layers"][number]> = [
     { id: "base", type: "raster", source: "base" }
   ];
 
@@ -78,7 +78,7 @@ const createRasterStyle = (
       source: "labels",
       minzoom: 0,
       maxzoom: 18,
-    } as StyleSpecification["layers"][number]);
+    });
   }
 
   return {

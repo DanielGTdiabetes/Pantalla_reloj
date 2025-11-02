@@ -34,7 +34,6 @@ const getHarvestIcon = (itemName: string): string | null => {
     "limón": "apple",
     "limones": "apple",
     "limon": "apple",
-    "limones": "apple",
     "manzana": "apple",
     "manzanas": "apple",
     
