@@ -58,8 +58,12 @@ const createRasterStyle = (
     base: baseSource,
   };
 
-  const baseLayer: { id: string; type: "raster"; source: string } = { id: "base", type: "raster", source: "base" };
-  const layers = [baseLayer];
+  const baseLayer: { id: string; type: "raster"; source: string; minzoom?: number; maxzoom?: number } = {
+    id: "base",
+    type: "raster",
+    source: "base"
+  };
+  const layers: Array<{ id: string; type: "raster"; source: string; minzoom?: number; maxzoom?: number }> = [baseLayer];
 
   // Añadir overlay de etiquetas OSM si está habilitado
   if (labelsOverlay) {
@@ -73,7 +77,7 @@ const createRasterStyle = (
     };
     layers.push({
       id: "labels-overlay",
-      type: "raster" as const,
+      type: "raster",
       source: "labels",
       minzoom: 0,
       maxzoom: 18,
