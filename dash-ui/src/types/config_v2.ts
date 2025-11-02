@@ -74,9 +74,31 @@ export type RadarConfig = {
   provider: "rainviewer" | "aemet";
 };
 
+export type RotatorDurationsConfig = {
+  clock: number;
+  weather: number;
+  astronomy: number;
+  santoral: number;
+  calendar: number;
+  news: number;
+};
+
+export type RotatorConfig = {
+  enabled: boolean;
+  order: string[];
+  durations_sec?: RotatorDurationsConfig;
+  transition_ms: number;
+  pause_on_alert: boolean;
+};
+
+export type OverlayConfig = {
+  rotator?: RotatorConfig;
+};
+
 export type UIGlobalConfigV2 = {
   satellite?: SatelliteConfig;
   radar?: RadarConfig;
+  overlay?: OverlayConfig;
 };
 
 export type FlightsLayerCircleConfigV2 = {

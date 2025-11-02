@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { withConfigDefaults } from "../config/defaults";
-import { apiGet, apiPost } from "../lib/api";
+import { apiGet, apiPost, getConfigMeta, getSantoralToday } from "../lib/api";
 import { useConfig } from "../lib/useConfig";
+import type { AppConfigV2 } from "../types/config_v2";
 import { dayjs } from "../utils/dayjs";
 import { ensurePlainText, sanitizeRichText } from "../utils/sanitize";
 import { safeGetTimezone } from "../utils/timezone";
@@ -23,6 +24,7 @@ type DashboardPayload = {
   news?: Record<string, unknown>;
   astronomy?: Record<string, unknown>;
   calendar?: Record<string, unknown>;
+  santoral?: { saints?: string[]; namedays?: string[] };
 };
 
 const REFRESH_INTERVAL_MS = 60_000;
@@ -62,9 +64,24 @@ const isDevelopment = (): boolean => {
 
 const IS_DEV = isDevelopment();
 
-// IDs de paneles soportados, en orden de fallback
-const SUPPORTED_PANEL_IDS = ["time", "forecast", "calendar", "news", "moon", "ephemerides", "harvest"] as const;
-const DEFAULT_FALLBACK_PANEL = "time";
+// IDs de paneles soportados, mapeo v2 (nuevos nombres) a v1 (legacy)
+const PANEL_ID_MAP: Record<string, string> = {
+  "clock": "time",
+  "weather": "weather",
+  "astronomy": "ephemerides",
+  "santoral": "saints",
+  "calendar": "calendar",
+  "news": "news",
+};
+const DEFAULT_FALLBACK_PANEL = "clock";
+const DEFAULT_DURATIONS_SEC = {
+  clock: 10,
+  weather: 12,
+  astronomy: 10,
+  santoral: 8,
+  calendar: 12,
+  news: 12,
+};
 
 const temperatureToUnit = (value: number, from: string, to: string): number => {
   const normalize = (unit: string) => unit.replace("°", "").trim().toUpperCase();
@@ -162,24 +179,57 @@ export const OverlayRotator: React.FC = () => {
   const config = useMemo(() => data ?? withConfigDefaults(), [data]);
   const [payload, setPayload] = useState<DashboardPayload>({});
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const [configVersion, setConfigVersion] = useState<number | null>(null);
+  const configVersionRef = useRef<number | null>(null);
   
   const timezone = useMemo(() => {
     const tz = safeGetTimezone(config as Record<string, unknown>);
     return tz;
   }, [config]);
 
-  // Leer configuración de rotación
+  // Leer configuración de rotación desde ui_global.overlay.rotator (v2) o ui.rotation (v1 legacy)
   const rotationConfig = useMemo(() => {
+    // Intentar leer desde v2 primero
+    const v2Config = config as unknown as AppConfigV2;
+    if (v2Config.version === 2 && v2Config.ui_global?.overlay?.rotator) {
+      const rotator = v2Config.ui_global.overlay.rotator;
+      const order = Array.isArray(rotator.order) && rotator.order.length > 0
+        ? rotator.order.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+        : [];
+      const durations_sec = rotator.durations_sec || DEFAULT_DURATIONS_SEC;
+      const transition_ms = Math.max(0, Math.min(2000, rotator.transition_ms ?? 400));
+      
+      return {
+        enabled: rotator.enabled ?? true,
+        order,
+        durations_sec,
+        transition_ms,
+        pause_on_alert: rotator.pause_on_alert ?? false,
+      };
+    }
+    
+    // Fallback a v1 legacy (ui.rotation)
     const uiConfig = config.ui || (config as unknown as { ui?: { rotation?: { enabled?: boolean; duration_sec?: number; panels?: string[] } } }).ui;
     const rotation = uiConfig?.rotation || {};
     const panels = Array.isArray(rotation.panels) && rotation.panels.length > 0
       ? rotation.panels.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
       : [];
     
+    // Mapear IDs v1 a v2
+    const order = panels.map(p => {
+      // Buscar mapeo inverso (v1 -> v2)
+      for (const [v2Id, v1Id] of Object.entries(PANEL_ID_MAP)) {
+        if (v1Id === p) return v2Id;
+      }
+      return p; // Si no hay mapeo, usar como está
+    });
+    
     return {
       enabled: rotation.enabled ?? false,
-      duration_sec: Math.max(3, Math.min(3600, rotation.duration_sec ?? 10)),
-      panels
+      order,
+      durations_sec: DEFAULT_DURATIONS_SEC,
+      transition_ms: 400,
+      pause_on_alert: false,
     };
   }, [config]);
 
@@ -188,21 +238,96 @@ export const OverlayRotator: React.FC = () => {
   const rotationTimerRef = useRef<number | null>(null);
   const availablePanelsRef = useRef<RotatingCardItem[]>([]);
 
-  // Fetch de datos (sin cambios)
+  // Hot-reload: polling de config_version para detectar cambios
+  useEffect(() => {
+    let mounted = true;
+    let timeoutId: number | null = null;
+
+    const pollConfigVersion = async () => {
+      try {
+        const meta = await getConfigMeta();
+        const newVersion = meta.config_version ?? 0;
+        
+        if (mounted) {
+          if (configVersionRef.current !== null && configVersionRef.current !== newVersion) {
+            // Config cambió, recargar config
+            if (IS_DEV) {
+              console.log(`[OverlayRotator] Config version changed: ${configVersionRef.current} -> ${newVersion}, reloading config`);
+            }
+            // Trigger reload de useConfig (ya hace polling automático)
+            window.dispatchEvent(new CustomEvent('config-changed'));
+          }
+          configVersionRef.current = newVersion;
+          setConfigVersion(newVersion);
+        }
+      } catch (error) {
+        if (IS_DEV) {
+          console.warn("[OverlayRotator] Failed to poll config version:", error);
+        }
+      }
+
+      if (mounted) {
+        // Polling con backoff: cada 5-10 segundos
+        timeoutId = window.setTimeout(pollConfigVersion, 5000 + Math.random() * 5000);
+      }
+    };
+
+    void pollConfigVersion();
+
+    return () => {
+      mounted = false;
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, []);
+
+  // Cacheo de respuestas API (Weather 2-5min, Astronomy 1h)
+  const weatherCacheRef = useRef<{ data: Record<string, unknown> | null; timestamp: number | null }>({ data: null, timestamp: null });
+  const astronomyCacheRef = useRef<{ data: Record<string, unknown> | null; timestamp: number | null }>({ data: null, timestamp: null });
+  const santoralCacheRef = useRef<{ data: { date: string; names: string[] } | null; timestamp: number | null }>({ data: null, timestamp: null });
+
+  // Fetch de datos con cacheo
   useEffect(() => {
     let mounted = true;
 
     const fetchAll = async () => {
       try {
-        const [weather, news, astronomy, calendar] = await Promise.all([
+        // Verificar cache de weather (2-5 min)
+        const weatherCacheAge = weatherCacheRef.current.timestamp 
+          ? Date.now() - weatherCacheRef.current.timestamp 
+          : Infinity;
+        const weatherCacheValid = weatherCacheAge < (2 + Math.random() * 3) * 60 * 1000;
+
+        // Verificar cache de astronomy (1h)
+        const astronomyCacheAge = astronomyCacheRef.current.timestamp 
+          ? Date.now() - astronomyCacheRef.current.timestamp 
+          : Infinity;
+        const astronomyCacheValid = astronomyCacheAge < 60 * 60 * 1000;
+
+        // Verificar cache de santoral (1d)
+        const santoralCacheAge = santoralCacheRef.current.timestamp 
+          ? Date.now() - santoralCacheRef.current.timestamp 
+          : Infinity;
+        const santoralCacheValid = santoralCacheAge < 24 * 60 * 60 * 1000;
+
+        const [weather, news, astronomy, calendar, santoral] = await Promise.all([
           (async () => {
+            if (weatherCacheValid && weatherCacheRef.current.data) {
+              return weatherCacheRef.current.data;
+            }
             try {
               const v2Config = config as unknown as { panels?: { weather?: { latitude?: number; longitude?: number } } };
               const lat = v2Config.panels?.weather?.latitude ?? 39.98;
               const lon = v2Config.panels?.weather?.longitude ?? 0.20;
-              return await apiGet<Record<string, unknown>>(`/api/weather/weekly?lat=${lat}&lon=${lon}`);
+              const data = await apiGet<Record<string, unknown>>(`/api/weather/weekly?lat=${lat}&lon=${lon}`);
+              if (mounted) {
+                weatherCacheRef.current = { data, timestamp: Date.now() };
+              }
+              return data;
             } catch {
-              return {};
+              // Si falla, usar cache si existe
+              return weatherCacheRef.current.data || {};
             }
           })(),
           (async () => {
@@ -215,7 +340,20 @@ export const OverlayRotator: React.FC = () => {
               return {};
             }
           })(),
-          apiGet<Record<string, unknown>>("/api/astronomy").catch(() => ({})),
+          (async () => {
+            if (astronomyCacheValid && astronomyCacheRef.current.data) {
+              return astronomyCacheRef.current.data;
+            }
+            try {
+              const data = await apiGet<Record<string, unknown>>("/api/astronomy");
+              if (mounted) {
+                astronomyCacheRef.current = { data, timestamp: Date.now() };
+              }
+              return data;
+            } catch {
+              return astronomyCacheRef.current.data || {};
+            }
+          })(),
           (async () => {
             try {
               const fromDate = new Date().toISOString();
@@ -225,11 +363,27 @@ export const OverlayRotator: React.FC = () => {
             } catch {
               return { events: [] };
             }
+          })(),
+          (async () => {
+            if (santoralCacheValid && santoralCacheRef.current.data) {
+              return { saints: santoralCacheRef.current.data.names, namedays: [] };
+            }
+            try {
+              const data = await getSantoralToday();
+              if (mounted) {
+                santoralCacheRef.current = { data, timestamp: Date.now() };
+              }
+              return { saints: data.names, namedays: [] };
+            } catch {
+              return santoralCacheRef.current.data 
+                ? { saints: santoralCacheRef.current.data.names, namedays: [] }
+                : { saints: [], namedays: [] };
+            }
           })()
         ]);
 
         if (mounted) {
-          setPayload({ weather, news, astronomy, calendar });
+          setPayload({ weather, news, astronomy, calendar, santoral });
           setLastUpdatedAt(Date.now());
         }
       } catch (error) {
@@ -378,19 +532,35 @@ export const OverlayRotator: React.FC = () => {
     });
   }, [weather.forecast, weather.daily, weather.weekly]);
 
-  // Crear mapa de todos los paneles disponibles
+  // Extraer santoral del payload
+  const santoral = (payload.santoral ?? {}) as { saints?: string[]; namedays?: string[] };
+  const santoralEntries = useMemo(() => {
+    const fromSaints = extractStrings(santoral.saints);
+    const fromNamedays = extractStrings(santoral.namedays);
+    const combined = [...fromSaints, ...fromNamedays];
+    const unique = combined.filter((entry, index, self) => {
+      const normalized = entry.toLowerCase().trim();
+      return self.findIndex((e) => e.toLowerCase().trim() === normalized) === index;
+    });
+    return unique;
+  }, [santoral.saints, santoral.namedays]);
+
+  // Crear mapa de todos los paneles disponibles (usar nombres v2: clock, weather, astronomy, santoral, calendar, news)
   const allPanelsMap = useMemo<Map<string, RotatingCardItem>>(() => {
     const map = new Map<string, RotatingCardItem>();
+    const durations = rotationConfig.durations_sec;
     
-    map.set("time", {
-      id: "time",
-      duration: rotationConfig.duration_sec * 1000,
+    // clock (TimeCard)
+    map.set("clock", {
+      id: "clock",
+      duration: (durations.clock ?? 10) * 1000,
       render: () => <TimeCard timezone={timezone} />
     });
     
+    // weather (WeatherCard - actual)
     map.set("weather", {
       id: "weather",
-      duration: rotationConfig.duration_sec * 1000,
+      duration: (durations.weather ?? 12) * 1000,
       render: () => (
         <WeatherCard
           temperatureLabel={`${temperature.value}${temperature.unit}`}
@@ -403,44 +573,10 @@ export const OverlayRotator: React.FC = () => {
       )
     });
 
-    map.set("forecast", {
-      id: "forecast",
-      duration: rotationConfig.duration_sec * 1000,
-      render: () => (
-        <WeatherForecastCard
-          forecast={forecastDays}
-          unit={temperature.unit}
-        />
-      )
-    });
-
-    map.set("calendar", {
-      id: "calendar",
-      duration: rotationConfig.duration_sec * 1000,
-      render: () => <CalendarCard events={calendarEvents} timezone={timezone} />
-    });
-
-    map.set("moon", {
-      id: "moon",
-      duration: rotationConfig.duration_sec * 1000,
-      render: () => <MoonCard moonPhase={moonPhase} illumination={moonIllumination} />
-    });
-
-    map.set("harvest", {
-      id: "harvest",
-      duration: rotationConfig.duration_sec * 1000,
-      render: () => <HarvestCard items={harvestItems} />
-    });
-
-    map.set("news", {
-      id: "news",
-      duration: rotationConfig.duration_sec * 1000,
-      render: () => <NewsCard items={newsItems} />
-    });
-
-    map.set("ephemerides", {
-      id: "ephemerides",
-      duration: rotationConfig.duration_sec * 1000,
+    // astronomy (EphemeridesCard - efemérides + fase lunar)
+    map.set("astronomy", {
+      id: "astronomy",
+      duration: (durations.astronomy ?? 10) * 1000,
       render: () => (
         <EphemeridesCard
           sunrise={sunrise}
@@ -451,9 +587,55 @@ export const OverlayRotator: React.FC = () => {
       )
     });
 
+    // santoral (SaintsCard)
+    map.set("santoral", {
+      id: "santoral",
+      duration: (durations.santoral ?? 8) * 1000,
+      render: () => <SaintsCard saints={santoralEntries} />
+    });
+
+    // calendar (CalendarCard)
+    map.set("calendar", {
+      id: "calendar",
+      duration: (durations.calendar ?? 12) * 1000,
+      render: () => <CalendarCard events={calendarEvents} timezone={timezone} />
+    });
+
+    // news (NewsCard)
+    map.set("news", {
+      id: "news",
+      duration: (durations.news ?? 12) * 1000,
+      render: () => <NewsCard items={newsItems} />
+    });
+
+    // Legacy panels (mapeo v1 -> v2 para retrocompatibilidad)
+    map.set("time", map.get("clock")!); // time -> clock
+    map.set("ephemerides", map.get("astronomy")!); // ephemerides -> astronomy
+    map.set("saints", map.get("santoral")!); // saints -> santoral
+    map.set("forecast", {
+      id: "forecast",
+      duration: (durations.weather ?? 12) * 1000,
+      render: () => (
+        <WeatherForecastCard
+          forecast={forecastDays}
+          unit={temperature.unit}
+        />
+      )
+    });
+    map.set("moon", {
+      id: "moon",
+      duration: (durations.astronomy ?? 10) * 1000,
+      render: () => <MoonCard moonPhase={moonPhase} illumination={moonIllumination} />
+    });
+    map.set("harvest", {
+      id: "harvest",
+      duration: 10 * 1000, // No está en durations_sec por defecto
+      render: () => <HarvestCard items={harvestItems} />
+    });
+
     return map;
   }, [
-    rotationConfig.duration_sec,
+    rotationConfig.durations_sec,
     timezone,
     temperature.value,
     temperature.unit,
@@ -469,18 +651,19 @@ export const OverlayRotator: React.FC = () => {
     newsItems,
     sunrise,
     sunset,
-    ephemeridesEvents
+    ephemeridesEvents,
+    santoralEntries
   ]);
 
   // Filtrar y validar paneles según configuración y disponibilidad
   const availablePanels = useMemo<RotatingCardItem[]>(() => {
-    const panelsToUse = rotationConfig.panels.length > 0 
-      ? rotationConfig.panels 
+    const orderToUse = rotationConfig.order.length > 0 
+      ? rotationConfig.order 
       : (rotationConfig.enabled ? [] : [DEFAULT_FALLBACK_PANEL]);
 
     const validPanels: RotatingCardItem[] = [];
     
-    for (const panelId of panelsToUse) {
+    for (const panelId of orderToUse) {
       // Validar que el panel existe en el mapa
       const panel = allPanelsMap.get(panelId);
       if (!panel) {
@@ -582,10 +765,19 @@ export const OverlayRotator: React.FC = () => {
       return;
     }
 
-    // Crear un único setInterval para la rotación
-    const intervalMs = rotationConfig.duration_sec * 1000;
-    
-    rotationTimerRef.current = window.setInterval(() => {
+    // Usar duración del panel actual en lugar de una duración global
+    const getCurrentPanelDuration = () => {
+      const currentPanels = availablePanelsRef.current;
+      if (!currentPanels || currentPanels.length === 0) {
+        return DEFAULT_DURATIONS_SEC.clock * 1000;
+      }
+      const currentIndex = currentPanelIndex % currentPanels.length;
+      const currentPanel = currentPanels[currentIndex];
+      return currentPanel?.duration ?? DEFAULT_DURATIONS_SEC.clock * 1000;
+    };
+
+    // Función para avanzar al siguiente panel
+    const advanceToNextPanel = () => {
       setCurrentPanelIndex((prevIndex) => {
         const currentPanels = availablePanelsRef.current;
         if (!currentPanels || currentPanels.length === 0) {
@@ -597,23 +789,35 @@ export const OverlayRotator: React.FC = () => {
         }
         return nextIndex;
       });
-    }, intervalMs);
+    };
 
-        if (IS_DEV) {
-      console.log(`[OverlayRotator] Timer iniciado: ${intervalMs}ms, ${availablePanels.length} paneles`);
+    // Programar el siguiente cambio usando duración del panel actual
+    const scheduleNext = () => {
+      const duration = getCurrentPanelDuration();
+      rotationTimerRef.current = window.setTimeout(() => {
+        advanceToNextPanel();
+        scheduleNext(); // Programar el siguiente
+      }, duration);
+    };
+
+    // Iniciar el ciclo
+    scheduleNext();
+
+    if (IS_DEV) {
+      console.log(`[OverlayRotator] Timer iniciado: ${availablePanels.length} paneles con duraciones individuales`);
     }
 
     // Cleanup: siempre limpiar el timer
     return () => {
       if (rotationTimerRef.current !== null) {
-        window.clearInterval(rotationTimerRef.current);
+        window.clearTimeout(rotationTimerRef.current);
         rotationTimerRef.current = null;
         if (IS_DEV) {
           console.log("[OverlayRotator] Timer limpiado (cleanup)");
         }
       }
     };
-  }, [rotationConfig.enabled, rotationConfig.duration_sec, availablePanels.length, availablePanelIds]);
+  }, [rotationConfig.enabled, rotationConfig.durations_sec, availablePanels.length, availablePanelIds, currentPanelIndex]);
 
   // Determinar el panel actual a mostrar
   const currentPanel = useMemo<RotatingCardItem | null>(() => {

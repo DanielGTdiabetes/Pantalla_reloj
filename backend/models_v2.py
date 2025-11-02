@@ -90,10 +90,37 @@ class RadarConfig(BaseModel):
     provider: Literal["rainviewer", "aemet"] = "rainviewer"
 
 
+class RotatorDurationsConfig(BaseModel):
+    """Configuración de duraciones por tarjeta del rotator."""
+    clock: int = Field(default=10, ge=3, le=300)
+    weather: int = Field(default=12, ge=3, le=300)
+    astronomy: int = Field(default=10, ge=3, le=300)
+    santoral: int = Field(default=8, ge=3, le=300)
+    calendar: int = Field(default=12, ge=3, le=300)
+    news: int = Field(default=12, ge=3, le=300)
+
+
+class RotatorConfig(BaseModel):
+    """Configuración del panel rotativo overlay."""
+    enabled: bool = Field(default=True)
+    order: List[str] = Field(
+        default_factory=lambda: ["clock", "weather", "astronomy", "santoral", "calendar", "news"]
+    )
+    durations_sec: Optional[RotatorDurationsConfig] = None
+    transition_ms: int = Field(default=400, ge=0, le=2000)
+    pause_on_alert: bool = Field(default=False)
+
+
+class OverlayConfig(BaseModel):
+    """Configuración del overlay (rotator, etc.)."""
+    rotator: Optional[RotatorConfig] = None
+
+
 class UIGlobalConfig(BaseModel):
-    """Configuración global de UI (satélite, radar)."""
+    """Configuración global de UI (satélite, radar, overlay)."""
     satellite: Optional[SatelliteConfig] = None
     radar: Optional[RadarConfig] = None
+    overlay: Optional[OverlayConfig] = None
 
 
 class FlightsLayerCircleConfig(BaseModel):

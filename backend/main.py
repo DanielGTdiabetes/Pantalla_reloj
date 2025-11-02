@@ -688,6 +688,7 @@ def _health_payload() -> Dict[str, Any]:
         "config_source": config_metadata["config_source"],
         "has_timezone": config_metadata["has_timezone"],
         "config_loaded_at": config_metadata.get("config_loaded_at"),
+        "config_version": map_reset_counter,
         "timezone": tz_str,
         "now_local_iso": now_local_iso,
         "storm": {
@@ -1404,6 +1405,22 @@ def get_config(request: Request) -> JSONResponse:
     response.headers["Last-Modified"] = datetime.fromtimestamp(config_mtime).strftime("%a, %d %b %Y %H:%M:%S GMT")
     
     return response
+
+
+@app.get("/api/config/meta")
+def get_config_meta() -> JSONResponse:
+    """Obtiene solo metadatos de configuración (config_version, config_loaded_at) para hot-reload.
+    
+    Returns:
+        {config_version: int, config_loaded_at: str | null, config_path: str, config_source: str}
+    """
+    config_metadata = config_manager.get_config_metadata()
+    return JSONResponse(content={
+        "config_version": map_reset_counter,
+        "config_loaded_at": config_metadata.get("config_loaded_at"),
+        "config_path": config_metadata.get("config_path"),
+        "config_source": config_metadata.get("config_source"),
+    })
 
 
 MAX_CONFIG_PAYLOAD_BYTES = 64 * 1024
@@ -3223,6 +3240,98 @@ def get_calendar() -> Dict[str, Any]:
     
     cache_store.store("calendar", payload)
     return payload
+
+
+def _load_santoral_data() -> Dict[str, List[str]]:
+    """Carga datos de santoral desde backend/data/santoral.es.json."""
+    santoral_path = Path(__file__).resolve().parent / "data" / "santoral.es.json"
+    try:
+        if santoral_path.exists():
+            content = santoral_path.read_text(encoding="utf-8")
+            data = json.loads(content)
+            if isinstance(data, dict):
+                return data
+        logger.warning("Santoral file not found or invalid, using empty dict")
+        return {}
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Failed to load santoral data from %s: %s", santoral_path, exc)
+        return {}
+
+
+@app.get("/api/santoral/today")
+def get_santoral_today() -> JSONResponse:
+    """Obtiene los santos del día actual desde el archivo JSON offline.
+    
+    Returns:
+        {date: "YYYY-MM-DD", names: [...]} - Nunca error 500; si no hay datos, devuelve []
+    """
+    try:
+        tz = _get_tz()
+        today_local = datetime.now(tz).date()
+        date_str = today_local.isoformat()
+        date_key = f"{today_local.month:02d}-{today_local.day:02d}"
+        
+        santoral_data = _load_santoral_data()
+        names = santoral_data.get(date_key, [])
+        
+        return JSONResponse(content={
+            "date": date_str,
+            "names": names if isinstance(names, list) else [],
+        })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to get santoral for today: %s", exc)
+        tz = _get_tz()
+        today_local = datetime.now(tz).date()
+        return JSONResponse(content={
+            "date": today_local.isoformat(),
+            "names": [],
+        })
+
+
+@app.get("/api/santoral/date")
+def get_santoral_date(iso: str) -> JSONResponse:
+    """Obtiene los santos para una fecha específica desde el archivo JSON offline.
+    
+    Args:
+        iso: Fecha en formato ISO YYYY-MM-DD
+    
+    Returns:
+        {date: "YYYY-MM-DD", names: [...]} - Nunca error 500; si fecha inválida o sin datos, devuelve []
+    """
+    try:
+        # Validar formato ISO
+        try:
+            target_date = datetime.fromisoformat(iso).date()
+        except (ValueError, TypeError):
+            logger.warning("Invalid date format in /api/santoral/date: %s", iso)
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "Invalid date format. Use YYYY-MM-DD",
+                    "date": iso,
+                    "names": [],
+                }
+            )
+        
+        date_key = f"{target_date.month:02d}-{target_date.day:02d}"
+        
+        santoral_data = _load_santoral_data()
+        names = santoral_data.get(date_key, [])
+        
+        return JSONResponse(content={
+            "date": target_date.isoformat(),
+            "names": names if isinstance(names, list) else [],
+        })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to get santoral for date %s: %s", iso, exc)
+        try:
+            target_date = datetime.fromisoformat(iso).date()
+        except (ValueError, TypeError):
+            target_date = date.today()
+        return JSONResponse(content={
+            "date": target_date.isoformat(),
+            "names": [],
+        })
 
 
 @app.get("/api/storm_mode")

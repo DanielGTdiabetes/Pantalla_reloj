@@ -31,7 +31,23 @@
   },
   "ui_global": {
     "satellite": { "enabled": true, "provider": "gibs", "opacity": 1.0 },
-    "radar": { "enabled": false, "provider": "rainviewer" }
+    "radar": { "enabled": false, "provider": "rainviewer" },
+    "overlay": {
+      "rotator": {
+        "enabled": true,
+        "order": ["clock", "weather", "astronomy", "santoral", "calendar", "news"],
+        "durations_sec": {
+          "clock": 10,
+          "weather": 12,
+          "astronomy": 10,
+          "santoral": 8,
+          "calendar": 12,
+          "news": 12
+        },
+        "transition_ms": 400,
+        "pause_on_alert": false
+      }
+    }
   },
   "layers": {
     "flights": {

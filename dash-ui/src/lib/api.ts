@@ -246,6 +246,23 @@ export async function getStormMode() {
   return apiGet<StormModeStatus>("/api/storm_mode");
 }
 
+export async function getConfigMeta() {
+  return apiGet<{
+    config_version: number;
+    config_loaded_at: string | null;
+    config_path: string;
+    config_source: string;
+  }>("/api/config/meta");
+}
+
+export async function getSantoralToday() {
+  return apiGet<{ date: string; names: string[] }>("/api/santoral/today");
+}
+
+export async function getSantoralDate(iso: string) {
+  return apiGet<{ date: string; names: string[] }>(`/api/santoral/date?iso=${encodeURIComponent(iso)}`);
+}
+
 export async function getShipsLayer() {
   return apiGet<Record<string, unknown>>("/api/layers/ships");
 }
