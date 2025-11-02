@@ -3646,6 +3646,249 @@ const ConfigPage: React.FC = () => {
                     {renderFieldError("layers.flights.provider")}
                   </div>
 
+                  {supports("layers.flights.render_mode") && (
+                    <div className="config-field">
+                      <label htmlFor="flights_render_mode">Modo de renderizado</label>
+                      <select
+                        id="flights_render_mode"
+                        value={form.layers.flights.render_mode ?? "auto"}
+                        disabled={disableInputs || !form.layers.flights.enabled}
+                        onChange={(event) => {
+                          const render_mode = event.target.value as "auto" | "symbol" | "circle";
+                          setForm((prev) => ({
+                            ...prev,
+                            layers: {
+                              ...prev.layers,
+                              flights: {
+                                ...prev.layers.flights,
+                                render_mode,
+                              },
+                            },
+                          }));
+                          resetErrorsFor("layers.flights.render_mode");
+                        }}
+                      >
+                        <option value="auto">Automático</option>
+                        <option value="symbol">Icono</option>
+                        <option value="circle">Círculo</option>
+                      </select>
+                      {renderHelp("Selecciona cómo se dibujan los vuelos sobre el mapa")}
+                      {renderFieldError("layers.flights.render_mode")}
+                    </div>
+                  )}
+
+                  {supports("layers.flights.circle.radius_base") && (
+                    <div className="config-field">
+                      <label htmlFor="flights_circle_radius_base">Radio base de círculo</label>
+                      <input
+                        id="flights_circle_radius_base"
+                        type="number"
+                        min="0.5"
+                        max="64"
+                        step="0.1"
+                        value={form.layers.flights.circle?.radius_base ?? 3}
+                        disabled={disableInputs || !form.layers.flights.enabled}
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          if (!Number.isNaN(value)) {
+                            const radius_base = Math.max(0.5, Math.min(64, value));
+                            setForm((prev) => ({
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                flights: {
+                                  ...prev.layers.flights,
+                                  circle: {
+                                    ...(prev.layers.flights.circle ?? {}),
+                                    radius_base,
+                                  },
+                                },
+                              },
+                            }));
+                            resetErrorsFor("layers.flights.circle.radius_base");
+                          }
+                        }}
+                      />
+                      {renderHelp("Tamaño base del círculo en zoom bajo (0.5 - 64)")}
+                      {renderFieldError("layers.flights.circle.radius_base")}
+                    </div>
+                  )}
+
+                  {supports("layers.flights.circle.radius_zoom_scale") && (
+                    <div className="config-field">
+                      <label htmlFor="flights_circle_radius_scale">Escala de radio por zoom</label>
+                      <input
+                        id="flights_circle_radius_scale"
+                        type="number"
+                        min="0.25"
+                        max="8"
+                        step="0.1"
+                        value={form.layers.flights.circle?.radius_zoom_scale ?? 1.2}
+                        disabled={disableInputs || !form.layers.flights.enabled}
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          if (!Number.isNaN(value)) {
+                            const radius_zoom_scale = Math.max(0.25, Math.min(8, value));
+                            setForm((prev) => ({
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                flights: {
+                                  ...prev.layers.flights,
+                                  circle: {
+                                    ...(prev.layers.flights.circle ?? {}),
+                                    radius_zoom_scale,
+                                  },
+                                },
+                              },
+                            }));
+                            resetErrorsFor("layers.flights.circle.radius_zoom_scale");
+                          }
+                        }}
+                      />
+                      {renderHelp("Factor de incremento del radio al acercar el mapa (0.25 - 8)")}
+                      {renderFieldError("layers.flights.circle.radius_zoom_scale")}
+                    </div>
+                  )}
+
+                  {supports("layers.flights.circle.opacity") && (
+                    <div className="config-field">
+                      <label htmlFor="flights_circle_opacity">Opacidad base del círculo</label>
+                      <input
+                        id="flights_circle_opacity"
+                        type="number"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={form.layers.flights.circle?.opacity ?? 1}
+                        disabled={disableInputs || !form.layers.flights.enabled}
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          if (!Number.isNaN(value)) {
+                            const opacity = Math.max(0, Math.min(1, value));
+                            setForm((prev) => ({
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                flights: {
+                                  ...prev.layers.flights,
+                                  circle: {
+                                    ...(prev.layers.flights.circle ?? {}),
+                                    opacity,
+                                  },
+                                },
+                              },
+                            }));
+                            resetErrorsFor("layers.flights.circle.opacity");
+                          }
+                        }}
+                      />
+                      {renderHelp("Multiplicador adicional de opacidad para círculos (0.0 - 1.0)")}
+                      {renderFieldError("layers.flights.circle.opacity")}
+                    </div>
+                  )}
+
+                  {supports("layers.flights.circle.color") && (
+                    <div className="config-field">
+                      <label htmlFor="flights_circle_color">Color del círculo</label>
+                      <input
+                        id="flights_circle_color"
+                        type="text"
+                        maxLength={32}
+                        value={form.layers.flights.circle?.color ?? "#00D1FF"}
+                        disabled={disableInputs || !form.layers.flights.enabled}
+                        onChange={(event) => {
+                          const color = event.target.value;
+                          setForm((prev) => ({
+                            ...prev,
+                            layers: {
+                              ...prev.layers,
+                              flights: {
+                                ...prev.layers.flights,
+                                circle: {
+                                  ...(prev.layers.flights.circle ?? {}),
+                                  color,
+                                },
+                              },
+                            },
+                          }));
+                          resetErrorsFor("layers.flights.circle.color");
+                        }}
+                      />
+                      {renderHelp("Color de relleno del círculo (hex o valor CSS válido)")}
+                      {renderFieldError("layers.flights.circle.color")}
+                    </div>
+                  )}
+
+                  {supports("layers.flights.circle.stroke_color") && (
+                    <div className="config-field">
+                      <label htmlFor="flights_circle_stroke_color">Color del borde</label>
+                      <input
+                        id="flights_circle_stroke_color"
+                        type="text"
+                        maxLength={32}
+                        value={form.layers.flights.circle?.stroke_color ?? "#002A33"}
+                        disabled={disableInputs || !form.layers.flights.enabled}
+                        onChange={(event) => {
+                          const stroke_color = event.target.value;
+                          setForm((prev) => ({
+                            ...prev,
+                            layers: {
+                              ...prev.layers,
+                              flights: {
+                                ...prev.layers.flights,
+                                circle: {
+                                  ...(prev.layers.flights.circle ?? {}),
+                                  stroke_color,
+                                },
+                              },
+                            },
+                          }));
+                          resetErrorsFor("layers.flights.circle.stroke_color");
+                        }}
+                      />
+                      {renderHelp("Color del borde del círculo")}
+                      {renderFieldError("layers.flights.circle.stroke_color")}
+                    </div>
+                  )}
+
+                  {supports("layers.flights.circle.stroke_width") && (
+                    <div className="config-field">
+                      <label htmlFor="flights_circle_stroke_width">Ancho del borde</label>
+                      <input
+                        id="flights_circle_stroke_width"
+                        type="number"
+                        min="0"
+                        max="10"
+                        step="0.1"
+                        value={form.layers.flights.circle?.stroke_width ?? 1}
+                        disabled={disableInputs || !form.layers.flights.enabled}
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          if (!Number.isNaN(value)) {
+                            const stroke_width = Math.max(0, Math.min(10, value));
+                            setForm((prev) => ({
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                flights: {
+                                  ...prev.layers.flights,
+                                  circle: {
+                                    ...(prev.layers.flights.circle ?? {}),
+                                    stroke_width,
+                                  },
+                                },
+                              },
+                            }));
+                            resetErrorsFor("layers.flights.circle.stroke_width");
+                          }
+                        }}
+                      />
+                      {renderHelp("Grosor del borde del círculo (0.0 - 10.0)")}
+                      {renderFieldError("layers.flights.circle.stroke_width")}
+                    </div>
+                  )}
+
                   {form.layers.flights.provider === "opensky" && (
                     <>
                       <div className="config-field">
@@ -4927,6 +5170,7 @@ const ConfigPage: React.FC = () => {
                     );
                   })}
                 </div>
+
               ) : wifiScanning ? null : wifiNetworksLoaded ? (
                 <div className="config-field-hint">
                   <p>No se han encontrado redes. Reintenta o acerca el equipo al AP.</p>

@@ -2,8 +2,20 @@ import maplibregl from "maplibre-gl";
 import type { MapLayerMouseEvent } from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
 
+import type { FlightsLayerCircleConfig, FlightsLayerRenderMode } from "../../../types/config";
 import type { Layer } from "./LayerRegistry";
 import { getExistingPopup, isGeoJSONSource } from "./layerUtils";
+
+type EffectiveRenderMode = "symbol" | "circle";
+
+type CircleOptions = {
+  radiusBase: number;
+  radiusZoomScale: number;
+  opacity: number;
+  color: string;
+  strokeColor: string;
+  strokeWidth: number;
+};
 
 interface AircraftLayerOptions {
   enabled?: boolean;
@@ -16,13 +28,72 @@ interface AircraftLayerOptions {
   };
   cluster?: boolean;
   styleScale?: number;
+  renderMode?: FlightsLayerRenderMode;
+  circle?: FlightsLayerCircleConfig;
+  spriteAvailable?: boolean;
+  iconImage?: string;
 }
 
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
+const DEFAULT_ICON_IMAGE = "airplane-15";
+const DEFAULT_CIRCLE_OPTIONS: CircleOptions = {
+  radiusBase: 3.0,
+  radiusZoomScale: 1.2,
+  opacity: 1.0,
+  color: "#00D1FF",
+  strokeColor: "#002A33",
+  strokeWidth: 1.0,
+};
+
+const clamp = (value: number, min: number, max: number): number => {
+  return Math.min(Math.max(value, min), max);
+};
+
+const coerceNumber = (value: unknown, fallback: number): number => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+};
+
+const normalizeCircleOptions = (options?: FlightsLayerCircleConfig): CircleOptions => {
+  const source = options ?? {
+    radius_base: DEFAULT_CIRCLE_OPTIONS.radiusBase,
+    radius_zoom_scale: DEFAULT_CIRCLE_OPTIONS.radiusZoomScale,
+    opacity: DEFAULT_CIRCLE_OPTIONS.opacity,
+    color: DEFAULT_CIRCLE_OPTIONS.color,
+    stroke_color: DEFAULT_CIRCLE_OPTIONS.strokeColor,
+    stroke_width: DEFAULT_CIRCLE_OPTIONS.strokeWidth,
+  };
+
+  const color = typeof source.color === "string" && source.color.trim().length > 0
+    ? source.color.trim()
+    : DEFAULT_CIRCLE_OPTIONS.color;
+  const strokeColor = typeof source.stroke_color === "string" && source.stroke_color.trim().length > 0
+    ? source.stroke_color.trim()
+    : DEFAULT_CIRCLE_OPTIONS.strokeColor;
+
+  return {
+    radiusBase: clamp(coerceNumber(source.radius_base, DEFAULT_CIRCLE_OPTIONS.radiusBase), 0.5, 64),
+    radiusZoomScale: clamp(
+      coerceNumber(source.radius_zoom_scale, DEFAULT_CIRCLE_OPTIONS.radiusZoomScale),
+      0.25,
+      8,
+    ),
+    opacity: clamp(coerceNumber(source.opacity, DEFAULT_CIRCLE_OPTIONS.opacity), 0.0, 1.0),
+    color,
+    strokeColor,
+    strokeWidth: clamp(coerceNumber(source.stroke_width, DEFAULT_CIRCLE_OPTIONS.strokeWidth), 0.0, 10.0),
+  };
+};
 
 export default class AircraftLayer implements Layer {
   public readonly id = "geoscope-aircraft";
   public readonly zIndex = 40;
+
+  private static autoSpriteWarned = false;
+  private static forcedSymbolWarned = false;
 
   private enabled: boolean;
   private opacity: number;
@@ -35,6 +106,11 @@ export default class AircraftLayer implements Layer {
   private readonly clusterLayerId: string;
   private readonly clusterCountLayerId: string;
   private styleScale: number;
+  private renderMode: FlightsLayerRenderMode;
+  private spriteAvailable: boolean;
+  private circleOptions: CircleOptions;
+  private iconImage: string;
+  private currentRenderMode: EffectiveRenderMode;
   private eventsRegistered = false;
   private onMouseEnter?: (event: MapLayerMouseEvent) => void;
   private onMouseLeave?: (event: MapLayerMouseEvent) => void;
@@ -50,17 +126,181 @@ export default class AircraftLayer implements Layer {
     this.clusterLayerId = `${this.id}-clusters`;
     this.clusterCountLayerId = `${this.id}-cluster-count`;
     this.styleScale = options.styleScale ?? 1.0;
+    this.renderMode = options.renderMode ?? "auto";
+    this.spriteAvailable = options.spriteAvailable ?? false;
+    this.circleOptions = normalizeCircleOptions(options.circle);
+    this.iconImage = options.iconImage ?? DEFAULT_ICON_IMAGE;
+    this.currentRenderMode = this.determineRenderMode(false);
   }
 
   add(map: maplibregl.Map): void {
     this.map = map;
-    this.ensureSource();
-    this.ensureLayers();
+    this.updateRenderState(true);
+    this.registerEvents(map);
+  }
+
+  remove(map: maplibregl.Map): void {
+    this.unregisterEvents(map);
+    this.removeLayers(map);
+    if (map.getSource(this.sourceId)) {
+      map.removeSource(this.sourceId);
+    }
+    this.map = undefined;
+  }
+
+  destroy(): void {
+    this.map = undefined;
+  }
+
+  setEnabled(on: boolean): void {
+    this.enabled = on;
     this.applyVisibility();
+  }
+
+  setOpacity(opacity: number): void {
+    this.opacity = clamp(opacity, 0, 1);
+    this.applyOpacity();
+  }
+
+  setMaxAgeSeconds(seconds: number): void {
+    this.maxAgeSeconds = seconds;
+    if (this.map) {
+      const data = this.getData();
+      this.updateData(data);
+    }
+    this.applyOpacity();
+  }
+
+  setCluster(enabled: boolean): void {
+    if (this.clusterEnabled === enabled) {
+      return;
+    }
+    this.clusterEnabled = enabled;
+    this.updateRenderState(false);
+  }
+
+  setStyleScale(scale: number): void {
+    const clamped = clamp(scale, 0.1, 4);
+    if (this.styleScale === clamped) {
+      return;
+    }
+    this.styleScale = clamped;
+    this.applyStyleScale();
+  }
+
+  setRenderMode(mode: FlightsLayerRenderMode): void {
+    if (this.renderMode === mode) {
+      this.updateRenderState(true);
+      return;
+    }
+    this.renderMode = mode;
+    this.updateRenderState(true);
+  }
+
+  setCircleOptions(circle: FlightsLayerCircleConfig | undefined): void {
+    this.circleOptions = normalizeCircleOptions(circle);
+    this.applyCirclePaintProperties();
+    this.applyOpacity();
+  }
+
+  setSpriteAvailability(available: boolean): void {
+    if (this.spriteAvailable === available) {
+      return;
+    }
+    this.spriteAvailable = available;
+    this.updateRenderState(true);
+  }
+
+  updateData(data: FeatureCollection): void {
+    const now = Math.floor(Date.now() / 1000);
+    const featuresWithAge = {
+      ...data,
+      features: data.features
+        .map((feature) => {
+          const props = feature.properties || {};
+          const timestamp = props.timestamp || now;
+          const ageSeconds = Math.max(0, now - timestamp);
+          const inFocus = Boolean(props.in_focus);
+          const isStale = props.stale === true;
+
+          if (this.cineFocus?.enabled && this.cineFocus.hardHideOutside && !inFocus) {
+            return null;
+          }
+
+          return {
+            ...feature,
+            properties: {
+              ...props,
+              age_seconds: ageSeconds,
+              in_focus: inFocus,
+              stale: isStale ? true : undefined,
+            },
+          };
+        })
+        .filter((f): f is NonNullable<typeof f> => f !== null),
+    };
+
+    this.lastData = featuresWithAge;
+
+    if (!this.map) return;
+
+    const source = this.map.getSource(this.sourceId);
+    if (isGeoJSONSource(source)) {
+      source.setData(this.lastData);
+    }
+  }
+
+  getData(): FeatureCollection {
+    return this.lastData;
+  }
+
+  private updateRenderState(shouldLog: boolean): void {
+    const nextMode = this.determineRenderMode(shouldLog);
+    const modeChanged = nextMode !== this.currentRenderMode;
+    this.currentRenderMode = nextMode;
+
+    if (!this.map) {
+      return;
+    }
+
+    this.ensureSource();
+    if (modeChanged) {
+      this.ensureLayers();
+      this.applyVisibility();
+    }
+
+    if (!modeChanged && !this.map.getLayer(this.id)) {
+      this.ensureLayers();
+      this.applyVisibility();
+    }
+
+    this.applyCirclePaintProperties();
     this.applyOpacity();
     this.applyStyleScale();
+  }
 
-    this.registerEvents(map);
+  private determineRenderMode(shouldLog: boolean): EffectiveRenderMode {
+    if (this.renderMode === "circle") {
+      return "circle";
+    }
+    if (this.renderMode === "symbol") {
+      if (this.spriteAvailable) {
+        return "symbol";
+      }
+      if (shouldLog && !AircraftLayer.forcedSymbolWarned) {
+        console.warn("Flights: sprite no disponible con mode=symbol; degradando a circle");
+        AircraftLayer.forcedSymbolWarned = true;
+      }
+      return "circle";
+    }
+    if (this.spriteAvailable) {
+      return "symbol";
+    }
+    if (shouldLog && !AircraftLayer.autoSpriteWarned) {
+      console.warn("Flights: sprite no disponible; usando fallback circle");
+      AircraftLayer.autoSpriteWarned = true;
+    }
+    return "circle";
   }
 
   private ensureSource(): void {
@@ -69,7 +309,7 @@ export default class AircraftLayer implements Layer {
     }
     const map = this.map;
     const existing = map.getSource(this.sourceId);
-    const expectedCluster = this.clusterEnabled;
+    const expectedCluster = this.shouldUseClusters();
     if (existing) {
       const anySource = existing as maplibregl.GeoJSONSource & { cluster?: boolean };
       const isCluster = Boolean(anySource.cluster);
@@ -105,7 +345,7 @@ export default class AircraftLayer implements Layer {
     const map = this.map;
     this.removeLayers(map);
 
-    if (this.clusterEnabled) {
+    if (this.shouldUseClusters()) {
       if (!map.getLayer(this.clusterLayerId)) {
         map.addLayer({
           id: this.clusterLayerId,
@@ -140,24 +380,39 @@ export default class AircraftLayer implements Layer {
     }
 
     if (!map.getLayer(this.id)) {
-      map.addLayer({
-        id: this.id,
-        type: "symbol",
-        source: this.sourceId,
-        filter: ["!", ["has", "point_count"]],
-        layout: {
-          "icon-image": "airport-15",
-          "icon-size": this.getIconSizeExpression(),
-          "icon-allow-overlap": true,
-          "icon-rotate": ["coalesce", ["get", "track"], 0],
-          "icon-rotation-alignment": "map",
-        },
-        paint: {
-          "icon-color": "#f97316",
-          "icon-halo-color": "#111827",
-          "icon-halo-width": 0.25,
-        },
-      });
+      if (this.currentRenderMode === "symbol") {
+        map.addLayer({
+          id: this.id,
+          type: "symbol",
+          source: this.sourceId,
+          filter: ["!", ["has", "point_count"]],
+          layout: {
+            "icon-image": this.iconImage,
+            "icon-size": this.getIconSizeExpression(),
+            "icon-allow-overlap": true,
+            "icon-rotate": ["coalesce", ["get", "track"], 0],
+            "icon-rotation-alignment": "map",
+          },
+          paint: {
+            "icon-color": "#f97316",
+            "icon-halo-color": "#111827",
+            "icon-halo-width": 0.25,
+          },
+        });
+      } else {
+        map.addLayer({
+          id: this.id,
+          type: "circle",
+          source: this.sourceId,
+          filter: ["!", ["has", "point_count"]],
+          paint: {
+            "circle-radius": this.getCircleRadiusExpression(),
+            "circle-color": this.circleOptions.color,
+            "circle-stroke-color": this.circleOptions.strokeColor,
+            "circle-stroke-width": this.circleOptions.strokeWidth,
+          },
+        });
+      }
     }
   }
 
@@ -173,7 +428,11 @@ export default class AircraftLayer implements Layer {
     }
   }
 
-  private getOpacityExpression(): maplibregl.ExpressionSpecification {
+  private shouldUseClusters(): boolean {
+    return this.clusterEnabled && this.currentRenderMode === "symbol";
+  }
+
+  private getFeatureOpacityExpression(baseOpacity: number): maplibregl.ExpressionSpecification {
     return [
       "interpolate",
       ["linear"],
@@ -182,43 +441,91 @@ export default class AircraftLayer implements Layer {
       [
         "case",
         ["get", "in_focus"],
-        this.opacity,
-        this.cineFocus?.enabled ? this.opacity * this.cineFocus.outsideDimOpacity : this.opacity,
+        baseOpacity,
+        this.cineFocus?.enabled ? baseOpacity * this.cineFocus.outsideDimOpacity : baseOpacity,
       ],
       this.maxAgeSeconds / 2,
       [
         "case",
         ["get", "in_focus"],
-        this.opacity * 0.5,
+        baseOpacity * 0.5,
         this.cineFocus?.enabled
-          ? this.opacity * this.cineFocus.outsideDimOpacity * 0.5
-          : this.opacity * 0.5,
+          ? baseOpacity * this.cineFocus.outsideDimOpacity * 0.5
+          : baseOpacity * 0.5,
       ],
       this.maxAgeSeconds,
       0.0,
     ];
   }
 
+  private applyOpacity(): void {
+    if (!this.map || !this.map.getLayer(this.id)) return;
+    const baseOpacity = this.currentRenderMode === "symbol"
+      ? this.opacity
+      : this.opacity * this.circleOptions.opacity;
+    const expression = this.getFeatureOpacityExpression(baseOpacity);
+    if (this.currentRenderMode === "symbol") {
+      this.map.setPaintProperty(this.id, "icon-opacity", expression);
+    } else {
+      this.map.setPaintProperty(this.id, "circle-opacity", expression);
+    }
+    if (this.map.getLayer(this.clusterLayerId)) {
+      this.map.setPaintProperty(this.clusterLayerId, "circle-opacity", this.opacity);
+    }
+    if (this.map.getLayer(this.clusterCountLayerId)) {
+      this.map.setPaintProperty(this.clusterCountLayerId, "text-opacity", this.opacity);
+    }
+  }
+
+  private applyCirclePaintProperties(): void {
+    if (!this.map || this.currentRenderMode !== "circle" || !this.map.getLayer(this.id)) {
+      return;
+    }
+    this.map.setPaintProperty(this.id, "circle-radius", this.getCircleRadiusExpression());
+    this.map.setPaintProperty(this.id, "circle-color", this.circleOptions.color);
+    this.map.setPaintProperty(this.id, "circle-stroke-color", this.circleOptions.strokeColor);
+    this.map.setPaintProperty(this.id, "circle-stroke-width", this.circleOptions.strokeWidth);
+  }
+
   private getIconSizeExpression(): maplibregl.ExpressionSpecification {
-    const baseSize = 1.2;
-    const scale = Math.max(0.1, Math.min(this.styleScale, 4));
+    const scale = clamp(this.styleScale, 0.1, 4);
     return [
       "interpolate",
       ["linear"],
       ["zoom"],
-      0,
-      baseSize,
-      3,
-      baseSize * scale,
+      2,
+      0.6 * scale,
       4,
-      baseSize,
+      0.8 * scale,
+      6,
+      1.0 * scale,
+      8,
+      1.2 * scale,
+      10,
+      1.4 * scale,
       22,
-      baseSize,
+      1.4 * scale,
+    ];
+  }
+
+  private getCircleRadiusExpression(): maplibregl.ExpressionSpecification {
+    const base = this.circleOptions.radiusBase;
+    const scale = this.circleOptions.radiusZoomScale;
+    return [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      2,
+      base,
+      8,
+      base * scale,
+      22,
+      base * scale,
     ];
   }
 
   private applyStyleScale(): void {
-    if (!this.map) {
+    if (!this.map || this.currentRenderMode !== "symbol") {
       return;
     }
     if (this.map.getLayer(this.id)) {
@@ -226,110 +533,18 @@ export default class AircraftLayer implements Layer {
     }
   }
 
-  setCluster(enabled: boolean): void {
-    if (this.clusterEnabled === enabled) {
-      return;
-    }
-    this.clusterEnabled = enabled;
-    if (this.map) {
-      const map = this.map;
-      this.removeLayers(map);
-      if (map.getSource(this.sourceId)) {
-        map.removeSource(this.sourceId);
-      }
-      this.ensureSource();
-      this.ensureLayers();
-      this.applyVisibility();
-      this.applyOpacity();
-      this.applyStyleScale();
-    }
-  }
-
-  remove(map: maplibregl.Map): void {
-    this.unregisterEvents(map);
-    this.removeLayers(map);
-    if (map.getSource(this.sourceId)) {
-      map.removeSource(this.sourceId);
-    }
-    this.map = undefined;
-  }
-
-  setEnabled(on: boolean): void {
-    this.enabled = on;
-    this.applyVisibility();
-  }
-
-  setOpacity(opacity: number): void {
-    this.opacity = Math.max(0, Math.min(1, opacity));
-    this.applyOpacity();
-  }
-
-  setMaxAgeSeconds(seconds: number): void {
-    this.maxAgeSeconds = seconds;
-    // Necesitaría recargar el layer para actualizar la expresión de opacity
-    if (this.map) {
-      const data = this.getData();
-      this.updateData(data);
-    }
-    this.applyOpacity();
-  }
-
-  setStyleScale(scale: number): void {
-    const clamped = Math.max(0.1, Math.min(scale, 4));
-    if (this.styleScale === clamped) {
-      return;
-    }
-    this.styleScale = clamped;
-    this.applyStyleScale();
-  }
-
-  updateData(data: FeatureCollection): void {
-    // Calcular edad para cada feature y aplicar dimming según in_focus
-    const now = Math.floor(Date.now() / 1000);
-    const featuresWithAge = {
-      ...data,
-      features: data.features
-        .map((feature) => {
-          const props = feature.properties || {};
-          const timestamp = props.timestamp || now;
-          const ageSeconds = Math.max(0, now - timestamp);
-          const inFocus = Boolean(props.in_focus);
-          const isStale = props.stale === true;
-
-          // Si hard_hide_outside está activado y no está en foco, ocultar
-          if (this.cineFocus?.enabled && this.cineFocus.hardHideOutside && !inFocus) {
-            return null; // Filtrar después
-          }
-
-          return {
-            ...feature,
-            properties: {
-              ...props,
-              age_seconds: ageSeconds,
-              in_focus: inFocus,
-              stale: isStale ? true : undefined
-            }
-          };
-        })
-        .filter((f): f is NonNullable<typeof f> => f !== null)
-    };
-
-    this.lastData = featuresWithAge;
-
+  private applyVisibility(): void {
     if (!this.map) return;
-
-    const source = this.map.getSource(this.sourceId);
-    if (isGeoJSONSource(source)) {
-      source.setData(this.lastData);
+    const visibility = this.enabled ? "visible" : "none";
+    if (this.map.getLayer(this.id)) {
+      this.map.setLayoutProperty(this.id, "visibility", visibility);
     }
-  }
-
-  getData(): FeatureCollection {
-    return this.lastData;
-  }
-
-  destroy(): void {
-    this.map = undefined;
+    if (this.map.getLayer(this.clusterLayerId)) {
+      this.map.setLayoutProperty(this.clusterLayerId, "visibility", visibility);
+    }
+    if (this.map.getLayer(this.clusterCountLayerId)) {
+      this.map.setLayoutProperty(this.clusterCountLayerId, "visibility", visibility);
+    }
   }
 
   private registerEvents(map: maplibregl.Map) {
@@ -419,31 +634,5 @@ export default class AircraftLayer implements Layer {
     this.onMouseLeave = undefined;
     this.onMouseMove = undefined;
     this.eventsRegistered = false;
-  }
-
-  private applyVisibility() {
-    if (!this.map) return;
-    const visibility = this.enabled ? "visible" : "none";
-    if (this.map.getLayer(this.id)) {
-      this.map.setLayoutProperty(this.id, "visibility", visibility);
-    }
-    if (this.map.getLayer(this.clusterLayerId)) {
-      this.map.setLayoutProperty(this.clusterLayerId, "visibility", visibility);
-    }
-    if (this.map.getLayer(this.clusterCountLayerId)) {
-      this.map.setLayoutProperty(this.clusterCountLayerId, "visibility", visibility);
-    }
-  }
-
-  private applyOpacity() {
-    if (!this.map || !this.map.getLayer(this.id)) return;
-    const expression = this.getOpacityExpression();
-    this.map.setPaintProperty(this.id, "icon-opacity", expression);
-    if (this.map.getLayer(this.clusterLayerId)) {
-      this.map.setPaintProperty(this.clusterLayerId, "circle-opacity", this.opacity);
-    }
-    if (this.map.getLayer(this.clusterCountLayerId)) {
-      this.map.setPaintProperty(this.clusterCountLayerId, "text-opacity", this.opacity);
-    }
   }
 }

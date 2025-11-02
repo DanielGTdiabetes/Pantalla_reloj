@@ -242,6 +242,17 @@ export type CustomShipConfig = {
   api_key?: string | null;
 };
 
+export type FlightsLayerRenderMode = "auto" | "symbol" | "circle";
+
+export type FlightsLayerCircleConfig = {
+  radius_base: number;
+  radius_zoom_scale: number;
+  opacity: number;
+  color: string;
+  stroke_color: string;
+  stroke_width: number;
+};
+
 export type FlightsLayerConfig = {
   enabled: boolean;
   opacity: number;
@@ -254,6 +265,8 @@ export type FlightsLayerConfig = {
   decimate: "grid" | "none";
   grid_px: number;
   styleScale: number;
+  render_mode: FlightsLayerRenderMode;
+  circle: FlightsLayerCircleConfig;
   cine_focus: CineFocusConfig;
   opensky?: OpenSkyAuthConfig;
   aviationstack?: AviationStackConfig;

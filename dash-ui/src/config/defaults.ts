@@ -12,6 +12,8 @@ import type {
   DisplayConfig,
   EphemeridesConfig,
   FlightsLayerConfig,
+  FlightsLayerCircleConfig,
+  FlightsLayerRenderMode,
   GenericAISConfig,
   GlobalLayersConfig,
   GlobalRadarLayerConfig,
@@ -75,6 +77,58 @@ const sanitizeNullableString = (value: unknown, fallback: string | null): string
     return trimmed.length > 0 ? trimmed : fallback;
   }
   return fallback;
+};
+
+const sanitizeColorString = (value: unknown, fallback: string): string => {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+  if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(trimmed)) {
+    return trimmed;
+  }
+  if (/^rgba?\(/i.test(trimmed) || /^hsla?\(/i.test(trimmed)) {
+    return trimmed;
+  }
+  return fallback;
+};
+
+const sanitizeRenderMode = (
+  value: unknown,
+  fallback: FlightsLayerRenderMode,
+): FlightsLayerRenderMode => {
+  if (value === "auto" || value === "symbol" || value === "circle") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "auto" || normalized === "symbol" || normalized === "circle") {
+      return normalized as FlightsLayerRenderMode;
+    }
+  }
+  return fallback;
+};
+
+const mergeCircleOptions = (
+  source: Partial<FlightsLayerCircleConfig> | undefined,
+  fallback: FlightsLayerCircleConfig,
+): FlightsLayerCircleConfig => {
+  const candidate = source ?? {};
+  return {
+    radius_base: clampNumber(toNumber(candidate.radius_base, fallback.radius_base), 0.5, 64),
+    radius_zoom_scale: clampNumber(
+      toNumber(candidate.radius_zoom_scale, fallback.radius_zoom_scale),
+      0.25,
+      8,
+    ),
+    opacity: clampNumber(toNumber(candidate.opacity, fallback.opacity), 0.0, 1.0),
+    color: sanitizeColorString(candidate.color, fallback.color),
+    stroke_color: sanitizeColorString(candidate.stroke_color, fallback.stroke_color),
+    stroke_width: clampNumber(toNumber(candidate.stroke_width, fallback.stroke_width), 0.0, 10.0),
+  };
 };
 
 const sanitizeRadarProvider = (
@@ -480,6 +534,15 @@ export const DEFAULT_CONFIG: AppConfig = {
       decimate: "grid",
       grid_px: 24,
       styleScale: 1.4,
+      render_mode: "auto",
+      circle: {
+        radius_base: 3.0,
+        radius_zoom_scale: 1.2,
+        opacity: 1.0,
+        color: "#00D1FF",
+        stroke_color: "#002A33",
+        stroke_width: 1.0,
+      },
       cine_focus: {
         enabled: true,
         mode: "both",
@@ -749,6 +812,16 @@ const mergeFlightsLayer = (candidate: unknown): FlightsLayerConfig => {
     api_key: fallback.aviationstack?.api_key ?? null,
   };
 
+  const circleSource: Partial<FlightsLayerCircleConfig> = source.circle ?? {};
+  const circleFallback: FlightsLayerCircleConfig = fallback.circle ?? {
+    radius_base: 3.0,
+    radius_zoom_scale: 1.2,
+    opacity: 1.0,
+    color: "#00D1FF",
+    stroke_color: "#002A33",
+    stroke_width: 1.0,
+  };
+
   const allowedProviders: Array<"opensky" | "aviationstack" | "custom"> = ["opensky", "aviationstack", "custom"];
   const provider = allowedProviders.includes(source.provider as any)
     ? (source.provider as "opensky" | "aviationstack" | "custom")
@@ -790,6 +863,8 @@ const mergeFlightsLayer = (candidate: unknown): FlightsLayerConfig => {
       128,
     ),
     styleScale: clampNumber(toNumber(source.styleScale, fallback.styleScale), 0.1, 4.0),
+    render_mode: sanitizeRenderMode(source.render_mode, fallback.render_mode ?? "auto"),
+    circle: mergeCircleOptions(circleSource, circleFallback),
     cine_focus: {
       enabled: toBoolean(cineFocusSource.enabled, cineFocusFallback.enabled),
       mode: (cineFocusSource.mode === "cap" || cineFocusSource.mode === "radar")
