@@ -1809,7 +1809,7 @@ export default function GeoScopeMap() {
         ? runtimeSnapshot.fallbackStyle?.style
         : runtimeSnapshot.style.style;
       if (targetStyle) {
-        map.setStyle(targetStyle);
+        map.setStyle(targetStyle as maplibregl.StyleSpecification);
         mapStateMachineRef.current?.notifyStyleLoading(`watchdog:${reason}`);
       }
     };
@@ -1889,6 +1889,9 @@ export default function GeoScopeMap() {
       }
 
       const cinema = cinemaRef.current;
+      if (!cinema) {
+        return;
+      }
       const totalBands = cinema.bands.length;
       if (!totalBands) {
         return;
@@ -2757,7 +2760,10 @@ export default function GeoScopeMap() {
             bearing: currentBearing,
             pitch: currentPitch,
           });
-          applyThemeToMap(map, styleTypeRef.current, themeRef.current);
+          const styleType = styleTypeRef.current;
+          if (styleType) {
+            applyThemeToMap(map, styleType, themeRef.current);
+          }
           layerRegistryRef.current?.reapply();
           mapStateMachineRef.current?.notifyStyleData("config-style-change");
           setStyleChangeInProgress(false);
@@ -2948,6 +2954,10 @@ export default function GeoScopeMap() {
                 }
 
                 const cinema = cinemaRef.current;
+                if (!cinema) {
+                  animationFrameRef.current = requestAnimationFrame(stepPan);
+                  return;
+                }
                 const totalBands = cinema.bands.length;
                 if (!totalBands) {
                   animationFrameRef.current = requestAnimationFrame(stepPan);
