@@ -25,8 +25,15 @@ const extractMapHotSwapDescriptor = (config: AppConfig | null): MapHotSwapDescri
   const v2Config = config as unknown as AppConfigV2;
   if (v2Config.version === 2 && v2Config.ui_map) {
     const provider = v2Config.ui_map.provider ?? null;
-    const xyz = v2Config.ui_map.xyz;
-    const style = xyz?.urlTemplate ?? null;
+    // Para v2, extraer tileUrl según el proveedor
+    let style: string | null = null;
+    if (v2Config.ui_map.provider === "custom_xyz") {
+      style = v2Config.ui_map.customXyz?.tileUrl ?? null;
+    } else if (v2Config.ui_map.provider === "local_raster_xyz") {
+      style = v2Config.ui_map.local?.tileUrl ?? null;
+    } else if (v2Config.ui_map.provider === "maptiler_vector") {
+      style = v2Config.ui_map.maptiler?.styleUrl ?? null;
+    }
     return {
       provider,
       style,

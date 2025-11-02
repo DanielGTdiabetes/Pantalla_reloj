@@ -65,6 +65,23 @@ const MAPTILER_KEY_PATTERN = /^[A-Za-z0-9._-]+$/;
 const MAPTILER_DOCS_TEXT = "Obtén la clave en docs.maptiler.com/cloud/api-keys";
 const DEFAULT_PANELS = DEFAULT_CONFIG.ui.rotation.panels;
 
+// Legacy v1 (para compatibilidad)
+const MAP_STYLE_OPTIONS: AppConfig["ui"]["map"]["style"][] = [
+  "vector-dark",
+  "vector-light",
+  "vector-bright",
+  "raster-carto-dark",
+  "raster-carto-light",
+];
+const MAP_PROVIDER_OPTIONS: AppConfig["ui"]["map"]["provider"][] = ["maptiler", "osm", "xyz"];
+const MAP_BACKEND_PROVIDERS: AppConfig["map"]["provider"][] = ["maptiler", "osm", "xyz"];
+const MAP_PROVIDER_LABELS: Record<AppConfig["map"]["provider"], string> = {
+  maptiler: "MapTiler",
+  osm: "OpenStreetMap",
+  openstreetmap: "OpenStreetMap",
+  xyz: "XYZ (Raster)",
+};
+
 const AEMET_REASON_MESSAGES: Record<string, string> = {
   unauthorized: "AEMET rechazó la clave (401)",
   network: "No hay conexión con los servicios de AEMET",
@@ -242,7 +259,7 @@ const extractBackendErrors = (detail: unknown): FieldErrors => {
   return {};
 };
 
-const validateConfig = (config: AppConfig, supports: SchemaInspector["has"]): FieldErrors => {
+const validateConfig = (config: AppConfig, supports: SchemaInspector["has"], configVersion?: number | null): FieldErrors => {
   const errors: FieldErrors = {};
 
   if (supports("display.timezone")) {
@@ -1175,7 +1192,7 @@ const ConfigPage: React.FC = () => {
     if (!isReady || saving) {
       return;
     }
-    const validationErrors = validateConfig(form, supports);
+    const validationErrors = validateConfig(form, supports, configVersion);
     if (Object.keys(validationErrors).length > 0) {
       setFieldErrors(validationErrors);
       setBanner({ kind: "error", text: "Revisa los errores en la configuración" });

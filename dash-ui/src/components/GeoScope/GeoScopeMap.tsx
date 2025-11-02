@@ -535,17 +535,26 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
     const styleResult = await loadMapStyle(ui_map);
     
     // Convertir a formato compatible con buildRuntimePreferences
+    // Construir un MapConfig compatible usando unknown para evitar errores de tipo
     const mapSettings = {
-      provider: ui_map.provider,
+      engine: "maplibre" as const,
+      provider: ui_map.provider === "maptiler_vector" ? "maptiler" : (ui_map.provider === "local_raster_xyz" ? "osm" : "xyz") as MapConfig["provider"],
       renderWorldCopies: ui_map.renderWorldCopies,
       interactive: ui_map.interactive,
       controls: ui_map.controls,
       viewMode: ui_map.viewMode,
       fixed: ui_map.fixed,
       region: ui_map.region,
+      style: "vector-dark" as const,
       theme: { sea: "#0b3756", land: "#20262c", label: "#d6e7ff", contrast: 0.15, tint: "rgba(0,170,255,0.06)" },
       respectReducedMotion: false,
-    } as MapConfig;
+      maptiler: ui_map.provider === "maptiler_vector" ? {
+        key: ui_map.maptiler?.apiKey || null,
+        styleUrlDark: ui_map.maptiler?.styleUrl || null,
+      } : undefined,
+      cinema: undefined,
+      idlePan: undefined,
+    } as unknown as MapConfig;
     
     return buildRuntimePreferences(mapSettings, rotationSettings || { enabled: false, duration_sec: 10, panels: [] }, styleResult);
   } catch (error) {
