@@ -1424,9 +1424,15 @@ const ConfigPage: React.FC = () => {
         };
         
         // Asegurar que panels.calendar esté presente si se está editando
+        const existingCalendar = v2Form.panels?.calendar;
         const panels: import("../types/config_v2").PanelsConfigV2 = {
           ...(v2Form.panels as import("../types/config_v2").PanelsConfigV2 || {}),
-          calendar: v2Form.panels?.calendar || { enabled: false, provider: "google" },
+          calendar: existingCalendar && typeof existingCalendar.enabled === "boolean"
+            ? {
+                enabled: existingCalendar.enabled,
+                provider: (existingCalendar.provider === "ics" ? "ics" : "google") as "google" | "ics",
+              }
+            : { enabled: false, provider: "google" as const },
         };
         
         const v2Payload: import("../types/config_v2").AppConfigV2 = {
