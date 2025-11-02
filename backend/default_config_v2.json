@@ -2,17 +2,23 @@
   "version": 2,
   "ui_map": {
     "engine": "maplibre",
-    "provider": "xyz",
-    "xyz": {
-      "urlTemplate": "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      "attribution": "© Esri, Maxar, Earthstar, CNES/Airbus, USDA, USGS, IGN, GIS User Community",
+    "provider": "local_raster_xyz",
+    "renderWorldCopies": true,
+    "interactive": false,
+    "controls": false,
+    "local": {
+      "tileUrl": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
       "minzoom": 0,
-      "maxzoom": 19,
-      "tileSize": 256
+      "maxzoom": 19
     },
-    "labelsOverlay": {
-      "enabled": true,
-      "style": "carto-only-labels"
+    "maptiler": {
+      "apiKey": null,
+      "styleUrl": null
+    },
+    "customXyz": {
+      "tileUrl": null,
+      "minzoom": 0,
+      "maxzoom": 19
     },
     "viewMode": "fixed",
     "fixed": {

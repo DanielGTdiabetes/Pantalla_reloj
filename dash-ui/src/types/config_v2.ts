@@ -7,17 +7,21 @@ export type MapCenter = {
   lon: number;
 };
 
-export type XyzConfig = {
-  urlTemplate: string;
-  attribution: string;
+export type LocalRasterConfig = {
+  tileUrl: string;
   minzoom: number;
   maxzoom: number;
-  tileSize: number;
 };
 
-export type LabelsOverlayConfig = {
-  enabled: boolean;
-  style: string;
+export type MapTilerConfig = {
+  apiKey: string | null;
+  styleUrl: string | null;
+};
+
+export type CustomXyzConfig = {
+  tileUrl: string | null;
+  minzoom: number;
+  maxzoom: number;
 };
 
 export type MapFixedView = {
@@ -46,9 +50,13 @@ export type MapRegion = {
 
 export type MapConfigV2 = {
   engine: "maplibre";
-  provider: "xyz" | "osm";
-  xyz?: XyzConfig;
-  labelsOverlay?: LabelsOverlayConfig;
+  provider: "local_raster_xyz" | "maptiler_vector" | "custom_xyz";
+  renderWorldCopies: boolean;
+  interactive: boolean;
+  controls: boolean;
+  local?: LocalRasterConfig;
+  maptiler?: MapTilerConfig;
+  customXyz?: CustomXyzConfig;
   viewMode: "fixed" | "aoiCycle";
   fixed?: MapFixedView;
   aoiCycle?: MapAoiCycle;

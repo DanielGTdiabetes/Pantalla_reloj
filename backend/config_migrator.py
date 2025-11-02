@@ -42,23 +42,84 @@ def migrate_v1_to_v2(
     ui_v1 = config_v1.get("ui", {})
     map_v1 = ui_v1.get("map", {})
     
-    # Provider: XYZ por defecto (no maptiler ni raster-carto legacy)
+    # Determinar proveedor y migrar configuración
+    provider_v1 = map_v1.get("provider", "osm")
+    provider_v2 = "local_raster_xyz"  # Por defecto
+    
+    # Migrar proveedores legacy
+    if provider_v1 in ["xyz", "osm", "local"]:
+        provider_v2 = "local_raster_xyz"
+    elif provider_v1 == "maptiler":
+        provider_v2 = "maptiler_vector"
+    # Si hay configuración xyz personalizada, usar custom_xyz
+    elif map_v1.get("xyz") and isinstance(map_v1.get("xyz"), dict):
+        xyz_config = map_v1["xyz"]
+        if xyz_config.get("urlTemplate") and "openstreetmap" not in xyz_config.get("urlTemplate", "").lower():
+            provider_v2 = "custom_xyz"
+    
+    # Inicializar estructura base
     v2["ui_map"] = {
         "engine": "maplibre",
-        "provider": "xyz",
-        "xyz": {
-            "urlTemplate": "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-            "attribution": "© Esri, Maxar, Earthstar, CNES/Airbus, USDA, USGS, IGN, GIS User Community",
-            "minzoom": 0,
-            "maxzoom": 19,
-            "tileSize": 256
-        },
-        "labelsOverlay": {
-            "enabled": True,
-            "style": "carto-only-labels"
-        },
+        "provider": provider_v2,
+        "renderWorldCopies": map_v1.get("renderWorldCopies", True),
+        "interactive": map_v1.get("interactive", False),
+        "controls": map_v1.get("controls", False),
         "viewMode": "fixed"
     }
+    
+    # Configurar según el proveedor
+    if provider_v2 == "local_raster_xyz":
+        v2["ui_map"]["local"] = {
+            "tileUrl": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+            "minzoom": 0,
+            "maxzoom": 19
+        }
+        v2["ui_map"]["maptiler"] = {"apiKey": None, "styleUrl": None}
+        v2["ui_map"]["customXyz"] = {"tileUrl": None, "minzoom": 0, "maxzoom": 19}
+    
+    elif provider_v2 == "maptiler_vector":
+        maptiler_v1 = map_v1.get("maptiler", {})
+        api_key = maptiler_v1.get("key") or config_v1.get("map", {}).get("maptiler_api_key")
+        # Determinar styleUrl desde style v1 o maptiler config
+        style_url = None
+        style_v1 = map_v1.get("style", "vector-dark")
+        if style_v1 == "vector-dark":
+            style_url = "https://api.maptiler.com/maps/dark/style.json"
+        elif style_v1 == "vector-light":
+            style_url = "https://api.maptiler.com/maps/streets/style.json"
+        elif style_v1 == "vector-bright":
+            style_url = "https://api.maptiler.com/maps/bright/style.json"
+        elif maptiler_v1.get("styleUrlDark"):
+            style_url = maptiler_v1.get("styleUrlDark")
+        elif maptiler_v1.get("styleUrlLight"):
+            style_url = maptiler_v1.get("styleUrlLight")
+        elif maptiler_v1.get("styleUrlBright"):
+            style_url = maptiler_v1.get("styleUrlBright")
+        
+        v2["ui_map"]["maptiler"] = {
+            "apiKey": api_key,
+            "styleUrl": style_url
+        }
+        v2["ui_map"]["local"] = {
+            "tileUrl": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+            "minzoom": 0,
+            "maxzoom": 19
+        }
+        v2["ui_map"]["customXyz"] = {"tileUrl": None, "minzoom": 0, "maxzoom": 19}
+    
+    elif provider_v2 == "custom_xyz":
+        xyz_config = map_v1.get("xyz", {})
+        v2["ui_map"]["customXyz"] = {
+            "tileUrl": xyz_config.get("urlTemplate") if xyz_config.get("urlTemplate") else None,
+            "minzoom": xyz_config.get("minzoom", 0),
+            "maxzoom": xyz_config.get("maxzoom", 19)
+        }
+        v2["ui_map"]["local"] = {
+            "tileUrl": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+            "minzoom": 0,
+            "maxzoom": 19
+        }
+        v2["ui_map"]["maptiler"] = {"apiKey": None, "styleUrl": None}
     
     # Código postal
     region_postal = config_v1.get("region", {}).get("postalCode") or map_v1.get("region", {}).get("postalCode")

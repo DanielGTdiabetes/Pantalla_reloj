@@ -467,14 +467,142 @@ class ConfigManager:
         
         return purged, changed
     
+    def _migrate_map_provider_keys(self, data: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
+        """Migra claves legacy de proveedores de mapa a la nueva estructura.
+        
+        Args:
+            data: Diccionario de configuración
+            
+        Returns:
+            Tuple de (data_migrado, was_changed)
+        """
+        changed = False
+        migrated = dict(data)
+        
+        # Para v2, migrar ui_map
+        if "ui_map" in migrated and isinstance(migrated["ui_map"], dict):
+            ui_map = migrated["ui_map"]
+            
+            # Normalizar provider legacy
+            provider_old = ui_map.get("provider", "xyz")
+            if provider_old in ["xyz", "osm", "local"]:
+                provider_new = "local_raster_xyz"
+                if provider_old != provider_new:
+                    ui_map["provider"] = provider_new
+                    changed = True
+                    self.logger.info("[config] Migrated ui_map.provider from '%s' to '%s'", provider_old, provider_new)
+            elif provider_old == "maptiler":
+                provider_new = "maptiler_vector"
+                ui_map["provider"] = provider_new
+                changed = True
+                self.logger.info("[config] Migrated ui_map.provider from 'maptiler' to 'maptiler_vector'")
+            
+            # Migrar estructura según provider
+            provider = ui_map.get("provider", "local_raster_xyz")
+            
+            # Si tiene xyz/xyz legacy, migrar a local o customXyz según el caso
+            if "xyz" in ui_map and isinstance(ui_map["xyz"], dict):
+                xyz_old = ui_map["xyz"]
+                tile_url = xyz_old.get("urlTemplate")
+                
+                # Si es OSM, usar local_raster_xyz
+                if tile_url and "openstreetmap" in tile_url.lower():
+                    if provider != "local_raster_xyz":
+                        ui_map["provider"] = "local_raster_xyz"
+                        changed = True
+                    if "local" not in ui_map:
+                        ui_map["local"] = {
+                            "tileUrl": tile_url,
+                            "minzoom": xyz_old.get("minzoom", 0),
+                            "maxzoom": xyz_old.get("maxzoom", 19)
+                        }
+                        changed = True
+                        self.logger.info("[config] Migrated ui_map.xyz to ui_map.local")
+                # Si es otro proveedor, usar customXyz
+                elif tile_url:
+                    if provider != "custom_xyz":
+                        ui_map["provider"] = "custom_xyz"
+                        changed = True
+                    if "customXyz" not in ui_map:
+                        ui_map["customXyz"] = {
+                            "tileUrl": tile_url,
+                            "minzoom": xyz_old.get("minzoom", 0),
+                            "maxzoom": xyz_old.get("maxzoom", 19)
+                        }
+                        changed = True
+                        self.logger.info("[config] Migrated ui_map.xyz to ui_map.customXyz")
+                
+                # Eliminar xyz legacy
+                del ui_map["xyz"]
+                changed = True
+                self.logger.info("[config] Removed legacy ui_map.xyz")
+            
+            # Eliminar labelsOverlay legacy
+            if "labelsOverlay" in ui_map:
+                del ui_map["labelsOverlay"]
+                changed = True
+                self.logger.info("[config] Removed legacy ui_map.labelsOverlay")
+            
+            # Migrar maptiler legacy
+            if "maptiler" in ui_map and isinstance(ui_map["maptiler"], dict):
+                maptiler_old = ui_map["maptiler"]
+                # Si tiene key/styleUrlDark/Light/Bright legacy, normalizar
+                api_key = maptiler_old.get("key")
+                style_url = (
+                    maptiler_old.get("styleUrlDark") or
+                    maptiler_old.get("styleUrlLight") or
+                    maptiler_old.get("styleUrlBright")
+                )
+                
+                # Actualizar a la nueva estructura
+                ui_map["maptiler"] = {
+                    "apiKey": api_key,
+                    "styleUrl": style_url
+                }
+                changed = True
+                self.logger.info("[config] Migrated ui_map.maptiler to new structure")
+            
+            # Asegurar que existen los 3 bloques (local, maptiler, customXyz)
+            if "local" not in ui_map:
+                ui_map["local"] = {
+                    "tileUrl": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                    "minzoom": 0,
+                    "maxzoom": 19
+                }
+                changed = True
+            
+            if "maptiler" not in ui_map:
+                ui_map["maptiler"] = {"apiKey": None, "styleUrl": None}
+                changed = True
+            
+            if "customXyz" not in ui_map:
+                ui_map["customXyz"] = {"tileUrl": None, "minzoom": 0, "maxzoom": 19}
+                changed = True
+            
+            # Asegurar renderWorldCopies, interactive, controls
+            if "renderWorldCopies" not in ui_map:
+                ui_map["renderWorldCopies"] = True
+                changed = True
+            if "interactive" not in ui_map:
+                ui_map["interactive"] = False
+                changed = True
+            if "controls" not in ui_map:
+                ui_map["controls"] = False
+                changed = True
+        
+        return migrated, changed
+    
     def _migrate_missing_keys(self, data: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
         # Primero purgar claves cinema
         purged_data, cinema_removed = self._purge_cinema_keys(data)
         
-        # Luego aplicar migración de claves faltantes
-        merged_data, keys_added = self._merge_missing_dict_keys(purged_data, self._load_default_template())
+        # Migrar claves legacy de proveedores de mapa
+        migrated_data, map_migrated = self._migrate_map_provider_keys(purged_data)
         
-        return merged_data, cinema_removed or keys_added
+        # Luego aplicar migración de claves faltantes
+        merged_data, keys_added = self._merge_missing_dict_keys(migrated_data, self._load_default_template())
+        
+        return merged_data, cinema_removed or map_migrated or keys_added
 
 
 __all__ = ["ConfigManager"]

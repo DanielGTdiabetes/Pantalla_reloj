@@ -13,19 +13,24 @@ class MapCenter(BaseModel):
     lon: float = Field(ge=-180, le=180)
 
 
-class XyzConfig(BaseModel):
-    """Configuración del proveedor XYZ (satelital)."""
-    urlTemplate: str
-    attribution: str
+class LocalRasterConfig(BaseModel):
+    """Configuración del proveedor local raster OSM."""
+    tileUrl: str = Field(default="https://tile.openstreetmap.org/{z}/{x}/{y}.png")
     minzoom: int = Field(default=0, ge=0, le=24)
     maxzoom: int = Field(default=19, ge=0, le=24)
-    tileSize: int = Field(default=256, ge=128, le=512)
 
 
-class LabelsOverlayConfig(BaseModel):
-    """Configuración de overlay de etiquetas."""
-    enabled: bool = True
-    style: str = Field(default="carto-only-labels")
+class MapTilerConfig(BaseModel):
+    """Configuración del proveedor MapTiler vector."""
+    apiKey: Optional[str] = Field(default=None, max_length=256)
+    styleUrl: Optional[str] = Field(default=None, max_length=512)
+
+
+class CustomXyzConfig(BaseModel):
+    """Configuración del proveedor XYZ personalizado."""
+    tileUrl: Optional[str] = Field(default=None, max_length=512)
+    minzoom: int = Field(default=0, ge=0, le=24)
+    maxzoom: int = Field(default=19, ge=0, le=24)
 
 
 class MapFixedView(BaseModel):
@@ -59,9 +64,13 @@ class MapRegion(BaseModel):
 class MapConfig(BaseModel):
     """Configuración del mapa v2."""
     engine: Literal["maplibre"] = "maplibre"
-    provider: Literal["xyz", "osm"] = "xyz"
-    xyz: Optional[XyzConfig] = None
-    labelsOverlay: Optional[LabelsOverlayConfig] = None
+    provider: Literal["local_raster_xyz", "maptiler_vector", "custom_xyz"] = "local_raster_xyz"
+    renderWorldCopies: bool = Field(default=True)
+    interactive: bool = Field(default=False)
+    controls: bool = Field(default=False)
+    local: Optional[LocalRasterConfig] = None
+    maptiler: Optional[MapTilerConfig] = None
+    customXyz: Optional[CustomXyzConfig] = None
     viewMode: Literal["fixed", "aoiCycle"] = "fixed"
     fixed: Optional[MapFixedView] = None
     aoiCycle: Optional[MapAoiCycle] = None

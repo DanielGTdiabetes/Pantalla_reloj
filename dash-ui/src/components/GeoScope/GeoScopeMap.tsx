@@ -28,6 +28,10 @@ import type {
   MapThemeConfig,
   RotationConfig
 } from "../../types/config";
+import type {
+  AppConfigV2,
+  MapConfigV2
+} from "../../types/config_v2";
 import {
   loadMapStyle,
   type MapStyleDefinition,
@@ -409,46 +413,110 @@ const buildRuntimePreferences = (
 const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
   try {
     // Intentar cargar v2 primero
-    let config: AppConfig | undefined;
+    let mapConfigV2: AppConfigV2 | undefined;
+    let rotationSettings: RotationConfig | undefined;
     try {
       const { getConfigV2 } = await import("../../lib/api");
       const { withConfigDefaultsV2 } = await import("../../config/defaults_v2");
       const v2Config = await getConfigV2();
       if (v2Config && v2Config.version === 2 && v2Config.ui_map) {
-        // Convertir v2 a formato interno compatible
-        config = {
-          ui: {
-            map: {
-              ...v2Config.ui_map,
-              xyz: v2Config.ui_map.xyz,
-              labelsOverlay: v2Config.ui_map.labelsOverlay,
-            },
-            rotation: {},
-          },
-          map: createDefaultMapPreferences(),
-        } as unknown as AppConfig;
+        mapConfigV2 = withConfigDefaultsV2(v2Config);
+        rotationSettings = { enabled: false, duration_sec: 10, panels: [] }; // Rotation viene de otro lugar
       } else {
-        config = await apiGet<AppConfig | undefined>("/api/config");
+        // Fallback a v1 si no hay v2
+        const config = await apiGet<AppConfig | undefined>("/api/config");
+        const merged = withConfigDefaults(config);
+        const mapSettings = merged.ui.map;
+        rotationSettings = merged.ui.rotation;
+        // Convertir v1 a v2 para compatibilidad
+        const v2FromV1: MapConfigV2 = {
+          engine: "maplibre",
+          provider: mapSettings.provider === "maptiler" ? "maptiler_vector" : "local_raster_xyz",
+          renderWorldCopies: mapSettings.renderWorldCopies ?? true,
+          interactive: mapSettings.interactive ?? false,
+          controls: mapSettings.controls ?? false,
+          local: {
+            tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+            minzoom: 0,
+            maxzoom: 19,
+          },
+          maptiler: mapSettings.maptiler ? {
+            apiKey: mapSettings.maptiler.key || null,
+            styleUrl: mapSettings.maptiler.styleUrlDark || null,
+          } : undefined,
+          customXyz: undefined,
+          viewMode: mapSettings.viewMode || "fixed",
+          fixed: mapSettings.fixed ? {
+            center: mapSettings.fixed.center,
+            zoom: mapSettings.fixed.zoom,
+            bearing: mapSettings.fixed.bearing || 0,
+            pitch: mapSettings.fixed.pitch || 0,
+          } : undefined,
+          region: mapSettings.region ? { postalCode: mapSettings.region.postalCode } : undefined,
+        };
+        mapConfigV2 = {
+          version: 2,
+          ui_map: v2FromV1,
+          ui_global: undefined,
+          layers: undefined,
+          panels: undefined,
+          secrets: undefined,
+        };
       }
     } catch (e) {
       // Si falla v2, intentar v1
-      config = await apiGet<AppConfig | undefined>("/api/config");
+      const config = await apiGet<AppConfig | undefined>("/api/config");
+      const merged = withConfigDefaults(config);
+      const mapSettings = merged.ui.map;
+      rotationSettings = merged.ui.rotation;
+      // Convertir v1 a v2 para compatibilidad
+      const v2FromV1: MapConfigV2 = {
+        engine: "maplibre",
+        provider: "local_raster_xyz",
+        renderWorldCopies: true,
+        interactive: false,
+        controls: false,
+        local: {
+          tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+          minzoom: 0,
+          maxzoom: 19,
+        },
+        maptiler: undefined,
+        customXyz: undefined,
+        viewMode: "fixed",
+        fixed: {
+          center: { lat: 39.98, lon: 0.20 },
+          zoom: 7.8,
+          bearing: 0,
+          pitch: 0,
+        },
+        region: undefined,
+      };
+      mapConfigV2 = {
+        version: 2,
+        ui_map: v2FromV1,
+        ui_global: undefined,
+        layers: undefined,
+        panels: undefined,
+        secrets: undefined,
+      };
     }
     
-    const merged = withConfigDefaults(config);
-    const mapSettings = merged.ui.map;
-    const rotationSettings = merged.ui.rotation;
-    const mapPreferences: MapPreferences = merged.map ?? createDefaultMapPreferences();
+    if (!mapConfigV2) {
+      throw new Error("No config loaded");
+    }
+    
+    const ui_map = mapConfigV2.ui_map;
     
     // Si hay viewMode "fixed" y región con postalCode, geocodificar primero
-    if (mapSettings.viewMode === "fixed" && mapSettings.region?.postalCode) {
+    if (ui_map.viewMode === "fixed" && ui_map.region?.postalCode) {
       try {
         const { geocodePostalES } = await import("../../lib/api");
-        const geocodeResult = await geocodePostalES(mapSettings.region.postalCode);
+        const geocodeResult = await geocodePostalES(ui_map.region.postalCode);
         if (geocodeResult.ok && geocodeResult) {
           // Actualizar fixed.center con las coordenadas geocodificadas
-          if (mapSettings.fixed) {
-            mapSettings.fixed.center = {
+          if (ui_map.fixed) {
+            ui_map.fixed.center = {
               lat: geocodeResult.lat,
               lon: geocodeResult.lon,
             };
@@ -457,15 +525,29 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
       } catch (geocodeError) {
         console.warn(
           "[GeoScopeMap] Failed to geocode postal code:",
-          mapSettings.region.postalCode,
+          ui_map.region.postalCode,
           geocodeError
         );
         // Continuar con valores existentes si falla el geocoding
       }
     }
     
-    const styleResult = await loadMapStyle(mapSettings, mapPreferences);
-    return buildRuntimePreferences(mapSettings, rotationSettings, styleResult);
+    const styleResult = await loadMapStyle(ui_map);
+    
+    // Convertir a formato compatible con buildRuntimePreferences
+    const mapSettings = {
+      provider: ui_map.provider,
+      renderWorldCopies: ui_map.renderWorldCopies,
+      interactive: ui_map.interactive,
+      controls: ui_map.controls,
+      viewMode: ui_map.viewMode,
+      fixed: ui_map.fixed,
+      region: ui_map.region,
+      theme: { sea: "#0b3756", land: "#20262c", label: "#d6e7ff", contrast: 0.15, tint: "rgba(0,170,255,0.06)" },
+      respectReducedMotion: false,
+    } as MapConfig;
+    
+    return buildRuntimePreferences(mapSettings, rotationSettings || { enabled: false, duration_sec: 10, panels: [] }, styleResult);
   } catch (error) {
     console.warn(
       "[GeoScopeMap] Falling back to default configuration (using defaults).",
@@ -473,7 +555,29 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
     );
     const fallbackSettings = createDefaultMapSettings();
     const fallbackPreferences = createDefaultMapPreferences();
-    const styleResult = await loadMapStyle(fallbackSettings, fallbackPreferences);
+    const fallbackMapConfigV2: MapConfigV2 = {
+      engine: "maplibre",
+      provider: "local_raster_xyz",
+      renderWorldCopies: true,
+      interactive: false,
+      controls: false,
+      local: {
+        tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        minzoom: 0,
+        maxzoom: 19,
+      },
+      maptiler: { apiKey: null, styleUrl: null },
+      customXyz: { tileUrl: null, minzoom: 0, maxzoom: 19 },
+      viewMode: "fixed",
+      fixed: {
+        center: { lat: 39.98, lon: 0.20 },
+        zoom: 7.8,
+        bearing: 0,
+        pitch: 0,
+      },
+      region: { postalCode: "12001" },
+    };
+    const styleResult = await loadMapStyle(fallbackMapConfigV2);
     const fallbackRotation = withConfigDefaults(undefined).ui.rotation;
     return buildRuntimePreferences(fallbackSettings, fallbackRotation, styleResult);
   }
@@ -1220,7 +1324,28 @@ export default function GeoScopeMap() {
         const mapSettings = merged.ui.map;
         const mapPreferences = merged.map ?? createDefaultMapPreferences();
 
-        const styleResult = await loadMapStyle(mapSettings, mapPreferences);
+        // Convertir a MapConfigV2 para loadMapStyle
+        const ui_map: MapConfigV2 = {
+          engine: "maplibre",
+          provider: mapSettings.provider === "maptiler" ? "maptiler_vector" : "local_raster_xyz",
+          renderWorldCopies: mapSettings.renderWorldCopies ?? true,
+          interactive: mapSettings.interactive ?? false,
+          controls: mapSettings.controls ?? false,
+          local: {
+            tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+            minzoom: 0,
+            maxzoom: 19,
+          },
+          maptiler: mapSettings.maptiler ? {
+            apiKey: mapSettings.maptiler.key || null,
+            styleUrl: mapSettings.maptiler.styleUrlDark || null,
+          } : undefined,
+          customXyz: undefined,
+          viewMode: mapSettings.viewMode || "fixed",
+          fixed: mapSettings.fixed,
+          region: mapSettings.region,
+        };
+        const styleResult = await loadMapStyle(ui_map);
         if (cancelled || !mapRef.current) {
           return;
         }

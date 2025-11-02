@@ -16,21 +16,27 @@ export const DEFAULT_MAP_CENTER = {
   lon: 0.20,
 };
 
-export const DEFAULT_XYZ_CONFIG = {
-  urlTemplate: "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-  attribution: "© Esri, Maxar, Earthstar, CNES/Airbus, USDA, USGS, IGN, GIS User Community",
+export const DEFAULT_LOCAL_RASTER_CONFIG = {
+  tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
   minzoom: 0,
   maxzoom: 19,
-  tileSize: 256,
 };
 
 export const DEFAULT_MAP_CONFIG: MapConfigV2 = {
   engine: "maplibre",
-  provider: "xyz",
-  xyz: DEFAULT_XYZ_CONFIG,
-  labelsOverlay: {
-    enabled: true,
-    style: "carto-only-labels",
+  provider: "local_raster_xyz",
+  renderWorldCopies: true,
+  interactive: false,
+  controls: false,
+  local: DEFAULT_LOCAL_RASTER_CONFIG,
+  maptiler: {
+    apiKey: null,
+    styleUrl: null,
+  },
+  customXyz: {
+    tileUrl: null,
+    minzoom: 0,
+    maxzoom: 19,
   },
   viewMode: "fixed",
   fixed: {
@@ -135,11 +141,15 @@ export function withConfigDefaultsV2(
     ui_map: {
       ...DEFAULT_MAP_CONFIG,
       ...config.ui_map,
-      xyz: {
-        ...DEFAULT_XYZ_CONFIG,
-        ...config.ui_map?.xyz,
+      local: {
+        ...DEFAULT_LOCAL_RASTER_CONFIG,
+        ...config.ui_map?.local,
       },
-      labelsOverlay: config.ui_map?.labelsOverlay ?? DEFAULT_MAP_CONFIG.labelsOverlay,
+      maptiler: config.ui_map?.maptiler ?? DEFAULT_MAP_CONFIG.maptiler,
+      customXyz: {
+        ...DEFAULT_MAP_CONFIG.customXyz!,
+        ...config.ui_map?.customXyz,
+      },
       fixed: config.ui_map?.fixed ?? DEFAULT_MAP_CONFIG.fixed,
       region: config.ui_map?.region ?? DEFAULT_MAP_CONFIG.region,
     },

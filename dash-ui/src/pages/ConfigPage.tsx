@@ -31,6 +31,7 @@ import {
   type MigrateConfigResponse,
 } from "../lib/api";
 import type { AppConfig, GlobalLayersConfig, MapConfig, XyzConfig } from "../types/config";
+import type { MapConfigV2 } from "../types/config_v2";
 
 type GlobalLayers = NonNullable<AppConfig["layers"]["global"]>;
 
@@ -53,20 +54,12 @@ type SchemaInspector = {
 };
 
 const API_ERROR_MESSAGE = `No se pudo conectar con el backend en ${API_ORIGIN}`;
-const MAP_STYLE_OPTIONS: AppConfig["ui"]["map"]["style"][] = [
-  "vector-dark",
-  "vector-light",
-  "vector-bright",
-  "raster-carto-dark",
-  "raster-carto-light",
-];
-const MAP_PROVIDER_OPTIONS: AppConfig["ui"]["map"]["provider"][] = ["maptiler", "osm", "xyz"];
-const MAP_BACKEND_PROVIDERS: AppConfig["map"]["provider"][] = ["maptiler", "osm", "xyz"];
-const MAP_PROVIDER_LABELS: Record<AppConfig["map"]["provider"], string> = {
-  maptiler: "MapTiler",
-  osm: "OpenStreetMap",
-  openstreetmap: "OpenStreetMap",
-  xyz: "XYZ (Raster)",
+// Proveedores v2
+const MAP_PROVIDER_V2_OPTIONS: MapConfigV2["provider"][] = ["local_raster_xyz", "maptiler_vector", "custom_xyz"];
+const MAP_PROVIDER_V2_LABELS: Record<MapConfigV2["provider"], string> = {
+  local_raster_xyz: "Local (OSM raster)",
+  maptiler_vector: "MapTiler (vector)",
+  custom_xyz: "XYZ personalizado",
 };
 const MAPTILER_KEY_PATTERN = /^[A-Za-z0-9._-]+$/;
 const MAPTILER_DOCS_TEXT = "Obtén la clave en docs.maptiler.com/cloud/api-keys";
@@ -265,8 +258,47 @@ const validateConfig = (config: AppConfig, supports: SchemaInspector["has"]): Fi
     }
   }
 
+  // Validación v2 para ui_map
+  if (configVersion === 2) {
+    const v2Config = config as unknown as { ui_map?: MapConfigV2 };
+    const ui_map = v2Config.ui_map;
+    
+    if (ui_map) {
+      // Validar provider
+      if (!MAP_PROVIDER_V2_OPTIONS.includes(ui_map.provider)) {
+        errors["ui_map.provider"] = "Selecciona un proveedor soportado";
+      }
+      
+      // Validar maptiler_vector
+      if (ui_map.provider === "maptiler_vector") {
+        const apiKey = ui_map.maptiler?.apiKey;
+        const styleUrl = ui_map.maptiler?.styleUrl;
+        
+        if (!apiKey || !apiKey.trim()) {
+          errors["ui_map.maptiler.apiKey"] = "Introduce la API key de MapTiler";
+        } else if (!MAPTILER_KEY_PATTERN.test(apiKey.trim())) {
+          errors["ui_map.maptiler.apiKey"] = "La API key solo puede incluir letras, números, punto, guion y guion bajo";
+        }
+        
+        if (!styleUrl || !styleUrl.trim()) {
+          errors["ui_map.maptiler.styleUrl"] = "Introduce la URL del estilo de MapTiler";
+        }
+      }
+      
+      // Validar custom_xyz
+      if (ui_map.provider === "custom_xyz") {
+        const tileUrl = ui_map.customXyz?.tileUrl;
+        if (!tileUrl || !tileUrl.trim()) {
+          errors["ui_map.customXyz.tileUrl"] = "Introduce la URL template de los tiles";
+        }
+      }
+    }
+  }
+  
+  // Validación legacy v1 (para compatibilidad)
   if (supports("map.provider")) {
-    if (!MAP_BACKEND_PROVIDERS.includes(config.map.provider)) {
+    const legacyProviders: string[] = ["maptiler", "osm", "xyz"];
+    if (!legacyProviders.includes(config.map.provider)) {
       errors["map.provider"] = "Selecciona un proveedor soportado";
     }
   }
@@ -279,18 +311,6 @@ const validateConfig = (config: AppConfig, supports: SchemaInspector["has"]): Fi
       } else if (!MAPTILER_KEY_PATTERN.test(key.trim())) {
         errors["map.maptiler_api_key"] = "La API key solo puede incluir letras, números, punto, guion y guion bajo";
       }
-    }
-  }
-
-  if (supports("ui.map.style")) {
-    if (!MAP_STYLE_OPTIONS.includes(config.ui.map.style)) {
-      errors["ui.map.style"] = "Selecciona un estilo compatible";
-    }
-  }
-
-  if (supports("ui.map.provider")) {
-    if (!MAP_PROVIDER_OPTIONS.includes(config.ui.map.provider)) {
-      errors["ui.map.provider"] = "Selecciona un proveedor soportado";
     }
   }
 
@@ -842,8 +862,11 @@ const ConfigPage: React.FC = () => {
     try {
       const v2Cfg = await getConfigV2();
       if (v2Cfg && v2Cfg.version === 2 && v2Cfg.ui_map) {
-        // Convertir v2 a formato interno compatible
-        cfg = v2Cfg as unknown as AppConfig;
+        // Convertir v2 a formato interno compatible (mantener ui_map como está)
+        cfg = {
+          ...(v2Cfg as unknown as AppConfig),
+          ui_map: v2Cfg.ui_map,
+        } as unknown as AppConfig;
         setConfigVersion(2);
       } else {
         cfg = await getConfig();
@@ -857,7 +880,17 @@ const ConfigPage: React.FC = () => {
       setConfigVersion(version ?? null);
     }
     
-    setForm(withConfigDefaults(cfg ?? undefined));
+    // Si es v2, mantener ui_map directamente en form
+    const mergedCfg = withConfigDefaults(cfg ?? undefined);
+    const detectedVersion = (cfg as { version?: number })?.version ?? null;
+    if (detectedVersion === 2 && cfg && (cfg as unknown as { ui_map?: MapConfigV2 }).ui_map) {
+      setForm({
+        ...mergedCfg,
+        ui_map: (cfg as unknown as { ui_map?: MapConfigV2 }).ui_map,
+      } as unknown as AppConfig);
+    } else {
+      setForm(mergedCfg);
+    }
     setShowMaptilerKey(false);
     setShowAemetKey(false);
     setAemetKeyInput("");
@@ -1254,9 +1287,26 @@ const ConfigPage: React.FC = () => {
             : { enabled: false, provider: "google" as const },
         };
         
+        // Construir ui_map desde form.ui_map si existe
+        const v2FormWithMap = form as unknown as { ui_map?: MapConfigV2 };
+        const ui_map = v2FormWithMap.ui_map || {
+          engine: "maplibre" as const,
+          provider: "local_raster_xyz" as const,
+          renderWorldCopies: true,
+          interactive: false,
+          controls: false,
+          local: { tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", minzoom: 0, maxzoom: 19 },
+          maptiler: { apiKey: null, styleUrl: null },
+          customXyz: { tileUrl: null, minzoom: 0, maxzoom: 19 },
+          viewMode: "fixed" as const,
+          fixed: { center: { lat: 39.98, lon: 0.20 }, zoom: 7.8, bearing: 0, pitch: 0 },
+          region: { postalCode: "12001" },
+        };
+        
         const v2Payload: import("../types/config_v2").AppConfigV2 = {
           ...payload,
           version: 2,
+          ui_map,
           panels,
           secrets,
         } as unknown as import("../types/config_v2").AppConfigV2;
@@ -1419,7 +1469,346 @@ const ConfigPage: React.FC = () => {
           </div>
         )}
 
-        {supports("map") && (
+        {/* Sección de Mapas v2 */}
+        {configVersion === 2 && (
+          <div className="config-card">
+            <div>
+              <h2>Mapa</h2>
+              <p>Configura el proveedor del mapa base.</p>
+            </div>
+            <div className="config-grid">
+              {/* Selector de proveedor */}
+              <div className="config-field">
+                <label htmlFor="map_provider_v2">Proveedor</label>
+                <select
+                  id="map_provider_v2"
+                  value={(form as unknown as { ui_map?: MapConfigV2 }).ui_map?.provider || "local_raster_xyz"}
+                  disabled={disableInputs}
+                  onChange={(event) => {
+                    const provider = event.target.value as MapConfigV2["provider"];
+                    setForm((prev) => {
+                      const v2Form = prev as unknown as { ui_map?: MapConfigV2 };
+                      const currentUiMap = v2Form.ui_map || {
+                        engine: "maplibre" as const,
+                        provider: "local_raster_xyz" as const,
+                        renderWorldCopies: true,
+                        interactive: false,
+                        controls: false,
+                        local: { tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", minzoom: 0, maxzoom: 19 },
+                        maptiler: { apiKey: null, styleUrl: null },
+                        customXyz: { tileUrl: null, minzoom: 0, maxzoom: 19 },
+                        viewMode: "fixed" as const,
+                        fixed: { center: { lat: 39.98, lon: 0.20 }, zoom: 7.8, bearing: 0, pitch: 0 },
+                      };
+                      
+                      return {
+                        ...prev,
+                        ui_map: {
+                          ...currentUiMap,
+                          provider,
+                          // Asegurar que los bloques existen
+                          local: currentUiMap.local || {
+                            tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                            minzoom: 0,
+                            maxzoom: 19,
+                          },
+                          maptiler: currentUiMap.maptiler || { apiKey: null, styleUrl: null },
+                          customXyz: currentUiMap.customXyz || { tileUrl: null, minzoom: 0, maxzoom: 19 },
+                        },
+                      } as unknown as AppConfig;
+                    });
+                    if (provider !== "maptiler_vector") {
+                      setShowMaptilerKey(false);
+                    }
+                    resetErrorsFor("ui_map.provider");
+                  }}
+                >
+                  {MAP_PROVIDER_V2_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {MAP_PROVIDER_V2_LABELS[option]}
+                    </option>
+                  ))}
+                </select>
+                {renderHelp("Proveedor del mapa base")}
+                {renderFieldError("ui_map.provider")}
+              </div>
+
+              {/* Campos para local_raster_xyz */}
+              {(form as unknown as { ui_map?: MapConfigV2 }).ui_map?.provider === "local_raster_xyz" && (
+                <div className="config-field">
+                  <label htmlFor="local_tile_url">URL de tiles OSM</label>
+                  <input
+                    id="local_tile_url"
+                    type="text"
+                    value={(form as unknown as { ui_map?: MapConfigV2 }).ui_map?.local?.tileUrl || "https://tile.openstreetmap.org/{z}/{x}/{y}.png"}
+                    disabled={disableInputs}
+                    readOnly
+                  />
+                  {renderHelp("URL de tiles OpenStreetMap (readonly, editable en modo avanzado)")}
+                </div>
+              )}
+
+              {/* Campos para maptiler_vector */}
+              {(form as unknown as { ui_map?: MapConfigV2 }).ui_map?.provider === "maptiler_vector" && (
+                <>
+                  <div className="config-field">
+                    <label htmlFor="maptiler_api_key_v2">API Key de MapTiler</label>
+                    <div className="config-field__inline">
+                      <input
+                        id="maptiler_api_key_v2"
+                        type={showMaptilerKey ? "text" : "password"}
+                        autoComplete="off"
+                        value={
+                          showMaptilerKey
+                            ? ((form as unknown as { ui_map?: MapConfigV2 }).ui_map?.maptiler?.apiKey || "")
+                            : ((form as unknown as { ui_map?: MapConfigV2 }).ui_map?.maptiler?.apiKey ? "••••••••" : "")
+                        }
+                        disabled={disableInputs}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setForm((prev) => {
+                            const v2Form = prev as unknown as { ui_map?: MapConfigV2 };
+                            const currentUiMap = v2Form.ui_map || {
+                              engine: "maplibre" as const,
+                              provider: "maptiler_vector" as const,
+                              renderWorldCopies: true,
+                              interactive: false,
+                              controls: false,
+                              local: { tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", minzoom: 0, maxzoom: 19 },
+                              maptiler: { apiKey: null, styleUrl: null },
+                              customXyz: { tileUrl: null, minzoom: 0, maxzoom: 19 },
+                              viewMode: "fixed" as const,
+                              fixed: { center: { lat: 39.98, lon: 0.20 }, zoom: 7.8, bearing: 0, pitch: 0 },
+                            };
+                            
+                            return {
+                              ...prev,
+                              ui_map: {
+                                ...currentUiMap,
+                                maptiler: {
+                                  ...currentUiMap.maptiler,
+                                  apiKey: value || null,
+                                },
+                              },
+                            } as unknown as AppConfig;
+                          });
+                          resetErrorsFor("ui_map.maptiler.apiKey");
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="config-button"
+                        onClick={() => {
+                          setShowMaptilerKey((prev) => !prev);
+                          if (!showMaptilerKey) {
+                            const v2Form = form as unknown as { ui_map?: MapConfigV2 };
+                            if (v2Form.ui_map?.maptiler?.apiKey && !googleCalendarKeyInput) {
+                              // No podemos cargar la key real desde el backend por seguridad
+                              // Solo mostramos el placeholder
+                            }
+                          }
+                        }}
+                        disabled={disableInputs}
+                      >
+                        {showMaptilerKey ? "Ocultar" : "Mostrar/Añadir"}
+                      </button>
+                    </div>
+                    <span className="config-field__hint" title={MAPTILER_DOCS_TEXT}>
+                      {MAPTILER_DOCS_TEXT}
+                    </span>
+                    {renderFieldError("ui_map.maptiler.apiKey")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="maptiler_style_url">URL del estilo</label>
+                    <input
+                      id="maptiler_style_url"
+                      type="text"
+                      value={(form as unknown as { ui_map?: MapConfigV2 }).ui_map?.maptiler?.styleUrl || ""}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const value = event.target.value.trim();
+                        setForm((prev) => {
+                          const v2Form = prev as unknown as { ui_map?: MapConfigV2 };
+                          const currentUiMap = v2Form.ui_map || {
+                            engine: "maplibre" as const,
+                            provider: "maptiler_vector" as const,
+                            renderWorldCopies: true,
+                            interactive: false,
+                            controls: false,
+                            local: { tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", minzoom: 0, maxzoom: 19 },
+                            maptiler: { apiKey: null, styleUrl: null },
+                            customXyz: { tileUrl: null, minzoom: 0, maxzoom: 19 },
+                            viewMode: "fixed" as const,
+                            fixed: { center: { lat: 39.98, lon: 0.20 }, zoom: 7.8, bearing: 0, pitch: 0 },
+                          };
+                          
+                          return {
+                            ...prev,
+                            ui_map: {
+                              ...currentUiMap,
+                              maptiler: {
+                                ...currentUiMap.maptiler,
+                                styleUrl: value || null,
+                              },
+                            },
+                          } as unknown as AppConfig;
+                        });
+                        resetErrorsFor("ui_map.maptiler.styleUrl");
+                      }}
+                      placeholder="https://api.maptiler.com/maps/dark/style.json"
+                    />
+                    {renderHelp("URL del estilo de MapTiler (ej: dark, streets, bright)")}
+                    {renderFieldError("ui_map.maptiler.styleUrl")}
+                  </div>
+                </>
+              )}
+
+              {/* Campos para custom_xyz */}
+              {(form as unknown as { ui_map?: MapConfigV2 }).ui_map?.provider === "custom_xyz" && (
+                <>
+                  <div className="config-field">
+                    <label htmlFor="custom_xyz_tile_url">URL Template</label>
+                    <input
+                      id="custom_xyz_tile_url"
+                      type="text"
+                      value={(form as unknown as { ui_map?: MapConfigV2 }).ui_map?.customXyz?.tileUrl || ""}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const value = event.target.value.trim();
+                        setForm((prev) => {
+                          const v2Form = prev as unknown as { ui_map?: MapConfigV2 };
+                          const currentUiMap = v2Form.ui_map || {
+                            engine: "maplibre" as const,
+                            provider: "custom_xyz" as const,
+                            renderWorldCopies: true,
+                            interactive: false,
+                            controls: false,
+                            local: { tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", minzoom: 0, maxzoom: 19 },
+                            maptiler: { apiKey: null, styleUrl: null },
+                            customXyz: { tileUrl: null, minzoom: 0, maxzoom: 19 },
+                            viewMode: "fixed" as const,
+                            fixed: { center: { lat: 39.98, lon: 0.20 }, zoom: 7.8, bearing: 0, pitch: 0 },
+                          };
+                          
+                          return {
+                            ...prev,
+                            ui_map: {
+                              ...currentUiMap,
+                              customXyz: {
+                                ...currentUiMap.customXyz,
+                                tileUrl: value || null,
+                              },
+                            },
+                          } as unknown as AppConfig;
+                        });
+                        resetErrorsFor("ui_map.customXyz.tileUrl");
+                      }}
+                      placeholder="https://example.com/tiles/{z}/{x}/{y}.png"
+                    />
+                    {renderHelp("Plantilla de URL para los tiles (usa {z}, {x}, {y})")}
+                    {renderFieldError("ui_map.customXyz.tileUrl")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="custom_xyz_minzoom">Zoom mínimo</label>
+                    <input
+                      id="custom_xyz_minzoom"
+                      type="number"
+                      min="0"
+                      max="24"
+                      value={(form as unknown as { ui_map?: MapConfigV2 }).ui_map?.customXyz?.minzoom ?? 0}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isNaN(value)) {
+                          setForm((prev) => {
+                            const v2Form = prev as unknown as { ui_map?: MapConfigV2 };
+                            const currentUiMap = v2Form.ui_map || {
+                              engine: "maplibre" as const,
+                              provider: "custom_xyz" as const,
+                              renderWorldCopies: true,
+                              interactive: false,
+                              controls: false,
+                              local: { tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", minzoom: 0, maxzoom: 19 },
+                              maptiler: { apiKey: null, styleUrl: null },
+                              customXyz: { tileUrl: null, minzoom: 0, maxzoom: 19 },
+                              viewMode: "fixed" as const,
+                              fixed: { center: { lat: 39.98, lon: 0.20 }, zoom: 7.8, bearing: 0, pitch: 0 },
+                            };
+                            
+                            return {
+                              ...prev,
+                              ui_map: {
+                                ...currentUiMap,
+                                customXyz: {
+                                  ...currentUiMap.customXyz,
+                                  minzoom: value,
+                                },
+                              },
+                            } as unknown as AppConfig;
+                          });
+                          resetErrorsFor("ui_map.customXyz.minzoom");
+                        }
+                      }}
+                    />
+                    {renderHelp("Nivel de zoom mínimo (0-24)")}
+                    {renderFieldError("ui_map.customXyz.minzoom")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="custom_xyz_maxzoom">Zoom máximo</label>
+                    <input
+                      id="custom_xyz_maxzoom"
+                      type="number"
+                      min="0"
+                      max="24"
+                      value={(form as unknown as { ui_map?: MapConfigV2 }).ui_map?.customXyz?.maxzoom ?? 19}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isNaN(value)) {
+                          setForm((prev) => {
+                            const v2Form = prev as unknown as { ui_map?: MapConfigV2 };
+                            const currentUiMap = v2Form.ui_map || {
+                              engine: "maplibre" as const,
+                              provider: "custom_xyz" as const,
+                              renderWorldCopies: true,
+                              interactive: false,
+                              controls: false,
+                              local: { tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", minzoom: 0, maxzoom: 19 },
+                              maptiler: { apiKey: null, styleUrl: null },
+                              customXyz: { tileUrl: null, minzoom: 0, maxzoom: 19 },
+                              viewMode: "fixed" as const,
+                              fixed: { center: { lat: 39.98, lon: 0.20 }, zoom: 7.8, bearing: 0, pitch: 0 },
+                            };
+                            
+                            return {
+                              ...prev,
+                              ui_map: {
+                                ...currentUiMap,
+                                customXyz: {
+                                  ...currentUiMap.customXyz,
+                                  maxzoom: value,
+                                },
+                              },
+                            } as unknown as AppConfig;
+                          });
+                          resetErrorsFor("ui_map.customXyz.maxzoom");
+                        }
+                      }}
+                    />
+                    {renderHelp("Nivel de zoom máximo (0-24)")}
+                    {renderFieldError("ui_map.customXyz.maxzoom")}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Sección de Mapas legacy v1 (solo si no es v2) */}
+        {configVersion !== 2 && supports("map") && (
           <div className="config-card">
             <div>
               <h2>Mapas</h2>
@@ -1453,15 +1842,6 @@ const ConfigPage: React.FC = () => {
                                 ...prev.ui.map.maptiler,
                                 key: provider === "maptiler" ? (nextKey ?? prev.ui.map.maptiler.key ?? null) : null,
                               },
-                              // Inicializar xyz con defaults si no existe
-                              xyz: provider === "xyz" ? (prev.ui.map.xyz ?? {
-                                urlTemplate: "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-                                attribution: "© Esri, Maxar, GeoEye, Earthstar Geographics, CNES/Airbus, USDA, USGS, AeroGRID, IGN, and the GIS User Community",
-                                minzoom: 0,
-                                maxzoom: 19,
-                                tileSize: 256,
-                                labelsOverlay: false,
-                              }) : prev.ui.map.xyz,
                             },
                           },
                         };
@@ -1535,7 +1915,7 @@ const ConfigPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Configuración XYZ */}
+              {/* Configuración XYZ legacy */}
               {supports("ui.map.xyz") && form.ui.map.provider === "xyz" && (
                 <>
                   {supports("ui.map.xyz.urlTemplate") && (
