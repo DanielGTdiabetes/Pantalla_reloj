@@ -60,6 +60,44 @@ export type XyzConfig = {
   labelsOverlay?: boolean;
 };
 
+export type MapViewMode = "fixed" | "aoiCycle";
+
+export type MapCenter = {
+  lat: number;
+  lon: number;
+};
+
+export type MapViewState = {
+  center: MapCenter;
+  zoom: number;
+  bearing: number;
+  pitch: number;
+};
+
+export type MapRegion = {
+  postalCode?: string;
+};
+
+export type MapFixedView = {
+  center: MapCenter;
+  zoom: number;
+  bearing: number;
+  pitch: number;
+};
+
+export type MapAoiCycleStop = {
+  center: MapCenter;
+  zoom: number;
+  bearing: number;
+  pitch: number;
+  duration_sec?: number;
+};
+
+export type MapAoiCycle = {
+  intervalSec: number;
+  stops: MapAoiCycleStop[];
+};
+
 export type MapConfig = {
   engine: "maplibre";
   style:
@@ -76,6 +114,10 @@ export type MapConfig = {
   provider: "maptiler" | "osm" | "openstreetmap" | "xyz";
   maptiler: MaptilerConfig;
   xyz?: XyzConfig;
+  viewMode?: MapViewMode;
+  fixed?: MapFixedView;
+  aoiCycle?: MapAoiCycle;
+  region?: MapRegion;
   renderWorldCopies: boolean;
   interactive: boolean;
   controls: boolean;

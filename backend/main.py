@@ -1662,6 +1662,66 @@ def get_astronomical_events_endpoint(
         }
 
 
+@app.get("/api/calendar/events")
+def get_calendar_events(days: int = 7) -> Dict[str, Any]:
+    """Obtiene eventos próximos del calendario (Google Calendar)."""
+    config = config_manager.read()
+    calendar_config = config.calendar
+    
+    if not calendar_config.enabled:
+        return {
+            "ok": False,
+            "reason": "calendar_disabled",
+            "events": [],
+        }
+    
+    if not calendar_config.google_api_key or not calendar_config.google_calendar_id:
+        return {
+            "ok": False,
+            "reason": "missing_credentials",
+            "events": [],
+        }
+    
+    try:
+        events = fetch_google_calendar_events(
+            api_key=calendar_config.google_api_key,
+            calendar_id=calendar_config.google_calendar_id,
+            days_ahead=days,
+            max_results=20,
+        )
+        return {
+            "ok": True,
+            "events": events,
+        }
+    except Exception as exc:
+        logger.warning("Failed to fetch Google Calendar events: %s", exc)
+        return {
+            "ok": False,
+            "reason": "api_error",
+            "message": str(exc),
+            "events": [],
+        }
+
+
+@app.get("/api/calendar/status")
+def get_calendar_status() -> Dict[str, Any]:
+    """Obtiene el estado de credenciales de Google Calendar."""
+    config = config_manager.read()
+    calendar_config = config.calendar
+    
+    has_api_key = bool(calendar_config.google_api_key)
+    has_calendar_id = bool(calendar_config.google_calendar_id)
+    enabled = calendar_config.enabled
+    
+    return {
+        "ok": True,
+        "enabled": enabled,
+        "has_api_key": has_api_key,
+        "has_calendar_id": has_calendar_id,
+        "configured": has_api_key and has_calendar_id,
+    }
+
+
 @app.get("/api/calendar")
 def get_calendar() -> Dict[str, Any]:
     """Obtiene datos del calendario (eventos, hortalizas, santoral)."""
@@ -2086,6 +2146,128 @@ def wifi_status() -> Dict[str, Any]:
         "ssid": ssid,
         "ip_address": ip_address,
         "signal": signal,
+    }
+
+
+# Caché para geocodificación de códigos postales españoles
+_SPANISH_POSTAL_CACHE: Dict[str, Tuple[float, float]] = {}
+_POSTAL_CACHE_LOCK = Lock()
+
+# Centroides por provincia (primer dígito) y zonas de código postal (3 primeros dígitos)
+# Fallback offline para España
+_SPANISH_POSTAL_FALLBACK: Dict[str, Tuple[float, float]] = {
+    # Provincias (por primer dígito)
+    "0": (39.4699, -0.3763),  # Alicante aproximado
+    "1": (42.8467, -2.6716),  # Álava
+    "2": (38.9537, -2.1322),  # Albacete
+    "3": (38.3450, -0.4810),  # Alicante
+    "4": (36.8381, -2.4597),  # Almería
+    "5": (40.6448, -4.7473),  # Ávila
+    "6": (38.8794, -6.9707),  # Badajoz
+    "7": (39.5692, 2.6502),   # Baleares
+    "8": (40.4168, -3.7038),  # Madrid
+    "9": (42.3439, -3.6969),  # Burgos
+    
+    # Zonas específicas comunes (3 primeros dígitos)
+    "120": (39.98, -0.20),   # Castellón
+    "460": (39.47, -0.38),   # Valencia
+    "280": (40.42, -3.70),   # Madrid
+    "080": (41.39, 2.17),    # Barcelona
+    "410": (37.38, -5.98),   # Sevilla
+    "290": (36.72, -4.42),   # Málaga
+    "150": (43.36, -8.41),   # A Coruña
+    "330": (43.36, -5.84),   # Oviedo
+}
+
+def _geocode_postal_es(code: str) -> Optional[Tuple[float, float]]:
+    """Geocodifica un código postal español usando Nominatim o fallback."""
+    if not code or len(code) != 5 or not code.isdigit():
+        return None
+    
+    # Verificar caché
+    with _POSTAL_CACHE_LOCK:
+        if code in _SPANISH_POSTAL_CACHE:
+            return _SPANISH_POSTAL_CACHE[code]
+    
+    # Intentar con Nominatim
+    try:
+        url = "https://nominatim.openstreetmap.org/search"
+        params = {
+            "postalcode": code,
+            "countrycodes": "es",
+            "format": "json",
+            "limit": 1,
+            "addressdetails": 1,
+        }
+        headers = {
+            "User-Agent": "Pantalla_reloj/1.0 (kiosk display; contact: admin@localhost)",
+        }
+        
+        # Rate limit: 1 request per second
+        time.sleep(1.1)
+        
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        data = response.json()
+        if data and len(data) > 0:
+            result = data[0]
+            lat = float(result.get("lat", 0))
+            lon = float(result.get("lon", 0))
+            
+            # Validar coordenadas
+            if -90 <= lat <= 90 and -180 <= lon <= 180:
+                coords = (lat, lon)
+                with _POSTAL_CACHE_LOCK:
+                    _SPANISH_POSTAL_CACHE[code] = coords
+                return coords
+    except Exception as exc:
+        logger.debug("Nominatim geocoding failed for postal code %s: %s", code, exc)
+    
+    # Fallback: usar zona o provincia
+    zone = code[:3]
+    province = code[0]
+    
+    with _POSTAL_CACHE_LOCK:
+        if zone in _SPANISH_POSTAL_FALLBACK:
+            coords = _SPANISH_POSTAL_FALLBACK[zone]
+            _SPANISH_POSTAL_CACHE[code] = coords
+            return coords
+        if province in _SPANISH_POSTAL_FALLBACK:
+            coords = _SPANISH_POSTAL_FALLBACK[province]
+            _SPANISH_POSTAL_CACHE[code] = coords
+            return coords
+    
+    # Fallback final: centro de España
+    coords = (40.4168, -3.7038)
+    with _POSTAL_CACHE_LOCK:
+        _SPANISH_POSTAL_CACHE[code] = coords
+    return coords
+
+
+@app.get("/api/geocode/es/postal")
+def geocode_postal_es(code: str) -> Dict[str, Any]:
+    """Geocodifica un código postal español a coordenadas (lat, lon)."""
+    if not code or len(code) != 5 or not code.isdigit():
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid postal code. Must be 5 digits."
+        )
+    
+    coords = _geocode_postal_es(code)
+    if not coords:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Could not geocode postal code {code}"
+        )
+    
+    lat, lon = coords
+    return {
+        "ok": True,
+        "postal_code": code,
+        "lat": lat,
+        "lon": lon,
+        "source": "nominatim" if code not in _SPANISH_POSTAL_FALLBACK else "fallback",
     }
 
 

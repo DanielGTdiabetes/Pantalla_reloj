@@ -240,6 +240,16 @@ export const createDefaultMapSettings = (): MapConfig => ({
   provider: "xyz",
   maptiler: { ...DEFAULT_MAPTILER },
   xyz: { ...DEFAULT_XYZ },
+  viewMode: "fixed",
+  fixed: {
+    center: { lat: 39.98, lon: 0.20 }, // Castellón por defecto
+    zoom: 7.8,
+    bearing: 0,
+    pitch: 0,
+  },
+  region: {
+    postalCode: "12001", // Castellón por defecto
+  },
   renderWorldCopies: true,
   interactive: false,
   controls: false,
