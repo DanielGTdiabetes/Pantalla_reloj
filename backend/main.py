@@ -57,6 +57,7 @@ from .services.opensky_client import OpenSkyClientError
 from .services.opensky_service import OpenSkyService
 from .services.ships_service import AISStreamService
 from .services.aemet_service import fetch_aemet_warnings, AEMETServiceError
+from .config_migrator import migrate_config_to_v2, migrate_v1_to_v2, apply_postal_geocoding
 from .rate_limiter import check_rate_limit
 
 APP_START = datetime.now(timezone.utc)
@@ -1436,6 +1437,92 @@ def get_aemet_sat_tile(z: int, x: int, y: int) -> Response:
         status_code=501,
         detail="AEMET OpenData no proporciona tiles de satélite. Use GIBS para datos de satélite."
     )
+
+
+@app.post("/api/config/migrate")
+def migrate_config_endpoint(to: int = 2, backup: bool = True) -> Dict[str, Any]:
+    """
+    Migra configuración v1 a v2 (idempotente).
+    
+    Args:
+        to: Versión objetivo (por defecto 2)
+        backup: Si True, crea backup antes de migrar
+        
+    Returns:
+        Configuración migrada y estado de éxito
+    """
+    if to != 2:
+        raise HTTPException(status_code=400, detail=f"Migración a versión {to} no soportada")
+    
+    try:
+        # Leer configuración actual
+        current_config = config_manager.read()
+        current_data = current_config.model_dump(mode="json", exclude_none=True)
+        
+        # Verificar si ya es v2
+        if current_data.get("version") == 2:
+            logger.info("Configuración ya es v2, no se requiere migración")
+            return {
+                "ok": True,
+                "version": 2,
+                "migrated": False,
+                "message": "Configuración ya es v2"
+            }
+        
+        # Migrar v1→v2
+        config_v2, needs_geocoding = migrate_v1_to_v2(current_data)
+        
+        # Geocodificar código postal si es necesario
+        if needs_geocoding:
+            postal_code = config_v2.get("ui", {}).get("map", {}).get("region", {}).get("postalCode")
+            if postal_code:
+                try:
+                    result = geocode_postal_es(postal_code)
+                    if result and result.get("ok"):
+                        lat = result.get("lat")
+                        lon = result.get("lon")
+                        if lat is not None and lon is not None:
+                            if "ui" in config_v2 and "map" in config_v2["ui"]:
+                                if "fixed" in config_v2["ui"]["map"]:
+                                    config_v2["ui"]["map"]["fixed"]["center"] = {
+                                        "lat": lat,
+                                        "lon": lon
+                                    }
+                                else:
+                                    config_v2["ui"]["map"]["fixed"] = {
+                                        "center": {"lat": lat, "lon": lon},
+                                        "zoom": 7.8,
+                                        "bearing": 0,
+                                        "pitch": 0
+                                    }
+                        logger.info("Geocodificación aplicada para CP %s: %s, %s", postal_code, lat, lon)
+                except Exception as e:
+                    logger.warning("Error geocodificando CP %s: %s", postal_code, e)
+        
+        # Crear backup si es necesario
+        if backup:
+            backup_path = config_manager.config_file.with_suffix(".json.v1backup")
+            backup_path.write_text(json.dumps(current_data, indent=2), encoding="utf-8")
+            logger.info("Backup creado en %s", backup_path)
+        
+        # Guardar configuración migrada
+        config_manager.config_file.write_text(
+            json.dumps(config_v2, indent=2),
+            encoding="utf-8"
+        )
+        
+        logger.info("Configuración migrada exitosamente a v2")
+        return {
+            "ok": True,
+            "version": 2,
+            "migrated": True,
+            "message": "Configuración migrada exitosamente a v2",
+            "config": config_v2
+        }
+        
+    except Exception as e:
+        logger.error("Error migrando configuración: %s", e)
+        raise HTTPException(status_code=500, detail=f"Error migrando configuración: {e}")
 
 
 @app.get("/api/opensky/status")
