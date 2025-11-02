@@ -2429,7 +2429,7 @@ export default function GeoScopeMap() {
           style: runtime.style.style,
           center: viewState ? [viewState.lng, viewState.lat] : [0, 0],
           zoom: viewState?.zoom ?? 2.6,
-          minZoom: viewMode === "fixed" ? (mapSettings?.fixed?.zoom ?? 2.6) - 2 : firstBand.minZoom,
+          minZoom: viewMode === "fixed" ? (mapSettings?.fixed?.zoom ?? 7.8) - 2 : 0,
           pitch: viewState?.pitch ?? 0,
           bearing: viewState?.bearing ?? 0,
           interactive: false,

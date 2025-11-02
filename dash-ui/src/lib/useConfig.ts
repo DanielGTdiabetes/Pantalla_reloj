@@ -95,7 +95,7 @@ export function useConfig() {
       }
       
       const newData = isV2 
-        ? (withConfigDefaultsV2(cfg as AppConfigV2) as unknown as AppConfig)
+        ? (withConfigDefaultsV2(cfg as unknown as AppConfigV2) as unknown as AppConfig)
         : withConfigDefaults((cfg ?? {}) as AppConfig);
       
       setData((prev) => {

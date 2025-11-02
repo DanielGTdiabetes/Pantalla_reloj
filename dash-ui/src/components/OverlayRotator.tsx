@@ -137,23 +137,39 @@ export const OverlayRotator: React.FC = () => {
         const [weather, news, astronomy, calendar] = await Promise.all([
           // Weekly forecast: usar /api/weather/weekly con lat/lon desde config
           (async () => {
-            const lat = config.panels?.weather?.latitude ?? 39.98;
-            const lon = config.panels?.weather?.longitude ?? 0.20;
-            return apiGet<Record<string, unknown>>(`/api/weather/weekly?lat=${lat}&lon=${lon}`).catch(() => ({}));
+            try {
+              // Soporte para v2 (panels) y v1 legacy
+              const v2Config = config as unknown as { panels?: { weather?: { latitude?: number; longitude?: number } } };
+              const lat = v2Config.panels?.weather?.latitude ?? 39.98;
+              const lon = v2Config.panels?.weather?.longitude ?? 0.20;
+              return await apiGet<Record<string, unknown>>(`/api/weather/weekly?lat=${lat}&lon=${lon}`);
+            } catch {
+              return {};
+            }
           })(),
           // RSS news: usar POST /api/news/rss con feeds desde config
           (async () => {
-            const feeds = config.panels?.news?.feeds ?? [];
-            if (feeds.length === 0) return {};
-            return apiPost<Record<string, unknown>>("/api/news/rss", { feeds }).catch(() => ({}));
+            try {
+              // Soporte para v2 (panels) y v1 legacy
+              const v2Config = config as unknown as { panels?: { news?: { feeds?: string[] } } };
+              const feeds = v2Config.panels?.news?.feeds ?? [];
+              if (feeds.length === 0) return {};
+              return await apiPost<Record<string, unknown>>("/api/news/rss", { feeds });
+            } catch {
+              return {};
+            }
           })(),
           apiGet<Record<string, unknown>>("/api/astronomy").catch(() => ({})),
           // Calendar events: usar GET /api/calendar/events
           (async () => {
-            const fromDate = dayjs().toISOString();
-            const toDate = dayjs().add(7, 'days').toISOString();
-            const events = await apiGet<Array<Record<string, unknown>>>(`/api/calendar/events?from_date=${fromDate}&to_date=${toDate}`).catch(() => []);
-            return { events };
+            try {
+              const fromDate = new Date().toISOString();
+              const toDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+              const events = await apiGet<Array<Record<string, unknown>>>(`/api/calendar/events?from_date=${fromDate}&to_date=${toDate}`);
+              return { events };
+            } catch {
+              return { events: [] };
+            }
           })()
         ]);
 
@@ -175,7 +191,7 @@ export const OverlayRotator: React.FC = () => {
       mounted = false;
       window.clearInterval(interval);
     };
-  }, [config.panels?.weather?.latitude, config.panels?.weather?.longitude, config.panels?.news?.feeds]);
+  }, [config]);
 
   const weather = (payload.weather ?? {}) as Record<string, unknown>;
   const astronomy = (payload.astronomy ?? {}) as Record<string, unknown>;

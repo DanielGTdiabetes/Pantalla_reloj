@@ -61,7 +61,7 @@ const coerceNumber = (value: unknown, fallback: number): number => {
 
 const normalizeCircleOptions = (options?: FlightsLayerCircleConfig, viewportHeight?: number): CircleOptions => {
   // Soporte para v2 (radius_base, radius_zoom_scale) y v1 legacy (radius_vh)
-  const source = options ?? {};
+  const source = (options ?? {}) as Partial<FlightsLayerCircleConfig>;
   
   // Intentar leer parámetros v2 primero
   const hasV2Params = 'radius_base' in source || 'radius_zoom_scale' in source;

@@ -87,7 +87,7 @@ const createRasterStyle = (
       paint: {
         "raster-opacity": 0.3, // Transparente para solo mostrar labels
       },
-    });
+    } as { id: string; type: "raster"; source: string; minzoom?: number; maxzoom?: number; paint?: { "raster-opacity"?: number } });
   }
 
   return {
@@ -152,7 +152,8 @@ export const loadMapStyle = async (
   if (intendedProvider === "xyz" || !intendedProvider) {
     const xyzConfig = mapSettings.xyz;
     // También verificar labelsOverlay en el nivel superior para v2
-    const labelsOverlayEnabled = mapSettings.labelsOverlay?.enabled ?? xyzConfig?.labelsOverlay ?? false;
+    const labelsOverlayConfig = (mapSettings as any).labelsOverlay;
+    const labelsOverlayEnabled = labelsOverlayConfig?.enabled ?? xyzConfig?.labelsOverlay ?? false;
     
     if (xyzConfig?.urlTemplate) {
       resolvedStyle = {
