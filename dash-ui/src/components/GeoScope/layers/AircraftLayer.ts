@@ -147,11 +147,13 @@ export default class AircraftLayer implements Layer {
   /**
    * Asegura que la capa de vuelos esté inicializada después de cambios de estilo.
    * Debe ser llamado en eventos 'styledata' y 'load'.
+   * Completamente idempotente: puede ser llamado múltiples veces sin efectos secundarios.
    */
   async ensureFlightsLayer(): Promise<void> {
     if (!this.map || !this.enabled) {
       return;
     }
+
     // Intentar registrar el icono custom si es necesario
     if (this.renderMode === "symbol_custom" || (this.renderMode === "auto" && !this.spriteAvailable)) {
       const registered = await registerPlaneIcon(this.map);
@@ -159,10 +161,18 @@ export default class AircraftLayer implements Layer {
         this.planeIconRegistered = true;
       }
     }
-    // Asegurar que el source existe
+
+    // Asegurar que el source existe (idempotente)
     this.ensureSource();
-    // Actualizar estado de renderizado (ahora con modo async)
-    await this.updateRenderStateAsync(false);
+
+    // Asegurar que las capas existen (idempotente)
+    await this.ensureLayersAsync();
+
+    // Asegurar que las capas están en el orden correcto
+    this.ensureLayerOrder();
+
+    // Asegurar visibilidad según render_mode
+    this.applyVisibilityByMode();
   }
 
   remove(map: maplibregl.Map): void {
@@ -421,34 +431,42 @@ export default class AircraftLayer implements Layer {
     return "circle";
   }
 
+  /**
+   * Asegura que el source existe. Completamente idempotente.
+   */
   private ensureSource(): void {
     if (!this.map) {
       return;
     }
     const map = this.map;
-    const existing = map.getSource(this.sourceId);
-    const expectedCluster = this.shouldUseClusters();
-    if (existing) {
-      const anySource = existing as maplibregl.GeoJSONSource & { cluster?: boolean };
-      const isCluster = Boolean(anySource.cluster);
-      if (isCluster !== expectedCluster) {
-        this.removeLayers(map);
-        map.removeSource(this.sourceId);
+    
+    // Si el source ya existe, solo actualizar datos si es necesario
+    if (map.getSource(this.sourceId)) {
+      const source = map.getSource(this.sourceId);
+      if (isGeoJSONSource(source)) {
+        // Actualizar datos si hay nuevos
+        source.setData(this.lastData);
       }
+      return;
     }
 
-    if (!map.getSource(this.sourceId)) {
-      const sourceInit: maplibregl.GeoJSONSourceSpecification = {
-        type: "geojson",
-        data: this.lastData,
-      };
-      if (expectedCluster) {
-        sourceInit.cluster = true;
-        sourceInit.clusterRadius = 40;
-        sourceInit.clusterMaxZoom = 10;
-      }
+    // El source no existe, crearlo
+    const expectedCluster = this.shouldUseClusters();
+    const sourceInit: maplibregl.GeoJSONSourceSpecification = {
+      type: "geojson",
+      data: this.lastData,
+      generateId: true,
+    };
+    if (expectedCluster) {
+      sourceInit.cluster = true;
+      sourceInit.clusterRadius = 40;
+      sourceInit.clusterMaxZoom = 10;
+    }
+
+    try {
       map.addSource(this.sourceId, sourceInit);
-    } else {
+    } catch (error) {
+      // Si falla (p. ej. source ya existe), solo actualizar datos
       const source = map.getSource(this.sourceId);
       if (isGeoJSONSource(source)) {
         source.setData(this.lastData);
@@ -456,16 +474,20 @@ export default class AircraftLayer implements Layer {
     }
   }
 
+  /**
+   * Encuentra el ID de la primera capa de símbolos de etiquetas para colocar nuestras capas antes de ella.
+   * Retorna undefined si no se encuentra.
+   */
   private findBeforeId(map: maplibregl.Map): string | undefined {
     const style = map.getStyle();
     if (!style || !style.layers || !Array.isArray(style.layers)) {
       return undefined;
     }
     
-    // Buscar el primer layer de tipo "symbol" que contenga "label", "place-", "country-", o "text"
+    // Buscar el primer layer de tipo "symbol" que contenga "label", "place-", "country-", "text", o "name"
     for (const layer of style.layers) {
       if (layer.type === "symbol") {
-        const layerId = layer.id?.toLowerCase() || "";
+        const layerId = (layer.id || "").toLowerCase();
         if (
           layerId.includes("label") ||
           layerId.includes("place-") ||
@@ -478,17 +500,232 @@ export default class AircraftLayer implements Layer {
       }
     }
     
-    // Si no se encuentra, devolver undefined para añadir al final
     return undefined;
   }
 
+  /**
+   * Asegura que las capas están en el orden correcto.
+   * Si beforeId no existe o no se encontró, mueve las capas al tope.
+   */
+  private ensureLayerOrder(): void {
+    if (!this.map) {
+      return;
+    }
+    const map = this.map;
+    const beforeId = this.findBeforeId(map);
+
+    // Si se encontró beforeId, las capas ya deberían estar antes (se añadieron con beforeId)
+    // Si no se encontró, mover las capas al tope
+    if (!beforeId) {
+      try {
+        if (map.getLayer(this.id)) {
+          // Mover al tope (sin beforeId)
+          const layers = map.getStyle().layers || [];
+          if (layers.length > 0) {
+            // Intentar mover después de la última capa
+            const lastLayer = layers[layers.length - 1];
+            if (lastLayer && lastLayer.id !== this.id) {
+              map.moveLayer(this.id, lastLayer.id);
+            }
+          }
+        }
+        if (map.getLayer(this.clusterLayerId)) {
+          const layers = map.getStyle().layers || [];
+          if (layers.length > 0) {
+            const lastLayer = layers[layers.length - 1];
+            if (lastLayer && lastLayer.id !== this.clusterLayerId) {
+              map.moveLayer(this.clusterLayerId, lastLayer.id);
+            }
+          }
+        }
+        if (map.getLayer(this.clusterCountLayerId)) {
+          const layers = map.getStyle().layers || [];
+          if (layers.length > 0) {
+            const lastLayer = layers[layers.length - 1];
+            if (lastLayer && lastLayer.id !== this.clusterCountLayerId) {
+              map.moveLayer(this.clusterCountLayerId, lastLayer.id);
+            }
+          }
+        }
+      } catch (error) {
+        // Si falla el movimiento, no es crítico
+        console.warn("[AircraftLayer] Error al mover capas al tope:", error);
+      }
+    }
+  }
+
+  /**
+   * Asegura que las capas existen. Completamente idempotente.
+   */
+  private async ensureLayersAsync(): Promise<void> {
+    if (!this.map) {
+      return;
+    }
+    const map = this.map;
+
+    // Determinar el modo de renderizado actual
+    const nextMode = await this.determineRenderModeAsync(false);
+    const modeChanged = nextMode !== this.currentRenderMode;
+    this.currentRenderMode = nextMode;
+
+    const beforeId = this.findBeforeId(map);
+
+    // Asegurar capas de cluster si es necesario
+    if (this.shouldUseClusters()) {
+      if (!map.getLayer(this.clusterLayerId)) {
+        try {
+          map.addLayer({
+            id: this.clusterLayerId,
+            type: "circle",
+            source: this.sourceId,
+            filter: ["has", "point_count"],
+            paint: {
+              "circle-color": "#f97316",
+              "circle-radius": 20,
+            },
+          }, beforeId);
+        } catch (error) {
+          // Si falla (p. ej. layer ya existe), continuar
+          console.warn("[AircraftLayer] Error al añadir cluster layer:", error);
+        }
+      }
+
+      if (!map.getLayer(this.clusterCountLayerId)) {
+        try {
+          map.addLayer({
+            id: this.clusterCountLayerId,
+            type: "symbol",
+            source: this.sourceId,
+            filter: ["has", "point_count"],
+            layout: {
+              "text-field": "{point_count_abbreviated}",
+              "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+              "text-size": 12,
+            },
+            paint: {
+              "text-color": "#ffffff",
+            },
+          }, beforeId);
+        } catch (error) {
+          console.warn("[AircraftLayer] Error al añadir cluster count layer:", error);
+        }
+      }
+    } else {
+      // Eliminar capas de cluster si no se necesitan
+      if (map.getLayer(this.clusterLayerId)) {
+        try {
+          map.removeLayer(this.clusterLayerId);
+        } catch {}
+      }
+      if (map.getLayer(this.clusterCountLayerId)) {
+        try {
+          map.removeLayer(this.clusterCountLayerId);
+        } catch {}
+      }
+    }
+
+    // Asegurar capa principal (circle o symbol)
+    if (this.currentRenderMode === "symbol" || this.currentRenderMode === "symbol_custom") {
+      // Capa symbol
+      if (!map.getLayer(this.id)) {
+        const iconImage = this.currentRenderMode === "symbol_custom" ? "plane" : this.iconImage;
+        const allowOverlap = this.currentRenderMode === "symbol_custom"
+          ? (this.symbolOptions?.allow_overlap ?? true)
+          : true;
+        const sizeExpression = this.currentRenderMode === "symbol_custom"
+          ? this.getCustomSymbolSizeExpression()
+          : this.getIconSizeExpression();
+
+        try {
+          map.addLayer({
+            id: this.id,
+            type: "symbol",
+            source: this.sourceId,
+            filter: ["!", ["has", "point_count"]],
+            layout: {
+              "icon-image": iconImage,
+              "icon-size": sizeExpression,
+              "icon-allow-overlap": allowOverlap,
+              "icon-rotate": ["coalesce", ["get", "track"], 0],
+              "icon-rotation-alignment": "map",
+              visibility: this.enabled ? "visible" : "none",
+            },
+            paint: {
+              "icon-color": "#f97316",
+              "icon-halo-color": "#111827",
+              "icon-halo-width": 0.25,
+              "icon-opacity": this.opacity,
+            },
+          }, beforeId);
+        } catch (error) {
+          console.warn("[AircraftLayer] Error al añadir symbol layer:", error);
+        }
+      } else if (modeChanged) {
+        // Si cambió el modo, actualizar propiedades de la capa existente
+        try {
+          const iconImage = this.currentRenderMode === "symbol_custom" ? "plane" : this.iconImage;
+          map.setLayoutProperty(this.id, "icon-image", iconImage);
+          if (this.currentRenderMode === "symbol_custom") {
+            map.setLayoutProperty(this.id, "icon-size", this.getCustomSymbolSizeExpression());
+            map.setLayoutProperty(this.id, "icon-allow-overlap", this.symbolOptions?.allow_overlap ?? true);
+          } else {
+            map.setLayoutProperty(this.id, "icon-size", this.getIconSizeExpression());
+            map.setLayoutProperty(this.id, "icon-allow-overlap", true);
+          }
+        } catch (error) {
+          console.warn("[AircraftLayer] Error al actualizar symbol layer:", error);
+        }
+      }
+    } else {
+      // Capa circle
+      if (!map.getLayer(this.id)) {
+        try {
+          map.addLayer({
+            id: this.id,
+            type: "circle",
+            source: this.sourceId,
+            filter: ["!", ["has", "point_count"]],
+            layout: {
+              visibility: this.enabled ? "visible" : "none",
+            },
+            paint: {
+              "circle-radius": this.getCircleRadiusExpression(),
+              "circle-color": this.circleOptions.color,
+              "circle-stroke-color": this.circleOptions.strokeColor,
+              "circle-stroke-width": this.circleOptions.strokeWidth,
+            },
+          }, beforeId);
+        } catch (error) {
+          console.warn("[AircraftLayer] Error al añadir circle layer:", error);
+        }
+      } else if (modeChanged) {
+        // Si cambió el modo, actualizar propiedades de la capa existente
+        try {
+          map.setPaintProperty(this.id, "circle-radius", this.getCircleRadiusExpression());
+          map.setPaintProperty(this.id, "circle-color", this.circleOptions.color);
+          map.setPaintProperty(this.id, "circle-stroke-color", this.circleOptions.strokeColor);
+          map.setPaintProperty(this.id, "circle-stroke-width", this.circleOptions.strokeWidth);
+        } catch (error) {
+          console.warn("[AircraftLayer] Error al actualizar circle layer:", error);
+        }
+      }
+    }
+
+    // Aplicar propiedades comunes
+    this.applyCirclePaintProperties();
+    this.applyOpacity();
+    this.applyStyleScale();
+  }
+
+  /**
+   * Versión síncrona de ensureLayers (para compatibilidad).
+   * @deprecated Usar ensureLayersAsync en su lugar.
+   */
   private ensureLayers(): void {
     if (!this.map) {
       return;
     }
     const map = this.map;
-    this.removeLayers(map);
-
     const beforeId = this.findBeforeId(map);
 
     if (this.shouldUseClusters()) {
@@ -700,18 +937,36 @@ export default class AircraftLayer implements Layer {
     }
   }
 
+  /**
+   * Aplica visibilidad según el render_mode.
+   * Asegura que siempre haya una capa visible (nunca ambas ocultas).
+   */
+  private applyVisibilityByMode(): void {
+    if (!this.map) {
+      return;
+    }
+    const map = this.map;
+    const baseVisibility = this.enabled ? "visible" : "none";
+
+    // Asegurar que la capa principal esté visible según el modo
+    if (map.getLayer(this.id)) {
+      map.setLayoutProperty(this.id, "visibility", baseVisibility);
+    }
+
+    // Capas de cluster
+    if (map.getLayer(this.clusterLayerId)) {
+      map.setLayoutProperty(this.clusterLayerId, "visibility", baseVisibility);
+    }
+    if (map.getLayer(this.clusterCountLayerId)) {
+      map.setLayoutProperty(this.clusterCountLayerId, "visibility", baseVisibility);
+    }
+  }
+
+  /**
+   * Aplica visibilidad simple (para compatibilidad).
+   */
   private applyVisibility(): void {
-    if (!this.map) return;
-    const visibility = this.enabled ? "visible" : "none";
-    if (this.map.getLayer(this.id)) {
-      this.map.setLayoutProperty(this.id, "visibility", visibility);
-    }
-    if (this.map.getLayer(this.clusterLayerId)) {
-      this.map.setLayoutProperty(this.clusterLayerId, "visibility", visibility);
-    }
-    if (this.map.getLayer(this.clusterCountLayerId)) {
-      this.map.setLayoutProperty(this.clusterCountLayerId, "visibility", visibility);
-    }
+    this.applyVisibilityByMode();
   }
 
   private registerEvents(map: maplibregl.Map) {
