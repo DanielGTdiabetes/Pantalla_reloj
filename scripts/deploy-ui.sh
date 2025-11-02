@@ -37,8 +37,8 @@ for svg in "${MOON_SVGS[@]}"; do
     fi
 done
 
-# Verificar SVG de harvest (10 archivos)
-HARVEST_SVGS=("apple.svg" "beet.svg" "broccoli.svg" "carrot.svg" "chard.svg" "cherry.svg" "grapes.svg" "lettuce.svg" "pear.svg" "pumpkin.svg")
+# Verificar SVG de harvest (23 archivos: 10 originales + 13 nuevos)
+HARVEST_SVGS=("apple.svg" "artichoke.svg" "bean.svg" "beet.svg" "broccoli.svg" "carrot.svg" "cauliflower.svg" "chard.svg" "cherry.svg" "corn.svg" "cucumber.svg" "eggplant.svg" "grapes.svg" "lettuce.svg" "melon.svg" "peach.svg" "pear.svg" "pepper.svg" "pumpkin.svg" "strawberry.svg" "tomato.svg" "watermelon.svg" "zucchini.svg")
 for svg in "${HARVEST_SVGS[@]}"; do
     if [ ! -f "$TARGET_DIR/icons/harvest/$svg" ]; then
         echo "[deploy] ERROR: Falta $TARGET_DIR/icons/harvest/$svg"

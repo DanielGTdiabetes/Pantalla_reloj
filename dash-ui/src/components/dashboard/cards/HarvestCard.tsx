@@ -36,15 +36,15 @@ const getHarvestIcon = (itemName: string): string | null => {
     "manzana": "apple",
     "manzanas": "apple",
     
-    // Frutas de hueso (usar cherry.svg)
+    // Frutas de hueso
     "cereza": "cherry",
     "cerezas": "cherry",
-    "fresa": "cherry",
-    "fresas": "cherry",
-    "melocotón": "cherry",
-    "melocotones": "cherry",
-    "albaricoque": "cherry",
-    "albaricoques": "cherry",
+    "fresa": "strawberry",
+    "fresas": "strawberry",
+    "melocotón": "peach",
+    "melocotones": "peach",
+    "albaricoque": "peach",
+    "albaricoques": "peach",
     
     // Frutas de pepita
     "pera": "pear",
@@ -62,11 +62,11 @@ const getHarvestIcon = (itemName: string): string | null => {
     "higo": "grapes",
     "higos": "grapes",
     
-    // Melones y sandías (usar pumpkin.svg)
-    "melón": "pumpkin",
-    "melones": "pumpkin",
-    "sandía": "pumpkin",
-    "sandías": "pumpkin",
+    // Melones y sandías
+    "melón": "melon",
+    "melones": "melon",
+    "sandía": "watermelon",
+    "sandías": "watermelon",
     
     // Calabazas
     "calabaza": "pumpkin",
@@ -77,7 +77,7 @@ const getHarvestIcon = (itemName: string): string | null => {
     "lechugas": "lettuce",
     "col": "lettuce",
     "coles": "lettuce",
-    "coliflor": "lettuce",
+    "coliflor": "cauliflower",
     "acelga": "chard",
     "acelgas": "chard",
     "espinaca": "chard",
@@ -103,30 +103,30 @@ const getHarvestIcon = (itemName: string): string | null => {
     "cebolla": "beet",
     "cebollas": "beet",
     
-    // Legumbres (usar carrot.svg)
-    "guisante": "carrot",
-    "guisantes": "carrot",
-    "judía": "carrot",
-    "judías": "carrot",
-    "habón": "carrot",
-    "habones": "carrot",
+    // Legumbres
+    "guisante": "bean",
+    "guisantes": "bean",
+    "judía": "bean",
+    "judías": "bean",
+    "habón": "bean",
+    "habones": "bean",
     
-    // Tomates, pimientos, berenjenas (usar cherry.svg)
-    "tomate": "cherry",
-    "tomates": "cherry",
-    "pimiento": "cherry",
-    "pimientos": "cherry",
-    "berenjena": "cherry",
-    "berenjenas": "cherry",
-    "calabacín": "cherry",
-    "calabacines": "cherry",
-    "pepino": "cherry",
-    "pepinos": "cherry",
+    // Solanáceas y cucurbitáceas
+    "tomate": "tomato",
+    "tomates": "tomato",
+    "pimiento": "pepper",
+    "pimientos": "pepper",
+    "berenjena": "eggplant",
+    "berenjenas": "eggplant",
+    "calabacín": "zucchini",
+    "calabacines": "zucchini",
+    "pepino": "cucumber",
+    "pepinos": "cucumber",
     
-    // Otros (usar carrot.svg como genérico)
-    "alcachofa": "carrot",
-    "alcachofas": "carrot",
-    "maíz": "carrot",
+    // Otros
+    "alcachofa": "artichoke",
+    "alcachofas": "artichoke",
+    "maíz": "corn",
   };
   
   // Buscar coincidencia exacta primero
