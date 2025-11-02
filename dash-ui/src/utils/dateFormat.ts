@@ -18,10 +18,18 @@ export function formatLocal(
     return "";
   }
   
-  // Obtener timezone del config con fallback seguro
-  const tz = config?.display?.timezone ?? 
-             config?.general?.timezone ?? 
-             "Europe/Madrid";
+  // Obtener timezone del config con fallback seguro usando getters seguros
+  const display = config?.display as Record<string, unknown> | undefined;
+  const general = config?.general as Record<string, unknown> | undefined;
+  
+  const tzFromDisplay = display?.timezone;
+  const tzFromGeneral = general?.timezone;
+  
+  const tz = (typeof tzFromDisplay === "string" && tzFromDisplay.trim()
+    ? tzFromDisplay.trim()
+    : typeof tzFromGeneral === "string" && tzFromGeneral.trim()
+    ? tzFromGeneral.trim()
+    : "Europe/Madrid");
   
   const tzStr = typeof tz === "string" && tz.trim() ? tz.trim() : "Europe/Madrid";
   
