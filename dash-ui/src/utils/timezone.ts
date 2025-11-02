@@ -32,19 +32,26 @@ export function getSystemTimezone(): string | null {
  */
 export function safeGetTimezone(config: Record<string, unknown> | null | undefined): string {
   if (!config) {
-    return getSystemTimezone() ?? "Europe/Madrid";
+    const fallback = getSystemTimezone() ?? "Europe/Madrid";
+    if (typeof console !== "undefined" && console.warn) {
+      console.warn("[config] timezone missing, using Europe/Madrid fallback");
+    }
+    return fallback;
   }
   
-  // Intentar display.timezone (v1)
-  const display = config.display as Record<string, unknown> | undefined;
-  if (display && typeof display.timezone === "string" && display.timezone.trim()) {
-    return display.timezone.trim();
+  // Usar getters seguros para evitar crashes
+  // Intentar display.timezone (v1) con null-safe access
+  const display = config?.display as Record<string, unknown> | undefined;
+  const tzFromDisplay = display?.timezone;
+  if (typeof tzFromDisplay === "string" && tzFromDisplay.trim()) {
+    return tzFromDisplay.trim();
   }
   
-  // Intentar general.timezone (v2 o normalizado)
-  const general = config.general as Record<string, unknown> | undefined;
-  if (general && typeof general.timezone === "string" && general.timezone.trim()) {
-    return general.timezone.trim();
+  // Intentar general.timezone (v2 o normalizado) con null-safe access
+  const general = config?.general as Record<string, unknown> | undefined;
+  const tzFromGeneral = general?.timezone;
+  if (typeof tzFromGeneral === "string" && tzFromGeneral.trim()) {
+    return tzFromGeneral.trim();
   }
   
   // Usar timezone del sistema si está disponible
@@ -53,7 +60,10 @@ export function safeGetTimezone(config: Record<string, unknown> | null | undefin
     return systemTz;
   }
   
-  // Fallback seguro
+  // Fallback seguro con advertencia
+  if (typeof console !== "undefined" && console.warn) {
+    console.warn("[config] timezone missing, using Europe/Madrid fallback");
+  }
   return "Europe/Madrid";
 }
 

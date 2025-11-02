@@ -666,6 +666,7 @@ def _health_payload() -> Dict[str, Any]:
         "config_path": config_metadata["config_path"],
         "config_source": config_metadata["config_source"],
         "has_timezone": config_metadata["has_timezone"],
+        "config_loaded_at": config_metadata.get("config_loaded_at"),
     }
     flights_layer = {"items": None, "stale": False}
     ships_layer = {"items": None, "stale": False}
@@ -778,6 +779,38 @@ def config_metadata() -> Dict[str, Any]:
     """Retorna metadatos sobre la configuración cargada."""
     logger.debug("Config metadata requested")
     return config_manager.get_config_metadata()
+
+
+@app.post("/api/config/reload")
+def reload_config() -> Dict[str, Any]:
+    """Recarga la configuración desde el archivo efectivo sin reiniciar el servicio."""
+    logger.info("[config] Reload requested via /api/config/reload")
+    try:
+        config, was_reloaded = config_manager.reload()
+        if was_reloaded:
+            metadata = config_manager.get_config_metadata()
+            logger.info("[config] Config reloaded successfully from %s", metadata["config_path"])
+            return {
+                "success": True,
+                "message": "Config reloaded successfully",
+                "config_path": metadata["config_path"],
+                "config_loaded_at": metadata["config_loaded_at"],
+            }
+        else:
+            logger.warning("[config] Reload requested but config was not reloaded (check logs)")
+            return {
+                "success": False,
+                "message": "Config reload failed (check logs for details)",
+                "config_path": config_manager.config_path_used,
+                "config_loaded_at": config_manager.config_loaded_at,
+            }
+    except Exception as exc:  # noqa: BLE001
+        logger.error("[config] Unexpected error during reload: %s", exc)
+        return {
+            "success": False,
+            "message": f"Unexpected error: {exc}",
+            "config_path": config_manager.config_path_used,
+        }
 
 
 def _health_payload_full_helper() -> Dict[str, Any]:

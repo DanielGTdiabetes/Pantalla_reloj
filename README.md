@@ -20,8 +20,11 @@ Pantalla_reloj/
 ### Backend (FastAPI)
 - Endpoints: `/api/health`, `/api/config` (GET/PATCH), `/api/weather`, `/api/news`,
   `/api/astronomy`, `/api/calendar`, `/api/storm_mode` (GET/POST), `/api/astronomy/events`.
-- Persistencia de configuración en `/var/lib/pantalla/config.json` (se crea con
+- Persistencia de configuración en `/var/lib/pantalla-reloj/config.json` (se crea con
   valores por defecto si no existe) y caché JSON en `/var/lib/pantalla/cache/`.
+- **Ruta oficial de config**: `/var/lib/pantalla-reloj/config.json`. Están obsoletas:
+  `/etc/pantalla-dash/config.json`, `/var/lib/pantalla/config.json` (el backend las detecta
+  al arranque y emite WARNING si existen, pero las ignora).
 - El lanzador `usr/local/bin/pantalla-backend-launch` garantiza que existan
   `/var/log/pantalla` y `/var/lib/pantalla`, verifica que `import backend.main`
   funcione (fallando con código 3 si no) y envía stdout/stderr a

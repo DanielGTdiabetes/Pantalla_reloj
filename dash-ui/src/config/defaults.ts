@@ -1228,14 +1228,23 @@ export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
   const opensky = (payload.opensky ?? {}) as Partial<OpenSkyConfig>;
   const layers = (payload.layers ?? {}) as Partial<LayersConfig>;
 
+  // Usar getters seguros para evitar crashes si display o timezone no existen
+  const displayTimezone = display?.timezone;
+  const safeTimezone = typeof displayTimezone === "string" && displayTimezone.trim()
+    ? displayTimezone.trim()
+    : DEFAULT_CONFIG.display.timezone;
+  
+  const displayModuleCycle = display?.module_cycle_seconds;
+  const safeModuleCycle = clampNumber(
+    Math.round(toNumber(displayModuleCycle, DEFAULT_CONFIG.display.module_cycle_seconds)),
+    5,
+    600,
+  );
+  
   return {
     display: {
-      timezone: sanitizeString(display.timezone, DEFAULT_CONFIG.display.timezone),
-      module_cycle_seconds: clampNumber(
-        Math.round(toNumber(display.module_cycle_seconds, DEFAULT_CONFIG.display.module_cycle_seconds)),
-        5,
-        600,
-      ),
+      timezone: safeTimezone,
+      module_cycle_seconds: safeModuleCycle,
     },
     map: mergeMapPreferences(map),
     ui: {

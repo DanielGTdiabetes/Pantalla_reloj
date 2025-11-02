@@ -5,9 +5,9 @@ import json
 import logging
 import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Literal, Tuple
+from typing import Any, Dict, Literal, Optional, Tuple
 
 from pydantic import ValidationError
 
@@ -47,6 +47,11 @@ class ConfigManager:
         # Trackear si se usó fallback
         self.config_source: Literal["file", "embedded_fallback"] = "file"
         self.config_path_used = str(self.config_file)
+        self.config_source_env: Literal["env", "default"] = "env" if env_config else "default"
+        self.config_loaded_at: Optional[str] = None
+        
+        # Detectar configs legacy y advertir
+        self._detect_legacy_configs()
         
         # Resolver configuración con fallback
         self._resolve_config_with_fallback()
@@ -59,6 +64,21 @@ class ConfigManager:
         except (PermissionError, OSError) as exc:
             self.logger.warning("Could not create snapshot directory %s: %s", self.snapshot_dir, exc)
     
+    def _detect_legacy_configs(self) -> None:
+        """Detecta configs legacy y emite advertencias una única vez al arranque."""
+        legacy_paths = [
+            Path("/etc/pantalla-dash/config.json"),
+            Path("/var/lib/pantalla/config.json"),
+        ]
+        
+        for legacy_path in legacy_paths:
+            if legacy_path.exists() and legacy_path != self.config_file:
+                self.logger.warning(
+                    "[config] Ignoring legacy config at %s; using %s",
+                    legacy_path,
+                    self.config_file,
+                )
+    
     def _resolve_config_with_fallback(self) -> None:
         """Resuelve el archivo de configuración con fallback claro y logs explícitos."""
         # Intentar usar el archivo configurado
@@ -67,7 +87,8 @@ class ConfigManager:
                 # Verificar permisos de lectura
                 self.config_file.read_text(encoding="utf-8")
                 self.config_source = "file"
-                self.logger.info("Loaded config from %s", self.config_file)
+                self.config_loaded_at = datetime.now(timezone.utc).isoformat()
+                self.logger.info("[config] Loaded config from %s", self.config_file)
                 return
             except (PermissionError, OSError) as exc:
                 self.logger.warning(
@@ -161,11 +182,13 @@ class ConfigManager:
         
         # Si se usó fallback embebido, usar defaults
         if self.config_source == "embedded_fallback":
-            self.logger.debug("Using embedded default config (fallback mode)")
+            self.logger.debug("[config] Using embedded default config (fallback mode)")
             config_data = AppConfig().model_dump(mode="json")
             config = AppConfig.model_validate(config_data)
             config_hash = self._get_config_hash(config_data)
-            self.logger.debug("Embedded config hash (8 chars): %s", config_hash)
+            self.logger.debug("[config] Embedded config hash (8 chars): %s", config_hash)
+            if not self.config_loaded_at:
+                self.config_loaded_at = datetime.now(timezone.utc).isoformat()
             return config
         
         # Leer desde archivo
@@ -173,15 +196,18 @@ class ConfigManager:
             raw_text = self.config_file.read_text(encoding="utf-8")
             config_data = json.loads(raw_text)
             config_hash = self._get_config_hash(config_data)
-            self.logger.debug("Config hash (8 chars): %s", config_hash)
+            self.config_loaded_at = datetime.now(timezone.utc).isoformat()
+            self.logger.debug("[config] Config hash (8 chars): %s", config_hash)
         except (json.JSONDecodeError, OSError, PermissionError) as exc:
             self.logger.error(
-                "Failed to read/parse config from %s: %s, using embedded defaults",
+                "[config] Failed to read/parse config from %s: %s, using embedded defaults",
                 self.config_file,
                 exc,
             )
             self.config_source = "embedded_fallback"
             config_data = AppConfig().model_dump(mode="json")
+            if not self.config_loaded_at:
+                self.config_loaded_at = datetime.now(timezone.utc).isoformat()
         
         # Normalizar timezone
         config_data = self._normalize_timezone(config_data)
@@ -194,28 +220,89 @@ class ConfigManager:
             config = AppConfig.model_validate(config_data)
         except ValidationError as exc:
             self.logger.error(
-                "Invalid configuration in %s: %s, using embedded defaults",
+                "[config] Invalid configuration in %s: %s, using embedded defaults",
                 self.config_file,
                 exc,
             )
             self.config_source = "embedded_fallback"
             config = AppConfig()
+            if not self.config_loaded_at:
+                self.config_loaded_at = datetime.now(timezone.utc).isoformat()
             try:
                 self._atomic_write(config)
             except (PermissionError, OSError) as write_exc:
-                self.logger.warning("Could not write fixed config: %s", write_exc)
+                self.logger.warning("[config] Could not write fixed config: %s", write_exc)
             return config
         
         # Si hubo migración, guardar
         if migrated:
-            self.logger.info("Applied configuration migrations for missing defaults")
+            self.logger.info("[config] Applied configuration migrations for missing defaults")
             try:
                 self._atomic_write(config)
                 self._write_snapshot(config)
             except (PermissionError, OSError) as write_exc:
-                self.logger.warning("Could not persist migrated config: %s", write_exc)
+                self.logger.warning("[config] Could not persist migrated config: %s", write_exc)
         
         return config
+    
+    def reload(self) -> Tuple[AppConfig, bool]:
+        """Recarga la configuración desde el archivo efectivo.
+        
+        Returns:
+            Tuple de (config, was_reloaded)
+        """
+        old_loaded_at = self.config_loaded_at
+        
+        # Forzar recarga desde archivo
+        if self.config_source == "embedded_fallback":
+            self.logger.warning("[config] Cannot reload from embedded fallback")
+            return self.read(), False
+        
+        # Leer y validar
+        try:
+            raw_text = self.config_file.read_text(encoding="utf-8")
+            config_data = json.loads(raw_text)
+            
+            # Normalizar timezone
+            config_data = self._normalize_timezone(config_data)
+            
+            # Migrar claves faltantes
+            config_data, migrated = self._migrate_missing_keys(config_data)
+            
+            # Validar
+            config = AppConfig.model_validate(config_data)
+            
+            # Actualizar timestamp
+            self.config_loaded_at = datetime.now(timezone.utc).isoformat()
+            self.config_source = "file"
+            
+            # Guardar si hubo migración
+            if migrated:
+                self.logger.info("[config] Applied migrations during reload, persisting")
+                try:
+                    self._atomic_write(config)
+                    self._write_snapshot(config)
+                except (PermissionError, OSError) as write_exc:
+                    self.logger.warning("[config] Could not persist migrated config: %s", write_exc)
+            
+            self.logger.info("[config] Reloaded config from %s", self.config_file)
+            return config, True
+            
+        except (json.JSONDecodeError, ValidationError) as exc:
+            self.logger.error(
+                "[config] Failed to reload config from %s: %s",
+                self.config_file,
+                exc,
+            )
+            # Mantener configuración anterior
+            return self.read(), False
+        except (OSError, PermissionError) as exc:
+            self.logger.error(
+                "[config] Cannot read config file %s for reload: %s",
+                self.config_file,
+                exc,
+            )
+            return self.read(), False
     
     def get_config_metadata(self) -> Dict[str, Any]:
         """Retorna metadatos sobre la configuración cargada."""
@@ -236,8 +323,9 @@ class ConfigManager:
         
         return {
             "config_path": self.config_path_used,
-            "config_source": self.config_source,
+            "config_source": self.config_source_env,
             "has_timezone": has_timezone,
+            "config_loaded_at": self.config_loaded_at,
         }
 
     def write(self, payload: Dict[str, Any]) -> AppConfig:
