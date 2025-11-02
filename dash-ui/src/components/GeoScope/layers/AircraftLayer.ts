@@ -580,10 +580,12 @@ export default class AircraftLayer implements Layer {
         `;
 
       if (!getExistingPopup(map)) {
-        new maplibregl.Popup({ closeOnClick: false, closeButton: true })
-          .setLngLat(event.lngLat)
-          .setHTML(content)
-          .addTo(map);
+        if (event.lngLat && typeof event.lngLat === "object" && "lng" in event.lngLat && "lat" in event.lngLat) {
+          new maplibregl.Popup({ closeOnClick: false, closeButton: true })
+            .setLngLat(event.lngLat as { lng: number; lat: number })
+            .setHTML(content)
+            .addTo(map);
+        }
       }
     };
 
@@ -602,14 +604,14 @@ export default class AircraftLayer implements Layer {
         return;
       }
       const popup = getExistingPopup(map);
-      if (popup) {
-        popup.setLngLat(event.lngLat);
+      if (popup && event.lngLat && typeof event.lngLat === "object" && "lng" in event.lngLat && "lat" in event.lngLat) {
+        popup.setLngLat(event.lngLat as { lng: number; lat: number });
       }
     };
 
-    map.on("mouseenter", this.id, this.onMouseEnter);
-    map.on("mouseleave", this.id, this.onMouseLeave);
-    map.on("mousemove", this.id, this.onMouseMove);
+    map.on("mouseenter", this.id, this.onMouseEnter as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
+    map.on("mouseleave", this.id, this.onMouseLeave as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
+    map.on("mousemove", this.id, this.onMouseMove as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
     this.eventsRegistered = true;
   }
 
@@ -618,13 +620,13 @@ export default class AircraftLayer implements Layer {
       return;
     }
     if (this.onMouseEnter) {
-      map.off("mouseenter", this.id, this.onMouseEnter);
+      map.off("mouseenter", this.id, this.onMouseEnter as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
     }
     if (this.onMouseLeave) {
-      map.off("mouseleave", this.id, this.onMouseLeave);
+      map.off("mouseleave", this.id, this.onMouseLeave as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
     }
     if (this.onMouseMove) {
-      map.off("mousemove", this.id, this.onMouseMove);
+      map.off("mousemove", this.id, this.onMouseMove as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
     }
     map.getCanvas().style.cursor = "";
     const popup = getExistingPopup(map);

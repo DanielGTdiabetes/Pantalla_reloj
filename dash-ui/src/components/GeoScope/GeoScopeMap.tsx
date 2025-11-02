@@ -1309,17 +1309,17 @@ export default function GeoScopeMap() {
   const diagnosticsAutopanRef = useRef<DiagnosticsAutopanConfig>(
     parseDiagnosticsAutopanConfig()
   );
-  const autopanModeRef = useRef<AutopanMode>(diagnosticsAutopanRef.current.mode);
   const diagnosticsConfig = diagnosticsAutopanRef.current;
+  const autopanModeRef = useRef<AutopanMode>(diagnosticsConfig.mode);
   const serpentineConfigRef = useRef<SerpentineConfig | null>(
     diagnosticsConfig.mode === "serpentine"
-      ? diagnosticsConfig.config
+      ? (diagnosticsConfig as { mode: "serpentine"; config: SerpentineConfig }).config
       : null
   );
   const serpentineControllerRef = useRef<SerpentineRunner | null>(null);
   const serpentineForcePendingRef = useRef<boolean>(
     diagnosticsConfig.mode === "serpentine"
-      ? diagnosticsConfig.config.force
+      ? (diagnosticsConfig as { mode: "serpentine"; config: SerpentineConfig }).config.force
       : false
   );
   const aircraftLayerRef = useRef<AircraftLayer | null>(null);
@@ -1334,7 +1334,7 @@ export default function GeoScopeMap() {
   const [tintColor, setTintColor] = useState<string | null>(null);
   const horizontalDirectionRef = useRef<1 | -1>(1); // 1 = Este (derecha), -1 = Oeste (izquierda)
   const verticalDirectionRef = useRef<1 | -1>(1); // 1 = hacia abajo, -1 = hacia arriba
-  const motionProgressRef = useRef(0.5);
+  const motionProgressRef = useRef<number>(0.5);
   const mapStateMachineRef = useRef<MapStateMachine | null>(null);
   const cinemaFsmEnabledRef = useRef(false);
   const runtimeRef = useRef<RuntimePreferences | null>(null);
@@ -1367,6 +1367,9 @@ export default function GeoScopeMap() {
     }
 
     const direction = idlePanDirectionRef.current;
+    if (direction === null || direction === undefined) {
+      return;
+    }
     idlePanDirectionRef.current = direction === 1 ? -1 : 1;
 
     const center = map.getCenter();
@@ -1415,6 +1418,9 @@ export default function GeoScopeMap() {
 
   const applyBandInstant = (band: MapCinemaBand, map?: maplibregl.Map | null) => {
     const viewState = viewStateRef.current;
+    if (!viewState) {
+      return;
+    }
     const zoom = Number.isFinite(band.zoom) ? band.zoom : viewState.zoom;
     const minZoom = Math.min(Number.isFinite(band.minZoom) ? band.minZoom : zoom, zoom);
 
@@ -1445,7 +1451,11 @@ export default function GeoScopeMap() {
     if (!cinema || !cinema.bands.length) return;
 
     const totalBands = cinema.bands.length;
-    const currentIndex = ((bandIndexRef.current % totalBands) + totalBands) % totalBands;
+    const bandIndex = bandIndexRef.current;
+    if (bandIndex === null || bandIndex === undefined) {
+      return;
+    }
+    const currentIndex = ((bandIndex % totalBands) + totalBands) % totalBands;
     const targetIndex = ((nextIndex % totalBands) + totalBands) % totalBands;
 
     const fromBand = cinema.bands[currentIndex];
@@ -1493,6 +1503,9 @@ export default function GeoScopeMap() {
     const nextMinZoom = Math.min(interpolatedMinZoom, nextZoom);
 
     const viewState = viewStateRef.current;
+    if (!viewState) {
+      return deltaSeconds;
+    }
     viewState.lat = nextLat;
     viewState.zoom = nextZoom;
     viewState.pitch = nextPitch;
@@ -1655,6 +1668,9 @@ export default function GeoScopeMap() {
 
       const runner = createSerpentineRunner(map, config, (step) => {
         const viewState = viewStateRef.current;
+        if (!viewState) {
+          return;
+        }
         viewState.lng = step.lon;
         viewState.lat = step.lat;
         viewState.bearing = 0;
@@ -1898,7 +1914,11 @@ export default function GeoScopeMap() {
       }
 
       // Obtener la banda actual
-      const currentIndex = ((bandIndexRef.current % totalBands) + totalBands) % totalBands;
+      const bandIndex = bandIndexRef.current;
+      if (bandIndex === null || bandIndex === undefined) {
+        return;
+      }
+      const currentIndex = ((bandIndex % totalBands) + totalBands) % totalBands;
       const currentBand = cinema.bands[currentIndex];
       if (!currentBand) {
         return;
@@ -1906,6 +1926,9 @@ export default function GeoScopeMap() {
 
       // Aplicar la configuración de la banda actual (zoom, pitch, lat)
       const viewState = viewStateRef.current;
+      if (!viewState) {
+        return;
+      }
       viewState.lat = currentBand.lat;
       viewState.zoom = currentBand.zoom;
       viewState.pitch = currentBand.pitch;
@@ -1930,6 +1953,9 @@ export default function GeoScopeMap() {
       const panSpeed = panSpeedRef.current;
       const motionProgress = motionProgressRef.current;
       const horizontalDirection = horizontalDirectionRef.current;
+      if (panSpeed === null || panSpeed === undefined || motionProgress === null || motionProgress === undefined || horizontalDirection === null || horizontalDirection === undefined) {
+        return;
+      }
       const deltaProgress = travel > 0 ? (panSpeed * elapsedSeconds) / travel : 0;
       let progress = motionProgress + deltaProgress * horizontalDirection;
 
@@ -1945,6 +1971,9 @@ export default function GeoScopeMap() {
 
       if (hitMax || hitMin) {
         const verticalDirection = verticalDirectionRef.current;
+        if (verticalDirection === null || verticalDirection === undefined) {
+          return;
+        }
         const nextIndex = currentIndex + verticalDirection;
         if (nextIndex < 0) {
           verticalDirectionRef.current = 1;
@@ -1969,6 +1998,9 @@ export default function GeoScopeMap() {
       const maxLng = HORIZONTAL_CENTER_LNG + amplitude;
       const newLng = minLng + (maxLng - minLng) * easedProgress;
 
+      if (!viewState) {
+        return;
+      }
       viewState.lng = normalizeLng(newLng);
       
       // Actualizar el minZoom del mapa
@@ -2101,8 +2133,9 @@ export default function GeoScopeMap() {
       const map = mapRef.current;
       if (map) {
         const styleType = styleTypeRef.current;
-        if (styleType) {
-          applyThemeToMap(map, styleType, themeRef.current);
+        const theme = themeRef.current;
+        if (styleType && theme) {
+          applyThemeToMap(map, styleType, theme);
         }
       }
       safeFit();
@@ -2123,8 +2156,9 @@ export default function GeoScopeMap() {
       const map = mapRef.current;
       if (map) {
         const styleType = styleTypeRef.current;
-        if (styleType) {
-          applyThemeToMap(map, styleType, themeRef.current);
+        const theme = themeRef.current;
+        if (styleType && theme) {
+          applyThemeToMap(map, styleType, theme);
         }
       }
       safeFit();
@@ -2250,6 +2284,9 @@ export default function GeoScopeMap() {
       );
       verticalDirectionRef.current = 1;
       const viewState = viewStateRef.current;
+      if (!viewState) {
+        return;
+      }
       viewState.lng = motionInit.lng;
       applyBandInstant(firstBand, null);
       viewState.pitch = firstBand.pitch;
@@ -2275,11 +2312,11 @@ export default function GeoScopeMap() {
         map = new maplibregl.Map({
           container: host,
           style: runtime.style.style,
-          center: [viewState.lng, viewState.lat],
-          zoom: viewState.zoom,
+          center: viewState ? [viewState.lng, viewState.lat] : [0, 0],
+          zoom: viewState?.zoom ?? 2.6,
           minZoom: firstBand.minZoom,
-          pitch: viewState.pitch,
-          bearing: viewState.bearing,
+          pitch: viewState?.pitch ?? 0,
+          bearing: viewState?.bearing ?? 0,
           interactive: false,
           attributionControl: false,
           renderWorldCopies: runtime.renderWorldCopies,
@@ -2557,6 +2594,9 @@ export default function GeoScopeMap() {
           );
           verticalDirectionRef.current = 1;
           const viewState = viewStateRef.current;
+          if (!viewState) {
+            return;
+          }
           viewState.lng = motionInit.lng;
 
           // NO llamar recomputeAutopanActivation() aquí porque lo desactiva
@@ -2572,6 +2612,9 @@ export default function GeoScopeMap() {
           // Si se desactiva, asegurar que el bearing sea 0
           panSpeedRef.current = 0;
           const viewState = viewStateRef.current;
+          if (!viewState) {
+            return;
+          }
           viewState.bearing = 0;
           const map = mapRef.current;
           if (map) {
@@ -2761,8 +2804,9 @@ export default function GeoScopeMap() {
             pitch: currentPitch,
           });
           const styleType = styleTypeRef.current;
-          if (styleType) {
-            applyThemeToMap(map, styleType, themeRef.current);
+          const theme = themeRef.current;
+          if (styleType && theme) {
+            applyThemeToMap(map, styleType, theme);
           }
           layerRegistryRef.current?.reapply();
           mapStateMachineRef.current?.notifyStyleData("config-style-change");
@@ -2965,7 +3009,12 @@ export default function GeoScopeMap() {
                 }
 
                 // Obtener la banda actual
-                const currentIndex = ((bandIndexRef.current % totalBands) + totalBands) % totalBands;
+                const bandIndex = bandIndexRef.current;
+                if (bandIndex === null || bandIndex === undefined) {
+                  animationFrameRef.current = requestAnimationFrame(stepPan);
+                  return;
+                }
+                const currentIndex = ((bandIndex % totalBands) + totalBands) % totalBands;
                 const currentBand = cinema.bands[currentIndex];
                 if (!currentBand) {
                   animationFrameRef.current = requestAnimationFrame(stepPan);
@@ -2974,6 +3023,10 @@ export default function GeoScopeMap() {
 
                 // Aplicar la configuración de la banda actual
                 const viewState = viewStateRef.current;
+                if (!viewState) {
+                  animationFrameRef.current = requestAnimationFrame(stepPan);
+                  return;
+                }
                 viewState.lat = currentBand.lat;
                 viewState.zoom = currentBand.zoom;
                 viewState.pitch = currentBand.pitch;
@@ -2998,6 +3051,10 @@ export default function GeoScopeMap() {
                 const panSpeed = panSpeedRef.current;
                 const motionProgress = motionProgressRef.current;
                 const horizontalDirection = horizontalDirectionRef.current;
+                if (panSpeed === null || panSpeed === undefined || motionProgress === null || motionProgress === undefined || horizontalDirection === null || horizontalDirection === undefined) {
+                  animationFrameRef.current = requestAnimationFrame(stepPan);
+                  return;
+                }
                 const deltaProgress = travel > 0 ? (panSpeed * elapsedSeconds) / travel : 0;
                 let progress = motionProgress + deltaProgress * horizontalDirection;
 
@@ -3013,6 +3070,10 @@ export default function GeoScopeMap() {
 
                 if (hitMax || hitMin) {
                   const verticalDirection = verticalDirectionRef.current;
+                  if (verticalDirection === null || verticalDirection === undefined) {
+                    animationFrameRef.current = requestAnimationFrame(stepPan);
+                    return;
+                  }
                   const nextIndex = currentIndex + verticalDirection;
                   if (nextIndex < 0) {
                     verticalDirectionRef.current = 1;
@@ -3037,6 +3098,10 @@ export default function GeoScopeMap() {
                 const maxLng = HORIZONTAL_CENTER_LNG + amplitude;
                 const newLng = minLng + (maxLng - minLng) * easedProgress;
 
+                if (!viewState) {
+                  animationFrameRef.current = requestAnimationFrame(stepPan);
+                  return;
+                }
                 viewState.lng = normalizeLng(newLng);
                 map.setMinZoom(minZoom);
                 
@@ -3095,8 +3160,11 @@ export default function GeoScopeMap() {
       } else {
         // Si se desactiva, asegurar que el bearing sea 0
         panSpeedRef.current = 0;
-        const viewState = viewStateRef.current;
-        viewState.bearing = 0;
+      const viewState = viewStateRef.current;
+      if (!viewState) {
+        return;
+      }
+      viewState.bearing = 0;
         const map = mapRef.current;
         if (map) {
           map.jumpTo({
@@ -3122,6 +3190,9 @@ export default function GeoScopeMap() {
           horizontalDirectionRef
         );
         const viewState = viewStateRef.current;
+        if (!viewState) {
+          return;
+        }
         viewState.lng = motionInit.lng;
       }
     } else if (newAllowCinema && (speedChanged || bandsChanged || transitionChanged)) {
@@ -3138,6 +3209,9 @@ export default function GeoScopeMap() {
         horizontalDirectionRef
       );
       const viewState = viewStateRef.current;
+      if (!viewState) {
+        return;
+      }
       viewState.lng = motionInit.lng;
 
       // Si cambiaron las bandas o el tiempo de transición, reiniciar el índice de banda
@@ -3209,6 +3283,9 @@ export default function GeoScopeMap() {
 
         // Actualizar estado de vista
         const viewState = viewStateRef.current;
+        if (!viewState) {
+          return;
+        }
         viewState.lat = centerLat;
         viewState.lng = centerLng;
         viewState.zoom = zoom;
@@ -3258,6 +3335,9 @@ export default function GeoScopeMap() {
           const firstBand = cinemaRef.current.bands[0];
           if (firstBand) {
             const viewState = viewStateRef.current;
+            if (!viewState) {
+              return;
+            }
             viewState.lat = firstBand.lat;
             viewState.lng = -180;
             viewState.zoom = firstBand.zoom;
