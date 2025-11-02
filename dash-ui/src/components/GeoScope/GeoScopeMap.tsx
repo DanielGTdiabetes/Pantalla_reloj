@@ -1,5 +1,5 @@
 import maplibregl from "maplibre-gl";
-import type { MapLibreEvent } from "maplibre-gl";
+import type { MapLibreEvent, StyleSpecification } from "maplibre-gl";
 import type { Feature, FeatureCollection, GeoJsonProperties, Geometry, Point } from "geojson";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
@@ -14,6 +14,7 @@ import LightningLayer from "./layers/LightningLayer";
 import { LayerRegistry } from "./layers/LayerRegistry";
 import ShipsLayer from "./layers/ShipsLayer";
 import MapSpinner from "../MapSpinner";
+import { hasSprite } from "./utils/styleSprite";
 import {
   createDefaultMapCinema,
   createDefaultMapIdlePan,
@@ -2261,7 +2262,15 @@ export default function GeoScopeMap() {
         map.setStyle(fallbackStyle.style);
         mapStateMachineRef.current?.notifyStyleLoading("fallback-style");
         // Reaplicar vista tras style load
-        map.once("load", () => {
+        map.once("load", async () => {
+          let spriteAvailable = false;
+          try {
+            const style = map.getStyle() as StyleSpecification | undefined;
+            spriteAvailable = style ? await hasSprite(style) : false;
+          } catch {
+            spriteAvailable = false;
+          }
+          aircraftLayerRef.current?.setSpriteAvailability(spriteAvailable);
           map.jumpTo({ center, zoom, pitch, bearing });
         });
       };
@@ -2325,7 +2334,7 @@ export default function GeoScopeMap() {
         // Inicializar AircraftLayer y ShipsLayer según configuración
         // Usar defaults si config aún no está disponible
         const mergedConfig = config ? withConfigDefaults(config) : withConfigDefaults();
-        
+
           // Global Satellite Layer (z-index 10, debajo de AEMET)
           const globalSatelliteConfig = mergedConfig.layers.global?.satellite;
           if (globalSatelliteConfig?.enabled) {
@@ -2351,19 +2360,41 @@ export default function GeoScopeMap() {
           // AircraftLayer
           const flightsConfig = mergedConfig.layers.flights;
           const openskyConfig = mergedConfig.opensky;
-          const aircraftLayer = new AircraftLayer({
-            enabled: flightsConfig.enabled,
-            opacity: flightsConfig.opacity,
-            maxAgeSeconds: flightsConfig.max_age_seconds,
-            cineFocus: flightsConfig.cine_focus?.enabled ? {
-              enabled: flightsConfig.cine_focus.enabled,
-              outsideDimOpacity: flightsConfig.cine_focus.outside_dim_opacity,
-              hardHideOutside: flightsConfig.cine_focus.hard_hide_outside,
-            } : undefined,
-            cluster: openskyConfig.cluster,
-          });
-          layerRegistry.add(aircraftLayer);
-          aircraftLayerRef.current = aircraftLayer;
+
+          const initializeAircraftLayer = async () => {
+            let spriteAvailable = false;
+            try {
+              const style = map.getStyle() as StyleSpecification | undefined;
+              spriteAvailable = style ? await hasSprite(style) : false;
+            } catch {
+              spriteAvailable = false;
+            }
+            if (destroyed || !mapRef.current) {
+              return;
+            }
+
+            const aircraftLayer = new AircraftLayer({
+              enabled: flightsConfig.enabled,
+              opacity: flightsConfig.opacity,
+              maxAgeSeconds: flightsConfig.max_age_seconds,
+              cineFocus: flightsConfig.cine_focus?.enabled
+                ? {
+                    enabled: flightsConfig.cine_focus.enabled,
+                    outsideDimOpacity: flightsConfig.cine_focus.outside_dim_opacity,
+                    hardHideOutside: flightsConfig.cine_focus.hard_hide_outside,
+                  }
+                : undefined,
+              cluster: openskyConfig.cluster,
+              styleScale: flightsConfig.styleScale ?? 1,
+              renderMode: flightsConfig.render_mode ?? "auto",
+              circle: flightsConfig.circle,
+              spriteAvailable,
+            });
+            layerRegistry.add(aircraftLayer);
+            aircraftLayerRef.current = aircraftLayer;
+          };
+
+          void initializeAircraftLayer();
 
           // ShipsLayer
           const shipsConfig = mergedConfig.layers.ships;
@@ -2371,11 +2402,13 @@ export default function GeoScopeMap() {
             enabled: shipsConfig.enabled,
             opacity: shipsConfig.opacity,
             maxAgeSeconds: shipsConfig.max_age_seconds,
-            cineFocus: shipsConfig.cine_focus?.enabled ? {
-              enabled: shipsConfig.cine_focus.enabled,
-              outsideDimOpacity: shipsConfig.cine_focus.outside_dim_opacity,
-              hardHideOutside: shipsConfig.cine_focus.hard_hide_outside,
-            } : undefined,
+            cineFocus: shipsConfig.cine_focus?.enabled
+              ? {
+                  enabled: shipsConfig.cine_focus.enabled,
+                  outsideDimOpacity: shipsConfig.cine_focus.outside_dim_opacity,
+                  hardHideOutside: shipsConfig.cine_focus.hard_hide_outside,
+                }
+              : undefined,
           });
           layerRegistry.add(shipsLayer);
           shipsLayerRef.current = shipsLayer;
@@ -2643,11 +2676,26 @@ export default function GeoScopeMap() {
           // Ignorar si el motor no soporta esta API.
         }
 
-        const handleStyleLoad = () => {
+        const handleStyleLoad = async () => {
           if (cancelled || !mapRef.current) {
             return;
           }
           map.off("style.load", handleStyleLoad);
+
+          let spriteAvailable = false;
+          try {
+            const style = map.getStyle() as StyleSpecification | undefined;
+            spriteAvailable = style ? await hasSprite(style) : false;
+          } catch {
+            spriteAvailable = false;
+          }
+
+          if (cancelled || !mapRef.current) {
+            return;
+          }
+
+          aircraftLayerRef.current?.setSpriteAvailability(spriteAvailable);
+
           map.setMinZoom(currentMinZoomRef.current ?? previousMinZoom);
           map.jumpTo({
             center: currentCenter,
@@ -3270,6 +3318,8 @@ export default function GeoScopeMap() {
     // Actualizar AircraftLayer
     const aircraftLayer = aircraftLayerRef.current;
     if (aircraftLayer) {
+      aircraftLayer.setRenderMode(flightsConfig.render_mode ?? "auto");
+      aircraftLayer.setCircleOptions(flightsConfig.circle);
       aircraftLayer.setEnabled(flightsConfig.enabled && openskyConfig.enabled);
       aircraftLayer.setOpacity(flightsConfig.opacity);
       aircraftLayer.setMaxAgeSeconds(flightsConfig.max_age_seconds);

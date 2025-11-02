@@ -160,6 +160,15 @@
       "decimate": "grid",
       "grid_px": 24,
       "styleScale": 1.4,
+      "render_mode": "auto",
+      "circle": {
+        "radius_base": 3.0,
+        "radius_zoom_scale": 1.2,
+        "opacity": 1.0,
+        "color": "#00D1FF",
+        "stroke_color": "#002A33",
+        "stroke_width": 1.0
+      },
       "cine_focus": {
         "enabled": true,
         "mode": "both",

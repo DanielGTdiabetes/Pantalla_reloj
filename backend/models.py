@@ -351,6 +351,18 @@ class CustomFlightConfig(BaseModel):
     api_key: Optional[str] = Field(default=None, max_length=256)
 
 
+class FlightsCircleStyle(BaseModel):
+    """Opciones de estilo para círculos de vuelos."""
+    model_config = ConfigDict(extra="ignore")
+
+    radius_base: float = Field(default=3.0, ge=0.5, le=64.0)
+    radius_zoom_scale: float = Field(default=1.2, ge=0.25, le=8.0)
+    opacity: float = Field(default=1.0, ge=0.0, le=1.0)
+    color: str = Field(default="#00D1FF", min_length=1, max_length=32)
+    stroke_color: str = Field(default="#002A33", min_length=1, max_length=32)
+    stroke_width: float = Field(default=1.0, ge=0.0, le=10.0)
+
+
 class FlightsLayer(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -365,6 +377,8 @@ class FlightsLayer(BaseModel):
     decimate: Literal["grid", "none"] = Field(default="grid")
     grid_px: int = Field(default=24, ge=8, le=128)
     styleScale: float = Field(default=1.4, ge=0.1, le=4.0)
+    render_mode: Literal["auto", "symbol", "circle"] = Field(default="auto")
+    circle: FlightsCircleStyle = Field(default_factory=FlightsCircleStyle)
     cine_focus: CineFocus = Field(default_factory=CineFocus)
     opensky: OpenSkyAuth = Field(default_factory=OpenSkyAuth)
     aviationstack: AviationStackConfig = Field(default_factory=AviationStackConfig)
