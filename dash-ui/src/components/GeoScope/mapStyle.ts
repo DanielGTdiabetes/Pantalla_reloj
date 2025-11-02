@@ -58,7 +58,7 @@ const createRasterStyle = (
     base: baseSource,
   };
 
-  const layers: Array<StyleSpecification["layers"][number]> = [
+  const layers: StyleSpecification["layers"] = [
     { id: "base", type: "raster", source: "base" }
   ];
 

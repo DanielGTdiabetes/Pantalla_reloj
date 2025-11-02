@@ -25,7 +25,7 @@ import {
   type WiFiStatusResponse,
   type OpenSkyStatus,
 } from "../lib/api";
-import type { AppConfig, GlobalLayersConfig, MapCinemaBand } from "../types/config";
+import type { AppConfig, GlobalLayersConfig, MapCinemaBand, XyzConfig } from "../types/config";
 
 type GlobalLayers = NonNullable<AppConfig["layers"]["global"]>;
 
@@ -1561,7 +1561,8 @@ const ConfigPage: React.FC = () => {
                         onChange={(event) => {
                           const urlTemplate = event.target.value.trim();
                           setForm((prev) => {
-                            const currentXyz = prev.ui.map.xyz ?? {
+                            const existingXyz = prev.ui.map.xyz as XyzConfig | undefined;
+                            const currentXyz: XyzConfig = existingXyz ?? {
                               urlTemplate: "",
                               attribution: "",
                               minzoom: 0,
@@ -1607,8 +1608,9 @@ const ConfigPage: React.FC = () => {
                         onChange={(event) => {
                           const attribution = event.target.value.trim();
                           setForm((prev) => {
-                            const currentXyz = prev.ui.map.xyz ?? {
-                              urlTemplate: prev.ui.map.xyz?.urlTemplate || "",
+                            const existingXyz = prev.ui.map.xyz as XyzConfig | undefined;
+                            const currentXyz: XyzConfig = existingXyz ?? {
+                              urlTemplate: "",
                               attribution: "",
                               minzoom: 0,
                               maxzoom: 19,
@@ -1656,9 +1658,10 @@ const ConfigPage: React.FC = () => {
                           const minzoom = Number(event.target.value);
                           if (!Number.isNaN(minzoom)) {
                             setForm((prev) => {
-                              const currentXyz = prev.ui.map.xyz ?? {
-                                urlTemplate: prev.ui.map.xyz?.urlTemplate || "",
-                                attribution: prev.ui.map.xyz?.attribution || "",
+                              const existingXyz = prev.ui.map.xyz as XyzConfig | undefined;
+                              const currentXyz: XyzConfig = existingXyz ?? {
+                                urlTemplate: existingXyz?.urlTemplate || "",
+                                attribution: existingXyz?.attribution || "",
                                 minzoom: 0,
                                 maxzoom: 19,
                                 tileSize: 256,
@@ -1705,10 +1708,11 @@ const ConfigPage: React.FC = () => {
                           const maxzoom = Number(event.target.value);
                           if (!Number.isNaN(maxzoom)) {
                             setForm((prev) => {
-                              const currentXyz = prev.ui.map.xyz ?? {
-                                urlTemplate: prev.ui.map.xyz?.urlTemplate || "",
-                                attribution: prev.ui.map.xyz?.attribution || "",
-                                minzoom: prev.ui.map.xyz?.minzoom ?? 0,
+                              const existingXyz = prev.ui.map.xyz as XyzConfig | undefined;
+                              const currentXyz: XyzConfig = existingXyz ?? {
+                                urlTemplate: existingXyz?.urlTemplate || "",
+                                attribution: existingXyz?.attribution || "",
+                                minzoom: existingXyz?.minzoom ?? 0,
                                 maxzoom: 19,
                                 tileSize: 256,
                                 labelsOverlay: false,
@@ -1755,11 +1759,12 @@ const ConfigPage: React.FC = () => {
                           const tileSize = Number(event.target.value);
                           if (!Number.isNaN(tileSize)) {
                             setForm((prev) => {
-                              const currentXyz = prev.ui.map.xyz ?? {
-                                urlTemplate: prev.ui.map.xyz?.urlTemplate || "",
-                                attribution: prev.ui.map.xyz?.attribution || "",
-                                minzoom: prev.ui.map.xyz?.minzoom ?? 0,
-                                maxzoom: prev.ui.map.xyz?.maxzoom ?? 19,
+                              const existingXyz = prev.ui.map.xyz as XyzConfig | undefined;
+                              const currentXyz: XyzConfig = existingXyz ?? {
+                                urlTemplate: existingXyz?.urlTemplate || "",
+                                attribution: existingXyz?.attribution || "",
+                                minzoom: existingXyz?.minzoom ?? 0,
+                                maxzoom: existingXyz?.maxzoom ?? 19,
                                 tileSize: 256,
                                 labelsOverlay: false,
                               };
@@ -1801,12 +1806,13 @@ const ConfigPage: React.FC = () => {
                           onChange={(event) => {
                             const labelsOverlay = event.target.checked;
                             setForm((prev) => {
-                              const currentXyz = prev.ui.map.xyz ?? {
-                                urlTemplate: prev.ui.map.xyz?.urlTemplate || "",
-                                attribution: prev.ui.map.xyz?.attribution || "",
-                                minzoom: prev.ui.map.xyz?.minzoom ?? 0,
-                                maxzoom: prev.ui.map.xyz?.maxzoom ?? 19,
-                                tileSize: prev.ui.map.xyz?.tileSize ?? 256,
+                              const existingXyz = prev.ui.map.xyz as XyzConfig | undefined;
+                              const currentXyz: XyzConfig = existingXyz ?? {
+                                urlTemplate: existingXyz?.urlTemplate || "",
+                                attribution: existingXyz?.attribution || "",
+                                minzoom: existingXyz?.minzoom ?? 0,
+                                maxzoom: existingXyz?.maxzoom ?? 19,
+                                tileSize: existingXyz?.tileSize ?? 256,
                                 labelsOverlay: false,
                               };
                               return {
