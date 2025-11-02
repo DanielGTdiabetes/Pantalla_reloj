@@ -1037,7 +1037,20 @@ const ConfigPage: React.FC = () => {
     setGoogleCalendarKeyInput("");
     setGoogleCalendarIdInput("");
     setIcsUrlInput("");
-    setIcsPathInput("");
+    
+    // Cargar ics_path desde la configuración v2 si existe
+    if (detectedVersion === 2 && cfg) {
+      const v2Cfg = cfg as unknown as { panels?: { calendar?: { ics_path?: string } }; calendar?: { ics_path?: string } };
+      const icsPath = v2Cfg.panels?.calendar?.ics_path || v2Cfg.calendar?.ics_path;
+      if (icsPath && typeof icsPath === "string") {
+        setIcsPathInput(icsPath);
+      } else {
+        setIcsPathInput("");
+      }
+    } else {
+      setIcsPathInput("");
+    }
+    
     setCalendarTestResult(null);
     
     // Nota: Los secrets no se devuelven en GET /api/config por seguridad.
@@ -1408,15 +1421,33 @@ const ConfigPage: React.FC = () => {
         
         // Asegurar que panels.calendar esté presente si se está editando
         const existingCalendar = v2Form.panels?.calendar;
+        const calendarProvider = (existingCalendar?.provider === "ics" ? "ics" : existingCalendar?.provider === "disabled" ? "disabled" : "google") as "google" | "ics" | "disabled";
+        const calendarIcsPath = icsPathInput.trim() || existingCalendar?.ics_path;
         const panels: import("../types/config_v2").PanelsConfigV2 = {
           ...(v2Form.panels as import("../types/config_v2").PanelsConfigV2 || {}),
           calendar: existingCalendar && typeof existingCalendar.enabled === "boolean"
             ? {
                 enabled: existingCalendar.enabled,
-                provider: (existingCalendar.provider === "ics" ? "ics" : existingCalendar.provider === "disabled" ? "disabled" : "google") as "google" | "ics" | "disabled",
+                provider: calendarProvider,
+                ...(calendarProvider === "ics" && calendarIcsPath ? { ics_path: calendarIcsPath } : {}),
               }
             : { enabled: false, provider: "google" as const },
         };
+        
+        // También añadir calendar top-level si es ICS
+        const calendar = calendarProvider === "ics" && calendarIcsPath
+          ? {
+              enabled: existingCalendar?.enabled ?? false,
+              provider: "ics" as const,
+              ics_path: calendarIcsPath,
+            }
+          : existingCalendar && typeof existingCalendar.enabled === "boolean"
+          ? {
+              enabled: existingCalendar.enabled,
+              provider: calendarProvider,
+              ...(calendarProvider === "ics" && calendarIcsPath ? { ics_path: calendarIcsPath } : {}),
+            }
+          : undefined;
         
         // Construir ui_map desde form.ui_map si existe
         const v2FormWithMap = form as unknown as { ui_map?: MapConfigV2 };
@@ -1434,12 +1465,24 @@ const ConfigPage: React.FC = () => {
           region: { postalCode: "12001" },
         };
         
+        // Extraer layers y ui_global desde el formulario
+        const v2FormWithLayers = form as unknown as { 
+          layers?: { flights?: { enabled?: boolean }; ships?: { enabled?: boolean } };
+          ui_global?: { radar?: { enabled?: boolean; provider?: string }; satellite?: { enabled?: boolean; provider?: string; opacity?: number } };
+        };
+        
+        const layers = v2FormWithLayers.layers;
+        const ui_global = v2FormWithLayers.ui_global;
+        
         const v2Payload: import("../types/config_v2").AppConfigV2 = {
           ...payload,
           version: 2,
           ui_map,
           panels,
           secrets,
+          layers,
+          ui_global,
+          calendar,
         } as unknown as import("../types/config_v2").AppConfigV2;
         
         const v2Saved = await saveConfigV2(v2Payload);
@@ -3463,6 +3506,152 @@ const ConfigPage: React.FC = () => {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Sección de Capas para v2 */}
+        {configVersion === 2 && (
+          <div className="config-card">
+            <div>
+              <h2>Capas del Mapa</h2>
+              <p>Activa o desactiva las capas en tiempo real del mapa: vuelos, barcos, radar y satélite.</p>
+            </div>
+            <div className="config-grid">
+              {/* Flights Layer */}
+              <div className="config-field config-field--checkbox">
+                <label htmlFor="v2_layers_flights_enabled">
+                  <input
+                    id="v2_layers_flights_enabled"
+                    type="checkbox"
+                    checked={
+                      (form as unknown as { layers?: { flights?: { enabled?: boolean } } }).layers?.flights?.enabled ?? false
+                    }
+                    disabled={disableInputs}
+                    onChange={(event) => {
+                      const enabled = event.target.checked;
+                      setForm((prev) => {
+                        const v2 = prev as unknown as { layers?: { flights?: { enabled?: boolean } } };
+                        return {
+                          ...prev,
+                          layers: {
+                            ...v2.layers,
+                            flights: {
+                              ...v2.layers?.flights,
+                              enabled,
+                            },
+                          },
+                        } as unknown as AppConfig;
+                      });
+                      resetErrorsFor("layers.flights.enabled");
+                    }}
+                  />
+                  Aviones (OpenSky)
+                </label>
+                {renderHelp("Muestra aviones en tiempo real desde OpenSky Network")}
+              </div>
+
+              {/* Ships Layer */}
+              <div className="config-field config-field--checkbox">
+                <label htmlFor="v2_layers_ships_enabled">
+                  <input
+                    id="v2_layers_ships_enabled"
+                    type="checkbox"
+                    checked={
+                      (form as unknown as { layers?: { ships?: { enabled?: boolean } } }).layers?.ships?.enabled ?? false
+                    }
+                    disabled={disableInputs}
+                    onChange={(event) => {
+                      const enabled = event.target.checked;
+                      setForm((prev) => {
+                        const v2 = prev as unknown as { layers?: { ships?: { enabled?: boolean } } };
+                        return {
+                          ...prev,
+                          layers: {
+                            ...v2.layers,
+                            ships: {
+                              ...v2.layers?.ships,
+                              enabled,
+                            },
+                          },
+                        } as unknown as AppConfig;
+                      });
+                      resetErrorsFor("layers.ships.enabled");
+                    }}
+                  />
+                  Barcos
+                </label>
+                {renderHelp("Muestra barcos en tiempo real (AIS)")}
+              </div>
+
+              {/* Radar (AEMET) */}
+              <div className="config-field config-field--checkbox">
+                <label htmlFor="v2_ui_global_radar_enabled">
+                  <input
+                    id="v2_ui_global_radar_enabled"
+                    type="checkbox"
+                    checked={
+                      (form as unknown as { ui_global?: { radar?: { enabled?: boolean } } }).ui_global?.radar?.enabled ?? false
+                    }
+                    disabled={disableInputs}
+                    onChange={(event) => {
+                      const enabled = event.target.checked;
+                      setForm((prev) => {
+                        const v2 = prev as unknown as { ui_global?: { radar?: { enabled?: boolean; provider?: string } } };
+                        return {
+                          ...prev,
+                          ui_global: {
+                            ...v2.ui_global,
+                            radar: {
+                              ...v2.ui_global?.radar,
+                              enabled,
+                              provider: v2.ui_global?.radar?.provider || "aemet",
+                            },
+                          },
+                        } as unknown as AppConfig;
+                      });
+                      resetErrorsFor("ui_global.radar.enabled");
+                    }}
+                  />
+                  Radar (AEMET)
+                </label>
+                {renderHelp("Muestra radar meteorológico de AEMET")}
+              </div>
+
+              {/* Satellite (GIBS) */}
+              <div className="config-field config-field--checkbox">
+                <label htmlFor="v2_ui_global_satellite_enabled">
+                  <input
+                    id="v2_ui_global_satellite_enabled"
+                    type="checkbox"
+                    checked={
+                      (form as unknown as { ui_global?: { satellite?: { enabled?: boolean } } }).ui_global?.satellite?.enabled ?? false
+                    }
+                    disabled={disableInputs}
+                    onChange={(event) => {
+                      const enabled = event.target.checked;
+                      setForm((prev) => {
+                        const v2 = prev as unknown as { ui_global?: { satellite?: { enabled?: boolean; provider?: string; opacity?: number } } };
+                        return {
+                          ...prev,
+                          ui_global: {
+                            ...v2.ui_global,
+                            satellite: {
+                              ...v2.ui_global?.satellite,
+                              enabled,
+                              provider: v2.ui_global?.satellite?.provider || "gibs",
+                              opacity: v2.ui_global?.satellite?.opacity ?? 1.0,
+                            },
+                          },
+                        } as unknown as AppConfig;
+                      });
+                      resetErrorsFor("ui_global.satellite.enabled");
+                    }}
+                  />
+                  Satélite (GIBS)
+                </label>
+                {renderHelp("Muestra imágenes satelitales de GIBS/NASA")}
+              </div>
             </div>
           </div>
         )}
