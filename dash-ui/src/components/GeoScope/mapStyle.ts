@@ -65,8 +65,11 @@ const createRasterStyle = (
   };
   const layers: Array<{ id: string; type: "raster"; source: string; minzoom?: number; maxzoom?: number }> = [baseLayer];
 
-  // Añadir overlay de etiquetas OSM si está habilitado
+  // Añadir overlay de etiquetas si está habilitado
+  // Por ahora usamos tiles OSM solo para labels, no para el mapa base
   if (labelsOverlay) {
+    // Usar tiles de CartoDB para labels solamente (sin mapa base)
+    // Nota: Por ahora usamos OSM como fallback; en futuro usar carto-only-labels si está disponible
     sources.labels = {
       type: "raster",
       tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
@@ -81,6 +84,9 @@ const createRasterStyle = (
       source: "labels",
       minzoom: 0,
       maxzoom: 18,
+      paint: {
+        "raster-opacity": 0.3, // Transparente para solo mostrar labels
+      },
     });
   }
 
@@ -142,12 +148,12 @@ export const loadMapStyle = async (
 
   const intendedProvider = (mapSettings.provider ?? mapPreferences.provider ?? "").toLowerCase();
 
-  const sanitizedKey =
-    sanitizeApiKey(mapPreferences.maptiler_api_key) ?? sanitizeApiKey(mapSettings.maptiler?.key) ?? null;
-
-  // Manejar proveedor XYZ directamente
-  if (intendedProvider === "xyz") {
+  // Manejar proveedor XYZ directamente (v2 por defecto)
+  if (intendedProvider === "xyz" || !intendedProvider) {
     const xyzConfig = mapSettings.xyz;
+    // También verificar labelsOverlay en el nivel superior para v2
+    const labelsOverlayEnabled = mapSettings.labelsOverlay?.enabled ?? xyzConfig?.labelsOverlay ?? false;
+    
     if (xyzConfig?.urlTemplate) {
       resolvedStyle = {
         type: "raster",
@@ -158,7 +164,7 @@ export const loadMapStyle = async (
           xyzConfig.minzoom,
           xyzConfig.maxzoom,
           xyzConfig.tileSize,
-          xyzConfig.labelsOverlay
+          labelsOverlayEnabled
         ),
         variant,
         name: "xyz",
@@ -168,6 +174,8 @@ export const loadMapStyle = async (
       console.warn("[map] XYZ provider configurado pero sin urlTemplate, usando fallback");
     }
   } else {
+    const sanitizedKey =
+      sanitizeApiKey(mapPreferences.maptiler_api_key) ?? sanitizeApiKey(mapSettings.maptiler?.key) ?? null;
     const providerBase = getBaseStyle({
       provider: mapSettings.provider ?? mapPreferences.provider,
       style: styleName,

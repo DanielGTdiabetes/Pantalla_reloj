@@ -239,6 +239,18 @@ export default class ShipsLayer implements Layer {
   }
 
   updateData(data: FeatureCollection): void {
+    // Resiliente: si no hay datos o features está vacío, usar EMPTY
+    if (!data || !Array.isArray(data.features)) {
+      this.lastData = EMPTY;
+      if (this.map) {
+        const source = this.map.getSource(this.sourceId);
+        if (isGeoJSONSource(source)) {
+          source.setData(EMPTY);
+        }
+      }
+      return;
+    }
+
     const now = Math.floor(Date.now() / 1000);
     const featuresWithAge = {
       ...data,
@@ -273,7 +285,12 @@ export default class ShipsLayer implements Layer {
 
     const source = this.map.getSource(this.sourceId);
     if (isGeoJSONSource(source)) {
-      source.setData(this.lastData);
+      try {
+        source.setData(this.lastData);
+      } catch (error) {
+        // Resiliente: si falla, no romper nada
+        console.warn("[ShipsLayer] Error updating data:", error);
+      }
     }
   }
 

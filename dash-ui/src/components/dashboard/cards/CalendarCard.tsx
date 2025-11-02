@@ -4,6 +4,8 @@ import { dayjs } from "../../../utils/dayjs";
 type CalendarEvent = {
   title: string;
   start?: string | null;
+  end?: string | null;
+  location?: string | null;
 };
 
 type CalendarCardProps = {
@@ -35,15 +37,23 @@ export const CalendarCard = ({ events, timezone }: CalendarCardProps): JSX.Eleme
           <ul className="calendar-card__list">
             {repeatedEvents.map((event, index) => {
               const label = event.title || "Evento";
-              const date = event.start
+              const startDate = event.start
                 ? dayjs(event.start).tz(timezone).format("ddd D MMM, HH:mm")
                 : null;
+              const endDate = event.end
+                ? dayjs(event.end).tz(timezone).format("HH:mm")
+                : null;
+              const dateRange = startDate && endDate
+                ? `${startDate} - ${endDate}`
+                : startDate || null;
+              const location = event.location || null;
               // Usar índice completo para garantizar keys únicas (incluso después de duplicar)
               const uniqueKey = `calendar-${index}`;
               return (
                 <li key={uniqueKey}>
                   <span className="calendar-card__event-title">{label}</span>
-                  {date ? <span className="calendar-card__event-date">{date}</span> : null}
+                  {dateRange ? <span className="calendar-card__event-date">{dateRange}</span> : null}
+                  {location ? <span className="calendar-card__event-location">{location}</span> : null}
                 </li>
               );
             })}

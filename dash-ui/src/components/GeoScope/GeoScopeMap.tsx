@@ -1039,7 +1039,33 @@ const buildRuntimePreferences = (
 
 const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
   try {
-    const config = await apiGet<AppConfig | undefined>("/api/config");
+    // Intentar cargar v2 primero
+    let config: AppConfig | undefined;
+    try {
+      const { getConfigV2 } = await import("../../lib/api");
+      const { withConfigDefaultsV2 } = await import("../../config/defaults_v2");
+      const v2Config = await getConfigV2();
+      if (v2Config && v2Config.version === 2 && v2Config.ui_map) {
+        // Convertir v2 a formato interno compatible
+        config = {
+          ui: {
+            map: {
+              ...v2Config.ui_map,
+              xyz: v2Config.ui_map.xyz,
+              labelsOverlay: v2Config.ui_map.labelsOverlay,
+            },
+            rotation: {},
+          },
+          map: createDefaultMapPreferences(),
+        } as unknown as AppConfig;
+      } else {
+        config = await apiGet<AppConfig | undefined>("/api/config");
+      }
+    } catch (e) {
+      // Si falla v2, intentar v1
+      config = await apiGet<AppConfig | undefined>("/api/config");
+    }
+    
     const merged = withConfigDefaults(config);
     const mapSettings = merged.ui.map;
     const rotationSettings = merged.ui.rotation;
@@ -1073,7 +1099,7 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
     return buildRuntimePreferences(mapSettings, rotationSettings, styleResult);
   } catch (error) {
     console.warn(
-      "[GeoScopeMap] Falling back to default cinema configuration (using defaults).",
+      "[GeoScopeMap] Falling back to default configuration (using defaults).",
       error
     );
     const fallbackSettings = createDefaultMapSettings();
@@ -2310,61 +2336,75 @@ export default function GeoScopeMap() {
       if (!host || destroyed || mapRef.current) return;
 
       const mapSettings = runtime.mapSettings;
-      const viewMode = mapSettings?.viewMode ?? "aoiCycle";
+      const viewMode = mapSettings?.viewMode ?? "fixed"; // Por defecto fixed para v2
       
-      let firstBand = FALLBACK_CINEMA.bands[0];
-      
-      // Si viewMode es "fixed", usar fixed view en lugar de cinema
-      if (viewMode === "fixed" && mapSettings?.fixed) {
-        const fixedView = mapSettings.fixed;
-        const viewState = viewStateRef.current;
-        if (!viewState) {
-          return;
-        }
-        viewState.lat = fixedView.center.lat;
-        viewState.lng = fixedView.center.lon;
-        viewState.zoom = fixedView.zoom;
-        viewState.bearing = fixedView.bearing;
-        viewState.pitch = fixedView.pitch;
-        // Desactivar cinema para modo fixed
-        allowCinemaRef.current = false;
-        panSpeedRef.current = 0;
-      } else {
-        // Modo cinema (por defecto o aoiCycle)
-        const cinemaSettings = cloneCinema(runtime.cinema);
-        firstBand = cinemaSettings.bands[0] ?? FALLBACK_CINEMA.bands[0];
-        if (!firstBand) {
-          return;
-        }
-
-        cinemaRef.current = cinemaSettings;
-        bandIndexRef.current = 0;
-        bandElapsedRef.current = 0;
-        bandTransitionRef.current = null;
-
-        const motionInit = initializeMotionState(
-          cinemaSettings,
-          motionProgressRef as React.MutableRefObject<number>,
-          horizontalDirectionRef as React.MutableRefObject<1 | -1>
-        );
-        verticalDirectionRef.current = 1;
-        const viewState = viewStateRef.current;
-        if (!viewState) {
-          return;
-        }
-        viewState.lng = motionInit.lng;
-        applyBandInstant(firstBand, null);
-        viewState.pitch = firstBand.pitch;
-        viewState.bearing = 0; // Sin rotación
-      }
-      
-      const viewState = viewStateRef.current;
+      // Por defecto usar fixed view (v2)
+      let viewState = viewStateRef.current;
       if (!viewState) {
         return;
       }
       
-      if (!firstBand) {
-        firstBand = FALLBACK_CINEMA.bands[0];
+      // Vista fija por defecto (v2)
+      if (viewMode === "fixed") {
+        if (mapSettings?.fixed) {
+          const fixedView = mapSettings.fixed;
+          viewState.lat = fixedView.center.lat;
+          viewState.lng = fixedView.center.lon;
+          viewState.zoom = fixedView.zoom;
+          viewState.bearing = fixedView.bearing ?? 0;
+          viewState.pitch = fixedView.pitch ?? 0;
+        } else {
+          // Defaults de Castellón si no hay fixed config
+          viewState.lat = 39.98;
+          viewState.lng = 0.20;
+          viewState.zoom = 7.8;
+          viewState.bearing = 0;
+          viewState.pitch = 0;
+        }
+        // Desactivar cinema completamente para modo fixed
+        allowCinemaRef.current = false;
+        panSpeedRef.current = 0;
+        cinemaRef.current = cloneCinema(FALLBACK_CINEMA);
+      } else if (viewMode === "aoiCycle" && mapSettings?.aoiCycle) {
+        // Modo aoiCycle (legacy) - mantener soporte por ahora
+        const aoiCycle = mapSettings.aoiCycle;
+        const firstStop = aoiCycle.stops?.[0];
+        if (firstStop) {
+          viewState.lat = firstStop.center.lat;
+          viewState.lng = firstStop.center.lon;
+          viewState.zoom = firstStop.zoom;
+          viewState.bearing = firstStop.bearing ?? 0;
+          viewState.pitch = firstStop.pitch ?? 0;
+        }
+        // Desactivar cinema también en aoiCycle
+        allowCinemaRef.current = false;
+        panSpeedRef.current = 0;
+      } else {
+        // Fallback: usar cinema legacy solo si no hay fixed ni aoiCycle
+        const cinemaSettings = cloneCinema(runtime.cinema ?? FALLBACK_CINEMA);
+        const firstBand = cinemaSettings.bands[0] ?? FALLBACK_CINEMA.bands[0];
+        if (firstBand) {
+          cinemaRef.current = cinemaSettings;
+          bandIndexRef.current = 0;
+          bandElapsedRef.current = 0;
+          bandTransitionRef.current = null;
+
+          const motionInit = initializeMotionState(
+            cinemaSettings,
+            motionProgressRef as React.MutableRefObject<number>,
+            horizontalDirectionRef as React.MutableRefObject<1 | -1>
+          );
+          verticalDirectionRef.current = 1;
+          viewState.lng = motionInit.lng;
+          applyBandInstant(firstBand, null);
+          viewState.pitch = firstBand.pitch;
+          viewState.bearing = 0;
+        }
+      }
+      
+      viewState = viewStateRef.current;
+      if (!viewState) {
+        return;
       }
 
       themeRef.current = cloneTheme(runtime.theme);
@@ -2404,11 +2444,13 @@ export default function GeoScopeMap() {
       }
 
       mapRef.current = map;
+      // Configurar minZoom según viewMode
       if (viewMode === "fixed") {
-        const minZoom = (mapSettings?.fixed?.zoom ?? 2.6) - 2;
-        map.setMinZoom(Math.max(minZoom, 0));
+        const fixedZoom = mapSettings?.fixed?.zoom ?? 7.8;
+        map.setMinZoom(Math.max(fixedZoom - 2, 0));
       } else {
-        map.setMinZoom(firstBand.minZoom);
+        // Para otros modos, usar zoom mínimo razonable
+        map.setMinZoom(0);
       }
       refreshRuntimePolicy(runtime.respectReducedMotion);
 

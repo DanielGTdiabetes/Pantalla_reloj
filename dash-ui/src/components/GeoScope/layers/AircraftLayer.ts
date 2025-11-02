@@ -10,7 +10,8 @@ import { registerPlaneIcon } from "../utils/planeIcon";
 type EffectiveRenderMode = "symbol" | "symbol_custom" | "circle";
 
 type CircleOptions = {
-  radiusVh: number; // Radio en % de viewport height
+  radiusBase: number; // Radio base en pixels
+  radiusZoomScale: number; // Factor de escala por zoom
   opacity: number;
   color: string;
   strokeColor: string;
@@ -38,7 +39,8 @@ interface AircraftLayerOptions {
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 const DEFAULT_ICON_IMAGE = "airplane-15";
 const DEFAULT_CIRCLE_OPTIONS: CircleOptions = {
-  radiusVh: 0.9, // 0.9% de viewport height
+  radiusBase: 7.5, // Radio base en pixels
+  radiusZoomScale: 1.7, // Factor de escala por zoom
   opacity: 1.0,
   color: "#FFD400",
   strokeColor: "#000000",
@@ -58,13 +60,27 @@ const coerceNumber = (value: unknown, fallback: number): number => {
 };
 
 const normalizeCircleOptions = (options?: FlightsLayerCircleConfig, viewportHeight?: number): CircleOptions => {
-  const source = options ?? {
-    radius_vh: DEFAULT_CIRCLE_OPTIONS.radiusVh,
-    opacity: DEFAULT_CIRCLE_OPTIONS.opacity,
-    color: DEFAULT_CIRCLE_OPTIONS.color,
-    stroke_color: DEFAULT_CIRCLE_OPTIONS.strokeColor,
-    stroke_width: DEFAULT_CIRCLE_OPTIONS.strokeWidth,
-  };
+  // Soporte para v2 (radius_base, radius_zoom_scale) y v1 legacy (radius_vh)
+  const source = options ?? {};
+  
+  // Intentar leer parámetros v2 primero
+  const hasV2Params = 'radius_base' in source || 'radius_zoom_scale' in source;
+  
+  let radiusBase = DEFAULT_CIRCLE_OPTIONS.radiusBase;
+  let radiusZoomScale = DEFAULT_CIRCLE_OPTIONS.radiusZoomScale;
+  
+  if (hasV2Params) {
+    // V2: usar radius_base y radius_zoom_scale
+    radiusBase = clamp(coerceNumber((source as any).radius_base, DEFAULT_CIRCLE_OPTIONS.radiusBase), 1.0, 50.0);
+    radiusZoomScale = clamp(coerceNumber((source as any).radius_zoom_scale, DEFAULT_CIRCLE_OPTIONS.radiusZoomScale), 0.1, 5.0);
+  } else if ('radius_vh' in source) {
+    // V1 legacy: convertir radius_vh a radius_base (aproximación)
+    const radiusVh = clamp(coerceNumber((source as any).radius_vh, 0.9), 0.1, 10.0);
+    // Convertir vh a base: asumir viewport 480px y zoom 5 como referencia
+    const viewportH = viewportHeight ?? 480;
+    radiusBase = (radiusVh / 100) * viewportH * 0.1; // Aproximación
+    radiusZoomScale = 1.7; // Default para v2
+  }
 
   const color = typeof source.color === "string" && source.color.trim().length > 0
     ? source.color.trim()
@@ -73,10 +89,9 @@ const normalizeCircleOptions = (options?: FlightsLayerCircleConfig, viewportHeig
     ? source.stroke_color.trim()
     : DEFAULT_CIRCLE_OPTIONS.strokeColor;
 
-  const radiusVh = clamp(coerceNumber(source.radius_vh, DEFAULT_CIRCLE_OPTIONS.radiusVh), 0.1, 10.0);
-
   return {
-    radiusVh, // Guardamos vh % para cálculo dinámico
+    radiusBase,
+    radiusZoomScale,
     opacity: clamp(coerceNumber(source.opacity, DEFAULT_CIRCLE_OPTIONS.opacity), 0.0, 1.0),
     color,
     strokeColor,
@@ -903,12 +918,34 @@ export default class AircraftLayer implements Layer {
   }
 
   private getCircleRadiusExpression(): maplibregl.ExpressionSpecification {
-    // Calcular radio en pixels basado en viewport height
-    const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 480;
-    const radiusVh = this.circleOptions.radiusVh;
-    const radiusPixels = (radiusVh / 100) * viewportHeight;
-    // Retornar como número literal (ExpressionSpecification puede ser un número)
-    return radiusPixels as unknown as maplibregl.ExpressionSpecification;
+    // V2: calcular radio basado en zoom usando radius_base y radius_zoom_scale
+    // Fórmula: radius = radius_base * (1 + (zoom - 5) * radius_zoom_scale_factor)
+    // Factor de escala = radius_zoom_scale / 10 para hacerlo razonable
+    const radiusBase = this.circleOptions.radiusBase;
+    const radiusZoomScale = this.circleOptions.radiusZoomScale;
+    
+    // Usar expresión de MapLibre para calcular radio dinámicamente según zoom
+    // radius = radius_base * (1 + (zoom - 5) * scale_factor)
+    // Ajustamos scale_factor para que sea más razonable: radius_zoom_scale representa el incremento por unidad de zoom
+    const scaleFactor = radiusZoomScale / 10; // Dividir por 10 para hacerlo más razonable
+    
+    return [
+      "*",
+      radiusBase,
+      [
+        "+",
+        1,
+        [
+          "*",
+          [
+            "-",
+            ["zoom"],
+            5 // Zoom de referencia
+          ],
+          scaleFactor
+        ]
+      ]
+    ] as maplibregl.ExpressionSpecification;
   }
 
   private getCustomSymbolSizeExpression(): maplibregl.ExpressionSpecification {

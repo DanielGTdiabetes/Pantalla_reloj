@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { withConfigDefaults } from "../config/defaults";
+import { withConfigDefaultsV2 } from "../config/defaults_v2";
 import type { AppConfig } from "../types/config";
-import { API_ORIGIN, getConfig } from "./api";
+import type { AppConfigV2 } from "../types/config_v2";
+import { API_ORIGIN, getConfig, getConfigV2 } from "./api";
 
 const API_UNREACHABLE = `No se pudo conectar con el backend en ${API_ORIGIN}`;
 
@@ -19,6 +21,20 @@ const extractMapHotSwapDescriptor = (config: AppConfig | null): MapHotSwapDescri
     return { provider: null, style: null, model: null };
   }
 
+  // Soporte para v2
+  const v2Config = config as unknown as AppConfigV2;
+  if (v2Config.version === 2 && v2Config.ui_map) {
+    const provider = v2Config.ui_map.provider ?? null;
+    const xyz = v2Config.ui_map.xyz;
+    const style = xyz?.urlTemplate ?? null;
+    return {
+      provider,
+      style,
+      model: null,
+    };
+  }
+
+  // Soporte para v1 (legacy)
   const uiMap = config.ui?.map ?? null;
   const prefs = config.map ?? null;
 
@@ -62,67 +78,53 @@ export function useConfig() {
 
   const load = useCallback(async () => {
     try {
-      const cfg = await getConfig();
-      const newData = withConfigDefaults((cfg ?? {}) as AppConfig);
+      // Intentar cargar v2 primero
+      let cfg: AppConfig | AppConfigV2 | undefined;
+      let isV2 = false;
+      try {
+        const v2Cfg = await getConfigV2();
+        if (v2Cfg && v2Cfg.version === 2 && v2Cfg.ui_map) {
+          isV2 = true;
+          cfg = v2Cfg as unknown as AppConfig;
+        } else {
+          cfg = await getConfig();
+        }
+      } catch (e) {
+        // Si falla v2, intentar v1
+        cfg = await getConfig();
+      }
+      
+      const newData = isV2 
+        ? (withConfigDefaultsV2(cfg as AppConfigV2) as unknown as AppConfig)
+        : withConfigDefaults((cfg ?? {}) as AppConfig);
       
       setData((prev) => {
         if (!prev) {
           return newData;
         }
 
-        const prevCinema = prev.ui?.map?.cinema;
-        const newCinema = newData.ui?.map?.cinema;
-
-        const prevEnabled = prevCinema?.enabled ?? false;
-        const newEnabled = newCinema?.enabled ?? false;
-        const prevSpeed = prevCinema?.panLngDegPerSec ?? 0;
-        const newSpeed = newCinema?.panLngDegPerSec ?? 0;
-        const prevTransition = prevCinema?.bandTransition_sec ?? 8;
-        const newTransition = newCinema?.bandTransition_sec ?? 8;
-
-        const prevBands = prevCinema?.bands ?? [];
-        const newBands = newCinema?.bands ?? [];
-        const bandsChanged = JSON.stringify(prevBands) !== JSON.stringify(newBands);
-
-        const cinemaChanged =
-          prevEnabled !== newEnabled ||
-          Math.abs(prevSpeed - newSpeed) > 0.0001 ||
-          prevTransition !== newTransition ||
-          bandsChanged;
-
-        if (cinemaChanged) {
-          console.log("[useConfig] Detected cinema config change:", {
-            prevEnabled,
-            newEnabled,
-            prevSpeed,
-            newSpeed,
-            prevTransition,
-            newTransition,
-            bandsChanged,
-          });
-        }
-
+        // Comparar configuración de mapa (v2 o v1)
         const prevMapConfig = {
-          cinema: prevCinema,
-          idlePan: prev.ui?.map?.idlePan,
-          style: prev.ui?.map?.style,
           provider: prev.ui?.map?.provider,
-          rotation: prev.ui?.rotation,
+          style: prev.ui?.map?.style,
+          xyz: prev.ui?.map?.xyz,
+          fixed: prev.ui?.map?.fixed,
+          viewMode: prev.ui?.map?.viewMode,
         };
         const newMapConfig = {
-          cinema: newCinema,
-          idlePan: newData.ui?.map?.idlePan,
-          style: newData.ui?.map?.style,
           provider: newData.ui?.map?.provider,
-          rotation: newData.ui?.rotation,
+          style: newData.ui?.map?.style,
+          xyz: newData.ui?.map?.xyz,
+          fixed: newData.ui?.map?.fixed,
+          viewMode: newData.ui?.map?.viewMode,
         };
 
         const prevJson = JSON.stringify(prevMapConfig);
         const newJson = JSON.stringify(newMapConfig);
         const mapConfigChanged = prevJson !== newJson;
 
-        if (mapConfigChanged && !cinemaChanged) {
-          console.log("[useConfig] Detected other config changes");
+        if (mapConfigChanged) {
+          console.log("[useConfig] Detected map config change");
         }
 
         const prevDescriptor = extractMapHotSwapDescriptor(prev);
@@ -136,7 +138,7 @@ export function useConfig() {
           });
         }
 
-        if (cinemaChanged || mapConfigChanged || mapHotSwapChanged) {
+        if (mapConfigChanged || mapHotSwapChanged) {
           setPrevData(prev);
           if (mapHotSwapChanged) {
             setMapStyleVersion((value) => value + 1);

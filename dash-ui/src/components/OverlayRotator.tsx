@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import { withConfigDefaults } from "../config/defaults";
-import { apiGet } from "../lib/api";
+import { apiGet, apiPost } from "../lib/api";
 import { useConfig } from "../lib/useConfig";
 import { dayjs } from "../utils/dayjs";
 import { ensurePlainText, sanitizeRichText } from "../utils/sanitize";
@@ -133,11 +133,28 @@ export const OverlayRotator: React.FC = () => {
 
     const fetchAll = async () => {
       try {
+        // V2: usar nuevas APIs
         const [weather, news, astronomy, calendar] = await Promise.all([
-          apiGet<Record<string, unknown>>("/api/weather").catch(() => ({})),
-          apiGet<Record<string, unknown>>("/api/news").catch(() => ({})),
+          // Weekly forecast: usar /api/weather/weekly con lat/lon desde config
+          (async () => {
+            const lat = config.panels?.weather?.latitude ?? 39.98;
+            const lon = config.panels?.weather?.longitude ?? 0.20;
+            return apiGet<Record<string, unknown>>(`/api/weather/weekly?lat=${lat}&lon=${lon}`).catch(() => ({}));
+          })(),
+          // RSS news: usar POST /api/news/rss con feeds desde config
+          (async () => {
+            const feeds = config.panels?.news?.feeds ?? [];
+            if (feeds.length === 0) return {};
+            return apiPost<Record<string, unknown>>("/api/news/rss", { feeds }).catch(() => ({}));
+          })(),
           apiGet<Record<string, unknown>>("/api/astronomy").catch(() => ({})),
-          apiGet<Record<string, unknown>>("/api/calendar").catch(() => ({}))
+          // Calendar events: usar GET /api/calendar/events
+          (async () => {
+            const fromDate = dayjs().toISOString();
+            const toDate = dayjs().add(7, 'days').toISOString();
+            const events = await apiGet<Array<Record<string, unknown>>>(`/api/calendar/events?from_date=${fromDate}&to_date=${toDate}`).catch(() => []);
+            return { events };
+          })()
         ]);
 
         if (mounted) {
@@ -158,7 +175,7 @@ export const OverlayRotator: React.FC = () => {
       mounted = false;
       window.clearInterval(interval);
     };
-  }, []);
+  }, [config.panels?.weather?.latitude, config.panels?.weather?.longitude, config.panels?.news?.feeds]);
 
   const weather = (payload.weather ?? {}) as Record<string, unknown>;
   const astronomy = (payload.astronomy ?? {}) as Record<string, unknown>;
@@ -200,15 +217,19 @@ export const OverlayRotator: React.FC = () => {
     .map((entry) => sanitizeRichText(entry?.description ?? entry?.title ?? entry?.name ?? entry?.text ?? ""))
     .filter((value): value is string => Boolean(value));
 
+  // V2: POST /api/news/rss retorna { items: [...] }
   const newsItems = safeArray(news.items || news.entries || news.news || news.articles).map((item) => ({
     title: sanitizeRichText(item.title || item.headline || item.name) || "Titular",
     summary: sanitizeRichText(item.summary || item.description || item.content || item.text) || undefined,
-    source: sanitizeRichText(item.source || item.author || item.feed) || undefined
+    source: sanitizeRichText(item.source || item.author || item.feed || item.publisher) || undefined
   }));
 
-  const calendarEvents = safeArray(calendar.upcoming).map((event) => ({
+  // V2: GET /api/calendar/events retorna [{title, start, end, location}, ...]
+  const calendarEvents = safeArray(calendar.events || calendar.upcoming).map((event) => ({
     title: sanitizeRichText(event.title) || "Evento",
-    start: ensurePlainText(event.start) || ensurePlainText(event.when) || null
+    start: ensurePlainText(event.start) || ensurePlainText(event.when) || null,
+    end: ensurePlainText(event.end) || null,
+    location: sanitizeRichText(event.location) || null
   }));
 
   const harvestItems = safeArray(calendar.harvest).map((item) => ({
@@ -231,7 +252,8 @@ export const OverlayRotator: React.FC = () => {
   }, [calendar.saints, calendar.namedays, config.saints?.include_namedays]);
 
   const forecastDays = useMemo(() => {
-    const forecastData = weather.forecast || weather.daily || weather.weekly || [];
+    // V2: /api/weather/weekly retorna { days: [...] }
+    const forecastData = weather.days || weather.forecast || weather.daily || weather.weekly || [];
     if (!Array.isArray(forecastData)) {
       return [];
     }
