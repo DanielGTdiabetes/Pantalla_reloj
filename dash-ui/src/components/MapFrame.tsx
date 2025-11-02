@@ -16,7 +16,7 @@ export function MapFrame({ className, children }: MapFrameProps) {
 
   return (
     <div className={outerClassName}>
-      <div className="map-frame-inner">{children}</div>
+      <div className="map-frame-inner">{children as React.ReactNode}</div>
     </div>
   );
 }

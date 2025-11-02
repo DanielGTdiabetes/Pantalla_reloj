@@ -609,9 +609,9 @@ export default class AircraftLayer implements Layer {
       }
     };
 
-    map.on("mouseenter", this.id, this.onMouseEnter as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
-    map.on("mouseleave", this.id, this.onMouseLeave as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
-    map.on("mousemove", this.id, this.onMouseMove as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
+    map.on("mouseenter", this.id, this.onMouseEnter as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
+    map.on("mouseleave", this.id, this.onMouseLeave as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
+    map.on("mousemove", this.id, this.onMouseMove as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
     this.eventsRegistered = true;
   }
 
@@ -620,13 +620,13 @@ export default class AircraftLayer implements Layer {
       return;
     }
     if (this.onMouseEnter) {
-      map.off("mouseenter", this.id, this.onMouseEnter as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
+      map.off("mouseenter", this.id, this.onMouseEnter as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
     }
     if (this.onMouseLeave) {
-      map.off("mouseleave", this.id, this.onMouseLeave as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
+      map.off("mouseleave", this.id, this.onMouseLeave as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
     }
     if (this.onMouseMove) {
-      map.off("mousemove", this.id, this.onMouseMove as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
+      map.off("mousemove", this.id, this.onMouseMove as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
     }
     map.getCanvas().style.cursor = "";
     const popup = getExistingPopup(map);

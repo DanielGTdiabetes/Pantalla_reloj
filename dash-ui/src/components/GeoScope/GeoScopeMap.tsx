@@ -1310,6 +1310,9 @@ export default function GeoScopeMap() {
     parseDiagnosticsAutopanConfig()
   );
   const diagnosticsConfig = diagnosticsAutopanRef.current;
+  if (!diagnosticsConfig) {
+    throw new Error("diagnosticsConfig is null");
+  }
   const autopanModeRef = useRef<AutopanMode>(diagnosticsConfig.mode);
   const serpentineConfigRef = useRef<SerpentineConfig | null>(
     diagnosticsConfig.mode === "serpentine"
@@ -1551,14 +1554,22 @@ export default function GeoScopeMap() {
         continue;
       }
 
-      const currentIndex = ((bandIndexRef.current % totalBands) + totalBands) % totalBands;
+      const bandIndex = bandIndexRef.current;
+      if (bandIndex === null || bandIndex === undefined) {
+        return;
+      }
+      const currentIndex = ((bandIndex % totalBands) + totalBands) % totalBands;
       const currentBand = cinema.bands[currentIndex];
       if (!currentBand) {
         return;
       }
 
       const duration = Math.max(0.1, currentBand.duration_sec);
-      const elapsed = bandElapsedRef.current + remaining;
+      const bandElapsed = bandElapsedRef.current;
+      if (bandElapsed === null || bandElapsed === undefined) {
+        return;
+      }
+      const elapsed = bandElapsed + remaining;
 
       if (elapsed < duration) {
         bandElapsedRef.current = elapsed;
@@ -1584,6 +1595,9 @@ export default function GeoScopeMap() {
 
   const updateMapView = (map: maplibregl.Map) => {
     const viewState = viewStateRef.current;
+    if (!viewState) {
+      return;
+    }
     // Siempre mantener bearing en 0 (sin rotación)
     map.jumpTo({
       center: [viewState.lng, viewState.lat],
@@ -2279,7 +2293,7 @@ export default function GeoScopeMap() {
 
       const motionInit = initializeMotionState(
         cinemaSettings,
-        motionProgressRef,
+        motionProgressRef as React.MutableRefObject<number>,
         horizontalDirectionRef
       );
       verticalDirectionRef.current = 1;
@@ -2637,10 +2651,13 @@ export default function GeoScopeMap() {
         cinemaRef.current = cloneCinema(cinemaSource);
         const motionInit = initializeMotionState(
           cinemaRef.current,
-          motionProgressRef,
+          motionProgressRef as React.MutableRefObject<number>,
           horizontalDirectionRef
         );
         const viewState = viewStateRef.current;
+        if (!viewState) {
+          return;
+        }
         viewState.lng = motionInit.lng;
       }
     };
@@ -2878,7 +2895,8 @@ export default function GeoScopeMap() {
     }
 
     // Detectar cambios en todos los campos del modo cine
-    const speedChanged = Math.abs(panSpeedDegPerSec - panSpeedRef.current) > 0.001;
+    const panSpeed = panSpeedRef.current;
+    const speedChanged = panSpeed !== null && panSpeed !== undefined ? Math.abs(panSpeedDegPerSec - panSpeed) > 0.001 : false;
     const cinemaChanged = newAllowCinema !== allowCinemaRef.current || fsmChanged;
     
     // Comparar bandas actuales vs nuevas
@@ -2936,11 +2954,14 @@ export default function GeoScopeMap() {
         cinemaRef.current = cloneCinema(cinemaSource);
         const motionInit = initializeMotionState(
           cinemaRef.current,
-          motionProgressRef,
+          motionProgressRef as React.MutableRefObject<number>,
           horizontalDirectionRef
         );
         verticalDirectionRef.current = 1;
         const viewState = viewStateRef.current;
+        if (!viewState) {
+          return;
+        }
         viewState.lng = motionInit.lng;
 
         // Asegurar que autopanEnabled esté activado
@@ -3186,7 +3207,7 @@ export default function GeoScopeMap() {
         cinemaRef.current = cloneCinema(cinemaSource);
         const motionInit = initializeMotionState(
           cinemaRef.current,
-          motionProgressRef,
+          motionProgressRef as React.MutableRefObject<number>,
           horizontalDirectionRef
         );
         const viewState = viewStateRef.current;
