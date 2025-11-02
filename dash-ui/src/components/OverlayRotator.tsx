@@ -5,6 +5,7 @@ import { apiGet, apiPost } from "../lib/api";
 import { useConfig } from "../lib/useConfig";
 import { dayjs } from "../utils/dayjs";
 import { ensurePlainText, sanitizeRichText } from "../utils/sanitize";
+import { safeGetTimezone } from "../utils/timezone";
 import type { RotatingCardItem } from "./RotatingCard";
 import { RotatingCard } from "./RotatingCard";
 import { CalendarCard } from "./dashboard/cards/CalendarCard";
@@ -127,6 +128,12 @@ export const OverlayRotator: React.FC = () => {
   const config = useMemo(() => data ?? withConfigDefaults(), [data]);
   const [payload, setPayload] = useState<DashboardPayload>({});
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  
+  // Obtener timezone de forma segura (nunca undefined)
+  const timezone = useMemo(() => {
+    const tz = safeGetTimezone(config as Record<string, unknown>);
+    return tz;
+  }, [config]);
 
   useEffect(() => {
     let mounted = true;
@@ -337,7 +344,7 @@ export const OverlayRotator: React.FC = () => {
         {
           id: "time",
           duration: 8000,
-          render: () => <TimeCard timezone={config.display.timezone} />
+          render: () => <TimeCard timezone={timezone} />
         },
         {
           id: "weather",
@@ -360,7 +367,7 @@ export const OverlayRotator: React.FC = () => {
         cards.push({
           id: "calendar",
           duration: 10000,
-          render: () => <CalendarCard events={calendarEvents} timezone={config.display.timezone} />
+          render: () => <CalendarCard events={calendarEvents} timezone={timezone} />
         });
       }
 
@@ -434,7 +441,7 @@ export const OverlayRotator: React.FC = () => {
     }, [
       calendarEvents,
       condition,
-      config.display.timezone,
+      timezone,
       config.calendar?.enabled,
       config.ephemerides?.enabled,
       config.harvest?.enabled,
@@ -461,8 +468,8 @@ export const OverlayRotator: React.FC = () => {
     if (!lastUpdatedAt) {
       return null;
     }
-    return dayjs(lastUpdatedAt).tz(config.display.timezone).format("HH:mm:ss");
-  }, [config.display.timezone, lastUpdatedAt]);
+    return dayjs(lastUpdatedAt).tz(timezone).format("HH:mm:ss");
+  }, [timezone, lastUpdatedAt]);
 
   const statusLabel = useMemo(() => {
     if (loading && !lastUpdatedAt) {

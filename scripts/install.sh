@@ -116,7 +116,8 @@ install -d -m 0755 "$SESSION_PREFIX/bin" "$SESSION_PREFIX/openbox"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" /opt/pantalla-reloj/frontend/static
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$KIOSK_LOG_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$LOG_DIR"
-install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
+# Asegurar directorio principal con permisos 755 (legible por usuario)
+install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_RUNTIME"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "${STATE_RUNTIME}/chromium-kiosk"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "${STATE_RUNTIME}/firefox-kiosk"
@@ -285,9 +286,28 @@ if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
 fi
 SUMMARY+=("[install] dependencias Python validadas")
 
+# Asegurar directorio de configuración con permisos correctos
+install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
+
 CONFIG_FILE="$STATE_DIR/config.json"
 if [[ ! -f "$CONFIG_FILE" ]]; then
-  install -o "$USER_NAME" -g "$USER_NAME" -m 0644 "$REPO_ROOT/backend/default_config.json" "$CONFIG_FILE"
+  # Crear config.json desde default_config_v2.json si existe, sino default_config.json
+  if [[ -f "$REPO_ROOT/backend/default_config_v2.json" ]]; then
+    install -o "$USER_NAME" -g "$USER_NAME" -m 0644 "$REPO_ROOT/backend/default_config_v2.json" "$CONFIG_FILE"
+    log_info "Config creado desde default_config_v2.json en ${CONFIG_FILE}"
+  elif [[ -f "$REPO_ROOT/backend/default_config.json" ]]; then
+    install -o "$USER_NAME" -g "$USER_NAME" -m 0644 "$REPO_ROOT/backend/default_config.json" "$CONFIG_FILE"
+    log_info "Config creado desde default_config.json en ${CONFIG_FILE}"
+  else
+    log_error "No se encontró default_config.json ni default_config_v2.json"
+    exit 1
+  fi
+  SUMMARY+=("[install] config.json creado en ${CONFIG_FILE}")
+else
+  # Asegurar permisos correctos del config existente
+  chown "$USER_NAME:$USER_NAME" "$CONFIG_FILE" 2>/dev/null || true
+  chmod 0644 "$CONFIG_FILE" 2>/dev/null || true
+  log_info "Config existente preservado en ${CONFIG_FILE} (permisos ajustados)"
 fi
 install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$STATE_DIR/cache"
 # Crear directorios de caché para layers (flights/ships) y focus masks
@@ -297,6 +317,19 @@ install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 /var/cache/pantalla/global
 install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 /var/cache/pantalla/global/satellite
 install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 /var/cache/pantalla/global/radar
 SUMMARY+=("[install] directorios de caché creados en /var/cache/pantalla/")
+
+# Instalar tmpfiles.d para asegurar permisos al boot
+log_info "Instalando tmpfiles.d para /var/lib/pantalla-reloj"
+TMPFILES_SRC="${REPO_ROOT}/etc/tmpfiles.d/pantalla-reloj.conf"
+TMPFILES_DST="/etc/tmpfiles.d/pantalla-reloj.conf"
+if [[ -f "$TMPFILES_SRC" ]]; then
+  install -D -m 0644 "$TMPFILES_SRC" "$TMPFILES_DST"
+  systemd-tmpfiles --create "$TMPFILES_DST" 2>/dev/null || true
+  log_ok "tmpfiles.d instalado en ${TMPFILES_DST}"
+  SUMMARY+=("[install] tmpfiles.d instalado para asegurar permisos al boot")
+else
+  log_warn "tmpfiles.d template no encontrado en ${TMPFILES_SRC}"
+fi
 
 install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$USER_HOME/.config/openbox"
 AUTO_FILE="$USER_HOME/.config/openbox/autostart"

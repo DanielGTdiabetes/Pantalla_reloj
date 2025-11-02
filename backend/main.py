@@ -655,11 +655,17 @@ def _health_payload() -> Dict[str, Any]:
     if runtime_state:
         cinema_block.update(runtime_state)
 
+    # Metadatos de configuración
+    config_metadata = config_manager.get_config_metadata()
+
     payload = {
         "status": "ok",
         "uptime_seconds": int(uptime.total_seconds()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "cinema": cinema_block,
+        "config_path": config_metadata["config_path"],
+        "config_source": config_metadata["config_source"],
+        "has_timezone": config_metadata["has_timezone"],
     }
     flights_layer = {"items": None, "stale": False}
     ships_layer = {"items": None, "stale": False}
@@ -764,6 +770,18 @@ def healthcheck() -> Dict[str, Any]:
 def healthcheck_full() -> Dict[str, Any]:
     """Health check completo con información de todas las capas."""
     logger.debug("Full health check requested")
+    return _health_payload()
+
+
+@app.get("/api/config/meta")
+def config_metadata() -> Dict[str, Any]:
+    """Retorna metadatos sobre la configuración cargada."""
+    logger.debug("Config metadata requested")
+    return config_manager.get_config_metadata()
+
+
+def _health_payload_full_helper() -> Dict[str, Any]:
+    """Helper para health full que lee config adicional."""
     payload = _health_payload()
     
     config = config_manager.read()

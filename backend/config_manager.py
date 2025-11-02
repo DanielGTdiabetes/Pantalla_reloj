@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Literal, Tuple
 
 from pydantic import ValidationError
 
@@ -22,61 +23,222 @@ class ConfigManager:
         default_config_file: Path | None = None,
     ) -> None:
         self.logger = logging.getLogger("pantalla.backend.config")
-        state_path = Path(os.getenv("PANTALLA_STATE_DIR", "/var/lib/pantalla"))
-        self.config_file = config_file or Path(
-            os.getenv("PANTALLA_CONFIG_FILE", state_path / "config.json")
-        )
+        
+        # Resolución robusta de ruta de configuración
+        # 1. ENV PANTALLA_CONFIG (prioridad absoluta)
+        # 2. Ruta por defecto: /var/lib/pantalla-reloj/config.json
+        # 3. Fallback embebido (se establece después)
+        env_config = os.getenv("PANTALLA_CONFIG")
+        if env_config:
+            resolved_path = Path(env_config)
+            self.logger.info("Using config path from PANTALLA_CONFIG env: %s", resolved_path)
+        else:
+            resolved_path = Path("/var/lib/pantalla-reloj/config.json")
+            self.logger.info("Using default config path: %s", resolved_path)
+        
+        self.config_file = config_file or resolved_path
         self.default_config_file = default_config_file or Path(
             os.getenv(
                 "PANTALLA_DEFAULT_CONFIG_FILE",
                 Path(__file__).resolve().parent / "default_config.json",
             )
         )
+        
+        # Trackear si se usó fallback
+        self.config_source: Literal["file", "embedded_fallback"] = "file"
+        self.config_path_used = str(self.config_file)
+        
+        # Resolver configuración con fallback
+        self._resolve_config_with_fallback()
+        
+        # Directorios auxiliares
+        state_path = Path(os.getenv("PANTALLA_STATE_DIR", "/var/lib/pantalla-reloj"))
         self.snapshot_dir = state_path / "config.snapshots"
-        self.snapshot_dir.mkdir(parents=True, exist_ok=True)
-        self.config_file.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_file_exists()
-        self.logger.info(
-            "Using configuration file %s (default template: %s)",
-            self.config_file,
-            self.default_config_file,
+        try:
+            self.snapshot_dir.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError) as exc:
+            self.logger.warning("Could not create snapshot directory %s: %s", self.snapshot_dir, exc)
+    
+    def _resolve_config_with_fallback(self) -> None:
+        """Resuelve el archivo de configuración con fallback claro y logs explícitos."""
+        # Intentar usar el archivo configurado
+        if self.config_file.exists():
+            try:
+                # Verificar permisos de lectura
+                self.config_file.read_text(encoding="utf-8")
+                self.config_source = "file"
+                self.logger.info("Loaded config from %s", self.config_file)
+                return
+            except (PermissionError, OSError) as exc:
+                self.logger.warning(
+                    "Cannot read config file %s (reason: %s), falling back to embedded default",
+                    self.config_file,
+                    exc,
+                )
+        else:
+            self.logger.warning(
+                "Config file %s does not exist, falling back to embedded default",
+                self.config_file,
+            )
+        
+        # Fallback: usar configuración embebida
+        self.config_source = "embedded_fallback"
+        self.logger.warning(
+            "Using embedded default config (fallback). Reason: config file not accessible or missing"
         )
+        
+        # Intentar crear el archivo con defaults si es posible
+        try:
+            self.config_file.parent.mkdir(parents=True, exist_ok=True)
+            if not self.config_file.exists():
+                if self.default_config_file.exists():
+                    try:
+                        self.config_file.write_text(
+                            self.default_config_file.read_text(encoding="utf-8"),
+                            encoding="utf-8",
+                        )
+                        os.chmod(self.config_file, 0o644)
+                        self.logger.info("Created config file at %s from default template", self.config_file)
+                        self.config_source = "file"
+                    except (PermissionError, OSError) as exc:
+                        self.logger.warning(
+                            "Could not create config file at %s: %s", self.config_file, exc
+                        )
+                else:
+                    try:
+                        AppConfig().to_path(self.config_file)
+                        os.chmod(self.config_file, 0o644)
+                        self.logger.info("Created config file at %s from AppConfig() defaults", self.config_file)
+                        self.config_source = "file"
+                    except (PermissionError, OSError) as exc:
+                        self.logger.warning(
+                            "Could not create config file at %s: %s", self.config_file, exc
+                        )
+        except (PermissionError, OSError) as exc:
+            self.logger.warning(
+                "Could not ensure config directory %s exists: %s",
+                self.config_file.parent,
+                exc,
+            )
+        
+        # Actualizar path usado (puede ser el fallback embebido si no se pudo crear)
+        self.config_path_used = str(self.config_file) if self.config_source == "file" else "embedded"
+    
+    def _get_config_hash(self, config_data: Dict[str, Any]) -> str:
+        """Calcula hash corto (SHA256 8 chars) del config para diagnóstico."""
+        config_str = json.dumps(config_data, sort_keys=True)
+        hash_full = hashlib.sha256(config_str.encode("utf-8")).hexdigest()
+        return hash_full[:8]
+    
+    def _normalize_timezone(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Normaliza timezone: mapea display.timezone a general.timezone si es necesario."""
+        # Normalizar timezone: soportar tanto display.timezone como general.timezone
+        if "display" in data and "timezone" in data.get("display", {}):
+            timezone_value = data["display"]["timezone"]
+            if timezone_value and "general" not in data:
+                data["general"] = {}
+            if timezone_value and "general" in data:
+                if "timezone" not in data["general"]:
+                    data["general"]["timezone"] = timezone_value
+                    self.logger.debug(
+                        "Mapped display.timezone to general.timezone: %s", timezone_value
+                    )
+        return data
 
     def _ensure_file_exists(self) -> None:
-        if not self.config_file.exists():
-            if self.default_config_file.exists():
-                self.config_file.write_text(self.default_config_file.read_text(), encoding="utf-8")
-            else:
-                AppConfig().to_path(self.config_file)
-            os.chmod(self.config_file, 0o644)
-            self.logger.info("Created new configuration file at %s", self.config_file)
-        else:
+        """Asegura que el archivo de configuración existe (ya se maneja en _resolve_config_with_fallback)."""
+        # La lógica de creación ya está en _resolve_config_with_fallback
+        # Solo ajustar permisos si el archivo existe
+        if self.config_file.exists():
             try:
                 os.chmod(self.config_file, 0o644)
-            except PermissionError:
-                self.logger.warning("Could not adjust permissions for %s", self.config_file)
+            except (PermissionError, OSError) as exc:
+                self.logger.warning("Could not adjust permissions for %s: %s", self.config_file, exc)
 
     def read(self) -> AppConfig:
-        try:
-            data = json.loads(self.config_file.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            self.logger.warning("Failed to parse configuration, regenerating defaults: %s", exc)
-            config = AppConfig()
-            self._atomic_write(config)
+        """Lee la configuración con manejo robusto de errores y normalización."""
+        config_data: Dict[str, Any]
+        
+        # Si se usó fallback embebido, usar defaults
+        if self.config_source == "embedded_fallback":
+            self.logger.debug("Using embedded default config (fallback mode)")
+            config_data = AppConfig().model_dump(mode="json")
+            config = AppConfig.model_validate(config_data)
+            config_hash = self._get_config_hash(config_data)
+            self.logger.debug("Embedded config hash (8 chars): %s", config_hash)
             return config
-        data, migrated = self._migrate_missing_keys(data)
+        
+        # Leer desde archivo
         try:
-            config = AppConfig.model_validate(data)
+            raw_text = self.config_file.read_text(encoding="utf-8")
+            config_data = json.loads(raw_text)
+            config_hash = self._get_config_hash(config_data)
+            self.logger.debug("Config hash (8 chars): %s", config_hash)
+        except (json.JSONDecodeError, OSError, PermissionError) as exc:
+            self.logger.error(
+                "Failed to read/parse config from %s: %s, using embedded defaults",
+                self.config_file,
+                exc,
+            )
+            self.config_source = "embedded_fallback"
+            config_data = AppConfig().model_dump(mode="json")
+        
+        # Normalizar timezone
+        config_data = self._normalize_timezone(config_data)
+        
+        # Migrar claves faltantes
+        config_data, migrated = self._migrate_missing_keys(config_data)
+        
+        # Validar y crear modelo
+        try:
+            config = AppConfig.model_validate(config_data)
         except ValidationError as exc:
-            self.logger.warning("Invalid configuration on disk, regenerating defaults: %s", exc)
+            self.logger.error(
+                "Invalid configuration in %s: %s, using embedded defaults",
+                self.config_file,
+                exc,
+            )
+            self.config_source = "embedded_fallback"
             config = AppConfig()
-            self._atomic_write(config)
+            try:
+                self._atomic_write(config)
+            except (PermissionError, OSError) as write_exc:
+                self.logger.warning("Could not write fixed config: %s", write_exc)
             return config
+        
+        # Si hubo migración, guardar
         if migrated:
             self.logger.info("Applied configuration migrations for missing defaults")
-            self._atomic_write(config)
-            self._write_snapshot(config)
+            try:
+                self._atomic_write(config)
+                self._write_snapshot(config)
+            except (PermissionError, OSError) as write_exc:
+                self.logger.warning("Could not persist migrated config: %s", write_exc)
+        
         return config
+    
+    def get_config_metadata(self) -> Dict[str, Any]:
+        """Retorna metadatos sobre la configuración cargada."""
+        has_timezone = False
+        try:
+            config = self.read()
+            # Verificar si hay timezone válido
+            # Puede estar en general.timezone (v2) o display.timezone (v1)
+            if hasattr(config, "display") and hasattr(config.display, "timezone"):
+                tz = getattr(config.display, "timezone", None)
+                has_timezone = bool(tz and str(tz).strip())
+            # También verificar general si existe (para compatibilidad futura)
+            elif hasattr(config, "general") and hasattr(config.general, "timezone"):
+                tz = getattr(config.general, "timezone", None)
+                has_timezone = bool(tz and str(tz).strip())
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("Could not determine timezone from config: %s", exc)
+        
+        return {
+            "config_path": self.config_path_used,
+            "config_source": self.config_source,
+            "has_timezone": has_timezone,
+        }
 
     def write(self, payload: Dict[str, Any]) -> AppConfig:
         config = AppConfig.model_validate(payload)
