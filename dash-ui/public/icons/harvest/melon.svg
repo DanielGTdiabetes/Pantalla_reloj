@@ -1,5 +1,63 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <circle cx="12" cy="12" r="9" fill="#f4d03f" stroke="#f1c40f"/>
-  <path d="M12 3v18M3 12h18" stroke="#f39c12" stroke-width="1.5"/>
-  <path d="M6 6l3 3M18 18l-3-3M18 6l-3 3M6 18l3-3" stroke="#f39c12" stroke-width="1" opacity="0.6"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="melon-body" cx="0.5" cy="0.5" r="0.6">
+      <stop offset="0%" stop-color="#FFE5B4" />
+      <stop offset="30%" stop-color="#FFD89B" />
+      <stop offset="70%" stop-color="#FFB84D" />
+      <stop offset="100%" stop-color="#FF9500" />
+    </radialGradient>
+    <radialGradient id="melon-highlight" cx="0.45" cy="0.4" r="0.3">
+      <stop offset="0%" stop-color="#FFFACD" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#FFE5B4" stop-opacity="0.4" />
+    </radialGradient>
+    <linearGradient id="melon-pattern" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#DAA520" stop-opacity="0.6" />
+      <stop offset="100%" stop-color="#B8860B" stop-opacity="0.4" />
+    </linearGradient>
+    <linearGradient id="melon-leaf" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#228B22" />
+      <stop offset="50%" stop-color="#32CD32" />
+      <stop offset="100%" stop-color="#228B22" />
+    </linearGradient>
+    <filter id="melon-shadow">
+      <feGaussianBlur stdDeviation="5" result="coloredBlur"/>
+      <feOffset in="coloredBlur" dx="4" dy="6"/>
+    </filter>
+  </defs>
+  
+  <!-- Melon shadow -->
+  <ellipse cx="256" cy="480" rx="140" ry="30" fill="#000000" opacity="0.2" filter="url(#melon-shadow)"/>
+  
+  <!-- Melon body -->
+  <ellipse cx="256" cy="320" rx="160" ry="140" fill="url(#melon-body)" stroke="#FF9500" stroke-width="3" filter="url(#melon-shadow)"/>
+  
+  <!-- Melon highlight -->
+  <ellipse cx="220" cy="280" rx="80" ry="90" fill="url(#melon-highlight)"/>
+  
+  <!-- Melon pattern (net-like lines) -->
+  <g stroke="url(#melon-pattern)" stroke-width="2" opacity="0.6">
+    <path d="M 180 280 Q 200 260 220 280 Q 240 300 260 320 Q 280 340 300 320 Q 320 300 340 320" fill="none"/>
+    <path d="M 180 320 Q 200 300 220 320 Q 240 340 260 360 Q 280 380 300 360 Q 320 340 340 360" fill="none"/>
+    <path d="M 180 360 Q 200 340 220 360 Q 240 380 260 400 Q 280 420 300 400 Q 320 380 340 400" fill="none"/>
+  </g>
+  
+  <!-- Melon leaves (top) -->
+  <path d="M 256 180 Q 240 160 230 185 Q 220 200 240 205 Q 260 200 256 180 Z" 
+        fill="url(#melon-leaf)" 
+        stroke="#006400" 
+        stroke-width="1"/>
+  <path d="M 270 185 Q 285 165 280 190 Q 275 205 270 185 Z" 
+        fill="url(#melon-leaf)" 
+        stroke="#006400" 
+        stroke-width="1"/>
+  <path d="M 242 185 Q 227 165 232 190 Q 237 205 242 185 Z" 
+        fill="url(#melon-leaf)" 
+        stroke="#006400" 
+        stroke-width="1"/>
+  
+  <!-- Melon stem -->
+  <line x1="256" y1="180" x2="256" y2="140" stroke="#8B4513" stroke-width="5" stroke-linecap="round"/>
+  
+  <!-- Melon shine -->
+  <ellipse cx="230" cy="300" rx="40" ry="50" fill="#FFFFFF" opacity="0.7"/>
 </svg>

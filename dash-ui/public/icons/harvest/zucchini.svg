@@ -1,7 +1,42 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <ellipse cx="12" cy="12" rx="6" ry="5" fill="#95d5b2" stroke="#74c69d"/>
-  <path d="M6 12h12" stroke="#fff" opacity="0.4" stroke-width="1"/>
-  <circle cx="10" cy="11" r="1" fill="#52b788" opacity="0.6"/>
-  <circle cx="14" cy="11" r="1" fill="#52b788" opacity="0.6"/>
-  <circle cx="12" cy="13" r="1" fill="#52b788" opacity="0.6"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="zucchini-body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#9ACD32" />
+      <stop offset="50%" stop-color="#6B8E23" />
+      <stop offset="100%" stop-color="#556B2F" />
+    </linearGradient>
+    <radialGradient id="zucchini-highlight" cx="0.5" cy="0.3" r="0.4">
+      <stop offset="0%" stop-color="#ADFF2F" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#9ACD32" stop-opacity="0.3" />
+    </radialGradient>
+    <linearGradient id="zucchini-stripe" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#808000" />
+      <stop offset="100%" stop-color="#556B2F" />
+    </linearGradient>
+    <filter id="zucchini-shadow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feOffset in="coloredBlur" dx="2" dy="4"/>
+    </filter>
+  </defs>
+  
+  <!-- Zucchini shadow -->
+  <ellipse cx="256" cy="480" rx="90" ry="20" fill="#000000" opacity="0.15" filter="url(#zucchini-shadow)"/>
+  
+  <!-- Zucchini body (long cylinder) -->
+  <ellipse cx="256" cy="300" rx="100" ry="80" fill="url(#zucchini-body)" stroke="#556B2F" stroke-width="2" filter="url(#zucchini-shadow)"/>
+  
+  <!-- Zucchini highlight -->
+  <ellipse cx="240" cy="280" rx="70" ry="55" fill="url(#zucchini-highlight)"/>
+  
+  <!-- Zucchini stripes (longitudinal) -->
+  <g stroke="url(#zucchini-stripe)" stroke-width="3" opacity="0.7">
+    <line x1="200" y1="240" x2="200" y2="360" stroke-linecap="round"/>
+    <line x1="230" y1="230" x2="230" y2="370" stroke-linecap="round"/>
+    <line x1="260" y1="230" x2="260" y2="370" stroke-linecap="round"/>
+    <line x1="290" y1="230" x2="290" y2="370" stroke-linecap="round"/>
+    <line x1="320" y1="240" x2="320" y2="360" stroke-linecap="round"/>
+  </g>
+  
+  <!-- Zucchini shine -->
+  <ellipse cx="240" cy="280" rx="50" ry="40" fill="#FFFFFF" opacity="0.6"/>
 </svg>

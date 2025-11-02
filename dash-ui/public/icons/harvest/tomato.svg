@@ -1,5 +1,53 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <circle cx="12" cy="12" r="9" fill="#e63946" stroke="#c1121f"/>
-  <path d="M12 3v3M12 18v3M3 12h3M18 12h3" stroke="#c1121f" stroke-width="1"/>
-  <path d="M8 8l1.5 1.5M14.5 14.5L16 16" stroke="#fff" opacity="0.3"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="tomato-body" cx="0.45" cy="0.35" r="0.65">
+      <stop offset="0%" stop-color="#FF6B6B" />
+      <stop offset="30%" stop-color="#E63946" />
+      <stop offset="70%" stop-color="#DC143C" />
+      <stop offset="100%" stop-color="#B22222" />
+    </radialGradient>
+    <radialGradient id="tomato-highlight" cx="0.4" cy="0.3" r="0.35">
+      <stop offset="0%" stop-color="#FFE5E5" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#FF6B6B" stop-opacity="0.4" />
+    </radialGradient>
+    <linearGradient id="tomato-stem" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#228B22" />
+      <stop offset="100%" stop-color="#006400" />
+    </linearGradient>
+    <filter id="tomato-shadow">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feOffset in="coloredBlur" dx="3" dy="5"/>
+    </filter>
+  </defs>
+  
+  <!-- Tomato shadow -->
+  <ellipse cx="256" cy="480" rx="100" ry="25" fill="#000000" opacity="0.2" filter="url(#tomato-shadow)"/>
+  
+  <!-- Tomato body -->
+  <circle cx="256" cy="300" r="140" fill="url(#tomato-body)" stroke="#B22222" stroke-width="3" filter="url(#tomato-shadow)"/>
+  
+  <!-- Tomato highlight -->
+  <ellipse cx="200" cy="240" rx="70" ry="90" fill="url(#tomato-highlight)"/>
+  
+  <!-- Tomato stem with leaves -->
+  <path d="M 256 160 Q 240 140 235 165 Q 230 180 245 175 Q 260 170 256 160 Z" 
+        fill="url(#tomato-stem)" 
+        stroke="#006400" 
+        stroke-width="1"/>
+  <path d="M 270 165 Q 285 150 280 170 Q 275 185 270 165 Z" 
+        fill="url(#tomato-stem)" 
+        stroke="#006400" 
+        stroke-width="1"/>
+  <path d="M 242 165 Q 227 150 232 170 Q 237 185 242 165 Z" 
+        fill="url(#tomato-stem)" 
+        stroke="#006400" 
+        stroke-width="1"/>
+  
+  <!-- Tomato shine -->
+  <ellipse cx="210" cy="260" rx="30" ry="40" fill="#FFFFFF" opacity="0.7"/>
+  
+  <!-- Tomato texture (seeds) -->
+  <circle cx="250" cy="320" r="3" fill="#FFD700" opacity="0.6"/>
+  <circle cx="270" cy="310" r="3" fill="#FFD700" opacity="0.6"/>
+  <circle cx="240" cy="330" r="3" fill="#FFD700" opacity="0.6"/>
 </svg>
