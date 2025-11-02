@@ -26,7 +26,9 @@ export const SaintsCard = ({ saints }: SaintsCardProps): JSX.Element => {
       <div className="saints-card__scroller">
         <ul className="saints-card__list">
           {displayEntries.map((entry, index) => (
-            <li key={`saints-${index}-${entry.substring(0, 10)}`}>{entry}</li>
+            <li key={`saints-${index}-${entry.substring(0, 10)}`}>
+              {entry}
+            </li>
           ))}
         </ul>
         <div className="saints-card__gradient" aria-hidden="true" />

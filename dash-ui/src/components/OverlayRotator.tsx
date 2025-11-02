@@ -196,14 +196,14 @@ export const OverlayRotator: React.FC = () => {
       ? (astronomy.illumination as number)
       : null;
 
-  const ephemeridesEvents = safeArray(astronomy.events)
-    .map((entry) => sanitizeRichText(entry?.description ?? entry?.title ?? ""))
+  const ephemeridesEvents = safeArray(astronomy.events || astronomy.ephemerides || astronomy.event)
+    .map((entry) => sanitizeRichText(entry?.description ?? entry?.title ?? entry?.name ?? entry?.text ?? ""))
     .filter((value): value is string => Boolean(value));
 
-  const newsItems = safeArray(news.items).map((item) => ({
-    title: sanitizeRichText(item.title) || "Titular",
-    summary: sanitizeRichText(item.summary) || sanitizeRichText(item.description) || undefined,
-    source: sanitizeRichText(item.source) || undefined
+  const newsItems = safeArray(news.items || news.entries || news.news || news.articles).map((item) => ({
+    title: sanitizeRichText(item.title || item.headline || item.name) || "Titular",
+    summary: sanitizeRichText(item.summary || item.description || item.content || item.text) || undefined,
+    source: sanitizeRichText(item.source || item.author || item.feed) || undefined
   }));
 
   const calendarEvents = safeArray(calendar.upcoming).map((event) => ({
@@ -218,7 +218,9 @@ export const OverlayRotator: React.FC = () => {
 
   const saintsEntries = useMemo(() => {
     const fromSaints = extractStrings(calendar.saints);
-    const fromNamedays = extractStrings(calendar.namedays);
+    // Solo incluir onomásticos si está habilitado en config
+    const includeNamedays = config.saints?.include_namedays !== false;
+    const fromNamedays = includeNamedays ? extractStrings(calendar.namedays) : [];
     // Combinar y eliminar duplicados (case-insensitive)
     const combined = [...fromSaints, ...fromNamedays];
     const unique = combined.filter((entry, index, self) => {
@@ -226,7 +228,7 @@ export const OverlayRotator: React.FC = () => {
       return self.findIndex((e) => e.toLowerCase().trim() === normalized) === index;
     });
     return unique;
-  }, [calendar.saints, calendar.namedays]);
+  }, [calendar.saints, calendar.namedays, config.saints?.include_namedays]);
 
   const forecastDays = useMemo(() => {
     const forecastData = weather.forecast || weather.daily || weather.weekly || [];
@@ -333,8 +335,8 @@ export const OverlayRotator: React.FC = () => {
         });
       }
 
-      // Harvest card - solo si está habilitado
-      if (config.harvest?.enabled) {
+      // Harvest card - solo si está habilitado y hay items
+      if (config.harvest?.enabled !== false && harvestItems.length > 0) {
         cards.push({
           id: "harvest",
           duration: 12000,
@@ -342,8 +344,8 @@ export const OverlayRotator: React.FC = () => {
         });
       }
 
-      // Saints card - solo si está habilitado
-      if (config.saints?.enabled) {
+      // Saints card - solo si está habilitado y hay entradas
+      if (config.saints?.enabled !== false && saintsEntries.length > 0) {
         cards.push({
           id: "saints",
           duration: 12000,
@@ -351,8 +353,8 @@ export const OverlayRotator: React.FC = () => {
         });
       }
 
-      // News card - solo si está habilitado
-      if (config.news?.enabled !== false) {
+      // News card - solo si está habilitado y hay items
+      if (config.news?.enabled !== false && newsItems.length > 0) {
         cards.push({
           id: "news",
           duration: 20000,
@@ -360,8 +362,8 @@ export const OverlayRotator: React.FC = () => {
         });
       }
 
-      // Ephemerides card - solo si está habilitado
-      if (config.ephemerides?.enabled !== false) {
+      // Ephemerides card - solo si está habilitado y hay datos
+      if (config.ephemerides?.enabled !== false && (sunrise || sunset || moonPhase || ephemeridesEvents.length > 0)) {
         cards.push({
           id: "ephemerides",
           duration: 20000,

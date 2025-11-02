@@ -26,12 +26,14 @@ const getHarvestIcon = (itemName: string): string | null => {
   // Mapeo de nombres comunes a archivos SVG disponibles
   // Cubre todos los cultivos del año según HARVEST_SEASON_DATA
   const iconMap: Record<string, string> = {
-    // Frutas cítricas (usar apple.svg como genérico)
+    // Frutas cítricas
     "naranja": "apple",
     "naranjas": "apple",
     "mandarina": "apple",
     "mandarinas": "apple",
     "limón": "apple",
+    "limones": "apple",
+    "limon": "apple",
     "limones": "apple",
     "manzana": "apple",
     "manzanas": "apple",
@@ -64,8 +66,10 @@ const getHarvestIcon = (itemName: string): string | null => {
     
     // Melones y sandías
     "melón": "melon",
+    "melon": "melon",
     "melones": "melon",
     "sandía": "watermelon",
+    "sandia": "watermelon",
     "sandías": "watermelon",
     
     // Calabazas
@@ -78,16 +82,19 @@ const getHarvestIcon = (itemName: string): string | null => {
     "col": "lettuce",
     "coles": "lettuce",
     "coliflor": "cauliflower",
+    "coliflores": "cauliflower",
     "acelga": "chard",
     "acelgas": "chard",
     "espinaca": "chard",
     "espinacas": "chard",
     "rúcula": "chard",
+    "rucula": "chard",
     
     // Brócoli y coles
     "brócoli": "broccoli",
     "brocoli": "broccoli",
     "brócolis": "broccoli",
+    "brocolis": "broccoli",
     
     // Raíces y bulbos
     "zanahoria": "carrot",
@@ -95,7 +102,9 @@ const getHarvestIcon = (itemName: string): string | null => {
     "ajo": "carrot",
     "ajos": "carrot",
     "rábano": "carrot",
+    "rabano": "carrot",
     "rábanos": "carrot",
+    "rabanos": "carrot",
     
     // Remolachas
     "remolacha": "beet",
@@ -107,8 +116,11 @@ const getHarvestIcon = (itemName: string): string | null => {
     "guisante": "bean",
     "guisantes": "bean",
     "judía": "bean",
+    "judia": "bean",
     "judías": "bean",
+    "judias": "bean",
     "habón": "bean",
+    "habon": "bean",
     "habones": "bean",
     
     // Solanáceas y cucurbitáceas
@@ -119,6 +131,7 @@ const getHarvestIcon = (itemName: string): string | null => {
     "berenjena": "eggplant",
     "berenjenas": "eggplant",
     "calabacín": "zucchini",
+    "calabacin": "zucchini",
     "calabacines": "zucchini",
     "pepino": "cucumber",
     "pepinos": "cucumber",
@@ -127,6 +140,7 @@ const getHarvestIcon = (itemName: string): string | null => {
     "alcachofa": "artichoke",
     "alcachofas": "artichoke",
     "maíz": "corn",
+    "maiz": "corn",
   };
   
   // Buscar coincidencia exacta primero
@@ -135,12 +149,16 @@ const getHarvestIcon = (itemName: string): string | null => {
   }
   
   // Buscar coincidencia parcial (si el nombre contiene alguna clave del mapa)
-  for (const [key, value] of Object.entries(iconMap)) {
+  // Ordenar por longitud descendente para priorizar coincidencias más largas
+  const sortedEntries = Object.entries(iconMap).sort((a, b) => b[0].length - a[0].length);
+  for (const [key, value] of sortedEntries) {
     if (nameLower.includes(key) || key.includes(nameLower)) {
       return `/icons/harvest/${value}.svg`;
     }
   }
   
+  // Log para debug si no se encuentra coincidencia
+  console.warn(`[HarvestCard] No se encontró icono para: "${itemName}" (normalizado: "${nameLower}")`);
   return null;
 };
 
@@ -166,13 +184,18 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
                     src={iconPath} 
                     alt={entry.name}
                     className="h-8 w-8"
-                    style={{ marginRight: "8px", verticalAlign: "middle", width: "32px", height: "32px" }}
+                    style={{ marginRight: "8px", verticalAlign: "middle", width: "32px", height: "32px", display: "inline-block" }}
                     onError={(e) => {
-                      console.warn(`[HarvestCard] Error al cargar icono: ${iconPath} para ${entry.name}`);
+                      console.warn(`[HarvestCard] Error al cargar icono: ${iconPath} para "${entry.name}"`);
                       (e.target as HTMLImageElement).style.display = "none";
                     }}
+                    onLoad={() => {
+                      console.debug(`[HarvestCard] Icono cargado correctamente: ${iconPath} para "${entry.name}"`);
+                    }}
                   />
-                ) : null}
+                ) : (
+                  <span style={{ marginRight: "8px", display: "inline-block", width: "32px", height: "32px" }} />
+                )}
                 <span className="harvest-card__item">{entry.name}</span>
                 {entry.status ? <span className="harvest-card__status">{entry.status}</span> : null}
               </li>
