@@ -91,11 +91,33 @@ const extractStrings = (value: unknown): string[] => {
   }
   if (Array.isArray(value)) {
     return value
-      .map((entry) => (typeof entry === "string" ? entry : sanitizeRichText(entry)))
-      .filter((entry): entry is string => Boolean(entry));
+      .map((entry) => {
+        // Si es string, devolver directamente
+        if (typeof entry === "string") {
+          return entry.trim();
+        }
+        // Si es objeto, intentar extraer campos comunes
+        if (entry && typeof entry === "object") {
+          const obj = entry as Record<string, unknown>;
+          // Prioridad: name > title > description > text
+          const name = typeof obj.name === "string" ? obj.name
+            : typeof obj.title === "string" ? obj.title
+            : typeof obj.description === "string" ? obj.description
+            : typeof obj.text === "string" ? obj.text
+            : null;
+          if (name) {
+            return ensurePlainText(name);
+          }
+          // Si no hay campo name, intentar convertir el objeto completo a string
+          return ensurePlainText(String(entry));
+        }
+        // Para otros tipos, convertir a string
+        return ensurePlainText(String(entry));
+      })
+      .filter((entry): entry is string => Boolean(entry && entry.trim()));
   }
   if (typeof value === "string") {
-    return [value];
+    return [value.trim()].filter(Boolean);
   }
   return [];
 };
@@ -192,7 +214,13 @@ export const OverlayRotator: React.FC = () => {
   const saintsEntries = useMemo(() => {
     const fromSaints = extractStrings(calendar.saints);
     const fromNamedays = extractStrings(calendar.namedays);
-    return [...fromSaints, ...fromNamedays];
+    // Combinar y eliminar duplicados (case-insensitive)
+    const combined = [...fromSaints, ...fromNamedays];
+    const unique = combined.filter((entry, index, self) => {
+      const normalized = entry.toLowerCase().trim();
+      return self.findIndex((e) => e.toLowerCase().trim() === normalized) === index;
+    });
+    return unique;
   }, [calendar.saints, calendar.namedays]);
 
   const forecastDays = useMemo(() => {

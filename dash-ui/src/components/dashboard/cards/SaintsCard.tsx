@@ -4,16 +4,18 @@ type SaintsCardProps = {
   saints: string[];
 };
 
-const repeatItems = <T,>(items: T[]): T[] => {
-  if (items.length === 0) {
-    return items;
-  }
-  return [...items, ...items];
-};
-
 export const SaintsCard = ({ saints }: SaintsCardProps): JSX.Element => {
-  const entries = saints.length > 0 ? saints : ["Sin onomásticas registradas"];
-  const repeatedEntries = repeatItems(entries);
+  // Filtrar entradas vacías y asegurar que sean strings válidos
+  const entries = saints
+    .map((entry) => (typeof entry === "string" ? entry.trim() : String(entry).trim()))
+    .filter((entry) => entry && entry !== "" && entry !== "[object Object]" && !entry.toLowerCase().includes("object"))
+    .filter((entry, index, self) => {
+      // Eliminar duplicados adicionales (case-insensitive)
+      const normalized = entry.toLowerCase();
+      return self.findIndex((e) => e.toLowerCase() === normalized) === index;
+    });
+
+  const displayEntries = entries.length > 0 ? entries : ["Sin onomásticas registradas"];
 
   return (
     <div className="card saints-card">
@@ -23,9 +25,8 @@ export const SaintsCard = ({ saints }: SaintsCardProps): JSX.Element => {
       </div>
       <div className="saints-card__scroller">
         <ul className="saints-card__list">
-          {repeatedEntries.map((entry, index) => (
-            // Usar índice completo para garantizar keys únicas (incluso después de duplicar)
-            <li key={`saints-${index}`}>{entry}</li>
+          {displayEntries.map((entry, index) => (
+            <li key={`saints-${index}-${entry.substring(0, 10)}`}>{entry}</li>
           ))}
         </ul>
         <div className="saints-card__gradient" aria-hidden="true" />
