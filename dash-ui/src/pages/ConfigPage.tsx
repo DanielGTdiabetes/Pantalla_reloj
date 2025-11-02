@@ -1885,7 +1885,7 @@ const ConfigPage: React.FC = () => {
               <p>Personaliza los colores del mapa.</p>
             </div>
             <div className="config-grid">
-                {supports("ui.map.theme.sea") && (
+              {supports("ui.map.theme.sea") && (
                   <div className="config-field">
                     <label htmlFor="theme_sea">Color mar</label>
                     <input
@@ -1908,9 +1908,9 @@ const ConfigPage: React.FC = () => {
                     />
                     {renderHelp("Color hexadecimal del agua")}
                   </div>
-                )}
+              )}
 
-                {supports("ui.map.theme.land") && (
+              {supports("ui.map.theme.land") && (
                   <div className="config-field">
                     <label htmlFor="theme_land">Color tierra</label>
                     <input
@@ -1933,9 +1933,9 @@ const ConfigPage: React.FC = () => {
                     />
                     {renderHelp("Color base para continentes")}
                   </div>
-                )}
+              )}
 
-                {supports("ui.map.theme.label") && (
+              {supports("ui.map.theme.label") && (
                   <div className="config-field">
                     <label htmlFor="theme_label">Color etiquetas</label>
                     <input
@@ -1958,9 +1958,9 @@ const ConfigPage: React.FC = () => {
                     />
                     {renderHelp("Color de texto en el mapa")}
                   </div>
-                )}
+              )}
 
-                {supports("ui.map.theme.contrast") && (
+              {supports("ui.map.theme.contrast") && (
                   <div className="config-field">
                     <label htmlFor="theme_contrast">Contraste</label>
                     <input
@@ -1988,9 +1988,9 @@ const ConfigPage: React.FC = () => {
                     {renderHelp("Intensidad del contraste adicional")}
                     {renderFieldError("ui.map.theme.contrast")}
                   </div>
-                )}
+              )}
 
-                {supports("ui.map.theme.tint") && (
+              {supports("ui.map.theme.tint") && (
                   <div className="config-field">
                     <label htmlFor="theme_tint">Capa de tinte</label>
                     <input
@@ -2013,8 +2013,7 @@ const ConfigPage: React.FC = () => {
                     />
                     {renderHelp("RGBA opcional para resaltar el mapa")}
                   </div>
-                )}
-              </div>
+              )}
             </div>
           </div>
         )}
