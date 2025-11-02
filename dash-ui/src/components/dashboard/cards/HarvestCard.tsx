@@ -24,8 +24,9 @@ const getHarvestIcon = (itemName: string): string | null => {
   const nameLower = itemName.toLowerCase().trim();
   
   // Mapeo de nombres comunes a archivos SVG disponibles
+  // Cubre todos los cultivos del año según HARVEST_SEASON_DATA
   const iconMap: Record<string, string> = {
-    // Frutas
+    // Frutas cítricas (usar apple.svg como genérico)
     "naranja": "apple",
     "naranjas": "apple",
     "mandarina": "apple",
@@ -34,35 +35,98 @@ const getHarvestIcon = (itemName: string): string | null => {
     "limones": "apple",
     "manzana": "apple",
     "manzanas": "apple",
-    "pera": "pear",
-    "peras": "pear",
+    
+    // Frutas de hueso (usar cherry.svg)
     "cereza": "cherry",
     "cerezas": "cherry",
+    "fresa": "cherry",
+    "fresas": "cherry",
+    "melocotón": "cherry",
+    "melocotones": "cherry",
+    "albaricoque": "cherry",
+    "albaricoques": "cherry",
+    
+    // Frutas de pepita
+    "pera": "pear",
+    "peras": "pear",
+    "granada": "pear",
+    "granadas": "pear",
+    "caqui": "pear",
+    "caquis": "pear",
+    "castaña": "pear",
+    "castañas": "pear",
+    
+    // Uvas y frutas pequeñas
     "uva": "grapes",
     "uvas": "grapes",
+    "higo": "grapes",
+    "higos": "grapes",
+    
+    // Melones y sandías (usar pumpkin.svg)
+    "melón": "pumpkin",
+    "melones": "pumpkin",
+    "sandía": "pumpkin",
+    "sandías": "pumpkin",
+    
+    // Calabazas
     "calabaza": "pumpkin",
     "calabazas": "pumpkin",
     
-    // Verduras
-    "zanahoria": "carrot",
-    "zanahorias": "carrot",
-    "remolacha": "beet",
-    "remolachas": "beet",
+    // Verduras de hoja
+    "lechuga": "lettuce",
+    "lechugas": "lettuce",
+    "col": "lettuce",
+    "coles": "lettuce",
+    "coliflor": "lettuce",
+    "acelga": "chard",
+    "acelgas": "chard",
+    "espinaca": "chard",
+    "espinacas": "chard",
+    "rúcula": "chard",
+    
+    // Brócoli y coles
     "brócoli": "broccoli",
     "brocoli": "broccoli",
     "brócolis": "broccoli",
-    "lechuga": "lettuce",
-    "lechugas": "lettuce",
-    "acelga": "chard",
-    "acelgas": "chard",
-    "col": "lettuce",
-    "coles": "lettuce",
+    
+    // Raíces y bulbos
+    "zanahoria": "carrot",
+    "zanahorias": "carrot",
     "ajo": "carrot",
     "ajos": "carrot",
+    "rábano": "carrot",
+    "rábanos": "carrot",
+    
+    // Remolachas
+    "remolacha": "beet",
+    "remolachas": "beet",
     "cebolla": "beet",
     "cebollas": "beet",
+    
+    // Legumbres (usar carrot.svg)
     "guisante": "carrot",
     "guisantes": "carrot",
+    "judía": "carrot",
+    "judías": "carrot",
+    "habón": "carrot",
+    "habones": "carrot",
+    
+    // Tomates, pimientos, berenjenas (usar cherry.svg)
+    "tomate": "cherry",
+    "tomates": "cherry",
+    "pimiento": "cherry",
+    "pimientos": "cherry",
+    "berenjena": "cherry",
+    "berenjenas": "cherry",
+    "calabacín": "cherry",
+    "calabacines": "cherry",
+    "pepino": "cherry",
+    "pepinos": "cherry",
+    
+    // Otros (usar carrot.svg como genérico)
+    "alcachofa": "carrot",
+    "alcachofas": "carrot",
+    "maíz": "carrot",
   };
   
   // Buscar coincidencia exacta primero
@@ -72,7 +136,7 @@ const getHarvestIcon = (itemName: string): string | null => {
   
   // Buscar coincidencia parcial (si el nombre contiene alguna clave del mapa)
   for (const [key, value] of Object.entries(iconMap)) {
-    if (nameLower.includes(key)) {
+    if (nameLower.includes(key) || key.includes(nameLower)) {
       return `/icons/harvest/${value}.svg`;
     }
   }
