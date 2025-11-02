@@ -770,17 +770,14 @@ def _health_payload() -> Dict[str, Any]:
         # Intentar leer como v2
         try:
             config_v2, _ = _read_config_v2()
-            calendar_provider = "google"  # default
-            enabled = False
-            if config_v2.panels and config_v2.panels.calendar:
-                enabled = getattr(config_v2.panels.calendar, "enabled", False)
-                calendar_provider = getattr(config_v2.panels.calendar, "provider", "google")
+            calendar_provider, enabled, ics_path = _resolve_calendar_settings(config_v2)
         except Exception:  # noqa: BLE001
             # Fallback a v1
             calendar_config = config.calendar
             enabled = calendar_config.enabled
             calendar_provider = "google"
-        
+            ics_path = None
+
         # Leer credenciales según provider
         credentials_present = False
         if calendar_provider == "google":
@@ -788,10 +785,8 @@ def _health_payload() -> Dict[str, Any]:
             calendar_id = secret_store.get_secret("google_calendar_id")
             credentials_present = bool(api_key and calendar_id)
         elif calendar_provider == "ics":
-            ics_url = secret_store.get_secret("calendar_ics_url")
-            ics_path = secret_store.get_secret("calendar_ics_path")
-            credentials_present = bool(ics_url or ics_path)
-        
+            credentials_present = _ics_path_is_readable(ics_path)
+
         # Intentar obtener último fetch desde caché o estado
         last_fetch_iso = None
         calendar_status = "ok"
@@ -1229,20 +1224,63 @@ def get_config(request: Request) -> JSONResponse:
     public_config["has_timezone"] = config_metadata.get("has_timezone", False)
     
     # Añadir información de calendario (provider y estructura top-level)
-    if config_v2.panels and config_v2.panels.calendar:
-        public_config.setdefault("panels", {})["calendar"] = {
-            "enabled": getattr(config_v2.panels.calendar, "enabled", False),
-            "provider": getattr(config_v2.panels.calendar, "provider", "google"),
+    panels_calendar = (
+        config_v2.panels.calendar if config_v2.panels and config_v2.panels.calendar else None
+    )
+    top_calendar = getattr(config_v2, "calendar", None)
+
+    calendar_enabled = False
+    calendar_provider = "google"
+    calendar_ics_path: Optional[str] = None
+
+    if top_calendar:
+        calendar_enabled = getattr(top_calendar, "enabled", calendar_enabled)
+        calendar_provider = getattr(top_calendar, "provider", calendar_provider)
+        calendar_ics_path = getattr(top_calendar, "ics_path", None)
+    elif panels_calendar:
+        calendar_enabled = getattr(panels_calendar, "enabled", calendar_enabled)
+        calendar_provider = getattr(panels_calendar, "provider", calendar_provider)
+        calendar_ics_path = getattr(panels_calendar, "ics_path", None)
+
+    # Fallback a panel si top-level no tiene ics_path
+    if calendar_provider == "ics" and not calendar_ics_path and panels_calendar:
+        calendar_ics_path = getattr(panels_calendar, "ics_path", None)
+
+    panels_block = public_config.setdefault("panels", {})
+    panel_payload = {
+        "enabled": calendar_enabled,
+        "provider": calendar_provider,
+    }
+    if calendar_provider == "ics" and calendar_ics_path:
+        panel_payload["ics_path"] = calendar_ics_path
+    panels_block["calendar"] = panel_payload
+
+    public_calendar = {
+        "enabled": calendar_enabled,
+        "provider": calendar_provider,
+    }
+    if calendar_provider == "ics" and calendar_ics_path:
+        public_calendar["ics_path"] = calendar_ics_path
+    public_config["calendar"] = public_calendar
+
+    stored_opensky_id = secret_store.get_secret("opensky_client_id")
+    stored_opensky_secret = secret_store.get_secret("opensky_client_secret")
+    public_config["opensky"] = {
+        "oauth2": {
+            "has_credentials": bool(stored_opensky_id and stored_opensky_secret),
+            "client_id_last4": (
+                stored_opensky_id[-4:]
+                if stored_opensky_id and len(stored_opensky_id) >= 4
+                else stored_opensky_id
+            ),
+            "token_url": DEFAULT_TOKEN_URL,
+            "scope": None,
         }
-        # Añadir calendar top-level para compatibilidad
-        public_config["calendar"] = {
-            "enabled": getattr(config_v2.panels.calendar, "enabled", False),
-            "provider": getattr(config_v2.panels.calendar, "provider", "google"),
-        }
-    
+    }
+
     # Añadir secrets.calendar_ics (solo estructura, sin valores sensibles)
     public_config.setdefault("secrets", {}).setdefault("calendar_ics", {})
-    
+
     response = JSONResponse(content=public_config)
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
@@ -1254,6 +1292,232 @@ def get_config(request: Request) -> JSONResponse:
 
 
 MAX_CONFIG_PAYLOAD_BYTES = 64 * 1024
+
+
+_CONFIG_METADATA_KEYS = {
+    "config_path",
+    "config_source",
+    "config_loaded_at",
+    "has_timezone",
+}
+
+
+def _sanitize_incoming_config_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Remove metadata keys that should not be persisted."""
+
+    return {key: value for key, value in payload.items() if key not in _CONFIG_METADATA_KEYS}
+
+
+def _normalize_calendar_sections(payload: Dict[str, Any]) -> Tuple[str, bool, Optional[str]]:
+    """Normalize calendar config between top-level and panels calendar blocks."""
+
+    panels_raw = payload.get("panels")
+    panels: Dict[str, Any]
+    if isinstance(panels_raw, dict):
+        panels = dict(panels_raw)
+    else:
+        panels = {}
+    payload["panels"] = panels
+
+    panel_calendar_raw = panels.get("calendar") if isinstance(panels, dict) else None
+    panel_calendar = dict(panel_calendar_raw) if isinstance(panel_calendar_raw, dict) else {}
+
+    calendar_raw = payload.get("calendar")
+    top_calendar = dict(calendar_raw) if isinstance(calendar_raw, dict) else {}
+
+    provider_value = top_calendar.get("provider") or panel_calendar.get("provider") or "google"
+    if isinstance(provider_value, str):
+        provider = provider_value.strip().lower()
+    else:
+        provider = "google"
+    if provider not in {"google", "ics", "disabled"}:
+        provider = "google"
+
+    enabled_value = top_calendar.get("enabled")
+    if enabled_value is None:
+        enabled_value = panel_calendar.get("enabled")
+    enabled = bool(enabled_value) if enabled_value is not None else True
+
+    ics_path_value = top_calendar.get("ics_path") or panel_calendar.get("ics_path")
+    ics_path = None
+    if isinstance(ics_path_value, str):
+        candidate = ics_path_value.strip()
+        if candidate:
+            ics_path = candidate
+
+    normalized_panel = {
+        "enabled": enabled,
+        "provider": provider,
+    }
+    normalized_top = {
+        "enabled": enabled,
+        "provider": provider,
+    }
+
+    if provider == "ics" and ics_path:
+        normalized_panel["ics_path"] = ics_path
+        normalized_top["ics_path"] = ics_path
+
+    panels["calendar"] = normalized_panel
+    payload["calendar"] = normalized_top
+
+    return provider, enabled, ics_path
+
+
+def _validate_calendar_requirements(
+    provider: str,
+    enabled: bool,
+    ics_path: Optional[str],
+    google_api_key: Optional[str],
+    google_calendar_id: Optional[str],
+) -> None:
+    """Validate provider-specific requirements for calendar configuration."""
+
+    if provider == "google" and enabled:
+        missing: List[str] = []
+        if not google_api_key or not str(google_api_key).strip():
+            missing.append("google.api_key")
+        if not google_calendar_id or not str(google_calendar_id).strip():
+            missing.append("google.calendar_id")
+        if missing:
+            logger.warning(
+                "[config] Provider google requires credentials (missing=%s)",
+                ", ".join(missing),
+            )
+            logger.error(
+                "[config] Rejecting config save due to missing Google credentials (missing=%s)",
+                ", ".join(missing),
+            )
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Calendar provider 'google' requires api_key and calendar_id",
+                    "missing": missing,
+                },
+            )
+
+    if provider == "ics" and enabled:
+        if not ics_path or not str(ics_path).strip():
+            logger.error("[config] Rejecting config save: ICS provider requires calendar.ics_path")
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Calendar provider 'ics' requires calendar.ics_path",
+                    "missing": ["calendar.ics_path"],
+                },
+            )
+        path_obj = Path(str(ics_path).strip())
+        if not path_obj.exists() or not path_obj.is_file():
+            logger.error(
+                "[config] Rejecting config save: ICS path %s not readable (exists=%s, is_file=%s)",
+                path_obj,
+                path_obj.exists(),
+                path_obj.is_file(),
+            )
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": f"Calendar provider 'ics' requires readable file at calendar.ics_path (not found: {path_obj})",
+                    "missing": ["calendar.ics_path"],
+                },
+            )
+        try:
+            with path_obj.open("rb") as handle:
+                handle.read(1)
+        except OSError as exc:
+            logger.error(
+                "[config] Rejecting config save: ICS path %s not readable (%s)",
+                path_obj,
+                exc,
+            )
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": f"Calendar provider 'ics' requires readable file at calendar.ics_path ({exc})",
+                    "missing": ["calendar.ics_path"],
+                },
+            )
+
+
+def _resolve_calendar_settings(config_v2: AppConfigV2) -> Tuple[str, bool, Optional[str]]:
+    """Return provider, enabled flag and ICS path for current calendar configuration."""
+
+    provider = "google"
+    enabled = False
+    ics_path: Optional[str] = None
+
+    if getattr(config_v2, "calendar", None):
+        provider = getattr(config_v2.calendar, "provider", provider)
+        enabled = getattr(config_v2.calendar, "enabled", enabled)
+        ics_path = getattr(config_v2.calendar, "ics_path", None)
+
+    panels_calendar = (
+        config_v2.panels.calendar if config_v2.panels and config_v2.panels.calendar else None
+    )
+    if not getattr(config_v2, "calendar", None) and panels_calendar:
+        provider = getattr(panels_calendar, "provider", provider)
+        enabled = getattr(panels_calendar, "enabled", enabled)
+        ics_path = getattr(panels_calendar, "ics_path", None)
+    elif getattr(config_v2, "calendar", None) and provider == "ics" and not ics_path and panels_calendar:
+        ics_path = getattr(panels_calendar, "ics_path", None)
+
+    if isinstance(ics_path, str):
+        ics_path = ics_path.strip() or None
+
+    return provider, enabled, ics_path
+
+
+def _ics_path_is_readable(ics_path: Optional[str]) -> bool:
+    if not ics_path or not str(ics_path).strip():
+        return False
+    path_obj = Path(str(ics_path).strip())
+    if not path_obj.exists() or not path_obj.is_file():
+        return False
+    try:
+        with path_obj.open("rb") as handle:
+            handle.read(1)
+    except OSError:
+        return False
+    return True
+
+
+def _handle_partial_opensky_update(payload: Dict[str, Any]) -> JSONResponse:
+    opensky_data = payload.get("opensky")
+    if not isinstance(opensky_data, dict):
+        return JSONResponse(content={"success": True})
+
+    oauth_payload = opensky_data.get("oauth2")
+    if not isinstance(oauth_payload, dict):
+        return JSONResponse(content={"success": True})
+
+    changed = False
+
+    if "client_id" in oauth_payload:
+        raw_client_id = oauth_payload.get("client_id")
+        sanitized_id = _sanitize_secret(raw_client_id)
+        if sanitized_id is not None:
+            secret_store.set_secret("opensky_client_id", sanitized_id)
+            changed = True
+        elif raw_client_id is None:
+            secret_store.set_secret("opensky_client_id", None)
+            changed = True
+
+    if "client_secret" in oauth_payload:
+        raw_client_secret = oauth_payload.get("client_secret")
+        sanitized_secret = _sanitize_secret(raw_client_secret)
+        if sanitized_secret is not None:
+            secret_store.set_secret("opensky_client_secret", sanitized_secret)
+            changed = True
+        elif raw_client_secret is None:
+            secret_store.set_secret("opensky_client_secret", None)
+            changed = True
+
+    if changed:
+        opensky_service.reset()
+        logger.info("[opensky] credentials updated via /api/config payload (partial)")
+        _refresh_opensky_oauth_metadata()
+
+    return JSONResponse(content={"success": True})
 
 
 @app.post("/api/config")
@@ -1275,7 +1539,10 @@ async def save_config(request: Request) -> JSONResponse:
         if not isinstance(payload, dict):
             logger.warning("Configuration payload must be a JSON object")
             raise HTTPException(status_code=400, detail="Configuration payload must be a JSON object")
-    
+
+    if payload and set(payload.keys()) <= {"opensky"}:
+        return _handle_partial_opensky_update(payload)
+
     # Verificar claves v1 y rechazar
     v1_keys = _check_v1_keys(payload)
     if v1_keys:
@@ -1284,7 +1551,7 @@ async def save_config(request: Request) -> JSONResponse:
             status_code=400,
             detail={"error": "v1 keys not allowed", "v1_keys": v1_keys}
         )
-    
+
     # Verificar que es v2
     if payload.get("version") != 2:
         logger.warning("Rejecting non-v2 config (version=%s)", payload.get("version"))
@@ -1299,64 +1566,43 @@ async def save_config(request: Request) -> JSONResponse:
             status_code=400,
             detail={"error": "ui_map required for v2"}
         )
+
+    payload = _sanitize_incoming_config_payload(payload)
     try:
         # Extraer secrets antes de validar (se eliminarán del payload)
         secrets = payload.get("secrets", {})
         google_secrets = secrets.get("google", {}) if isinstance(secrets, dict) else {}
         calendar_ics_secrets = secrets.get("calendar_ics", {}) if isinstance(secrets, dict) else {}
-        
+
         # Extraer secrets de Google Calendar
         google_api_key = google_secrets.get("api_key") if isinstance(google_secrets, dict) else None
         google_calendar_id = google_secrets.get("calendar_id") if isinstance(google_secrets, dict) else None
-        
+
         # Extraer secrets de ICS
-        calendar_ics_url = calendar_ics_secrets.get("url") if isinstance(calendar_ics_secrets, dict) else None
-        calendar_ics_path = calendar_ics_secrets.get("path") if isinstance(calendar_ics_secrets, dict) else None
-        
-        # Validar provider de calendario si está presente
-        calendar_provider = None
-        if isinstance(payload.get("panels"), dict) and isinstance(payload["panels"].get("calendar"), dict):
-            calendar_provider = payload["panels"]["calendar"].get("provider")
-        
-        # Si no hay provider explícito, inferir de secrets
-        if not calendar_provider:
-            if google_api_key and google_calendar_id:
-                calendar_provider = "google"
-            elif calendar_ics_url or calendar_ics_path:
-                calendar_provider = "ics"
-        
-        # Validación básica: si provider=google, exigir credenciales
-        if calendar_provider == "google":
-            if not google_api_key or not google_calendar_id:
-                logger.warning("[config] Provider google requiere api_key y calendar_id")
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "error": "Calendar provider 'google' requires api_key and calendar_id",
-                        "missing": []
-                    }
-                )
-        elif calendar_provider == "ics":
-            # Validación básica: si provider=ics, exigir url o path
-            if not calendar_ics_url and not calendar_ics_path:
-                logger.warning("[config] Provider ics requiere url o path")
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "error": "Calendar provider 'ics' requires url or path",
-                        "missing": []
-                    }
-                )
-        # Si provider es "disabled", no validar credenciales
-        
+        calendar_ics_url = (
+            calendar_ics_secrets.get("url") if isinstance(calendar_ics_secrets, dict) else None
+        )
+        calendar_ics_path_secret = (
+            calendar_ics_secrets.get("path") if isinstance(calendar_ics_secrets, dict) else None
+        )
+
+        calendar_provider, calendar_enabled, normalized_ics_path = _normalize_calendar_sections(payload)
+
+        _validate_calendar_requirements(
+            calendar_provider,
+            calendar_enabled,
+            normalized_ics_path,
+            google_api_key,
+            google_calendar_id,
+        )
+
         # Eliminar secrets del payload antes de validar (no van en config.json)
-        payload_without_secrets = payload.copy()
-        if "secrets" in payload_without_secrets:
-            del payload_without_secrets["secrets"]
-        
+        payload_without_secrets = dict(payload)
+        payload_without_secrets.pop("secrets", None)
+
         # Validar como AppConfigV2
         config_v2 = AppConfigV2.model_validate(payload_without_secrets)
-        
+
         # Guardar v2 usando persistencia atómica (write a tmp + mv)
         config_dict = config_v2.model_dump(mode="json", exclude_none=True)
         try:
@@ -1400,44 +1646,49 @@ async def save_config(request: Request) -> JSONResponse:
             secret_store.set_secret("calendar_ics_url", str(calendar_ics_url).strip())
         else:
             secret_store.set_secret("calendar_ics_url", None)
-        
-        if calendar_ics_path:
-            logger.info("[config] Saving ICS calendar path (length=%d)", len(str(calendar_ics_path)))
-            secret_store.set_secret("calendar_ics_path", str(calendar_ics_path).strip())
+
+        ics_path_to_store: Optional[str] = None
+        if isinstance(calendar_ics_path_secret, str) and calendar_ics_path_secret.strip():
+            ics_path_to_store = calendar_ics_path_secret.strip()
+        if calendar_provider == "ics" and normalized_ics_path and not ics_path_to_store:
+            ics_path_to_store = normalized_ics_path
+
+        if ics_path_to_store and calendar_provider == "ics":
+            logger.info(
+                "[config] Saving ICS calendar path (length=%d)",
+                len(str(ics_path_to_store)),
+            )
+            secret_store.set_secret("calendar_ics_path", ics_path_to_store)
         else:
             secret_store.set_secret("calendar_ics_path", None)
-        
+
         # Aplicar cambios a servicios si es necesario
         if config_v2.layers and config_v2.layers.ships:
-            ships_service.apply_config(config_v2.layers.ships)
-        
-        # Construir respuesta v2
-        public_config = _build_public_config_v2(config_v2)
+            try:
+                ships_service.apply_config(config_v2.layers.ships)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[config] Skipping ships config apply due to error: %s", exc)
+
     except ValidationError as exc:
         logger.debug("Configuration validation error: %s", exc.errors())
         raise HTTPException(status_code=400, detail=exc.errors()) from exc
+    except HTTPException as exc:
+        return JSONResponse(status_code=exc.status_code, content=exc.detail)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Failed to persist configuration: %s", exc)
         raise HTTPException(status_code=500, detail="Unable to persist configuration") from exc
-    
-    # Agregar headers anti-cache a la respuesta POST
-    from datetime import datetime
-    
-    try:
-        config_mtime = config_manager.config_file.stat().st_mtime
-        config_etag = f'"{config_mtime}"'
-    except OSError:
-        config_mtime = datetime.now().timestamp()
-        config_etag = f'"{config_mtime}"'
-    
-    response = JSONResponse(content=public_config)
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
-    response.headers["ETag"] = config_etag
-    response.headers["Last-Modified"] = datetime.fromtimestamp(config_mtime).strftime("%a, %d %b %Y %H:%M:%S GMT")
 
-    return response
+    # Recargar configuración en memoria para reflejar cambios inmediatos
+    try:
+        _, was_reloaded = config_manager.reload()
+        if was_reloaded:
+            logger.info("[config] Configuration reloaded in-memory after save")
+        else:
+            logger.warning("[config] Configuration reload after save did not report changes")
+    except Exception as exc:  # noqa: BLE001
+        logger.error("[config] Failed to reload configuration after save: %s", exc)
+
+    return JSONResponse(content={"success": True})
 
 
 @app.post("/api/map/reset", response_model=MapResetResponse)
@@ -1455,23 +1706,90 @@ def reset_map_endpoint() -> MapResetResponse:
 
 @app.get("/api/config/schema")
 def get_config_schema() -> Dict[str, Any]:
-    """Devuelve el schema de configuración y el listado de secretos enmascarados.
+    """Devuelve un JSON Schema v2020-12 para la configuración v2."""
 
-    El bloque `.secrets` incluye únicamente claves que se gestionan vía endpoints de secreto
-    y nunca se exponen en GET /api/config.
-    """
-    schema = AppConfig.model_json_schema()
-    schema["secrets"] = [
+    schema = AppConfigV2.model_json_schema(ref_template="#/$defs/{model}")
+    schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
+    schema["title"] = "Pantalla Reloj Config v2"
+    schema["description"] = "Esquema de validación para la configuración v2 del backend."
+
+    # Limitar a las claves top-level relevantes
+    relevant_keys = ["version", "ui_map", "ui_global", "layers", "panels", "secrets", "calendar"]
+    properties = schema.get("properties", {})
+    schema["properties"] = {key: properties[key] for key in relevant_keys if key in properties}
+
+    # Asegurar campos obligatorios
+    schema["required"] = ["version", "ui_map"]
+
+    # Validación condicional para Google Calendar
+    schema.setdefault("allOf", [])
+    schema["allOf"].append(
+        {
+            "if": {
+                "required": ["calendar"],
+                "properties": {
+                    "calendar": {
+                        "required": ["provider"],
+                        "properties": {"provider": {"const": "google"}},
+                    }
+                },
+            },
+            "then": {
+                "required": ["secrets"],
+                "properties": {
+                    "secrets": {
+                        "required": ["google"],
+                        "properties": {
+                            "google": {
+                                "required": ["api_key", "calendar_id"],
+                                "properties": {
+                                    "api_key": {"type": "string", "minLength": 1},
+                                    "calendar_id": {"type": "string", "minLength": 1},
+                                },
+                            }
+                        },
+                    }
+                },
+            },
+        }
+    )
+
+    # Validación condicional para ICS
+    schema["allOf"].append(
+        {
+            "if": {
+                "required": ["calendar"],
+                "properties": {
+                    "calendar": {
+                        "required": ["provider"],
+                        "properties": {"provider": {"const": "ics"}},
+                    }
+                },
+            },
+            "then": {
+                "properties": {
+                    "calendar": {
+                        "required": ["ics_path"],
+                    }
+                }
+            },
+        }
+    )
+
+    schema["x-maskedSecrets"] = [
         {"key": "aemet_api_key", "masked": True},
         {"key": "opensky_client_id", "masked": True},
         {"key": "opensky_client_secret", "masked": True},
-        {"key": "aistream_api_key", "masked": True},
+        {"key": "aisstream_api_key", "masked": True},
         {
             "key": "openweathermap_api_key",
             "masked": True,
             "description": "API key para tiles de precipitación de OpenWeatherMap",
         },
+        {"key": "google_calendar_api_key", "masked": True},
+        {"key": "google_calendar_id", "masked": True},
     ]
+
     return schema
 
 
@@ -2308,12 +2626,8 @@ def get_calendar_events(
         return []
     
     # Determinar provider de calendario desde config
-    calendar_provider = "google"  # default
-    enabled = False
-    if config_v2.panels and config_v2.panels.calendar:
-        enabled = getattr(config_v2.panels.calendar, "enabled", False)
-        calendar_provider = getattr(config_v2.panels.calendar, "provider", "google")
-    
+    calendar_provider, enabled, ics_path = _resolve_calendar_settings(config_v2)
+
     # Si provider es "disabled" o enabled es False, retornar inmediatamente
     if calendar_provider == "disabled" or not enabled:
         if inspect_mode:
@@ -2336,21 +2650,17 @@ def get_calendar_events(
     calendars_found = 0
     api_key: Optional[str] = None
     calendar_id: Optional[str] = None
-    ics_url: Optional[str] = None
-    ics_path: Optional[str] = None
-    
+
     if calendar_provider == "google":
         api_key = secret_store.get_secret("google_calendar_api_key") or secret_store.get_secret("google_api_key")
         calendar_id = secret_store.get_secret("google_calendar_id")
         credentials_present = bool(api_key and calendar_id)
         calendars_found = 1 if calendar_id else 0
     elif calendar_provider == "ics":
-        ics_url = secret_store.get_secret("calendar_ics_url")
-        ics_path = secret_store.get_secret("calendar_ics_path")
-        credentials_present = bool(ics_url or ics_path)
+        credentials_present = _ics_path_is_readable(ics_path)
         calendars_found = 1 if credentials_present else 0
-    
-    provider_enabled = True
+
+    provider_enabled = enabled
     
     # Parsear fechas con soporte de timezone
     tz = _get_tz()
@@ -2441,7 +2751,7 @@ def get_calendar_events(
         if calendar_provider == "google":
             note = "Credentials missing: api_key or calendar_id not found in secrets"
         else:  # ics
-            note = "ICS source missing: url or path not found in secrets"
+            note = "ICS source missing: readable calendar.ics_path not provided"
         
         if inspect_mode:
             return {
@@ -2484,8 +2794,7 @@ def get_calendar_events(
             )
         else:  # ics
             events = fetch_ics_calendar_events(
-                url=ics_url,
-                path=ics_path,
+                path=ics_path if credentials_present else None,
                 time_min=utc_start,
                 time_max=utc_end,
             )
@@ -2567,28 +2876,18 @@ def get_calendar_status() -> Dict[str, Any]:
         }
     
     # Determinar provider de calendario
-    calendar_provider = "google"  # default
-    enabled = False
-    if config_v2.panels and config_v2.panels.calendar:
-        enabled = getattr(config_v2.panels.calendar, "enabled", False)
-        calendar_provider = getattr(config_v2.panels.calendar, "provider", "google")
-    
+    calendar_provider, enabled, ics_path = _resolve_calendar_settings(config_v2)
+
     # Si provider es "disabled" o enabled es False, retornar inmediatamente
     if calendar_provider == "disabled" or not enabled:
-        if inspect_mode:
-            return {
-                "tz": str(_get_tz()),
-                "local_range": {"start": None, "end": None},
-                "utc_range": {"start": None, "end": None},
-                "provider": calendar_provider,
-                "provider_enabled": False,
-                "credentials_present": False,
-                "calendars_found": 0,
-                "raw_events_count": 0,
-                "filtered_events_count": 0,
-                "note": f"Calendar provider is disabled (provider={calendar_provider}, enabled={enabled})",
-            }
-        return []
+        return {
+            "provider": calendar_provider,
+            "enabled": False,
+            "credentials_present": False,
+            "status": "stale",
+            "last_fetch_iso": None,
+            "note": "Calendar disabled",
+        }
     
     # Leer credenciales según provider
     credentials_present = False
@@ -2611,15 +2910,13 @@ def get_calendar_status() -> Dict[str, Any]:
             note = "Calendar disabled"
     
     elif calendar_provider == "ics":
-        ics_url = secret_store.get_secret("calendar_ics_url")
-        ics_path = secret_store.get_secret("calendar_ics_path")
-        credentials_present = bool(ics_url or ics_path)
-        
+        credentials_present = _ics_path_is_readable(ics_path)
+
         if enabled and credentials_present:
             status = "ok"
         elif enabled and not credentials_present:
             status = "error"
-            note = "ICS calendar URL or path missing"
+            note = "ICS calendar path missing or unreadable"
         else:
             status = "stale"
             note = "Calendar disabled"

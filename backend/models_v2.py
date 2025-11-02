@@ -161,6 +161,14 @@ class PanelCalendarConfig(BaseModel):
     """Configuración de panel de calendario."""
     enabled: bool = True
     provider: Literal["google", "ics", "disabled"] = Field(default="google")
+    ics_path: Optional[str] = Field(default=None, max_length=1024)
+
+
+class CalendarConfig(BaseModel):
+    """Configuración de calendario top-level."""
+    enabled: bool = True
+    provider: Literal["google", "ics", "disabled"] = Field(default="google")
+    ics_path: Optional[str] = Field(default=None, max_length=1024)
 
 
 class PanelsConfig(BaseModel):
@@ -171,12 +179,24 @@ class PanelsConfig(BaseModel):
     calendar: Optional[PanelCalendarConfig] = None
 
 
+class GoogleSecretsConfig(BaseModel):
+    """Metadatos de secretos de Google Calendar."""
+    api_key: Optional[str] = Field(default=None, min_length=1, max_length=512)
+    calendar_id: Optional[str] = Field(default=None, min_length=1, max_length=512)
+
+
+class CalendarICSSecretsConfig(BaseModel):
+    """Metadatos de secretos de calendarios ICS."""
+    url: Optional[str] = Field(default=None, max_length=2048)
+    path: Optional[str] = Field(default=None, max_length=1024)
+
+
 class SecretsConfig(BaseModel):
     """Secrets (metadata only, no valores reales)."""
     opensky: Optional[Dict[str, Any]] = None
-    google: Optional[Dict[str, Any]] = None
+    google: Optional[GoogleSecretsConfig] = None
     aemet: Optional[Dict[str, Any]] = None
-    calendar_ics: Optional[Dict[str, Any]] = None
+    calendar_ics: Optional[CalendarICSSecretsConfig] = None
 
 
 class AppConfigV2(BaseModel):
@@ -189,3 +209,4 @@ class AppConfigV2(BaseModel):
     layers: Optional[LayersConfig] = None
     panels: Optional[PanelsConfig] = None
     secrets: Optional[SecretsConfig] = None
+    calendar: Optional[CalendarConfig] = None
