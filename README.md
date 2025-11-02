@@ -99,6 +99,17 @@ Pantalla_reloj/
 - `GET /api/config` nunca devuelve la clave completa; expone `has_api_key` y
   `api_key_last4` para saber si se ha cargado correctamente.
 
+### Timezone y rangos de fecha
+
+- **Configuración**: El timezone se define en `config.display.timezone` (por defecto `Europe/Madrid`).
+- **Backend**: Los endpoints que trabajan con fechas (`/api/calendar/events`, `/api/weather/weekly`) usan el timezone del config para:
+  - Construir rangos del día local actual si no se proporcionan fechas.
+  - Convertir siempre rangos local → UTC al consultar proveedores externos.
+  - Loguear proyecciones local/UTC en DEBUG para trazabilidad.
+- **Frontend**: Usa utilidades `formatLocal()` para renderizar horas/fechas según el timezone del config.
+- **Hot-reload**: Con `POST /api/config/reload` cambiando `display.timezone`, los endpoints ajustan automáticamente sin reiniciar.
+- **Metadatos**: `/api/health` expone `timezone` y `now_local_iso` para diagnóstico.
+
 ### Integración OpenSky
 
 - Crea un cliente OAuth2 en el portal de [OpenSky Network](https://opensky-network.org/)

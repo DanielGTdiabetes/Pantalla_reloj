@@ -1106,17 +1106,28 @@ def fetch_google_calendar_events(
     calendar_id: str,
     days_ahead: int = 14,
     max_results: int = 10,
+    time_min: Optional[datetime] = None,
+    time_max: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
-    """Obtiene eventos de Google Calendar."""
+    """Obtiene eventos de Google Calendar.
+    
+    Si se proporcionan time_min/time_max, se usan directamente (deben estar en UTC).
+    Si no, se calculan desde ahora hasta days_ahead.
+    """
     try:
-        time_min = datetime.now(timezone.utc).isoformat()
-        time_max = (datetime.now(timezone.utc) + timedelta(days=days_ahead)).isoformat()
+        if time_min is None:
+            time_min = datetime.now(timezone.utc)
+        if time_max is None:
+            time_max = time_min + timedelta(days=days_ahead)
+        
+        time_min_str = time_min.isoformat()
+        time_max_str = time_max.isoformat()
         
         url = f"https://www.googleapis.com/calendar/v3/calendars/{calendar_id}/events"
         params = {
             "key": api_key,
-            "timeMin": time_min,
-            "timeMax": time_max,
+            "timeMin": time_min_str,
+            "timeMax": time_max_str,
             "maxResults": max_results,
             "orderBy": "startTime",
             "singleEvents": "true",

@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import time
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Literal, TypeVar
 
@@ -640,6 +641,30 @@ def _migrate_public_secrets_to_store() -> None:
         logger.warning("Secret migration skipped due to error: %s", exc)
 
 
+def _get_tz() -> ZoneInfo:
+    """Retorna ZoneInfo para el timezone del config o fallback a Europe/Madrid."""
+    config = config_manager.read()
+    tz_str = getattr(config.display, "timezone", None) if hasattr(config, "display") else None
+    if not tz_str or not isinstance(tz_str, str) or not tz_str.strip():
+        tz_str = "Europe/Madrid"
+    try:
+        return ZoneInfo(tz_str.strip())
+    except Exception:  # noqa: BLE001
+        logger.warning("[timezone] Invalid timezone '%s', falling back to Europe/Madrid", tz_str)
+        return ZoneInfo("Europe/Madrid")
+
+
+def _get_local_day_range() -> Tuple[datetime, datetime]:
+    """Construye el rango del día local actual [00:00, 23:59:59] y convierte a UTC ISO."""
+    tz = _get_tz()
+    now_local = datetime.now(tz)
+    start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_local = now_local.replace(hour=23, minute=59, second=59, microsecond=999999)
+    start_utc = start_local.astimezone(timezone.utc)
+    end_utc = end_local.astimezone(timezone.utc)
+    return start_utc, end_utc
+
+
 def _health_payload() -> Dict[str, Any]:
     config = config_manager.read()
     uptime = datetime.now(timezone.utc) - APP_START
@@ -657,6 +682,12 @@ def _health_payload() -> Dict[str, Any]:
 
     # Metadatos de configuración
     config_metadata = config_manager.get_config_metadata()
+    
+    # Timezone y hora local
+    tz = _get_tz()
+    tz_str = str(tz)
+    now_local = datetime.now(tz)
+    now_local_iso = now_local.isoformat()
 
     payload = {
         "status": "ok",
@@ -667,6 +698,8 @@ def _health_payload() -> Dict[str, Any]:
         "config_source": config_metadata["config_source"],
         "has_timezone": config_metadata["has_timezone"],
         "config_loaded_at": config_metadata.get("config_loaded_at"),
+        "timezone": tz_str,
+        "now_local_iso": now_local_iso,
     }
     flights_layer = {"items": None, "stale": False}
     ships_layer = {"items": None, "stale": False}
@@ -2070,7 +2103,11 @@ def get_astronomical_events_endpoint(
 
 @app.get("/api/calendar/events")
 def get_calendar_events(from_date: Optional[str] = None, to_date: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Obtiene eventos del calendario (Google Calendar) entre fechas."""
+    """Obtiene eventos del calendario (Google Calendar) entre fechas.
+    
+    Si no se proporcionan fechas, usa el rango del día local actual según config.display.timezone.
+    Si se proporcionan en ISO UTC, las interpreta como UTC pero loguea su proyección local.
+    """
     try:
         config_v2, _ = _read_config_v2()
     except Exception:
@@ -2084,21 +2121,54 @@ def get_calendar_events(from_date: Optional[str] = None, to_date: Optional[str] 
         # Retornar lista vacía sin romper el frontend
         return []
     
-    # Parsear fechas
+    # Parsear fechas con soporte de timezone
+    tz = _get_tz()
     try:
         if from_date:
+            # Interpretar como UTC si termina en Z o tiene offset
             from_dt = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
+            # Loguear proyección local para trazabilidad
+            from_local = from_dt.astimezone(tz)
+            logger.debug(
+                "[timezone] Calendar from_date: UTC=%s -> Local=%s (tz=%s)",
+                from_dt.isoformat(),
+                from_local.isoformat(),
+                str(tz),
+            )
         else:
-            from_dt = datetime.now(timezone.utc)
+            # Construir rango del día local actual [00:00, 23:59:59] y convertir a UTC
+            from_dt, _ = _get_local_day_range()
+            logger.debug(
+                "[timezone] Calendar from_date: using local day range start (UTC=%s, tz=%s)",
+                from_dt.isoformat(),
+                str(tz),
+            )
         
         if to_date:
+            # Interpretar como UTC si termina en Z o tiene offset
             to_dt = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
+            # Loguear proyección local para trazabilidad
+            to_local = to_dt.astimezone(tz)
+            logger.debug(
+                "[timezone] Calendar to_date: UTC=%s -> Local=%s (tz=%s)",
+                to_dt.isoformat(),
+                to_local.isoformat(),
+                str(tz),
+            )
         else:
-            to_dt = from_dt + timedelta(days=7)
+            # Si no hay from_date, usar rango del día local; si hay, usar from_date + 7 días
+            if from_date:
+                to_dt = from_dt + timedelta(days=7)
+            else:
+                _, to_dt = _get_local_day_range()
+                logger.debug(
+                    "[timezone] Calendar to_date: using local day range end (UTC=%s, tz=%s)",
+                    to_dt.isoformat(),
+                    str(tz),
+                )
     except Exception as e:
-        logger.warning("Error parsing dates: %s", e)
-        from_dt = datetime.now(timezone.utc)
-        to_dt = from_dt + timedelta(days=7)
+        logger.warning("[timezone] Error parsing dates: %s, using local day range", e)
+        from_dt, to_dt = _get_local_day_range()
     
     try:
         # Calcular días hacia adelante
@@ -2108,6 +2178,8 @@ def get_calendar_events(from_date: Optional[str] = None, to_date: Optional[str] 
             calendar_id=calendar_id,
             days_ahead=days_ahead,
             max_results=20,
+            time_min=from_dt,
+            time_max=to_dt,
         )
         # Normalizar formato: añadir campos fin y ubicación si faltan
         normalized_events = []
