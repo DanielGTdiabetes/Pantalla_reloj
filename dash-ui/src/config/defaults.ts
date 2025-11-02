@@ -189,11 +189,11 @@ const DEFAULT_CINEMA_MOTION: MapCinemaMotionConfig = {
 
 const DEFAULT_XYZ: XyzConfig = {
   urlTemplate: "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-  attribution: "© Esri, Maxar, GeoEye, Earthstar Geographics, CNES/Airbus, USDA, USGS, AeroGRID, IGN, and the GIS User Community",
+  attribution: "© Esri, Maxar, Earthstar, CNES/Airbus, USDA, USGS, IGN, GIS User Community",
   minzoom: 0,
   maxzoom: 19,
   tileSize: 256,
-  labelsOverlay: false,
+  labelsOverlay: true,
 };
 
 const DEFAULT_MAPTILER: MaptilerConfig = {
@@ -215,7 +215,7 @@ const sanitizeApiKey = (value: unknown): string | null => {
 };
 
 export const createDefaultMapPreferences = (): MapPreferences => ({
-  provider: "osm",
+  provider: "xyz",
   maptiler_api_key: null,
 });
 
@@ -237,7 +237,7 @@ export const createDefaultMapIdlePan = (): MapIdlePanConfig => ({
 export const createDefaultMapSettings = (): MapConfig => ({
   engine: "maplibre",
   style: "vector-dark",
-  provider: "osm",
+  provider: "xyz",
   maptiler: { ...DEFAULT_MAPTILER },
   xyz: { ...DEFAULT_XYZ },
   renderWorldCopies: true,
@@ -566,28 +566,28 @@ export const DEFAULT_CONFIG: AppConfig = {
   layers: {
     flights: {
       enabled: true,
-      opacity: 0.9,
+      opacity: 1.0,
       provider: "opensky",
       refresh_seconds: 12,
       max_age_seconds: 90,
       max_items_global: 2000,
-      max_items_view: 480,
+      max_items_view: 1200,
       rate_limit_per_min: 6,
-      decimate: "grid",
+      decimate: "none",
       grid_px: 24,
       styleScale: 1.4,
-      render_mode: "auto",
+      render_mode: "symbol_custom",
       circle: {
-        radius_base: 3.0,
-        radius_zoom_scale: 1.2,
+        radius_base: 6.0,
+        radius_zoom_scale: 1.8,
         opacity: 1.0,
-        color: "#00D1FF",
-        stroke_color: "#002A33",
-        stroke_width: 1.0,
+        color: "#FFD400",
+        stroke_color: "#FFFFFF",
+        stroke_width: 1.6,
       },
       symbol: {
-        size_base: 0.7,
-        size_zoom_scale: 1.2,
+        size_base: 0.8,
+        size_zoom_scale: 1.25,
         allow_overlap: true,
       },
       cine_focus: {
