@@ -2294,7 +2294,7 @@ export default function GeoScopeMap() {
       const motionInit = initializeMotionState(
         cinemaSettings,
         motionProgressRef as React.MutableRefObject<number>,
-        horizontalDirectionRef
+        horizontalDirectionRef as React.MutableRefObject<1 | -1>
       );
       verticalDirectionRef.current = 1;
       const viewState = viewStateRef.current;
@@ -2603,8 +2603,8 @@ export default function GeoScopeMap() {
           cinemaRef.current = cloneCinema(cinemaSource);
           const motionInit = initializeMotionState(
             cinemaRef.current,
-            motionProgressRef,
-            horizontalDirectionRef
+            motionProgressRef as React.MutableRefObject<number>,
+            horizontalDirectionRef as React.MutableRefObject<1 | -1>
           );
           verticalDirectionRef.current = 1;
           const viewState = viewStateRef.current;
@@ -2652,7 +2652,7 @@ export default function GeoScopeMap() {
         const motionInit = initializeMotionState(
           cinemaRef.current,
           motionProgressRef as React.MutableRefObject<number>,
-          horizontalDirectionRef
+          horizontalDirectionRef as React.MutableRefObject<1 | -1>
         );
         const viewState = viewStateRef.current;
         if (!viewState) {
@@ -2955,7 +2955,7 @@ export default function GeoScopeMap() {
         const motionInit = initializeMotionState(
           cinemaRef.current,
           motionProgressRef as React.MutableRefObject<number>,
-          horizontalDirectionRef
+          horizontalDirectionRef as React.MutableRefObject<1 | -1>
         );
         verticalDirectionRef.current = 1;
         const viewState = viewStateRef.current;
@@ -3208,7 +3208,7 @@ export default function GeoScopeMap() {
         const motionInit = initializeMotionState(
           cinemaRef.current,
           motionProgressRef as React.MutableRefObject<number>,
-          horizontalDirectionRef
+          horizontalDirectionRef as React.MutableRefObject<1 | -1>
         );
         const viewState = viewStateRef.current;
         if (!viewState) {
@@ -3226,8 +3226,8 @@ export default function GeoScopeMap() {
       cinemaRef.current = cloneCinema(cinemaSource);
       const motionInit = initializeMotionState(
         cinemaRef.current,
-        motionProgressRef,
-        horizontalDirectionRef
+        motionProgressRef as React.MutableRefObject<number>,
+        horizontalDirectionRef as React.MutableRefObject<1 | -1>
       );
       const viewState = viewStateRef.current;
       if (!viewState) {
