@@ -5,10 +5,12 @@ import {
   API_ORIGIN,
   ApiError,
   getConfig,
+  getConfigV2,
   getHealth,
   getSchema,
   getOpenSkyStatus,
   saveConfig,
+  saveConfigV2,
   testAemetApiKey,
   testCalendarConnection,
   type CalendarTestResponse,
@@ -978,11 +980,25 @@ const ConfigPage: React.FC = () => {
   }, [testingOpenSky]);
 
   const refreshConfig = useCallback(async () => {
-    const cfg = await getConfig();
-    
-    // Detectar versión de configuración
-    const version = (cfg as { version?: number })?.version;
-    setConfigVersion(version ?? null);
+    // Intentar cargar v2 primero
+    let cfg: AppConfig | undefined;
+    try {
+      const v2Cfg = await getConfigV2();
+      if (v2Cfg && v2Cfg.version === 2 && v2Cfg.ui_map) {
+        // Convertir v2 a formato interno compatible
+        cfg = v2Cfg as unknown as AppConfig;
+        setConfigVersion(2);
+      } else {
+        cfg = await getConfig();
+        const version = (cfg as { version?: number })?.version;
+        setConfigVersion(version ?? null);
+      }
+    } catch (e) {
+      // Si falla v2, intentar v1
+      cfg = await getConfig();
+      const version = (cfg as { version?: number })?.version;
+      setConfigVersion(version ?? null);
+    }
     
     setForm(withConfigDefaults(cfg ?? undefined));
     setShowMaptilerKey(false);
@@ -1348,7 +1364,16 @@ const ConfigPage: React.FC = () => {
         delete oauthPayload.has_credentials;
         delete oauthPayload.client_id_last4;
       }
-      const saved = await saveConfig(payload);
+      // Usar saveConfigV2 si la versión es 2
+      let saved: AppConfig;
+      if (configVersion === 2) {
+        // Convertir payload a v2
+        const v2Payload = payload as unknown as import("../types/config_v2").AppConfigV2;
+        const v2Saved = await saveConfigV2(v2Payload);
+        saved = v2Saved as unknown as AppConfig;
+      } else {
+        saved = await saveConfig(payload);
+      }
       setForm(withConfigDefaults(saved));
       setShowMaptilerKey(false);
       setShowAemetKey(false);

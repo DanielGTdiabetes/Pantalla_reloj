@@ -305,10 +305,66 @@ class OpenWeatherMapRadarProvider:
         return f"{self.BASE_URL}/{self._layer}/{z}/{x}/{y}.png?appid={api_key}"
 
 
+class AEMETSatelliteProvider:
+    """Proveedor placeholder para tiles de satélite AEMET.
+    
+    Nota: Por ahora es un placeholder. En el futuro se implementará
+    la obtención de tiles de satélite desde AEMET OpenData.
+    """
+    
+    BASE_URL = "https://opendata.aemet.es"  # URL base de AEMET OpenData
+    
+    def __init__(self):
+        self.base_url = self.BASE_URL
+    
+    def get_available_frames(
+        self,
+        history_minutes: int = 90,
+        frame_step: int = 10
+    ) -> List[Dict[str, Any]]:
+        """Placeholder: retorna lista vacía por ahora.
+        
+        Args:
+            history_minutes: Minutos de historia a buscar
+            frame_step: Intervalo entre frames en minutos
+            
+        Returns:
+            Lista vacía (placeholder)
+        """
+        # TODO: Implementar obtención de frames desde AEMET OpenData
+        logger.warning("AEMETSatelliteProvider: placeholder - not implemented yet")
+        return []
+    
+    def get_tile_url(
+        self,
+        timestamp: int,
+        z: int,
+        x: int,
+        y: int,
+        layer: str = "satellite"
+    ) -> str:
+        """Placeholder: retorna URL vacía por ahora.
+        
+        Args:
+            timestamp: Unix timestamp
+            z: Zoom level
+            x: Tile X
+            y: Tile Y
+            layer: Nombre de capa
+            
+        Returns:
+            URL vacía (placeholder)
+        """
+        # TODO: Implementar generación de URL de tiles desde AEMET
+        logger.warning("AEMETSatelliteProvider get_tile_url: placeholder - not implemented yet")
+        return ""
+
+
 __all__ = [
     "GIBSProvider",
     "RainViewerProvider",
     "OpenWeatherMapRadarProvider",
     "OpenWeatherMapApiKeyError",
+    "AEMETSatelliteProvider",
 ]
 
