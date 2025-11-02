@@ -17,15 +17,18 @@ const getMoonPhaseIcon = (illumination: number | null): string => {
     return "/icons/moon/moon-50.svg";
   }
   
-  const illum = Math.round(illumination);
+  // Convertir a decimal (0.0-1.0) si viene como porcentaje (0-100)
+  // Si el valor es > 1, asumimos que es porcentaje y lo normalizamos
+  const illum = illumination > 1 ? illumination / 100 : illumination;
+  const normalized = Math.max(0, Math.min(1, illum));
   
-  if (illum === 0 || illum < 12.5) {
+  if (normalized <= 0.12) {
     return "/icons/moon/moon-0.svg";
-  } else if (illum < 37.5) {
+  } else if (normalized <= 0.37) {
     return "/icons/moon/moon-25.svg";
-  } else if (illum < 62.5) {
+  } else if (normalized <= 0.62) {
     return "/icons/moon/moon-50.svg";
-  } else if (illum < 87.5) {
+  } else if (normalized <= 0.87) {
     return "/icons/moon/moon-75.svg";
   } else {
     return "/icons/moon/moon-100.svg";
@@ -41,9 +44,9 @@ export const MoonCard = ({ moonPhase, illumination }: MoonCardProps): JSX.Elemen
       <div className="moon-card__body">
         <img 
           src={moonIconPath} 
-          alt={moonPhase ?? "Fase lunar"} 
-          className="moon-card__image"
-          style={{ width: "64px", height: "64px", margin: "0 auto", display: "block" }}
+          alt="Fase lunar" 
+          className="h-16 w-16"
+          style={{ margin: "0 auto", display: "block" }}
         />
         <p className="moon-card__phase">{moonPhase ?? "Sin datos"}</p>
         <p className="moon-card__illumination">Iluminación {formatIllumination(illumination)}</p>

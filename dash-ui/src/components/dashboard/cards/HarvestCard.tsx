@@ -165,8 +165,8 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
                   <img 
                     src={iconPath} 
                     alt={entry.name}
-                    className="harvest-card__icon"
-                    style={{ width: "24px", height: "24px", marginRight: "8px", verticalAlign: "middle" }}
+                    className="h-8 w-8"
+                    style={{ marginRight: "8px", verticalAlign: "middle" }}
                   />
                 ) : null}
                 <span className="harvest-card__item">{entry.name}</span>
