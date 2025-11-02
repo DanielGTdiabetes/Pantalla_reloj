@@ -7,11 +7,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, Literal, List, Dict, Any
 
 
-class ConfigVersion(BaseModel):
-    """Versión del esquema de configuración."""
-    version: int = Field(default=2, ge=1, le=2)
-
-
 class MapCenter(BaseModel):
     """Coordenadas del centro del mapa."""
     lat: float = Field(ge=-90, le=90)
@@ -64,8 +59,8 @@ class MapRegion(BaseModel):
 class MapConfig(BaseModel):
     """Configuración del mapa v2."""
     engine: Literal["maplibre"] = "maplibre"
-    provider: Literal["xyz"] = "xyz"
-    xyz: XyzConfig
+    provider: Literal["xyz", "osm"] = "xyz"
+    xyz: Optional[XyzConfig] = None
     labelsOverlay: Optional[LabelsOverlayConfig] = None
     viewMode: Literal["fixed", "aoiCycle"] = "fixed"
     fixed: Optional[MapFixedView] = None
@@ -73,77 +68,30 @@ class MapConfig(BaseModel):
     region: Optional[MapRegion] = None
 
 
-class AemetWarningsConfig(BaseModel):
-    """Configuración de avisos AEMET."""
+class SatelliteConfig(BaseModel):
+    """Configuración de satélite global."""
     enabled: bool = True
-    min_severity: Literal["yellow", "orange", "red", "extreme"] = "yellow"
+    provider: Literal["gibs"] = "gibs"
+    opacity: float = Field(default=1.0, ge=0, le=1)
 
 
-class AemetRadarConfig(BaseModel):
-    """Configuración de radar AEMET."""
-    enabled: bool = True
-    opacity: float = Field(default=0.6, ge=0, le=1)
-    speed: float = Field(default=1.0, ge=0.1, le=5.0)
-
-
-class AemetSatConfig(BaseModel):
-    """Configuración de satélite AEMET."""
+class RadarConfig(BaseModel):
+    """Configuración de radar global."""
     enabled: bool = False
-    opacity: float = Field(default=0.5, ge=0, le=1)
+    provider: Literal["rainviewer", "aemet"] = "rainviewer"
 
 
-class AemetConfig(BaseModel):
-    """Configuración AEMET v2."""
-    enabled: bool = True
-    warnings: Optional[AemetWarningsConfig] = None
-    radar: Optional[AemetRadarConfig] = None
-    sat: Optional[AemetSatConfig] = None
-
-
-class PanelRotateConfig(BaseModel):
-    """Configuración de rotación del panel."""
-    enabled: bool = True
-    order: List[str] = Field(default_factory=lambda: [
-        "weather_now", "forecast_week", "luna", "harvest",
-        "efemerides", "news", "calendar"
-    ])
-    intervalSec: int = Field(default=12, ge=1)
-
-
-class PanelNewsConfig(BaseModel):
-    """Configuración de noticias RSS."""
-    feeds: List[str] = Field(default_factory=list)
-
-
-class PanelEphemeridesConfig(BaseModel):
-    """Configuración de efemérides."""
-    source: Literal["built-in", "api"] = "built-in"
-
-
-class PanelConfig(BaseModel):
-    """Configuración del panel rotatorio v2."""
-    rotate: Optional[PanelRotateConfig] = None
-    news: Optional[PanelNewsConfig] = None
-    efemerides: Optional[PanelEphemeridesConfig] = None
-
-
-class UIConfig(BaseModel):
-    """Configuración de UI v2."""
-    layout: Literal["grid-2-1", "grid-1-1", "full"] = "grid-2-1"
-    map: MapConfig
-    aemet: Optional[AemetConfig] = None
-    panel: Optional[PanelConfig] = None
-
-
-class FlightsLayerSymbolConfig(BaseModel):
-    """Configuración de símbolos de vuelos."""
-    size_vh: float = Field(default=1.6, ge=0.1, le=10)
-    allow_overlap: bool = True
+class UIGlobalConfig(BaseModel):
+    """Configuración global de UI (satélite, radar)."""
+    satellite: Optional[SatelliteConfig] = None
+    radar: Optional[RadarConfig] = None
 
 
 class FlightsLayerCircleConfig(BaseModel):
     """Configuración de círculos de vuelos."""
-    radius_vh: float = Field(default=0.9, ge=0.1, le=10)
+    radius_base: float = Field(default=7.5, ge=1, le=50)
+    radius_zoom_scale: float = Field(default=1.7, ge=0.1, le=5)
+    opacity: float = Field(default=1.0, ge=0, le=1)
     color: str = "#FFD400"
     stroke_color: str = "#000000"
     stroke_width: float = Field(default=2.0, ge=0, le=10)
@@ -153,41 +101,64 @@ class FlightsLayerConfig(BaseModel):
     """Configuración de capa de vuelos v2."""
     enabled: bool = True
     provider: Literal["opensky", "aviationstack", "custom"] = "opensky"
-    render_mode: Literal["auto", "symbol", "symbol_custom", "circle"] = "symbol_custom"
-    max_items_view: int = Field(default=1200, ge=1, le=10000)
-    symbol: Optional[FlightsLayerSymbolConfig] = None
+    refresh_seconds: int = Field(default=12, ge=1, le=300)
+    max_age_seconds: int = Field(default=120, ge=10, le=600)
+    max_items_global: int = Field(default=2000, ge=1, le=10000)
+    max_items_view: int = Field(default=1500, ge=1, le=10000)
+    rate_limit_per_min: int = Field(default=6, ge=1, le=60)
+    decimate: Literal["none", "grid"] = "none"
+    grid_px: int = Field(default=24, ge=8, le=128)
+    styleScale: float = Field(default=3.2, ge=0.1, le=10)
+    render_mode: Literal["circle", "symbol", "symbol_custom", "auto"] = "circle"
     circle: Optional[FlightsLayerCircleConfig] = None
-
-
-class ShipsLayerSymbolConfig(BaseModel):
-    """Configuración de símbolos de barcos."""
-    size_vh: float = Field(default=1.4, ge=0.1, le=10)
-    allow_overlap: bool = True
-
-
-class ShipsLayerCircleConfig(BaseModel):
-    """Configuración de círculos de barcos."""
-    radius_vh: float = Field(default=0.8, ge=0.1, le=10)
-    color: str = "#5ad35a"
-    stroke_color: str = "#002200"
-    stroke_width: float = Field(default=2.0, ge=0, le=10)
 
 
 class ShipsLayerConfig(BaseModel):
     """Configuración de capa de barcos v2."""
-    enabled: bool = True
+    enabled: bool = False
     provider: Literal["aisstream", "aishub", "ais_generic", "custom"] = "aisstream"
+    refresh_seconds: int = Field(default=10, ge=1, le=300)
+    max_age_seconds: int = Field(default=180, ge=10, le=600)
+    max_items_global: int = Field(default=1500, ge=1, le=10000)
+    max_items_view: int = Field(default=420, ge=1, le=5000)
     decimate: Literal["grid", "none"] = "grid"
     grid_px: int = Field(default=24, ge=8, le=128)
-    max_items_view: int = Field(default=420, ge=1, le=5000)
-    symbol: Optional[ShipsLayerSymbolConfig] = None
-    circle: Optional[ShipsLayerCircleConfig] = None
+    styleScale: float = Field(default=1.4, ge=0.1, le=10)
 
 
 class LayersConfig(BaseModel):
     """Configuración de capas v2."""
     flights: Optional[FlightsLayerConfig] = None
     ships: Optional[ShipsLayerConfig] = None
+
+
+class PanelWeatherWeeklyConfig(BaseModel):
+    """Configuración de panel de clima semanal."""
+    enabled: bool = True
+
+
+class PanelEphemeridesConfig(BaseModel):
+    """Configuración de panel de efemérides."""
+    enabled: bool = True
+
+
+class PanelNewsConfig(BaseModel):
+    """Configuración de panel de noticias RSS."""
+    enabled: bool = True
+    feeds: List[str] = Field(default_factory=list)
+
+
+class PanelCalendarConfig(BaseModel):
+    """Configuración de panel de calendario."""
+    enabled: bool = True
+
+
+class PanelsConfig(BaseModel):
+    """Configuración de paneles v2."""
+    weatherWeekly: Optional[PanelWeatherWeeklyConfig] = None
+    ephemerides: Optional[PanelEphemeridesConfig] = None
+    news: Optional[PanelNewsConfig] = None
+    calendar: Optional[PanelCalendarConfig] = None
 
 
 class SecretsConfig(BaseModel):
@@ -202,7 +173,8 @@ class AppConfigV2(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     version: int = Field(default=2, ge=2, le=2)
-    ui: UIConfig
+    ui_map: MapConfig
+    ui_global: Optional[UIGlobalConfig] = None
     layers: Optional[LayersConfig] = None
+    panels: Optional[PanelsConfig] = None
     secrets: Optional[SecretsConfig] = None
-

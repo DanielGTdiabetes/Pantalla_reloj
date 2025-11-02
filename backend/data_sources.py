@@ -1131,6 +1131,7 @@ def fetch_google_calendar_events(
         for item in data.get("items", []):
             event: Dict[str, Any] = {
                 "title": item.get("summary", "Evento sin título"),
+                "location": item.get("location", ""),
             }
             
             # Fecha de inicio
@@ -1139,6 +1140,15 @@ def fetch_google_calendar_events(
                 event["start"] = start["dateTime"]
             elif "date" in start:
                 event["start"] = start["date"]
+            
+            # Fecha de fin
+            end = item.get("end", {})
+            if "dateTime" in end:
+                event["end"] = end["dateTime"]
+            elif "date" in end:
+                event["end"] = end["date"]
+            else:
+                event["end"] = event.get("start", "")
             
             events.append(event)
         

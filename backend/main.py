@@ -51,6 +51,7 @@ from .layer_providers import (
 )
 from .logging_utils import configure_logging
 from .models import AppConfig
+from .models_v2 import AppConfigV2
 from .secret_store import SecretStore
 from .services.opensky_auth import DEFAULT_TOKEN_URL, OpenSkyAuthError
 from .services.opensky_client import OpenSkyClientError
@@ -346,6 +347,109 @@ def _build_public_config(config: AppConfig) -> Dict[str, Any]:
             global_layers_info["radar"] = radar_public
             layers_info["global"] = global_layers_info
     payload["layers"] = layers_info
+    return payload
+
+
+def _check_v1_keys(payload: Dict[str, Any]) -> List[str]:
+    """Verifica si el payload contiene claves v1. Devuelve lista de claves v1 encontradas."""
+    v1_keys = []
+    v1_patterns = [
+        "ui.map", "ui_map" if "ui" in payload and "map" in payload.get("ui", {}) else None,
+        "maptiler",
+        "cinema",
+        "global.satellite",
+        "global.radar",
+    ]
+    
+    # Check top-level v1 keys
+    if "ui" in payload and isinstance(payload["ui"], dict) and "map" in payload["ui"]:
+        v1_keys.append("ui.map")
+    if any(k for k in payload.keys() if "maptiler" in k.lower()):
+        v1_keys.append("maptiler")
+    if any(k for k in payload.keys() if "cinema" in k.lower()):
+        v1_keys.append("cinema")
+    if "global" in payload:
+        v1_keys.append("global")
+    
+    return v1_keys
+
+
+def _read_config_v2() -> Tuple[AppConfigV2, bool]:
+    """
+    Lee configuración y devuelve v2. Migra v1→v2 si es necesario.
+    
+    Returns:
+        Tuple de (config_v2, was_migrated)
+    """
+    try:
+        # Leer como dict primero para verificar versión
+        config_data = json.loads(config_manager.config_file.read_text(encoding="utf-8"))
+        version = config_data.get("version", 1)
+        
+        if version == 2 and "ui_map" in config_data:
+            # Ya es v2, validar y devolver
+            try:
+                config_v2 = AppConfigV2.model_validate(config_data)
+                return config_v2, False
+            except ValidationError:
+                logger.warning("Invalid v2 config, migrating from defaults")
+                # Fallback a defaults
+                default_data = json.loads((Path(__file__).parent / "default_config_v2.json").read_text(encoding="utf-8"))
+                config_v2 = AppConfigV2.model_validate(default_data)
+                return config_v2, False
+        else:
+            # Es v1, migrar
+            logger.info("Migrating v1 config to v2")
+            config_v2_dict, needs_geocoding = migrate_v1_to_v2(config_data)
+            
+            # Geocodificar si es necesario
+            if needs_geocoding:
+                postal_code = config_v2_dict.get("ui_map", {}).get("region", {}).get("postalCode")
+                if postal_code:
+                    try:
+                        # Usar función de geocodificación (definida más adelante)
+                        coords = _geocode_postal_es(str(postal_code))
+                        if coords:
+                            lat, lon = coords
+                            if "fixed" in config_v2_dict.get("ui_map", {}):
+                                config_v2_dict["ui_map"]["fixed"]["center"] = {"lat": lat, "lon": lon}
+                    except Exception as e:
+                        logger.warning("Could not geocode postal code %s: %s", postal_code, e)
+            
+            # Validar y guardar v2
+            config_v2 = AppConfigV2.model_validate(config_v2_dict)
+            
+            # Crear backup de v1
+            backup_path = config_manager.config_file.with_suffix(".json.v1backup")
+            if not backup_path.exists():
+                backup_path.write_text(json.dumps(config_data, indent=2), encoding="utf-8")
+                logger.info("Created v1 backup at %s", backup_path)
+            
+            # Guardar v2
+            config_manager.config_file.write_text(json.dumps(config_v2_dict, indent=2), encoding="utf-8")
+            logger.info("Migrated and saved v2 config")
+            
+            return config_v2, True
+    except Exception as e:
+        logger.error("Error reading config: %s", e, exc_info=True)
+        # Fallback a defaults v2
+        default_data = json.loads((Path(__file__).parent / "default_config_v2.json").read_text(encoding="utf-8"))
+        config_v2 = AppConfigV2.model_validate(default_data)
+        return config_v2, False
+
+
+def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
+    """Construye configuración pública v2 (sin secrets)."""
+    payload = config.model_dump(mode="json", exclude_none=True)
+    
+    # Secrets ya no se exponen en la API pública
+    if "secrets" in payload:
+        payload["secrets"] = {
+            "opensky": {},
+            "google": {},
+            "aemet": {}
+        }
+    
     return payload
 
 
@@ -963,26 +1067,30 @@ def opensky_manual_refresh() -> Dict[str, Any]:
 
 @app.get("/api/config")
 def get_config(request: Request) -> JSONResponse:
-    """Obtiene la configuración actual con headers anti-cache."""
-    logger.info("Fetching configuration")
-    config = config_manager.read()
-    # Agregar headers anti-cache para evitar que el navegador cachee la configuración
-    # Esto asegura que cuando se guarde desde otro PC, el frontend obtenga los cambios
+    """Obtiene la configuración v2 actual con headers anti-cache."""
+    logger.info("Fetching configuration v2")
+    
+    # Leer/migrar a v2
+    config_v2, was_migrated = _read_config_v2()
+    
+    # Agregar headers anti-cache
     from datetime import datetime
     try:
         config_mtime = config_manager.config_file.stat().st_mtime
         config_etag = f'"{config_mtime}"'
     except OSError:
-        # Si no se puede obtener el tiempo de modificación, usar timestamp actual
         config_mtime = datetime.now().timestamp()
         config_etag = f'"{config_mtime}"'
     
     # Verificar si el cliente tiene una versión en caché
     if_none_match = request.headers.get("if-none-match")
-    if if_none_match == config_etag:
+    if if_none_match == config_etag and not was_migrated:
         return Response(status_code=304)  # Not Modified
     
-    response = JSONResponse(content=_build_public_config(config))
+    # Construir respuesta solo con v2 (sin claves v1)
+    public_config = _build_public_config_v2(config_v2)
+    
+    response = JSONResponse(content=public_config)
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
@@ -997,6 +1105,7 @@ MAX_CONFIG_PAYLOAD_BYTES = 64 * 1024
 
 @app.post("/api/config")
 async def save_config(request: Request) -> JSONResponse:
+    """Guarda configuración v2. Rechaza v1 con HTTP 400."""
     body = await request.body()
     if len(body) > MAX_CONFIG_PAYLOAD_BYTES:
         logger.warning("Configuration payload exceeds size limit")
@@ -1013,124 +1122,63 @@ async def save_config(request: Request) -> JSONResponse:
         if not isinstance(payload, dict):
             logger.warning("Configuration payload must be a JSON object")
             raise HTTPException(status_code=400, detail="Configuration payload must be a JSON object")
-    try:
-        current_config = config_manager.read()
-        incoming_aemet = payload.get("aemet")
-        if not isinstance(incoming_aemet, dict):
-            incoming_aemet = {}
-            payload["aemet"] = incoming_aemet
-        if "api_key" not in incoming_aemet:
-            incoming_aemet["api_key"] = current_config.aemet.api_key
-
-        incoming_opensky = payload.get("opensky")
-        if not isinstance(incoming_opensky, dict):
-            incoming_opensky = {}
-            payload["opensky"] = incoming_opensky
-        oauth_block = incoming_opensky.get("oauth2")
-        if not isinstance(oauth_block, dict):
-            oauth_block = {}
-            incoming_opensky["oauth2"] = oauth_block
-        current_oauth = getattr(current_config.opensky, "oauth2", None)
-
-        if "token_url" in oauth_block:
-            token_candidate = oauth_block.get("token_url")
-            if isinstance(token_candidate, str):
-                sanitized = token_candidate.strip()
-                if not sanitized and current_oauth is not None:
-                    oauth_block["token_url"] = current_oauth.token_url
-                elif not sanitized:
-                    oauth_block["token_url"] = DEFAULT_TOKEN_URL
-                else:
-                    oauth_block["token_url"] = sanitized
-            elif token_candidate is None and current_oauth is not None:
-                oauth_block["token_url"] = current_oauth.token_url
-        elif current_oauth is not None:
-            oauth_block["token_url"] = current_oauth.token_url
-
-        if "scope" in oauth_block:
-            scope_candidate = oauth_block.get("scope")
-            if isinstance(scope_candidate, str):
-                sanitized_scope = scope_candidate.strip()
-                oauth_block["scope"] = sanitized_scope or None
-            elif scope_candidate is None:
-                oauth_block["scope"] = None
-            else:
-                oauth_block["scope"] = None
-        elif current_oauth is not None:
-            oauth_block["scope"] = current_oauth.scope
-
-        existing_client_id = secret_store.get_secret("opensky_client_id")
-        existing_client_secret = secret_store.get_secret("opensky_client_secret")
-        credentials_updated = False
-
-        _sentinel = object()
-        client_id_raw = oauth_block.get("client_id", _sentinel)
-        if client_id_raw is None:
-            if existing_client_id is not None:
-                secret_store.set_secret("opensky_client_id", None)
-                credentials_updated = True
-        elif client_id_raw is not _sentinel:
-            sanitized_id = _sanitize_secret(str(client_id_raw))
-            if sanitized_id:
-                if sanitized_id != existing_client_id:
-                    secret_store.set_secret("opensky_client_id", sanitized_id)
-                    credentials_updated = True
-            # Ignore empty submissions to avoid clearing stored values
-
-        client_secret_raw = oauth_block.get("client_secret", _sentinel)
-        if client_secret_raw is None:
-            if existing_client_secret is not None:
-                secret_store.set_secret("opensky_client_secret", None)
-                credentials_updated = True
-        elif client_secret_raw is not _sentinel:
-            sanitized_secret = _sanitize_secret(str(client_secret_raw))
-            if sanitized_secret:
-                if sanitized_secret != existing_client_secret:
-                    secret_store.set_secret("opensky_client_secret", sanitized_secret)
-                    credentials_updated = True
-            # Ignore empty submissions to avoid clearing stored values
-
-        oauth_block.pop("client_id", None)
-        oauth_block.pop("client_secret", None)
-
-        stored_client_id = secret_store.get_secret("opensky_client_id")
-        stored_client_secret = secret_store.get_secret("opensky_client_secret")
-        has_credentials = bool(stored_client_id and stored_client_secret)
-        oauth_block["has_credentials"] = has_credentials
-        oauth_block["client_id_last4"] = (
-            stored_client_id[-4:] if stored_client_id and len(stored_client_id) >= 4 else stored_client_id
+    
+    # Verificar claves v1 y rechazar
+    v1_keys = _check_v1_keys(payload)
+    if v1_keys:
+        logger.warning("Rejecting v1 keys in payload: %s", v1_keys)
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "v1 keys not allowed", "v1_keys": v1_keys}
         )
-
-        if credentials_updated:
-            try:
-                opensky_service.reset()
-                logger.info("[opensky] credentials updated -> token cache reset")
-            except Exception:  # noqa: BLE001
-                logger.debug("post-secret side effects failed", exc_info=True)
-
-        updated = config_manager.write(payload)
+    
+    # Verificar que es v2
+    if payload.get("version") != 2:
+        logger.warning("Rejecting non-v2 config (version=%s)", payload.get("version"))
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "Only v2 config allowed", "version": payload.get("version")}
+        )
+    
+    if "ui_map" not in payload:
+        logger.warning("Rejecting config without ui_map")
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "ui_map required for v2"}
+        )
+    try:
+        # Validar como AppConfigV2
+        config_v2 = AppConfigV2.model_validate(payload)
+        
+        # Guardar v2
+        config_dict = config_v2.model_dump(mode="json", exclude_none=True)
+        config_manager.config_file.write_text(json.dumps(config_dict, indent=2), encoding="utf-8")
+        logger.info("Configuration v2 saved")
+        
+        # Aplicar cambios a servicios si es necesario
+        if config_v2.layers and config_v2.layers.ships:
+            ships_service.apply_config(config_v2.layers.ships)
+        
+        # Construir respuesta v2
+        public_config = _build_public_config_v2(config_v2)
     except ValidationError as exc:
         logger.debug("Configuration validation error: %s", exc.errors())
         raise HTTPException(status_code=400, detail=exc.errors()) from exc
     except Exception as exc:  # noqa: BLE001
         logger.exception("Failed to persist configuration: %s", exc)
         raise HTTPException(status_code=500, detail="Unable to persist configuration") from exc
-    logger.info("Configuration updated")
-    ships_service.apply_config(updated.layers.ships)
     
-    # Agregar headers anti-cache a la respuesta POST también
+    # Agregar headers anti-cache a la respuesta POST
     from datetime import datetime
     
-    # Obtener el tiempo de modificación del archivo de configuración
     try:
         config_mtime = config_manager.config_file.stat().st_mtime
         config_etag = f'"{config_mtime}"'
     except OSError:
-        # Si no se puede obtener el tiempo de modificación, usar timestamp actual
         config_mtime = datetime.now().timestamp()
         config_etag = f'"{config_mtime}"'
     
-    response = JSONResponse(content=_build_public_config(updated))
+    response = JSONResponse(content=public_config)
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
@@ -1355,10 +1403,10 @@ def _update_aemet_health(ok: bool, error: Optional[str]) -> None:
 @app.get("/api/aemet/warnings")
 def get_aemet_warnings() -> Dict[str, Any]:
     """Obtiene avisos CAP de AEMET (Meteoalerta) en formato GeoJSON."""
-    config = config_manager.read()
-    aemet_config = config.aemet
-    
-    if not aemet_config.enabled or not aemet_config.cap_enabled:
+    try:
+        config_v2, _ = _read_config_v2()
+    except Exception:
+        # Fallback: retornar estructura vacía si no se puede leer config
         return {
             "type": "FeatureCollection",
             "features": [],
@@ -1369,12 +1417,23 @@ def get_aemet_warnings() -> Dict[str, Any]:
             }
         }
     
+    # Verificar si está habilitado en v2 (ui_global.aemet.warnings o panels)
+    # Por ahora, siempre intentar si hay API key
     api_key = secret_store.get_secret("aemet_api_key")
     if not api_key:
-        raise HTTPException(status_code=400, detail="API key de AEMET no configurada")
+        # Retornar estructura vacía sin romper el frontend
+        return {
+            "type": "FeatureCollection",
+            "features": [],
+            "metadata": {
+                "source": "aemet",
+                "enabled": False,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        }
     
-    # Intentar cargar desde caché
-    cached = cache_store.load("aemet_warnings", max_age_minutes=aemet_config.cache_minutes)
+    # Intentar cargar desde caché (5 minutos por defecto)
+    cached = cache_store.load("aemet_warnings", max_age_minutes=5)
     if cached and cached.payload:
         logger.debug("Returning cached AEMET warnings")
         return cached.payload
@@ -1389,10 +1448,28 @@ def get_aemet_warnings() -> Dict[str, Any]:
         return warnings_data
     except AEMETServiceError as e:
         logger.error("Error fetching AEMET warnings: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        # Retornar estructura vacía sin romper el frontend
+        return {
+            "type": "FeatureCollection",
+            "features": [],
+            "metadata": {
+                "source": "aemet",
+                "error": str(e),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        }
     except Exception as e:
         logger.error("Unexpected error fetching AEMET warnings: %s", e)
-        raise HTTPException(status_code=500, detail="Error al obtener avisos de AEMET")
+        # Retornar estructura vacía sin romper el frontend
+        return {
+            "type": "FeatureCollection",
+            "features": [],
+            "metadata": {
+                "source": "aemet",
+                "error": "unexpected_error",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        }
 
 
 @app.get("/api/aemet/radar/tiles/{z}/{x}/{y}.png")
@@ -1608,48 +1685,152 @@ def get_weather() -> Dict[str, Any]:
     return _load_or_default("weather")
 
 
+@app.get("/api/weather/weekly")
+def get_weather_weekly(lat: float, lon: float) -> Dict[str, Any]:
+    """Obtiene pronóstico semanal de OpenWeatherMap (7 días)."""
+    api_key = secret_store.get_secret("openweathermap_api_key")
+    if not api_key:
+        return {
+            "ok": False,
+            "reason": "api_key_not_configured",
+            "daily": []
+        }
+    
+    try:
+        url = "https://api.openweathermap.org/data/3.0/onecall"
+        params = {
+            "lat": lat,
+            "lon": lon,
+            "appid": api_key,
+            "units": "metric",
+            "lang": "es",
+            "exclude": "current,minutely,hourly,alerts"
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        daily = []
+        for day in data.get("daily", [])[:7]:
+            daily.append({
+                "date": datetime.fromtimestamp(day.get("dt", 0), tz=timezone.utc).isoformat(),
+                "temp_max": day.get("temp", {}).get("max"),
+                "temp_min": day.get("temp", {}).get("min"),
+                "condition": day.get("weather", [{}])[0].get("description", ""),
+                "icon": day.get("weather", [{}])[0].get("icon", ""),
+                "humidity": day.get("humidity"),
+                "wind_speed": day.get("wind_speed"),
+            })
+        
+        return {
+            "ok": True,
+            "daily": daily,
+            "location": {"lat": lat, "lon": lon}
+        }
+    except requests.RequestException as e:
+        logger.error("Error fetching OpenWeatherMap weekly forecast: %s", e)
+        return {
+            "ok": False,
+            "reason": "api_error",
+            "daily": []
+        }
+    except Exception as e:
+        logger.error("Unexpected error fetching weekly forecast: %s", e)
+        return {
+            "ok": False,
+            "reason": "unexpected_error",
+            "daily": []
+        }
+
+
 @app.get("/api/news")
 def get_news() -> Dict[str, Any]:
-    """Obtiene noticias de feeds RSS configurados."""
-    config = config_manager.read()
-    news_config = config.news
+    """Obtiene noticias de feeds RSS configurados (legacy endpoint)."""
+    try:
+        config_v2, _ = _read_config_v2()
+    except Exception:
+        return {"items": [], "updated_at": datetime.now(timezone.utc).isoformat()}
     
-    if not news_config.enabled:
-        return _load_or_default("news")
+    # Usar feeds de v2 panels.news si existe
+    feeds = []
+    if config_v2.panels and config_v2.panels.news and config_v2.panels.news.feeds:
+        feeds = config_v2.panels.news.feeds
     
-    # Verificar caché
-    cached = cache_store.load("news", max_age_minutes=news_config.refresh_minutes)
-    if cached:
-        return cached.payload
+    if not feeds:
+        return {"items": [], "updated_at": datetime.now(timezone.utc).isoformat()}
     
     # Obtener noticias de todos los feeds
     all_items: List[Dict[str, Any]] = []
     
-    for feed_url in news_config.rss_feeds:
+    for feed_url in feeds:
         if not feed_url or not feed_url.strip():
             continue
         
         try:
-            items = parse_rss_feed(feed_url, max_items=news_config.max_items_per_feed)
+            items = parse_rss_feed(feed_url, max_items=10)
             all_items.extend(items)
         except Exception as exc:
             logger.warning("Failed to fetch RSS feed %s: %s", feed_url, exc)
             continue
     
-    # Ordenar por fecha (si está disponible)
+    # Ordenar por fecha
     all_items.sort(key=lambda x: x.get("published_at", ""), reverse=True)
     
-    # Limitar total
-    max_total = news_config.max_items_per_feed * len(news_config.rss_feeds)
-    all_items = all_items[:max_total]
+    # Limitar total a 20
+    all_items = all_items[:20]
     
     payload = {
         "items": all_items,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     
-    cache_store.store("news", payload)
     return payload
+
+
+@app.post("/api/news/rss")
+async def post_news_rss(request: Request) -> Dict[str, Any]:
+    """Obtiene noticias de feeds RSS proporcionados en el body."""
+    try:
+        body = await request.json()
+        feeds = body.get("feeds", [])
+    except Exception:
+        feeds = []
+    
+    if not feeds or not isinstance(feeds, list):
+        return {"items": []}
+    
+    # Obtener noticias de todos los feeds
+    all_items: List[Dict[str, Any]] = []
+    
+    for feed_url in feeds[:10]:  # Máximo 10 feeds
+        if not feed_url or not isinstance(feed_url, str) or not feed_url.strip():
+            continue
+        
+        try:
+            items = parse_rss_feed(feed_url.strip(), max_items=10)
+            for item in items:
+                # Normalizar formato
+                all_items.append({
+                    "title": item.get("title", ""),
+                    "link": item.get("link", ""),
+                    "source": feed_url,
+                    "published": item.get("published_at", item.get("published", ""))
+                })
+        except Exception as exc:
+            logger.warning("Failed to fetch RSS feed %s: %s", feed_url, exc)
+            continue
+    
+    # Ordenar por fecha
+    all_items.sort(key=lambda x: x.get("published", ""), reverse=True)
+    
+    # Limitar total a 20
+    all_items = all_items[:20]
+    
+    return {"items": all_items}
+
+
+# Legacy news endpoint code removed - using v2-compatible version above
 
 
 @app.get("/api/astronomy")
@@ -1837,44 +2018,61 @@ def get_astronomical_events_endpoint(
 
 
 @app.get("/api/calendar/events")
-def get_calendar_events(days: int = 7) -> Dict[str, Any]:
-    """Obtiene eventos próximos del calendario (Google Calendar)."""
-    config = config_manager.read()
-    calendar_config = config.calendar
+def get_calendar_events(from_date: Optional[str] = None, to_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Obtiene eventos del calendario (Google Calendar) entre fechas."""
+    try:
+        config_v2, _ = _read_config_v2()
+    except Exception:
+        return []
     
-    if not calendar_config.enabled:
-        return {
-            "ok": False,
-            "reason": "calendar_disabled",
-            "events": [],
-        }
+    # Por ahora, leer credenciales desde secrets (si existen)
+    api_key = secret_store.get_secret("google_calendar_api_key") or secret_store.get_secret("google_api_key")
+    calendar_id = secret_store.get_secret("google_calendar_id")
     
-    if not calendar_config.google_api_key or not calendar_config.google_calendar_id:
-        return {
-            "ok": False,
-            "reason": "missing_credentials",
-            "events": [],
-        }
+    if not api_key or not calendar_id:
+        # Retornar lista vacía sin romper el frontend
+        return []
+    
+    # Parsear fechas
+    try:
+        if from_date:
+            from_dt = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
+        else:
+            from_dt = datetime.now(timezone.utc)
+        
+        if to_date:
+            to_dt = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
+        else:
+            to_dt = from_dt + timedelta(days=7)
+    except Exception as e:
+        logger.warning("Error parsing dates: %s", e)
+        from_dt = datetime.now(timezone.utc)
+        to_dt = from_dt + timedelta(days=7)
     
     try:
+        # Calcular días hacia adelante
+        days_ahead = max(1, (to_dt - from_dt).days)
         events = fetch_google_calendar_events(
-            api_key=calendar_config.google_api_key,
-            calendar_id=calendar_config.google_calendar_id,
-            days_ahead=days,
+            api_key=api_key,
+            calendar_id=calendar_id,
+            days_ahead=days_ahead,
             max_results=20,
         )
-        return {
-            "ok": True,
-            "events": events,
-        }
+        # Normalizar formato: añadir campos fin y ubicación si faltan
+        normalized_events = []
+        for event in (events if isinstance(events, list) else []):
+            normalized = {
+                "title": event.get("title", event.get("summary", "Evento sin título")),
+                "start": event.get("start", ""),
+                "end": event.get("end", event.get("start", "")),
+                "location": event.get("location", ""),
+            }
+            normalized_events.append(normalized)
+        return normalized_events
     except Exception as exc:
         logger.warning("Failed to fetch Google Calendar events: %s", exc)
-        return {
-            "ok": False,
-            "reason": "api_error",
-            "message": str(exc),
-            "events": [],
-        }
+        # Retornar lista vacía sin romper el frontend
+        return []
 
 
 @app.get("/api/calendar/status")
