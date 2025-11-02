@@ -49,7 +49,7 @@ log_ok()   { printf '[OK] %s\n' "$*"; }
 log_error(){ printf '[ERROR] %s\n' "$*" >&2; }
 
 wait_for_backend_ready() {
-  local max_wait=40
+  local max_wait=${BACKEND_WAIT_TIMEOUT:-120}
   local sleep_interval=2
   local waited=0
   local backend_url="http://127.0.0.1:8081/api/health"
@@ -60,6 +60,9 @@ wait_for_backend_ready() {
       log_error "Backend no responde en 127.0.0.1:8081 tras ${max_wait}s"
       systemctl --no-pager -l status "pantalla-dash-backend@${USER_NAME}.service" | sed -n '1,60p' || true
       return 1
+    fi
+    if (( waited > 0 && (waited % 20) == 0 )); then
+      log_info "Backend aún no responde tras ${waited}s; esperando..."
     fi
     sleep "$sleep_interval"
     waited=$((waited + sleep_interval))
