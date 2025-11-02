@@ -139,6 +139,20 @@ export default class AircraftLayer implements Layer {
     this.registerEvents(map);
   }
 
+  /**
+   * Asegura que la capa de vuelos esté inicializada después de cambios de estilo.
+   * Debe ser llamado en eventos 'styledata' y 'load'.
+   */
+  ensureFlightsLayer(): void {
+    if (!this.map || !this.enabled) {
+      return;
+    }
+    // Asegurar que el source existe
+    this.ensureSource();
+    // Asegurar que las capas existen y están correctamente posicionadas
+    this.updateRenderState(false);
+  }
+
   remove(map: maplibregl.Map): void {
     this.unregisterEvents(map);
     this.removeLayers(map);
@@ -338,12 +352,40 @@ export default class AircraftLayer implements Layer {
     }
   }
 
+  private findBeforeId(map: maplibregl.Map): string | undefined {
+    const style = map.getStyle();
+    if (!style || !style.layers || !Array.isArray(style.layers)) {
+      return undefined;
+    }
+    
+    // Buscar el primer layer de tipo "symbol" que contenga "label", "place-", "country-", o "text"
+    for (const layer of style.layers) {
+      if (layer.type === "symbol") {
+        const layerId = layer.id?.toLowerCase() || "";
+        if (
+          layerId.includes("label") ||
+          layerId.includes("place-") ||
+          layerId.includes("country-") ||
+          layerId.includes("text") ||
+          layerId.includes("name")
+        ) {
+          return layer.id;
+        }
+      }
+    }
+    
+    // Si no se encuentra, devolver undefined para añadir al final
+    return undefined;
+  }
+
   private ensureLayers(): void {
     if (!this.map) {
       return;
     }
     const map = this.map;
     this.removeLayers(map);
+
+    const beforeId = this.findBeforeId(map);
 
     if (this.shouldUseClusters()) {
       if (!map.getLayer(this.clusterLayerId)) {
@@ -358,7 +400,10 @@ export default class AircraftLayer implements Layer {
             "circle-stroke-width": 1,
             "circle-stroke-color": "#111827",
           },
-        });
+          layout: {
+            visibility: this.enabled ? "visible" : "none",
+          },
+        }, beforeId);
       }
 
       if (!map.getLayer(this.clusterCountLayerId)) {
@@ -371,11 +416,12 @@ export default class AircraftLayer implements Layer {
             "text-field": "{point_count_abbreviated}",
             "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
             "text-size": 12,
+            visibility: this.enabled ? "visible" : "none",
           },
           paint: {
             "text-color": "#ffffff",
           },
-        });
+        }, beforeId);
       }
     }
 
@@ -392,26 +438,30 @@ export default class AircraftLayer implements Layer {
             "icon-allow-overlap": true,
             "icon-rotate": ["coalesce", ["get", "track"], 0],
             "icon-rotation-alignment": "map",
+            visibility: this.enabled ? "visible" : "none",
           },
           paint: {
             "icon-color": "#f97316",
             "icon-halo-color": "#111827",
             "icon-halo-width": 0.25,
           },
-        });
+        }, beforeId);
       } else {
         map.addLayer({
           id: this.id,
           type: "circle",
           source: this.sourceId,
           filter: ["!", ["has", "point_count"]],
+          layout: {
+            visibility: this.enabled ? "visible" : "none",
+          },
           paint: {
             "circle-radius": this.getCircleRadiusExpression(),
             "circle-color": this.circleOptions.color,
             "circle-stroke-color": this.circleOptions.strokeColor,
             "circle-stroke-width": this.circleOptions.strokeWidth,
           },
-        });
+        }, beforeId);
       }
     }
   }

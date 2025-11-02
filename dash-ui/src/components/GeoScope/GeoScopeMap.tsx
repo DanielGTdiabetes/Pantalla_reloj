@@ -2424,6 +2424,19 @@ export default function GeoScopeMap() {
       map.on("webglcontextrestored", handleContextRestored);
       map.on("error", handleMapError);
 
+      // Asegurar que la capa de vuelos se reestablezca después de cambios de estilo
+      const handleEnsureFlightsLayer = () => {
+        const aircraftLayer = aircraftLayerRef.current;
+        if (aircraftLayer) {
+          aircraftLayer.ensureFlightsLayer();
+        }
+      };
+      map.on("styledata", handleEnsureFlightsLayer);
+      map.on("load", handleEnsureFlightsLayer);
+
+      // Guardar referencia para cleanup
+      const ensureFlightsLayerHandler = handleEnsureFlightsLayer;
+
       // Inicializar sistema de capas cuando el mapa esté listo
       map.once("load", () => {
         if (destroyed || !mapRef.current) return;
