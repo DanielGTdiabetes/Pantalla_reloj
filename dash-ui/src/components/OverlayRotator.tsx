@@ -28,6 +28,20 @@ type DashboardPayload = {
 const REFRESH_INTERVAL_MS = 60_000;
 
 // Detectar si estamos en modo desarrollo
+// Similar a isProduction() en runtimeFlags.ts
+type NodeProcess = { env?: { NODE_ENV?: string } };
+
+const getNodeProcess = (): NodeProcess | undefined => {
+  if (typeof globalThis === "undefined") {
+    return undefined;
+  }
+  const candidate = (globalThis as { process?: NodeProcess }).process;
+  if (candidate && typeof candidate === "object") {
+    return candidate;
+  }
+  return undefined;
+};
+
 const isDevelopment = (): boolean => {
   if (typeof import.meta !== "undefined" && typeof import.meta.env !== "undefined") {
     const env = import.meta.env as { MODE?: string; PROD?: boolean };
@@ -39,8 +53,9 @@ const isDevelopment = (): boolean => {
     }
   }
   // Fallback para Node.js en build time
-  if (typeof process !== "undefined" && typeof process.env !== "undefined") {
-    return process.env.NODE_ENV === 'development';
+  const nodeProcess = getNodeProcess();
+  if (typeof nodeProcess?.env?.NODE_ENV === "string") {
+    return nodeProcess.env.NODE_ENV === 'development';
   }
   return false;
 };
