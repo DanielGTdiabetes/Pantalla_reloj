@@ -336,35 +336,34 @@ class ConfigManager:
 
     def _atomic_write(self, config: AppConfig) -> None:
         serialized = config.model_dump(mode="json", exclude_none=True)
+        self._atomic_write_v2(serialized)
+    
+    def _atomic_write_v2(self, config_dict: Dict[str, Any]) -> None:
+        """Escribe configuración de forma atómica usando tmp + mv.
+        
+        Args:
+            config_dict: Diccionario con la configuración a persistir
+        """
         self.config_file.parent.mkdir(parents=True, exist_ok=True)
         tmp_fd, tmp_path = tempfile.mkstemp(
-            dir=self.config_file.parent,
-            prefix=".config",
+            dir=str(self.config_file.parent),
+            prefix=self.config_file.name + ".",
             suffix=".tmp",
         )
         try:
-            os.fchmod(tmp_fd, 0o600)
+            os.fchmod(tmp_fd, 0o644)
             with os.fdopen(tmp_fd, "w", encoding="utf-8") as handle:
-                json.dump(serialized, handle, indent=2, ensure_ascii=False)
+                json.dump(config_dict, handle, indent=2, ensure_ascii=False)
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(tmp_path, self.config_file)
-            try:
-                dir_fd = os.open(self.config_file.parent, os.O_DIRECTORY)
-            except (PermissionError, FileNotFoundError):
-                dir_fd = None
-            else:
-                try:
-                    os.fsync(dir_fd)
-                finally:
-                    os.close(dir_fd)
-            try:
-                os.chmod(self.config_file, 0o644)
-            except PermissionError:
-                self.logger.warning("Could not adjust permissions for %s", self.config_file)
+            os.chmod(self.config_file, 0o644)
         finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
+            try:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+            except OSError:
+                pass
 
     def _write_snapshot(self, config: AppConfig) -> None:
         today = datetime.now().strftime("%Y-%m-%d")

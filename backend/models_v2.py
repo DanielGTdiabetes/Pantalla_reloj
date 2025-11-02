@@ -151,7 +151,7 @@ class PanelNewsConfig(BaseModel):
 class PanelCalendarConfig(BaseModel):
     """Configuración de panel de calendario."""
     enabled: bool = True
-    provider: Literal["google", "ics"] = Field(default="google")
+    provider: Literal["google", "ics", "disabled"] = Field(default="google")
 
 
 class PanelsConfig(BaseModel):

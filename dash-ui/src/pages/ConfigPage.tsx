@@ -1430,7 +1430,7 @@ const ConfigPage: React.FC = () => {
           calendar: existingCalendar && typeof existingCalendar.enabled === "boolean"
             ? {
                 enabled: existingCalendar.enabled,
-                provider: (existingCalendar.provider === "ics" ? "ics" : "google") as "google" | "ics",
+                provider: (existingCalendar.provider === "ics" ? "ics" : existingCalendar.provider === "disabled" ? "disabled" : "google") as "google" | "ics" | "disabled",
               }
             : { enabled: false, provider: "google" as const },
         };
@@ -3263,7 +3263,8 @@ const ConfigPage: React.FC = () => {
                     value={(form as unknown as { panels?: { calendar?: { provider?: string } } }).panels?.calendar?.provider || "google"}
                     disabled={disableInputs || !((form as unknown as { panels?: { calendar?: { enabled?: boolean } } }).panels?.calendar?.enabled)}
                     onChange={(event) => {
-                      const provider = event.target.value as "google" | "ics";
+                      const provider = event.target.value as "google" | "ics" | "disabled";
+                      const newEnabled = provider === "disabled" ? false : (form as unknown as { panels?: { calendar?: { enabled?: boolean } } }).panels?.calendar?.enabled ?? false;
                       setForm((prev) => {
                         const v2 = prev as unknown as { panels?: { calendar?: { enabled?: boolean; provider?: string } } };
                         return {
@@ -3272,7 +3273,7 @@ const ConfigPage: React.FC = () => {
                             ...v2.panels,
                             calendar: {
                               ...v2.panels?.calendar,
-                              enabled: v2.panels?.calendar?.enabled ?? false,
+                              enabled: newEnabled,
                               provider,
                             },
                           },
@@ -3282,13 +3283,14 @@ const ConfigPage: React.FC = () => {
                   >
                     <option value="google">Google Calendar</option>
                     <option value="ics">ICS (iCalendar)</option>
+                    <option value="disabled">Deshabilitado</option>
                   </select>
                   {renderHelp("Selecciona el proveedor de calendario")}
                 </div>
               )}
 
               {/* Google Calendar fields */}
-              {((configVersion === 2 && (form as unknown as { panels?: { calendar?: { provider?: string } } }).panels?.calendar?.provider === "google") || !configVersion || configVersion !== 2) && (
+              {configVersion === 2 && (form as unknown as { panels?: { calendar?: { provider?: string } } }).panels?.calendar?.provider === "google" && (
                 <>
                   <div className="config-field">
                     <label htmlFor="calendar_api_key">API Key de Google Calendar</label>

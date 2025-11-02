@@ -116,19 +116,23 @@ Pantalla_reloj/
   - `tz`: Timezone aplicada (p. ej., `Europe/Madrid`)
   - `local_range`: Rango del día local calculado (`start`, `end` en ISO)
   - `utc_range`: Conversión a UTC del rango local (`start`, `end` en ISO)
-  - `provider`: Proveedor usado (`google`)
+  - `provider`: Proveedor usado (`google`, `ics` o `disabled`)
   - `provider_enabled`: Si el proveedor está habilitado
-  - `credentials_present`: Si existen credenciales (API key y calendar ID)
+  - `credentials_present`: Si existen credenciales (API key y calendar ID para Google, o url/path para ICS)
   - `calendars_found`: Número de calendarios detectados
   - `raw_events_count`: Eventos crudos recibidos del proveedor
   - `filtered_events_count`: Eventos tras normalización
-  - `note`: Motivo si no hay eventos (p. ej., sin credenciales, error API)
+  - `note`: Motivo si no hay eventos (p. ej., sin credenciales, error API, provider deshabilitado)
 - **Estado en health**: `/api/health` incluye bloque `calendar` con:
   - `enabled`: Si el calendario está habilitado
-  - `provider`: Proveedor configurado (`google`)
+  - `provider`: Proveedor configurado (`google`, `ics` o `disabled`)
   - `credentials_present`: Si hay credenciales
   - `last_fetch_iso`: Última consulta exitosa (si está disponible)
-  - `status`: Estado (`ok`, `stale`, `error`)
+  - `status`: Estado (`ok`, `stale`, `error`, `disabled`)
+- **Configuración de calendario**: En `/config`, puedes seleccionar el proveedor (`google`, `ics` o `disabled`):
+  - **Google Calendar**: Requiere `secrets.google.api_key` y `secrets.google.calendar_id`
+  - **ICS (iCalendar)**: Requiere `secrets.calendar_ics.url` (HTTP/HTTPS) o `secrets.calendar_ics.path` (ruta local)
+  - **Deshabilitado**: Desactiva completamente el panel de calendario
 - **Logs DEBUG**: El backend loguea información detallada con prefijo `[Calendar]` y `[timezone]`:
   ```bash
   journalctl -u pantalla-dash-backend@dani -n 60 --no-pager -l | egrep -i 'calendar|tz|range|utc'

@@ -1235,6 +1235,27 @@ def get_config(request: Request) -> JSONResponse:
     # Construir respuesta solo con v2 (sin claves v1)
     public_config = _build_public_config_v2(config_v2)
     
+    # Añadir metadatos de configuración
+    config_metadata = config_manager.get_config_metadata()
+    public_config["config_path"] = config_metadata.get("config_path", str(config_manager.config_file))
+    public_config["config_source"] = config_metadata.get("config_source", "file")
+    public_config["has_timezone"] = config_metadata.get("has_timezone", False)
+    
+    # Añadir información de calendario (provider y estructura top-level)
+    if config_v2.panels and config_v2.panels.calendar:
+        public_config.setdefault("panels", {})["calendar"] = {
+            "enabled": getattr(config_v2.panels.calendar, "enabled", False),
+            "provider": getattr(config_v2.panels.calendar, "provider", "google"),
+        }
+        # Añadir calendar top-level para compatibilidad
+        public_config["calendar"] = {
+            "enabled": getattr(config_v2.panels.calendar, "enabled", False),
+            "provider": getattr(config_v2.panels.calendar, "provider", "google"),
+        }
+    
+    # Añadir secrets.calendar_ics (solo estructura, sin valores sensibles)
+    public_config.setdefault("secrets", {}).setdefault("calendar_ics", {})
+    
     response = JSONResponse(content=public_config)
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
@@ -1328,9 +1349,8 @@ async def save_config(request: Request) -> JSONResponse:
                         "missing": []
                     }
                 )
-        
-        # Validación básica: si provider=ics, exigir url o path
-        if calendar_provider == "ics":
+        elif calendar_provider == "ics":
+            # Validación básica: si provider=ics, exigir url o path
             if not calendar_ics_url and not calendar_ics_path:
                 logger.warning("[config] Provider ics requiere url o path")
                 raise HTTPException(
@@ -1340,6 +1360,7 @@ async def save_config(request: Request) -> JSONResponse:
                         "missing": []
                     }
                 )
+        # Si provider es "disabled", no validar credenciales
         
         # Eliminar secrets del payload antes de validar (no van en config.json)
         payload_without_secrets = payload.copy()
@@ -1349,10 +1370,18 @@ async def save_config(request: Request) -> JSONResponse:
         # Validar como AppConfigV2
         config_v2 = AppConfigV2.model_validate(payload_without_secrets)
         
-        # Guardar v2
+        # Guardar v2 usando persistencia atómica (write a tmp + mv)
         config_dict = config_v2.model_dump(mode="json", exclude_none=True)
-        config_manager.config_file.write_text(json.dumps(config_dict, indent=2), encoding="utf-8")
-        logger.info("[config] Configuration v2 saved")
+        try:
+            # Usar _atomic_write de config_manager para persistencia atómica
+            config_manager._atomic_write_v2(config_dict)
+            logger.info("[config] Configuration v2 saved atomically")
+        except (PermissionError, OSError) as write_exc:
+            logger.error("[config] Failed to write config atomically: %s", write_exc)
+            raise HTTPException(
+                status_code=500,
+                detail={"error": "Failed to persist configuration", "reason": str(write_exc)}
+            )
         
         # Guardar secrets en SecretStore (sin loguear valores en claro)
         if google_api_key:
@@ -2291,13 +2320,50 @@ def get_calendar_events(
             }
         return []
     
-    # Por ahora, leer credenciales desde secrets (si existen)
-    api_key = secret_store.get_secret("google_calendar_api_key") or secret_store.get_secret("google_api_key")
-    calendar_id = secret_store.get_secret("google_calendar_id")
+    # Determinar provider de calendario desde config
+    calendar_provider = "google"  # default
+    enabled = False
+    if config_v2.panels and config_v2.panels.calendar:
+        enabled = getattr(config_v2.panels.calendar, "enabled", False)
+        calendar_provider = getattr(config_v2.panels.calendar, "provider", "google")
+    
+    # Si provider es "disabled" o enabled es False, retornar inmediatamente
+    if calendar_provider == "disabled" or not enabled:
+        if inspect_mode:
+            return {
+                "tz": str(_get_tz()),
+                "local_range": {"start": None, "end": None},
+                "utc_range": {"start": None, "end": None},
+                "provider": calendar_provider,
+                "provider_enabled": False,
+                "credentials_present": False,
+                "calendars_found": 0,
+                "raw_events_count": 0,
+                "filtered_events_count": 0,
+                "note": f"Calendar provider is disabled (provider={calendar_provider}, enabled={enabled})",
+            }
+        return []
+    
+    # Leer credenciales según provider
+    credentials_present = False
+    calendars_found = 0
+    api_key: Optional[str] = None
+    calendar_id: Optional[str] = None
+    ics_url: Optional[str] = None
+    ics_path: Optional[str] = None
+    
+    if calendar_provider == "google":
+        api_key = secret_store.get_secret("google_calendar_api_key") or secret_store.get_secret("google_api_key")
+        calendar_id = secret_store.get_secret("google_calendar_id")
+        credentials_present = bool(api_key and calendar_id)
+        calendars_found = 1 if calendar_id else 0
+    elif calendar_provider == "ics":
+        ics_url = secret_store.get_secret("calendar_ics_url")
+        ics_path = secret_store.get_secret("calendar_ics_path")
+        credentials_present = bool(ics_url or ics_path)
+        calendars_found = 1 if credentials_present else 0
     
     provider_enabled = True
-    credentials_present = bool(api_key and calendar_id)
-    calendars_found = 1 if calendar_id else 0
     
     # Parsear fechas con soporte de timezone
     tz = _get_tz()
@@ -2519,6 +2585,23 @@ def get_calendar_status() -> Dict[str, Any]:
     if config_v2.panels and config_v2.panels.calendar:
         enabled = getattr(config_v2.panels.calendar, "enabled", False)
         calendar_provider = getattr(config_v2.panels.calendar, "provider", "google")
+    
+    # Si provider es "disabled" o enabled es False, retornar inmediatamente
+    if calendar_provider == "disabled" or not enabled:
+        if inspect_mode:
+            return {
+                "tz": str(_get_tz()),
+                "local_range": {"start": None, "end": None},
+                "utc_range": {"start": None, "end": None},
+                "provider": calendar_provider,
+                "provider_enabled": False,
+                "credentials_present": False,
+                "calendars_found": 0,
+                "raw_events_count": 0,
+                "filtered_events_count": 0,
+                "note": f"Calendar provider is disabled (provider={calendar_provider}, enabled={enabled})",
+            }
+        return []
     
     # Leer credenciales según provider
     credentials_present = False
