@@ -119,6 +119,24 @@ export async function testAemetApiKey(apiKey?: string) {
   return apiPost<AemetTestResponse | undefined>("/api/aemet/test_key", body);
 }
 
+export type CalendarTestResponse = {
+  ok: boolean;
+  message?: string;
+  reason?: string;
+  event_count?: number;
+};
+
+export async function testCalendarConnection(apiKey?: string, calendarId?: string) {
+  const body: Record<string, unknown> = {};
+  if (apiKey && apiKey.trim().length > 0) {
+    body.api_key = apiKey.trim();
+  }
+  if (calendarId && calendarId.trim().length > 0) {
+    body.calendar_id = calendarId.trim();
+  }
+  return apiPost<CalendarTestResponse | undefined>("/api/calendar/test", body);
+}
+
 export async function updateOpenWeatherMapApiKey(apiKey: string | null) {
   return apiPost<undefined>("/api/config/secret/openweathermap_api_key", { api_key: apiKey });
 }

@@ -10,6 +10,8 @@ import {
   getOpenSkyStatus,
   saveConfig,
   testAemetApiKey,
+  testCalendarConnection,
+  type CalendarTestResponse,
   updateAemetApiKey,
   updateAISStreamApiKey,
   updateOpenWeatherMapApiKey,
@@ -420,6 +422,8 @@ const ConfigPage: React.FC = () => {
   const [testingOpenSky, setTestingOpenSky] = useState(false);
   const [openskyStatusData, setOpenSkyStatusData] = useState<OpenSkyStatus | null>(null);
   const [openskyStatusError, setOpenSkyStatusError] = useState<string | null>(null);
+  const [testingCalendar, setTestingCalendar] = useState(false);
+  const [calendarTestResult, setCalendarTestResult] = useState<{ ok: boolean; message: string; eventCount?: number } | null>(null);
   
   // WiFi state
   const [wifiNetworkList, setWifiNetworkList] = useState<WiFiNetwork[]>([]);
@@ -731,6 +735,48 @@ const ConfigPage: React.FC = () => {
       setTestingAemetKey(false);
     }
   }, [aemetKeyInput, form.aemet.has_api_key, showAemetKey, testingAemetKey]);
+
+  const handleTestCalendar = useCallback(async () => {
+    if (testingCalendar) {
+      return;
+    }
+
+    if (!form.calendar.enabled) {
+      setCalendarTestResult({ ok: false, message: "Activa Google Calendar primero" });
+      return;
+    }
+
+    const apiKey = form.calendar.google_api_key?.trim() || "";
+    const calendarId = form.calendar.google_calendar_id?.trim() || "";
+
+    if (!apiKey && !calendarId) {
+      setCalendarTestResult({ ok: false, message: "Introduce al menos la API Key o el Calendar ID" });
+      return;
+    }
+
+    setTestingCalendar(true);
+    setCalendarTestResult(null);
+    try {
+      const response = await testCalendarConnection(apiKey || undefined, calendarId || undefined);
+      if (response?.ok) {
+        const eventCount = typeof response.event_count === "number" ? response.event_count : undefined;
+        const message = eventCount !== undefined
+          ? `Conexión exitosa: Se encontraron ${eventCount} evento(s)`
+          : response.message || "Conexión exitosa: Google Calendar responde correctamente";
+        setCalendarTestResult({ ok: true, message, eventCount });
+      } else {
+        const reason = response?.reason ?? "";
+        const message = response?.message || reason || "No se pudo conectar con Google Calendar";
+        setCalendarTestResult({ ok: false, message });
+      }
+    } catch (error) {
+      console.error("[ConfigPage] Failed to test Google Calendar connection", error);
+      const errorMessage = error instanceof Error ? error.message : "No se pudo comprobar la conexión";
+      setCalendarTestResult({ ok: false, message: errorMessage });
+    } finally {
+      setTestingCalendar(false);
+    }
+  }, [form.calendar.enabled, form.calendar.google_api_key, form.calendar.google_calendar_id, testingCalendar]);
 
   const handleToggleAisstreamKeyVisibility = useCallback(() => {
     setShowAisstreamKey((prev) => {
@@ -2756,6 +2802,29 @@ const ConfigPage: React.FC = () => {
                   {renderFieldError("calendar.google_calendar_id")}
                 </div>
               )}
+
+              {/* Botón de prueba para Google Calendar */}
+              <div className="config-field">
+                <div className="config-field__actions">
+                  <button
+                    type="button"
+                    className="config-button"
+                    onClick={() => void handleTestCalendar()}
+                    disabled={disableInputs || testingCalendar || !form.calendar.enabled}
+                  >
+                    {testingCalendar ? "Comprobando…" : "Probar conexión"}
+                  </button>
+                </div>
+                {calendarTestResult && (
+                  <div
+                    className={`config-field__hint ${
+                      calendarTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                    }`}
+                  >
+                    {calendarTestResult.message}
+                  </div>
+                )}
+              </div>
 
               {supports("calendar.days_ahead") && (
                 <div className="config-field">
