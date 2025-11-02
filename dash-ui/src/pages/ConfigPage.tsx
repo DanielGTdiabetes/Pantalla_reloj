@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { DEFAULT_CONFIG, createDefaultGlobalLayers, createDefaultMapCinema, withConfigDefaults } from "../config/defaults";
+import { DEFAULT_CONFIG, createDefaultGlobalLayers, withConfigDefaults } from "../config/defaults";
 import {
   API_ORIGIN,
   ApiError,
@@ -30,7 +30,7 @@ import {
   migrateConfig,
   type MigrateConfigResponse,
 } from "../lib/api";
-import type { AppConfig, GlobalLayersConfig, MapCinemaBand, MapConfig, XyzConfig } from "../types/config";
+import type { AppConfig, GlobalLayersConfig, MapConfig, XyzConfig } from "../types/config";
 
 type GlobalLayers = NonNullable<AppConfig["layers"]["global"]>;
 
@@ -71,26 +71,6 @@ const MAP_PROVIDER_LABELS: Record<AppConfig["map"]["provider"], string> = {
 const MAPTILER_KEY_PATTERN = /^[A-Za-z0-9._-]+$/;
 const MAPTILER_DOCS_TEXT = "Obtén la clave en docs.maptiler.com/cloud/api-keys";
 const DEFAULT_PANELS = DEFAULT_CONFIG.ui.rotation.panels;
-const CINEMA_BAND_COUNT = DEFAULT_CONFIG.ui.map.cinema.bands.length;
-const CINEMA_SPEED_VALUES: Record<"slow" | "medium" | "fast", number> = {
-  slow: 3,
-  medium: 6,
-  fast: 9,
-};
-const CINEMA_AMPLITUDE_RANGE = { min: 20, max: 160 };
-
-const deriveSpeedPreset = (value: number): keyof typeof CINEMA_SPEED_VALUES => {
-  if (!Number.isFinite(value)) {
-    return "medium";
-  }
-  if (value <= (CINEMA_SPEED_VALUES.slow + CINEMA_SPEED_VALUES.medium) / 2) {
-    return "slow";
-  }
-  if (value <= (CINEMA_SPEED_VALUES.medium + CINEMA_SPEED_VALUES.fast) / 2) {
-    return "medium";
-  }
-  return "fast";
-};
 
 const AEMET_REASON_MESSAGES: Record<string, string> = {
   unauthorized: "AEMET rechazó la clave (401)",
@@ -314,51 +294,6 @@ const validateConfig = (config: AppConfig, supports: SchemaInspector["has"]): Fi
     }
   }
 
-  if (supports("ui.map.cinema.panLngDegPerSec")) {
-    if (!Number.isFinite(config.ui.map.cinema.panLngDegPerSec) || config.ui.map.cinema.panLngDegPerSec < 0) {
-      errors["ui.map.cinema.panLngDegPerSec"] = "Introduce una velocidad positiva";
-    }
-  }
-
-  if (supports("ui.map.cinema.bandTransition_sec")) {
-    if (!Number.isFinite(config.ui.map.cinema.bandTransition_sec) || config.ui.map.cinema.bandTransition_sec < 1) {
-      errors["ui.map.cinema.bandTransition_sec"] = "Debe ser mayor o igual a 1";
-    }
-  }
-
-  if (supports("ui.map.idlePan.intervalSec")) {
-    const value = config.ui.map.idlePan.intervalSec;
-    if (!Number.isFinite(value) || value < 10) {
-      errors["ui.map.idlePan.intervalSec"] = "Debe ser mayor o igual a 10";
-    }
-  }
-
-  if (supports("ui.map.cinema.bands")) {
-    if (config.ui.map.cinema.bands.length !== CINEMA_BAND_COUNT) {
-      errors["ui.map.cinema.bands"] = `Configura exactamente ${CINEMA_BAND_COUNT} bandas`;
-    }
-    config.ui.map.cinema.bands.forEach((band, index) => {
-      const basePath = `ui.map.cinema.bands.${index}`;
-      if (!Number.isFinite(band.lat)) {
-        errors[`${basePath}.lat`] = "Latitud inválida";
-      }
-      if (!Number.isFinite(band.zoom)) {
-        errors[`${basePath}.zoom`] = "Zoom inválido";
-      }
-      if (!Number.isFinite(band.pitch)) {
-        errors[`${basePath}.pitch`] = "Pitch inválido";
-      }
-      if (!Number.isFinite(band.minZoom)) {
-        errors[`${basePath}.minZoom`] = "minZoom inválido";
-      }
-      if (!Number.isFinite(band.duration_sec) || band.duration_sec < 1) {
-        errors[`${basePath}.duration_sec`] = "Duración inválida";
-      }
-      if (Number.isFinite(band.minZoom) && Number.isFinite(band.zoom) && band.minZoom > band.zoom) {
-        errors[`${basePath}.minZoom`] = "minZoom debe ser menor o igual a zoom";
-      }
-    });
-  }
 
   if (supports("ui.map.theme.contrast")) {
     if (!Number.isFinite(config.ui.map.theme.contrast)) {
@@ -468,12 +403,6 @@ const ConfigPage: React.FC = () => {
 
   const isReady = status === "ready";
   const disableInputs = !isReady || saving;
-
-  // El modo cine horizontal ya no requiere rotation.enabled
-  const cinemaBlocked = !form.ui.map.cinema.enabled;
-  const disableCinemaControls = disableInputs || cinemaBlocked;
-  const disableIdlePanControls =
-    disableInputs || cinemaBlocked || !form.ui.map.idlePan.enabled;
   const openskyAuthState = form.opensky.oauth2;
   const pendingOpenSkyClientId = openskyAuthState?.client_id ?? "";
   const pendingOpenSkyClientSecret = openskyAuthState?.client_secret ?? "";
@@ -498,14 +427,6 @@ const ConfigPage: React.FC = () => {
       return next;
     });
   }, []);
-
-  const currentCinemaMotion = useMemo(
-    () => ({
-      ...createDefaultMapCinema().motion,
-      ...(form.ui.map.cinema.motion ?? {}),
-    }),
-    [form.ui.map.cinema.motion]
-  );
 
   const maskedAemetKey = useMemo(() => {
     if (!form.aemet?.has_api_key) {
@@ -596,88 +517,6 @@ const ConfigPage: React.FC = () => {
     !savingOpenWeatherKey &&
     (trimmedOpenWeatherKeyInput.length > 0 || hasStoredOpenWeatherKey);
   const openWeatherSelected = form.layers.global?.radar?.provider === "openweathermap";
-
-  const updateCinemaMotion = useCallback(
-    (patch: Partial<AppConfig["ui"]["map"]["cinema"]["motion"]>) => {
-      setForm((prev) => {
-        const baseMotion = {
-          ...createDefaultMapCinema().motion,
-          ...(prev.ui.map.cinema.motion ?? {}),
-        };
-        return {
-          ...prev,
-          ui: {
-            ...prev.ui,
-            map: {
-              ...prev.ui.map,
-              cinema: {
-                ...prev.ui.map.cinema,
-                motion: {
-                  ...baseMotion,
-                  ...patch,
-                },
-              },
-            },
-          },
-        };
-      });
-    },
-    []
-  );
-
-  const handleCinemaSpeedPresetChange = useCallback(
-    (preset: keyof typeof CINEMA_SPEED_VALUES) => {
-      const speed = CINEMA_SPEED_VALUES[preset];
-      setForm((prev) => {
-        const baseMotion = {
-          ...createDefaultMapCinema().motion,
-          ...(prev.ui.map.cinema.motion ?? {}),
-        };
-        return {
-          ...prev,
-          ui: {
-            ...prev.ui,
-            map: {
-              ...prev.ui.map,
-              cinema: {
-                ...prev.ui.map.cinema,
-                panLngDegPerSec: speed,
-                motion: {
-                  ...baseMotion,
-                  speedPreset: preset,
-                },
-              },
-            },
-          },
-        };
-      });
-      resetErrorsFor("ui.map.cinema.panLngDegPerSec");
-    },
-    [resetErrorsFor]
-  );
-
-  const resetCinemaSettings = useCallback(() => {
-    const defaults = createDefaultMapCinema();
-    setForm((prev) => ({
-      ...prev,
-      ui: {
-        ...prev.ui,
-        map: {
-          ...prev.ui.map,
-          cinema: {
-            ...prev.ui.map.cinema,
-            enabled: defaults.enabled,
-            panLngDegPerSec: defaults.panLngDegPerSec,
-            debug: defaults.debug,
-            bandTransition_sec: defaults.bandTransition_sec,
-            fsmEnabled: defaults.fsmEnabled,
-            motion: { ...defaults.motion },
-          },
-        },
-      },
-    }));
-    resetErrorsFor("ui.map.cinema");
-  }, [resetErrorsFor]);
 
   const handleToggleAemetKeyVisibility = useCallback(() => {
     setShowAemetKey((prev) => {
@@ -1275,26 +1114,6 @@ const ConfigPage: React.FC = () => {
     setForm((prev) => ({ ...prev, [key]: value }));
   }, []);
 
-  const handleBandChange = (index: number, patch: Partial<MapCinemaBand>) => {
-    setForm((prev) => {
-      const nextBands = prev.ui.map.cinema.bands.map((band, bandIndex) =>
-        bandIndex === index ? { ...band, ...patch } : band,
-      );
-      return {
-        ...prev,
-        ui: {
-          ...prev.ui,
-          map: {
-            ...prev.ui.map,
-            cinema: {
-              ...prev.ui.map.cinema,
-              bands: nextBands,
-            },
-          },
-        },
-      };
-    });
-  };
 
   const handlePanelsChange = (selected: string[]) => {
     updateForm("ui", {
@@ -2055,370 +1874,17 @@ const ConfigPage: React.FC = () => {
                   {renderFieldError("ui.map.style")}
                 </div>
               )}
-
-              {supports("ui.map.cinema.enabled") && (
-                <div className="config-field config-field--checkbox">
-                  <label htmlFor="cinema_enabled">
-                    <input
-                      id="cinema_enabled"
-                      type="checkbox"
-                      checked={form.ui.map.cinema.enabled}
-                      disabled={disableInputs}
-                      onChange={(event) => {
-                        const enabled = event.target.checked;
-                        setForm((prev) => ({
-                          ...prev,
-                          ui: {
-                            ...prev.ui,
-                            map: {
-                              ...prev.ui.map,
-                              cinema: {
-                                ...prev.ui.map.cinema,
-                                enabled,
-                              },
-                            },
-                          },
-                        }));
-                        resetErrorsFor("ui.map.cinema.enabled");
-                      }}
-                    />
-                    Activar modo cine
-                  </label>
-                  {renderHelp(
-                    "Habilita el desplazamiento horizontal automático del mapa (modo película)"
-                  )}
-                </div>
-              )}
-
-              {supports("ui.map.cinema.motion") && (
-                <div className="config-field">
-                  <label htmlFor="cinema_speed">Velocidad</label>
-                  <select
-                    id="cinema_speed"
-                    value={currentCinemaMotion.speedPreset ?? deriveSpeedPreset(form.ui.map.cinema.panLngDegPerSec)}
-                    disabled={disableCinemaControls}
-                    onChange={(event) => {
-                      handleCinemaSpeedPresetChange(event.target.value as keyof typeof CINEMA_SPEED_VALUES);
-                    }}
-                  >
-                    <option value="slow">Lenta</option>
-                    <option value="medium">Media</option>
-                    <option value="fast">Rápida</option>
-                  </select>
-                  {renderHelp("Controla la rapidez del barrido horizontal del mapa")}
-                  {renderFieldError("ui.map.cinema.panLngDegPerSec")}
-                </div>
-              )}
-
-              {supports("ui.map.cinema.motion.amplitudeDeg") && (
-                <div className="config-field">
-                  <label htmlFor="cinema_amplitude">Amplitud del movimiento</label>
-                  <input
-                    id="cinema_amplitude"
-                    type="range"
-                    min={CINEMA_AMPLITUDE_RANGE.min}
-                    max={CINEMA_AMPLITUDE_RANGE.max}
-                    step={5}
-                    value={Math.round(currentCinemaMotion.amplitudeDeg)}
-                    disabled={disableCinemaControls}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (Number.isNaN(value)) {
-                        return;
-                      }
-                      updateCinemaMotion({ amplitudeDeg: value });
-                    }}
-                  />
-                  <div className="config-field__hint">
-                    Cobertura horizontal ±{Math.round(currentCinemaMotion.amplitudeDeg)}° alrededor del centro.
-                  </div>
-                </div>
-              )}
-
-              {supports("ui.map.cinema.motion.easing") && (
-                <div className="config-field">
-                  <label htmlFor="cinema_easing">Suavizado del movimiento</label>
-                  <select
-                    id="cinema_easing"
-                    value={currentCinemaMotion.easing}
-                    disabled={disableCinemaControls}
-                    onChange={(event) => {
-                      updateCinemaMotion({ easing: event.target.value as AppConfig["ui"]["map"]["cinema"]["motion"]["easing"] });
-                    }}
-                  >
-                    <option value="linear">Lineal</option>
-                    <option value="ease-in-out">Suave (ease-in-out)</option>
-                  </select>
-                  {renderHelp("Elige cómo acelera y frena el desplazamiento al cambiar de sentido")}
-                </div>
-              )}
-
-              {supports("ui.map.cinema.motion.pauseWithOverlay") && (
-                <div className="config-field config-field--checkbox">
-                  <label htmlFor="cinema_pause_overlay">
-                    <input
-                      id="cinema_pause_overlay"
-                      type="checkbox"
-                      checked={currentCinemaMotion.pauseWithOverlay}
-                      disabled={disableCinemaControls}
-                      onChange={(event) => {
-                        updateCinemaMotion({ pauseWithOverlay: event.target.checked });
-                      }}
-                    />
-                    Pausar cuando haya overlays informativos
-                  </label>
-                  {renderHelp("Detiene el movimiento si se muestra el modo tormenta u otros paneles prioritarios")}
-                </div>
-              )}
-
-              {supports("ui.map.cinema.fsmEnabled") && (
-                <div className="config-field config-field--checkbox">
-                  <label htmlFor="cinema_fsm_toggle">
-                    <input
-                      id="cinema_fsm_toggle"
-                      type="checkbox"
-                      checked={form.ui.map.cinema.fsmEnabled}
-                      disabled={disableCinemaControls}
-                      onChange={(event) => {
-                        const { checked } = event.target;
-                        setForm((prev) => ({
-                          ...prev,
-                          ui: {
-                            ...prev.ui,
-                            map: {
-                              ...prev.ui.map,
-                              cinema: {
-                                ...prev.ui.map.cinema,
-                                fsmEnabled: checked,
-                              },
-                            },
-                          },
-                        }));
-                      }}
-                    />
-                    Estabilizador del modo cine (nuevo)
-                  </label>
-                  {renderHelp(
-                    "Activa la máquina de estados para evitar congelaciones al cambiar de estilo. Desactiva para volver al comportamiento clásico."
-                  )}
-                </div>
-              )}
-
-              {supports("ui.map.cinema.motion") && (
-                <div className="config-field">
-                  <button
-                    type="button"
-                    className="config-button"
-                    onClick={resetCinemaSettings}
-                    disabled={disableCinemaControls}
-                  >
-                    Restablecer valores del modo cine
-                  </button>
-                </div>
-              )}
-
-              {supports("ui.map.cinema.bandTransition_sec") && (
-                <div className="config-field">
-                  <label htmlFor="cinema_transition">Transición entre bandas</label>
-                  <input
-                    id="cinema_transition"
-                    type="number"
-                    min={1}
-                    value={form.ui.map.cinema.bandTransition_sec}
-                    disabled={disableCinemaControls}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (Number.isNaN(value)) {
-                        return;
-                      }
-                      setForm((prev) => ({
-                        ...prev,
-                        ui: {
-                          ...prev.ui,
-                          map: {
-                            ...prev.ui.map,
-                            cinema: {
-                              ...prev.ui.map.cinema,
-                              bandTransition_sec: value,
-                            },
-                          },
-                        },
-                      }));
-                      resetErrorsFor("ui.map.cinema.bandTransition_sec");
-                    }}
-                  />
-                  {renderHelp("Duración de la transición en segundos")}
-                  {renderFieldError("ui.map.cinema.bandTransition_sec")}
-                </div>
-              )}
-
-              {supports("ui.map.idlePan.enabled") && (
-                <div className="config-field config-field--checkbox">
-                  <label htmlFor="idle_pan_enabled">
-                    <input
-                      id="idle_pan_enabled"
-                      type="checkbox"
-                      checked={form.ui.map.idlePan.enabled}
-                      disabled={disableInputs || cinemaBlocked}
-                      onChange={(event) => {
-                        const enabled = event.target.checked;
-                        setForm((prev) => ({
-                          ...prev,
-                          ui: {
-                            ...prev.ui,
-                            map: {
-                              ...prev.ui.map,
-                              idlePan: {
-                                ...prev.ui.map.idlePan,
-                                enabled,
-                              },
-                            },
-                          },
-                        }));
-                        resetErrorsFor("ui.map.idlePan.enabled");
-                      }}
-                    />
-                    Activar movimiento en reposo
-                  </label>
-                  {renderHelp("Realiza un pequeño desplazamiento periódico (sin rotación)")}
-                </div>
-              )}
-
-              {supports("ui.map.idlePan.intervalSec") && (
-                <div className="config-field">
-                  <label htmlFor="idle_pan_interval">Intervalo entre desplazamientos</label>
-                  <input
-                    id="idle_pan_interval"
-                    type="number"
-                    min={10}
-                    value={form.ui.map.idlePan.intervalSec}
-                    disabled={disableIdlePanControls}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (Number.isNaN(value)) {
-                        return;
-                      }
-                      setForm((prev) => ({
-                        ...prev,
-                        ui: {
-                          ...prev.ui,
-                          map: {
-                            ...prev.ui.map,
-                            idlePan: {
-                              ...prev.ui.map.idlePan,
-                              intervalSec: value,
-                            },
-                          },
-                        },
-                      }));
-                      resetErrorsFor("ui.map.idlePan.intervalSec");
-                    }}
-                  />
-                  {renderHelp("Segundos entre cada desplazamiento automático")}
-                  {renderFieldError("ui.map.idlePan.intervalSec")}
-                </div>
-              )}
             </div>
+          </div>
+        )}
 
-            {supports("ui.map.cinema.bands") && (
-              <div className="config-field">
-                <label>Bandas cinematográficas</label>
-                {renderHelp("Seis posiciones predefinidas para el recorrido mundial")}
-                {renderFieldError("ui.map.cinema.bands")}
-                <div className="config-table">
-                  <div className="config-table__header">
-                    <span>Banda</span>
-                    <span>Latitud</span>
-                    <span>Zoom</span>
-                    <span>Pitch</span>
-                    <span>minZoom</span>
-                    <span>Duración (s)</span>
-                  </div>
-                  {form.ui.map.cinema.bands.map((band, index) => (
-                    <div key={index} className="config-table__row">
-                      <span className="config-table__label">{index + 1}</span>
-                      <div className="config-table__cell">
-                        <input
-                          type="number"
-                          disabled={disableCinemaControls}
-                          value={band.lat}
-                          onChange={(event) => {
-                            const value = Number(event.target.value);
-                            if (Number.isNaN(value)) return;
-                            handleBandChange(index, { lat: value });
-                            resetErrorsFor(`ui.map.cinema.bands.${index}.lat`);
-                          }}
-                        />
-                        {renderFieldError(`ui.map.cinema.bands.${index}.lat`)}
-                      </div>
-                      <div className="config-table__cell">
-                        <input
-                          type="number"
-                          step="0.1"
-                          disabled={disableCinemaControls}
-                          value={band.zoom}
-                          onChange={(event) => {
-                            const value = Number(event.target.value);
-                            if (Number.isNaN(value)) return;
-                            handleBandChange(index, { zoom: value });
-                            resetErrorsFor(`ui.map.cinema.bands.${index}.zoom`);
-                          }}
-                        />
-                        {renderFieldError(`ui.map.cinema.bands.${index}.zoom`)}
-                      </div>
-                      <div className="config-table__cell">
-                        <input
-                          type="number"
-                          step="0.1"
-                          disabled={disableCinemaControls}
-                          value={band.pitch}
-                          onChange={(event) => {
-                            const value = Number(event.target.value);
-                            if (Number.isNaN(value)) return;
-                            handleBandChange(index, { pitch: value });
-                            resetErrorsFor(`ui.map.cinema.bands.${index}.pitch`);
-                          }}
-                        />
-                        {renderFieldError(`ui.map.cinema.bands.${index}.pitch`)}
-                      </div>
-                      <div className="config-table__cell">
-                        <input
-                          type="number"
-                          step="0.1"
-                          disabled={disableCinemaControls}
-                          value={band.minZoom}
-                          onChange={(event) => {
-                            const value = Number(event.target.value);
-                            if (Number.isNaN(value)) return;
-                            handleBandChange(index, { minZoom: value });
-                            resetErrorsFor(`ui.map.cinema.bands.${index}.minZoom`);
-                          }}
-                        />
-                        {renderFieldError(`ui.map.cinema.bands.${index}.minZoom`)}
-                      </div>
-                      <div className="config-table__cell">
-                        <input
-                          type="number"
-                          min={1}
-                          disabled={disableCinemaControls}
-                          value={band.duration_sec}
-                          onChange={(event) => {
-                            const value = Number(event.target.value);
-                            if (Number.isNaN(value)) return;
-                            handleBandChange(index, { duration_sec: value });
-                            resetErrorsFor(`ui.map.cinema.bands.${index}.duration_sec`);
-                          }}
-                        />
-                        {renderFieldError(`ui.map.cinema.bands.${index}.duration_sec`)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {supports("ui.map.theme") && (
-              <div className="config-grid">
+        {supports("ui.map.theme") && (
+          <div className="config-card">
+            <div>
+              <h2>Tema del mapa</h2>
+              <p>Personaliza los colores del mapa.</p>
+            </div>
+            <div className="config-grid">
                 {supports("ui.map.theme.sea") && (
                   <div className="config-field">
                     <label htmlFor="theme_sea">Color mar</label>
@@ -2549,7 +2015,7 @@ const ConfigPage: React.FC = () => {
                   </div>
                 )}
               </div>
-            )}
+            </div>
           </div>
         )}
 
