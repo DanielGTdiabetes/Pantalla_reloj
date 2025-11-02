@@ -27,6 +27,26 @@ type DashboardPayload = {
 
 const REFRESH_INTERVAL_MS = 60_000;
 
+// Detectar si estamos en modo desarrollo
+const isDevelopment = (): boolean => {
+  if (typeof import.meta !== "undefined" && typeof import.meta.env !== "undefined") {
+    const env = import.meta.env as { MODE?: string; PROD?: boolean };
+    if (env.MODE) {
+      return env.MODE === 'development';
+    }
+    if (typeof env.PROD === 'boolean') {
+      return !env.PROD;
+    }
+  }
+  // Fallback para Node.js en build time
+  if (typeof process !== "undefined" && typeof process.env !== "undefined") {
+    return process.env.NODE_ENV === 'development';
+  }
+  return false;
+};
+
+const IS_DEV = isDevelopment();
+
 // IDs de paneles soportados, en orden de fallback
 const SUPPORTED_PANEL_IDS = ["time", "forecast", "calendar", "news", "moon", "ephemerides", "harvest"] as const;
 const DEFAULT_FALLBACK_PANEL = "time";
@@ -450,7 +470,7 @@ export const OverlayRotator: React.FC = () => {
       const panel = allPanelsMap.get(panelId);
       if (!panel) {
         // En dev, log leve si el panel no está implementado
-        if (import.meta.env.MODE === 'development') {
+        if (IS_DEV) {
           console.warn(`[OverlayRotator] Panel "${panelId}" no está implementado, ignorando`);
         }
         continue;
@@ -482,7 +502,7 @@ export const OverlayRotator: React.FC = () => {
 
       if (shouldInclude) {
         validPanels.push(panel);
-      } else if (import.meta.env.MODE === 'development') {
+      } else if (IS_DEV) {
         console.warn(`[OverlayRotator] Panel "${panelId}" no tiene datos disponibles, saltando`);
       }
     }
@@ -534,14 +554,14 @@ export const OverlayRotator: React.FC = () => {
     if (rotationTimerRef.current !== null) {
       window.clearInterval(rotationTimerRef.current);
       rotationTimerRef.current = null;
-        if (import.meta.env.MODE === 'development') {
+        if (IS_DEV) {
         console.log("[OverlayRotator] Timer limpiado (dependencias cambiaron)");
       }
     }
 
     // Si rotation está deshabilitado o lista vacía o solo hay un panel, no crear timer
     if (!rotationConfig.enabled || availablePanels.length <= 1) {
-        if (import.meta.env.MODE === 'development') {
+        if (IS_DEV) {
         console.log(`[OverlayRotator] Timer no iniciado: enabled=${rotationConfig.enabled}, panels=${availablePanels.length}`);
       }
       return;
@@ -557,14 +577,14 @@ export const OverlayRotator: React.FC = () => {
           return 0;
         }
         const nextIndex = (prevIndex + 1) % currentPanels.length;
-        if (import.meta.env.MODE === 'development') {
+        if (IS_DEV) {
           console.log(`[OverlayRotator] Rotando de panel ${prevIndex} a ${nextIndex} (${currentPanels[nextIndex]?.id})`);
         }
         return nextIndex;
       });
     }, intervalMs);
 
-        if (import.meta.env.MODE === 'development') {
+        if (IS_DEV) {
       console.log(`[OverlayRotator] Timer iniciado: ${intervalMs}ms, ${availablePanels.length} paneles`);
     }
 
@@ -573,7 +593,7 @@ export const OverlayRotator: React.FC = () => {
       if (rotationTimerRef.current !== null) {
         window.clearInterval(rotationTimerRef.current);
         rotationTimerRef.current = null;
-        if (import.meta.env.MODE === 'development') {
+        if (IS_DEV) {
           console.log("[OverlayRotator] Timer limpiado (cleanup)");
         }
       }
