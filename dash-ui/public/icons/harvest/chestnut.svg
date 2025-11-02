@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="chestnut-shell" cx="0.5" cy="0.5" r="0.6">
+      <stop offset="0%" stop-color="#8B4513" />
+      <stop offset="30%" stop-color="#654321" />
+      <stop offset="70%" stop-color="#4A2C1D" />
+      <stop offset="100%" stop-color="#3D2817" />
+    </radialGradient>
+    <radialGradient id="chestnut-spine" cx="0.5" cy="0.5" r="0.6">
+      <stop offset="0%" stop-color="#A0522D" />
+      <stop offset="50%" stop-color="#8B4513" />
+      <stop offset="100%" stop-color="#654321" />
+    </radialGradient>
+    <radialGradient id="chestnut-nut" cx="0.5" cy="0.6" r="0.5">
+      <stop offset="0%" stop-color="#D2691E" />
+      <stop offset="50%" stop-color="#A0522D" />
+      <stop offset="100%" stop-color="#8B4513" />
+    </radialGradient>
+    <radialGradient id="chestnut-highlight" cx="0.45" cy="0.4" r="0.3">
+      <stop offset="0%" stop-color="#DEB887" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#A0522D" stop-opacity="0.3" />
+    </radialGradient>
+    <filter id="chestnut-shadow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feOffset in="coloredBlur" dx="2" dy="4"/>
+    </filter>
+  </defs>
+  
+  <!-- Chestnut shadow -->
+  <ellipse cx="256" cy="450" rx="80" ry="25" fill="#000000" opacity="0.15" filter="url(#chestnut-shadow)"/>
+  
+  <!-- Chestnut outer shell (spiky) -->
+  <circle cx="256" cy="300" r="100" fill="url(#chestnut-shell)" stroke="#3D2817" stroke-width="2" filter="url(#chestnut-shadow)"/>
+  
+  <!-- Chestnut spines (spikes on shell) -->
+  <circle cx="240" cy="270" r="8" fill="url(#chestnut-spine)" stroke="#654321" stroke-width="1"/>
+  <circle cx="260" cy="265" r="9" fill="url(#chestnut-spine)" stroke="#654321" stroke-width="1"/>
+  <circle cx="280" cy="270" r="8" fill="url(#chestnut-spine)" stroke="#654321" stroke-width="1"/>
+  <circle cx="250" cy="285" r="9" fill="url(#chestnut-spine)" stroke="#654321" stroke-width="1"/>
+  <circle cx="270" cy="285" r="8" fill="url(#chestnut-spine)" stroke="#654321" stroke-width="1"/>
+  <circle cx="230" cy="290" r="8" fill="url(#chestnut-spine)" stroke="#654321" stroke-width="1"/>
+  <circle cx="290" cy="290" r="9" fill="url(#chestnut-spine)" stroke="#654321" stroke-width="1"/>
+  <circle cx="240" cy="310" r="9" fill="url(#chestnut-spine)" stroke="#654321" stroke-width="1"/>
+  <circle cx="275" cy="310" r="8" fill="url(#chestnut-spine)" stroke="#654321" stroke-width="1"/>
+  <circle cx="255" cy="320" r="9" fill="url(#chestnut-spine)" stroke="#654321" stroke-width="1"/>
+  
+  <!-- Chestnut inner (nut visible through opening) -->
+  <ellipse cx="256" cy="300" rx="70" ry="85" fill="url(#chestnut-nut)" stroke="#654321" stroke-width="2"/>
+  
+  <!-- Chestnut highlight -->
+  <ellipse cx="230" cy="280" rx="40" ry="50" fill="url(#chestnut-highlight)"/>
+  
+  <!-- Chestnut shine -->
+  <ellipse cx="240" cy="300" rx="20" ry="30" fill="#FFFFFF" opacity="0.6"/>
+  
+  <!-- Chestnut opening detail (split in shell) -->
+  <path d="M 256 220 Q 250 280 245 300 Q 240 320 245 340 Q 250 360 256 370 Q 262 360 267 340 Q 272 320 267 300 Q 262 280 256 220 Z" 
+        fill="#3D2817" 
+        opacity="0.6"/>
+</svg>

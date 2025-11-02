@@ -54,8 +54,8 @@ const getHarvestIcon = (itemName: string): string | null => {
     "granadas": "pear",
     "caqui": "pear",
     "caquis": "pear",
-    "castaña": "pear",
-    "castañas": "pear",
+    "castaña": "chestnut",
+    "castañas": "chestnut",
     
     // Uvas y frutas pequeñas
     "uva": "grapes",
