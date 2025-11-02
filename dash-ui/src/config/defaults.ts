@@ -15,6 +15,9 @@ import type {
   FlightsLayerCircleConfig,
   FlightsLayerSymbolConfig,
   FlightsLayerRenderMode,
+  ShipsLayerRenderMode,
+  ShipsLayerCircleConfig,
+  ShipsLayerSymbolConfig,
   GenericAISConfig,
   GlobalLayersConfig,
   GlobalRadarLayerConfig,
@@ -114,18 +117,29 @@ const sanitizeRenderMode = (
   return fallback;
 };
 
+const sanitizeShipsRenderMode = (
+  value: unknown,
+  fallback: ShipsLayerRenderMode,
+): ShipsLayerRenderMode => {
+  if (value === "auto" || value === "symbol" || value === "symbol_custom" || value === "circle") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "auto" || normalized === "symbol" || normalized === "symbol_custom" || normalized === "circle") {
+      return normalized as ShipsLayerRenderMode;
+    }
+  }
+  return fallback;
+};
+
 const mergeSymbolOptions = (
   source: Partial<FlightsLayerSymbolConfig> | undefined,
   fallback: FlightsLayerSymbolConfig,
 ): FlightsLayerSymbolConfig => {
   const candidate = source ?? {};
   return {
-    size_base: clampNumber(toNumber(candidate.size_base, fallback.size_base), 0.1, 4.0),
-    size_zoom_scale: clampNumber(
-      toNumber(candidate.size_zoom_scale, fallback.size_zoom_scale),
-      0.25,
-      8.0,
-    ),
+    size_vh: clampNumber(toNumber(candidate.size_vh, fallback.size_vh), 0.1, 10.0),
     allow_overlap: toBoolean(candidate.allow_overlap, fallback.allow_overlap),
   };
 };
@@ -136,12 +150,7 @@ const mergeCircleOptions = (
 ): FlightsLayerCircleConfig => {
   const candidate = source ?? {};
   return {
-    radius_base: clampNumber(toNumber(candidate.radius_base, fallback.radius_base), 0.5, 64),
-    radius_zoom_scale: clampNumber(
-      toNumber(candidate.radius_zoom_scale, fallback.radius_zoom_scale),
-      0.25,
-      8,
-    ),
+    radius_vh: clampNumber(toNumber(candidate.radius_vh, fallback.radius_vh), 0.1, 10.0),
     opacity: clampNumber(toNumber(candidate.opacity, fallback.opacity), 0.0, 1.0),
     color: sanitizeColorString(candidate.color, fallback.color),
     stroke_color: sanitizeColorString(candidate.stroke_color, fallback.stroke_color),
@@ -588,16 +597,14 @@ export const DEFAULT_CONFIG: AppConfig = {
       styleScale: 1.4,
       render_mode: "symbol_custom",
       circle: {
-        radius_base: 6.0,
-        radius_zoom_scale: 1.8,
+        radius_vh: 0.9, // 0.9% de la altura de la ventana
         opacity: 1.0,
         color: "#FFD400",
-        stroke_color: "#FFFFFF",
-        stroke_width: 1.6,
+        stroke_color: "#000000",
+        stroke_width: 2.0,
       },
       symbol: {
-        size_base: 0.8,
-        size_zoom_scale: 1.25,
+        size_vh: 1.6, // 1.6% de la altura de la ventana
         allow_overlap: true,
       },
       cine_focus: {
@@ -636,6 +643,18 @@ export const DEFAULT_CONFIG: AppConfig = {
       decimate: "grid",
       grid_px: 24,
       styleScale: 1.4,
+      render_mode: "symbol_custom",
+      circle: {
+        radius_vh: 0.8, // 0.8% de viewport height (más pequeño que vuelos)
+        opacity: 1.0,
+        color: "#38bdf8",
+        stroke_color: "#0f172a",
+        stroke_width: 1.5,
+      },
+      symbol: {
+        size_vh: 1.4, // 1.4% de viewport height
+        allow_overlap: true,
+      },
       cine_focus: {
         enabled: true,
         mode: "both",
@@ -871,18 +890,16 @@ const mergeFlightsLayer = (candidate: unknown): FlightsLayerConfig => {
 
   const circleSource: Partial<FlightsLayerCircleConfig> = source.circle ?? {};
   const circleFallback: FlightsLayerCircleConfig = fallback.circle ?? {
-    radius_base: 3.0,
-    radius_zoom_scale: 1.2,
+    radius_vh: 0.9,
     opacity: 1.0,
-    color: "#00D1FF",
-    stroke_color: "#002A33",
-    stroke_width: 1.0,
+    color: "#FFD400",
+    stroke_color: "#000000",
+    stroke_width: 2.0,
   };
 
   const symbolSource: Partial<FlightsLayerSymbolConfig> = source.symbol ?? {};
   const symbolFallback: FlightsLayerSymbolConfig = fallback.symbol ?? {
-    size_base: 0.7,
-    size_zoom_scale: 1.2,
+    size_vh: 1.6,
     allow_overlap: true,
   };
 
@@ -1051,6 +1068,9 @@ const mergeShipsLayer = (candidate: unknown): ShipsLayerConfig => {
       128,
     ),
     styleScale: clampNumber(toNumber(source.styleScale, fallback.styleScale), 0.1, 4.0),
+    render_mode: sanitizeShipsRenderMode(source.render_mode, fallback.render_mode ?? "auto"),
+    circle: mergeCircleOptions(circleSource as Partial<FlightsLayerCircleConfig>, circleFallback as FlightsLayerCircleConfig) as ShipsLayerCircleConfig,
+    symbol: mergeSymbolOptions(symbolSource as Partial<FlightsLayerSymbolConfig>, symbolFallback as FlightsLayerSymbolConfig) as ShipsLayerSymbolConfig,
     cine_focus: {
       enabled: toBoolean(cineFocusSource.enabled, cineFocusFallback.enabled),
       mode: (cineFocusSource.mode === "cap" || cineFocusSource.mode === "radar")

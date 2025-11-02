@@ -297,8 +297,7 @@ export type CustomShipConfig = {
 export type FlightsLayerRenderMode = "auto" | "symbol" | "symbol_custom" | "circle";
 
 export type FlightsLayerCircleConfig = {
-  radius_base: number;
-  radius_zoom_scale: number;
+  radius_vh: number; // Radio en viewport height (%)
   opacity: number;
   color: string;
   stroke_color: string;
@@ -306,8 +305,7 @@ export type FlightsLayerCircleConfig = {
 };
 
 export type FlightsLayerSymbolConfig = {
-  size_base: number;
-  size_zoom_scale: number;
+  size_vh: number; // Tamaño en viewport height (%)
   allow_overlap: boolean;
 };
 
@@ -332,6 +330,21 @@ export type FlightsLayerConfig = {
   custom?: CustomFlightConfig;
 };
 
+export type ShipsLayerRenderMode = "auto" | "symbol" | "symbol_custom" | "circle";
+
+export type ShipsLayerCircleConfig = {
+  radius_vh: number; // Radio en viewport height (%)
+  opacity: number;
+  color: string;
+  stroke_color: string;
+  stroke_width: number;
+};
+
+export type ShipsLayerSymbolConfig = {
+  size_vh: number; // Tamaño en viewport height (%)
+  allow_overlap: boolean;
+};
+
 export type ShipsLayerConfig = {
   enabled: boolean;
   opacity: number;
@@ -346,6 +359,9 @@ export type ShipsLayerConfig = {
   decimate: "grid" | "none";
   grid_px: number;
   styleScale: number;
+  render_mode: ShipsLayerRenderMode;
+  circle: ShipsLayerCircleConfig;
+  symbol?: ShipsLayerSymbolConfig;
   cine_focus: CineFocusConfig;
   ais_generic?: GenericAISConfig;
   aisstream?: AISStreamConfig;

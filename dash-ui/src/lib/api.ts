@@ -295,3 +295,16 @@ export async function wifiConnect(request: WiFiConnectRequest) {
 export async function wifiDisconnect() {
   return apiPost<{ success: boolean; message: string }>("/api/wifi/disconnect", {});
 }
+
+// Geocode API
+export type GeocodePostalResponse = {
+  ok: boolean;
+  postal_code: string;
+  lat: number;
+  lon: number;
+  source?: string;
+};
+
+export async function geocodePostalES(code: string) {
+  return apiGet<GeocodePostalResponse>(`/api/geocode/es/postal?code=${encodeURIComponent(code)}`);
+}

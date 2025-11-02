@@ -972,6 +972,7 @@ const createMapStateMachine = (options: MapStateMachineOptions): MapStateMachine
 
 type RuntimePreferences = {
   cinema: MapCinemaConfig;
+  mapSettings?: MapConfig;
   renderWorldCopies: boolean;
   initialLng: number;
   style: MapStyleDefinition;
@@ -1016,6 +1017,7 @@ const buildRuntimePreferences = (
 
   return {
     cinema,
+    mapSettings: source,
     renderWorldCopies: source.renderWorldCopies ?? defaults.renderWorldCopies ?? true,
     initialLng,
     style: styleResult.resolved,
@@ -1041,6 +1043,31 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
     const mapSettings = merged.ui.map;
     const rotationSettings = merged.ui.rotation;
     const mapPreferences: MapPreferences = merged.map ?? createDefaultMapPreferences();
+    
+    // Si hay viewMode "fixed" y región con postalCode, geocodificar primero
+    if (mapSettings.viewMode === "fixed" && mapSettings.region?.postalCode) {
+      try {
+        const { geocodePostalES } = await import("../../lib/api");
+        const geocodeResult = await geocodePostalES(mapSettings.region.postalCode);
+        if (geocodeResult.ok && geocodeResult) {
+          // Actualizar fixed.center con las coordenadas geocodificadas
+          if (mapSettings.fixed) {
+            mapSettings.fixed.center = {
+              lat: geocodeResult.lat,
+              lon: geocodeResult.lon,
+            };
+          }
+        }
+      } catch (geocodeError) {
+        console.warn(
+          "[GeoScopeMap] Failed to geocode postal code:",
+          mapSettings.region.postalCode,
+          geocodeError
+        );
+        // Continuar con valores existentes si falla el geocoding
+      }
+    }
+    
     const styleResult = await loadMapStyle(mapSettings, mapPreferences);
     return buildRuntimePreferences(mapSettings, rotationSettings, styleResult);
   } catch (error) {
@@ -2280,31 +2307,63 @@ export default function GeoScopeMap() {
 
       if (!host || destroyed || mapRef.current) return;
 
-      const cinemaSettings = cloneCinema(runtime.cinema);
-      const firstBand = cinemaSettings.bands[0] ?? FALLBACK_CINEMA.bands[0];
-      if (!firstBand) {
-        return;
+      const mapSettings = runtime.mapSettings;
+      const viewMode = mapSettings?.viewMode ?? "aoiCycle";
+      
+      let firstBand = FALLBACK_CINEMA.bands[0];
+      
+      // Si viewMode es "fixed", usar fixed view en lugar de cinema
+      if (viewMode === "fixed" && mapSettings?.fixed) {
+        const fixedView = mapSettings.fixed;
+        const viewState = viewStateRef.current;
+        if (!viewState) {
+          return;
+        }
+        viewState.lat = fixedView.center.lat;
+        viewState.lng = fixedView.center.lon;
+        viewState.zoom = fixedView.zoom;
+        viewState.bearing = fixedView.bearing;
+        viewState.pitch = fixedView.pitch;
+        // Desactivar cinema para modo fixed
+        allowCinemaRef.current = false;
+        panSpeedRef.current = 0;
+      } else {
+        // Modo cinema (por defecto o aoiCycle)
+        const cinemaSettings = cloneCinema(runtime.cinema);
+        firstBand = cinemaSettings.bands[0] ?? FALLBACK_CINEMA.bands[0];
+        if (!firstBand) {
+          return;
+        }
+
+        cinemaRef.current = cinemaSettings;
+        bandIndexRef.current = 0;
+        bandElapsedRef.current = 0;
+        bandTransitionRef.current = null;
+
+        const motionInit = initializeMotionState(
+          cinemaSettings,
+          motionProgressRef as React.MutableRefObject<number>,
+          horizontalDirectionRef as React.MutableRefObject<1 | -1>
+        );
+        verticalDirectionRef.current = 1;
+        const viewState = viewStateRef.current;
+        if (!viewState) {
+          return;
+        }
+        viewState.lng = motionInit.lng;
+        applyBandInstant(firstBand, null);
+        viewState.pitch = firstBand.pitch;
+        viewState.bearing = 0; // Sin rotación
       }
-
-      cinemaRef.current = cinemaSettings;
-      bandIndexRef.current = 0;
-      bandElapsedRef.current = 0;
-      bandTransitionRef.current = null;
-
-      const motionInit = initializeMotionState(
-        cinemaSettings,
-        motionProgressRef as React.MutableRefObject<number>,
-        horizontalDirectionRef as React.MutableRefObject<1 | -1>
-      );
-      verticalDirectionRef.current = 1;
+      
       const viewState = viewStateRef.current;
       if (!viewState) {
         return;
       }
-      viewState.lng = motionInit.lng;
-      applyBandInstant(firstBand, null);
-      viewState.pitch = firstBand.pitch;
-      viewState.bearing = 0; // Sin rotación
+      
+      if (!firstBand) {
+        firstBand = FALLBACK_CINEMA.bands[0];
+      }
 
       themeRef.current = cloneTheme(runtime.theme);
       styleTypeRef.current = runtime.style.type;
@@ -2328,7 +2387,7 @@ export default function GeoScopeMap() {
           style: runtime.style.style,
           center: viewState ? [viewState.lng, viewState.lat] : [0, 0],
           zoom: viewState?.zoom ?? 2.6,
-          minZoom: firstBand.minZoom,
+          minZoom: viewMode === "fixed" ? (mapSettings?.fixed?.zoom ?? 2.6) - 2 : firstBand.minZoom,
           pitch: viewState?.pitch ?? 0,
           bearing: viewState?.bearing ?? 0,
           interactive: false,
@@ -2343,7 +2402,12 @@ export default function GeoScopeMap() {
       }
 
       mapRef.current = map;
-      map.setMinZoom(firstBand.minZoom);
+      if (viewMode === "fixed") {
+        const minZoom = (mapSettings?.fixed?.zoom ?? 2.6) - 2;
+        map.setMinZoom(Math.max(minZoom, 0));
+      } else {
+        map.setMinZoom(firstBand.minZoom);
+      }
       refreshRuntimePolicy(runtime.respectReducedMotion);
 
       attachStateMachine(map, "initial-style");

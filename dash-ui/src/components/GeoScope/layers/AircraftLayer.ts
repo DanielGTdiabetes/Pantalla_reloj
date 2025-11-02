@@ -10,8 +10,7 @@ import { registerPlaneIcon } from "../utils/planeIcon";
 type EffectiveRenderMode = "symbol" | "symbol_custom" | "circle";
 
 type CircleOptions = {
-  radiusBase: number;
-  radiusZoomScale: number;
+  radiusVh: number; // Radio en % de viewport height
   opacity: number;
   color: string;
   strokeColor: string;
@@ -39,12 +38,11 @@ interface AircraftLayerOptions {
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 const DEFAULT_ICON_IMAGE = "airplane-15";
 const DEFAULT_CIRCLE_OPTIONS: CircleOptions = {
-  radiusBase: 3.0,
-  radiusZoomScale: 1.2,
+  radiusVh: 0.9, // 0.9% de viewport height
   opacity: 1.0,
-  color: "#00D1FF",
-  strokeColor: "#002A33",
-  strokeWidth: 1.0,
+  color: "#FFD400",
+  strokeColor: "#000000",
+  strokeWidth: 2.0,
 };
 
 const clamp = (value: number, min: number, max: number): number => {
@@ -59,10 +57,9 @@ const coerceNumber = (value: unknown, fallback: number): number => {
   return Number.isFinite(numeric) ? numeric : fallback;
 };
 
-const normalizeCircleOptions = (options?: FlightsLayerCircleConfig): CircleOptions => {
+const normalizeCircleOptions = (options?: FlightsLayerCircleConfig, viewportHeight?: number): CircleOptions => {
   const source = options ?? {
-    radius_base: DEFAULT_CIRCLE_OPTIONS.radiusBase,
-    radius_zoom_scale: DEFAULT_CIRCLE_OPTIONS.radiusZoomScale,
+    radius_vh: DEFAULT_CIRCLE_OPTIONS.radiusVh,
     opacity: DEFAULT_CIRCLE_OPTIONS.opacity,
     color: DEFAULT_CIRCLE_OPTIONS.color,
     stroke_color: DEFAULT_CIRCLE_OPTIONS.strokeColor,
@@ -76,13 +73,10 @@ const normalizeCircleOptions = (options?: FlightsLayerCircleConfig): CircleOptio
     ? source.stroke_color.trim()
     : DEFAULT_CIRCLE_OPTIONS.strokeColor;
 
+  const radiusVh = clamp(coerceNumber(source.radius_vh, DEFAULT_CIRCLE_OPTIONS.radiusVh), 0.1, 10.0);
+
   return {
-    radiusBase: clamp(coerceNumber(source.radius_base, DEFAULT_CIRCLE_OPTIONS.radiusBase), 0.5, 64),
-    radiusZoomScale: clamp(
-      coerceNumber(source.radius_zoom_scale, DEFAULT_CIRCLE_OPTIONS.radiusZoomScale),
-      0.25,
-      8,
-    ),
+    radiusVh, // Guardamos vh % para cálculo dinámico
     opacity: clamp(coerceNumber(source.opacity, DEFAULT_CIRCLE_OPTIONS.opacity), 0.0, 1.0),
     color,
     strokeColor,
@@ -132,7 +126,7 @@ export default class AircraftLayer implements Layer {
     this.styleScale = options.styleScale ?? 1.0;
     this.renderMode = options.renderMode ?? "auto";
     this.spriteAvailable = options.spriteAvailable ?? false;
-    this.circleOptions = normalizeCircleOptions(options.circle);
+    this.circleOptions = normalizeCircleOptions(options.circle, typeof window !== "undefined" ? window.innerHeight : 480);
     this.symbolOptions = options.symbol;
     this.iconImage = options.iconImage ?? DEFAULT_ICON_IMAGE;
     this.currentRenderMode = this.determineRenderMode(false);
@@ -234,7 +228,7 @@ export default class AircraftLayer implements Layer {
   }
 
   setCircleOptions(circle: FlightsLayerCircleConfig | undefined): void {
-    this.circleOptions = normalizeCircleOptions(circle);
+    this.circleOptions = normalizeCircleOptions(circle, typeof window !== "undefined" ? window.innerHeight : 480);
     this.applyCirclePaintProperties();
     this.applyOpacity();
   }
@@ -909,35 +903,23 @@ export default class AircraftLayer implements Layer {
   }
 
   private getCircleRadiusExpression(): maplibregl.ExpressionSpecification {
-    const base = this.circleOptions.radiusBase;
-    const scale = this.circleOptions.radiusZoomScale;
-    return [
-      "interpolate",
-      ["linear"],
-      ["zoom"],
-      2,
-      base,
-      8,
-      base * scale,
-      22,
-      base * scale,
-    ];
+    // Calcular radio en pixels basado en viewport height
+    const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 480;
+    const radiusVh = this.circleOptions.radiusVh;
+    const radiusPixels = (radiusVh / 100) * viewportHeight;
+    // Usar un valor constante basado en viewport height actual
+    // Nota: Esto se recalculará cuando el viewport cambie (necesitaría listener)
+    return radiusPixels;
   }
 
   private getCustomSymbolSizeExpression(): maplibregl.ExpressionSpecification {
-    const base = this.symbolOptions?.size_base ?? 0.7;
-    const scale = this.symbolOptions?.size_zoom_scale ?? 1.2;
-    return [
-      "interpolate",
-      ["linear"],
-      ["zoom"],
-      2,
-      base,
-      8,
-      base * scale,
-      22,
-      base * scale,
-    ];
+    // Calcular tamaño en pixels basado en viewport height
+    const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 480;
+    const sizeVh = this.symbolOptions?.size_vh ?? 1.6;
+    const sizePixels = (sizeVh / 100) * viewportHeight;
+    // Usar un valor constante basado en viewport height actual
+    // Nota: Esto se recalculará cuando el viewport cambie (necesitaría listener)
+    return sizePixels;
   }
 
   private applyStyleScale(): void {
