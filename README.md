@@ -110,6 +110,30 @@ Pantalla_reloj/
 - **Hot-reload**: Con `POST /api/config/reload` cambiando `display.timezone`, los endpoints ajustan automáticamente sin reiniciar.
 - **Metadatos**: `/api/health` expone `timezone` y `now_local_iso` para diagnóstico.
 
+#### Diagnóstico calendario (inspect)
+
+- **Modo inspección**: Añade `?inspect=1` o `?debug=1` a `/api/calendar/events` para obtener información detallada:
+  - `tz`: Timezone aplicada (p. ej., `Europe/Madrid`)
+  - `local_range`: Rango del día local calculado (`start`, `end` en ISO)
+  - `utc_range`: Conversión a UTC del rango local (`start`, `end` en ISO)
+  - `provider`: Proveedor usado (`google`)
+  - `provider_enabled`: Si el proveedor está habilitado
+  - `credentials_present`: Si existen credenciales (API key y calendar ID)
+  - `calendars_found`: Número de calendarios detectados
+  - `raw_events_count`: Eventos crudos recibidos del proveedor
+  - `filtered_events_count`: Eventos tras normalización
+  - `note`: Motivo si no hay eventos (p. ej., sin credenciales, error API)
+- **Estado en health**: `/api/health` incluye bloque `calendar` con:
+  - `enabled`: Si el calendario está habilitado
+  - `provider`: Proveedor configurado (`google`)
+  - `credentials_present`: Si hay credenciales
+  - `last_fetch_iso`: Última consulta exitosa (si está disponible)
+  - `status`: Estado (`ok`, `stale`, `error`)
+- **Logs DEBUG**: El backend loguea información detallada con prefijo `[Calendar]` y `[timezone]`:
+  ```bash
+  journalctl -u pantalla-dash-backend@dani -n 60 --no-pager -l | egrep -i 'calendar|tz|range|utc'
+  ```
+
 ### Integración OpenSky
 
 - Crea un cliente OAuth2 en el portal de [OpenSky Network](https://opensky-network.org/)

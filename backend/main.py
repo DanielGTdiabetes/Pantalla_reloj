@@ -9,7 +9,7 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Literal, TypeVar
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Literal, TypeVar, Union
 
 import requests
 
@@ -770,6 +770,47 @@ def _health_payload() -> Dict[str, Any]:
         }
     }
     payload["providers"] = providers
+    
+    # Bloque de calendario
+    try:
+        calendar_config = config.calendar
+        api_key = secret_store.get_secret("google_calendar_api_key") or secret_store.get_secret("google_api_key")
+        calendar_id = secret_store.get_secret("google_calendar_id")
+        credentials_present = bool(api_key and calendar_id)
+        
+        # Intentar obtener último fetch desde caché o estado
+        last_fetch_iso = None
+        calendar_status = "ok"
+        
+        # Verificar si hay errores recientes
+        try:
+            # Intentar una verificación básica
+            if calendar_config.enabled and credentials_present:
+                # Está habilitado y tiene credenciales
+                calendar_status = "ok"
+            elif calendar_config.enabled and not credentials_present:
+                calendar_status = "error"
+            else:
+                calendar_status = "stale"
+        except Exception:  # noqa: BLE001
+            calendar_status = "error"
+        
+        payload["calendar"] = {
+            "enabled": calendar_config.enabled,
+            "provider": "google",
+            "credentials_present": credentials_present,
+            "last_fetch_iso": last_fetch_iso,
+            "status": calendar_status,
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Unable to gather calendar status for health: %s", exc)
+        payload["calendar"] = {
+            "enabled": False,
+            "provider": "google",
+            "credentials_present": False,
+            "last_fetch_iso": None,
+            "status": "error",
+        }
 
     cache_store.store("health", payload)
     return payload
@@ -2102,46 +2143,83 @@ def get_astronomical_events_endpoint(
 
 
 @app.get("/api/calendar/events")
-def get_calendar_events(from_date: Optional[str] = None, to_date: Optional[str] = None) -> List[Dict[str, Any]]:
+def get_calendar_events(
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    inspect: Optional[int] = None,
+    debug: Optional[int] = None,
+) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
     """Obtiene eventos del calendario (Google Calendar) entre fechas.
     
     Si no se proporcionan fechas, usa el rango del día local actual según config.display.timezone.
     Si se proporcionan en ISO UTC, las interpreta como UTC pero loguea su proyección local.
+    
+    Args:
+        from_date: Fecha de inicio en ISO UTC (opcional)
+        to_date: Fecha de fin en ISO UTC (opcional)
+        inspect: Si es 1, devuelve información de diagnóstico en lugar de eventos
+        debug: Alias de inspect para compatibilidad
     """
+    inspect_mode = inspect == 1 or debug == 1
+    
     try:
         config_v2, _ = _read_config_v2()
-    except Exception:
+    except Exception as exc:
+        if inspect_mode:
+            return {
+                "tz": None,
+                "local_range": {"start": None, "end": None},
+                "utc_range": {"start": None, "end": None},
+                "provider": "google",
+                "provider_enabled": False,
+                "credentials_present": False,
+                "calendars_found": 0,
+                "raw_events_count": 0,
+                "filtered_events_count": 0,
+                "note": f"Config v2 read failed: {exc}",
+            }
         return []
     
     # Por ahora, leer credenciales desde secrets (si existen)
     api_key = secret_store.get_secret("google_calendar_api_key") or secret_store.get_secret("google_api_key")
     calendar_id = secret_store.get_secret("google_calendar_id")
     
-    if not api_key or not calendar_id:
-        # Retornar lista vacía sin romper el frontend
-        return []
+    provider_enabled = True
+    credentials_present = bool(api_key and calendar_id)
+    calendars_found = 1 if calendar_id else 0
     
     # Parsear fechas con soporte de timezone
     tz = _get_tz()
+    tz_str = str(tz)
+    local_start: Optional[datetime] = None
+    local_end: Optional[datetime] = None
+    utc_start: Optional[datetime] = None
+    utc_end: Optional[datetime] = None
+    
     try:
         if from_date:
             # Interpretar como UTC si termina en Z o tiene offset
             from_dt = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
             # Loguear proyección local para trazabilidad
             from_local = from_dt.astimezone(tz)
+            local_start = from_local
+            utc_start = from_dt
             logger.debug(
                 "[timezone] Calendar from_date: UTC=%s -> Local=%s (tz=%s)",
                 from_dt.isoformat(),
                 from_local.isoformat(),
-                str(tz),
+                tz_str,
             )
         else:
             # Construir rango del día local actual [00:00, 23:59:59] y convertir a UTC
             from_dt, _ = _get_local_day_range()
+            now_local = datetime.now(tz)
+            local_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+            utc_start = from_dt
             logger.debug(
                 "[timezone] Calendar from_date: using local day range start (UTC=%s, tz=%s)",
                 from_dt.isoformat(),
-                str(tz),
+                tz_str,
             )
         
         if to_date:
@@ -2149,38 +2227,91 @@ def get_calendar_events(from_date: Optional[str] = None, to_date: Optional[str] 
             to_dt = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
             # Loguear proyección local para trazabilidad
             to_local = to_dt.astimezone(tz)
+            local_end = to_local
+            utc_end = to_dt
             logger.debug(
                 "[timezone] Calendar to_date: UTC=%s -> Local=%s (tz=%s)",
                 to_dt.isoformat(),
                 to_local.isoformat(),
-                str(tz),
+                tz_str,
             )
         else:
             # Si no hay from_date, usar rango del día local; si hay, usar from_date + 7 días
             if from_date:
                 to_dt = from_dt + timedelta(days=7)
+                utc_end = to_dt
+                local_end = to_dt.astimezone(tz)
             else:
                 _, to_dt = _get_local_day_range()
+                utc_end = to_dt
+                now_local = datetime.now(tz)
+                local_end = now_local.replace(hour=23, minute=59, second=59, microsecond=999999)
                 logger.debug(
                     "[timezone] Calendar to_date: using local day range end (UTC=%s, tz=%s)",
                     to_dt.isoformat(),
-                    str(tz),
+                    tz_str,
                 )
     except Exception as e:
         logger.warning("[timezone] Error parsing dates: %s, using local day range", e)
         from_dt, to_dt = _get_local_day_range()
+        now_local = datetime.now(tz)
+        local_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        local_end = now_local.replace(hour=23, minute=59, second=59, microsecond=999999)
+        utc_start = from_dt
+        utc_end = to_dt
+    
+    # Log detallado en modo inspect o debug
+    logger.debug(
+        "[Calendar] tz=%s local_start=%s local_end=%s utc_start=%s utc_end=%s provider=google creds=%s calendars=%s",
+        tz_str,
+        local_start.isoformat() if local_start else None,
+        local_end.isoformat() if local_end else None,
+        utc_start.isoformat() if utc_start else None,
+        utc_end.isoformat() if utc_end else None,
+        credentials_present,
+        calendars_found,
+    )
+    
+    if not credentials_present:
+        note = "Credentials missing: api_key or calendar_id not found in secrets"
+        if inspect_mode:
+            return {
+                "tz": tz_str,
+                "local_range": {
+                    "start": local_start.isoformat() if local_start else None,
+                    "end": local_end.isoformat() if local_end else None,
+                },
+                "utc_range": {
+                    "start": utc_start.isoformat() if utc_start else None,
+                    "end": utc_end.isoformat() if utc_end else None,
+                },
+                "provider": "google",
+                "provider_enabled": provider_enabled,
+                "credentials_present": credentials_present,
+                "calendars_found": calendars_found,
+                "raw_events_count": 0,
+                "filtered_events_count": 0,
+                "note": note,
+            }
+        return []
+    
+    raw_events_count = 0
+    filtered_events_count = 0
+    note: Optional[str] = None
     
     try:
         # Calcular días hacia adelante
-        days_ahead = max(1, (to_dt - from_dt).days)
+        days_ahead = max(1, (utc_end - utc_start).days) if utc_end and utc_start else 7
         events = fetch_google_calendar_events(
             api_key=api_key,
             calendar_id=calendar_id,
             days_ahead=days_ahead,
             max_results=20,
-            time_min=from_dt,
-            time_max=to_dt,
+            time_min=utc_start,
+            time_max=utc_end,
         )
+        raw_events_count = len(events) if isinstance(events, list) else 0
+        
         # Normalizar formato: añadir campos fin y ubicación si faltan
         normalized_events = []
         for event in (events if isinstance(events, list) else []):
@@ -2191,10 +2322,52 @@ def get_calendar_events(from_date: Optional[str] = None, to_date: Optional[str] 
                 "location": event.get("location", ""),
             }
             normalized_events.append(normalized)
+        
+        filtered_events_count = len(normalized_events)
+        
+        if inspect_mode:
+            return {
+                "tz": tz_str,
+                "local_range": {
+                    "start": local_start.isoformat() if local_start else None,
+                    "end": local_end.isoformat() if local_end else None,
+                },
+                "utc_range": {
+                    "start": utc_start.isoformat() if utc_start else None,
+                    "end": utc_end.isoformat() if utc_end else None,
+                },
+                "provider": "google",
+                "provider_enabled": provider_enabled,
+                "credentials_present": credentials_present,
+                "calendars_found": calendars_found,
+                "raw_events_count": raw_events_count,
+                "filtered_events_count": filtered_events_count,
+                "note": note or "OK",
+            }
+        
         return normalized_events
     except Exception as exc:
-        logger.warning("Failed to fetch Google Calendar events: %s", exc)
-        # Retornar lista vacía sin romper el frontend
+        logger.warning("[Calendar] Failed to fetch Google Calendar events: %s", exc)
+        note = f"API error: {exc}"
+        if inspect_mode:
+            return {
+                "tz": tz_str,
+                "local_range": {
+                    "start": local_start.isoformat() if local_start else None,
+                    "end": local_end.isoformat() if local_end else None,
+                },
+                "utc_range": {
+                    "start": utc_start.isoformat() if utc_start else None,
+                    "end": utc_end.isoformat() if utc_end else None,
+                },
+                "provider": "google",
+                "provider_enabled": provider_enabled,
+                "credentials_present": credentials_present,
+                "calendars_found": calendars_found,
+                "raw_events_count": raw_events_count,
+                "filtered_events_count": filtered_events_count,
+                "note": note,
+            }
         return []
 
 
