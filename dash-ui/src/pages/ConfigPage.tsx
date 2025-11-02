@@ -15,6 +15,9 @@ import {
   testAemetApiKey,
   testCalendarConnection,
   type CalendarTestResponse,
+  uploadIcsFile,
+  getCalendarEvents,
+  type CalendarEvent,
   updateAemetApiKey,
   updateAISStreamApiKey,
   updateOpenWeatherMapApiKey,
@@ -407,6 +410,10 @@ const ConfigPage: React.FC = () => {
   const [googleCalendarIdInput, setGoogleCalendarIdInput] = useState("");
   const [icsUrlInput, setIcsUrlInput] = useState("");
   const [icsPathInput, setIcsPathInput] = useState("");
+  const [uploadingIcs, setUploadingIcs] = useState(false);
+  const [icsUploadResult, setIcsUploadResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [testingIcs, setTestingIcs] = useState(false);
+  const [icsTestResult, setIcsTestResult] = useState<{ ok: boolean; message: string; events?: CalendarEvent[] } | null>(null);
   
   // WiFi state
   const [wifiNetworkList, setWifiNetworkList] = useState<WiFiNetwork[]>([]);
@@ -679,6 +686,113 @@ const ConfigPage: React.FC = () => {
       setTestingCalendar(false);
     }
   }, [configVersion, form, googleCalendarKeyInput, googleCalendarIdInput, testingCalendar]);
+
+  const handleUploadIcs = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    if (!file.name.toLowerCase().endsWith(".ics")) {
+      setIcsUploadResult({ ok: false, message: "El archivo debe tener extensión .ics" });
+      return;
+    }
+
+    setUploadingIcs(true);
+    setIcsUploadResult(null);
+    
+    try {
+      const result = await uploadIcsFile(file);
+      setIcsPathInput(result.ics_path);
+      setIcsUploadResult({
+        ok: true,
+        message: `Archivo subido correctamente: ${result.ics_path} (${result.events_detected} eventos detectados)`,
+      });
+      
+      // Actualizar el formulario para establecer provider="ics" y ics_path
+      setForm((prev) => {
+        const v2 = prev as unknown as { panels?: { calendar?: { enabled?: boolean; provider?: string; ics_path?: string } } };
+        return {
+          ...prev,
+          panels: {
+            ...v2.panels,
+            calendar: {
+              ...v2.panels?.calendar,
+              enabled: v2.panels?.calendar?.enabled ?? true,
+              provider: "ics",
+              ics_path: result.ics_path,
+            },
+          },
+        } as unknown as AppConfig;
+      });
+    } catch (error) {
+      console.error("[ConfigPage] Failed to upload ICS file", error);
+      const errorMessage = error instanceof ApiError && typeof error.body === "object" && error.body !== null && "error" in error.body
+        ? String(error.body.error)
+        : error instanceof Error
+        ? error.message
+        : "No se pudo subir el archivo ICS";
+      setIcsUploadResult({ ok: false, message: errorMessage });
+    } finally {
+      setUploadingIcs(false);
+      // Limpiar el input file para permitir subir el mismo archivo de nuevo
+      event.target.value = "";
+    }
+  }, []);
+
+  const handleTestIcs = useCallback(async () => {
+    if (testingIcs) {
+      return;
+    }
+
+    const v2 = form as unknown as { panels?: { calendar?: { enabled?: boolean; provider?: string; ics_path?: string } } };
+    const enabled = v2.panels?.calendar?.enabled ?? false;
+    const provider = v2.panels?.calendar?.provider;
+    const icsPath = icsPathInput.trim() || v2.panels?.calendar?.ics_path;
+
+    if (!enabled || provider !== "ics") {
+      setIcsTestResult({ ok: false, message: "Activa el calendario con provider ICS primero" });
+      return;
+    }
+
+    if (!icsPath) {
+      setIcsTestResult({ ok: false, message: "No se ha especificado una ruta ICS" });
+      return;
+    }
+
+    setTestingIcs(true);
+    setIcsTestResult(null);
+    
+    try {
+      // Obtener eventos del calendario
+      const now = new Date();
+      const from = now.toISOString();
+      const to = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString(); // 14 días adelante
+      
+      const events = await getCalendarEvents(from, to);
+      const upcomingEvents = events.slice(0, 3); // Primeros 3 eventos
+      
+      if (events.length === 0) {
+        setIcsTestResult({ ok: true, message: "ICS válido pero sin eventos en los próximos 14 días", events: [] });
+      } else {
+        setIcsTestResult({
+          ok: true,
+          message: `ICS válido: ${events.length} evento(s) encontrado(s) en los próximos 14 días`,
+          events: upcomingEvents,
+        });
+      }
+    } catch (error) {
+      console.error("[ConfigPage] Failed to test ICS calendar", error);
+      const errorMessage = error instanceof ApiError && typeof error.body === "object" && error.body !== null && "error" in error.body
+        ? String(error.body.error)
+        : error instanceof Error
+        ? error.message
+        : "No se pudo probar el archivo ICS";
+      setIcsTestResult({ ok: false, message: errorMessage });
+    } finally {
+      setTestingIcs(false);
+    }
+  }, [configVersion, form, icsPathInput, testingIcs]);
 
   const handleToggleAisstreamKeyVisibility = useCallback(() => {
     setShowAisstreamKey((prev) => {
@@ -1359,8 +1473,35 @@ const ConfigPage: React.FC = () => {
       if (error instanceof ApiError) {
         const backendErrors = extractBackendErrors(error.body);
         setFieldErrors(backendErrors);
-        const message = backendErrors.__root__ ?? "El backend rechazó la configuración";
-        setBanner({ kind: "error", text: message });
+        
+        // Extraer información detallada del error 400
+        let errorMessage = backendErrors.__root__ ?? "El backend rechazó la configuración";
+        if (error.status === 400 && typeof error.body === "object" && error.body !== null) {
+          const errorBody = error.body as Record<string, unknown>;
+          if ("error" in errorBody && typeof errorBody.error === "string") {
+            errorMessage = errorBody.error;
+          }
+          
+          // Mostrar missing y field_paths si están presentes
+          const missing = "missing" in errorBody && Array.isArray(errorBody.missing) ? errorBody.missing : [];
+          const fieldPaths = "field_paths" in errorBody && Array.isArray(errorBody.field_paths) ? errorBody.field_paths : [];
+          
+          if (missing.length > 0 || fieldPaths.length > 0) {
+            const missingFields = missing.length > 0 ? missing.join(", ") : fieldPaths.join(", ");
+            errorMessage = `${errorMessage}\n\nCampos faltantes o inválidos: ${missingFields}`;
+            
+            // Añadir errores de campo para cada field_path
+            const fieldPathErrors: FieldErrors = {};
+            for (const fieldPath of fieldPaths) {
+              if (typeof fieldPath === "string") {
+                fieldPathErrors[fieldPath] = `Campo requerido o inválido: ${fieldPath}`;
+              }
+            }
+            setFieldErrors({ ...backendErrors, ...fieldPathErrors });
+          }
+        }
+        
+        setBanner({ kind: "error", text: errorMessage });
       } else {
         setBanner({ kind: "error", text: "Error al guardar" });
       }
@@ -3247,41 +3388,78 @@ const ConfigPage: React.FC = () => {
               {configVersion === 2 && (form as unknown as { panels?: { calendar?: { provider?: string } } }).panels?.calendar?.provider === "ics" && (
                 <>
                   <div className="config-field">
-                    <label htmlFor="ics_url">URL del archivo ICS</label>
-                    <input
-                      id="ics_url"
-                      type="url"
-                      value={icsUrlInput}
-                      disabled={disableInputs || !((form as unknown as { panels?: { calendar?: { enabled?: boolean } } }).panels?.calendar?.enabled)}
-                      onChange={(event) => {
-                        setIcsUrlInput(event.target.value);
-                        // Limpiar path si se introduce URL
-                        if (event.target.value.trim()) {
-                          setIcsPathInput("");
-                        }
-                      }}
-                      placeholder="https://ejemplo.com/mi.ics"
-                    />
-                    {renderHelp("URL HTTP/HTTPS del archivo ICS (o deja vacío y usa Path)")}
+                    <label htmlFor="ics_path">Ruta local del archivo ICS</label>
+                    <div className="config-field__input-group">
+                      <input
+                        id="ics_path"
+                        type="text"
+                        value={icsPathInput}
+                        readOnly
+                        disabled={disableInputs || !((form as unknown as { panels?: { calendar?: { enabled?: boolean } } }).panels?.calendar?.enabled)}
+                        placeholder="/var/lib/pantalla-reloj/ics/personal.ics"
+                      />
+                      <label htmlFor="ics_file_upload" className="config-button">
+                        {uploadingIcs ? "Subiendo…" : "Subir ICS…"}
+                        <input
+                          id="ics_file_upload"
+                          type="file"
+                          accept=".ics"
+                          style={{ display: "none" }}
+                          disabled={disableInputs || uploadingIcs || !((form as unknown as { panels?: { calendar?: { enabled?: boolean } } }).panels?.calendar?.enabled)}
+                          onChange={handleUploadIcs}
+                        />
+                      </label>
+                    </div>
+                    {renderHelp("Sube un archivo ICS desde tu PC o introduce la ruta manualmente")}
+                    {icsUploadResult && (
+                      <div
+                        className={`config-field__hint ${
+                          icsUploadResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                        }`}
+                      >
+                        {icsUploadResult.message}
+                      </div>
+                    )}
                   </div>
 
+                  {/* Botón de prueba ICS */}
                   <div className="config-field">
-                    <label htmlFor="ics_path">Ruta local del archivo ICS</label>
-                    <input
-                      id="ics_path"
-                      type="text"
-                      value={icsPathInput}
-                      disabled={disableInputs || !((form as unknown as { panels?: { calendar?: { enabled?: boolean } } }).panels?.calendar?.enabled)}
-                      onChange={(event) => {
-                        setIcsPathInput(event.target.value);
-                        // Limpiar URL si se introduce path
-                        if (event.target.value.trim()) {
-                          setIcsUrlInput("");
+                    <div className="config-field__actions">
+                      <button
+                        type="button"
+                        className="config-button"
+                        onClick={() => void handleTestIcs()}
+                        disabled={
+                          disableInputs ||
+                          testingIcs ||
+                          !((form as unknown as { panels?: { calendar?: { enabled?: boolean } } }).panels?.calendar?.enabled) ||
+                          !icsPathInput.trim()
                         }
-                      }}
-                      placeholder="/var/lib/pantalla-reloj/mi.ics"
-                    />
-                    {renderHelp("Ruta local del archivo ICS legible por el servicio (o deja vacío y usa URL)")}
+                      >
+                        {testingIcs ? "Comprobando…" : "Probar ICS"}
+                      </button>
+                    </div>
+                    {icsTestResult && (
+                      <div
+                        className={`config-field__hint ${
+                          icsTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                        }`}
+                      >
+                        {icsTestResult.message}
+                        {icsTestResult.events && icsTestResult.events.length > 0 && (
+                          <div style={{ marginTop: "0.5rem", fontSize: "0.9em" }}>
+                            <strong>Próximos eventos:</strong>
+                            <ul style={{ marginTop: "0.25rem", marginLeft: "1rem" }}>
+                              {icsTestResult.events.map((event, idx) => (
+                                <li key={idx}>
+                                  <strong>{event.title}</strong> - {new Date(event.start).toLocaleDateString()} {new Date(event.start).toLocaleTimeString()}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </>
               )}

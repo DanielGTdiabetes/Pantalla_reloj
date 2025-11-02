@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import grp
 import json
 import os
+import pwd
 import re
 import subprocess
 import tempfile
@@ -13,7 +15,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Literal
 
 import requests
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -857,6 +859,116 @@ def config_metadata() -> Dict[str, Any]:
     return config_manager.get_config_metadata()
 
 
+@app.post("/api/config/upload/ics")
+async def upload_ics_file(
+    file: UploadFile = File(..., description="ICS calendar file"),
+    filename: Optional[str] = None,
+) -> JSONResponse:
+    """Sube un archivo ICS y lo guarda en /var/lib/pantalla-reloj/ics/.
+    
+    Args:
+        file: Archivo ICS (máx 2 MB)
+        filename: Nombre opcional del archivo (si no se proporciona, se usa el nombre del archivo)
+    
+    Returns:
+        JSON con ics_path, size, events_detected
+    """
+    MAX_ICS_SIZE = 2 * 1024 * 1024  # 2 MB
+    
+    # Validar extensión
+    original_filename = filename or file.filename or "calendar.ics"
+    if not original_filename.lower().endswith(".ics"):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "File must have .ics extension",
+                "filename": original_filename,
+            }
+        )
+    
+    # Validar tamaño
+    content = await file.read()
+    if len(content) > MAX_ICS_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "error": f"File size exceeds maximum ({MAX_ICS_SIZE} bytes)",
+                "size": len(content),
+                "max_size": MAX_ICS_SIZE,
+            }
+        )
+    
+    # Sanitizar nombre del archivo
+    safe_name = re.sub(r'[^a-zA-Z0-9._-]', '_', original_filename)
+    safe_name = safe_name[:128]  # Limitar longitud
+    if not safe_name.endswith(".ics"):
+        safe_name = safe_name + ".ics"
+    
+    # Crear directorio si no existe
+    ics_dir = Path("/var/lib/pantalla-reloj/ics")
+    try:
+        ics_dir.mkdir(parents=True, exist_ok=True)
+    except (PermissionError, OSError) as exc:
+        logger.error("[config] Cannot create ICS directory %s: %s", ics_dir, exc)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Cannot create ICS directory",
+                "path": str(ics_dir),
+                "reason": str(exc),
+            }
+        ) from exc
+    
+    # Guardar archivo
+    ics_path = ics_dir / safe_name
+    try:
+        # Escribir archivo
+        with ics_path.open("wb") as handle:
+            handle.write(content)
+        
+        # Ajustar permisos: owner dani:dani, modo 640
+        try:
+            user = pwd.getpwnam("dani")
+            uid = user.pw_uid
+            gid = grp.getgrnam("dani").gr_gid
+            os.chown(ics_path, uid, gid)
+            os.chmod(ics_path, 0o640)
+        except (KeyError, OSError, PermissionError) as exc:
+            logger.warning("[config] Cannot chown/chmod ICS file %s: %s", ics_path, exc)
+        
+        # Verificar que se puede parsear
+        try:
+            events = fetch_ics_calendar_events(path=str(ics_path))
+            events_count = len(events)
+        except Exception as exc:
+            logger.warning("[config] ICS file may not be parseable: %s", exc)
+            events_count = 0
+        
+        logger.info(
+            "[config] ICS file uploaded: %s (size=%d, events=%d)",
+            ics_path,
+            len(content),
+            events_count,
+        )
+        
+        return JSONResponse(content={
+            "ics_path": str(ics_path),
+            "size": len(content),
+            "events_detected": events_count,
+        })
+        
+    except (OSError, PermissionError) as exc:
+        logger.error("[config] Cannot write ICS file %s: %s", ics_path, exc)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Cannot write ICS file",
+                "path": str(ics_path),
+                "reason": str(exc),
+            }
+        ) from exc
+
+
 @app.post("/api/config/reload")
 def reload_config() -> Dict[str, Any]:
     """Recarga la configuración desde el archivo efectivo sin reiniciar el servicio."""
@@ -866,6 +978,9 @@ def reload_config() -> Dict[str, Any]:
         if was_reloaded:
             metadata = config_manager.get_config_metadata()
             logger.info("[config] Config reloaded successfully from %s", metadata["config_path"])
+            # Incrementar contador para notificar al frontend
+            global map_reset_counter
+            map_reset_counter += 1
             return {
                 "success": True,
                 "message": "Config reloaded successfully",
@@ -1371,14 +1486,21 @@ def _validate_calendar_requirements(
     google_api_key: Optional[str],
     google_calendar_id: Optional[str],
 ) -> None:
-    """Validate provider-specific requirements for calendar configuration."""
+    """Validate provider-specific requirements for calendar configuration.
+    
+    Returns 400 with detailed error including missing fields and field_paths.
+    Never returns 500 for validation errors.
+    """
 
     if provider == "google" and enabled:
         missing: List[str] = []
+        field_paths: List[str] = []
         if not google_api_key or not str(google_api_key).strip():
-            missing.append("google.api_key")
+            missing.append("secrets.google.api_key")
+            field_paths.append("secrets.google.api_key")
         if not google_calendar_id or not str(google_calendar_id).strip():
-            missing.append("google.calendar_id")
+            missing.append("secrets.google.calendar_id")
+            field_paths.append("secrets.google.calendar_id")
         if missing:
             logger.warning(
                 "[config] Provider google requires credentials (missing=%s)",
@@ -1393,21 +1515,25 @@ def _validate_calendar_requirements(
                 detail={
                     "error": "Calendar provider 'google' requires api_key and calendar_id",
                     "missing": missing,
+                    "field_paths": field_paths,
                 },
             )
 
     if provider == "ics" and enabled:
         if not ics_path or not str(ics_path).strip():
+            missing = ["panels.calendar.ics_path", "calendar.ics_path"]
             logger.error("[config] Rejecting config save: ICS provider requires calendar.ics_path")
             raise HTTPException(
                 status_code=400,
                 detail={
                     "error": "Calendar provider 'ics' requires calendar.ics_path",
-                    "missing": ["calendar.ics_path"],
+                    "missing": missing,
+                    "field_paths": missing,
                 },
             )
         path_obj = Path(str(ics_path).strip())
         if not path_obj.exists() or not path_obj.is_file():
+            missing = ["panels.calendar.ics_path", "calendar.ics_path"]
             logger.error(
                 "[config] Rejecting config save: ICS path %s not readable (exists=%s, is_file=%s)",
                 path_obj,
@@ -1418,13 +1544,24 @@ def _validate_calendar_requirements(
                 status_code=400,
                 detail={
                     "error": f"Calendar provider 'ics' requires readable file at calendar.ics_path (not found: {path_obj})",
-                    "missing": ["calendar.ics_path"],
+                    "missing": missing,
+                    "field_paths": missing,
                 },
             )
         try:
-            with path_obj.open("rb") as handle:
-                handle.read(1)
-        except OSError as exc:
+            # Leer y verificar que se puede parsear como ICS
+            with path_obj.open("r", encoding="utf-8") as handle:
+                content = handle.read()
+                # Intentar parsear con fetch_ics_calendar_events
+                events = fetch_ics_calendar_events(path=str(path_obj))
+                # Si no hay eventos pero el archivo está vacío o tiene formato válido, permitirlo
+                # Solo fallar si el contenido no parece ser un ICS válido
+                if content.strip() and not content.strip().startswith("BEGIN:VCALENDAR"):
+                    # Intentar buscar al menos un VEVENT como mínimo
+                    if "BEGIN:VEVENT" not in content.upper():
+                        raise ValueError("File does not contain valid ICS events (no VEVENT found)")
+        except (OSError, UnicodeDecodeError) as exc:
+            missing = ["panels.calendar.ics_path", "calendar.ics_path"]
             logger.error(
                 "[config] Rejecting config save: ICS path %s not readable (%s)",
                 path_obj,
@@ -1434,7 +1571,23 @@ def _validate_calendar_requirements(
                 status_code=400,
                 detail={
                     "error": f"Calendar provider 'ics' requires readable file at calendar.ics_path ({exc})",
-                    "missing": ["calendar.ics_path"],
+                    "missing": missing,
+                    "field_paths": missing,
+                },
+            )
+        except Exception as exc:
+            missing = ["panels.calendar.ics_path", "calendar.ics_path"]
+            logger.error(
+                "[config] Rejecting config save: ICS path %s not parseable as ICS (%s)",
+                path_obj,
+                exc,
+            )
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": f"Calendar provider 'ics' requires parseable ICS file at calendar.ics_path ({exc})",
+                    "missing": missing,
+                    "field_paths": missing,
                 },
             )
 
@@ -1671,24 +1824,63 @@ async def save_config(request: Request) -> JSONResponse:
 
     except ValidationError as exc:
         logger.debug("Configuration validation error: %s", exc.errors())
-        raise HTTPException(status_code=400, detail=exc.errors()) from exc
-    except HTTPException as exc:
-        return JSONResponse(status_code=exc.status_code, content=exc.detail)
-    except Exception as exc:  # noqa: BLE001
+        # Convertir errores de Pydantic a formato con missing y field_paths
+        missing: List[str] = []
+        field_paths: List[str] = []
+        for error in exc.errors():
+            field = ".".join(str(x) for x in error.get("loc", []))
+            if field:
+                missing.append(field)
+                field_paths.append(field)
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "Configuration validation failed",
+                "missing": missing,
+                "field_paths": field_paths,
+                "details": exc.errors(),
+            }
+        ) from exc
+    except HTTPException:
+        # Re-lanzar HTTPException tal cual (ya tiene status_code 400 con detalles)
+        raise
+    except (PermissionError, OSError) as exc:
+        # Errores de IO: devolver 500 con detalles útiles
         logger.exception("Failed to persist configuration: %s", exc)
-        raise HTTPException(status_code=500, detail="Unable to persist configuration") from exc
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Failed to persist configuration",
+                "reason": str(exc),
+                "errno": getattr(exc, "errno", None),
+                "hint": "Check file permissions and disk space",
+            }
+        ) from exc
+    except Exception as exc:  # noqa: BLE001
+        # Errores inesperados: devolver 500 con detalles
+        logger.exception("Failed to persist configuration: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Unable to persist configuration",
+                "reason": str(exc),
+            }
+        ) from exc
 
-    # Recargar configuración en memoria para reflejar cambios inmediatos
+    # Recargar configuración en memoria para reflejar cambios inmediatos (hot-reload)
     try:
         _, was_reloaded = config_manager.reload()
         if was_reloaded:
-            logger.info("[config] Configuration reloaded in-memory after save")
+            logger.info("[config] Configuration reloaded in-memory after save (hot-reload)")
+            # Incrementar contador para notificar al frontend
+            global map_reset_counter
+            map_reset_counter += 1
         else:
             logger.warning("[config] Configuration reload after save did not report changes")
     except Exception as exc:  # noqa: BLE001
         logger.error("[config] Failed to reload configuration after save: %s", exc)
 
-    return JSONResponse(content={"success": True})
+    return JSONResponse(content={"success": True, "config_version": map_reset_counter})
 
 
 @app.post("/api/map/reset", response_model=MapResetResponse)

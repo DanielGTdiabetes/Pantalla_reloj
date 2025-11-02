@@ -367,7 +367,17 @@ class ConfigManager:
                 json.dump(config_dict, handle, indent=2, ensure_ascii=False)
                 handle.flush()
                 os.fsync(handle.fileno())
+            # Persistencia atómica: rename después de fsync
             os.replace(tmp_path, self.config_file)
+            # Fsync del directorio para asegurar que el rename se persiste
+            try:
+                dir_fd = os.open(str(self.config_file.parent), os.O_RDONLY)
+                try:
+                    os.fsync(dir_fd)
+                finally:
+                    os.close(dir_fd)
+            except OSError as exc:
+                self.logger.debug("[config] Could not fsync directory after atomic write: %s", exc)
             try:
                 user = pwd.getpwnam("dani")
                 uid = user.pw_uid

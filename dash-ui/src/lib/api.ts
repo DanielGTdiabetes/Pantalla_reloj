@@ -423,6 +423,33 @@ export async function getCalendarEvents(from: string, to: string): Promise<Calen
   return apiGet<CalendarEvent[]>(`/api/calendar/events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
 }
 
+// ICS Upload API
+export type IcsUploadResponse = {
+  ics_path: string;
+  size: number;
+  events_detected: number;
+};
+
+export async function uploadIcsFile(file: File, filename?: string): Promise<IcsUploadResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (filename) {
+    formData.append("filename", filename);
+  }
+  
+  const response = await fetch(withBase("/api/config/upload/ics"), {
+    method: "POST",
+    body: formData,
+  });
+  
+  if (!response.ok) {
+    const body = await readJson(response);
+    throw new ApiError(response.status, body);
+  }
+  
+  return (await readJson(response)) as IcsUploadResponse;
+}
+
 // AEMET Warnings API
 export type AemetWarningFeature = {
   type: "Feature";
