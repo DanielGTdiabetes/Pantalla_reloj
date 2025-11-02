@@ -1,7 +1,37 @@
 import { StarIcon } from "../../icons";
+import { useState, useEffect } from "react";
 
 type SaintsCardProps = {
   saints: string[];
+};
+
+const SantoralIconImage: React.FC<{ size?: number; className?: string }> = ({ size = 48, className = "" }) => {
+  const [iconError, setIconError] = useState(false);
+  const iconPath = "/icons/misc/santoral.svg";
+  const emojiFallback = "✨";
+
+  useEffect(() => {
+    setIconError(false);
+  }, [iconPath]);
+
+  if (iconError || !iconPath) {
+    return (
+      <span style={{ fontSize: `${size}px`, lineHeight: 1 }} className={className} role="img" aria-label="Santoral">
+        {emojiFallback}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={iconPath}
+      alt="Santoral"
+      className={className}
+      style={{ width: `${size}px`, height: `${size}px`, objectFit: "contain" }}
+      onError={() => setIconError(true)}
+      loading="lazy"
+    />
+  );
 };
 
 export const SaintsCard = ({ saints }: SaintsCardProps): JSX.Element => {
@@ -15,12 +45,12 @@ export const SaintsCard = ({ saints }: SaintsCardProps): JSX.Element => {
       return self.findIndex((e) => e.toLowerCase() === normalized) === index;
     });
 
-  const displayEntries = entries.length > 0 ? entries : ["Sin onomásticas registradas"];
+  const displayEntries = entries.length > 0 ? entries : ["—"];
 
   return (
     <div className="card saints-card">
       <div className="saints-card__header">
-        <StarIcon className="card-icon" aria-hidden="true" />
+        <SantoralIconImage size={48} className="card-icon" />
         <h2>Santoral</h2>
       </div>
       <div className="saints-card__scroller">

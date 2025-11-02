@@ -1,10 +1,12 @@
 import { BookOpenIcon } from "../../icons";
+import { MoonIcon } from "../../MoonIcon";
 
 type EphemeridesCardProps = {
   sunrise: string | null;
   sunset: string | null;
   moonPhase: string | null;
   events: string[];
+  illumination?: number | null;
 };
 
 const repeatItems = <T,>(items: T[]): T[] => {
@@ -14,41 +16,7 @@ const repeatItems = <T,>(items: T[]): T[] => {
   return [...items, ...items];
 };
 
-const getMoonIcon = (phase: string | null): string => {
-  if (!phase) {
-    return "/icons/moon/moon-50.svg";
-  }
-  
-  const phaseLower = phase.toLowerCase().trim();
-  
-  // Mapeo de fases lunares a iconos SVG
-  const phaseMap: Record<string, string> = {
-    "nueva": "moon-0",
-    "new": "moon-0",
-    "nueva luna": "moon-0",
-    "creciente": "moon-25",
-    "waxing": "moon-25",
-    "cuarto creciente": "moon-25",
-    "llena": "moon-100",
-    "full": "moon-100",
-    "luna llena": "moon-100",
-    "menguante": "moon-75",
-    "waning": "moon-75",
-    "cuarto menguante": "moon-75",
-  };
-  
-  // Buscar coincidencia
-  for (const [key, value] of Object.entries(phaseMap)) {
-    if (phaseLower.includes(key) || key.includes(phaseLower)) {
-      return `/icons/moon/${value}.svg`;
-    }
-  }
-  
-  // Fallback: luna en cuarto
-  return "/icons/moon/moon-50.svg";
-};
-
-export const EphemeridesCard = ({ sunrise, sunset, moonPhase, events }: EphemeridesCardProps): JSX.Element => {
+export const EphemeridesCard = ({ sunrise, sunset, moonPhase, events, illumination }: EphemeridesCardProps): JSX.Element => {
   const items = events.length > 0 ? events : ["Sin efemérides registradas"];
   const repeatedItems = repeatItems(items);
 
@@ -69,14 +37,20 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, events }: Ephemeri
         </div>
         <div>
           <span className="ephemerides-card__label">Fase lunar</span>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <img
-              src={getMoonIcon(moonPhase)}
-              alt="Fase lunar"
-              style={{ width: "24px", height: "24px" }}
-              aria-hidden="true"
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <MoonIcon
+              phase={moonPhase}
+              illumination={illumination}
+              size={48}
+              className="ephemerides-card__moon-icon"
+              alt="Fase lunar actual"
             />
             <span>{moonPhase ?? "Sin datos"}</span>
+            {illumination !== null && illumination !== undefined && (
+              <span style={{ fontSize: "0.9em", opacity: 0.8 }}>
+                {Math.round(illumination > 1 ? illumination : illumination * 100)}%
+              </span>
+            )}
           </div>
         </div>
       </div>

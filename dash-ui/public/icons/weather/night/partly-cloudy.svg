@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="night-partly-sky" x1="0" y1="0" x2="0" y2="512">
+      <stop offset="0%" stop-color="#0A0E27" />
+      <stop offset="100%" stop-color="#1A1F3A" />
+    </linearGradient>
+    <radialGradient id="night-partly-moon" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#F5F5DC" />
+      <stop offset="50%" stop-color="#E6E6FA" />
+      <stop offset="100%" stop-color="#D3D3D3" />
+    </radialGradient>
+    <radialGradient id="night-partly-moon-glow" cx="0.5" cy="0.5" r="0.7">
+      <stop offset="0%" stop-color="#E6E6FA" stop-opacity="0.5" />
+      <stop offset="100%" stop-color="#2F2F2F" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="night-partly-cloud" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#5D6D7E" />
+      <stop offset="50%" stop-color="#4A5568" />
+      <stop offset="100%" stop-color="#3A4456" />
+    </radialGradient>
+  </defs>
+  
+  <!-- Night sky -->
+  <rect width="512" height="512" fill="url(#night-partly-sky)"/>
+  
+  <!-- Stars -->
+  <g opacity="0.9">
+    <circle cx="80" cy="120" r="2" fill="#FFFFFF"/>
+    <circle cx="150" cy="80" r="1.5" fill="#FFFFFF"/>
+    <circle cx="400" cy="150" r="2.5" fill="#FFFFFF"/>
+  </g>
+  
+  <!-- Moon (partially visible) -->
+  <circle cx="150" cy="150" r="70" fill="url(#night-partly-moon-glow)" opacity="0.4"/>
+  <circle cx="150" cy="150" r="60" fill="url(#night-partly-moon)"/>
+  
+  <!-- Light clouds -->
+  <ellipse cx="320" cy="200" rx="90" ry="55" fill="url(#night-partly-cloud)"/>
+  <ellipse cx="360" cy="180" rx="85" ry="50" fill="url(#night-partly-cloud)"/>
+  <ellipse cx="340" cy="220" rx="75" ry="45" fill="url(#night-partly-cloud)"/>
+</svg>

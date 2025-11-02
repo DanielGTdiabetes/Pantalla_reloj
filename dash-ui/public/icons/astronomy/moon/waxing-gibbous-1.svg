@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="gibbous1-moon" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#F5F5DC" />
+      <stop offset="50%" stop-color="#E6E6FA" />
+      <stop offset="100%" stop-color="#D3D3D3" />
+    </radialGradient>
+    <linearGradient id="gibbous1-sky" x1="0" y1="0" x2="0" y2="512">
+      <stop offset="0%" stop-color="#0A0E27" />
+      <stop offset="100%" stop-color="#1A1F3A" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Night sky -->
+  <rect width="512" height="512" fill="url(#gibbous1-sky)"/>
+  
+  <!-- Stars -->
+  <g opacity="0.7">
+    <circle cx="80" cy="120" r="1.5" fill="#FFFFFF"/>
+    <circle cx="400" cy="150" r="2" fill="#FFFFFF"/>
+  </g>
+  
+  <!-- Waxing gibbous moon (mostly lit, dark on left) -->
+  <clipPath id="gibbous-left-shadow">
+    <rect x="156" y="146" width="60" height="220" rx="30"/>
+  </clipPath>
+  <circle cx="256" cy="256" r="110" fill="url(#gibbous1-moon)"/>
+  <circle cx="220" cy="256" r="80" fill="#1A1F3A" clip-path="url(#gibbous-left-shadow)" opacity="0.9"/>
+  
+  <!-- Craters on lit side -->
+  <ellipse cx="280" cy="270" rx="10" ry="15" fill="#B8B8B8" opacity="0.4"/>
+  <ellipse cx="300" cy="245" rx="8" ry="12" fill="#B8B8B8" opacity="0.3"/>
+</svg>

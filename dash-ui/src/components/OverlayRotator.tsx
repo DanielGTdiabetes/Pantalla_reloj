@@ -569,6 +569,7 @@ export const OverlayRotator: React.FC = () => {
           humidity={humidity}
           wind={wind}
           unit={temperature.unit}
+          timezone={timezone}
         />
       )
     });
@@ -582,6 +583,7 @@ export const OverlayRotator: React.FC = () => {
           sunrise={sunrise}
           sunset={sunset}
           moonPhase={moonPhase}
+          illumination={moonIllumination}
           events={ephemeridesEvents}
         />
       )

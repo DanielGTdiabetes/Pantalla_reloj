@@ -1,4 +1,5 @@
-import { CloudIcon, DropletsIcon, WindIcon } from "../../icons";
+import { DropletsIcon, WindIcon } from "../../icons";
+import { WeatherIcon } from "../../WeatherIcon";
 
 type WeatherCardProps = {
   temperatureLabel: string;
@@ -7,6 +8,7 @@ type WeatherCardProps = {
   humidity: number | null;
   wind: number | null;
   unit: string;
+  timezone?: string;
 };
 
 const formatMetric = (value: number | null, suffix: string): string => {
@@ -22,12 +24,19 @@ export const WeatherCard = ({
   condition,
   humidity,
   wind,
-  unit
+  unit,
+  timezone = "Europe/Madrid"
 }: WeatherCardProps): JSX.Element => {
   return (
     <div className="card weather-card">
       <div className="weather-card__header">
-        <CloudIcon className="card-icon" aria-hidden="true" />
+        <WeatherIcon 
+          condition={condition} 
+          timezone={timezone}
+          size={80}
+          className="weather-card__main-icon"
+          alt="Condición climática actual"
+        />
         <div>
           <p className="weather-card__temperature">{temperatureLabel}</p>
           <p className="weather-card__feels-like">
