@@ -11,6 +11,7 @@ import {
   getOpenSkyStatus,
   saveConfig,
   saveConfigV2,
+  reloadConfig,
   testAemetApiKey,
   testCalendarConnection,
   type CalendarTestResponse,
@@ -1367,12 +1368,27 @@ const ConfigPage: React.FC = () => {
       // Usar saveConfigV2 si la versión es 2
       let saved: AppConfig;
       if (configVersion === 2) {
-        // Convertir payload a v2
-        const v2Payload = payload as unknown as import("../types/config_v2").AppConfigV2;
+        // Construir objeto v2 completo con secrets
+        const v2Payload: import("../types/config_v2").AppConfigV2 = {
+          ...payload,
+          version: 2,
+          secrets: payload.secrets || {},
+        } as unknown as import("../types/config_v2").AppConfigV2;
+        
         const v2Saved = await saveConfigV2(v2Payload);
         saved = v2Saved as unknown as AppConfig;
+        
+        // Llamar a reload después de guardar exitosamente
+        try {
+          await reloadConfig();
+          setBanner({ kind: "success", text: "Config guardada y recargada" });
+        } catch (reloadError) {
+          console.warn("[ConfigPage] Failed to reload config after save:", reloadError);
+          setBanner({ kind: "success", text: "Config guardada (recarga falló)" });
+        }
       } else {
         saved = await saveConfig(payload);
+        setBanner({ kind: "success", text: "Guardado" });
       }
       setForm(withConfigDefaults(saved));
       setShowMaptilerKey(false);
@@ -1385,7 +1401,6 @@ const ConfigPage: React.FC = () => {
       setShowOpenWeatherKey(false);
       setOpenWeatherKeyInput("");
       setFieldErrors({});
-      setBanner({ kind: "success", text: "Guardado" });
     } catch (error) {
       console.error("[ConfigPage] Failed to save configuration", error);
       if (error instanceof ApiError) {

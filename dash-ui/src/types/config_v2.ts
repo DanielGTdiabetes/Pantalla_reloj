@@ -127,6 +127,7 @@ export type PanelNewsConfig = {
 
 export type PanelCalendarConfig = {
   enabled: boolean;
+  provider?: "google" | "ics";
 };
 
 export type PanelsConfigV2 = {
@@ -140,6 +141,7 @@ export type SecretsConfig = {
   opensky?: Record<string, unknown>;
   google?: Record<string, unknown>;
   aemet?: Record<string, unknown>;
+  calendar_ics?: Record<string, unknown>;
 };
 
 export type AppConfigV2 = {

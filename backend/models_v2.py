@@ -151,6 +151,7 @@ class PanelNewsConfig(BaseModel):
 class PanelCalendarConfig(BaseModel):
     """Configuración de panel de calendario."""
     enabled: bool = True
+    provider: Literal["google", "ics"] = Field(default="google")
 
 
 class PanelsConfig(BaseModel):
@@ -166,6 +167,7 @@ class SecretsConfig(BaseModel):
     opensky: Optional[Dict[str, Any]] = None
     google: Optional[Dict[str, Any]] = None
     aemet: Optional[Dict[str, Any]] = None
+    calendar_ics: Optional[Dict[str, Any]] = None
 
 
 class AppConfigV2(BaseModel):

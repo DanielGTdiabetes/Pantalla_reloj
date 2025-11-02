@@ -32,6 +32,7 @@ from .data_sources import (
     get_saints_today,
     parse_rss_feed,
 )
+from .data_sources_ics import fetch_ics_calendar_events
 from .focus_masks import check_point_in_focus, load_or_build_focus_mask
 from .global_providers import (
     GIBSProvider,
@@ -773,10 +774,30 @@ def _health_payload() -> Dict[str, Any]:
     
     # Bloque de calendario
     try:
-        calendar_config = config.calendar
-        api_key = secret_store.get_secret("google_calendar_api_key") or secret_store.get_secret("google_api_key")
-        calendar_id = secret_store.get_secret("google_calendar_id")
-        credentials_present = bool(api_key and calendar_id)
+        # Intentar leer como v2
+        try:
+            config_v2, _ = _read_config_v2()
+            calendar_provider = "google"  # default
+            enabled = False
+            if config_v2.panels and config_v2.panels.calendar:
+                enabled = getattr(config_v2.panels.calendar, "enabled", False)
+                calendar_provider = getattr(config_v2.panels.calendar, "provider", "google")
+        except Exception:  # noqa: BLE001
+            # Fallback a v1
+            calendar_config = config.calendar
+            enabled = calendar_config.enabled
+            calendar_provider = "google"
+        
+        # Leer credenciales según provider
+        credentials_present = False
+        if calendar_provider == "google":
+            api_key = secret_store.get_secret("google_calendar_api_key") or secret_store.get_secret("google_api_key")
+            calendar_id = secret_store.get_secret("google_calendar_id")
+            credentials_present = bool(api_key and calendar_id)
+        elif calendar_provider == "ics":
+            ics_url = secret_store.get_secret("calendar_ics_url")
+            ics_path = secret_store.get_secret("calendar_ics_path")
+            credentials_present = bool(ics_url or ics_path)
         
         # Intentar obtener último fetch desde caché o estado
         last_fetch_iso = None
@@ -784,11 +805,9 @@ def _health_payload() -> Dict[str, Any]:
         
         # Verificar si hay errores recientes
         try:
-            # Intentar una verificación básica
-            if calendar_config.enabled and credentials_present:
-                # Está habilitado y tiene credenciales
+            if enabled and credentials_present:
                 calendar_status = "ok"
-            elif calendar_config.enabled and not credentials_present:
+            elif enabled and not credentials_present:
                 calendar_status = "error"
             else:
                 calendar_status = "stale"
@@ -796,8 +815,8 @@ def _health_payload() -> Dict[str, Any]:
             calendar_status = "error"
         
         payload["calendar"] = {
-            "enabled": calendar_config.enabled,
-            "provider": "google",
+            "enabled": enabled,
+            "provider": calendar_provider,
             "credentials_present": credentials_present,
             "last_fetch_iso": last_fetch_iso,
             "status": calendar_status,
@@ -806,7 +825,7 @@ def _health_payload() -> Dict[str, Any]:
         logger.debug("Unable to gather calendar status for health: %s", exc)
         payload["calendar"] = {
             "enabled": False,
-            "provider": "google",
+            "provider": "unknown",
             "credentials_present": False,
             "last_fetch_iso": None,
             "status": "error",
@@ -1272,13 +1291,104 @@ async def save_config(request: Request) -> JSONResponse:
             detail={"error": "ui_map required for v2"}
         )
     try:
+        # Extraer secrets antes de validar (se eliminarán del payload)
+        secrets = payload.get("secrets", {})
+        google_secrets = secrets.get("google", {}) if isinstance(secrets, dict) else {}
+        calendar_ics_secrets = secrets.get("calendar_ics", {}) if isinstance(secrets, dict) else {}
+        
+        # Extraer secrets de Google Calendar
+        google_api_key = google_secrets.get("api_key") if isinstance(google_secrets, dict) else None
+        google_calendar_id = google_secrets.get("calendar_id") if isinstance(google_secrets, dict) else None
+        
+        # Extraer secrets de ICS
+        calendar_ics_url = calendar_ics_secrets.get("url") if isinstance(calendar_ics_secrets, dict) else None
+        calendar_ics_path = calendar_ics_secrets.get("path") if isinstance(calendar_ics_secrets, dict) else None
+        
+        # Validar provider de calendario si está presente
+        calendar_provider = None
+        if isinstance(payload.get("panels"), dict) and isinstance(payload["panels"].get("calendar"), dict):
+            calendar_provider = payload["panels"]["calendar"].get("provider")
+        
+        # Si no hay provider explícito, inferir de secrets
+        if not calendar_provider:
+            if google_api_key and google_calendar_id:
+                calendar_provider = "google"
+            elif calendar_ics_url or calendar_ics_path:
+                calendar_provider = "ics"
+        
+        # Validación básica: si provider=google, exigir credenciales
+        if calendar_provider == "google":
+            if not google_api_key or not google_calendar_id:
+                logger.warning("[config] Provider google requiere api_key y calendar_id")
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "Calendar provider 'google' requires api_key and calendar_id",
+                        "missing": []
+                    }
+                )
+        
+        # Validación básica: si provider=ics, exigir url o path
+        if calendar_provider == "ics":
+            if not calendar_ics_url and not calendar_ics_path:
+                logger.warning("[config] Provider ics requiere url o path")
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "Calendar provider 'ics' requires url or path",
+                        "missing": []
+                    }
+                )
+        
+        # Eliminar secrets del payload antes de validar (no van en config.json)
+        payload_without_secrets = payload.copy()
+        if "secrets" in payload_without_secrets:
+            del payload_without_secrets["secrets"]
+        
         # Validar como AppConfigV2
-        config_v2 = AppConfigV2.model_validate(payload)
+        config_v2 = AppConfigV2.model_validate(payload_without_secrets)
         
         # Guardar v2
         config_dict = config_v2.model_dump(mode="json", exclude_none=True)
         config_manager.config_file.write_text(json.dumps(config_dict, indent=2), encoding="utf-8")
-        logger.info("Configuration v2 saved")
+        logger.info("[config] Configuration v2 saved")
+        
+        # Guardar secrets en SecretStore (sin loguear valores en claro)
+        if google_api_key:
+            masked_key = _mask_secret(str(google_api_key))
+            logger.info(
+                "[config] Saving Google Calendar API key (present=%s, last4=%s)",
+                masked_key.get("has_api_key", False),
+                masked_key.get("api_key_last4", "****"),
+            )
+            secret_store.set_secret("google_calendar_api_key", str(google_api_key).strip())
+        else:
+            # Eliminar si está vacío
+            secret_store.set_secret("google_calendar_api_key", None)
+            logger.info("[config] Google Calendar API key removed")
+        
+        if google_calendar_id:
+            logger.info(
+                "[config] Saving Google Calendar ID (length=%d)",
+                len(str(google_calendar_id)),
+            )
+            secret_store.set_secret("google_calendar_id", str(google_calendar_id).strip())
+        else:
+            secret_store.set_secret("google_calendar_id", None)
+            logger.info("[config] Google Calendar ID removed")
+        
+        # Guardar secrets de ICS
+        if calendar_ics_url:
+            logger.info("[config] Saving ICS calendar URL (length=%d)", len(str(calendar_ics_url)))
+            secret_store.set_secret("calendar_ics_url", str(calendar_ics_url).strip())
+        else:
+            secret_store.set_secret("calendar_ics_url", None)
+        
+        if calendar_ics_path:
+            logger.info("[config] Saving ICS calendar path (length=%d)", len(str(calendar_ics_path)))
+            secret_store.set_secret("calendar_ics_path", str(calendar_ics_path).strip())
+        else:
+            secret_store.set_secret("calendar_ics_path", None)
         
         # Aplicar cambios a servicios si es necesario
         if config_v2.layers and config_v2.layers.ships:
@@ -2262,18 +2372,23 @@ def get_calendar_events(
     
     # Log detallado en modo inspect o debug
     logger.debug(
-        "[Calendar] tz=%s local_start=%s local_end=%s utc_start=%s utc_end=%s provider=google creds=%s calendars=%s",
+        "[Calendar] tz=%s local_start=%s local_end=%s utc_start=%s utc_end=%s provider=%s creds=%s calendars=%s",
         tz_str,
         local_start.isoformat() if local_start else None,
         local_end.isoformat() if local_end else None,
         utc_start.isoformat() if utc_start else None,
         utc_end.isoformat() if utc_end else None,
+        calendar_provider,
         credentials_present,
         calendars_found,
     )
     
     if not credentials_present:
-        note = "Credentials missing: api_key or calendar_id not found in secrets"
+        if calendar_provider == "google":
+            note = "Credentials missing: api_key or calendar_id not found in secrets"
+        else:  # ics
+            note = "ICS source missing: url or path not found in secrets"
+        
         if inspect_mode:
             return {
                 "tz": tz_str,
@@ -2285,7 +2400,7 @@ def get_calendar_events(
                     "start": utc_start.isoformat() if utc_start else None,
                     "end": utc_end.isoformat() if utc_end else None,
                 },
-                "provider": "google",
+                "provider": calendar_provider,
                 "provider_enabled": provider_enabled,
                 "credentials_present": credentials_present,
                 "calendars_found": calendars_found,
@@ -2302,14 +2417,25 @@ def get_calendar_events(
     try:
         # Calcular días hacia adelante
         days_ahead = max(1, (utc_end - utc_start).days) if utc_end and utc_start else 7
-        events = fetch_google_calendar_events(
-            api_key=api_key,
-            calendar_id=calendar_id,
-            days_ahead=days_ahead,
-            max_results=20,
-            time_min=utc_start,
-            time_max=utc_end,
-        )
+        
+        # Obtener eventos según provider
+        if calendar_provider == "google":
+            events = fetch_google_calendar_events(
+                api_key=api_key or "",
+                calendar_id=calendar_id or "",
+                days_ahead=days_ahead,
+                max_results=20,
+                time_min=utc_start,
+                time_max=utc_end,
+            )
+        else:  # ics
+            events = fetch_ics_calendar_events(
+                url=ics_url,
+                path=ics_path,
+                time_min=utc_start,
+                time_max=utc_end,
+            )
+        
         raw_events_count = len(events) if isinstance(events, list) else 0
         
         # Normalizar formato: añadir campos fin y ubicación si faltan
@@ -2336,7 +2462,7 @@ def get_calendar_events(
                     "start": utc_start.isoformat() if utc_start else None,
                     "end": utc_end.isoformat() if utc_end else None,
                 },
-                "provider": "google",
+                "provider": calendar_provider,
                 "provider_enabled": provider_enabled,
                 "credentials_present": credentials_present,
                 "calendars_found": calendars_found,
@@ -2347,7 +2473,7 @@ def get_calendar_events(
         
         return normalized_events
     except Exception as exc:
-        logger.warning("[Calendar] Failed to fetch Google Calendar events: %s", exc)
+        logger.warning("[Calendar] Failed to fetch calendar events (provider=%s): %s", calendar_provider, exc)
         note = f"API error: {exc}"
         if inspect_mode:
             return {
@@ -2360,7 +2486,7 @@ def get_calendar_events(
                     "start": utc_start.isoformat() if utc_start else None,
                     "end": utc_end.isoformat() if utc_end else None,
                 },
-                "provider": "google",
+                "provider": calendar_provider,
                 "provider_enabled": provider_enabled,
                 "credentials_present": credentials_present,
                 "calendars_found": calendars_found,
@@ -2373,20 +2499,70 @@ def get_calendar_events(
 
 @app.get("/api/calendar/status")
 def get_calendar_status() -> Dict[str, Any]:
-    """Obtiene el estado de credenciales de Google Calendar."""
-    config = config_manager.read()
-    calendar_config = config.calendar
+    """Obtiene el estado del calendario (provider, credenciales, estado)."""
+    try:
+        config_v2, _ = _read_config_v2()
+    except Exception as exc:
+        return {
+            "provider": "unknown",
+            "enabled": False,
+            "credentials_present": False,
+            "status": "error",
+            "last_fetch_iso": None,
+            "note": f"Config read failed: {exc}",
+        }
     
-    has_api_key = bool(calendar_config.google_api_key)
-    has_calendar_id = bool(calendar_config.google_calendar_id)
-    enabled = calendar_config.enabled
+    # Determinar provider de calendario
+    calendar_provider = "google"  # default
+    enabled = False
+    if config_v2.panels and config_v2.panels.calendar:
+        enabled = getattr(config_v2.panels.calendar, "enabled", False)
+        calendar_provider = getattr(config_v2.panels.calendar, "provider", "google")
+    
+    # Leer credenciales según provider
+    credentials_present = False
+    status = "stale"
+    last_fetch_iso: Optional[str] = None
+    note: Optional[str] = None
+    
+    if calendar_provider == "google":
+        api_key = secret_store.get_secret("google_calendar_api_key") or secret_store.get_secret("google_api_key")
+        calendar_id = secret_store.get_secret("google_calendar_id")
+        credentials_present = bool(api_key and calendar_id)
+        
+        if enabled and credentials_present:
+            status = "ok"
+        elif enabled and not credentials_present:
+            status = "error"
+            note = "Google Calendar API key or calendar ID missing"
+        else:
+            status = "stale"
+            note = "Calendar disabled"
+    
+    elif calendar_provider == "ics":
+        ics_url = secret_store.get_secret("calendar_ics_url")
+        ics_path = secret_store.get_secret("calendar_ics_path")
+        credentials_present = bool(ics_url or ics_path)
+        
+        if enabled and credentials_present:
+            status = "ok"
+        elif enabled and not credentials_present:
+            status = "error"
+            note = "ICS calendar URL or path missing"
+        else:
+            status = "stale"
+            note = "Calendar disabled"
+    else:
+        status = "error"
+        note = f"Unknown provider: {calendar_provider}"
     
     return {
-        "ok": True,
+        "provider": calendar_provider,
         "enabled": enabled,
-        "has_api_key": has_api_key,
-        "has_calendar_id": has_calendar_id,
-        "configured": has_api_key and has_calendar_id,
+        "credentials_present": credentials_present,
+        "status": status,
+        "last_fetch_iso": last_fetch_iso,
+        "note": note or "OK",
     }
 
 

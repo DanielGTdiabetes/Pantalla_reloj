@@ -133,6 +133,10 @@ export async function saveConfigV2(config: AppConfigV2): Promise<AppConfigV2> {
   return apiPost<AppConfigV2>("/api/config", config);
 }
 
+export async function reloadConfig(): Promise<{ success: boolean; message: string; config_path?: string; config_loaded_at?: string }> {
+  return apiPost<{ success: boolean; message: string; config_path?: string; config_loaded_at?: string }>("/api/config/reload", {});
+}
+
 export type AemetSecretRequest = {
   api_key: string | null;
 };
