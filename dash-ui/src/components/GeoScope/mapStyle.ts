@@ -32,20 +32,63 @@ const determineVariant = (styleName: string): MapStyleVariant => {
   return "dark";
 };
 
-const createRasterStyle = (tileUrl: string, attribution: string, name: string): StyleSpecification => ({
-  version: 8,
-  name,
-  glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
-  sources: {
-    base: {
+const createRasterStyle = (
+  tileUrl: string,
+  attribution: string,
+  name: string,
+  minzoom?: number,
+  maxzoom?: number,
+  tileSize?: number,
+  labelsOverlay?: boolean
+): StyleSpecification => {
+  const baseSource: Record<string, unknown> = {
+    type: "raster",
+    tiles: [tileUrl],
+    tileSize: tileSize ?? 256,
+    attribution,
+  };
+  if (typeof minzoom === "number") {
+    baseSource.minzoom = minzoom;
+  }
+  if (typeof maxzoom === "number") {
+    baseSource.maxzoom = maxzoom;
+  }
+
+  const sources: Record<string, unknown> = {
+    base: baseSource,
+  };
+
+  const layers: StyleSpecification["layers"] = [
+    { id: "base", type: "raster", source: "base" }
+  ];
+
+  // Añadir overlay de etiquetas OSM si está habilitado
+  if (labelsOverlay) {
+    sources.labels = {
       type: "raster",
-      tiles: [tileUrl],
+      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
       tileSize: 256,
-      attribution
-    }
-  },
-  layers: [{ id: "base", type: "raster", source: "base" }]
-});
+      attribution: "© OpenStreetMap contributors",
+      minzoom: 0,
+      maxzoom: 18,
+    };
+    layers.push({
+      id: "labels-overlay",
+      type: "raster",
+      source: "labels",
+      minzoom: 0,
+      maxzoom: 18,
+    } as StyleSpecification["layers"][number]);
+  }
+
+  return {
+    version: 8,
+    name,
+    glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+    sources: sources as StyleSpecification["sources"],
+    layers,
+  };
+};
 
 const ensureStyleName = (mapSettings: UIMapSettings): string => {
   const candidate = mapSettings.style;
@@ -99,44 +142,68 @@ export const loadMapStyle = async (
   const sanitizedKey =
     sanitizeApiKey(mapPreferences.maptiler_api_key) ?? sanitizeApiKey(mapSettings.maptiler?.key) ?? null;
 
-  const providerBase = getBaseStyle({
-    provider: mapSettings.provider ?? mapPreferences.provider,
-    style: styleName,
-    model: (mapSettings as unknown as { model?: string | null })?.model ?? null,
-    apiKeys: { maptiler: sanitizedKey },
-  });
-
-  if (providerBase.type === "maplibre" && providerBase.styleUrl) {
-    try {
-      const response = await fetch(providerBase.styleUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to load style: HTTP ${response.status}`);
-      }
-      const styleText = await response.text();
-      const parsed = JSON.parse(
-        sanitizedKey ? injectKeyPlaceholders(styleText, sanitizedKey) : styleText
-      ) as StyleSpecification;
+  // Manejar proveedor XYZ directamente
+  if (intendedProvider === "xyz") {
+    const xyzConfig = mapSettings.xyz;
+    if (xyzConfig?.urlTemplate) {
       resolvedStyle = {
-        type: "vector",
-        style: parsed,
+        type: "raster",
+        style: createRasterStyle(
+          xyzConfig.urlTemplate,
+          xyzConfig.attribution || "© XYZ Provider",
+          "xyz",
+          xyzConfig.minzoom,
+          xyzConfig.maxzoom,
+          xyzConfig.tileSize,
+          xyzConfig.labelsOverlay
+        ),
+        variant,
+        name: "xyz",
+      };
+      usedFallback = false;
+    } else {
+      console.warn("[map] XYZ provider configurado pero sin urlTemplate, usando fallback");
+    }
+  } else {
+    const providerBase = getBaseStyle({
+      provider: mapSettings.provider ?? mapPreferences.provider,
+      style: styleName,
+      model: (mapSettings as unknown as { model?: string | null })?.model ?? null,
+      apiKeys: { maptiler: sanitizedKey },
+    });
+
+    if (providerBase.type === "maplibre" && providerBase.styleUrl) {
+      try {
+        const response = await fetch(providerBase.styleUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to load style: HTTP ${response.status}`);
+        }
+        const styleText = await response.text();
+        const parsed = JSON.parse(
+          sanitizedKey ? injectKeyPlaceholders(styleText, sanitizedKey) : styleText
+        ) as StyleSpecification;
+        resolvedStyle = {
+          type: "vector",
+          style: parsed,
+          variant,
+          name: providerBase.name,
+        };
+        usedFallback = false;
+      } catch (error) {
+        console.warn("[map] MapTiler style failed, using OpenStreetMap fallback", error);
+        usedFallback = true;
+      }
+    } else if (providerBase.type === "maplibre" && providerBase.tileUrl) {
+      resolvedStyle = {
+        type: "raster",
+        style: createRasterStyle(providerBase.tileUrl, providerBase.attribution, providerBase.name),
         variant,
         name: providerBase.name,
       };
-      usedFallback = false;
-    } catch (error) {
-      console.warn("[map] MapTiler style failed, using OpenStreetMap fallback", error);
-      usedFallback = true;
+      const isOsmTile = providerBase.tileUrl === OSM_TILES;
+      const intendedOsm = intendedProvider === "osm" || intendedProvider === "openstreetmap";
+      usedFallback = isOsmTile ? !intendedOsm : false;
     }
-  } else if (providerBase.type === "maplibre" && providerBase.tileUrl) {
-    resolvedStyle = {
-      type: "raster",
-      style: createRasterStyle(providerBase.tileUrl, providerBase.attribution, providerBase.name),
-      variant,
-      name: providerBase.name,
-    };
-    const isOsmTile = providerBase.tileUrl === OSM_TILES;
-    const intendedOsm = intendedProvider === "osm" || intendedProvider === "openstreetmap";
-    usedFallback = isOsmTile ? !intendedOsm : false;
   }
 
   return {

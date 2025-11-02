@@ -28,6 +28,7 @@ import type {
   MapIdlePanConfig,
   MapThemeConfig,
   MaptilerConfig,
+  XyzConfig,
   MapPreferences,
   NewsConfig,
   OpenSkyOAuthConfig,
@@ -186,6 +187,15 @@ const DEFAULT_CINEMA_MOTION: MapCinemaMotionConfig = {
   phaseOffsetDeg: 25,
 };
 
+const DEFAULT_XYZ: XyzConfig = {
+  urlTemplate: "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  attribution: "© Esri, Maxar, GeoEye, Earthstar Geographics, CNES/Airbus, USDA, USGS, AeroGRID, IGN, and the GIS User Community",
+  minzoom: 0,
+  maxzoom: 19,
+  tileSize: 256,
+  labelsOverlay: false,
+};
+
 const DEFAULT_MAPTILER: MaptilerConfig = {
   key: null,
   styleUrlDark: "https://api.maptiler.com/maps/dark/style.json",
@@ -229,6 +239,7 @@ export const createDefaultMapSettings = (): MapConfig => ({
   style: "vector-dark",
   provider: "osm",
   maptiler: { ...DEFAULT_MAPTILER },
+  xyz: { ...DEFAULT_XYZ },
   renderWorldCopies: true,
   interactive: false,
   controls: false,
@@ -359,6 +370,19 @@ const mergeMaptiler = (candidate: unknown): MaptilerConfig => {
   };
 };
 
+const mergeXyz = (candidate: unknown): XyzConfig => {
+  const fallback = { ...DEFAULT_XYZ };
+  const source = (candidate as Partial<XyzConfig>) ?? {};
+  return {
+    urlTemplate: sanitizeString(source.urlTemplate, fallback.urlTemplate),
+    attribution: sanitizeString(source.attribution, fallback.attribution),
+    minzoom: clampNumber(Math.round(toNumber(source.minzoom, fallback.minzoom)), 0, 24),
+    maxzoom: clampNumber(Math.round(toNumber(source.maxzoom, fallback.maxzoom)), 0, 24),
+    tileSize: clampNumber(Math.round(toNumber(source.tileSize, fallback.tileSize)), 64, 512),
+    labelsOverlay: toBoolean(source.labelsOverlay, fallback.labelsOverlay ?? false),
+  };
+};
+
 const mergeMap = (candidate: unknown): MapConfig => {
   const fallback = createDefaultMapSettings();
   const source = (candidate as Partial<MapConfig>) ?? {};
@@ -369,7 +393,7 @@ const mergeMap = (candidate: unknown): MapConfig => {
     "raster-carto-dark",
     "raster-carto-light",
   ];
-  const allowedProviders: MapConfig["provider"][] = ["maptiler", "osm", "openstreetmap"];
+  const allowedProviders: MapConfig["provider"][] = ["maptiler", "osm", "openstreetmap", "xyz"];
   const style = allowedStyles.includes(source.style ?? fallback.style)
     ? (source.style as MapConfig["style"])
     : fallback.style;
@@ -381,6 +405,7 @@ const mergeMap = (candidate: unknown): MapConfig => {
     style,
     provider,
     maptiler: mergeMaptiler(source.maptiler),
+    xyz: mergeXyz(source.xyz),
     renderWorldCopies: toBoolean(source.renderWorldCopies, fallback.renderWorldCopies),
     interactive: toBoolean(source.interactive, fallback.interactive),
     controls: toBoolean(source.controls, fallback.controls),

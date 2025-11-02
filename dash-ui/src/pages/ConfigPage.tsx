@@ -55,12 +55,13 @@ const MAP_STYLE_OPTIONS: AppConfig["ui"]["map"]["style"][] = [
   "raster-carto-dark",
   "raster-carto-light",
 ];
-const MAP_PROVIDER_OPTIONS: AppConfig["ui"]["map"]["provider"][] = ["maptiler", "osm"];
-const MAP_BACKEND_PROVIDERS: AppConfig["map"]["provider"][] = ["maptiler", "osm"];
+const MAP_PROVIDER_OPTIONS: AppConfig["ui"]["map"]["provider"][] = ["maptiler", "osm", "xyz"];
+const MAP_BACKEND_PROVIDERS: AppConfig["map"]["provider"][] = ["maptiler", "osm", "xyz"];
 const MAP_PROVIDER_LABELS: Record<AppConfig["map"]["provider"], string> = {
   maptiler: "MapTiler",
   osm: "OpenStreetMap",
   openstreetmap: "OpenStreetMap",
+  xyz: "XYZ (Raster)",
 };
 const MAPTILER_KEY_PATTERN = /^[A-Za-z0-9._-]+$/;
 const MAPTILER_DOCS_TEXT = "Obtén la clave en docs.maptiler.com/cloud/api-keys";
@@ -1448,6 +1449,7 @@ const ConfigPage: React.FC = () => {
                       const provider = event.target.value as AppConfig["map"]["provider"];
                       setForm((prev) => {
                         const nextKey = provider === "maptiler" ? prev.map.maptiler_api_key : null;
+                        const uiProvider = provider as AppConfig["ui"]["map"]["provider"];
                         return {
                           ...prev,
                           map: {
@@ -1458,11 +1460,20 @@ const ConfigPage: React.FC = () => {
                             ...prev.ui,
                             map: {
                               ...prev.ui.map,
-                              provider: provider as AppConfig["ui"]["map"]["provider"],
+                              provider: uiProvider,
                               maptiler: {
                                 ...prev.ui.map.maptiler,
                                 key: provider === "maptiler" ? (nextKey ?? prev.ui.map.maptiler.key ?? null) : null,
                               },
+                              // Inicializar xyz con defaults si no existe
+                              xyz: provider === "xyz" ? (prev.ui.map.xyz ?? {
+                                urlTemplate: "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+                                attribution: "© Esri, Maxar, GeoEye, Earthstar Geographics, CNES/Airbus, USDA, USGS, AeroGRID, IGN, and the GIS User Community",
+                                minzoom: 0,
+                                maxzoom: 19,
+                                tileSize: 256,
+                                labelsOverlay: false,
+                              }) : prev.ui.map.xyz,
                             },
                           },
                         };
@@ -1534,6 +1545,219 @@ const ConfigPage: React.FC = () => {
                   </span>
                   {renderFieldError("map.maptiler_api_key")}
                 </div>
+              )}
+
+              {/* Configuración XYZ */}
+              {supports("ui.map.xyz") && form.ui.map.provider === "xyz" && (
+                <>
+                  {supports("ui.map.xyz.urlTemplate") && (
+                    <div className="config-field">
+                      <label htmlFor="xyz_url_template">URL Template</label>
+                      <input
+                        id="xyz_url_template"
+                        type="text"
+                        value={form.ui.map.xyz?.urlTemplate || ""}
+                        disabled={disableInputs}
+                        onChange={(event) => {
+                          const urlTemplate = event.target.value.trim();
+                          setForm((prev) => ({
+                            ...prev,
+                            ui: {
+                              ...prev.ui,
+                              map: {
+                                ...prev.ui.map,
+                                xyz: {
+                                  ...prev.ui.map.xyz,
+                                  urlTemplate,
+                                  attribution: prev.ui.map.xyz?.attribution || "",
+                                  minzoom: prev.ui.map.xyz?.minzoom ?? 0,
+                                  maxzoom: prev.ui.map.xyz?.maxzoom ?? 19,
+                                  tileSize: prev.ui.map.xyz?.tileSize ?? 256,
+                                  labelsOverlay: prev.ui.map.xyz?.labelsOverlay ?? false,
+                                },
+                              },
+                            },
+                          }));
+                          resetErrorsFor("ui.map.xyz.urlTemplate");
+                        }}
+                        placeholder="https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                      />
+                      {renderHelp("Plantilla de URL para los tiles (usa {z}, {x}, {y})")}
+                      {renderFieldError("ui.map.xyz.urlTemplate")}
+                    </div>
+                  )}
+
+                  {supports("ui.map.xyz.attribution") && (
+                    <div className="config-field">
+                      <label htmlFor="xyz_attribution">Atribución</label>
+                      <input
+                        id="xyz_attribution"
+                        type="text"
+                        value={form.ui.map.xyz?.attribution || ""}
+                        disabled={disableInputs}
+                        onChange={(event) => {
+                          const attribution = event.target.value.trim();
+                          setForm((prev) => ({
+                            ...prev,
+                            ui: {
+                              ...prev.ui,
+                              map: {
+                                ...prev.ui.map,
+                                xyz: {
+                                  ...prev.ui.map.xyz,
+                                  attribution,
+                                },
+                              },
+                            },
+                          }));
+                          resetErrorsFor("ui.map.xyz.attribution");
+                        }}
+                        placeholder="© Esri, Maxar, GeoEye..."
+                      />
+                      {renderHelp("Texto de atribución para mostrar en el mapa")}
+                      {renderFieldError("ui.map.xyz.attribution")}
+                    </div>
+                  )}
+
+                  {supports("ui.map.xyz.minzoom") && (
+                    <div className="config-field">
+                      <label htmlFor="xyz_minzoom">Zoom mínimo</label>
+                      <input
+                        id="xyz_minzoom"
+                        type="number"
+                        min="0"
+                        max="24"
+                        value={form.ui.map.xyz?.minzoom ?? 0}
+                        disabled={disableInputs}
+                        onChange={(event) => {
+                          const minzoom = Number(event.target.value);
+                          if (!Number.isNaN(minzoom)) {
+                            setForm((prev) => ({
+                              ...prev,
+                              ui: {
+                                ...prev.ui,
+                                map: {
+                                  ...prev.ui.map,
+                                  xyz: {
+                                    ...prev.ui.map.xyz,
+                                    minzoom,
+                                  },
+                                },
+                              },
+                            }));
+                            resetErrorsFor("ui.map.xyz.minzoom");
+                          }
+                        }}
+                      />
+                      {renderHelp("Nivel de zoom mínimo (0-24)")}
+                      {renderFieldError("ui.map.xyz.minzoom")}
+                    </div>
+                  )}
+
+                  {supports("ui.map.xyz.maxzoom") && (
+                    <div className="config-field">
+                      <label htmlFor="xyz_maxzoom">Zoom máximo</label>
+                      <input
+                        id="xyz_maxzoom"
+                        type="number"
+                        min="0"
+                        max="24"
+                        value={form.ui.map.xyz?.maxzoom ?? 19}
+                        disabled={disableInputs}
+                        onChange={(event) => {
+                          const maxzoom = Number(event.target.value);
+                          if (!Number.isNaN(maxzoom)) {
+                            setForm((prev) => ({
+                              ...prev,
+                              ui: {
+                                ...prev.ui,
+                                map: {
+                                  ...prev.ui.map,
+                                  xyz: {
+                                    ...prev.ui.map.xyz,
+                                    maxzoom,
+                                  },
+                                },
+                              },
+                            }));
+                            resetErrorsFor("ui.map.xyz.maxzoom");
+                          }
+                        }}
+                      />
+                      {renderHelp("Nivel de zoom máximo (0-24)")}
+                      {renderFieldError("ui.map.xyz.maxzoom")}
+                    </div>
+                  )}
+
+                  {supports("ui.map.xyz.tileSize") && (
+                    <div className="config-field">
+                      <label htmlFor="xyz_tile_size">Tamaño de tile</label>
+                      <input
+                        id="xyz_tile_size"
+                        type="number"
+                        min="64"
+                        max="512"
+                        step="64"
+                        value={form.ui.map.xyz?.tileSize ?? 256}
+                        disabled={disableInputs}
+                        onChange={(event) => {
+                          const tileSize = Number(event.target.value);
+                          if (!Number.isNaN(tileSize)) {
+                            setForm((prev) => ({
+                              ...prev,
+                              ui: {
+                                ...prev.ui,
+                                map: {
+                                  ...prev.ui.map,
+                                  xyz: {
+                                    ...prev.ui.map.xyz,
+                                    tileSize,
+                                  },
+                                },
+                              },
+                            }));
+                            resetErrorsFor("ui.map.xyz.tileSize");
+                          }
+                        }}
+                      />
+                      {renderHelp("Tamaño de los tiles en píxeles (64-512)")}
+                      {renderFieldError("ui.map.xyz.tileSize")}
+                    </div>
+                  )}
+
+                  {supports("ui.map.xyz.labelsOverlay") && (
+                    <div className="config-field config-field--checkbox">
+                      <label htmlFor="xyz_labels_overlay">
+                        <input
+                          id="xyz_labels_overlay"
+                          type="checkbox"
+                          checked={form.ui.map.xyz?.labelsOverlay ?? false}
+                          disabled={disableInputs}
+                          onChange={(event) => {
+                            const labelsOverlay = event.target.checked;
+                            setForm((prev) => ({
+                              ...prev,
+                              ui: {
+                                ...prev.ui,
+                                map: {
+                                  ...prev.ui.map,
+                                  xyz: {
+                                    ...prev.ui.map.xyz,
+                                    labelsOverlay,
+                                  },
+                                },
+                              },
+                            }));
+                            resetErrorsFor("ui.map.xyz.labelsOverlay");
+                          }}
+                        />
+                        Overlay de etiquetas OSM
+                      </label>
+                      {renderHelp("Añade etiquetas de OpenStreetMap encima del mapa raster para toponimia")}
+                      {renderFieldError("ui.map.xyz.labelsOverlay")}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>

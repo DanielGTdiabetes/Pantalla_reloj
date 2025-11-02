@@ -1,4 +1,4 @@
-type MapProvider = "maptiler" | "osm" | "openstreetmap" | string;
+type MapProvider = "maptiler" | "osm" | "openstreetmap" | "xyz" | string;
 
 export type MapProviderRequest = {
   provider?: MapProvider | null;

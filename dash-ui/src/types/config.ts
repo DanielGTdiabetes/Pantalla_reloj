@@ -51,6 +51,15 @@ export type MaptilerConfig = {
   styleUrlBright: string | null;
 };
 
+export type XyzConfig = {
+  urlTemplate: string;
+  attribution: string;
+  minzoom: number;
+  maxzoom: number;
+  tileSize: number;
+  labelsOverlay?: boolean;
+};
+
 export type MapConfig = {
   engine: "maplibre";
   style:
@@ -64,8 +73,9 @@ export type MapConfig = {
     | "bright"
     | "streets"
     | "satellite";
-  provider: "maptiler" | "osm" | "openstreetmap";
+  provider: "maptiler" | "osm" | "openstreetmap" | "xyz";
   maptiler: MaptilerConfig;
+  xyz?: XyzConfig;
   renderWorldCopies: boolean;
   interactive: boolean;
   controls: boolean;
@@ -79,7 +89,7 @@ export type MapConfig = {
 export type UIMapSettings = MapConfig;
 
 export type MapPreferences = {
-  provider: "maptiler" | "osm" | "openstreetmap";
+  provider: "maptiler" | "osm" | "openstreetmap" | "xyz";
   maptiler_api_key: string | null;
   model?: string | null;
 };
