@@ -1394,7 +1394,7 @@ export default function GeoScopeMap() {
       } else {
         // Restaurar vista fija por defecto (Castellón)
         const merged = withConfigDefaults(config);
-        const mapConfig = merged.ui_map;
+        const mapConfig = merged.ui?.map;
         const fixedConfig = mapConfig?.fixed;
         
         const centerLat = fixedConfig?.center?.lat ?? 39.98;
