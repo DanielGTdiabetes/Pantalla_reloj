@@ -1658,7 +1658,7 @@ const ConfigPage: React.FC = () => {
                           const minzoom = Number(event.target.value);
                           if (!Number.isNaN(minzoom)) {
                             setForm((prev) => {
-                              const existingXyz = prev.ui.map.xyz as XyzConfig | undefined;
+                              const existingXyz = (prev.ui.map as { xyz?: XyzConfig }).xyz;
                               const currentXyz: XyzConfig = existingXyz ?? {
                                 urlTemplate: existingXyz?.urlTemplate || "",
                                 attribution: existingXyz?.attribution || "",
@@ -1708,7 +1708,7 @@ const ConfigPage: React.FC = () => {
                           const maxzoom = Number(event.target.value);
                           if (!Number.isNaN(maxzoom)) {
                             setForm((prev) => {
-                              const existingXyz = prev.ui.map.xyz as XyzConfig | undefined;
+                              const existingXyz = (prev.ui.map as { xyz?: XyzConfig }).xyz;
                               const currentXyz: XyzConfig = existingXyz ?? {
                                 urlTemplate: existingXyz?.urlTemplate || "",
                                 attribution: existingXyz?.attribution || "",
@@ -1759,7 +1759,7 @@ const ConfigPage: React.FC = () => {
                           const tileSize = Number(event.target.value);
                           if (!Number.isNaN(tileSize)) {
                             setForm((prev) => {
-                              const existingXyz = prev.ui.map.xyz as XyzConfig | undefined;
+                              const existingXyz = (prev.ui.map as { xyz?: XyzConfig }).xyz;
                               const currentXyz: XyzConfig = existingXyz ?? {
                                 urlTemplate: existingXyz?.urlTemplate || "",
                                 attribution: existingXyz?.attribution || "",
@@ -1806,7 +1806,7 @@ const ConfigPage: React.FC = () => {
                           onChange={(event) => {
                             const labelsOverlay = event.target.checked;
                             setForm((prev) => {
-                              const existingXyz = prev.ui.map.xyz as XyzConfig | undefined;
+                              const existingXyz = (prev.ui.map as { xyz?: XyzConfig }).xyz;
                               const currentXyz: XyzConfig = existingXyz ?? {
                                 urlTemplate: existingXyz?.urlTemplate || "",
                                 attribution: existingXyz?.attribution || "",
