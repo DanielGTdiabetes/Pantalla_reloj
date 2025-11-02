@@ -308,3 +308,16 @@ export type GeocodePostalResponse = {
 export async function geocodePostalES(code: string) {
   return apiGet<GeocodePostalResponse>(`/api/geocode/es/postal?code=${encodeURIComponent(code)}`);
 }
+
+// Config Migration
+export type MigrateConfigResponse = {
+  ok: boolean;
+  version: number;
+  migrated: boolean;
+  message: string;
+  config?: unknown;
+};
+
+export async function migrateConfig(to: number = 2, backup: boolean = true) {
+  return apiPost<MigrateConfigResponse>(`/api/config/migrate?to=${to}&backup=${backup ? "true" : "false"}`, {});
+}

@@ -1,0 +1,115 @@
+{
+  "version": 2,
+  "ui": {
+    "layout": "grid-2-1",
+    "map": {
+      "engine": "maplibre",
+      "provider": "xyz",
+      "xyz": {
+        "urlTemplate": "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        "attribution": "© Esri, Maxar, Earthstar, CNES/Airbus, USDA, USGS, IGN, GIS User Community",
+        "minzoom": 0,
+        "maxzoom": 19,
+        "tileSize": 256
+      },
+      "labelsOverlay": {
+        "enabled": true,
+        "style": "carto-only-labels"
+      },
+      "viewMode": "fixed",
+      "fixed": {
+        "center": {
+          "lat": 39.98,
+          "lon": 0.20
+        },
+        "zoom": 7.8,
+        "bearing": 0,
+        "pitch": 0
+      },
+      "region": {
+        "postalCode": "12001"
+      }
+    },
+    "aemet": {
+      "enabled": true,
+      "warnings": {
+        "enabled": true,
+        "min_severity": "yellow"
+      },
+      "radar": {
+        "enabled": true,
+        "opacity": 0.6,
+        "speed": 1.0
+      },
+      "sat": {
+        "enabled": false,
+        "opacity": 0.5
+      }
+    },
+    "panel": {
+      "rotate": {
+        "enabled": true,
+        "order": [
+          "weather_now",
+          "forecast_week",
+          "luna",
+          "harvest",
+          "efemerides",
+          "news",
+          "calendar"
+        ],
+        "intervalSec": 12
+      },
+      "news": {
+        "feeds": [
+          "https://www.elperiodicomediterraneo.com/rss.html",
+          "https://www.xataka.com/feed"
+        ]
+      },
+      "efemerides": {
+        "source": "built-in"
+      }
+    }
+  },
+  "layers": {
+    "flights": {
+      "enabled": true,
+      "provider": "opensky",
+      "render_mode": "symbol_custom",
+      "max_items_view": 1200,
+      "symbol": {
+        "size_vh": 1.6,
+        "allow_overlap": true
+      },
+      "circle": {
+        "radius_vh": 0.9,
+        "color": "#FFD400",
+        "stroke_color": "#000000",
+        "stroke_width": 2.0
+      }
+    },
+    "ships": {
+      "enabled": true,
+      "provider": "aisstream",
+      "decimate": "grid",
+      "grid_px": 24,
+      "max_items_view": 420,
+      "symbol": {
+        "size_vh": 1.4,
+        "allow_overlap": true
+      },
+      "circle": {
+        "radius_vh": 0.8,
+        "color": "#5ad35a",
+        "stroke_color": "#002200",
+        "stroke_width": 2.0
+      }
+    }
+  },
+  "secrets": {
+    "opensky": {},
+    "google": {},
+    "aemet": {}
+  }
+}
+

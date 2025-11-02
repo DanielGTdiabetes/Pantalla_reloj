@@ -436,6 +436,9 @@ const ConfigPage: React.FC = () => {
   const [wifiConnectPassword, setWifiConnectPassword] = useState<Record<string, string>>({});
   const [wifiConnectError, setWifiConnectError] = useState<string | null>(null);
   const [wifiScanNotice, setWifiScanNotice] = useState<string | null>(null);
+  const [configVersion, setConfigVersion] = useState<number | null>(null);
+  const [migrating, setMigrating] = useState(false);
+  const [migrationResult, setMigrationResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   const isMountedRef = useRef(true);
 
@@ -974,6 +977,11 @@ const ConfigPage: React.FC = () => {
 
   const refreshConfig = useCallback(async () => {
     const cfg = await getConfig();
+    
+    // Detectar versión de configuración
+    const version = (cfg as { version?: number })?.version;
+    setConfigVersion(version ?? null);
+    
     setForm(withConfigDefaults(cfg ?? undefined));
     setShowMaptilerKey(false);
     setShowAemetKey(false);
@@ -1163,6 +1171,37 @@ const ConfigPage: React.FC = () => {
   useEffect(() => {
     void loadWifiStatus();
   }, [loadWifiStatus]);
+
+  const handleMigrateToV2 = useCallback(async () => {
+    if (migrating) {
+      return;
+    }
+    
+    setMigrating(true);
+    setMigrationResult(null);
+    setBanner(null);
+    
+    try {
+      const result = await migrateConfig(2, true);
+      if (result?.ok) {
+        setMigrationResult({ ok: true, message: result.message || "Migración completada exitosamente" });
+        setBanner({ kind: "success", text: "Configuración migrada a v2" });
+        setConfigVersion(2);
+        // Recargar configuración
+        await refreshConfig();
+      } else {
+        setMigrationResult({ ok: false, message: result?.message || "Error en la migración" });
+        setBanner({ kind: "error", text: "Error al migrar configuración" });
+      }
+    } catch (error) {
+      console.error("[ConfigPage] Error migrando configuración:", error);
+      const message = resolveApiErrorMessage(error, "Error al migrar configuración");
+      setMigrationResult({ ok: false, message });
+      setBanner({ kind: "error", text: message });
+    } finally {
+      setMigrating(false);
+    }
+  }, [migrating, refreshConfig]);
 
   const initialize = useCallback(async () => {
     setStatus("loading");
@@ -1360,6 +1399,27 @@ const ConfigPage: React.FC = () => {
       {banner && (
         <div className={`config-status config-status--${banner.kind}`} role="status">
           {banner.text}
+        </div>
+      )}
+
+      {configVersion !== null && configVersion !== 2 && (
+        <div className="config-status config-status--warning" role="alert">
+          <p>
+            <strong>Configuración v{configVersion} detectada.</strong> Se recomienda migrar a v2 para acceder a todas las nuevas funcionalidades.
+          </p>
+          <button
+            type="button"
+            onClick={() => void handleMigrateToV2()}
+            disabled={migrating || !isReady}
+            className="config-button primary"
+          >
+            {migrating ? "Migrando..." : "Migrar a v2"}
+          </button>
+          {migrationResult && (
+            <div className={`config-status config-status--${migrationResult.ok ? "success" : "error"}`} style={{ marginTop: "8px" }}>
+              {migrationResult.message}
+            </div>
+          )}
         </div>
       )}
 

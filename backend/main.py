@@ -1477,24 +1477,23 @@ def migrate_config_endpoint(to: int = 2, backup: bool = True) -> Dict[str, Any]:
             postal_code = config_v2.get("ui", {}).get("map", {}).get("region", {}).get("postalCode")
             if postal_code:
                 try:
-                    result = geocode_postal_es(postal_code)
-                    if result and result.get("ok"):
-                        lat = result.get("lat")
-                        lon = result.get("lon")
-                        if lat is not None and lon is not None:
-                            if "ui" in config_v2 and "map" in config_v2["ui"]:
-                                if "fixed" in config_v2["ui"]["map"]:
-                                    config_v2["ui"]["map"]["fixed"]["center"] = {
-                                        "lat": lat,
-                                        "lon": lon
-                                    }
-                                else:
-                                    config_v2["ui"]["map"]["fixed"] = {
-                                        "center": {"lat": lat, "lon": lon},
-                                        "zoom": 7.8,
-                                        "bearing": 0,
-                                        "pitch": 0
-                                    }
+                    from .main import _geocode_postal_es
+                    coords = _geocode_postal_es(postal_code)
+                    if coords:
+                        lat, lon = coords
+                        if "ui" in config_v2 and "map" in config_v2["ui"]:
+                            if "fixed" in config_v2["ui"]["map"]:
+                                config_v2["ui"]["map"]["fixed"]["center"] = {
+                                    "lat": lat,
+                                    "lon": lon
+                                }
+                            else:
+                                config_v2["ui"]["map"]["fixed"] = {
+                                    "center": {"lat": lat, "lon": lon},
+                                    "zoom": 7.8,
+                                    "bearing": 0,
+                                    "pitch": 0
+                                }
                         logger.info("Geocodificación aplicada para CP %s: %s, %s", postal_code, lat, lon)
                 except Exception as e:
                     logger.warning("Error geocodificando CP %s: %s", postal_code, e)
