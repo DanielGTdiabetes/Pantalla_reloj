@@ -907,9 +907,8 @@ export default class AircraftLayer implements Layer {
     const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 480;
     const radiusVh = this.circleOptions.radiusVh;
     const radiusPixels = (radiusVh / 100) * viewportHeight;
-    // Usar un valor constante basado en viewport height actual
-    // Nota: Esto se recalculará cuando el viewport cambie (necesitaría listener)
-    return radiusPixels;
+    // Retornar como número literal (ExpressionSpecification puede ser un número)
+    return radiusPixels as unknown as maplibregl.ExpressionSpecification;
   }
 
   private getCustomSymbolSizeExpression(): maplibregl.ExpressionSpecification {
@@ -917,9 +916,8 @@ export default class AircraftLayer implements Layer {
     const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 480;
     const sizeVh = this.symbolOptions?.size_vh ?? 1.6;
     const sizePixels = (sizeVh / 100) * viewportHeight;
-    // Usar un valor constante basado en viewport height actual
-    // Nota: Esto se recalculará cuando el viewport cambie (necesitaría listener)
-    return sizePixels;
+    // Retornar como número literal (ExpressionSpecification puede ser un número)
+    return sizePixels as unknown as maplibregl.ExpressionSpecification;
   }
 
   private applyStyleScale(): void {

@@ -1069,8 +1069,23 @@ const mergeShipsLayer = (candidate: unknown): ShipsLayerConfig => {
     ),
     styleScale: clampNumber(toNumber(source.styleScale, fallback.styleScale), 0.1, 4.0),
     render_mode: sanitizeShipsRenderMode(source.render_mode, fallback.render_mode ?? "auto"),
-    circle: mergeCircleOptions(circleSource as Partial<FlightsLayerCircleConfig>, circleFallback as FlightsLayerCircleConfig) as ShipsLayerCircleConfig,
-    symbol: mergeSymbolOptions(symbolSource as Partial<FlightsLayerSymbolConfig>, symbolFallback as FlightsLayerSymbolConfig) as ShipsLayerSymbolConfig,
+    circle: mergeCircleOptions(
+      (source.circle as Partial<ShipsLayerCircleConfig>) ?? {},
+      (fallback.circle as ShipsLayerCircleConfig) ?? {
+        radius_vh: 0.8,
+        opacity: 1.0,
+        color: "#5ad35a",
+        stroke_color: "#002200",
+        stroke_width: 2.0,
+      }
+    ) as ShipsLayerCircleConfig,
+    symbol: mergeSymbolOptions(
+      (source.symbol as Partial<ShipsLayerSymbolConfig>) ?? {},
+      (fallback.symbol as ShipsLayerSymbolConfig) ?? {
+        size_vh: 1.4,
+        allow_overlap: true,
+      }
+    ) as ShipsLayerSymbolConfig,
     cine_focus: {
       enabled: toBoolean(cineFocusSource.enabled, cineFocusFallback.enabled),
       mode: (cineFocusSource.mode === "cap" || cineFocusSource.mode === "radar")

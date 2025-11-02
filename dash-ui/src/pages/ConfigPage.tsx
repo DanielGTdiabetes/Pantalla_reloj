@@ -24,6 +24,8 @@ import {
   type WiFiNetwork,
   type WiFiStatusResponse,
   type OpenSkyStatus,
+  migrateConfig,
+  type MigrateConfigResponse,
 } from "../lib/api";
 import type { AppConfig, GlobalLayersConfig, MapCinemaBand, MapConfig, XyzConfig } from "../types/config";
 
@@ -4121,21 +4123,21 @@ const ConfigPage: React.FC = () => {
                     </div>
                   )}
 
-                  {supports("layers.flights.circle.radius_base") && (
+                  {supports("layers.flights.circle.radius_vh") && (
                     <div className="config-field">
-                      <label htmlFor="flights_circle_radius_base">Radio base de círculo</label>
+                      <label htmlFor="flights_circle_radius_vh">Radio en viewport height (%)</label>
                       <input
-                        id="flights_circle_radius_base"
+                        id="flights_circle_radius_vh"
                         type="number"
-                        min="0.5"
-                        max="64"
+                        min="0.1"
+                        max="10"
                         step="0.1"
-                        value={form.layers.flights.circle?.radius_base ?? 3}
+                        value={form.layers.flights.circle?.radius_vh ?? 0.9}
                         disabled={disableInputs || !form.layers.flights.enabled}
                         onChange={(event) => {
                           const value = Number(event.target.value);
                           if (!Number.isNaN(value)) {
-                            const radius_base = Math.max(0.5, Math.min(64, value));
+                            const radius_vh = Math.max(0.1, Math.min(10, value));
                             setForm((prev) => ({
                               ...prev,
                               layers: {
@@ -4144,54 +4146,17 @@ const ConfigPage: React.FC = () => {
                                   ...prev.layers.flights,
                                   circle: {
                                     ...(prev.layers.flights.circle ?? {}),
-                                    radius_base,
+                                    radius_vh,
                                   },
                                 },
                               },
                             }));
-                            resetErrorsFor("layers.flights.circle.radius_base");
+                            resetErrorsFor("layers.flights.circle.radius_vh");
                           }
                         }}
                       />
-                      {renderHelp("Tamaño base del círculo en zoom bajo (0.5 - 64)")}
-                      {renderFieldError("layers.flights.circle.radius_base")}
-                    </div>
-                  )}
-
-                  {supports("layers.flights.circle.radius_zoom_scale") && (
-                    <div className="config-field">
-                      <label htmlFor="flights_circle_radius_scale">Escala de radio por zoom</label>
-                      <input
-                        id="flights_circle_radius_scale"
-                        type="number"
-                        min="0.25"
-                        max="8"
-                        step="0.1"
-                        value={form.layers.flights.circle?.radius_zoom_scale ?? 1.2}
-                        disabled={disableInputs || !form.layers.flights.enabled}
-                        onChange={(event) => {
-                          const value = Number(event.target.value);
-                          if (!Number.isNaN(value)) {
-                            const radius_zoom_scale = Math.max(0.25, Math.min(8, value));
-                            setForm((prev) => ({
-                              ...prev,
-                              layers: {
-                                ...prev.layers,
-                                flights: {
-                                  ...prev.layers.flights,
-                                  circle: {
-                                    ...(prev.layers.flights.circle ?? {}),
-                                    radius_zoom_scale,
-                                  },
-                                },
-                              },
-                            }));
-                            resetErrorsFor("layers.flights.circle.radius_zoom_scale");
-                          }
-                        }}
-                      />
-                      {renderHelp("Factor de incremento del radio al acercar el mapa (0.25 - 8)")}
-                      {renderFieldError("layers.flights.circle.radius_zoom_scale")}
+                      {renderHelp("Radio del círculo en porcentaje del viewport height (0.1 - 10)")}
+                      {renderFieldError("layers.flights.circle.radius_vh")}
                     </div>
                   )}
 

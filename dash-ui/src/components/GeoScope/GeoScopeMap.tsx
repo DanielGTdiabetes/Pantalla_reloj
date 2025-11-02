@@ -2522,7 +2522,7 @@ export default function GeoScopeMap() {
       const ensureFlightsLayerHandler = handleEnsureFlightsLayer;
 
       // Inicializar sistema de capas cuando el mapa esté listo
-      map.once("load", () => {
+      map.once("load", async () => {
         if (destroyed || !mapRef.current) return;
         
         const layerRegistry = new LayerRegistry(map);
