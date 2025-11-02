@@ -233,15 +233,31 @@ export const OverlayRotator: React.FC = () => {
       const dayName = ensurePlainText(day.dayName || day.day_name || day.name);
       const condition = sanitizeRichText(day.condition || day.weather || day.summary || day.description);
       
-      const tempMin = typeof day.temp_min === "number" ? day.temp_min
-        : typeof day.temp?.min === "number" ? day.temp.min
-        : typeof day.min === "number" ? day.min
-        : null;
+      // Extraer temperatura mínima
+      let tempMin: number | null = null;
+      if (typeof day.temp_min === "number") {
+        tempMin = day.temp_min;
+      } else if (day.temp && typeof day.temp === "object") {
+        const tempObj = day.temp as Record<string, unknown>;
+        if (typeof tempObj.min === "number") {
+          tempMin = tempObj.min;
+        }
+      } else if (typeof day.min === "number") {
+        tempMin = day.min;
+      }
       
-      const tempMax = typeof day.temp_max === "number" ? day.temp_max
-        : typeof day.temp?.max === "number" ? day.temp.max
-        : typeof day.max === "number" ? day.max
-        : null;
+      // Extraer temperatura máxima
+      let tempMax: number | null = null;
+      if (typeof day.temp_max === "number") {
+        tempMax = day.temp_max;
+      } else if (day.temp && typeof day.temp === "object") {
+        const tempObj = day.temp as Record<string, unknown>;
+        if (typeof tempObj.max === "number") {
+          tempMax = tempObj.max;
+        }
+      } else if (typeof day.max === "number") {
+        tempMax = day.max;
+      }
       
       const precipitation = typeof day.precipitation === "number" ? day.precipitation
         : typeof day.precip === "number" ? day.precip
