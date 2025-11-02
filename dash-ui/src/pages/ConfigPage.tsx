@@ -430,6 +430,11 @@ const ConfigPage: React.FC = () => {
   const [openskyStatusError, setOpenSkyStatusError] = useState<string | null>(null);
   const [testingCalendar, setTestingCalendar] = useState(false);
   const [calendarTestResult, setCalendarTestResult] = useState<{ ok: boolean; message: string; eventCount?: number } | null>(null);
+  const [showGoogleCalendarKey, setShowGoogleCalendarKey] = useState(false);
+  const [googleCalendarKeyInput, setGoogleCalendarKeyInput] = useState("");
+  const [googleCalendarIdInput, setGoogleCalendarIdInput] = useState("");
+  const [icsUrlInput, setIcsUrlInput] = useState("");
+  const [icsPathInput, setIcsPathInput] = useState("");
   
   // WiFi state
   const [wifiNetworkList, setWifiNetworkList] = useState<WiFiNetwork[]>([]);
@@ -750,13 +755,25 @@ const ConfigPage: React.FC = () => {
       return;
     }
 
-    if (!form.calendar.enabled) {
-      setCalendarTestResult({ ok: false, message: "Activa Google Calendar primero" });
-      return;
+    let enabled = false;
+    let apiKey = "";
+    let calendarId = "";
+
+    if (configVersion === 2) {
+      const v2 = form as unknown as { panels?: { calendar?: { enabled?: boolean; provider?: string } }; secrets?: { google?: { api_key?: string; calendar_id?: string } } };
+      enabled = v2.panels?.calendar?.enabled ?? false;
+      apiKey = googleCalendarKeyInput.trim() || v2.secrets?.google?.api_key || "";
+      calendarId = googleCalendarIdInput.trim() || v2.secrets?.google?.calendar_id || "";
+    } else {
+      enabled = form.calendar?.enabled ?? false;
+      apiKey = form.calendar?.google_api_key?.trim() || "";
+      calendarId = form.calendar?.google_calendar_id?.trim() || "";
     }
 
-    const apiKey = form.calendar.google_api_key?.trim() || "";
-    const calendarId = form.calendar.google_calendar_id?.trim() || "";
+    if (!enabled) {
+      setCalendarTestResult({ ok: false, message: "Activa el calendario primero" });
+      return;
+    }
 
     if (!apiKey && !calendarId) {
       setCalendarTestResult({ ok: false, message: "Introduce al menos la API Key o el Calendar ID" });
@@ -785,7 +802,7 @@ const ConfigPage: React.FC = () => {
     } finally {
       setTestingCalendar(false);
     }
-  }, [form.calendar.enabled, form.calendar.google_api_key, form.calendar.google_calendar_id, testingCalendar]);
+  }, [configVersion, form, googleCalendarKeyInput, googleCalendarIdInput, testingCalendar]);
 
   const handleToggleAisstreamKeyVisibility = useCallback(() => {
     setShowAisstreamKey((prev) => {
@@ -1013,6 +1030,15 @@ const ConfigPage: React.FC = () => {
     setOpenWeatherKeyInput("");
     setOpenSkyStatusData(null);
     setOpenSkyStatusError(null);
+    setShowGoogleCalendarKey(false);
+    setGoogleCalendarKeyInput("");
+    setGoogleCalendarIdInput("");
+    setIcsUrlInput("");
+    setIcsPathInput("");
+    setCalendarTestResult(null);
+    
+    // Nota: Los secrets no se devuelven en GET /api/config por seguridad.
+    // El usuario debe introducirlos desde la UI.
   }, []);
 
   // WiFi functions
@@ -1369,10 +1395,45 @@ const ConfigPage: React.FC = () => {
       let saved: AppConfig;
       if (configVersion === 2) {
         // Construir objeto v2 completo con secrets
+        // Extraer secrets desde inputs locales o del payload
+        const v2Form = form as unknown as { 
+          panels?: { calendar?: { enabled?: boolean; provider?: string } }; 
+          secrets?: { 
+            google?: { api_key?: string; calendar_id?: string }; 
+            calendar_ics?: { url?: string; path?: string };
+            opensky?: Record<string, unknown>;
+            aemet?: Record<string, unknown>;
+          } 
+        };
+        
+        const secrets: import("../types/config_v2").SecretsConfig = {
+          opensky: v2Form.secrets?.opensky || {},
+          aemet: v2Form.secrets?.aemet || {},
+          google: {
+            api_key: (showGoogleCalendarKey && googleCalendarKeyInput.trim()) 
+              ? googleCalendarKeyInput.trim() 
+              : undefined,
+            calendar_id: googleCalendarIdInput.trim() 
+              ? googleCalendarIdInput.trim() 
+              : undefined,
+          },
+          calendar_ics: {
+            url: icsUrlInput.trim() ? icsUrlInput.trim() : undefined,
+            path: icsPathInput.trim() ? icsPathInput.trim() : undefined,
+          },
+        };
+        
+        // Asegurar que panels.calendar esté presente si se está editando
+        const panels: import("../types/config_v2").PanelsConfigV2 = {
+          ...(v2Form.panels as import("../types/config_v2").PanelsConfigV2 || {}),
+          calendar: v2Form.panels?.calendar || { enabled: false, provider: "google" },
+        };
+        
         const v2Payload: import("../types/config_v2").AppConfigV2 = {
           ...payload,
           version: 2,
-          secrets: payload.secrets || {},
+          panels,
+          secrets,
         } as unknown as import("../types/config_v2").AppConfigV2;
         
         const v2Saved = await saveConfigV2(v2Payload);
@@ -3135,23 +3196,43 @@ const ConfigPage: React.FC = () => {
           </div>
         )}
 
-        {supports("calendar") && (
+        {(supports("calendar") || configVersion === 2) && (
           <div className="config-card">
             <div>
-              <h2>Google Calendar</h2>
-              <p>Configura la integración con Google Calendar para mostrar eventos.</p>
+              <h2>Calendario</h2>
+              <p>Configura la integración con Google Calendar o un archivo ICS para mostrar eventos.</p>
             </div>
             <div className="config-grid">
-              {supports("calendar.enabled") && (
-                <div className="config-field config-field--checkbox">
-                  <label htmlFor="calendar_enabled">
-                    <input
-                      id="calendar_enabled"
-                      type="checkbox"
-                      checked={form.calendar.enabled}
-                      disabled={disableInputs}
-                      onChange={(event) => {
-                        const enabled = event.target.checked;
+              {/* Toggle enabled */}
+              <div className="config-field config-field--checkbox">
+                <label htmlFor="calendar_enabled">
+                  <input
+                    id="calendar_enabled"
+                    type="checkbox"
+                    checked={
+                      configVersion === 2
+                        ? (form as unknown as { panels?: { calendar?: { enabled?: boolean } } }).panels?.calendar?.enabled ?? false
+                        : form.calendar?.enabled ?? false
+                    }
+                    disabled={disableInputs}
+                    onChange={(event) => {
+                      const enabled = event.target.checked;
+                      if (configVersion === 2) {
+                        setForm((prev) => {
+                          const v2 = prev as unknown as { panels?: { calendar?: { enabled?: boolean; provider?: string } } };
+                          return {
+                            ...prev,
+                            panels: {
+                              ...v2.panels,
+                              calendar: {
+                                ...v2.panels?.calendar,
+                                enabled,
+                                provider: v2.panels?.calendar?.provider || "google",
+                              },
+                            },
+                          } as unknown as AppConfig;
+                        });
+                      } else {
                         setForm((prev) => ({
                           ...prev,
                           calendar: {
@@ -3159,117 +3240,180 @@ const ConfigPage: React.FC = () => {
                             enabled,
                           },
                         }));
-                        resetErrorsFor("calendar.enabled");
-                      }}
-                    />
-                    Activar Google Calendar
-                  </label>
-                  {renderHelp("Habilita la integración con Google Calendar")}
-                </div>
-              )}
-
-              {supports("calendar.google_api_key") && (
-                <div className="config-field">
-                  <label htmlFor="calendar_api_key">API Key de Google Calendar</label>
-                  <input
-                    id="calendar_api_key"
-                    type="text"
-                    value={form.calendar.google_api_key || ""}
-                    disabled={disableInputs || !form.calendar.enabled}
-                    onChange={(event) => {
-                      const api_key = event.target.value.trim() || null;
-                      setForm((prev) => ({
-                        ...prev,
-                        calendar: {
-                          ...prev.calendar,
-                          google_api_key: api_key,
-                        },
-                      }));
-                      resetErrorsFor("calendar.google_api_key");
-                    }}
-                    placeholder="AIza..."
-                  />
-                  {renderHelp("API key de Google Calendar (opcional, se puede obtener en Google Cloud Console)")}
-                  {renderFieldError("calendar.google_api_key")}
-                </div>
-              )}
-
-              {supports("calendar.google_calendar_id") && (
-                <div className="config-field">
-                  <label htmlFor="calendar_calendar_id">Calendar ID</label>
-                  <input
-                    id="calendar_calendar_id"
-                    type="text"
-                    value={form.calendar.google_calendar_id || ""}
-                    disabled={disableInputs || !form.calendar.enabled}
-                    onChange={(event) => {
-                      const calendar_id = event.target.value.trim() || null;
-                      setForm((prev) => ({
-                        ...prev,
-                        calendar: {
-                          ...prev.calendar,
-                          google_calendar_id: calendar_id,
-                        },
-                      }));
-                      resetErrorsFor("calendar.google_calendar_id");
-                    }}
-                    placeholder="primary o example@gmail.com"
-                  />
-                  {renderHelp("ID del calendario de Google (ej: 'primary' o dirección de email)")}
-                  {renderFieldError("calendar.google_calendar_id")}
-                </div>
-              )}
-
-              {/* Botón de prueba para Google Calendar */}
-              <div className="config-field">
-                <div className="config-field__actions">
-                  <button
-                    type="button"
-                    className="config-button"
-                    onClick={() => void handleTestCalendar()}
-                    disabled={disableInputs || testingCalendar || !form.calendar.enabled}
-                  >
-                    {testingCalendar ? "Comprobando…" : "Probar conexión"}
-                  </button>
-                </div>
-                {calendarTestResult && (
-                  <div
-                    className={`config-field__hint ${
-                      calendarTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
-                    }`}
-                  >
-                    {calendarTestResult.message}
-                  </div>
-                )}
-              </div>
-
-              {supports("calendar.days_ahead") && (
-                <div className="config-field">
-                  <label htmlFor="calendar_days_ahead">Días adelante</label>
-                  <input
-                    id="calendar_days_ahead"
-                    type="number"
-                    min="1"
-                    max="90"
-                    value={form.calendar.days_ahead}
-                    disabled={disableInputs || !form.calendar.enabled}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (!Number.isNaN(value)) {
-                        setForm((prev) => ({
-                          ...prev,
-                          calendar: {
-                            ...prev.calendar,
-                            days_ahead: Math.max(1, Math.min(90, Math.round(value))),
-                          },
-                        }));
-                        resetErrorsFor("calendar.days_ahead");
                       }
                     }}
                   />
-                  {renderHelp("Número de días adelante para obtener eventos (1-90)")}
-                  {renderFieldError("calendar.days_ahead")}
+                  Activar Calendario
+                </label>
+                {renderHelp("Habilita la integración con calendario")}
+              </div>
+
+              {/* Provider selector (solo v2) */}
+              {configVersion === 2 && (
+                <div className="config-field">
+                  <label htmlFor="calendar_provider">Proveedor</label>
+                  <select
+                    id="calendar_provider"
+                    value={(form as unknown as { panels?: { calendar?: { provider?: string } } }).panels?.calendar?.provider || "google"}
+                    disabled={disableInputs || !((form as unknown as { panels?: { calendar?: { enabled?: boolean } } }).panels?.calendar?.enabled)}
+                    onChange={(event) => {
+                      const provider = event.target.value as "google" | "ics";
+                      setForm((prev) => {
+                        const v2 = prev as unknown as { panels?: { calendar?: { enabled?: boolean; provider?: string } } };
+                        return {
+                          ...prev,
+                          panels: {
+                            ...v2.panels,
+                            calendar: {
+                              ...v2.panels?.calendar,
+                              enabled: v2.panels?.calendar?.enabled ?? false,
+                              provider,
+                            },
+                          },
+                        } as unknown as AppConfig;
+                      });
+                    }}
+                  >
+                    <option value="google">Google Calendar</option>
+                    <option value="ics">ICS (iCalendar)</option>
+                  </select>
+                  {renderHelp("Selecciona el proveedor de calendario")}
                 </div>
+              )}
+
+              {/* Google Calendar fields */}
+              {((configVersion === 2 && (form as unknown as { panels?: { calendar?: { provider?: string } } }).panels?.calendar?.provider === "google") || !configVersion || configVersion !== 2) && (
+                <>
+                  <div className="config-field">
+                    <label htmlFor="calendar_api_key">API Key de Google Calendar</label>
+                    <div className="config-field__input-group">
+                      {showGoogleCalendarKey ? (
+                        <input
+                          id="calendar_api_key"
+                          type="text"
+                          value={googleCalendarKeyInput}
+                          disabled={disableInputs || (configVersion === 2 && !((form as unknown as { panels?: { calendar?: { enabled?: boolean } } }).panels?.calendar?.enabled))}
+                          onChange={(event) => {
+                            setGoogleCalendarKeyInput(event.target.value);
+                          }}
+                          placeholder="AIza..."
+                        />
+                      ) : (
+                        <input
+                          id="calendar_api_key_masked"
+                          type="text"
+                          value={googleCalendarKeyInput ? "••••••••" : ""}
+                          readOnly
+                          disabled
+                          placeholder="Sin clave guardada"
+                        />
+                      )}
+                      <button
+                        type="button"
+                        className="config-button"
+                        onClick={() => {
+                          setShowGoogleCalendarKey((prev) => !prev);
+                          if (!showGoogleCalendarKey && !googleCalendarKeyInput) {
+                            // Cargar desde config si existe
+                            const v2 = form as unknown as { secrets?: { google?: { api_key?: string } } };
+                            if (v2.secrets?.google?.api_key) {
+                              setGoogleCalendarKeyInput(v2.secrets.google.api_key);
+                            }
+                          }
+                        }}
+                        disabled={disableInputs || (configVersion === 2 && !((form as unknown as { panels?: { calendar?: { enabled?: boolean } } }).panels?.calendar?.enabled))}
+                      >
+                        {showGoogleCalendarKey ? "Ocultar" : "Mostrar/Añadir"}
+                      </button>
+                    </div>
+                    {renderHelp("API key de Google Calendar (opcional, se puede obtener en Google Cloud Console)")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="calendar_calendar_id">Calendar ID</label>
+                    <input
+                      id="calendar_calendar_id"
+                      type="text"
+                      value={googleCalendarIdInput}
+                      disabled={disableInputs || (configVersion === 2 && !((form as unknown as { panels?: { calendar?: { enabled?: boolean } } }).panels?.calendar?.enabled))}
+                      onChange={(event) => {
+                        setGoogleCalendarIdInput(event.target.value);
+                      }}
+                      placeholder="primary o example@gmail.com"
+                    />
+                    {renderHelp("ID del calendario de Google (ej: 'primary' o dirección de email)")}
+                  </div>
+
+                  {/* Botón de prueba para Google Calendar */}
+                  <div className="config-field">
+                    <div className="config-field__actions">
+                      <button
+                        type="button"
+                        className="config-button"
+                        onClick={() => void handleTestCalendar()}
+                        disabled={
+                          disableInputs ||
+                          testingCalendar ||
+                          (configVersion === 2 && !((form as unknown as { panels?: { calendar?: { enabled?: boolean } } }).panels?.calendar?.enabled))
+                        }
+                      >
+                        {testingCalendar ? "Comprobando…" : "Probar conexión"}
+                      </button>
+                    </div>
+                    {calendarTestResult && (
+                      <div
+                        className={`config-field__hint ${
+                          calendarTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                        }`}
+                      >
+                        {calendarTestResult.message}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* ICS fields (solo v2) */}
+              {configVersion === 2 && (form as unknown as { panels?: { calendar?: { provider?: string } } }).panels?.calendar?.provider === "ics" && (
+                <>
+                  <div className="config-field">
+                    <label htmlFor="ics_url">URL del archivo ICS</label>
+                    <input
+                      id="ics_url"
+                      type="url"
+                      value={icsUrlInput}
+                      disabled={disableInputs || !((form as unknown as { panels?: { calendar?: { enabled?: boolean } } }).panels?.calendar?.enabled)}
+                      onChange={(event) => {
+                        setIcsUrlInput(event.target.value);
+                        // Limpiar path si se introduce URL
+                        if (event.target.value.trim()) {
+                          setIcsPathInput("");
+                        }
+                      }}
+                      placeholder="https://ejemplo.com/mi.ics"
+                    />
+                    {renderHelp("URL HTTP/HTTPS del archivo ICS (o deja vacío y usa Path)")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="ics_path">Ruta local del archivo ICS</label>
+                    <input
+                      id="ics_path"
+                      type="text"
+                      value={icsPathInput}
+                      disabled={disableInputs || !((form as unknown as { panels?: { calendar?: { enabled?: boolean } } }).panels?.calendar?.enabled)}
+                      onChange={(event) => {
+                        setIcsPathInput(event.target.value);
+                        // Limpiar URL si se introduce path
+                        if (event.target.value.trim()) {
+                          setIcsUrlInput("");
+                        }
+                      }}
+                      placeholder="/var/lib/pantalla-reloj/mi.ics"
+                    />
+                    {renderHelp("Ruta local del archivo ICS legible por el servicio (o deja vacío y usa URL)")}
+                  </div>
+                </>
               )}
             </div>
           </div>

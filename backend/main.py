@@ -444,12 +444,13 @@ def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
     """Construye configuración pública v2 (sin secrets)."""
     payload = config.model_dump(mode="json", exclude_none=True)
     
-    # Secrets ya no se exponen en la API pública
+    # Secrets ya no se exponen en la API pública (solo metadata vacía)
     if "secrets" in payload:
         payload["secrets"] = {
             "opensky": {},
             "google": {},
-            "aemet": {}
+            "aemet": {},
+            "calendar_ics": {},
         }
     
     return payload
