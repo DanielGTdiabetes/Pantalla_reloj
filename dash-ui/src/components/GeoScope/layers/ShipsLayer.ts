@@ -226,11 +226,12 @@ export default class ShipsLayer implements Layer {
     }
 
     this.onMouseEnter = (event) => {
-      if (!(event.features && event.features.length > 0)) {
+      const features = Array.isArray(event.features) ? event.features : [];
+      if (features.length === 0) {
         return;
       }
       map.getCanvas().style.cursor = "pointer";
-      const feature = event.features[0];
+      const feature = features[0];
       if (!feature.properties) {
         return;
       }
@@ -262,7 +263,8 @@ export default class ShipsLayer implements Layer {
     };
 
     this.onMouseMove = (event) => {
-      if (!(event.features && event.features.length > 0 && this.hoveredFeatureId)) {
+      const features = Array.isArray(event.features) ? event.features : [];
+      if (features.length === 0 || !this.hoveredFeatureId) {
         return;
       }
       const popup = getExistingPopup(map);

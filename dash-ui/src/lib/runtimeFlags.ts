@@ -104,7 +104,7 @@ const kioskEnabledFromEnv = () => {
 
 const isProduction = (): boolean => {
   if (typeof import.meta !== "undefined" && typeof import.meta.env !== "undefined") {
-    return Boolean(import.meta.env.PROD);
+    return Boolean((import.meta.env as { PROD?: boolean }).PROD);
   }
   const nodeProcess = getNodeProcess();
   if (typeof nodeProcess?.env?.NODE_ENV === "string") {

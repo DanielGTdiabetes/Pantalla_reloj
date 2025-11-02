@@ -6,6 +6,7 @@ const isFunction = (value: unknown): value is (...args: unknown[]) => unknown =>
 
 type GeoJSONSourceWithData = GeoJSONSource & {
   type: "geojson";
+  setData(data: unknown): void;
 };
 
 type SourceCandidate = {
@@ -21,11 +22,16 @@ export const isGeoJSONSource = (
   return (source as SourceCandidate).type === "geojson";
 };
 
-export const getExistingPopup = (map: maplibregl.Map): Popup | undefined => {
+type PopupWithMethods = Popup & {
+  remove(): void;
+  setLngLat(lngLat: { lng: number; lat: number }): PopupWithMethods;
+};
+
+export const getExistingPopup = (map: maplibregl.Map): PopupWithMethods | undefined => {
   const candidate = (map as maplibregl.Map & { getPopup?: () => Popup | null }).getPopup;
   if (!isFunction(candidate)) {
     return undefined;
   }
   const popup = candidate.call(map);
-  return popup ?? undefined;
+  return popup ? (popup as PopupWithMethods) : undefined;
 };

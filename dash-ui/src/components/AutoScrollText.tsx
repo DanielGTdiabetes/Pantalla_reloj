@@ -1,5 +1,4 @@
 import React, {
-  type CSSProperties,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -123,8 +122,8 @@ export const AutoScrollText: React.FC<AutoScrollTextProps> = ({
   const isActive = enabled && shouldScroll;
   const animationDuration = isActive ? Math.max(duration, 0.5) : 0;
 
-  const containerStyle = useMemo<CSSProperties>(() => {
-    return { "--ticker-gap": `${sanitizedGap}px` } as CSSProperties;
+  const containerStyle = useMemo<React.CSSProperties>(() => {
+    return { "--ticker-gap": `${sanitizedGap}px` } as React.CSSProperties;
   }, [sanitizedGap]);
 
   return (

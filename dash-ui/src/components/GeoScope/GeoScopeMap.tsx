@@ -1132,23 +1132,37 @@ export default function GeoScopeMap() {
               }
 
               const cinema = cinemaRef.current;
+              if (!cinema) {
+                animationFrameRef.current = requestAnimationFrame(stepPan);
+                return;
+              }
               const totalBands = cinema.bands.length;
               if (!totalBands) {
                 animationFrameRef.current = requestAnimationFrame(stepPan);
                 return;
               }
 
-              const currentIndex = ((bandIndexRef.current % totalBands) + totalBands) % totalBands;
+              const currentBandIndex = bandIndexRef.current;
+              if (currentBandIndex === null || currentBandIndex === undefined) {
+                animationFrameRef.current = requestAnimationFrame(stepPan);
+                return;
+              }
+              const currentIndex = ((currentBandIndex % totalBands) + totalBands) % totalBands;
               const currentBand = cinema.bands[currentIndex];
               if (!currentBand) {
                 animationFrameRef.current = requestAnimationFrame(stepPan);
                 return;
               }
 
-              viewStateRef.current.lat = currentBand.lat;
-              viewStateRef.current.zoom = currentBand.zoom;
-              viewStateRef.current.pitch = currentBand.pitch;
-              viewStateRef.current.bearing = 0;
+              const viewState = viewStateRef.current;
+              if (!viewState) {
+                animationFrameRef.current = requestAnimationFrame(stepPan);
+                return;
+              }
+              viewState.lat = currentBand.lat;
+              viewState.zoom = currentBand.zoom;
+              viewState.pitch = currentBand.pitch;
+              viewState.bearing = 0;
               const minZoom = Math.min(
                 Number.isFinite(currentBand.minZoom) ? currentBand.minZoom : currentBand.zoom,
                 currentBand.zoom
@@ -1166,8 +1180,15 @@ export default function GeoScopeMap() {
                 MAX_MOTION_AMPLITUDE
               );
               const travel = Math.max(amplitude * 2, 1);
-              const deltaProgress = travel > 0 ? (panSpeedRef.current * elapsedSeconds) / travel : 0;
-              let progress = motionProgressRef.current + deltaProgress * horizontalDirectionRef.current;
+              const panSpeed = panSpeedRef.current;
+              const motionProgress = motionProgressRef.current;
+              const horizontalDirection = horizontalDirectionRef.current;
+              if (panSpeed === null || panSpeed === undefined || motionProgress === null || motionProgress === undefined || horizontalDirection === null || horizontalDirection === undefined) {
+                animationFrameRef.current = requestAnimationFrame(stepPan);
+                return;
+              }
+              const deltaProgress = travel > 0 ? (panSpeed * elapsedSeconds) / travel : 0;
+              let progress = motionProgress + deltaProgress * horizontalDirection;
 
               let hitMax = false;
               let hitMin = false;
@@ -1180,7 +1201,12 @@ export default function GeoScopeMap() {
               }
 
               if (hitMax || hitMin) {
-                const nextIndex = currentIndex + verticalDirectionRef.current;
+                const verticalDirection = verticalDirectionRef.current;
+                if (verticalDirection === null || verticalDirection === undefined) {
+                  animationFrameRef.current = requestAnimationFrame(stepPan);
+                  return;
+                }
+                const nextIndex = currentIndex + verticalDirection;
                 if (nextIndex < 0) {
                   verticalDirectionRef.current = 1;
                   bandIndexRef.current = 0;
@@ -1204,10 +1230,10 @@ export default function GeoScopeMap() {
               const maxLng = HORIZONTAL_CENTER_LNG + amplitude;
               const newLng = minLng + (maxLng - minLng) * easedProgress;
 
-              viewStateRef.current.lng = normalizeLng(newLng);
+              viewState.lng = normalizeLng(newLng);
               map.setMinZoom(minZoom);
               
-              const { lng, lat, zoom, pitch } = viewStateRef.current;
+              const { lng, lat, zoom, pitch } = viewState;
               map.jumpTo({
                 center: [lng, lat],
                 zoom,
@@ -1284,15 +1310,16 @@ export default function GeoScopeMap() {
     parseDiagnosticsAutopanConfig()
   );
   const autopanModeRef = useRef<AutopanMode>(diagnosticsAutopanRef.current.mode);
+  const diagnosticsConfig = diagnosticsAutopanRef.current;
   const serpentineConfigRef = useRef<SerpentineConfig | null>(
-    diagnosticsAutopanRef.current.mode === "serpentine"
-      ? diagnosticsAutopanRef.current.config
+    diagnosticsConfig.mode === "serpentine"
+      ? diagnosticsConfig.config
       : null
   );
   const serpentineControllerRef = useRef<SerpentineRunner | null>(null);
   const serpentineForcePendingRef = useRef<boolean>(
-    diagnosticsAutopanRef.current.mode === "serpentine"
-      ? diagnosticsAutopanRef.current.config.force
+    diagnosticsConfig.mode === "serpentine"
+      ? diagnosticsConfig.config.force
       : false
   );
   const aircraftLayerRef = useRef<AircraftLayer | null>(null);

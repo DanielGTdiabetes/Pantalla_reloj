@@ -1,6 +1,6 @@
-import type { SVGProps } from "react";
+import React from "react";
 
-type IconProps = SVGProps<SVGSVGElement>;
+type IconProps = React.SVGProps<SVGSVGElement>;
 
 const createStrokeProps = (props: IconProps): IconProps => ({
   width: "1em",

@@ -2,7 +2,7 @@ import React from "react";
 import { Route, Routes } from "react-router-dom";
 
 import GeoScopeMap from "./components/GeoScope/GeoScopeMap";
-import MapFrame from "./components/MapFrame";
+import { MapFrame } from "./components/MapFrame";
 import { RightPanel } from "./components/RightPanel";
 import { ConfigPage } from "./pages/ConfigPage";
 import DiagnosticsAutoPan from "./pages/DiagnosticsAutoPan";

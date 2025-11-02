@@ -20,4 +20,3 @@ export function MapFrame({ className, children }: MapFrameProps) {
   );
 }
 
-export default MapFrame;
