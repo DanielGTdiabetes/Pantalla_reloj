@@ -158,6 +158,7 @@ export type PanelNewsConfig = {
 export type PanelCalendarConfig = {
   enabled: boolean;
   provider?: "google" | "ics" | "disabled";
+  ics_path?: string;
 };
 
 export type PanelsConfigV2 = {

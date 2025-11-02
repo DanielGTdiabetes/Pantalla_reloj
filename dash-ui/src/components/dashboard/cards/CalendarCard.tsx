@@ -62,8 +62,11 @@ export const CalendarCard = ({ events, timezone }: CalendarCardProps): JSX.Eleme
     }
     const start = dayjs(event.start).tz(timezone);
     const end = dayjs(event.end).tz(timezone);
-    const isNow = now.isAfter(start) && now.isBefore(end);
-    const minutesUntil = isNow ? 0 : start.diff(now, "minute");
+    const nowTime = Number(now.valueOf());
+    const startTime = Number(start.valueOf());
+    const endTime = Number(end.valueOf());
+    const isNow = nowTime >= startTime && nowTime <= endTime;
+    const minutesUntil = isNow ? 0 : Math.round((startTime - nowTime) / (60 * 1000));
     return { isNow, minutesUntil };
   };
 

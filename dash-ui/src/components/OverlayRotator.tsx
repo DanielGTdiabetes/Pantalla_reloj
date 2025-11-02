@@ -294,26 +294,26 @@ export const OverlayRotator: React.FC = () => {
     const fetchAll = async () => {
       try {
         // Verificar cache de weather (2-5 min)
-        const weatherCacheAge = weatherCacheRef.current.timestamp 
+        const weatherCacheAge = weatherCacheRef.current?.timestamp 
           ? Date.now() - weatherCacheRef.current.timestamp 
           : Infinity;
         const weatherCacheValid = weatherCacheAge < (2 + Math.random() * 3) * 60 * 1000;
 
         // Verificar cache de astronomy (1h)
-        const astronomyCacheAge = astronomyCacheRef.current.timestamp 
+        const astronomyCacheAge = astronomyCacheRef.current?.timestamp 
           ? Date.now() - astronomyCacheRef.current.timestamp 
           : Infinity;
         const astronomyCacheValid = astronomyCacheAge < 60 * 60 * 1000;
 
         // Verificar cache de santoral (1d)
-        const santoralCacheAge = santoralCacheRef.current.timestamp 
+        const santoralCacheAge = santoralCacheRef.current?.timestamp 
           ? Date.now() - santoralCacheRef.current.timestamp 
           : Infinity;
         const santoralCacheValid = santoralCacheAge < 24 * 60 * 60 * 1000;
 
         const [weather, news, astronomy, calendar, santoral] = await Promise.all([
           (async () => {
-            if (weatherCacheValid && weatherCacheRef.current.data) {
+            if (weatherCacheValid && weatherCacheRef.current?.data) {
               return weatherCacheRef.current.data;
             }
             try {
@@ -327,7 +327,7 @@ export const OverlayRotator: React.FC = () => {
               return data;
             } catch {
               // Si falla, usar cache si existe
-              return weatherCacheRef.current.data || {};
+              return weatherCacheRef.current?.data || {};
             }
           })(),
           (async () => {
@@ -341,7 +341,7 @@ export const OverlayRotator: React.FC = () => {
             }
           })(),
           (async () => {
-            if (astronomyCacheValid && astronomyCacheRef.current.data) {
+            if (astronomyCacheValid && astronomyCacheRef.current?.data) {
               return astronomyCacheRef.current.data;
             }
             try {
@@ -351,7 +351,7 @@ export const OverlayRotator: React.FC = () => {
               }
               return data;
             } catch {
-              return astronomyCacheRef.current.data || {};
+              return astronomyCacheRef.current?.data || {};
             }
           })(),
           (async () => {
@@ -365,7 +365,7 @@ export const OverlayRotator: React.FC = () => {
             }
           })(),
           (async () => {
-            if (santoralCacheValid && santoralCacheRef.current.data) {
+            if (santoralCacheValid && santoralCacheRef.current?.data) {
               return { saints: santoralCacheRef.current.data.names, namedays: [] };
             }
             try {
@@ -375,7 +375,7 @@ export const OverlayRotator: React.FC = () => {
               }
               return { saints: data.names, namedays: [] };
             } catch {
-              return santoralCacheRef.current.data 
+              return santoralCacheRef.current?.data 
                 ? { saints: santoralCacheRef.current.data.names, namedays: [] }
                 : { saints: [], namedays: [] };
             }
@@ -717,7 +717,7 @@ export const OverlayRotator: React.FC = () => {
 
     return validPanels;
   }, [
-    rotationConfig.panels,
+    rotationConfig.order,
     rotationConfig.enabled,
     allPanelsMap,
     config,
