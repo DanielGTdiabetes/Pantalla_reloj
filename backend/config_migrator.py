@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Tuple, Optional
 
 from .models import AppConfig as AppConfigV1
-from .models_v2 import AppConfigV2, MapCenter, XyzConfig, MapFixedView, MapRegion
+from .models_v2 import AppConfigV2, MapCenter, MapFixedView, MapRegion
 
 logger = logging.getLogger(__name__)
 
