@@ -86,6 +86,10 @@ export default class AEMETWarningsLayer implements Layer {
     this.stopRefresh();
     this.unregisterEvents(map);
     
+    if (map.getLayer(`${this.id}-outline`)) {
+      map.removeLayer(`${this.id}-outline`);
+    }
+    
     if (map.getLayer(this.id)) {
       map.removeLayer(this.id);
     }

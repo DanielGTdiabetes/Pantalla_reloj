@@ -60,6 +60,7 @@ def fetch_aemet_warnings(api_key: Optional[str]) -> Dict[str, Any]:
         data_response.raise_for_status()
         
         # Parsear XML CAP usando xml.etree.ElementTree
+        xml_content = data_response.text
         try:
             root = ET.fromstring(xml_content)
         except ET.ParseError as e:

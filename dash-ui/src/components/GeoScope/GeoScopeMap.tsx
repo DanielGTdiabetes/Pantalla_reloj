@@ -2509,6 +2509,15 @@ export default function GeoScopeMap() {
       map.on("styledata", handleEnsureAEMETWarningsLayer);
       map.on("load", handleEnsureAEMETWarningsLayer);
 
+      const handleEnsureShipsLayer = async () => {
+        const shipsLayer = shipsLayerRef.current;
+        if (shipsLayer) {
+          await shipsLayer.ensureShipsLayer();
+        }
+      };
+      map.on("styledata", handleEnsureShipsLayer);
+      map.on("load", handleEnsureShipsLayer);
+
       // Guardar referencia para cleanup
       const ensureFlightsLayerHandler = handleEnsureFlightsLayer;
 
@@ -2605,20 +2614,34 @@ export default function GeoScopeMap() {
 
           // ShipsLayer
           const shipsConfig = mergedConfig.layers.ships;
-          const shipsLayer = new ShipsLayer({
-            enabled: shipsConfig.enabled,
-            opacity: shipsConfig.opacity,
-            maxAgeSeconds: shipsConfig.max_age_seconds,
-            cineFocus: shipsConfig.cine_focus?.enabled
-              ? {
-                  enabled: shipsConfig.cine_focus.enabled,
-                  outsideDimOpacity: shipsConfig.cine_focus.outside_dim_opacity,
-                  hardHideOutside: shipsConfig.cine_focus.hard_hide_outside,
-                }
-              : undefined,
-          });
-          layerRegistry.add(shipsLayer);
-          shipsLayerRef.current = shipsLayer;
+          let spriteAvailableShips = false;
+          try {
+            const style = map.getStyle() as StyleSpecification | undefined;
+            spriteAvailableShips = style ? await hasSprite(style) : false;
+          } catch {
+            spriteAvailableShips = false;
+          }
+          if (!destroyed && mapRef.current) {
+            const shipsLayer = new ShipsLayer({
+              enabled: shipsConfig.enabled,
+              opacity: shipsConfig.opacity,
+              maxAgeSeconds: shipsConfig.max_age_seconds,
+              cineFocus: shipsConfig.cine_focus?.enabled
+                ? {
+                    enabled: shipsConfig.cine_focus.enabled,
+                    outsideDimOpacity: shipsConfig.cine_focus.outside_dim_opacity,
+                    hardHideOutside: shipsConfig.cine_focus.hard_hide_outside,
+                  }
+                : undefined,
+              styleScale: shipsConfig.styleScale,
+              renderMode: shipsConfig.render_mode,
+              circle: shipsConfig.circle,
+              symbol: shipsConfig.symbol,
+              spriteAvailable: spriteAvailableShips,
+            });
+            layerRegistry.add(shipsLayer);
+            shipsLayerRef.current = shipsLayer;
+          }
       });
 
       setupResizeObserver(host);
@@ -2804,6 +2827,7 @@ export default function GeoScopeMap() {
       aircraftLayerRef.current = null;
       globalRadarLayerRef.current = null;
       globalSatelliteLayerRef.current = null;
+      aemetWarningsLayerRef.current = null;
       lightningLayerRef.current = null;
       shipsLayerRef.current = null;
 
@@ -3614,7 +3638,21 @@ export default function GeoScopeMap() {
       shipsLayer.setOpacity(shipsConfig.opacity);
       shipsLayer.setMaxAgeSeconds(shipsConfig.max_age_seconds);
       shipsLayer.setStyleScale(shipsConfig.styleScale ?? 1);
+      shipsLayer.setRenderMode(shipsConfig.render_mode);
+      shipsLayer.setCircleOptions(shipsConfig.circle);
+      shipsLayer.setSymbolOptions(shipsConfig.symbol);
       // Actualizar cine_focus si está disponible
+    }
+
+    // Actualizar AEMET Warnings Layer
+    const aemetLayer = aemetWarningsLayerRef.current;
+    const aemetConfig = merged.aemet;
+    if (aemetLayer && aemetConfig?.enabled && aemetConfig?.cap_enabled) {
+      aemetLayer.setEnabled(true);
+      aemetLayer.setOpacity(0.6);
+      aemetLayer.setRefreshSeconds((aemetConfig.cache_minutes ?? 15) * 60);
+    } else if (aemetLayer) {
+      aemetLayer.setEnabled(false);
     }
   }, [config]);
 
