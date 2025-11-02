@@ -2,6 +2,9 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 
 const tscCommand = process.platform === "win32" ? "tsc.cmd" : "tsc";
 const viteCommand = process.platform === "win32" ? "vite.cmd" : "vite";
