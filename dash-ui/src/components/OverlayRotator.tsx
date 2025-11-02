@@ -175,12 +175,17 @@ export const OverlayRotator: React.FC = () => {
       ? formatTemperature(weather.feels_like as number, rawUnit, targetUnit)
       : null;
 
-  const humidity = typeof weather.humidity === "number" ? (weather.humidity as number) : null;
-  const wind = typeof weather.wind_speed === "number"
-    ? (weather.wind_speed as number)
-    : typeof weather.wind === "number"
-      ? (weather.wind as number)
-      : null;
+  // Extraer humedad con múltiples campos alternativos
+  const humidity = typeof weather.humidity === "number" ? (weather.humidity as number)
+    : typeof weather.relative_humidity === "number" ? (weather.relative_humidity as number)
+    : typeof weather.hum === "number" ? (weather.hum as number)
+    : null;
+  // Extraer viento con múltiples campos alternativos
+  const wind = typeof weather.wind_speed === "number" ? (weather.wind_speed as number)
+    : typeof weather.wind === "number" ? (weather.wind as number)
+    : typeof weather.windSpeed === "number" ? (weather.windSpeed as number)
+    : typeof weather.ws === "number" ? (weather.ws as number)
+    : null;
   const condition = sanitizeRichText(weather.summary) || sanitizeRichText(weather.condition) || null;
   const sunrise = sanitizeRichText(astronomy.sunrise) || null;
   const sunset = sanitizeRichText(astronomy.sunset) || null;

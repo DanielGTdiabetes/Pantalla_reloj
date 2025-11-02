@@ -156,6 +156,10 @@ export const WeatherForecastCard = ({ forecast, unit = "°C" }: WeatherForecastC
                       alt={day.condition || "Condición climática"}
                       className="weather-forecast-card__icon"
                       style={{ width: "32px", height: "32px" }}
+                      onError={(e) => {
+                        console.warn(`[WeatherForecastCard] Error al cargar icono: ${iconPath} para ${day.condition}`);
+                        (e.target as HTMLImageElement).style.display = "none";
+                      }}
                     />
                   </div>
                   <div className="weather-forecast-card__day-temps">
@@ -172,6 +176,10 @@ export const WeatherForecastCard = ({ forecast, unit = "°C" }: WeatherForecastC
                         src="/icons/weather/rainy.svg"
                         alt="Precipitación"
                         style={{ width: "16px", height: "16px", verticalAlign: "middle", marginRight: "4px" }}
+                        onError={(e) => {
+                          console.warn(`[WeatherForecastCard] Error al cargar icono de precipitación`);
+                          (e.target as HTMLImageElement).style.display = "none";
+                        }}
                       />
                       {Math.round(day.precipitation)}%
                     </span>

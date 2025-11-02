@@ -166,7 +166,11 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
                     src={iconPath} 
                     alt={entry.name}
                     className="h-8 w-8"
-                    style={{ marginRight: "8px", verticalAlign: "middle" }}
+                    style={{ marginRight: "8px", verticalAlign: "middle", width: "32px", height: "32px" }}
+                    onError={(e) => {
+                      console.warn(`[HarvestCard] Error al cargar icono: ${iconPath} para ${entry.name}`);
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
                   />
                 ) : null}
                 <span className="harvest-card__item">{entry.name}</span>
