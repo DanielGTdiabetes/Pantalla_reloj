@@ -15,6 +15,7 @@ import { NewsCard } from "./dashboard/cards/NewsCard";
 import { SaintsCard } from "./dashboard/cards/SaintsCard";
 import { TimeCard } from "./dashboard/cards/TimeCard";
 import { WeatherCard } from "./dashboard/cards/WeatherCard";
+import { WeatherForecastCard } from "./dashboard/cards/WeatherForecastCard";
 
 type DashboardPayload = {
   weather?: Record<string, unknown>;
@@ -194,6 +195,53 @@ export const OverlayRotator: React.FC = () => {
     return [...fromSaints, ...fromNamedays];
   }, [calendar.saints, calendar.namedays]);
 
+  const forecastDays = useMemo(() => {
+    const forecastData = weather.forecast || weather.daily || weather.weekly || [];
+    if (!Array.isArray(forecastData)) {
+      return [];
+    }
+    return forecastData.slice(0, 7).map((day: Record<string, unknown>) => {
+      const date = ensurePlainText(day.date || day.dt || day.time);
+      const dayName = ensurePlainText(day.dayName || day.day_name || day.name);
+      const condition = sanitizeRichText(day.condition || day.weather || day.summary || day.description);
+      
+      const tempMin = typeof day.temp_min === "number" ? day.temp_min
+        : typeof day.temp?.min === "number" ? day.temp.min
+        : typeof day.min === "number" ? day.min
+        : null;
+      
+      const tempMax = typeof day.temp_max === "number" ? day.temp_max
+        : typeof day.temp?.max === "number" ? day.temp.max
+        : typeof day.max === "number" ? day.max
+        : null;
+      
+      const precipitation = typeof day.precipitation === "number" ? day.precipitation
+        : typeof day.precip === "number" ? day.precip
+        : typeof day.precipitation_probability === "number" ? day.precipitation_probability
+        : typeof day.pop === "number" ? day.pop * 100
+        : null;
+      
+      const wind = typeof day.wind === "number" ? day.wind
+        : typeof day.wind_speed === "number" ? day.wind_speed
+        : null;
+      
+      const humidity = typeof day.humidity === "number" ? day.humidity : null;
+
+      return {
+        date: date || new Date().toISOString().split("T")[0],
+        dayName: dayName || undefined,
+        condition: condition || "Sin datos",
+        temperature: {
+          min: tempMin,
+          max: tempMax,
+        },
+        precipitation,
+        wind,
+        humidity,
+      };
+    });
+  }, [weather.forecast, weather.daily, weather.weekly]);
+
   const rotatingCards = useMemo<RotatingCardItem[]>(
     () => {
       const cards: RotatingCardItem[] = [
@@ -279,6 +327,20 @@ export const OverlayRotator: React.FC = () => {
         });
       }
 
+      // Weather Forecast card - si hay datos de pronóstico
+      if (forecastDays.length > 0) {
+        cards.push({
+          id: "weather-forecast",
+          duration: 20000,
+          render: () => (
+            <WeatherForecastCard
+              forecast={forecastDays}
+              unit={temperature.unit}
+            />
+          )
+        });
+      }
+
       return cards;
     }, [
       calendarEvents,
@@ -291,6 +353,7 @@ export const OverlayRotator: React.FC = () => {
       config.news?.enabled,
       ephemeridesEvents,
       feelsLikeValue,
+      forecastDays,
       harvestItems,
       humidity,
       moonIllumination,
