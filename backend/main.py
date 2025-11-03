@@ -13,7 +13,6 @@ from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Literal, TypeVar, Union
 
-import multipart
 import requests
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
@@ -49,6 +48,8 @@ from .config_store import (
 )
 from .data_sources_ics import (
     ICSCalendarError,
+    ICSFileError,
+    ICSParseError,
     fetch_ics_calendar_events,
     get_last_error as get_last_ics_error,
 )
@@ -963,6 +964,12 @@ async def upload_ics_file(
                 "max_size": MAX_ICS_SIZE,
             },
         )
+    
+    # Validar formato ICS básico ANTES de escribir
+    try:
+        _validate_ics_basic(content)
+    except HTTPException:
+        raise
 
     try:
         ICS_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
@@ -1076,18 +1083,20 @@ async def upload_ics_file(
         map_reset_counter += 1
     _update_calendar_runtime_state("ics", True, "stale", None, str(ICS_STORAGE_PATH))
     calendar_state = _get_calendar_runtime_state()
+    
+    # Obtener metadatos del archivo guardado
+    try:
+        stat_info = ICS_STORAGE_PATH.stat()
+        mtime_iso = datetime.fromtimestamp(stat_info.st_mtime, tz=timezone.utc).isoformat()
+        file_size = stat_info.st_size
+    except OSError:
+        mtime_iso = datetime.now(timezone.utc).isoformat()
+        file_size = len(content)
 
     response_payload = {
-        "ok": True,
-        "ics_path": str(ICS_STORAGE_PATH),
-        "provider": "ics",
-        "events_detected": len(preview_events),
-        "reloaded": reloaded,
-        "config_version": map_reset_counter,
-        "calendar": {
-            "status": calendar_state.get("status"),
-            "last_error": calendar_state.get("last_error"),
-        },
+        "path": str(ICS_STORAGE_PATH),
+        "size": file_size,
+        "mtime_iso": mtime_iso,
     }
 
     return JSONResponse(content=response_payload)
@@ -1663,6 +1672,44 @@ def _ics_path_is_readable(ics_path: Optional[str]) -> bool:
     except OSError:
         return False
     return True
+
+
+def _validate_ics_basic(content: bytes) -> None:
+    """Valida formato ICS básico (BEGIN:VCALENDAR y al menos un VEVENT).
+    
+    Raises HTTPException con 400 si no cumple.
+    """
+    try:
+        content_str = content.decode('utf-8', errors='replace')
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "ICS file is not valid UTF-8", "reason": str(exc)},
+        ) from exc
+    
+    # Validar que tiene BEGIN:VCALENDAR
+    if "BEGIN:VCALENDAR" not in content_str.upper():
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "ICS file must contain BEGIN:VCALENDAR"},
+        )
+    
+    # Validar que tiene al menos un VEVENT
+    if "BEGIN:VEVENT" not in content_str.upper():
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "ICS file must contain at least one BEGIN:VEVENT"},
+        )
+    
+    # Intentar parsear con icalendar para validar sintaxis
+    try:
+        from icalendar import Calendar
+        Calendar.from_ical(content)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": f"Invalid ICS format: {str(exc)}"},
+        ) from exc
 
 
 def _handle_partial_opensky_update(payload: Dict[str, Any]) -> JSONResponse:
@@ -3220,8 +3267,12 @@ def get_calendar_status() -> Dict[str, Any]:
         if enabled and credentials_present:
             status = "ok"
         elif enabled and not credentials_present:
-            status = "error"
-            note = "ICS calendar path missing or unreadable"
+            if not ics_path or not ics_path.strip():
+                status = "empty"
+                note = "ICS calendar path not configured"
+            else:
+                status = "error"
+                note = "ICS calendar path missing or unreadable"
         else:
             status = "stale"
             note = "Calendar disabled"
