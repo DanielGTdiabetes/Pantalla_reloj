@@ -408,6 +408,63 @@ async def _read_secret_value(request: Request) -> Optional[str]:
     return text or None
 
 
+def _validate_maptiler_style(style_url: str) -> Dict[str, Any]:
+    """Valida un estilo de MapTiler haciendo una petición HTTP.
+    
+    Args:
+        style_url: URL del estilo de MapTiler
+        
+    Returns:
+        Diccionario con:
+        - ok: bool - True si el estilo es válido
+        - status: int - Código HTTP
+        - error: str | None - Mensaje de error si falla
+        - name: str | None - Nombre del estilo si está disponible
+    """
+    try:
+        response = requests.get(style_url, timeout=5)
+        if response.status_code == 200:
+            try:
+                style_json = response.json()
+                # Verificar que tiene la estructura básica de un estilo MapLibre
+                if isinstance(style_json, dict) and "glyphs" in style_json:
+                    name = style_json.get("name", "Unknown")
+                    return {
+                        "ok": True,
+                        "status": 200,
+                        "error": None,
+                        "name": str(name) if name else None
+                    }
+                else:
+                    return {
+                        "ok": False,
+                        "status": 200,
+                        "error": "Style JSON missing required fields (glyphs)",
+                        "name": None
+                    }
+            except (ValueError, KeyError) as e:
+                return {
+                    "ok": False,
+                    "status": 200,
+                    "error": f"Invalid JSON or missing required fields: {e}",
+                    "name": None
+                }
+        else:
+            return {
+                "ok": False,
+                "status": response.status_code,
+                "error": f"HTTP {response.status_code}",
+                "name": None
+            }
+    except requests.RequestException as e:
+        return {
+            "ok": False,
+            "status": 0,
+            "error": str(e),
+            "name": None
+        }
+
+
 def _build_public_config(config: AppConfig) -> Dict[str, Any]:
     payload = config.model_dump(mode="json", exclude_none=True, by_alias=True)
     aemet_info = payload.get("aemet", {})
@@ -1045,6 +1102,79 @@ def config_metadata() -> Dict[str, Any]:
     """Retorna metadatos sobre la configuración cargada."""
     logger.debug("Config metadata requested")
     return config_manager.get_config_metadata()
+
+
+@app.get("/api/map/validate")
+def validate_map_config() -> Dict[str, Any]:
+    """Valida la configuración de MapTiler y devuelve el estado del estilo."""
+    logger.debug("Map validation requested")
+    
+    try:
+        config_v2, _ = _read_config_v2()
+        ui_map = config_v2.ui_map
+        
+        # Si el proveedor no es maptiler_vector, devolver ok
+        if ui_map.provider != "maptiler_vector":
+            return {
+                "ok": True,
+                "provider": ui_map.provider,
+                "message": f"Provider {ui_map.provider} does not require MapTiler validation"
+            }
+        
+        maptiler_config = ui_map.maptiler
+        if not maptiler_config:
+            return {
+                "ok": False,
+                "provider": "maptiler_vector",
+                "error": "No MapTiler configuration found"
+            }
+        
+        style_url = maptiler_config.styleUrl
+        api_key = maptiler_config.apiKey
+        
+        if not style_url:
+            return {
+                "ok": False,
+                "provider": "maptiler_vector",
+                "error": "Missing styleUrl"
+            }
+        
+        # Validar el estilo
+        result = _validate_maptiler_style(style_url)
+        
+        # Si falla y hay apiKey, intentar auto-fix a streets-v2
+        tried_fallback = False
+        if not result["ok"] and api_key:
+            fallback_url = f"https://api.maptiler.com/maps/streets-v2/style.json?key={api_key}"
+            fallback_result = _validate_maptiler_style(fallback_url)
+            if fallback_result["ok"]:
+                # Auto-fix exitoso: actualizar config
+                logger.info("Auto-fixing MapTiler style to streets-v2")
+                config_data = json.loads(config_manager.config_file.read_text(encoding="utf-8"))
+                if "ui_map" in config_data and isinstance(config_data["ui_map"], dict):
+                    if "maptiler" in config_data["ui_map"] and isinstance(config_data["ui_map"]["maptiler"], dict):
+                        config_data["ui_map"]["maptiler"]["styleUrl"] = fallback_url
+                        config_manager._atomic_write_v2(config_data)
+                        logger.info("Updated MapTiler styleUrl to streets-v2")
+                result = fallback_result
+                tried_fallback = True
+        
+        return {
+            "ok": result["ok"],
+            "provider": "maptiler_vector",
+            "styleUrl": style_url if result["ok"] else (fallback_url if tried_fallback else style_url),
+            "triedFallback": tried_fallback,
+            "status": result["status"],
+            "error": result.get("error"),
+            "name": result.get("name")
+        }
+        
+    except Exception as exc:
+        logger.error("Error validating map config: %s", exc)
+        return {
+            "ok": False,
+            "error": str(exc)
+        }
 
 
 @app.post("/api/config/upload/ics")

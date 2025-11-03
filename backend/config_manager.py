@@ -518,6 +518,55 @@ class ConfigManager:
         
         return purged, changed
     
+    def _migrate_maptiler_config(self, maptiler: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
+        """Migra y normaliza configuración de MapTiler.
+        
+        Aplica las siguientes reglas:
+        1. Si styleUrl no incluye ?key= y existe apiKey, añadir ?key=<apiKey>
+        2. Si styleUrl apunta a dark o dark-v2, reemplazar por streets-v2
+        3. Si apiKey está presente y styleUrl vacío, set al streets-v2
+        
+        Args:
+            maptiler: Diccionario de configuración MapTiler
+            
+        Returns:
+            Tuple de (maptiler_migrado, was_changed)
+        """
+        changed = False
+        migrated = dict(maptiler)
+        api_key = migrated.get("apiKey")
+        style_url = migrated.get("styleUrl")
+        
+        # Si no hay apiKey, no podemos hacer nada
+        if not api_key:
+            return migrated, False
+        
+        # Regla 2 y 3: Reemplazar estilos obsoletos o vacíos por streets-v2
+        if style_url:
+            # Reemplazar dark-v2 y dark por streets-v2
+            if "/dark-v2/" in style_url or style_url.endswith("/dark/style.json"):
+                new_style_url = f"https://api.maptiler.com/maps/streets-v2/style.json?key={api_key}"
+                migrated["styleUrl"] = new_style_url
+                changed = True
+                self.logger.info("[config] Replaced obsolete MapTiler style with streets-v2")
+                return migrated, changed
+            # Si el styleUrl no incluye ?key=, añadirlo
+            if "?key=" not in style_url:
+                separator = "&" if "?" in style_url else "?"
+                migrated["styleUrl"] = f"{style_url}{separator}key={api_key}"
+                changed = True
+                self.logger.info("[config] Added ?key= parameter to MapTiler styleUrl")
+                return migrated, changed
+        else:
+            # Regla 3: Si apiKey está presente y styleUrl vacío, set streets-v2
+            new_style_url = f"https://api.maptiler.com/maps/streets-v2/style.json?key={api_key}"
+            migrated["styleUrl"] = new_style_url
+            changed = True
+            self.logger.info("[config] Set default MapTiler style to streets-v2")
+            return migrated, changed
+        
+        return migrated, changed
+    
     def _migrate_map_provider_keys(self, data: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
         """Migra claves legacy de proveedores de mapa a la nueva estructura.
         
@@ -612,6 +661,13 @@ class ConfigManager:
                 }
                 changed = True
                 self.logger.info("[config] Migrated ui_map.maptiler to new structure")
+            
+            # Aplicar migración automática de MapTiler si el proveedor es maptiler_vector
+            if ui_map.get("provider") == "maptiler_vector" and "maptiler" in ui_map and isinstance(ui_map["maptiler"], dict):
+                maptiler_migrated, maptiler_changed = self._migrate_maptiler_config(ui_map["maptiler"])
+                if maptiler_changed:
+                    ui_map["maptiler"] = maptiler_migrated
+                    changed = True
             
             # Asegurar que existen los 3 bloques (local, maptiler, customXyz)
             if "local" not in ui_map:
