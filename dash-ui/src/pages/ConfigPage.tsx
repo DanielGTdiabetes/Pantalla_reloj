@@ -2394,26 +2394,135 @@ const ConfigPage: React.FC = () => {
                 setSaving(true);
                 setBanner(null);
                 try {
-                  // Obtener config actual para preservar el resto
-                  const current = await getConfigV2();
-                  if (!current || current.version !== 2) {
-                    setBanner({ kind: "error", text: "La configuración actual no es v2" });
-                    setSaving(false);
-                    return;
-                  }
-                  
-                  // Construir payload solo con ui_map actualizado
-                  const mapOnlyPayload: import("../types/config_v2").AppConfigV2 = {
-                    ...current,
-                    ui_map: v2Form.ui_map || current.ui_map,
+                  // Construir el mismo payload que el botón de "Guardar" principal
+                  // para evitar problemas de tipos mezclados
+                  const v2FormWithSecrets = form as unknown as { 
+                    panels?: { calendar?: { enabled?: boolean; provider?: string } }; 
+                    secrets?: { 
+                      google?: { api_key?: string; calendar_id?: string }; 
+                      calendar_ics?: { url?: string; path?: string };
+                      opensky?: Record<string, unknown>;
+                      aemet?: Record<string, unknown>;
+                    } 
                   };
                   
-                  await saveConfigV2(mapOnlyPayload);
-                  await refreshConfig();
-                  await reloadConfig();
-                  setSaveStatus("saved");
-                  setBanner({ kind: "success", text: "Configuración del mapa guardada ✅" });
+                  const secrets: import("../types/config_v2").SecretsConfig = {
+                    opensky: v2FormWithSecrets.secrets?.opensky || {},
+                    aemet: v2FormWithSecrets.secrets?.aemet || {},
+                    google: {
+                      api_key: (showGoogleCalendarKey && googleCalendarKeyInput.trim()) 
+                        ? googleCalendarKeyInput.trim() 
+                        : undefined,
+                      calendar_id: googleCalendarIdInput.trim() 
+                        ? googleCalendarIdInput.trim() 
+                        : undefined,
+                    },
+                    calendar_ics: {
+                      url: icsUrlInput.trim() ? icsUrlInput.trim() : undefined,
+                      path: icsPathInput.trim() ? icsPathInput.trim() : undefined,
+                    },
+                  };
                   
+                  const existingCalendar = v2FormWithSecrets.panels?.calendar as import("../types/config_v2").PanelCalendarConfig | undefined;
+                  const calendarProvider = (existingCalendar?.provider === "ics" ? "ics" : existingCalendar?.provider === "disabled" ? "disabled" : "google") as "google" | "ics" | "disabled";
+                  const calendarIcsPath = icsPathInput.trim() || existingCalendar?.ics_path;
+                  const panels: import("../types/config_v2").PanelsConfigV2 = {
+                    ...(v2FormWithSecrets.panels as import("../types/config_v2").PanelsConfigV2 || {}),
+                    calendar: existingCalendar && typeof existingCalendar.enabled === "boolean"
+                      ? {
+                          enabled: existingCalendar.enabled,
+                          provider: calendarProvider,
+                          ...(calendarProvider === "ics" && calendarIcsPath ? { ics_path: calendarIcsPath } : {}),
+                        }
+                      : { enabled: false, provider: "google" as const },
+                  };
+                  
+                  const calendar = calendarProvider === "ics" && calendarIcsPath
+                    ? {
+                        enabled: existingCalendar?.enabled ?? false,
+                        provider: "ics" as const,
+                        ics_path: calendarIcsPath,
+                      }
+                    : existingCalendar && typeof existingCalendar.enabled === "boolean"
+                    ? {
+                        enabled: existingCalendar.enabled,
+                        provider: calendarProvider,
+                        ...(calendarProvider === "ics" && calendarIcsPath ? { ics_path: calendarIcsPath } : {}),
+                      }
+                    : undefined;
+                  
+                  const v2FormWithMap = form as unknown as { ui_map?: MapConfigV2 };
+                  const ui_map = v2FormWithMap.ui_map || {
+                    engine: "maplibre" as const,
+                    provider: "local_raster_xyz" as const,
+                    renderWorldCopies: true,
+                    interactive: false,
+                    controls: false,
+                    local: { tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", minzoom: 0, maxzoom: 19 },
+                    maptiler: { apiKey: null, styleUrl: null },
+                    customXyz: { tileUrl: null, minzoom: 0, maxzoom: 19 },
+                    viewMode: "fixed" as const,
+                    fixed: { center: { lat: 39.98, lon: 0.20 }, zoom: 7.8, bearing: 0, pitch: 0 },
+                    region: { postalCode: "12001" },
+                  };
+                  
+                  const v2FormWithLayers = form as unknown as { 
+                    layers?: { 
+                      flights?: { enabled?: boolean; [key: string]: unknown }; 
+                      ships?: { enabled?: boolean; [key: string]: unknown };
+                      global?: { [key: string]: unknown };
+                    };
+                    ui_global?: { 
+                      radar?: { enabled?: boolean; provider?: string; [key: string]: unknown }; 
+                      satellite?: { enabled?: boolean; provider?: string; opacity?: number; [key: string]: unknown };
+                    };
+                  };
+                  
+                  const layers = v2FormWithLayers.layers ? {
+                    ...v2FormWithLayers.layers,
+                    flights: v2FormWithLayers.layers.flights ? {
+                      ...v2FormWithLayers.layers.flights,
+                      enabled: v2FormWithLayers.layers.flights.enabled ?? false,
+                    } : undefined,
+                    ships: v2FormWithLayers.layers.ships ? {
+                      ...v2FormWithLayers.layers.ships,
+                      enabled: v2FormWithLayers.layers.ships.enabled ?? false,
+                    } : undefined,
+                  } : undefined;
+                  
+                  const ui_global = v2FormWithLayers.ui_global ? {
+                    ...v2FormWithLayers.ui_global,
+                    radar: v2FormWithLayers.ui_global.radar ? {
+                      ...v2FormWithLayers.ui_global.radar,
+                      enabled: v2FormWithLayers.ui_global.radar.enabled ?? false,
+                    } : undefined,
+                  } : undefined;
+                  
+                  const mapOnlyPayload: import("../types/config_v2").AppConfigV2 = {
+                    version: 2,
+                    ui_map,
+                    panels,
+                    secrets,
+                    layers,
+                    ui_global,
+                    calendar,
+                  } as unknown as import("../types/config_v2").AppConfigV2;
+                  
+                  await saveConfigV2(mapOnlyPayload);
+                  
+                  let reloadOk = false;
+                  try {
+                    await refreshConfig();
+                    await reloadConfig();
+                    reloadOk = true;
+                  } catch (reloadError) {
+                    console.warn("[ConfigPage] Failed to reload config after map save:", reloadError);
+                  }
+                  
+                  setSaveStatus("saved");
+                  setBanner({ kind: "success", text: reloadOk ? "Config guardada y recargada ✅" : "Config guardada ✅" });
+                  
+                  void loadCalendarStatus();
                   window.dispatchEvent(new CustomEvent("pantalla:config:saved", { detail: { version: 2 } }));
                   
                   setTimeout(() => {
@@ -2427,7 +2536,10 @@ const ConfigPage: React.FC = () => {
                     const backendErrors = extractBackendErrors(error.body);
                     setFieldErrors(backendErrors);
                     setSaveStatus("error");
-                    setBanner({ kind: "error", text: "Error al guardar la configuración del mapa" });
+                    const errorMessage = typeof error.body === "object" && error.body !== null && "error" in error.body
+                      ? String(error.body.error)
+                      : "Error al guardar la configuración del mapa";
+                    setBanner({ kind: "error", text: errorMessage });
                   } else {
                     setSaveStatus("error");
                     setBanner({ kind: "error", text: "Error al guardar" });
