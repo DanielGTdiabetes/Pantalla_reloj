@@ -80,6 +80,7 @@ from .services.opensky_client import OpenSkyClientError
 from .services.opensky_service import OpenSkyService
 from .services.ships_service import AISStreamService
 from .services.aemet_service import fetch_aemet_warnings, AEMETServiceError
+from .services.blitzortung_service import BlitzortungService, LightningStrike
 from .config_migrator import migrate_config_to_v2, migrate_v1_to_v2, apply_postal_geocoding
 from .rate_limiter import check_rate_limit
 
@@ -90,6 +91,8 @@ cache_store = CacheStore()
 secret_store = SecretStore()
 opensky_service = OpenSkyService(secret_store, logger)
 ships_service = AISStreamService(cache_store=cache_store, secret_store=secret_store, logger=logger)
+blitzortung_service: Optional[BlitzortungService] = None
+_blitzortung_lock = Lock()
 map_reset_counter = 0
 
 CINEMA_TELEMETRY_TTL = timedelta(seconds=45)
@@ -197,6 +200,12 @@ app.add_middleware(
 def _shutdown_services() -> None:
     opensky_service.close()
     ships_service.close()
+    # Detener Blitzortung al cerrar
+    global blitzortung_service
+    if blitzortung_service:
+        with _blitzortung_lock:
+            blitzortung_service.stop()
+            blitzortung_service = None
 
 def _ensure_directory(path: Path, description: str, fallback: Optional[Path] = None) -> Path:
     """Ensure *path* exists, optionally falling back if permissions are denied."""
@@ -1116,6 +1125,8 @@ def reload_config() -> Dict[str, Any]:
             # Incrementar contador para notificar al frontend
             global map_reset_counter
             map_reset_counter += 1
+            # Inicializar/actualizar servicios según nueva configuración
+            _ensure_blitzortung_service(config)
             return {
                 "success": True,
                 "message": "Config reloaded successfully",
@@ -1996,6 +2007,9 @@ async def save_config(request: Request) -> JSONResponse:
         global map_reset_counter
         map_reset_counter += 1
         logger.info("[config] Configuration reloaded in-memory after save (hot-reload)")
+        # Inicializar/actualizar servicios según nueva configuración
+        config_after_reload = config_manager.get_config()
+        _ensure_blitzortung_service(config_after_reload)
     else:
         logger.warning("[config] Configuration reload after save did not report changes")
 
@@ -3550,20 +3564,231 @@ def update_storm_mode(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-@app.get("/api/lightning")
-def get_lightning() -> Dict[str, Any]:
-    """Obtiene datos de rayos para mostrar en el mapa."""
-    # Por ahora devolver datos vacíos, se conectará a MQTT más adelante
-    cached = cache_store.load("lightning", max_age_minutes=1)
-    if cached:
-        return cached.payload
+def _ensure_blitzortung_service(config: AppConfig) -> None:
+    """Inicia o actualiza el servicio Blitzortung según configuración."""
+    global blitzortung_service
     
-    default_data = {
-        "type": "FeatureCollection",
-        "features": []
-    }
-    cache_store.store("lightning", default_data)
-    return default_data
+    blitz_config = getattr(config, "blitzortung", None)
+    if not blitz_config:
+        # Detener servicio si existe pero configuración no está presente
+        if blitzortung_service:
+            with _blitzortung_lock:
+                blitzortung_service.stop()
+                blitzortung_service = None
+        return
+    
+    enabled = getattr(blitz_config, "enabled", False)
+    mqtt_host = getattr(blitz_config, "mqtt_host", "127.0.0.1")
+    mqtt_port = getattr(blitz_config, "mqtt_port", 1883)
+    mqtt_topic = getattr(blitz_config, "mqtt_topic", "blitzortung/1")
+    ws_enabled = getattr(blitz_config, "ws_enabled", False)
+    ws_url = getattr(blitz_config, "ws_url", None)
+    
+    with _blitzortung_lock:
+        # Detener servicio existente si cambió la configuración
+        if blitzortung_service:
+            if (not enabled or
+                blitzortung_service.mqtt_host != mqtt_host or
+                blitzortung_service.mqtt_port != mqtt_port or
+                blitzortung_service.mqtt_topic != mqtt_topic or
+                blitzortung_service.ws_enabled != ws_enabled or
+                blitzortung_service.ws_url != ws_url):
+                blitzortung_service.stop()
+                blitzortung_service = None
+        
+        # Crear/iniciar servicio si está habilitado
+        if enabled and not blitzortung_service:
+            blitzortung_service = BlitzortungService(
+                enabled=True,
+                mqtt_host=mqtt_host,
+                mqtt_port=mqtt_port,
+                mqtt_topic=mqtt_topic,
+                ws_enabled=ws_enabled,
+                ws_url=ws_url,
+                max_age_minutes=15
+            )
+            
+            def on_lightning_received(strikes: List[LightningStrike]) -> None:
+                """Callback cuando se reciben nuevos rayos."""
+                # Actualizar caché con todos los rayos
+                geojson = blitzortung_service.to_geojson()
+                cache_store.store("lightning", geojson)
+            
+            blitzortung_service.callback = on_lightning_received
+            
+            if not blitzortung_service.start():
+                logger.warning("[lightning] Failed to start Blitzortung service")
+                blitzortung_service = None
+        elif not enabled and blitzortung_service:
+            # Detener servicio si se deshabilitó
+            blitzortung_service.stop()
+            blitzortung_service = None
+
+
+@app.get("/api/storm/local")
+def get_storm_local(
+    min_lat: Optional[float] = None,
+    max_lat: Optional[float] = None,
+    min_lon: Optional[float] = None,
+    max_lon: Optional[float] = None
+) -> Dict[str, Any]:
+    """Obtiene resumen de rayos + radar en bbox local (Castellón por defecto).
+    
+    Args:
+        min_lat: Latitud mínima del bbox (opcional, default: 39.5 para Castellón)
+        max_lat: Latitud máxima del bbox (opcional, default: 40.2 para Castellón)
+        min_lon: Longitud mínima del bbox (opcional, default: -1.2 para Castellón)
+        max_lon: Longitud máxima del bbox (opcional, default: 0.5 para Castellón)
+    """
+    try:
+        # Valores por defecto para Castellón si no se proporcionan
+        if min_lat is None:
+            min_lat = 39.5
+        if max_lat is None:
+            max_lat = 40.2
+        if min_lon is None:
+            min_lon = -1.2
+        if max_lon is None:
+            max_lon = 0.5
+        
+        # Obtener rayos en el bbox
+        lightning_bbox = f"{min_lat},{max_lat},{min_lon},{max_lon}"
+        lightning_data = get_lightning(bbox=lightning_bbox)
+        lightning_features = lightning_data.get("features", []) if isinstance(lightning_data, dict) else []
+        
+        # Obtener avisos CAP de AEMET
+        aemet_warnings_data = get_aemet_warnings()
+        aemet_features = []
+        if isinstance(aemet_warnings_data, dict):
+            all_features = aemet_warnings_data.get("features", [])
+            # Filtrar avisos que intersectan con el bbox
+            for feature in all_features:
+                if isinstance(feature, dict) and "geometry" in feature:
+                    geom = feature["geometry"]
+                    if geom.get("type") == "Polygon":
+                        # Verificar si el polígono intersecta con el bbox
+                        coords = geom.get("coordinates", [])
+                        if coords and len(coords) > 0:
+                            ring = coords[0] if isinstance(coords[0], list) else coords
+                            # Verificar si algún punto del polígono está en el bbox
+                            intersects = False
+                            for point in ring:
+                                if isinstance(point, list) and len(point) >= 2:
+                                    lon, lat = point[0], point[1]
+                                    if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
+                                        intersects = True
+                                        break
+                            if intersects:
+                                aemet_features.append(feature)
+                    elif geom.get("type") == "Point":
+                        coords = geom.get("coordinates", [])
+                        if len(coords) >= 2:
+                            lon, lat = coords[0], coords[1]
+                            if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
+                                aemet_features.append(feature)
+        
+        # Obtener estado de radar (último frame disponible)
+        radar_data = None
+        try:
+            # Intentar obtener frames de radar desde RainViewer
+            from .global_providers import RainViewerProvider
+            radar_provider = RainViewerProvider()
+            radar_frames = radar_provider.get_available_frames(history_minutes=90, frame_step=5)
+            if radar_frames:
+                latest_frame = radar_frames[-1]  # Frame más reciente
+                radar_data = {
+                    "latest_timestamp": latest_frame.get("timestamp"),
+                    "latest_timestamp_iso": latest_frame.get("iso"),
+                    "frames_count": len(radar_frames),
+                    "provider": "rainviewer"
+                }
+        except Exception as exc:
+            logger.debug("Failed to get radar frames for storm/local: %s", exc)
+        
+        return {
+            "bbox": {
+                "min_lat": min_lat,
+                "max_lat": max_lat,
+                "min_lon": min_lon,
+                "max_lon": max_lon
+            },
+            "lightning": {
+                "count": len(lightning_features),
+                "features": lightning_features[:50]  # Limitar a 50 rayos más recientes
+            },
+            "aemet_warnings": {
+                "count": len(aemet_features),
+                "features": aemet_features
+            },
+            "radar": radar_data,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as exc:
+        logger.error("[storm/local] Error getting storm local data: %s", exc)
+        return {
+            "bbox": {
+                "min_lat": min_lat or 39.5,
+                "max_lat": max_lat or 40.2,
+                "min_lon": min_lon or -1.2,
+                "max_lon": max_lon or 0.5
+            },
+            "lightning": {"count": 0, "features": []},
+            "aemet_warnings": {"count": 0, "features": []},
+            "radar": None,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "error": str(exc)
+        }
+
+
+@app.get("/api/lightning")
+def get_lightning(bbox: Optional[str] = None) -> Dict[str, Any]:
+    """Obtiene datos de rayos para mostrar en el mapa.
+    
+    Args:
+        bbox: Opcional, formato "min_lat,max_lat,min_lon,max_lon" para filtrar
+    """
+    try:
+        # Cargar configuración para inicializar servicio si es necesario
+        config = config_manager.get_config()
+        _ensure_blitzortung_service(config)
+        
+        # Obtener rayos del servicio o caché
+        if blitzortung_service:
+            with _blitzortung_lock:
+                if bbox:
+                    try:
+                        parts = [float(x) for x in bbox.split(",")]
+                        if len(parts) == 4:
+                            geojson = blitzortung_service.to_geojson(bbox=(parts[0], parts[1], parts[2], parts[3]))
+                        else:
+                            geojson = blitzortung_service.to_geojson()
+                    except (ValueError, IndexError):
+                        geojson = blitzortung_service.to_geojson()
+                else:
+                    geojson = blitzortung_service.to_geojson()
+                
+                # Actualizar caché
+                cache_store.store("lightning", geojson)
+                return geojson
+        
+        # Fallback a caché si servicio no está disponible
+        cached = cache_store.load("lightning", max_age_minutes=1)
+        if cached:
+            return cached.payload
+        
+        # Devolver datos vacíos por defecto
+        default_data = {
+            "type": "FeatureCollection",
+            "features": []
+        }
+        cache_store.store("lightning", default_data)
+        return default_data
+    except Exception as exc:
+        logger.error("[lightning] Error getting lightning data: %s", exc)
+        return {
+            "type": "FeatureCollection",
+            "features": []
+        }
 
 
 # WiFi Configuration
@@ -5338,6 +5563,8 @@ def on_startup() -> None:
         ",".join(config.ui.rotation.panels),
     )
     ships_service.apply_config(config.layers.ships)
+    # Inicializar Blitzortung si está configurado
+    _ensure_blitzortung_service(config)
     cache_store.store("health", {"started_at": APP_START.isoformat()})
     logger.info(
         "Configuration path %s (layout=%s, map_style=%s, map_provider=%s)",

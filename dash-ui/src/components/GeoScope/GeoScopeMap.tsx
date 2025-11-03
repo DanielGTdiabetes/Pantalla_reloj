@@ -15,6 +15,8 @@ import LightningLayer from "./layers/LightningLayer";
 import { LayerRegistry } from "./layers/LayerRegistry";
 import ShipsLayer from "./layers/ShipsLayer";
 import MapSpinner from "../MapSpinner";
+import { RadarControls } from "./RadarControls";
+import "./RadarControls.css";
 import { hasSprite } from "./utils/styleSprite";
 import {
   createDefaultMapPreferences,
@@ -621,6 +623,10 @@ export default function GeoScopeMap() {
   const mapFillRef = useRef<HTMLDivElement | null>(null);
   const [webglError, setWebglError] = useState<string | null>(null);
   const [styleChangeInProgress, setStyleChangeInProgress] = useState(false);
+  // Estados para controles de radar animado
+  const [radarPlaying, setRadarPlaying] = useState(true);
+  const [radarPlaybackSpeed, setRadarPlaybackSpeed] = useState(1.0);
+  const [radarOpacity, setRadarOpacity] = useState(0.7);
   
   // Recargar config cuando la página se vuelve visible (después de guardar en /config)
   useEffect(() => {
@@ -1935,13 +1941,16 @@ export default function GeoScopeMap() {
       return;
     }
 
+    // Inicializar opacidad del radar desde configuración
+    if (globalConfig.radar?.enabled && typeof globalConfig.radar.opacity === "number") {
+      setRadarOpacity(globalConfig.radar.opacity);
+    }
+
     let satelliteFrameIndex = 0;
     let radarFrameIndex = 0;
     let satelliteFrames: Array<{ timestamp: number; iso: string }> = [];
     let radarFrames: Array<{ timestamp: number; iso: string }> = [];
     let animationTimer: number | null = null;
-    let isPlaying = true;
-    let playbackSpeed = 1.0;
 
     const fetchFrames = async () => {
       try {
@@ -1988,7 +1997,7 @@ export default function GeoScopeMap() {
     };
 
     const advanceFrames = () => {
-      if (!isPlaying) return;
+      if (!radarPlaying) return;
 
       // Avanzar satellite frames
       if (globalConfig.satellite?.enabled && satelliteFrames.length > 0) {
@@ -2016,7 +2025,7 @@ export default function GeoScopeMap() {
       const satFrameStep = globalConfig.satellite?.frame_step ?? 10;
       const radarFrameStep = globalConfig.radar?.frame_step ?? 5;
       // Usar el menor intervalo
-      const frameIntervalMs = Math.min(satFrameStep, radarFrameStep) * 60 * 1000 / playbackSpeed;
+      const frameIntervalMs = Math.min(satFrameStep, radarFrameStep) * 60 * 1000 / radarPlaybackSpeed;
 
       const animate = () => {
         advanceFrames();
@@ -2030,6 +2039,14 @@ export default function GeoScopeMap() {
       if (animationTimer !== null) {
         window.clearTimeout(animationTimer);
         animationTimer = null;
+      }
+    };
+
+    // Reiniciar animación si cambia play/pause o velocidad
+    const restartAnimation = () => {
+      stopAnimation();
+      if (radarPlaying && (globalConfig.satellite?.enabled || globalConfig.radar?.enabled)) {
+        startAnimation();
       }
     };
 
@@ -2047,7 +2064,7 @@ export default function GeoScopeMap() {
     }, refreshInterval);
 
     // Iniciar animación si está habilitada
-    if (globalConfig.satellite?.enabled || globalConfig.radar?.enabled) {
+    if (radarPlaying && (globalConfig.satellite?.enabled || globalConfig.radar?.enabled)) {
       startAnimation();
     }
 
@@ -2060,17 +2077,20 @@ export default function GeoScopeMap() {
 
       const globalRadarLayer = globalRadarLayerRef.current;
       if (globalRadarLayer && globalConfig.radar?.enabled) {
-        globalRadarLayer.update({ opacity: globalConfig.radar.opacity });
+        globalRadarLayer.update({ opacity: radarOpacity });
       }
     };
 
     updateLayersOpacity();
 
+    // Reiniciar animación cuando cambien los controles (play/pause o velocidad)
+    restartAnimation();
+
     return () => {
       stopAnimation();
       clearInterval(refreshTimer);
     };
-  }, [config]);
+  }, [config, radarPlaying, radarPlaybackSpeed, radarOpacity]);
 
 
   // Mostrar error si WebGL no está disponible o el mapa falló
@@ -2088,6 +2108,11 @@ export default function GeoScopeMap() {
     );
   }
 
+  // Obtener configuración de radar para controles
+  const merged = config ? withConfigDefaults(config) : null;
+  const globalConfig = merged?.layers?.global;
+  const radarEnabled = globalConfig?.radar?.enabled ?? false;
+
   return (
     <div className="map-host">
       <div ref={mapFillRef} className="map-fill" />
@@ -2095,6 +2120,17 @@ export default function GeoScopeMap() {
       {tintColor ? (
         <div className="map-tint" style={{ background: tintColor }} aria-hidden="true" />
       ) : null}
+      {radarEnabled && (
+        <RadarControls
+          enabled={radarEnabled}
+          playing={radarPlaying}
+          playbackSpeed={radarPlaybackSpeed}
+          opacity={radarOpacity}
+          onPlayPause={setRadarPlaying}
+          onSpeedChange={setRadarPlaybackSpeed}
+          onOpacityChange={setRadarOpacity}
+        />
+      )}
     </div>
   );
 }

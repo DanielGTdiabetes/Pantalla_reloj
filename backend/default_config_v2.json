@@ -1,11 +1,18 @@
 {
   "version": 2,
+  "display": {
+    "timezone": "Europe/Madrid"
+  },
   "ui_map": {
     "engine": "maplibre",
     "provider": "local_raster_xyz",
     "renderWorldCopies": true,
     "interactive": false,
     "controls": false,
+    "labelsOverlay": {
+      "enabled": true,
+      "style": "carto-only-labels"
+    },
     "local": {
       "tileUrl": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
       "minzoom": 0,
@@ -88,5 +95,18 @@
     "ephemerides": { "enabled": true },
     "news": { "enabled": true, "feeds": [] },
     "calendar": { "enabled": true }
+  },
+  "secrets": {
+    "google": {
+      "api_key": null,
+      "calendar_id": null
+    },
+    "aemet": {
+      "api_key": null
+    },
+    "ics": {
+      "url": null,
+      "path": null
+    }
   }
 }
