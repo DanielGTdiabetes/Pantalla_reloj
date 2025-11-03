@@ -12,6 +12,7 @@ import GlobalRadarLayer from "./layers/GlobalRadarLayer";
 import GlobalSatelliteLayer from "./layers/GlobalSatelliteLayer";
 import AEMETWarningsLayer from "./layers/AEMETWarningsLayer";
 import LightningLayer from "./layers/LightningLayer";
+import WeatherLayer from "./layers/WeatherLayer";
 import { LayerRegistry } from "./layers/LayerRegistry";
 import ShipsLayer from "./layers/ShipsLayer";
 import MapSpinner from "../MapSpinner";
@@ -670,6 +671,7 @@ export default function GeoScopeMap() {
   const globalSatelliteLayerRef = useRef<GlobalSatelliteLayer | null>(null);
   const aemetWarningsLayerRef = useRef<AEMETWarningsLayer | null>(null);
   const lightningLayerRef = useRef<LightningLayer | null>(null);
+  const weatherLayerRef = useRef<WeatherLayer | null>(null);
   const layerRegistryRef = useRef<LayerRegistry | null>(null);
   const shipsLayerRef = useRef<ShipsLayer | null>(null);
   const stormModeActiveRef = useRef(false);
@@ -1159,8 +1161,19 @@ export default function GeoScopeMap() {
             globalRadarLayerRef.current = globalRadarLayer;
           }
 
-          // AEMET Warnings Layer (z-index 15, entre radar y vuelos)
+          // Weather Layer (z-index 12, entre radar/satélite y AEMET warnings)
           const aemetConfig = mergedConfig.aemet;
+          if (aemetConfig?.enabled && aemetConfig?.cap_enabled) {
+            const weatherLayer = new WeatherLayer({
+              enabled: true,
+              opacity: 0.3,
+              refreshSeconds: (aemetConfig.cache_minutes ?? 15) * 60,
+            });
+            layerRegistry.add(weatherLayer);
+            weatherLayerRef.current = weatherLayer;
+          }
+
+          // AEMET Warnings Layer (z-index 15, entre radar y vuelos)
           if (aemetConfig?.enabled && aemetConfig?.cap_enabled) {
             const aemetWarningsLayer = new AEMETWarningsLayer({
               enabled: true,
@@ -1290,6 +1303,7 @@ export default function GeoScopeMap() {
       globalSatelliteLayerRef.current = null;
       aemetWarningsLayerRef.current = null;
       lightningLayerRef.current = null;
+      weatherLayerRef.current = null;
       shipsLayerRef.current = null;
 
       const map = mapRef.current;
@@ -1778,9 +1792,19 @@ export default function GeoScopeMap() {
       shipsLayer.setSymbolOptions(shipsConfig.symbol);
     }
 
+    // Actualizar Weather Layer
+    const weatherLayer = weatherLayerRef.current;
+    const aemetConfig = merged.aemet;
+    if (weatherLayer && aemetConfig?.enabled && aemetConfig?.cap_enabled) {
+      weatherLayer.setEnabled(true);
+      weatherLayer.setOpacity(0.3);
+      weatherLayer.setRefreshSeconds((aemetConfig.cache_minutes ?? 15) * 60);
+    } else if (weatherLayer) {
+      weatherLayer.setEnabled(false);
+    }
+
     // Actualizar AEMET Warnings Layer
     const aemetLayer = aemetWarningsLayerRef.current;
-    const aemetConfig = merged.aemet;
     if (aemetLayer && aemetConfig?.enabled && aemetConfig?.cap_enabled) {
       aemetLayer.setEnabled(true);
       aemetLayer.setOpacity(0.6);
