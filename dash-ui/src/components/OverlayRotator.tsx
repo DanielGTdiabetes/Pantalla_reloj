@@ -241,6 +241,7 @@ export const OverlayRotator: React.FC = () => {
   const [currentPanelIndex, setCurrentPanelIndex] = useState(0);
   const rotationTimerRef = useRef<number | null>(null);
   const availablePanelsRef = useRef<RotatingCardItem[]>([]);
+  const currentPanelIndexRef = useRef<number>(0);
 
   // Hot-reload: polling de config_version para detectar cambios
   useEffect(() => {
@@ -812,22 +813,23 @@ export const OverlayRotator: React.FC = () => {
   // Resetear índice cuando cambie la lista de paneles
   useEffect(() => {
     setCurrentPanelIndex(0);
+    currentPanelIndexRef.current = 0;
   }, [availablePanelIds]);
 
   // Manejo del timer de rotación
   useEffect(() => {
     // Limpiar timer anterior si existe
     if (rotationTimerRef.current !== null) {
-      window.clearInterval(rotationTimerRef.current);
+      window.clearTimeout(rotationTimerRef.current);
       rotationTimerRef.current = null;
-        if (IS_DEV) {
+      if (IS_DEV) {
         console.log("[OverlayRotator] Timer limpiado (dependencias cambiaron)");
       }
     }
 
     // Si rotation está deshabilitado o lista vacía o solo hay un panel, no crear timer
     if (!rotationConfig.enabled || availablePanels.length <= 1) {
-        if (IS_DEV) {
+      if (IS_DEV) {
         console.log(`[OverlayRotator] Timer no iniciado: enabled=${rotationConfig.enabled}, panels=${availablePanels.length}`);
       }
       return;
@@ -839,7 +841,8 @@ export const OverlayRotator: React.FC = () => {
       if (!currentPanels || currentPanels.length === 0) {
         return DEFAULT_DURATIONS_SEC.clock * 1000;
       }
-      const currentIndex = currentPanelIndex % currentPanels.length;
+      // Usar la ref para obtener el índice actual sin causar re-render del efecto
+      const currentIndex = currentPanelIndexRef.current % currentPanels.length;
       const currentPanel = currentPanels[currentIndex];
       return currentPanel?.duration ?? DEFAULT_DURATIONS_SEC.clock * 1000;
     };
@@ -849,9 +852,11 @@ export const OverlayRotator: React.FC = () => {
       setCurrentPanelIndex((prevIndex) => {
         const currentPanels = availablePanelsRef.current;
         if (!currentPanels || currentPanels.length === 0) {
+          currentPanelIndexRef.current = 0;
           return 0;
         }
         const nextIndex = (prevIndex + 1) % currentPanels.length;
+        currentPanelIndexRef.current = nextIndex;
         if (IS_DEV) {
           console.log(`[OverlayRotator] Rotando de panel ${prevIndex} a ${nextIndex} (${currentPanels[nextIndex]?.id})`);
         }
@@ -885,7 +890,12 @@ export const OverlayRotator: React.FC = () => {
         }
       }
     };
-  }, [rotationConfig.enabled, rotationConfig.durations_sec, availablePanels.length, availablePanelIds, currentPanelIndex]);
+  }, [rotationConfig.enabled, rotationConfig.durations_sec, availablePanels.length, availablePanelIds]);
+
+  // Sincronizar la ref con el estado cuando cambie
+  useEffect(() => {
+    currentPanelIndexRef.current = currentPanelIndex;
+  }, [currentPanelIndex]);
 
   // Determinar el panel actual a mostrar
   const currentPanel = useMemo<RotatingCardItem | null>(() => {
