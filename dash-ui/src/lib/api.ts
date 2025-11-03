@@ -477,6 +477,53 @@ export async function getCalendarStatus(): Promise<CalendarStatusResponse> {
   return apiGet<CalendarStatusResponse>("/api/calendar/status");
 }
 
+// Historical Events (Efemérides) API
+export type HistoricalEventsResponse = {
+  date: string;
+  count: number;
+  items: string[];
+};
+
+export type HistoricalEventsStatusResponse = {
+  enabled: boolean;
+  provider: string;
+  status: "ok" | "error" | "missing" | "empty";
+  last_load_iso?: string | null;
+  data_path: string;
+};
+
+export type HistoricalEventsUploadResponse = {
+  ok: boolean;
+  saved_path: string;
+  items_total: number;
+};
+
+export async function getHistoricalEvents(date?: string): Promise<HistoricalEventsResponse> {
+  const url = date ? `/api/efemerides?date=${encodeURIComponent(date)}` : "/api/efemerides";
+  return apiGet<HistoricalEventsResponse>(url);
+}
+
+export async function getHistoricalEventsStatus(): Promise<HistoricalEventsStatusResponse> {
+  return apiGet<HistoricalEventsStatusResponse>("/api/efemerides/status");
+}
+
+export async function uploadHistoricalEventsFile(file: File): Promise<HistoricalEventsUploadResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(withBase("/api/efemerides/upload"), {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const body = await readJson(response);
+    throw new ApiError(response.status, body);
+  }
+
+  return (await readJson(response)) as HistoricalEventsUploadResponse;
+}
+
 // ICS Upload API
 export type IcsUploadResponse = {
   ok: boolean;

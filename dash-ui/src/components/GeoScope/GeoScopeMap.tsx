@@ -12,9 +12,12 @@ import GlobalRadarLayer from "./layers/GlobalRadarLayer";
 import GlobalSatelliteLayer from "./layers/GlobalSatelliteLayer";
 import AEMETWarningsLayer from "./layers/AEMETWarningsLayer";
 import LightningLayer from "./layers/LightningLayer";
+import WeatherLayer from "./layers/WeatherLayer";
 import { LayerRegistry } from "./layers/LayerRegistry";
 import ShipsLayer from "./layers/ShipsLayer";
 import MapSpinner from "../MapSpinner";
+import { RadarControls } from "./RadarControls";
+import "./RadarControls.css";
 import { hasSprite } from "./utils/styleSprite";
 import {
   createDefaultMapPreferences,
@@ -42,7 +45,7 @@ import {
 const DEFAULT_VIEW = {
   lng: 0.20,
   lat: 39.98,
-  zoom: 7.8,
+  zoom: 9.0,
   bearing: 0,
   pitch: 0
 };
@@ -486,7 +489,7 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
         viewMode: "fixed",
         fixed: {
           center: { lat: 39.98, lon: 0.20 },
-          zoom: 7.8,
+          zoom: 9.0,
           bearing: 0,
           pitch: 0,
         },
@@ -580,7 +583,7 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
       viewMode: "fixed",
       fixed: {
         center: { lat: 39.98, lon: 0.20 },
-        zoom: 7.8,
+        zoom: 9.0,
         bearing: 0,
         pitch: 0,
       },
@@ -621,6 +624,10 @@ export default function GeoScopeMap() {
   const mapFillRef = useRef<HTMLDivElement | null>(null);
   const [webglError, setWebglError] = useState<string | null>(null);
   const [styleChangeInProgress, setStyleChangeInProgress] = useState(false);
+  // Estados para controles de radar animado
+  const [radarPlaying, setRadarPlaying] = useState(true);
+  const [radarPlaybackSpeed, setRadarPlaybackSpeed] = useState(1.0);
+  const [radarOpacity, setRadarOpacity] = useState(0.7);
   
   // Recargar config cuando la página se vuelve visible (después de guardar en /config)
   useEffect(() => {
@@ -664,6 +671,7 @@ export default function GeoScopeMap() {
   const globalSatelliteLayerRef = useRef<GlobalSatelliteLayer | null>(null);
   const aemetWarningsLayerRef = useRef<AEMETWarningsLayer | null>(null);
   const lightningLayerRef = useRef<LightningLayer | null>(null);
+  const weatherLayerRef = useRef<WeatherLayer | null>(null);
   const layerRegistryRef = useRef<LayerRegistry | null>(null);
   const shipsLayerRef = useRef<ShipsLayer | null>(null);
   const stormModeActiveRef = useRef(false);
@@ -937,7 +945,7 @@ export default function GeoScopeMap() {
           // Defaults de Castellón si no hay fixed config
           viewState.lat = 39.98;
           viewState.lng = 0.20;
-          viewState.zoom = 7.8;
+          viewState.zoom = 9.0;
           viewState.bearing = 0;
           viewState.pitch = 0;
         }
@@ -981,7 +989,7 @@ export default function GeoScopeMap() {
           style: runtime.style.style,
           center: viewState ? [viewState.lng, viewState.lat] : [0, 0],
           zoom: viewState?.zoom ?? 2.6,
-          minZoom: viewMode === "fixed" ? (mapSettings?.fixed?.zoom ?? 7.8) - 2 : 0,
+          minZoom: viewMode === "fixed" ? (mapSettings?.fixed?.zoom ?? 9.0) - 2 : 0,
           pitch: viewState?.pitch ?? 0,
           bearing: viewState?.bearing ?? 0,
           interactive: false,
@@ -998,7 +1006,7 @@ export default function GeoScopeMap() {
       mapRef.current = map;
       // Configurar minZoom según viewMode
       if (viewMode === "fixed") {
-        const fixedZoom = mapSettings?.fixed?.zoom ?? 7.8;
+        const fixedZoom = mapSettings?.fixed?.zoom ?? 9.0;
         map.setMinZoom(Math.max(fixedZoom - 2, 0));
       } else {
         // Para otros modos, usar zoom mínimo razonable
@@ -1153,8 +1161,19 @@ export default function GeoScopeMap() {
             globalRadarLayerRef.current = globalRadarLayer;
           }
 
-          // AEMET Warnings Layer (z-index 15, entre radar y vuelos)
+          // Weather Layer (z-index 12, entre radar/satélite y AEMET warnings)
           const aemetConfig = mergedConfig.aemet;
+          if (aemetConfig?.enabled && aemetConfig?.cap_enabled) {
+            const weatherLayer = new WeatherLayer({
+              enabled: true,
+              opacity: 0.3,
+              refreshSeconds: (aemetConfig.cache_minutes ?? 15) * 60,
+            });
+            layerRegistry.add(weatherLayer);
+            weatherLayerRef.current = weatherLayer;
+          }
+
+          // AEMET Warnings Layer (z-index 15, entre radar y vuelos)
           if (aemetConfig?.enabled && aemetConfig?.cap_enabled) {
             const aemetWarningsLayer = new AEMETWarningsLayer({
               enabled: true,
@@ -1284,6 +1303,7 @@ export default function GeoScopeMap() {
       globalSatelliteLayerRef.current = null;
       aemetWarningsLayerRef.current = null;
       lightningLayerRef.current = null;
+      weatherLayerRef.current = null;
       shipsLayerRef.current = null;
 
       const map = mapRef.current;
@@ -1476,7 +1496,7 @@ export default function GeoScopeMap() {
 
     const centerLat = v2Fixed.center.lat ?? 39.98;
     const centerLng = v2Fixed.center.lon ?? 0.20;
-    const zoom = v2Fixed.zoom ?? 7.8;
+    const zoom = v2Fixed.zoom ?? 9.0;
     const bearing = v2Fixed.bearing ?? 0;
     const pitch = v2Fixed.pitch ?? 0;
 
@@ -1612,7 +1632,7 @@ export default function GeoScopeMap() {
         
         const centerLat = fixedConfig?.center?.lat ?? 39.98;
         const centerLng = fixedConfig?.center?.lon ?? 0.20;
-        const zoom = fixedConfig?.zoom ?? 7.8;
+        const zoom = fixedConfig?.zoom ?? 9.0;
 
         const viewState = viewStateRef.current;
         if (!viewState) {
@@ -1772,9 +1792,19 @@ export default function GeoScopeMap() {
       shipsLayer.setSymbolOptions(shipsConfig.symbol);
     }
 
+    // Actualizar Weather Layer
+    const weatherLayer = weatherLayerRef.current;
+    const aemetConfig = merged.aemet;
+    if (weatherLayer && aemetConfig?.enabled && aemetConfig?.cap_enabled) {
+      weatherLayer.setEnabled(true);
+      weatherLayer.setOpacity(0.3);
+      weatherLayer.setRefreshSeconds((aemetConfig.cache_minutes ?? 15) * 60);
+    } else if (weatherLayer) {
+      weatherLayer.setEnabled(false);
+    }
+
     // Actualizar AEMET Warnings Layer
     const aemetLayer = aemetWarningsLayerRef.current;
-    const aemetConfig = merged.aemet;
     if (aemetLayer && aemetConfig?.enabled && aemetConfig?.cap_enabled) {
       aemetLayer.setEnabled(true);
       aemetLayer.setOpacity(0.6);
@@ -1935,13 +1965,16 @@ export default function GeoScopeMap() {
       return;
     }
 
+    // Inicializar opacidad del radar desde configuración
+    if (globalConfig.radar?.enabled && typeof globalConfig.radar.opacity === "number") {
+      setRadarOpacity(globalConfig.radar.opacity);
+    }
+
     let satelliteFrameIndex = 0;
     let radarFrameIndex = 0;
     let satelliteFrames: Array<{ timestamp: number; iso: string }> = [];
     let radarFrames: Array<{ timestamp: number; iso: string }> = [];
     let animationTimer: number | null = null;
-    let isPlaying = true;
-    let playbackSpeed = 1.0;
 
     const fetchFrames = async () => {
       try {
@@ -1988,7 +2021,7 @@ export default function GeoScopeMap() {
     };
 
     const advanceFrames = () => {
-      if (!isPlaying) return;
+      if (!radarPlaying) return;
 
       // Avanzar satellite frames
       if (globalConfig.satellite?.enabled && satelliteFrames.length > 0) {
@@ -2016,7 +2049,7 @@ export default function GeoScopeMap() {
       const satFrameStep = globalConfig.satellite?.frame_step ?? 10;
       const radarFrameStep = globalConfig.radar?.frame_step ?? 5;
       // Usar el menor intervalo
-      const frameIntervalMs = Math.min(satFrameStep, radarFrameStep) * 60 * 1000 / playbackSpeed;
+      const frameIntervalMs = Math.min(satFrameStep, radarFrameStep) * 60 * 1000 / radarPlaybackSpeed;
 
       const animate = () => {
         advanceFrames();
@@ -2030,6 +2063,14 @@ export default function GeoScopeMap() {
       if (animationTimer !== null) {
         window.clearTimeout(animationTimer);
         animationTimer = null;
+      }
+    };
+
+    // Reiniciar animación si cambia play/pause o velocidad
+    const restartAnimation = () => {
+      stopAnimation();
+      if (radarPlaying && (globalConfig.satellite?.enabled || globalConfig.radar?.enabled)) {
+        startAnimation();
       }
     };
 
@@ -2047,7 +2088,7 @@ export default function GeoScopeMap() {
     }, refreshInterval);
 
     // Iniciar animación si está habilitada
-    if (globalConfig.satellite?.enabled || globalConfig.radar?.enabled) {
+    if (radarPlaying && (globalConfig.satellite?.enabled || globalConfig.radar?.enabled)) {
       startAnimation();
     }
 
@@ -2060,17 +2101,20 @@ export default function GeoScopeMap() {
 
       const globalRadarLayer = globalRadarLayerRef.current;
       if (globalRadarLayer && globalConfig.radar?.enabled) {
-        globalRadarLayer.update({ opacity: globalConfig.radar.opacity });
+        globalRadarLayer.update({ opacity: radarOpacity });
       }
     };
 
     updateLayersOpacity();
 
+    // Reiniciar animación cuando cambien los controles (play/pause o velocidad)
+    restartAnimation();
+
     return () => {
       stopAnimation();
       clearInterval(refreshTimer);
     };
-  }, [config]);
+  }, [config, radarPlaying, radarPlaybackSpeed, radarOpacity]);
 
 
   // Mostrar error si WebGL no está disponible o el mapa falló
@@ -2088,6 +2132,11 @@ export default function GeoScopeMap() {
     );
   }
 
+  // Obtener configuración de radar para controles
+  const merged = config ? withConfigDefaults(config) : null;
+  const globalConfig = merged?.layers?.global;
+  const radarEnabled = globalConfig?.radar?.enabled ?? false;
+
   return (
     <div className="map-host">
       <div ref={mapFillRef} className="map-fill" />
@@ -2095,6 +2144,17 @@ export default function GeoScopeMap() {
       {tintColor ? (
         <div className="map-tint" style={{ background: tintColor }} aria-hidden="true" />
       ) : null}
+      {radarEnabled && (
+        <RadarControls
+          enabled={radarEnabled}
+          playing={radarPlaying}
+          playbackSpeed={radarPlaybackSpeed}
+          opacity={radarOpacity}
+          onPlayPause={setRadarPlaying}
+          onSpeedChange={setRadarPlaybackSpeed}
+          onOpacityChange={setRadarOpacity}
+        />
+      )}
     </div>
   );
 }

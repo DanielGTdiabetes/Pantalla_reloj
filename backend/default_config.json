@@ -137,7 +137,7 @@
       "decimate": "grid",
       "grid_px": 24,
       "styleScale": 1.4,
-      "render_mode": "circle",
+      "render_mode": "symbol_custom",
       "circle": {
         "radius_base": 3.0,
         "radius_zoom_scale": 1.2,
@@ -178,6 +178,7 @@
       "decimate": "grid",
       "grid_px": 24,
       "styleScale": 1.4,
+      "render_mode": "symbol_custom",
       "cine_focus": {
         "enabled": true,
         "mode": "both",

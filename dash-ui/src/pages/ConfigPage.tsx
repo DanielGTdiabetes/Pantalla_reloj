@@ -20,6 +20,11 @@ import {
   type CalendarEvent,
   getCalendarStatus,
   type CalendarStatusResponse,
+  getHistoricalEvents,
+  getHistoricalEventsStatus,
+  uploadHistoricalEventsFile,
+  type HistoricalEventsResponse,
+  type HistoricalEventsStatusResponse,
   updateAemetApiKey,
   updateAISStreamApiKey,
   updateOpenWeatherMapApiKey,
@@ -420,6 +425,12 @@ const ConfigPage: React.FC = () => {
   const [testingIcs, setTestingIcs] = useState(false);
   const [icsTestResult, setIcsTestResult] = useState<{ ok: boolean; message: string; events?: CalendarEvent[] } | null>(null);
   
+  // Historical Events state
+  const [uploadingHistoricalEvents, setUploadingHistoricalEvents] = useState(false);
+  const [historicalEventsUploadResult, setHistoricalEventsUploadResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [historicalEventsPreview, setHistoricalEventsPreview] = useState<HistoricalEventsResponse | null>(null);
+  const [loadingHistoricalEventsPreview, setLoadingHistoricalEventsPreview] = useState(false);
+  
   // WiFi state
   const [wifiNetworkList, setWifiNetworkList] = useState<WiFiNetwork[]>([]);
   const [wifiNetworksCount, setWifiNetworksCount] = useState(0);
@@ -814,6 +825,68 @@ const ConfigPage: React.FC = () => {
       event.target.value = "";
     }
   }, [refreshConfig, resetErrorsFor]);
+
+  const handleUploadHistoricalEvents = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    if (!file.name.toLowerCase().endsWith(".json")) {
+      setHistoricalEventsUploadResult({ ok: false, message: "El archivo debe tener extensión .json" });
+      return;
+    }
+
+    setUploadingHistoricalEvents(true);
+    setHistoricalEventsUploadResult(null);
+
+    try {
+      const result = await uploadHistoricalEventsFile(file);
+      const successMessage = `Archivo subido correctamente: ${result.saved_path} (${result.items_total} eventos totales)`;
+      setHistoricalEventsUploadResult({ ok: Boolean(result.ok), message: successMessage });
+
+      // Actualizar el formulario para habilitar el panel
+      setForm((prev) => {
+        const v2 = prev as unknown as { panels?: { historicalEvents?: { enabled?: boolean } } };
+        return {
+          ...prev,
+          panels: {
+            ...v2.panels,
+            historicalEvents: {
+              ...v2.panels?.historicalEvents,
+              enabled: v2.panels?.historicalEvents?.enabled ?? true,
+            },
+          },
+        } as unknown as AppConfig;
+      });
+
+      // Cargar preview de los primeros 3 ítems del día actual
+      try {
+        setLoadingHistoricalEventsPreview(true);
+        const preview = await getHistoricalEvents();
+        if (preview && preview.items && preview.items.length > 0) {
+          setHistoricalEventsPreview({
+            ...preview,
+            items: preview.items.slice(0, 3),
+          });
+        }
+      } catch (error) {
+        console.warn("Failed to load historical events preview:", error);
+      } finally {
+        setLoadingHistoricalEventsPreview(false);
+      }
+    } catch (error) {
+      console.error("[ConfigPage] Failed to upload historical events file", error);
+      const errorMessage = error instanceof Error ? error.message : "No se pudo subir el archivo JSON";
+      setHistoricalEventsUploadResult({ ok: false, message: errorMessage });
+    } finally {
+      setUploadingHistoricalEvents(false);
+      // Limpiar el input file para permitir subir el mismo archivo de nuevo
+      if (event.target) {
+        event.target.value = "";
+      }
+    }
+  }, []);
 
   const handleTestIcs = useCallback(async () => {
     if (testingIcs) {
@@ -3414,6 +3487,177 @@ const ConfigPage: React.FC = () => {
           </div>
         )}
 
+        {supports("blitzortung") && (
+          <div className="config-card">
+            <div>
+              <h2>Blitzortung (Rayos)</h2>
+              <p>Configura la conexión a Blitzortung para recibir datos de rayos en tiempo real.</p>
+            </div>
+            <div className="config-grid">
+              {supports("blitzortung.enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="blitzortung_enabled">
+                    <input
+                      id="blitzortung_enabled"
+                      type="checkbox"
+                      checked={form.blitzortung?.enabled ?? false}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          blitzortung: {
+                            ...prev.blitzortung,
+                            enabled,
+                          },
+                        }));
+                        resetErrorsFor("blitzortung.enabled");
+                      }}
+                    />
+                    Activar detección de rayos en tiempo real
+                  </label>
+                  {renderHelp("Conecta a Blitzortung vía MQTT o WebSocket para recibir datos de rayos")}
+                  {renderFieldError("blitzortung.enabled")}
+                </div>
+              )}
+
+              {supports("blitzortung.ws_enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="blitzortung_ws_enabled">
+                    <input
+                      id="blitzortung_ws_enabled"
+                      type="checkbox"
+                      checked={form.blitzortung?.ws_enabled ?? false}
+                      disabled={disableInputs || !form.blitzortung?.enabled}
+                      onChange={(event) => {
+                        const ws_enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          blitzortung: {
+                            ...prev.blitzortung,
+                            ws_enabled,
+                          },
+                        }));
+                        resetErrorsFor("blitzortung.ws_enabled");
+                      }}
+                    />
+                    Usar WebSocket en lugar de MQTT
+                  </label>
+                  {renderHelp("Si está activado, usa WebSocket en lugar de MQTT para conectar con Blitzortung")}
+                  {renderFieldError("blitzortung.ws_enabled")}
+                </div>
+              )}
+
+              {supports("blitzortung.mqtt_host") && !form.blitzortung?.ws_enabled && (
+                <div className="config-field">
+                  <label htmlFor="blitzortung_mqtt_host">Host MQTT</label>
+                  <input
+                    id="blitzortung_mqtt_host"
+                    type="text"
+                    maxLength={256}
+                    value={form.blitzortung?.mqtt_host ?? "127.0.0.1"}
+                    disabled={disableInputs || !form.blitzortung?.enabled || form.blitzortung?.ws_enabled}
+                    onChange={(event) => {
+                      const mqtt_host = event.target.value.trim();
+                      setForm((prev) => ({
+                        ...prev,
+                        blitzortung: {
+                          ...prev.blitzortung,
+                          mqtt_host: mqtt_host || "127.0.0.1",
+                        },
+                      }));
+                      resetErrorsFor("blitzortung.mqtt_host");
+                    }}
+                  />
+                  {renderHelp("Dirección del servidor MQTT (ej: 127.0.0.1 o mqtt.blitzortung.org)")}
+                  {renderFieldError("blitzortung.mqtt_host")}
+                </div>
+              )}
+
+              {supports("blitzortung.mqtt_port") && !form.blitzortung?.ws_enabled && (
+                <div className="config-field">
+                  <label htmlFor="blitzortung_mqtt_port">Puerto MQTT</label>
+                  <input
+                    id="blitzortung_mqtt_port"
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={form.blitzortung?.mqtt_port ?? 1883}
+                    disabled={disableInputs || !form.blitzortung?.enabled || form.blitzortung?.ws_enabled}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (!Number.isNaN(value)) {
+                        setForm((prev) => ({
+                          ...prev,
+                          blitzortung: {
+                            ...prev.blitzortung,
+                            mqtt_port: Math.max(1, Math.min(65535, Math.round(value))),
+                          },
+                        }));
+                        resetErrorsFor("blitzortung.mqtt_port");
+                      }
+                    }}
+                  />
+                  {renderHelp("Puerto del servidor MQTT (por defecto: 1883)")}
+                  {renderFieldError("blitzortung.mqtt_port")}
+                </div>
+              )}
+
+              {supports("blitzortung.mqtt_topic") && !form.blitzortung?.ws_enabled && (
+                <div className="config-field">
+                  <label htmlFor="blitzortung_mqtt_topic">Tópico MQTT</label>
+                  <input
+                    id="blitzortung_mqtt_topic"
+                    type="text"
+                    maxLength={256}
+                    value={form.blitzortung?.mqtt_topic ?? "blitzortung/1"}
+                    disabled={disableInputs || !form.blitzortung?.enabled || form.blitzortung?.ws_enabled}
+                    onChange={(event) => {
+                      const mqtt_topic = event.target.value.trim();
+                      setForm((prev) => ({
+                        ...prev,
+                        blitzortung: {
+                          ...prev.blitzortung,
+                          mqtt_topic: mqtt_topic || "blitzortung/1",
+                        },
+                      }));
+                      resetErrorsFor("blitzortung.mqtt_topic");
+                    }}
+                  />
+                  {renderHelp("Tópico MQTT para suscribirse (por defecto: blitzortung/1)")}
+                  {renderFieldError("blitzortung.mqtt_topic")}
+                </div>
+              )}
+
+              {supports("blitzortung.ws_url") && form.blitzortung?.ws_enabled && (
+                <div className="config-field">
+                  <label htmlFor="blitzortung_ws_url">URL WebSocket</label>
+                  <input
+                    id="blitzortung_ws_url"
+                    type="url"
+                    maxLength={512}
+                    value={form.blitzortung?.ws_url ?? ""}
+                    disabled={disableInputs || !form.blitzortung?.enabled || !form.blitzortung?.ws_enabled}
+                    onChange={(event) => {
+                      const ws_url = event.target.value.trim() || null;
+                      setForm((prev) => ({
+                        ...prev,
+                        blitzortung: {
+                          ...prev.blitzortung,
+                          ws_url,
+                        },
+                      }));
+                      resetErrorsFor("blitzortung.ws_url");
+                    }}
+                  />
+                  {renderHelp("URL del endpoint WebSocket de Blitzortung (ej: wss://ws.blitzortung.org)")}
+                  {renderFieldError("blitzortung.ws_url")}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {supports("news") && (
           <div className="config-card">
             <div>
@@ -3838,6 +4082,169 @@ const ConfigPage: React.FC = () => {
                     )}
                   </div>
                 </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Sección de Efemérides Históricas para v2 */}
+        {configVersion === 2 && (
+          <div className="config-card">
+            <div>
+              <h2>Efemérides Históricas</h2>
+              <p>Configura el panel de efemérides históricas (hechos/curiosidades del día) con datos locales en formato JSON.</p>
+            </div>
+            <div className="config-grid">
+              {/* Toggle enabled */}
+              <div className="config-field config-field--checkbox">
+                <label htmlFor="historicalEvents_enabled">
+                  <input
+                    id="historicalEvents_enabled"
+                    type="checkbox"
+                    checked={
+                      (form as unknown as { panels?: { historicalEvents?: { enabled?: boolean } } }).panels?.historicalEvents?.enabled ?? false
+                    }
+                    disabled={disableInputs}
+                    onChange={(event) => {
+                      const enabled = event.target.checked;
+                      setForm((prev) => {
+                        const v2 = prev as unknown as { panels?: { historicalEvents?: { enabled?: boolean; rotation_seconds?: number; max_items?: number } } };
+                        return {
+                          ...prev,
+                          panels: {
+                            ...v2.panels,
+                            historicalEvents: {
+                              ...v2.panels?.historicalEvents,
+                              enabled,
+                              rotation_seconds: v2.panels?.historicalEvents?.rotation_seconds ?? 6,
+                              max_items: v2.panels?.historicalEvents?.max_items ?? 5,
+                            },
+                          },
+                        } as unknown as AppConfig;
+                      });
+                    }}
+                  />
+                  Activar Efemérides Históricas
+                </label>
+                {renderHelp("Habilita el panel de efemérides históricas en el rotador")}
+              </div>
+
+              {/* Rotation seconds */}
+              {(form as unknown as { panels?: { historicalEvents?: { enabled?: boolean } } }).panels?.historicalEvents?.enabled && (
+                <div className="config-field">
+                  <label htmlFor="historicalEvents_rotation_seconds">Intervalo de rotación (segundos)</label>
+                  <input
+                    id="historicalEvents_rotation_seconds"
+                    type="number"
+                    min="3"
+                    max="60"
+                    value={(form as unknown as { panels?: { historicalEvents?: { rotation_seconds?: number } } }).panels?.historicalEvents?.rotation_seconds ?? 6}
+                    disabled={disableInputs || !((form as unknown as { panels?: { historicalEvents?: { enabled?: boolean } } }).panels?.historicalEvents?.enabled)}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (!Number.isNaN(value)) {
+                        setForm((prev) => {
+                          const v2 = prev as unknown as { panels?: { historicalEvents?: { rotation_seconds?: number; max_items?: number; enabled?: boolean } } };
+                          return {
+                            ...prev,
+                            panels: {
+                              ...v2.panels,
+                              historicalEvents: {
+                                ...v2.panels?.historicalEvents,
+                                rotation_seconds: Math.max(3, Math.min(60, Math.round(value))),
+                                max_items: v2.panels?.historicalEvents?.max_items ?? 5,
+                                enabled: v2.panels?.historicalEvents?.enabled ?? true,
+                              },
+                            },
+                          } as unknown as AppConfig;
+                        });
+                      }
+                    }}
+                  />
+                  {renderHelp("Cada cuántos segundos se rotan los items de efemérides (3-60)")}
+                </div>
+              )}
+
+              {/* Max items */}
+              {(form as unknown as { panels?: { historicalEvents?: { enabled?: boolean } } }).panels?.historicalEvents?.enabled && (
+                <div className="config-field">
+                  <label htmlFor="historicalEvents_max_items">Máximo de items a mostrar</label>
+                  <input
+                    id="historicalEvents_max_items"
+                    type="number"
+                    min="1"
+                    max="20"
+                    value={(form as unknown as { panels?: { historicalEvents?: { max_items?: number } } }).panels?.historicalEvents?.max_items ?? 5}
+                    disabled={disableInputs || !((form as unknown as { panels?: { historicalEvents?: { enabled?: boolean } } }).panels?.historicalEvents?.enabled)}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (!Number.isNaN(value)) {
+                        setForm((prev) => {
+                          const v2 = prev as unknown as { panels?: { historicalEvents?: { rotation_seconds?: number; max_items?: number; enabled?: boolean } } };
+                          return {
+                            ...prev,
+                            panels: {
+                              ...v2.panels,
+                              historicalEvents: {
+                                ...v2.panels?.historicalEvents,
+                                max_items: Math.max(1, Math.min(20, Math.round(value))),
+                                rotation_seconds: v2.panels?.historicalEvents?.rotation_seconds ?? 6,
+                                enabled: v2.panels?.historicalEvents?.enabled ?? true,
+                              },
+                            },
+                          } as unknown as AppConfig;
+                        });
+                      }
+                    }}
+                  />
+                  {renderHelp("Número máximo de items de efemérides a mostrar (1-20)")}
+                </div>
+              )}
+
+              {/* Upload JSON */}
+              {(form as unknown as { panels?: { historicalEvents?: { enabled?: boolean } } }).panels?.historicalEvents?.enabled && (
+                <div className="config-field">
+                  <label htmlFor="historicalEvents_upload">Subir archivo JSON</label>
+                  <input
+                    id="historicalEvents_upload"
+                    type="file"
+                    accept=".json"
+                    disabled={disableInputs || uploadingHistoricalEvents || !((form as unknown as { panels?: { historicalEvents?: { enabled?: boolean } } }).panels?.historicalEvents?.enabled)}
+                    onChange={handleUploadHistoricalEvents}
+                  />
+                  {renderHelp("Sube un archivo JSON con formato {\"MM-DD\": [\"evento1\", ...]}")}
+                  {historicalEventsUploadResult && (
+                    <div
+                      className={`config-field__hint ${
+                        historicalEventsUploadResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                      }`}
+                    >
+                      {historicalEventsUploadResult.message}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Preview de items del día actual */}
+              {historicalEventsPreview && historicalEventsPreview.items && historicalEventsPreview.items.length > 0 && (
+                <div className="config-field">
+                  <label>Vista previa (3 primeros items del día actual)</label>
+                  <div className="config-field__preview">
+                    <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                      {historicalEventsPreview.items.map((item, idx) => (
+                        <li key={idx} style={{ padding: "8px 0", borderBottom: idx < historicalEventsPreview.items.length - 1 ? "1px solid rgba(255,255,255,0.1)" : "none" }}>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {loadingHistoricalEventsPreview && (
+                <div className="config-field">
+                  <div className="config-field__hint">Cargando vista previa...</div>
+                </div>
               )}
             </div>
           </div>

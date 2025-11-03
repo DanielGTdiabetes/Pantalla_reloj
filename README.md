@@ -19,7 +19,8 @@ Pantalla_reloj/
 
 ### Backend (FastAPI)
 - Endpoints: `/api/health`, `/api/config` (GET/PATCH), `/api/weather`, `/api/news`,
-  `/api/astronomy`, `/api/calendar`, `/api/storm_mode` (GET/POST), `/api/astronomy/events`.
+  `/api/astronomy`, `/api/calendar`, `/api/storm_mode` (GET/POST), `/api/astronomy/events`,
+  `/api/efemerides`, `/api/efemerides/status`, `/api/efemerides/upload`.
 - Persistencia de configuración en `/var/lib/pantalla-reloj/config.json` (se crea con
   valores por defecto si no existe) y caché JSON en `/var/lib/pantalla/cache/`.
 - **Ruta oficial de config**: `/var/lib/pantalla-reloj/config.json`. Están obsoletas:
@@ -40,6 +41,7 @@ Pantalla_reloj/
 - ✅ **Unión geométrica**: Combinación real de polígonos CAP y radar usando `shapely` para máscaras de foco en modo `"both"`
 - ✅ **Datos enriquecidos**: Santoral con información adicional (type, patron_of, name_days), hortalizas con siembra y cosecha, eventos astronómicos
 - ✅ **Mejoras de fuentes**: `calculate_extended_astronomy()`, `get_astronomical_events()`, datos mejorados de harvest y saints
+- ✅ **Efemérides históricas**: Panel de efemérides históricas con datos locales JSON, uploader en `/config`, validación y guardado atómico
 
 ### Frontend (React/Vite)
 - Dashboard por defecto en modo `full`: mapa principal con tarjetas de noticias y
@@ -198,6 +200,106 @@ El sistema soporta el formato estándar iCalendar (RFC 5545) con eventos `VEVENT
 - `SUMMARY`: Título del evento
 - `DESCRIPTION`: Descripción opcional
 - `LOCATION`: Ubicación opcional
+
+### Efemérides Históricas
+
+El sistema soporta efemérides históricas (hechos/curiosidades del día) que se muestran en el panel rotativo del overlay. Los datos se almacenan localmente en formato JSON.
+
+#### Configurar efemérides históricas desde la UI
+
+La interfaz de configuración (`/#/config`) ofrece un uploader integrado para subir archivos JSON con efemérides directamente desde tu navegador.
+
+**Procedimiento:**
+
+1. **Acceder a la configuración**: Navega a `/#/config` y busca la sección **Efemérides Históricas**.
+2. **Activar el panel**: Marca la casilla **"Activar Efemérides Históricas"** para habilitar el panel en el rotador.
+3. **Configurar rotación**: Ajusta el **"Intervalo de rotación"** (3-60 segundos) y el **"Máximo de items a mostrar"** (1-20).
+4. **Subir archivo JSON**: Haz clic en el campo **"Subir archivo JSON"** y selecciona un archivo `.json` desde tu equipo.
+5. **Vista previa automática**: Tras la subida, el sistema muestra una vista previa de los 3 primeros items del día actual si hay datos disponibles.
+
+**Formato del archivo JSON:**
+
+El archivo debe tener la siguiente estructura:
+
+```json
+{
+  "MM-DD": [
+    "Año: Descripción del evento.",
+    "Año: Otro evento del mismo día."
+  ],
+  "01-01": [
+    "1959: Fidel Castro toma el poder en Cuba.",
+    "1993: Entra en vigor el Tratado de Maastricht."
+  ],
+  "11-03": [
+    "1957: Se lanza el Sputnik 2 con Laika.",
+    "1992: Firma del Tratado de Maastricht que establece la Unión Europea."
+  ]
+}
+```
+
+**Requisitos:**
+
+- El archivo debe tener extensión `.json` (validado en el navegador antes de enviar).
+- Formato válido: El archivo debe cumplir la estructura `{"MM-DD": ["evento1", "evento2", ...]}`. Las claves deben ser fechas en formato `MM-DD` (mes-día) y los valores deben ser arrays de strings.
+- Validación: El backend valida que todas las claves sean fechas válidas (mes 1-12, día 1-31) y que todos los valores sean strings no vacíos.
+- Permisos: El usuario del servicio (`dani` por defecto) debe tener permisos de escritura en `/var/lib/pantalla-reloj/data/` (el directorio se crea automáticamente con permisos `0644` si no existe).
+
+**Solución de errores típicos:**
+
+**Error: "El archivo debe tener extensión .json"**
+- **Causa**: El archivo seleccionado no termina en `.json`.
+- **Solución**: Asegúrate de que el archivo tenga la extensión correcta.
+
+**Error: "Invalid JSON format"**
+- **Causa**: El archivo no es un JSON válido.
+- **Solución**: Valida el JSON con una herramienta externa:
+  ```bash
+  python3 -m json.tool archivo.json
+  ```
+
+**Error: "Invalid efemerides format: Key 'XX-YY' must have numeric month and day"**
+- **Causa**: Las claves de fecha no están en formato `MM-DD` válido.
+- **Solución**: Asegúrate de que todas las claves sean fechas en formato `MM-DD` (ej: `01-01`, `11-03`, `12-25`).
+
+**Error: "Invalid efemerides format: Empty string found in 'XX-YY'"**
+- **Causa**: Hay strings vacíos en los arrays de eventos.
+- **Solución**: Elimina cualquier string vacío de los arrays.
+
+**El panel no muestra efemérides:**
+- **Causa**: Puede que no haya datos para el día actual o que el panel no esté habilitado en el rotador.
+- **Solución**: 
+  1. Verifica que `panels.historicalEvents.enabled` esté en `true` en la configuración.
+  2. Comprueba que el panel esté incluido en `ui_global.overlay.rotator.order`:
+     ```bash
+     curl -s http://127.0.0.1:8081/api/config | python3 -m json.tool | grep -A 5 "rotator"
+     ```
+  3. Verifica que haya datos para el día actual:
+     ```bash
+     curl -s http://127.0.0.1:8081/api/efemerides | python3 -m json.tool
+     ```
+
+**Subida mediante API (alternativa):**
+
+Si prefieres subir el archivo por línea de comandos:
+```bash
+curl -X POST \
+  -F "file=@/ruta/a/tu/efemerides.json" \
+  http://127.0.0.1:8081/api/efemerides/upload
+```
+
+El archivo se almacena de forma atómica (tmp + rename) y la configuración se actualiza automáticamente para habilitar el panel.
+
+#### Endpoints relacionados
+
+- `GET /api/efemerides?date=YYYY-MM-DD`: Obtiene efemérides para una fecha específica (por defecto: hoy)
+- `GET /api/efemerides/status`: Verifica el estado del servicio de efemérides históricas (devuelve `status: "ok"` si está funcionando correctamente)
+- `POST /api/efemerides/upload`: Sube un archivo JSON de efemérides al servidor
+- `GET /api/health`: Incluye información de efemérides históricas en el campo `historicalEvents.status`
+
+#### Ruta por defecto
+
+Por defecto, los archivos de efemérides se almacenan en `/var/lib/pantalla-reloj/data/efemerides.json`. Esta ruta puede configurarse en `panels.historicalEvents.local.data_path`.
 
 ### Timezone y rangos de fecha
 
@@ -761,23 +863,111 @@ También desinstala las unidades systemd sin reactivar ningún display manager.
      sudo cp /var/lib/pantalla-reloj/config.json.backup /var/lib/pantalla-reloj/config.json
      ```
 
-#### Smoke test E2E
+#### Smoke Test v23 Detallado
 
-Ejecuta el script de smoke test para verificar que todos los componentes funcionan correctamente:
+El script `scripts/smoke_v23.sh` ejecuta una suite completa de pruebas E2E (end-to-end) para verificar que todos los componentes de v23 funcionan correctamente.
+
+**Comandos exactos:**
 
 ```bash
+cd /home/dani/proyectos/Pantalla_reloj
 chmod +x scripts/smoke_v23.sh
-bash scripts/smoke_v23.sh
+bash scripts/smoke_v23.sh [usuario]
 ```
 
-El script verifica:
-1. Health endpoint (HTTP 200)
-2. Subida de archivo ICS
-3. Activación de layers (radar/aviones/barcos)
-4. Eventos de calendario (>= 1 evento)
-5. Calendar status ("ok")
+Si no se especifica `[usuario]`, el script intenta detectarlo automáticamente desde `$VERIFY_USER`, `$SUDO_USER` o `$USER`.
 
-Si algún test falla, el script mostrará el error específico y sugerencias de diagnóstico.
+**Tests ejecutados (10/10):**
+
+1. **Health endpoint (HTTP 200)**: Verifica que `/api/health` devuelve HTTP 200 con `status=ok`
+2. **Subida de archivo ICS**: Sube un archivo ICS de prueba a `/api/config/upload/ics` y verifica HTTP 200
+3. **Activación de layers**: Activa las capas radar, aviones y barcos mediante POST `/api/config`
+4. **Eventos de calendario**: Verifica que `/api/calendar/events` devuelve >= 1 evento tras la subida ICS
+5. **Calendar status**: Verifica que `/api/calendar/status` devuelve `status="ok"`
+6. **Weather now**: Verifica que `/api/weather/now` devuelve HTTP 200 sin errores 500 (permite vacío)
+7. **Weather weekly**: Verifica que `/api/weather/weekly` devuelve HTTP 200 sin errores 500
+8. **Ephemerides**: Verifica que `/api/ephemerides` devuelve HTTP 200 sin errores 500 (permite vacío)
+9. **Saints**: Verifica que `/api/saints` devuelve HTTP 200 sin errores 500 (permite vacío)
+10. **Overlay config**: Verifica que `/api/config` contiene bloque `ui_overlay` o `ui_global.overlay`
+
+**Expected outputs por test:**
+
+- **Test 1 (Health)**: `[smoke][OK] Health directo → HTTP 200, status=ok`
+- **Test 2 (ICS Upload)**: `[smoke][OK] ICS subido correctamente → HTTP 200`
+- **Test 3 (Layers)**: `[smoke][OK] Layers activados (radar/aviones/barcos) → HTTP 200`
+- **Test 4 (Calendar Events)**: `[smoke][OK] Eventos de calendario: X >= 1`
+- **Test 5 (Calendar Status)**: `[smoke][OK] Calendar status: ok`
+- **Test 6 (Weather Now)**: `[smoke][OK] weather/now → HTTP 200 (sin 500)`
+- **Test 7 (Weather Weekly)**: `[smoke][OK] weather/weekly → HTTP 200 (sin 500)`
+- **Test 8 (Ephemerides)**: `[smoke][OK] ephemerides → HTTP 200 (sin 500, permite vacío)`
+- **Test 9 (Saints)**: `[smoke][OK] saints → HTTP 200 (sin 500, permite vacío)`
+- **Test 10 (Overlay)**: `[smoke][OK] Config contiene bloque overlay coherente`
+
+**Salida de éxito:**
+
+```
+[smoke] ==========================================
+[smoke][OK] Todos los smoke tests E2E v23 pasaron correctamente (10/10)
+```
+
+**Salida de fallo:**
+
+```
+[smoke][ERROR] Smoke tests E2E v23 fallaron: X error(es) de 10 tests
+```
+
+**Troubleshooting específico:**
+
+**Test falla con "Fallo al verificar health directo":**
+- **Causa**: El backend no está corriendo o no responde en `http://127.0.0.1:8081`
+- **Solución**:
+  ```bash
+  sudo systemctl status pantalla-dash-backend@dani.service
+  sudo systemctl restart pantalla-dash-backend@dani.service
+  # Esperar 5-10s y volver a ejecutar el test
+  ```
+
+**Test falla con "Fallo al subir ICS":**
+- **Causa**: Permisos insuficientes en `/var/lib/pantalla-reloj/ics/` o archivo ICS inválido
+- **Solución**:
+  ```bash
+  sudo install -d -m 0700 -o dani -g dani /var/lib/pantalla-reloj/ics
+  # Verificar que el archivo temporal existe: ls -l /tmp/test_calendar_v23.ics
+  ```
+
+**Test falla con "Fallo al verificar weather/now" o "weather/now devolvió error del servidor (500)":**
+- **Causa**: Error interno del backend al obtener datos meteorológicos
+- **Solución**: Revisar logs del backend:
+  ```bash
+  journalctl -u pantalla-dash-backend@dani.service -n 100 | grep -i weather
+  ```
+  Si el error persiste, verificar que OpenWeather API key esté configurada correctamente en `/config`.
+
+**Test falla con "ephemerides devolvió error del servidor (500)":**
+- **Causa**: Error interno del backend al calcular efemérides
+- **Solución**: Revisar logs del backend:
+  ```bash
+  journalctl -u pantalla-dash-backend@dani.service -n 100 | grep -i ephemerides
+  ```
+  Nota: El test permite respuestas vacías, pero no errores 500 del servidor.
+
+**Test falla con "Config no contiene bloque overlay":**
+- **Causa**: La configuración no tiene bloque `ui_overlay` o `ui_global.overlay`
+- **Solución**: Verificar la configuración:
+  ```bash
+  curl -s http://127.0.0.1:8081/api/config | python3 -m json.tool | grep -A 10 overlay
+  ```
+  Si falta, activar el overlay desde la UI en `/config` o añadirlo manualmente a la configuración.
+
+**Test falla con "Fallo al verificar calendar status" o "status" != "ok":**
+- **Causa**: El calendario ICS no se procesó correctamente o está corrupto
+- **Solución**: Verificar el estado del calendario:
+  ```bash
+  curl -s http://127.0.0.1:8081/api/calendar/status | python3 -m json.tool
+  ```
+  Revisar el campo `note` para el motivo del error específico. Verificar que el archivo ICS tenga formato válido (RFC 5545).
+
+Si algún test falla, el script mostrará el error específico con mensajes claros para facilitar el diagnóstico.
 
 Para pruebas mínimas de runtime post-arranque, usa:
 

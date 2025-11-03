@@ -1,11 +1,18 @@
 {
   "version": 2,
+  "display": {
+    "timezone": "Europe/Madrid"
+  },
   "ui_map": {
     "engine": "maplibre",
     "provider": "local_raster_xyz",
     "renderWorldCopies": true,
     "interactive": false,
     "controls": false,
+    "labelsOverlay": {
+      "enabled": true,
+      "style": "carto-only-labels"
+    },
     "local": {
       "tileUrl": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
       "minzoom": 0,
@@ -23,7 +30,7 @@
     "viewMode": "fixed",
     "fixed": {
       "center": { "lat": 39.98, "lon": 0.20 },
-      "zoom": 7.8,
+      "zoom": 9.0,
       "bearing": 0,
       "pitch": 0
     },
@@ -61,7 +68,7 @@
       "decimate": "none",
       "grid_px": 24,
       "styleScale": 3.2,
-      "render_mode": "circle",
+      "render_mode": "symbol_custom",
       "circle": {
         "radius_base": 7.5,
         "radius_zoom_scale": 1.7,
@@ -80,13 +87,36 @@
       "max_items_view": 420,
       "decimate": "grid",
       "grid_px": 24,
-      "styleScale": 1.4
+      "styleScale": 1.4,
+      "render_mode": "symbol_custom"
     }
   },
   "panels": {
     "weatherWeekly": { "enabled": true },
     "ephemerides": { "enabled": true },
     "news": { "enabled": true, "feeds": [] },
-    "calendar": { "enabled": true }
+    "calendar": { "enabled": true },
+    "historicalEvents": {
+      "enabled": true,
+      "provider": "local",
+      "local": {
+        "data_path": "/var/lib/pantalla-reloj/data/efemerides.json"
+      },
+      "rotation_seconds": 6,
+      "max_items": 5
+    }
+  },
+  "secrets": {
+    "google": {
+      "api_key": null,
+      "calendar_id": null
+    },
+    "aemet": {
+      "api_key": null
+    },
+    "ics": {
+      "url": null,
+      "path": null
+    }
   }
 }

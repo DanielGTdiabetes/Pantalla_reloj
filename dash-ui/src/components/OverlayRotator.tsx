@@ -12,6 +12,7 @@ import { RotatingCard } from "./RotatingCard";
 import { CalendarCard } from "./dashboard/cards/CalendarCard";
 import { EphemeridesCard } from "./dashboard/cards/EphemeridesCard";
 import { HarvestCard } from "./dashboard/cards/HarvestCard";
+import { HistoricalEventsCard } from "./dashboard/cards/HistoricalEventsCard";
 import { MoonCard } from "./dashboard/cards/MoonCard";
 import { NewsCard } from "./dashboard/cards/NewsCard";
 import { SaintsCard } from "./dashboard/cards/SaintsCard";
@@ -25,6 +26,7 @@ type DashboardPayload = {
   astronomy?: Record<string, unknown>;
   calendar?: Record<string, unknown>;
   santoral?: { saints?: string[]; namedays?: string[] };
+  historicalEvents?: { date?: string; count?: number; items?: string[] };
 };
 
 const REFRESH_INTERVAL_MS = 60_000;
@@ -72,6 +74,7 @@ const PANEL_ID_MAP: Record<string, string> = {
   "santoral": "saints",
   "calendar": "calendar",
   "news": "news",
+  "historicalEvents": "historicalEvents",
 };
 const DEFAULT_FALLBACK_PANEL = "clock";
 const DEFAULT_DURATIONS_SEC = {
@@ -81,6 +84,7 @@ const DEFAULT_DURATIONS_SEC = {
   santoral: 8,
   calendar: 12,
   news: 12,
+  historicalEvents: 6,
 };
 
 const temperatureToUnit = (value: number, from: string, to: string): number => {
@@ -286,6 +290,7 @@ export const OverlayRotator: React.FC = () => {
   const weatherCacheRef = useRef<{ data: Record<string, unknown> | null; timestamp: number | null }>({ data: null, timestamp: null });
   const astronomyCacheRef = useRef<{ data: Record<string, unknown> | null; timestamp: number | null }>({ data: null, timestamp: null });
   const santoralCacheRef = useRef<{ data: { date: string; names: string[] } | null; timestamp: number | null }>({ data: null, timestamp: null });
+  const historicalEventsCacheRef = useRef<{ data: { date?: string; count?: number; items?: string[] } | null; timestamp: number | null }>({ data: null, timestamp: null });
 
   // Fetch de datos con cacheo
   useEffect(() => {
@@ -311,7 +316,13 @@ export const OverlayRotator: React.FC = () => {
           : Infinity;
         const santoralCacheValid = santoralCacheAge < 24 * 60 * 60 * 1000;
 
-        const [weather, news, astronomy, calendar, santoral] = await Promise.all([
+        // Verificar cache de efemérides históricas (5 min)
+        const historicalEventsCacheAge = historicalEventsCacheRef.current?.timestamp 
+          ? Date.now() - historicalEventsCacheRef.current.timestamp 
+          : Infinity;
+        const historicalEventsCacheValid = historicalEventsCacheAge < 5 * 60 * 1000;
+
+        const [weather, news, astronomy, calendar, santoral, historicalEvents] = await Promise.all([
           (async () => {
             if (weatherCacheValid && weatherCacheRef.current?.data) {
               return weatherCacheRef.current.data;
@@ -379,11 +390,29 @@ export const OverlayRotator: React.FC = () => {
                 ? { saints: santoralCacheRef.current.data.names, namedays: [] }
                 : { saints: [], namedays: [] };
             }
+          })(),
+          (async () => {
+            if (historicalEventsCacheValid && historicalEventsCacheRef.current?.data) {
+              return historicalEventsCacheRef.current.data;
+            }
+            try {
+              const v2Config = config as unknown as { panels?: { historicalEvents?: { enabled?: boolean } } };
+              const enabled = v2Config.panels?.historicalEvents?.enabled !== false;
+              if (!enabled) return { count: 0, items: [] };
+              
+              const data = await apiGet<{ date?: string; count?: number; items?: string[] }>("/api/efemerides");
+              if (mounted) {
+                historicalEventsCacheRef.current = { data, timestamp: Date.now() };
+              }
+              return data;
+            } catch {
+              return historicalEventsCacheRef.current?.data || { count: 0, items: [] };
+            }
           })()
         ]);
 
         if (mounted) {
-          setPayload({ weather, news, astronomy, calendar, santoral });
+          setPayload({ weather, news, astronomy, calendar, santoral, historicalEvents });
           setLastUpdatedAt(Date.now());
         }
       } catch (error) {
@@ -407,6 +436,7 @@ export const OverlayRotator: React.FC = () => {
   const astronomy = (payload.astronomy ?? {}) as Record<string, unknown>;
   const news = (payload.news ?? {}) as Record<string, unknown>;
   const calendar = (payload.calendar ?? {}) as Record<string, unknown>;
+  const historicalEvents = (payload.historicalEvents ?? {}) as { date?: string; count?: number; items?: string[] };
 
   const targetUnit = "C";
   const rawTemperature = typeof weather.temperature === "number" ? weather.temperature : null;
@@ -610,6 +640,18 @@ export const OverlayRotator: React.FC = () => {
       render: () => <NewsCard items={newsItems} />
     });
 
+    // historicalEvents (HistoricalEventsCard)
+    const historicalEventsItems = Array.isArray(historicalEvents.items) 
+      ? historicalEvents.items 
+      : [];
+    const v2ConfigForDuration = config as unknown as { panels?: { historicalEvents?: { rotation_seconds?: number } } };
+    const rotationSeconds = v2ConfigForDuration.panels?.historicalEvents?.rotation_seconds ?? 6;
+    map.set("historicalEvents", {
+      id: "historicalEvents",
+      duration: (durations.historicalEvents ?? 6) * 1000,
+      render: () => <HistoricalEventsCard items={historicalEventsItems} rotationSeconds={rotationSeconds} />
+    });
+
     // Legacy panels (mapeo v1 -> v2 para retrocompatibilidad)
     map.set("time", map.get("clock")!); // time -> clock
     map.set("ephemerides", map.get("astronomy")!); // ephemerides -> astronomy
@@ -654,7 +696,8 @@ export const OverlayRotator: React.FC = () => {
     sunrise,
     sunset,
     ephemeridesEvents,
-    santoralEntries
+    santoralEntries,
+    historicalEvents
   ]);
 
   // Filtrar y validar paneles según configuración y disponibilidad
@@ -688,6 +731,10 @@ export const OverlayRotator: React.FC = () => {
       } else if (panelId === "news") {
         const panelsConfig = config as unknown as { panels?: { news?: { enabled?: boolean } } };
         shouldInclude = panelsConfig.panels?.news?.enabled !== false && newsItems.length >= 0;
+      } else if (panelId === "historicalEvents") {
+        const panelsConfig = config as unknown as { panels?: { historicalEvents?: { enabled?: boolean } } };
+        const historicalEventsItems = Array.isArray(historicalEvents.items) ? historicalEvents.items : [];
+        shouldInclude = panelsConfig.panels?.historicalEvents?.enabled !== false && historicalEventsItems.length > 0;
       } else if (panelId === "ephemerides") {
         const panelsConfig = config as unknown as { panels?: { ephemerides?: { enabled?: boolean } } };
         const ephemeridesEnabled = panelsConfig.panels?.ephemerides?.enabled !== false;
@@ -730,7 +777,8 @@ export const OverlayRotator: React.FC = () => {
     ephemeridesEvents,
     forecastDays,
     condition,
-    temperature.value
+    temperature.value,
+    historicalEvents
   ]);
 
   // Mantener ref actualizado con los paneles disponibles

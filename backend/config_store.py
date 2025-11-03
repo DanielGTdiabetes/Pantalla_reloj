@@ -148,6 +148,37 @@ def default_layers_if_missing(config: Dict[str, Any]) -> None:
     radar.setdefault("provider", "aemet")
 
 
+def default_panels_if_missing(config: Dict[str, Any]) -> None:
+    """Ensure key panels settings exist with safe defaults."""
+    
+    panels_raw = config.get("panels")
+    panels = panels_raw if isinstance(panels_raw, dict) else {}
+    if panels_raw is not panels:
+        config["panels"] = panels
+    
+    # Historical Events panel defaults
+    historical_events_raw = panels.get("historicalEvents")
+    if isinstance(historical_events_raw, dict):
+        historical_events = historical_events_raw
+    else:
+        historical_events = {}
+        panels["historicalEvents"] = historical_events
+    
+    historical_events.setdefault("enabled", True)
+    historical_events.setdefault("provider", "local")
+    historical_events.setdefault("rotation_seconds", 6)
+    historical_events.setdefault("max_items", 5)
+    
+    local_raw = historical_events.get("local")
+    if isinstance(local_raw, dict):
+        local = local_raw
+    else:
+        local = {}
+        historical_events["local"] = local
+    
+    local.setdefault("data_path", "/var/lib/pantalla-reloj/data/efemerides.json")
+
+
 def validate_calendar_provider(
     provider: str,
     enabled: bool,

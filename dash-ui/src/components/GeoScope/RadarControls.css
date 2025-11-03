@@ -1,0 +1,118 @@
+.radar-controls {
+  position: absolute;
+  bottom: 1rem;
+  left: 1rem;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  border-radius: 8px;
+  padding: 0.75rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.radar-controls__inner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.radar-controls__button {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  color: white;
+  font-size: 1.2rem;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.radar-controls__button:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.radar-controls__button:active {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.radar-controls__group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.radar-controls__label {
+  color: white;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.radar-controls__slider {
+  width: 100px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.3);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.radar-controls__slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.radar-controls__slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.radar-controls__value {
+  color: white;
+  font-size: 0.875rem;
+  min-width: 40px;
+  text-align: right;
+  user-select: none;
+}
+
+@media (max-width: 768px) {
+  .radar-controls {
+    bottom: 0.5rem;
+    left: 0.5rem;
+    padding: 0.5rem;
+  }
+
+  .radar-controls__inner {
+    gap: 0.5rem;
+  }
+
+  .radar-controls__slider {
+    width: 80px;
+  }
+
+  .radar-controls__label {
+    font-size: 0.75rem;
+  }
+
+  .radar-controls__value {
+    font-size: 0.75rem;
+    min-width: 35px;
+  }
+}
+

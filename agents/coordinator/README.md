@@ -108,3 +108,6 @@ Se recomienda ejecutar pruebas intermedias tras cada merge.
 - `130`: Interrupción por el usuario (Ctrl+C)
 
 
+
+
+
