@@ -25,12 +25,13 @@ Pantalla_reloj/
 - **Ruta oficial de config**: `/var/lib/pantalla-reloj/config.json`. Están obsoletas:
   `/etc/pantalla-dash/config.json`, `/var/lib/pantalla/config.json` (el backend las detecta
   al arranque y emite WARNING si existen, pero las ignora).
-- El lanzador `usr/local/bin/pantalla-backend-launch` garantiza que existan
-  `/var/log/pantalla` y `/var/lib/pantalla`, verifica que `import backend.main`
-  funcione (fallando con código 3 si no) y envía stdout/stderr a
-  `/tmp/backend-launch.log` antes de delegar en `uvicorn main:app --host
-  127.0.0.1 --port 8081` dentro de un entorno virtual local
-  (`/opt/pantalla/backend/.venv`).
+- El lanzador `usr/local/bin/pantalla-backend-launch` es robusto e idempotente:
+  crea/usar venv en `/opt/pantalla-reloj/backend/.venv`, actualiza pip, instala
+  dependencias desde `requirements.txt` con retry x2 si falla la red, valida imports
+  críticos (fastapi, uvicorn, python-multipart, icalendar, backend.main) antes de lanzar,
+  garantiza directorios (`/var/lib/pantalla-reloj/ics` con 0700), y lanza uvicorn con
+  uvloop/httptools si están disponibles (sino usa stdlib). Los logs van a journal via
+  `StandardOutput=journal` y `StandardError=journal` del servicio systemd.
 
 #### Funcionalidades Implementadas (2025-01)
 - ✅ **Proveedores personalizados**: `CustomFlightProvider` y `CustomShipProvider` con configuración de URL y API key
@@ -276,7 +277,12 @@ variable.
 - `pantalla-openbox@dani.service`: sesión gráfica minimalista con autostart que aplica
   la geometría fija descrita arriba y prepara el entorno antes de lanzar el kiosk.
 - `pantalla-dash-backend@dani.service`: ejecuta el backend FastAPI como usuario `dani`
-  vía `pantalla-backend-launch`, que valida imports y crea las rutas necesarias.
+  vía `pantalla-backend-launch`. El servicio usa `StateDirectory=pantalla-reloj` (crea
+  `/var/lib/pantalla-reloj` con permisos 0755), `User=%i` y `Group=%i` dinámicos,
+  timeouts de 30s/15s, logging a journal, y `Environment=PORT=8081`. El launcher crea/usar
+  venv en `/opt/pantalla-reloj/backend/.venv`, instala dependencias con retry x2, valida
+  imports críticos (fastapi, uvicorn, python-multipart, icalendar, backend.main) y garantiza
+  directorios de datos antes de lanzar uvicorn con uvloop/httptools si están disponibles.
 - `pantalla-kiosk@dani.service`: lanzador agnóstico que prioriza Chromium (deb o snap) y
   recurre a Firefox si no hay binario Chromium disponible; consume `kiosk.env` para
   URL y overrides.
@@ -441,18 +447,23 @@ en un estado consistente. Durante la instalación:
   unidad `pantalla-kiosk@.service`, creando `kiosk.env` solo si falta para evitar
   sobrescrituras.
 - Se prepara el backend (venv + `requirements.txt`) sirviendo en
-  `http://127.0.0.1:8081` y se crea `/var/lib/pantalla/config.json` con el layout
+  `http://127.0.0.1:8081` y se crea `/var/lib/pantalla-reloj/config.json` con el layout
   `full`, panel derecho y overlay oculto.
 - Se construye el frontend (`dash-ui`) aplicando las variables Vite por defecto y
   se publica en `/var/www/html`.
 - Se configura Nginx como reverse proxy (`/api/` → backend) y servidor estático.
 - Se instalan y activan las unidades systemd (`pantalla-xorg.service`,
   `pantalla-openbox@dani.service`, `pantalla-dash-backend@dani.service`).
+- **Espera activa del backend**: El instalador espera hasta 60s (con mensajes cada 5s)
+  a que el backend responda en `/api/health` con `status=ok`. Si falla, muestra los logs
+  del servicio (`journalctl -u pantalla-dash-backend@dani.service -n 150 -o short-iso`)
+  y aborta la instalación para evitar servicios en estado inconsistente.
 - Se asegura la rotación de la pantalla a horizontal y se lanza el navegador kiosk
   (Chromium por defecto, Firefox como fallback) apuntando a `http://127.0.0.1`.
 - Crea `/var/log/pantalla`, `/var/lib/pantalla` y `/var/lib/pantalla-reloj/state`,
   asegurando que la cookie `~/.Xauthority` exista con permisos correctos para
-  `dani`.
+  `dani`. El servicio backend usa `StateDirectory=pantalla-reloj` para crear
+  `/var/lib/pantalla-reloj` automáticamente con permisos correctos.
 
 Al finalizar verás un resumen con el estado del backend, frontend, Nginx y los
 servicios systemd.
@@ -596,6 +607,17 @@ El script verifica:
 
 Si algún test falla, el script mostrará el error específico y sugerencias de diagnóstico.
 
+Para pruebas mínimas de runtime post-arranque, usa:
+
+```bash
+bash scripts/smoke_runtime.sh
+```
+
+Este script verifica:
+1. Health 200 → status="ok"
+2. Calendar status endpoint (ok/empty/stale sin errores de proveedor)
+3. Config path correcto (`/var/lib/pantalla-reloj/config.json` y no "default/legacy")
+
 ### Runbook: pantalla negra + puntero
 
 1. Revisar servicios clave:
@@ -629,6 +651,145 @@ Si algún test falla, el script mostrará el error específico y sugerencias de 
    ```bash
    journalctl -u pantalla-kiosk@dani.service -n 120 --no-pager -l
    ```
+
+### Troubleshooting: Restart Loop del Backend
+
+Si el servicio `pantalla-dash-backend@dani.service` entra en un ciclo de reinicios (`restart loop`), sigue estos pasos:
+
+#### 1. Diagnosticar el problema
+
+```bash
+# Ver estado del servicio y últimos reinicios
+sudo systemctl status pantalla-dash-backend@dani.service
+
+# Ver logs detallados (últimos 150 registros con timestamp)
+journalctl -u pantalla-dash-backend@dani.service -n 150 -o short-iso
+
+# Verificar que el servicio está en restart loop
+systemctl show pantalla-dash-backend@dani.service -p ActiveState,Result
+```
+
+#### 2. Verificar dependencias e imports
+
+El launcher valida imports críticos antes de lanzar. Si fallan, revisa:
+
+```bash
+# Verificar venv existe y es válido
+ls -la /opt/pantalla-reloj/backend/.venv/bin/python
+
+# Probar imports manualmente
+sudo -u dani /opt/pantalla-reloj/backend/.venv/bin/python -c "import fastapi; import uvicorn; import multipart; import icalendar; import backend.main"
+
+# Si algún import falla, reinstalar dependencias
+sudo -u dani /opt/pantalla-reloj/backend/.venv/bin/pip install -r /opt/pantalla-reloj/backend/requirements.txt
+```
+
+#### 3. Verificar permisos de directorios
+
+```bash
+# Verificar StateDirectory
+ls -ld /var/lib/pantalla-reloj/
+# Debe ser: drwxr-xr-x dani dani (o similar con owner correcto)
+
+# Verificar directorio ICS
+ls -ld /var/lib/pantalla-reloj/ics/
+# Debe ser: drwx------ dani dani (0700)
+
+# Verificar config.json
+ls -l /var/lib/pantalla-reloj/config.json
+# Debe ser: -rw-r--r-- dani dani (0644)
+
+# Si los permisos están incorrectos, corregir:
+sudo install -d -m 0755 -o dani -g dani /var/lib/pantalla-reloj
+sudo install -d -m 0700 -o dani -g dani /var/lib/pantalla-reloj/ics
+sudo chown dani:dani /var/lib/pantalla-reloj/config.json
+sudo chmod 0644 /var/lib/pantalla-reloj/config.json
+```
+
+#### 4. Verificar StateDirectory en systemd
+
+El unit debe tener `StateDirectory=pantalla-reloj` (no `pantalla`). Verificar:
+
+```bash
+systemctl cat pantalla-dash-backend@dani.service | grep StateDirectory
+```
+
+Si muestra `StateDirectory=pantalla`, corregir instalando el unit actualizado:
+
+```bash
+sudo systemctl stop pantalla-dash-backend@dani.service
+sudo install -D -m 0644 systemd/pantalla-dash-backend@.service /etc/systemd/system/pantalla-dash-backend@.service
+sudo systemctl daemon-reload
+sudo systemctl start pantalla-dash-backend@dani.service
+```
+
+#### 5. Verificar puerto y variables de entorno
+
+```bash
+# Verificar que PORT está definido
+systemctl show pantalla-dash-backend@dani.service -p Environment
+
+# Verificar que el puerto 8081 no está ocupado
+sudo lsof -i :8081 || echo "Puerto libre"
+```
+
+#### 6. Reinstalar backend desde cero
+
+Si nada funciona, reinstalar el backend:
+
+```bash
+# Detener servicio
+sudo systemctl stop pantalla-dash-backend@dani.service
+
+# Eliminar venv y recrear
+sudo rm -rf /opt/pantalla-reloj/backend/.venv
+sudo -u dani python3 -m venv /opt/pantalla-reloj/backend/.venv
+sudo -u dani /opt/pantalla-reloj/backend/.venv/bin/pip install --upgrade pip wheel
+sudo -u dani /opt/pantalla-reloj/backend/.venv/bin/pip install -r /opt/pantalla-reloj/backend/requirements.txt
+
+# Verificar imports
+sudo -u dani /opt/pantalla-reloj/backend/.venv/bin/python -c "import backend.main" || echo "ERROR: Imports fallan"
+
+# Reiniciar servicio
+sudo systemctl start pantalla-dash-backend@dani.service
+
+# Verificar que arranca correctamente (esperar hasta 30s por TimeoutStartSec)
+sleep 35
+curl -sfS http://127.0.0.1:8081/api/health | jq -r '.status' || echo "Backend no responde"
+```
+
+#### 7. Verificar health después del arranque
+
+Después de corregir el problema, verifica que el backend esté funcionando:
+
+```bash
+# Esperar hasta 15s para que arranque (según DoD)
+for i in {1..15}; do
+  if curl -sfS http://127.0.0.1:8081/api/health | jq -e '.status == "ok"' >/dev/null 2>&1; then
+    echo "Backend OK tras ${i}s"
+    exit 0
+  fi
+  sleep 1
+done
+echo "Backend no responde tras 15s"
+```
+
+#### 8. Ejecutar smoke test de runtime
+
+Una vez el servicio esté estable, verifica con el smoke test:
+
+```bash
+bash scripts/smoke_runtime.sh
+```
+
+Si el smoke test pasa pero el servicio sigue reiniciándose, revisa `journalctl -u pantalla-dash-backend@dani.service -f` en tiempo real para ver el error exacto antes del restart.
+
+#### Errores comunes y soluciones
+
+- **"ERROR: fastapi no importable"**: Reinstalar dependencias (`pip install -r requirements.txt`).
+- **"ERROR: backend.main no importable"**: Verificar `PYTHONPATH=/opt/pantalla-reloj` y que el código backend esté en `/opt/pantalla-reloj/backend/`.
+- **PermissionError al crear directorios**: Verificar permisos de `/var/lib/pantalla-reloj` y que el usuario del servicio tenga acceso.
+- **"Port already in use"**: Verificar que no hay otra instancia corriendo (`lsof -i :8081`) o cambiar `Environment=PORT=8082` temporalmente.
 
 ## Corrección de permisos
 
