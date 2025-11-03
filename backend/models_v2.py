@@ -191,6 +191,20 @@ class PanelCalendarConfig(BaseModel):
     ics_path: Optional[str] = Field(default=None, max_length=1024)
 
 
+class PanelHistoricalEventsLocalConfig(BaseModel):
+    """Configuración local del proveedor de efemérides históricas."""
+    data_path: str = Field(default="/var/lib/pantalla-reloj/data/efemerides.json", max_length=1024)
+
+
+class PanelHistoricalEventsConfig(BaseModel):
+    """Configuración de panel de efemérides históricas."""
+    enabled: bool = True
+    provider: Literal["local"] = "local"
+    local: Optional[PanelHistoricalEventsLocalConfig] = None
+    rotation_seconds: int = Field(default=6, ge=3, le=60)
+    max_items: int = Field(default=5, ge=1, le=20)
+
+
 class CalendarConfig(BaseModel):
     """Configuración de calendario top-level."""
     enabled: bool = True
@@ -204,6 +218,7 @@ class PanelsConfig(BaseModel):
     ephemerides: Optional[PanelEphemeridesConfig] = None
     news: Optional[PanelNewsConfig] = None
     calendar: Optional[PanelCalendarConfig] = None
+    historicalEvents: Optional[PanelHistoricalEventsConfig] = None
 
 
 class GoogleSecretsConfig(BaseModel):

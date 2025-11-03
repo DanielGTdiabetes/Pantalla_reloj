@@ -74,6 +74,12 @@ from .layer_providers import (
 from .logging_utils import configure_logging
 from .models import AppConfig
 from .models_v2 import AppConfigV2
+from .routes.efemerides import (
+    get_efemerides_for_date,
+    load_efemerides_data,
+    save_efemerides_data,
+    upload_efemerides_file,
+)
 from .secret_store import SecretStore
 from .services.opensky_auth import DEFAULT_TOKEN_URL, OpenSkyAuthError
 from .services.opensky_client import OpenSkyClientError
@@ -834,6 +840,56 @@ def _health_payload() -> Dict[str, Any]:
         }
     }
     payload["providers"] = providers
+    
+    # Bloque de efemérides históricas
+    try:
+        config_v2, _ = _read_config_v2()
+        historical_events_config = None
+        enabled = False
+        provider = "local"
+        data_path = "/var/lib/pantalla-reloj/data/efemerides.json"
+        
+        if config_v2.panels and config_v2.panels.historicalEvents:
+            historical_events_config = config_v2.panels.historicalEvents
+            enabled = historical_events_config.enabled
+            provider = historical_events_config.provider
+            if historical_events_config.local:
+                data_path = historical_events_config.local.data_path
+        
+        # Verificar estado del archivo
+        path = Path(data_path)
+        status = "ok"
+        last_load_iso = None
+        
+        if not path.exists():
+            status = "missing"
+        else:
+            try:
+                from .routes.efemerides import load_efemerides_data
+                data = load_efemerides_data(data_path)
+                if data:
+                    mtime = path.stat().st_mtime
+                    last_load_iso = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+                else:
+                    status = "empty"
+            except Exception as e:
+                logger.debug("Error loading efemerides for health: %s", e)
+                status = "error"
+        
+        payload["historicalEvents"] = {
+            "enabled": enabled,
+            "provider": provider,
+            "status": status,
+            "last_load_iso": last_load_iso
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Unable to gather historicalEvents status for health: %s", exc)
+        payload["historicalEvents"] = {
+            "enabled": False,
+            "provider": "local",
+            "status": "error",
+            "last_load_iso": None
+        }
     
     # Bloque de calendario
     try:
@@ -2680,6 +2736,165 @@ def get_weather_weekly(lat: float, lon: float) -> Dict[str, Any]:
             "reason": "unexpected_error",
             "daily": []
         }
+
+
+@app.get("/api/efemerides")
+def get_efemerides(target_date: Optional[str] = None) -> Dict[str, Any]:
+    """Obtiene efemérides históricas para una fecha específica.
+    
+    Args:
+        target_date: Fecha en formato YYYY-MM-DD (opcional, por defecto: hoy)
+        
+    Returns:
+        Diccionario con {"date": "YYYY-MM-DD", "count": N, "items": [...]}
+    """
+    try:
+        # Leer configuración v2
+        config_v2, _ = _read_config_v2()
+        
+        # Obtener configuración del panel
+        historical_events_config = None
+        if config_v2.panels and config_v2.panels.historicalEvents:
+            historical_events_config = config_v2.panels.historicalEvents
+        
+        # Ruta por defecto si no hay configuración
+        data_path = "/var/lib/pantalla-reloj/data/efemerides.json"
+        if historical_events_config and historical_events_config.local:
+            data_path = historical_events_config.local.data_path
+        
+        # Parsear fecha si se proporciona
+        parsed_date = None
+        if target_date:
+            try:
+                parsed_date = datetime.strptime(target_date, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid date format. Expected YYYY-MM-DD, got: {target_date}"
+                )
+        
+        # Obtener efemérides
+        result = get_efemerides_for_date(data_path, parsed_date)
+        return result
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error getting efemerides: %s", e, exc_info=True)
+        # Retornar estructura vacía en lugar de 500
+        return {
+            "date": target_date or date.today().isoformat(),
+            "count": 0,
+            "items": []
+        }
+
+
+@app.get("/api/efemerides/status")
+def get_efemerides_status() -> Dict[str, Any]:
+    """Obtiene estado del servicio de efemérides históricas.
+    
+    Returns:
+        Diccionario con información de estado
+    """
+    try:
+        config_v2, _ = _read_config_v2()
+        
+        historical_events_config = None
+        enabled = False
+        provider = "local"
+        data_path = "/var/lib/pantalla-reloj/data/efemerides.json"
+        
+        if config_v2.panels and config_v2.panels.historicalEvents:
+            historical_events_config = config_v2.panels.historicalEvents
+            enabled = historical_events_config.enabled
+            provider = historical_events_config.provider
+            if historical_events_config.local:
+                data_path = historical_events_config.local.data_path
+        
+        # Verificar estado del archivo
+        path = Path(data_path)
+        status = "ok"
+        last_load_iso = None
+        
+        if not path.exists():
+            status = "missing"
+        else:
+            try:
+                # Intentar cargar datos para verificar validez
+                data = load_efemerides_data(data_path)
+                if data:
+                    # Obtener fecha de modificación
+                    mtime = path.stat().st_mtime
+                    last_load_iso = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+                else:
+                    status = "empty"
+            except Exception as e:
+                logger.warning("Error loading efemerides for status: %s", e)
+                status = "error"
+                last_load_iso = None
+        
+        return {
+            "enabled": enabled,
+            "provider": provider,
+            "status": status,
+            "last_load_iso": last_load_iso,
+            "data_path": data_path
+        }
+    
+    except Exception as e:
+        logger.error("Error getting efemerides status: %s", e, exc_info=True)
+        return {
+            "enabled": False,
+            "provider": "local",
+            "status": "error",
+            "last_load_iso": None,
+            "data_path": "/var/lib/pantalla-reloj/data/efemerides.json"
+        }
+
+
+@app.post("/api/efemerides/upload")
+async def upload_efemerides(file: UploadFile = File(...)) -> Dict[str, Any]:
+    """Sube y guarda archivo JSON de efemérides históricas.
+    
+    Args:
+        file: Archivo JSON con estructura {"MM-DD": ["evento1", ...]}
+        
+    Returns:
+        Diccionario con información del guardado
+    """
+    try:
+        # Leer configuración v2
+        config_v2, _ = _read_config_v2()
+        
+        # Obtener configuración del panel
+        historical_events_config = None
+        if config_v2.panels and config_v2.panels.historicalEvents:
+            historical_events_config = config_v2.panels.historicalEvents
+        
+        # Ruta por defecto si no hay configuración
+        data_path = "/var/lib/pantalla-reloj/data/efemerides.json"
+        if historical_events_config and historical_events_config.local:
+            data_path = historical_events_config.local.data_path
+        
+        # Procesar archivo subido
+        data = await upload_efemerides_file(file)
+        
+        # Guardar datos
+        result = save_efemerides_data(data_path, data)
+        
+        return result
+    
+    except HTTPException:
+        raise
+    except ValueError as e:
+        # Errores de validación → 400
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Error uploading efemerides: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error uploading efemerides: {str(e)}"
+        )
 
 
 @app.get("/api/news")

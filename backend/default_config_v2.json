@@ -95,7 +95,16 @@
     "weatherWeekly": { "enabled": true },
     "ephemerides": { "enabled": true },
     "news": { "enabled": true, "feeds": [] },
-    "calendar": { "enabled": true }
+    "calendar": { "enabled": true },
+    "historicalEvents": {
+      "enabled": true,
+      "provider": "local",
+      "local": {
+        "data_path": "/var/lib/pantalla-reloj/data/efemerides.json"
+      },
+      "rotation_seconds": 6,
+      "max_items": 5
+    }
   },
   "secrets": {
     "google": {
