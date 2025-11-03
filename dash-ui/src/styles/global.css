@@ -696,6 +696,70 @@ main {
   pointer-events: none;
 }
 
+/* Historical Events Card */
+.historical-events-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(18px, 2vw, 28px);
+  color: var(--text-primary);
+  text-align: center;
+}
+
+.historical-events-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.historical-events-card__header h2 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.historical-events-card__scroller {
+  position: relative;
+  overflow: hidden;
+  height: 240px;
+  width: 100%;
+}
+
+.historical-events-card__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: scroll-up 20s linear infinite;
+}
+
+.historical-events-card__item {
+  background: rgba(13, 20, 36, 0.6);
+  border-radius: 12px;
+  border: 1px solid rgba(104, 162, 255, 0.14);
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.historical-events-card__item p {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.historical-events-card__gradient {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 40px;
+  background: linear-gradient(0deg, rgba(6, 9, 20, 0.9), transparent);
+  pointer-events: none;
+}
+
 @keyframes scroll-up {
   0% {
     transform: translateY(0);
