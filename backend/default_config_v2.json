@@ -68,7 +68,7 @@
       "decimate": "none",
       "grid_px": 24,
       "styleScale": 3.2,
-      "render_mode": "circle",
+      "render_mode": "symbol_custom",
       "circle": {
         "radius_base": 7.5,
         "radius_zoom_scale": 1.7,
@@ -87,7 +87,8 @@
       "max_items_view": 420,
       "decimate": "grid",
       "grid_px": 24,
-      "styleScale": 1.4
+      "styleScale": 1.4,
+      "render_mode": "symbol_custom"
     }
   },
   "panels": {
