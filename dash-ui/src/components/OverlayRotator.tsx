@@ -291,6 +291,24 @@ export const OverlayRotator: React.FC = () => {
   const astronomyCacheRef = useRef<{ data: Record<string, unknown> | null; timestamp: number | null }>({ data: null, timestamp: null });
   const santoralCacheRef = useRef<{ data: { date: string; names: string[] } | null; timestamp: number | null }>({ data: null, timestamp: null });
   const historicalEventsCacheRef = useRef<{ data: { date?: string; count?: number; items?: string[] } | null; timestamp: number | null }>({ data: null, timestamp: null });
+  
+  // Invalidar cache de efemérides cuando se dispare el evento
+  useEffect(() => {
+    const handleCacheInvalidation = () => {
+      historicalEventsCacheRef.current = { data: null, timestamp: null };
+      if (IS_DEV) {
+        console.log("[OverlayRotator] Historical events cache invalidated");
+      }
+    };
+    
+    window.addEventListener('historical-events-cache-invalidated', handleCacheInvalidation);
+    window.addEventListener('config-changed', handleCacheInvalidation); // También invalidar cuando cambie config (timezone, etc.)
+    
+    return () => {
+      window.removeEventListener('historical-events-cache-invalidated', handleCacheInvalidation);
+      window.removeEventListener('config-changed', handleCacheInvalidation);
+    };
+  }, []);
 
   // Fetch de datos con cacheo
   useEffect(() => {

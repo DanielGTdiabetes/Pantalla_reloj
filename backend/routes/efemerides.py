@@ -1,6 +1,7 @@
 """Módulo para gestión de efemérides históricas (hechos/curiosidades del día)."""
 from __future__ import annotations
 
+import calendar
 import json
 import logging
 import os
@@ -71,26 +72,28 @@ def load_efemerides_data(data_path: str) -> Dict[str, List[str]]:
 
 def get_efemerides_for_date(
     data_path: str,
-    target_date: Optional[date] = None
+    target_date: Optional[date] = None,
+    tz_str: str = "Europe/Madrid"
 ) -> Dict[str, Any]:
     """Obtiene efemérides para una fecha específica.
     
     Args:
         data_path: Ruta al archivo JSON de efemérides
-        target_date: Fecha objetivo (por defecto: hoy en Europe/Madrid)
+        target_date: Fecha objetivo (por defecto: hoy en timezone especificado)
+        tz_str: Timezone a usar (por defecto: Europe/Madrid)
         
     Returns:
         Diccionario con {"date": "YYYY-MM-DD", "count": N, "items": [...]}
     """
     if target_date is None:
-        # Usar fecha actual en Europe/Madrid
+        # Usar fecha actual en timezone especificado
         try:
             from zoneinfo import ZoneInfo
-            tz = ZoneInfo("Europe/Madrid")
+            tz = ZoneInfo(tz_str)
             now = datetime.now(tz)
             target_date = now.date()
-        except ImportError:
-            # Fallback a UTC si zoneinfo no está disponible
+        except Exception:
+            # Fallback a UTC si zoneinfo no está disponible o timezone inválido
             now = datetime.now(timezone.utc)
             target_date = now.date()
     
@@ -137,8 +140,12 @@ def validate_efemerides_json(data: Dict[str, Any]) -> Tuple[bool, Optional[str]]
             day = int(parts[1])
             if not (1 <= month <= 12):
                 return False, f"Month in key '{key}' must be between 1 and 12"
-            if not (1 <= day <= 31):
-                return False, f"Day in key '{key}' must be between 1 and 31"
+            # Validar día válido para el mes usando calendar.monthrange
+            # Usamos año 2000 (bisiesto) para permitir 29 de febrero
+            year = 2000
+            max_day = calendar.monthrange(year, month)[1]
+            if not (1 <= day <= max_day):
+                return False, f"Day {day} in key '{key}' is invalid for month {month} (max: {max_day})"
         except ValueError:
             return False, f"Key '{key}' must have numeric month and day"
         
@@ -226,12 +233,25 @@ async def upload_efemerides_file(file: UploadFile) -> Dict[str, Any]:
         
     Returns:
         Datos parseados y validados
+        
+    Raises:
+        HTTPException: Si el archivo es demasiado grande, no es JSON válido o no cumple el formato
     """
+    # Límite de tamaño: 2 MB (mismo que ICS)
+    MAX_FILE_SIZE = 2 * 1024 * 1024  # 2 MB
+    
     # Leer contenido
     try:
         content = await file.read()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error reading file: {e}")
+    
+    # Validar tamaño
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File size exceeds maximum ({MAX_FILE_SIZE // (1024 * 1024)} MB)"
+        )
     
     # Parsear JSON
     try:

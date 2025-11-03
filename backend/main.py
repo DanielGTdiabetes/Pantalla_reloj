@@ -2776,8 +2776,13 @@ def get_efemerides(target_date: Optional[str] = None) -> Dict[str, Any]:
                     detail=f"Invalid date format. Expected YYYY-MM-DD, got: {target_date}"
                 )
         
+        # Obtener timezone del config
+        tz_str = "Europe/Madrid"
+        if hasattr(config_v2, "display") and hasattr(config_v2.display, "timezone"):
+            tz_str = config_v2.display.timezone or "Europe/Madrid"
+        
         # Obtener efemérides
-        result = get_efemerides_for_date(data_path, parsed_date)
+        result = get_efemerides_for_date(data_path, parsed_date, tz_str=tz_str)
         return result
     
     except HTTPException:
@@ -2884,6 +2889,16 @@ async def upload_efemerides(file: UploadFile = File(...)) -> Dict[str, Any]:
         
         # Guardar datos
         result = save_efemerides_data(data_path, data)
+        
+        # Invalidar cache de efemérides en cache_store si existe
+        try:
+            cache_store.invalidate("efemerides")
+        except Exception:
+            pass  # Ignorar si no hay cache store configurado
+        
+        # Añadir timestamp para invalidación de cache del frontend
+        result["cache_invalidated"] = True
+        result["timestamp"] = datetime.now(timezone.utc).isoformat()
         
         return result
     
