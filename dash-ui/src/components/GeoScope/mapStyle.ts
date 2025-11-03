@@ -133,16 +133,12 @@ export const loadMapStyle = async (
   // Manejar proveedor maptiler_vector
   else if (provider === "maptiler_vector") {
     const maptilerConfig = mapConfig.maptiler;
-    const apiKey = sanitizeApiKey(maptilerConfig?.apiKey);
     const styleUrl = sanitizeOptionalString(maptilerConfig?.styleUrl);
 
-    if (styleUrl && apiKey) {
+    if (styleUrl) {
       try {
-        const fullStyleUrl = styleUrl.includes("{key}") 
-          ? injectKeyPlaceholders(styleUrl, apiKey)
-          : styleUrl + (styleUrl.includes("?") ? "&" : "?") + `key=${apiKey}`;
-        
-        const response = await fetch(fullStyleUrl);
+        // Usar styleUrl tal cual viene del backend (ya incluye ?key= si es necesario)
+        const response = await fetch(styleUrl);
         if (!response.ok) {
           throw new Error(`Failed to load style: HTTP ${response.status}`);
         }
@@ -160,7 +156,7 @@ export const loadMapStyle = async (
         usedFallback = true;
       }
     } else {
-      console.warn("[map] MapTiler provider requires apiKey and styleUrl, using fallback");
+      console.warn("[map] MapTiler provider requires styleUrl, using fallback");
       usedFallback = true;
     }
   }

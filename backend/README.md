@@ -19,6 +19,7 @@ Environment variables allow overriding deployment paths when testing locally:
 - `PANTALLA_CONFIG_FILE`: Specific path to the configuration file.
 - `PANTALLA_CACHE_DIR`: Location for cached JSON payloads.
 - `PANTALLA_BACKEND_LOG`: Location for the backend log file.
+- `MAPTILER_API_KEY`: Optional MapTiler API key injected at startup if `ui_map.maptiler.apiKey` is empty (does not overwrite existing values).
 
 ## Endpoints
 
@@ -29,6 +30,7 @@ Environment variables allow overriding deployment paths when testing locally:
 - `GET /api/astronomy`
 - `GET /api/calendar`
 - `GET|POST /api/storm_mode`
+- `GET /api/map/validate` - Validates MapTiler style configuration and provides auto-fix for obsolete styles
 
 ### AISStream runtime check
 

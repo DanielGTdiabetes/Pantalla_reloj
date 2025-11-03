@@ -942,6 +942,55 @@ def _health_payload() -> Dict[str, Any]:
     }
     payload["providers"] = providers
     
+    # Bloque de MapTiler
+    try:
+        config_v2, _ = _read_config_v2()
+        ui_map = config_v2.ui_map
+        
+        if ui_map.provider == "maptiler_vector" and ui_map.maptiler:
+            style_url = ui_map.maptiler.styleUrl
+            api_key = ui_map.maptiler.apiKey
+            
+            # Validar el estilo (cacheado en caché global)
+            maptiler_cache_key = "maptiler_validation"
+            cached_validation = cache_store.load(maptiler_cache_key, max_age_minutes=60)
+            
+            if cached_validation:
+                validation_result = cached_validation.payload
+            else:
+                # Primera validación o caché expirado
+                validation_result = _validate_maptiler_style(style_url) if style_url else {
+                    "ok": False,
+                    "status": 0,
+                    "error": "Missing styleUrl",
+                    "name": None
+                }
+                cache_store.store(maptiler_cache_key, validation_result)
+            
+            payload["maptiler"] = {
+                "provider": "maptiler_vector",
+                "apiKey": "***" if api_key else None,
+                "hasApiKey": bool(api_key),
+                "status": "ok" if validation_result.get("ok") else "error",
+                "styleUrl": style_url,
+                "name": validation_result.get("name"),
+                "last_check_iso": cached_validation.fetched_at.isoformat() if cached_validation else None,
+                "error": validation_result.get("error")
+            }
+        else:
+            payload["maptiler"] = {
+                "provider": ui_map.provider,
+                "enabled": False,
+                "message": f"MapTiler not enabled (provider is {ui_map.provider})"
+            }
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Unable to gather MapTiler status for health: %s", exc)
+        payload["maptiler"] = {
+            "provider": "unknown",
+            "status": "error",
+            "error": str(exc)
+        }
+    
     # Bloque de efemérides históricas
     try:
         config_v2, _ = _read_config_v2()

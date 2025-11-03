@@ -522,9 +522,10 @@ class ConfigManager:
         """Migra y normaliza configuración de MapTiler.
         
         Aplica las siguientes reglas:
-        1. Si styleUrl no incluye ?key= y existe apiKey, añadir ?key=<apiKey>
-        2. Si styleUrl apunta a dark o dark-v2, reemplazar por streets-v2
-        3. Si apiKey está presente y styleUrl vacío, set al streets-v2
+        1. Inyectar apiKey desde MAPTILER_API_KEY si está vacío
+        2. Si styleUrl no incluye ?key= y existe apiKey, añadir ?key=<apiKey>
+        3. Si styleUrl apunta a dark o dark-v2, reemplazar por streets-v2
+        4. Si apiKey está presente y styleUrl vacío, set al streets-v2
         
         Args:
             maptiler: Diccionario de configuración MapTiler
@@ -537,9 +538,18 @@ class ConfigManager:
         api_key = migrated.get("apiKey")
         style_url = migrated.get("styleUrl")
         
-        # Si no hay apiKey, no podemos hacer nada
+        # Regla 1: Inyectar apiKey desde variable de entorno si está vacío
         if not api_key:
-            return migrated, False
+            env_api_key = os.getenv("MAPTILER_API_KEY")
+            if env_api_key and env_api_key.strip():
+                migrated["apiKey"] = env_api_key.strip()
+                api_key = migrated["apiKey"]
+                changed = True
+                self.logger.info("[config] Injected MapTiler API key from MAPTILER_API_KEY env")
+        
+        # Si aún no hay apiKey, no podemos hacer nada más
+        if not api_key:
+            return migrated, changed
         
         # Regla 2 y 3: Reemplazar estilos obsoletos o vacíos por streets-v2
         if style_url:

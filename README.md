@@ -89,6 +89,9 @@ Pantalla_reloj/
   estilos vectoriales, por lo que se considera información visible desde el cliente.
   Si el plan de MapTiler lo permite, restringe la API key a los dominios o direcciones
   IP del kiosk desde el panel de MapTiler.
+- **Auto-migración**: El backend migra automáticamente configuraciones MapTiler con estilos obsoletos (`dark`, `dark-v2`) al estilo `streets-v2` por defecto. Si la URL del estilo no incluye `?key=`, se añade automáticamente.
+- **Validación**: El endpoint `/api/map/validate` valida la configuración de MapTiler y proporciona auto-fix si detecta problemas. La información de estado de MapTiler se incluye en `/api/health` en el campo `maptiler`.
+- **Variable de entorno**: Opcionalmente, puedes definir `MAPTILER_API_KEY` como variable de entorno al iniciar el backend. Si `ui_map.maptiler.apiKey` está vacío, se inyectará automáticamente (no sobrescribe valores existentes).
 
 ### Configurar AEMET
 
