@@ -2452,18 +2452,29 @@ const ConfigPage: React.FC = () => {
                     : undefined;
                   
                   const v2FormWithMap = form as unknown as { ui_map?: MapConfigV2 };
-                  const ui_map = v2FormWithMap.ui_map || {
-                    engine: "maplibre" as const,
-                    provider: "local_raster_xyz" as const,
-                    renderWorldCopies: true,
-                    interactive: false,
-                    controls: false,
-                    local: { tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", minzoom: 0, maxzoom: 19 },
-                    maptiler: { apiKey: null, styleUrl: null },
-                    customXyz: { tileUrl: null, minzoom: 0, maxzoom: 19 },
-                    viewMode: "fixed" as const,
-                    fixed: { center: { lat: 39.98, lon: 0.20 }, zoom: 7.8, bearing: 0, pitch: 0 },
-                    region: { postalCode: "12001" },
+                  const existingMap = v2FormWithMap.ui_map;
+                  
+                  // Construir ui_map completo con valores por defecto seguros
+                  // Asegurarse de que todos los campos requeridos estén presentes
+                  const viewMode = existingMap?.viewMode || "fixed";
+                  
+                  const ui_map: MapConfigV2 = {
+                    engine: existingMap?.engine || "maplibre",
+                    provider: existingMap?.provider || "local_raster_xyz",
+                    renderWorldCopies: existingMap?.renderWorldCopies ?? true,
+                    interactive: existingMap?.interactive ?? false,
+                    controls: existingMap?.controls ?? false,
+                    viewMode,
+                    local: existingMap?.local || { tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", minzoom: 0, maxzoom: 19 },
+                    maptiler: existingMap?.maptiler || { apiKey: null, styleUrl: null },
+                    customXyz: existingMap?.customXyz || { tileUrl: null, minzoom: 0, maxzoom: 19 },
+                    fixed: viewMode === "fixed" 
+                      ? (existingMap?.fixed || { center: { lat: 39.98, lon: 0.20 }, zoom: 7.8, bearing: 0, pitch: 0 })
+                      : undefined,
+                    aoiCycle: viewMode === "aoiCycle"
+                      ? (existingMap?.aoiCycle || { intervalSec: 30, stops: [] })
+                      : undefined,
+                    region: existingMap?.region || { postalCode: "12001" },
                   };
                   
                   const v2FormWithLayers = form as unknown as { 
@@ -2536,13 +2547,35 @@ const ConfigPage: React.FC = () => {
                     const backendErrors = extractBackendErrors(error.body);
                     setFieldErrors(backendErrors);
                     setSaveStatus("error");
-                    const errorMessage = typeof error.body === "object" && error.body !== null && "error" in error.body
-                      ? String(error.body.error)
-                      : "Error al guardar la configuración del mapa";
+                    
+                    // Construir mensaje de error más detallado
+                    let errorMessage = "Error al guardar la configuración del mapa";
+                    if (typeof error.body === "object" && error.body !== null) {
+                      if ("error" in error.body) {
+                        errorMessage = String(error.body.error);
+                      } else if ("detail" in error.body) {
+                        const detail = error.body.detail;
+                        if (typeof detail === "string") {
+                          errorMessage = detail;
+                        } else if (typeof detail === "object" && detail !== null && "error" in detail) {
+                          errorMessage = String(detail.error);
+                        }
+                      }
+                      
+                      // Agregar información adicional si está disponible
+                      if (typeof error.body === "object" && error.body !== null && "field_paths" in error.body) {
+                        const fieldPaths = (error.body.field_paths as string[]) || [];
+                        if (fieldPaths.length > 0) {
+                          errorMessage += ` (campos: ${fieldPaths.join(", ")})`;
+                        }
+                      }
+                    }
+                    
                     setBanner({ kind: "error", text: errorMessage });
                   } else {
                     setSaveStatus("error");
-                    setBanner({ kind: "error", text: "Error al guardar" });
+                    const errorMsg = error instanceof Error ? error.message : "Error al guardar";
+                    setBanner({ kind: "error", text: errorMsg });
                   }
                   setTimeout(() => {
                     if (isMountedRef.current && saveStatus === "error") {
