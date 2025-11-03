@@ -842,7 +842,8 @@ export const OverlayRotator: React.FC = () => {
         return DEFAULT_DURATIONS_SEC.clock * 1000;
       }
       // Usar la ref para obtener el índice actual sin causar re-render del efecto
-      const currentIndex = currentPanelIndexRef.current % currentPanels.length;
+      const currentIndexValue = currentPanelIndexRef.current ?? 0;
+      const currentIndex = currentIndexValue % currentPanels.length;
       const currentPanel = currentPanels[currentIndex];
       return currentPanel?.duration ?? DEFAULT_DURATIONS_SEC.clock * 1000;
     };
