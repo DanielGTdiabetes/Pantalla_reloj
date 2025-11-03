@@ -467,6 +467,177 @@ except Exception:
   return 0
 }
 
+# Función para verificar efemérides históricas status
+check_efemerides_status() {
+  local url="${API_BASE}/api/efemerides/status"
+  
+  local response
+  local status_value
+  
+  if ! response=$(curl -sf "$url" 2>&1); then
+    log_error "Fallo al verificar efemerides status"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Extraer status
+  if ! status_value=$(python3 -c 'import json, sys
+try:
+    data = json.load(sys.stdin)
+    print(data.get("status", ""))
+except Exception:
+    print("")
+' <<< "$response" 2>&1); then
+    log_error "Fallo al parsear efemerides status"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  if [[ "$status_value" != "ok" ]] && [[ "$status_value" != "missing" ]]; then
+    log_error "Fallo al verificar efemerides status: ${status_value} (esperado 'ok' o 'missing')"
+    log_error "Respuesta: ${response}"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  log_success "Efemerides status: ${status_value}"
+  return 0
+}
+
+# Función para verificar efemérides del día actual
+check_efemerides_today() {
+  local url="${API_BASE}/api/efemerides"
+  
+  local response
+  local status
+  local count
+  
+  if ! response=$(curl -sf -w "\n%{http_code}" "$url" 2>&1); then
+    log_error "Fallo al obtener efemerides: ${response}"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Extraer status code (última línea)
+  status=$(echo "$response" | tail -n1)
+  response=$(echo "$response" | head -n-1)
+  
+  if [[ "$status" != "200" ]]; then
+    log_error "Fallo al verificar efemerides: HTTP ${status} (esperado 200)"
+    log_error "Respuesta: ${response}"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Extraer count
+  if ! count=$(python3 -c 'import json, sys
+try:
+    data = json.load(sys.stdin)
+    print(data.get("count", 0))
+except Exception:
+    print(0)
+' <<< "$response" 2>&1); then
+    log_error "Fallo al parsear efemerides count"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Permitir count >= 0 (puede estar vacío si no hay datos para hoy)
+  log_success "Efemerides del día: count=${count} → HTTP ${status}"
+  return 0
+}
+
+# Función para subir archivo JSON de efemérides
+upload_efemerides_json() {
+  local json_file="$1"
+  local url="${API_BASE}/api/efemerides/upload"
+  
+  if [[ ! -f "$json_file" ]]; then
+    log_error "Archivo JSON de efemérides no encontrado: ${json_file}"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  local status
+  local response
+  
+  if ! response=$(curl -sf -w "\n%{http_code}" -X POST \
+    -F "file=@${json_file}" \
+    "$url" 2>&1); then
+    log_error "Fallo al subir JSON de efemerides: ${response}"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Extraer status code (última línea)
+  status=$(echo "$response" | tail -n1)
+  response=$(echo "$response" | head -n-1)
+  
+  if [[ "$status" != "200" ]]; then
+    log_error "Fallo al subir JSON de efemerides: HTTP ${status}"
+    log_error "Respuesta: ${response}"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Verificar que la respuesta contiene "ok": true
+  if ! python3 -c 'import json, sys
+try:
+    data = json.load(sys.stdin)
+    if not data.get("ok", False):
+        sys.exit(1)
+except Exception:
+    sys.exit(1)
+' <<< "$response" 2>&1; then
+    log_error "Fallo al verificar respuesta de upload: ok != true"
+    log_error "Respuesta: ${response}"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  log_success "JSON de efemerides subido correctamente → HTTP ${status}"
+  return 0
+}
+
+# Función para verificar que overlay tiene historicalEvents habilitado
+check_overlay_has_historical() {
+  local url="${API_BASE}/api/config"
+  
+  local response
+  local has_historical
+  
+  if ! response=$(curl -sf "$url" 2>&1); then
+    log_error "Fallo al obtener config para verificar historicalEvents"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Verificar que existe panels.historicalEvents.enabled
+  if ! has_historical=$(python3 -c 'import json, sys
+try:
+    data = json.load(sys.stdin)
+    panels = data.get("panels", {})
+    historical = panels.get("historicalEvents", {})
+    enabled = historical.get("enabled", False)
+    print("yes" if enabled else "no")
+except Exception:
+    print("no")
+' <<< "$response" 2>&1); then
+    log_error "Fallo al parsear config para historicalEvents"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  if [[ "$has_historical" != "yes" ]]; then
+    log_error "Config no tiene panels.historicalEvents.enabled == true"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  log_success "Config tiene panels.historicalEvents.enabled == true"
+  return 0
+}
+
 # Función para verificar overlay en /api/config
 check_overlay_config() {
   local url="${API_BASE}/api/config"
@@ -507,6 +678,35 @@ except Exception:
   return 0
 }
 
+# Crear archivo JSON de efemérides de prueba si no existe
+create_test_efemerides_json() {
+  local json_file="${TMPDIR:-/tmp}/test_efemerides_v23.json"
+  
+  if [[ -f "$json_file" ]]; then
+    echo "$json_file"
+    return 0
+  fi
+  
+  cat > "$json_file" << 'EOF'
+{
+  "01-01": [
+    "1959: Fidel Castro toma el poder en Cuba.",
+    "1993: Entra en vigor el Tratado de Maastricht."
+  ],
+  "11-03": [
+    "1957: Se lanza el Sputnik 2 con Laika, el primer ser vivo en orbitar la Tierra.",
+    "1992: Firma del Tratado de Maastricht que establece la Unión Europea."
+  ],
+  "12-25": [
+    "1066: Coronación de Guillermo el Conquistador como rey de Inglaterra.",
+    "1991: Dimisión de Mikhail Gorbachev, fin de la Unión Soviética."
+  ]
+}
+EOF
+  
+  echo "$json_file"
+}
+
 # Crear archivo ICS de prueba si no existe
 create_test_ics() {
   local ics_file="${TMPDIR:-/tmp}/test_calendar_v23.ics"
@@ -538,26 +738,26 @@ EOF
 log_info "Iniciando smoke tests E2E v23..."
 
 # 1. Verificar health 200
-log_info "Test 1/10: Verificar health 200"
+log_info "Test 1/13: Verificar health 200"
 if ! check_health_200 "${API_BASE}/api/health" "Health directo"; then
   log_error "Fallo en verificación de health directo"
 fi
 
 # 2. Subir ICS
-log_info "Test 2/10: Subir archivo ICS"
+log_info "Test 2/13: Subir archivo ICS"
 TEST_ICS=$(create_test_ics)
 if ! upload_ics "$TEST_ICS"; then
   log_error "Fallo en subida de ICS"
 fi
 
 # 3. Activar layers (radar/aviones/barcos)
-log_info "Test 3/10: Activar layers (radar/aviones/barcos)"
+log_info "Test 3/13: Activar layers (radar/aviones/barcos)"
 if ! activate_layers; then
   log_error "Fallo en activación de layers"
 fi
 
 # 4. Verificar GET /api/calendar/events >= 1 evento
-log_info "Test 4/10: Verificar GET /api/calendar/events >= 1 evento"
+log_info "Test 4/13: Verificar GET /api/calendar/events >= 1 evento"
 # Esperar un poco para que el calendario se procese
 sleep 2
 if ! check_calendar_events 1; then
@@ -565,37 +765,64 @@ if ! check_calendar_events 1; then
 fi
 
 # 5. Verificar calendar.status "ok"
-log_info "Test 5/10: Verificar calendar.status 'ok'"
+log_info "Test 5/13: Verificar calendar.status 'ok'"
 if ! check_calendar_status; then
   log_error "Fallo en verificación de calendar status"
 fi
 
 # 6. Verificar /api/weather/now
-log_info "Test 6/10: Verificar /api/weather/now (sin 500)"
+log_info "Test 6/13: Verificar /api/weather/now (sin 500)"
 if ! check_weather_now; then
   log_error "Fallo en verificación de weather/now"
 fi
 
 # 7. Verificar /api/weather/weekly
-log_info "Test 7/10: Verificar /api/weather/weekly (sin 500)"
+log_info "Test 7/13: Verificar /api/weather/weekly (sin 500)"
 if ! check_weather_weekly; then
   log_error "Fallo en verificación de weather/weekly"
 fi
 
 # 8. Verificar /api/ephemerides
-log_info "Test 8/10: Verificar /api/ephemerides (sin 500, permite vacío)"
+log_info "Test 8/13: Verificar /api/ephemerides (sin 500, permite vacío)"
 if ! check_ephemerides; then
   log_error "Fallo en verificación de ephemerides"
 fi
 
 # 9. Verificar /api/saints
-log_info "Test 9/10: Verificar /api/saints (sin 500, permite vacío)"
+log_info "Test 9/13: Verificar /api/saints (sin 500, permite vacío)"
 if ! check_saints; then
   log_error "Fallo en verificación de saints"
 fi
 
-# 10. Verificar overlay en /api/config
-log_info "Test 10/10: Verificar overlay en /api/config"
+# 10. Verificar efemerides status
+log_info "Test 10/13: Verificar GET /api/efemerides/status"
+if ! check_efemerides_status; then
+  log_error "Fallo en verificación de efemerides status"
+fi
+
+# 11. Verificar efemerides del día actual
+log_info "Test 11/13: Verificar GET /api/efemerides (del día actual)"
+if ! check_efemerides_today; then
+  log_error "Fallo en verificación de efemerides del día"
+fi
+
+# 12. Subir archivo JSON de efemérides
+log_info "Test 12/13: Subir archivo JSON de efemérides"
+TEST_EFEMERIDES_JSON=$(create_test_efemerides_json)
+if ! upload_efemerides_json "$TEST_EFEMERIDES_JSON"; then
+  log_error "Fallo en subida de JSON de efemerides"
+fi
+
+# 13. Verificar que overlay tiene historicalEvents habilitado
+log_info "Test 13/13: Verificar overlay tiene historicalEvents habilitado"
+# Esperar un poco para que el config se actualice
+sleep 1
+if ! check_overlay_has_historical; then
+  log_error "Fallo en verificación de historicalEvents en overlay"
+fi
+
+# 14. Verificar overlay en /api/config
+log_info "Test 14/14: Verificar overlay en /api/config"
 if ! check_overlay_config; then
   log_error "Fallo en verificación de overlay config"
 fi
@@ -603,10 +830,10 @@ fi
 # Resumen
 log_info "=========================================="
 if [[ $ERRORS -eq 0 ]]; then
-  log_success "Todos los smoke tests E2E v23 pasaron correctamente (10/10)"
+  log_success "Todos los smoke tests E2E v23 pasaron correctamente (14/14)"
   exit 0
 else
-  log_error "Smoke tests E2E v23 fallaron: ${ERRORS} error(es) de 10 tests"
+  log_error "Smoke tests E2E v23 fallaron: ${ERRORS} error(es) de 14 tests"
   exit 1
 fi
 

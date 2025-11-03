@@ -19,7 +19,8 @@ Pantalla_reloj/
 
 ### Backend (FastAPI)
 - Endpoints: `/api/health`, `/api/config` (GET/PATCH), `/api/weather`, `/api/news`,
-  `/api/astronomy`, `/api/calendar`, `/api/storm_mode` (GET/POST), `/api/astronomy/events`.
+  `/api/astronomy`, `/api/calendar`, `/api/storm_mode` (GET/POST), `/api/astronomy/events`,
+  `/api/efemerides`, `/api/efemerides/status`, `/api/efemerides/upload`.
 - Persistencia de configuración en `/var/lib/pantalla-reloj/config.json` (se crea con
   valores por defecto si no existe) y caché JSON en `/var/lib/pantalla/cache/`.
 - **Ruta oficial de config**: `/var/lib/pantalla-reloj/config.json`. Están obsoletas:
@@ -40,6 +41,7 @@ Pantalla_reloj/
 - ✅ **Unión geométrica**: Combinación real de polígonos CAP y radar usando `shapely` para máscaras de foco en modo `"both"`
 - ✅ **Datos enriquecidos**: Santoral con información adicional (type, patron_of, name_days), hortalizas con siembra y cosecha, eventos astronómicos
 - ✅ **Mejoras de fuentes**: `calculate_extended_astronomy()`, `get_astronomical_events()`, datos mejorados de harvest y saints
+- ✅ **Efemérides históricas**: Panel de efemérides históricas con datos locales JSON, uploader en `/config`, validación y guardado atómico
 
 ### Frontend (React/Vite)
 - Dashboard por defecto en modo `full`: mapa principal con tarjetas de noticias y
@@ -198,6 +200,106 @@ El sistema soporta el formato estándar iCalendar (RFC 5545) con eventos `VEVENT
 - `SUMMARY`: Título del evento
 - `DESCRIPTION`: Descripción opcional
 - `LOCATION`: Ubicación opcional
+
+### Efemérides Históricas
+
+El sistema soporta efemérides históricas (hechos/curiosidades del día) que se muestran en el panel rotativo del overlay. Los datos se almacenan localmente en formato JSON.
+
+#### Configurar efemérides históricas desde la UI
+
+La interfaz de configuración (`/#/config`) ofrece un uploader integrado para subir archivos JSON con efemérides directamente desde tu navegador.
+
+**Procedimiento:**
+
+1. **Acceder a la configuración**: Navega a `/#/config` y busca la sección **Efemérides Históricas**.
+2. **Activar el panel**: Marca la casilla **"Activar Efemérides Históricas"** para habilitar el panel en el rotador.
+3. **Configurar rotación**: Ajusta el **"Intervalo de rotación"** (3-60 segundos) y el **"Máximo de items a mostrar"** (1-20).
+4. **Subir archivo JSON**: Haz clic en el campo **"Subir archivo JSON"** y selecciona un archivo `.json` desde tu equipo.
+5. **Vista previa automática**: Tras la subida, el sistema muestra una vista previa de los 3 primeros items del día actual si hay datos disponibles.
+
+**Formato del archivo JSON:**
+
+El archivo debe tener la siguiente estructura:
+
+```json
+{
+  "MM-DD": [
+    "Año: Descripción del evento.",
+    "Año: Otro evento del mismo día."
+  ],
+  "01-01": [
+    "1959: Fidel Castro toma el poder en Cuba.",
+    "1993: Entra en vigor el Tratado de Maastricht."
+  ],
+  "11-03": [
+    "1957: Se lanza el Sputnik 2 con Laika.",
+    "1992: Firma del Tratado de Maastricht que establece la Unión Europea."
+  ]
+}
+```
+
+**Requisitos:**
+
+- El archivo debe tener extensión `.json` (validado en el navegador antes de enviar).
+- Formato válido: El archivo debe cumplir la estructura `{"MM-DD": ["evento1", "evento2", ...]}`. Las claves deben ser fechas en formato `MM-DD` (mes-día) y los valores deben ser arrays de strings.
+- Validación: El backend valida que todas las claves sean fechas válidas (mes 1-12, día 1-31) y que todos los valores sean strings no vacíos.
+- Permisos: El usuario del servicio (`dani` por defecto) debe tener permisos de escritura en `/var/lib/pantalla-reloj/data/` (el directorio se crea automáticamente con permisos `0644` si no existe).
+
+**Solución de errores típicos:**
+
+**Error: "El archivo debe tener extensión .json"**
+- **Causa**: El archivo seleccionado no termina en `.json`.
+- **Solución**: Asegúrate de que el archivo tenga la extensión correcta.
+
+**Error: "Invalid JSON format"**
+- **Causa**: El archivo no es un JSON válido.
+- **Solución**: Valida el JSON con una herramienta externa:
+  ```bash
+  python3 -m json.tool archivo.json
+  ```
+
+**Error: "Invalid efemerides format: Key 'XX-YY' must have numeric month and day"**
+- **Causa**: Las claves de fecha no están en formato `MM-DD` válido.
+- **Solución**: Asegúrate de que todas las claves sean fechas en formato `MM-DD` (ej: `01-01`, `11-03`, `12-25`).
+
+**Error: "Invalid efemerides format: Empty string found in 'XX-YY'"**
+- **Causa**: Hay strings vacíos en los arrays de eventos.
+- **Solución**: Elimina cualquier string vacío de los arrays.
+
+**El panel no muestra efemérides:**
+- **Causa**: Puede que no haya datos para el día actual o que el panel no esté habilitado en el rotador.
+- **Solución**: 
+  1. Verifica que `panels.historicalEvents.enabled` esté en `true` en la configuración.
+  2. Comprueba que el panel esté incluido en `ui_global.overlay.rotator.order`:
+     ```bash
+     curl -s http://127.0.0.1:8081/api/config | python3 -m json.tool | grep -A 5 "rotator"
+     ```
+  3. Verifica que haya datos para el día actual:
+     ```bash
+     curl -s http://127.0.0.1:8081/api/efemerides | python3 -m json.tool
+     ```
+
+**Subida mediante API (alternativa):**
+
+Si prefieres subir el archivo por línea de comandos:
+```bash
+curl -X POST \
+  -F "file=@/ruta/a/tu/efemerides.json" \
+  http://127.0.0.1:8081/api/efemerides/upload
+```
+
+El archivo se almacena de forma atómica (tmp + rename) y la configuración se actualiza automáticamente para habilitar el panel.
+
+#### Endpoints relacionados
+
+- `GET /api/efemerides?date=YYYY-MM-DD`: Obtiene efemérides para una fecha específica (por defecto: hoy)
+- `GET /api/efemerides/status`: Verifica el estado del servicio de efemérides históricas (devuelve `status: "ok"` si está funcionando correctamente)
+- `POST /api/efemerides/upload`: Sube un archivo JSON de efemérides al servidor
+- `GET /api/health`: Incluye información de efemérides históricas en el campo `historicalEvents.status`
+
+#### Ruta por defecto
+
+Por defecto, los archivos de efemérides se almacenan en `/var/lib/pantalla-reloj/data/efemerides.json`. Esta ruta puede configurarse en `panels.historicalEvents.local.data_path`.
 
 ### Timezone y rangos de fecha
 

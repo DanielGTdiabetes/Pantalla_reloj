@@ -40,6 +40,7 @@ from .config_store import (
     CalendarValidationError,
     deep_merge,
     default_layers_if_missing,
+    default_panels_if_missing,
     load_raw_config,
     reload_runtime_config,
     resolve_calendar_provider,
@@ -1913,6 +1914,7 @@ async def save_config(request: Request) -> JSONResponse:
                 )
 
         default_layers_if_missing(config_dict)
+        default_panels_if_missing(config_dict)
 
         try:
             current_raw = load_raw_config(config_manager.config_file)
@@ -1934,6 +1936,7 @@ async def save_config(request: Request) -> JSONResponse:
 
         merged = deep_merge(current_raw, config_dict)
         default_layers_if_missing(merged)
+        default_panels_if_missing(merged)
         provider_final, enabled_final, final_ics_path = resolve_calendar_provider(merged)
         
         # Validar ICS usando validate_calendar_provider (nunca 500, solo 400)
