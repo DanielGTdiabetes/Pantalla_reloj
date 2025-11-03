@@ -62,3 +62,4 @@ python3 -m agents.coordinator.main "$TEST_REPORTS_DIR" -o "$PROJECT_ROOT/tmp/fin
 
 echo "[TEST] Completado. Revisar $PROJECT_ROOT/tmp/final_report.json"
 
+

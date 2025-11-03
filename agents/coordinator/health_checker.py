@@ -166,3 +166,4 @@ class HealthChecker:
         except Exception as e:
             raise ConfigPersistenceError(f"Error inesperado: {e}")
 
+

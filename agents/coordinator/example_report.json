@@ -33,3 +33,4 @@
   "compatibility_explanation": "Los cambios son compatibles hacia atrás porque:\n1. Se agregaron campos opcionales a los modelos\n2. Los endpoints existentes mantienen su comportamiento\n3. No se removieron campos requeridos\n4. Las migraciones de configuración son automáticas"
 }
 
+
