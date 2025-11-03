@@ -124,3 +124,4 @@ El mapa detecta cambios en `ui_map.fixed` comparando la configuración anterior 
 ### Prioridad de Storm Mode
 Cuando storm mode está activo, tiene prioridad sobre `ui_map.fixed`. Los cambios en zoom/centro solo se aplican si storm mode está desactivado.
 
+

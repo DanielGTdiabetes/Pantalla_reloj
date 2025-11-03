@@ -107,3 +107,4 @@ Se recomienda ejecutar pruebas intermedias tras cada merge.
 - `1`: Error, no hay agentes aprobados o error en la ejecución
 - `130`: Interrupción por el usuario (Ctrl+C)
 
+

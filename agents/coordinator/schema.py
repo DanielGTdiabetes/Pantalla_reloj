@@ -73,3 +73,4 @@ class CoordinatorReport(BaseModel):
         description="Advertencias no bloqueantes"
     )
 
+
