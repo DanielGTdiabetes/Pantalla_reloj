@@ -147,7 +147,9 @@ launch_chromium() {
     --ozone-platform=x11
     --ignore-gpu-blocklist
     --enable-webgl
-    --use-gl=egl-angle
+    --enable-unsafe-swiftshader
+    --use-gl=angle
+    --use-angle=swiftshader
     "--disk-cache-dir=${cache_dir}"
     "--user-data-dir=${profile_dir}"
   )
@@ -162,10 +164,8 @@ launch_chromium() {
     args+=(--enable-logging=stderr --log-level=1)
   fi
 
-  if (( use_swiftshader )); then
-    args+=(--enable-unsafe-swiftshader)
-    log "swiftshader habilitado para esta ejecución"
-  fi
+  # SwiftShader siempre habilitado para evitar problemas de GPU
+  log "swiftshader habilitado para esta ejecución (--enable-unsafe-swiftshader, --use-gl=angle, --use-angle=swiftshader)"
 
   log "launch: ${args[*]}"
   log "url: ${url}"
@@ -270,12 +270,6 @@ main() {
   local target_url
   target_url="$(resolve_url "$raw_url")"
 
-  local allow_swiftshader=0
-  if [[ "${PANTALLA_ALLOW_SWIFTSHADER:-0}" == "1" ]]; then
-    allow_swiftshader=1
-    log "SwiftShader permitido bajo demanda (PANTALLA_ALLOW_SWIFTSHADER=1)"
-  fi
-
   local base_dir profile_dir cache_dir
   base_dir="${CHROMIUM_BASE_DIR:-${HOME}/snap/chromium/common/pantalla-reloj}"
   profile_dir="${CHROMIUM_USER_DATA_DIR:-${base_dir}/chromium}"
@@ -301,25 +295,13 @@ main() {
 
   close_existing_windows
 
-  if launch_chromium 0 "$chromium_bin" "$target_url" "$profile_dir" "$cache_dir"; then
+  # SwiftShader siempre habilitado para evitar problemas de GPU (flags en args base)
+  if launch_chromium 1 "$chromium_bin" "$target_url" "$profile_dir" "$cache_dir"; then
     exit 0
   fi
 
-  local first_status=$?
-  if (( first_status == 99 )); then
-    if (( allow_swiftshader )); then
-      log "Activando fallback SwiftShader (--enable-unsafe-swiftshader)"
-      if launch_chromium 1 "$chromium_bin" "$target_url" "$profile_dir" "$cache_dir"; then
-        exit 0
-      fi
-      local second_status=$?
-      exit $second_status
-    fi
-    log "SwiftShader deshabilitado (exporta PANTALLA_ALLOW_SWIFTSHADER=1 para permitirlo)"
-    exit $first_status
-  fi
-
-  exit $first_status
+  local status=$?
+  exit $status
 }
 
 main "$@"
