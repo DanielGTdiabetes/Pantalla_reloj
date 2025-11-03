@@ -104,8 +104,8 @@ upload_ics_file() {
     return 1
   fi
   
-  # Extraer ics_path de la respuesta
-  if ! ics_path=$(echo "$response" | jq -r '.path // empty' 2>/dev/null); then
+  # Extraer ics_path de la respuesta (el endpoint devuelve {"ok": true, "ics_path": "...", "size": ...})
+  if ! ics_path=$(echo "$response" | jq -r '.ics_path // .path // empty' 2>/dev/null); then
     log_error "Fallo al extraer ics_path de respuesta"
     ((ERRORS++)) || true
     return 1
