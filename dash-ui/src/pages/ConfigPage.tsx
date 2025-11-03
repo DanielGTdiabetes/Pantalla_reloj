@@ -3414,6 +3414,177 @@ const ConfigPage: React.FC = () => {
           </div>
         )}
 
+        {supports("blitzortung") && (
+          <div className="config-card">
+            <div>
+              <h2>Blitzortung (Rayos)</h2>
+              <p>Configura la conexión a Blitzortung para recibir datos de rayos en tiempo real.</p>
+            </div>
+            <div className="config-grid">
+              {supports("blitzortung.enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="blitzortung_enabled">
+                    <input
+                      id="blitzortung_enabled"
+                      type="checkbox"
+                      checked={form.blitzortung?.enabled ?? false}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          blitzortung: {
+                            ...prev.blitzortung,
+                            enabled,
+                          },
+                        }));
+                        resetErrorsFor("blitzortung.enabled");
+                      }}
+                    />
+                    Activar detección de rayos en tiempo real
+                  </label>
+                  {renderHelp("Conecta a Blitzortung vía MQTT o WebSocket para recibir datos de rayos")}
+                  {renderFieldError("blitzortung.enabled")}
+                </div>
+              )}
+
+              {supports("blitzortung.ws_enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="blitzortung_ws_enabled">
+                    <input
+                      id="blitzortung_ws_enabled"
+                      type="checkbox"
+                      checked={form.blitzortung?.ws_enabled ?? false}
+                      disabled={disableInputs || !form.blitzortung?.enabled}
+                      onChange={(event) => {
+                        const ws_enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          blitzortung: {
+                            ...prev.blitzortung,
+                            ws_enabled,
+                          },
+                        }));
+                        resetErrorsFor("blitzortung.ws_enabled");
+                      }}
+                    />
+                    Usar WebSocket en lugar de MQTT
+                  </label>
+                  {renderHelp("Si está activado, usa WebSocket en lugar de MQTT para conectar con Blitzortung")}
+                  {renderFieldError("blitzortung.ws_enabled")}
+                </div>
+              )}
+
+              {supports("blitzortung.mqtt_host") && !form.blitzortung?.ws_enabled && (
+                <div className="config-field">
+                  <label htmlFor="blitzortung_mqtt_host">Host MQTT</label>
+                  <input
+                    id="blitzortung_mqtt_host"
+                    type="text"
+                    maxLength={256}
+                    value={form.blitzortung?.mqtt_host ?? "127.0.0.1"}
+                    disabled={disableInputs || !form.blitzortung?.enabled || form.blitzortung?.ws_enabled}
+                    onChange={(event) => {
+                      const mqtt_host = event.target.value.trim();
+                      setForm((prev) => ({
+                        ...prev,
+                        blitzortung: {
+                          ...prev.blitzortung,
+                          mqtt_host: mqtt_host || "127.0.0.1",
+                        },
+                      }));
+                      resetErrorsFor("blitzortung.mqtt_host");
+                    }}
+                  />
+                  {renderHelp("Dirección del servidor MQTT (ej: 127.0.0.1 o mqtt.blitzortung.org)")}
+                  {renderFieldError("blitzortung.mqtt_host")}
+                </div>
+              )}
+
+              {supports("blitzortung.mqtt_port") && !form.blitzortung?.ws_enabled && (
+                <div className="config-field">
+                  <label htmlFor="blitzortung_mqtt_port">Puerto MQTT</label>
+                  <input
+                    id="blitzortung_mqtt_port"
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={form.blitzortung?.mqtt_port ?? 1883}
+                    disabled={disableInputs || !form.blitzortung?.enabled || form.blitzortung?.ws_enabled}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (!Number.isNaN(value)) {
+                        setForm((prev) => ({
+                          ...prev,
+                          blitzortung: {
+                            ...prev.blitzortung,
+                            mqtt_port: Math.max(1, Math.min(65535, Math.round(value))),
+                          },
+                        }));
+                        resetErrorsFor("blitzortung.mqtt_port");
+                      }
+                    }}
+                  />
+                  {renderHelp("Puerto del servidor MQTT (por defecto: 1883)")}
+                  {renderFieldError("blitzortung.mqtt_port")}
+                </div>
+              )}
+
+              {supports("blitzortung.mqtt_topic") && !form.blitzortung?.ws_enabled && (
+                <div className="config-field">
+                  <label htmlFor="blitzortung_mqtt_topic">Tópico MQTT</label>
+                  <input
+                    id="blitzortung_mqtt_topic"
+                    type="text"
+                    maxLength={256}
+                    value={form.blitzortung?.mqtt_topic ?? "blitzortung/1"}
+                    disabled={disableInputs || !form.blitzortung?.enabled || form.blitzortung?.ws_enabled}
+                    onChange={(event) => {
+                      const mqtt_topic = event.target.value.trim();
+                      setForm((prev) => ({
+                        ...prev,
+                        blitzortung: {
+                          ...prev.blitzortung,
+                          mqtt_topic: mqtt_topic || "blitzortung/1",
+                        },
+                      }));
+                      resetErrorsFor("blitzortung.mqtt_topic");
+                    }}
+                  />
+                  {renderHelp("Tópico MQTT para suscribirse (por defecto: blitzortung/1)")}
+                  {renderFieldError("blitzortung.mqtt_topic")}
+                </div>
+              )}
+
+              {supports("blitzortung.ws_url") && form.blitzortung?.ws_enabled && (
+                <div className="config-field">
+                  <label htmlFor="blitzortung_ws_url">URL WebSocket</label>
+                  <input
+                    id="blitzortung_ws_url"
+                    type="url"
+                    maxLength={512}
+                    value={form.blitzortung?.ws_url ?? ""}
+                    disabled={disableInputs || !form.blitzortung?.enabled || !form.blitzortung?.ws_enabled}
+                    onChange={(event) => {
+                      const ws_url = event.target.value.trim() || null;
+                      setForm((prev) => ({
+                        ...prev,
+                        blitzortung: {
+                          ...prev.blitzortung,
+                          ws_url,
+                        },
+                      }));
+                      resetErrorsFor("blitzortung.ws_url");
+                    }}
+                  />
+                  {renderHelp("URL del endpoint WebSocket de Blitzortung (ej: wss://ws.blitzortung.org)")}
+                  {renderFieldError("blitzortung.ws_url")}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {supports("news") && (
           <div className="config-card">
             <div>
