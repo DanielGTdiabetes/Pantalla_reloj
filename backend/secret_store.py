@@ -16,10 +16,17 @@ class SecretStore:
     """
 
     def __init__(self, file_path: Path | None = None) -> None:
-        state_dir = Path(os.getenv("PANTALLA_STATE_DIR", "/var/lib/pantalla"))
+        state_dir = Path(os.getenv("PANTALLA_STATE_DIR", "/var/lib/pantalla-reloj"))
         default_path = Path(os.getenv("PANTALLA_SECRETS_FILE", str(state_dir / "secrets.json")))
         self._file = file_path or default_path
-        self._file.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self._file.parent.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError) as exc:
+            raise RuntimeError(
+                f"Cannot create secrets directory {self._file.parent}: {exc}. "
+                f"Ensure the service user has write access to {self._file.parent} "
+                f"(usually /var/lib/pantalla-reloj)"
+            ) from exc
         self._lock = threading.Lock()
         # Ensure file exists with correct perms
         if not self._file.exists():

@@ -5319,6 +5319,6 @@ def on_startup() -> None:
         config.ui.map.style,
         config.map.provider,
     )
-    root = Path(os.getenv("PANTALLA_STATE_DIR", "/var/lib/pantalla"))
+    root = Path(os.getenv("PANTALLA_STATE_DIR", "/var/lib/pantalla-reloj"))
     for child in (root / "cache").glob("*.json"):
         child.touch(exist_ok=True)

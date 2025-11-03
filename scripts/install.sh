@@ -668,15 +668,11 @@ if [[ ! -w /var/cache/pantalla ]]; then
   log_warn "No se puede escribir en /var/cache/pantalla, corrigiendo permisos..."
   chown -R "$USER_NAME:$USER_NAME" /var/cache/pantalla 2>/dev/null || true
 fi
-if [[ ! -w /var/lib/pantalla/cache ]]; then
-  log_warn "No se puede escribir en /var/lib/pantalla/cache, corrigiendo permisos..."
-  chown -R "$USER_NAME:$USER_NAME" /var/lib/pantalla/cache 2>/dev/null || true
-fi
 
 log_info "Enabling services"
 systemctl enable --now "pantalla-xorg@${USER_NAME}.service" || true
 systemctl enable --now pantalla-dash-backend@${USER_NAME}.service || true
-install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" /var/lib/pantalla || true
+install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" /var/lib/pantalla-reloj || true
 
 # Crear /run/user/<uid> correcto para el usuario kiosk (no asumir 1000)
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "/run/user/${USER_UID}"

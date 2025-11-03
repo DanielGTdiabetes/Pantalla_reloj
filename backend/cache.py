@@ -10,14 +10,21 @@ from .models import CachedPayload
 
 
 class CacheStore:
-    """Simple JSON cache backed by files in /var/lib/pantalla/cache."""
+    """Simple JSON cache backed by files in /var/lib/pantalla-reloj/cache."""
 
     def __init__(self, cache_dir: Path | None = None) -> None:
-        state_path = Path(os.getenv("PANTALLA_STATE_DIR", "/var/lib/pantalla"))
+        state_path = Path(os.getenv("PANTALLA_STATE_DIR", "/var/lib/pantalla-reloj"))
         self.cache_dir = cache_dir or Path(
             os.getenv("PANTALLA_CACHE_DIR", state_path / "cache")
         )
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError) as exc:
+            raise RuntimeError(
+                f"Cannot create cache directory {self.cache_dir}: {exc}. "
+                f"Ensure the service user has write access to {self.cache_dir} "
+                f"(usually /var/lib/pantalla-reloj/cache)"
+            ) from exc
 
     def _path(self, key: str) -> Path:
         return self.cache_dir / f"{key}.json"

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# OBsolete: Este script es legacy y puede no funcionar correctamente.
+# Los permisos ahora se gestionan automáticamente por install.sh y systemd StateDirectory.
+# Use 'sudo bash scripts/install.sh' en su lugar para una instalación completa.
 set -euo pipefail
 
 PANTALLA_ROOT=/opt/pantalla
