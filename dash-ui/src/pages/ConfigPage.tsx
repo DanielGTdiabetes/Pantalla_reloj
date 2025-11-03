@@ -700,15 +700,21 @@ const ConfigPage: React.FC = () => {
 
     setUploadingIcs(true);
     setIcsUploadResult(null);
-    
+
     try {
       const result = await uploadIcsFile(file);
       setIcsPathInput(result.ics_path);
-      setIcsUploadResult({
-        ok: true,
-        message: `Archivo subido correctamente: ${result.ics_path} (${result.events_detected} eventos detectados)`,
-      });
-      
+      resetErrorsFor("panels.calendar.ics_path");
+      const detectedEvents =
+        typeof result.events_detected === "number" && Number.isFinite(result.events_detected)
+          ? result.events_detected
+          : undefined;
+      const successMessage =
+        detectedEvents !== undefined
+          ? `Archivo subido correctamente: ${result.ics_path} (${detectedEvents} eventos detectados)`
+          : `Archivo subido correctamente: ${result.ics_path}`;
+      setIcsUploadResult({ ok: Boolean(result.ok), message: successMessage });
+
       // Actualizar el formulario para establecer provider="ics" y ics_path
       setForm((prev) => {
         const v2 = prev as unknown as { panels?: { calendar?: { enabled?: boolean; provider?: string; ics_path?: string } } };
@@ -725,6 +731,12 @@ const ConfigPage: React.FC = () => {
           },
         } as unknown as AppConfig;
       });
+
+      try {
+        await refreshConfig();
+      } catch (refreshError) {
+        console.warn("[ConfigPage] Failed to refresh config after ICS upload", refreshError);
+      }
     } catch (error) {
       console.error("[ConfigPage] Failed to upload ICS file", error);
       const errorMessage = error instanceof ApiError && typeof error.body === "object" && error.body !== null && "error" in error.body
@@ -738,7 +750,7 @@ const ConfigPage: React.FC = () => {
       // Limpiar el input file para permitir subir el mismo archivo de nuevo
       event.target.value = "";
     }
-  }, []);
+  }, [refreshConfig, resetErrorsFor]);
 
   const handleTestIcs = useCallback(async () => {
     if (testingIcs) {
@@ -1388,7 +1400,6 @@ const ConfigPage: React.FC = () => {
         delete oauthPayload.client_id_last4;
       }
       // Usar saveConfigV2 si la versión es 2
-      let saved: AppConfig;
       if (configVersion === 2) {
         // Construir objeto v2 completo con secrets
         // Extraer secrets desde inputs locales o del payload
@@ -1485,22 +1496,24 @@ const ConfigPage: React.FC = () => {
           calendar,
         } as unknown as import("../types/config_v2").AppConfigV2;
         
-        const v2Saved = await saveConfigV2(v2Payload);
-        saved = v2Saved as unknown as AppConfig;
-        
-        // Llamar a reload después de guardar exitosamente
+        await saveConfigV2(v2Payload);
+        let reloadOk = false;
         try {
           await reloadConfig();
-          setBanner({ kind: "success", text: "Config guardada y recargada" });
+          reloadOk = true;
         } catch (reloadError) {
           console.warn("[ConfigPage] Failed to reload config after save:", reloadError);
-          setBanner({ kind: "success", text: "Config guardada (recarga falló)" });
         }
+        setBanner({ kind: "success", text: reloadOk ? "Config guardada y recargada" : "Config guardada" });
       } else {
-        saved = await saveConfig(payload);
+        await saveConfig(payload);
         setBanner({ kind: "success", text: "Guardado" });
       }
-      setForm(withConfigDefaults(saved));
+      try {
+        await refreshConfig();
+      } catch (refreshError) {
+        console.warn("[ConfigPage] Failed to refresh config after save", refreshError);
+      }
       setShowMaptilerKey(false);
       setShowAemetKey(false);
       setAemetKeyInput("");
@@ -3453,6 +3466,7 @@ const ConfigPage: React.FC = () => {
                         />
                       </label>
                     </div>
+                    {renderFieldError("panels.calendar.ics_path")}
                     {renderHelp("Sube un archivo ICS desde tu PC o introduce la ruta manualmente")}
                     {icsUploadResult && (
                       <div

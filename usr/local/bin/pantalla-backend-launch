@@ -29,6 +29,8 @@ MISSING_DEPS=()
 "$PY" -c "import fastapi" 2>/dev/null || MISSING_DEPS+=("fastapi")
 "$PY" -c "import uvicorn" 2>/dev/null || MISSING_DEPS+=("uvicorn")
 "$PY" -c "import pydantic" 2>/dev/null || MISSING_DEPS+=("pydantic")
+"$PY" -c "import multipart" 2>/dev/null || MISSING_DEPS+=("python-multipart")
+"$PY" -c "import icalendar" 2>/dev/null || MISSING_DEPS+=("icalendar")
 
 if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
   echo "[backend] ERROR: Dependencias faltantes: ${MISSING_DEPS[*]}" >&2

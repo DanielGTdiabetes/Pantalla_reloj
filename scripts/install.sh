@@ -53,12 +53,19 @@ wait_for_backend_ready() {
   local sleep_interval=2
   local waited=0
   local backend_url="http://127.0.0.1:8081/api/health"
+  local backend_service="pantalla-dash-backend@${USER_NAME}.service"
 
   log_info "Esperando backend en ${backend_url} (timeout ${max_wait}s)"
   until curl -sfS "$backend_url" >/dev/null; do
     if (( waited >= max_wait )); then
       log_error "Backend no responde en 127.0.0.1:8081 tras ${max_wait}s"
-      systemctl --no-pager -l status "pantalla-dash-backend@${USER_NAME}.service" | sed -n '1,60p' || true
+      systemctl --no-pager -l status "$backend_service" | sed -n '1,60p' || true
+      if [[ -f /tmp/backend-launch.log ]]; then
+        log_warn "Últimos mensajes de /tmp/backend-launch.log:"
+        tail -n 40 /tmp/backend-launch.log || true
+      fi
+      log_warn "Últimos registros de systemd (${backend_service}):"
+      journalctl --no-pager -n 80 -u "$backend_service" || true
       return 1
     fi
     if (( waited > 0 && (waited % 20) == 0 )); then
@@ -282,6 +289,12 @@ if ! "$PYTHON_BIN" -c "import shapely" 2>/dev/null; then
   MISSING_DEPS+=("shapely")
   log_warn "shapely no está instalado - modo 'both' de cine_focus usará fallback"
 fi
+if ! "$PYTHON_BIN" -c "import multipart" 2>/dev/null; then
+  MISSING_DEPS+=("python-multipart")
+fi
+if ! "$PYTHON_BIN" -c "import icalendar" 2>/dev/null; then
+  MISSING_DEPS+=("icalendar")
+fi
 if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
   log_error "Dependencias faltantes: ${MISSING_DEPS[*]}"
   log_error "El backend puede fallar. Reintenta la instalación."
@@ -311,6 +324,32 @@ else
   chown "$USER_NAME:$USER_NAME" "$CONFIG_FILE" 2>/dev/null || true
   chmod 0644 "$CONFIG_FILE" 2>/dev/null || true
   log_info "Config existente preservado en ${CONFIG_FILE} (permisos ajustados)"
+fi
+ICS_DIR="$STATE_DIR/ics"
+SAMPLE_ICS="$ICS_DIR/personal.ics"
+install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$ICS_DIR"
+if [[ ! -f "$SAMPLE_ICS" ]]; then
+  cat <<'EOF' >"$SAMPLE_ICS"
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Pantalla Reloj//ES
+BEGIN:VEVENT
+UID:sample-event@pantalla-reloj.local
+DTSTAMP:20240101T000000Z
+DTSTART:20240101T090000Z
+DTEND:20240101T093000Z
+SUMMARY:Ejemplo de evento
+DESCRIPTION:Actualiza este archivo desde el panel de configuración.
+LOCATION:Pantalla Reloj
+END:VEVENT
+END:VCALENDAR
+EOF
+  chown "$USER_NAME:$USER_NAME" "$SAMPLE_ICS" 2>/dev/null || true
+  chmod 0644 "$SAMPLE_ICS" 2>/dev/null || true
+  SUMMARY+=("[install] ICS de ejemplo creado en ${SAMPLE_ICS}")
+else
+  chown "$USER_NAME:$USER_NAME" "$SAMPLE_ICS" 2>/dev/null || true
+  chmod 0644 "$SAMPLE_ICS" 2>/dev/null || true
 fi
 install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$STATE_DIR/cache"
 # Crear directorios de caché para layers (flights/ships) y focus masks

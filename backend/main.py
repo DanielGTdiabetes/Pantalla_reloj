@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Literal, TypeVar, Union
 
+import multipart
 import requests
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
@@ -34,7 +35,23 @@ from .data_sources import (
     get_saints_today,
     parse_rss_feed,
 )
-from .data_sources_ics import fetch_ics_calendar_events
+from .config_store import (
+    ICS_STORAGE_DIR,
+    ICS_STORAGE_PATH,
+    CalendarValidationError,
+    deep_merge,
+    default_layers_if_missing,
+    load_raw_config,
+    reload_runtime_config,
+    resolve_calendar_provider,
+    validate_calendar_provider,
+    write_config_atomic,
+)
+from .data_sources_ics import (
+    ICSCalendarError,
+    fetch_ics_calendar_events,
+    get_last_error as get_last_ics_error,
+)
 from .focus_masks import check_point_in_focus, load_or_build_focus_mask
 from .global_providers import (
     GIBSProvider,
@@ -78,6 +95,16 @@ CINEMA_TELEMETRY_TTL = timedelta(seconds=45)
 _cinema_runtime_state: Dict[str, Any] | None = None
 _cinema_runtime_expires_at: datetime | None = None
 _cinema_state_lock = Lock()
+
+_calendar_runtime_state: Dict[str, Any] = {
+    "provider": "none",
+    "enabled": False,
+    "status": "stale",
+    "last_error": None,
+    "ics_path": None,
+    "updated_at": None,
+}
+_calendar_state_lock = Lock()
 
 
 class CinemaTelemetryPayload(BaseModel):
@@ -128,6 +155,32 @@ def _get_cinema_runtime_state() -> Dict[str, Any]:
         _cinema_runtime_state = None
         _cinema_runtime_expires_at = None
     return {}
+
+
+def _update_calendar_runtime_state(
+    provider: str,
+    enabled: bool,
+    status: str,
+    last_error: Optional[str] = None,
+    ics_path: Optional[str] = None,
+) -> None:
+    global _calendar_runtime_state
+    snapshot = {
+        "provider": provider,
+        "enabled": enabled,
+        "status": status,
+        "last_error": last_error,
+        "ics_path": ics_path,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    with _calendar_state_lock:
+        _calendar_runtime_state = snapshot
+
+
+def _get_calendar_runtime_state() -> Dict[str, Any]:
+    with _calendar_state_lock:
+        return dict(_calendar_runtime_state)
+
 
 app = FastAPI(title="Pantalla Reloj Backend", version="2025.10.0")
 app.add_middleware(
@@ -781,37 +834,56 @@ def _health_payload() -> Dict[str, Any]:
             calendar_provider = "google"
             ics_path = None
 
-        # Leer credenciales según provider
+        calendar_state = _get_calendar_runtime_state()
         credentials_present = False
+        last_fetch_iso = None
+        calendar_status = "stale"
+        last_error: Optional[str] = None
+
         if calendar_provider == "google":
             api_key = secret_store.get_secret("google_calendar_api_key") or secret_store.get_secret("google_api_key")
             calendar_id = secret_store.get_secret("google_calendar_id")
             credentials_present = bool(api_key and calendar_id)
-        elif calendar_provider == "ics":
-            credentials_present = _ics_path_is_readable(ics_path)
-
-        # Intentar obtener último fetch desde caché o estado
-        last_fetch_iso = None
-        calendar_status = "ok"
-        
-        # Verificar si hay errores recientes
-        try:
             if enabled and credentials_present:
                 calendar_status = "ok"
-            elif enabled and not credentials_present:
+            elif enabled:
                 calendar_status = "error"
-            else:
+                last_error = "Google Calendar API key or calendar ID missing"
+        elif calendar_provider == "ics":
+            credentials_present = _ics_path_is_readable(ics_path)
+            if not enabled:
                 calendar_status = "stale"
-        except Exception:  # noqa: BLE001
-            calendar_status = "error"
-        
+                last_error = None
+            elif not credentials_present:
+                calendar_status = "error"
+                last_error = f"ICS calendar path missing or unreadable: {ics_path}"
+                _update_calendar_runtime_state("ics", enabled, calendar_status, last_error, ics_path)
+            else:
+                state_matches = (
+                    calendar_state.get("provider") == "ics"
+                    and calendar_state.get("ics_path") == (ics_path or calendar_state.get("ics_path"))
+                )
+                if state_matches:
+                    calendar_status = calendar_state.get("status", "ok") or "ok"
+                    last_error = calendar_state.get("last_error")
+                else:
+                    calendar_status = "stale"
+                    last_error = None
+        else:
+            credentials_present = False
+            calendar_status = "stale"
+            last_error = None
+
         payload["calendar"] = {
             "enabled": enabled,
             "provider": calendar_provider,
             "credentials_present": credentials_present,
             "last_fetch_iso": last_fetch_iso,
             "status": calendar_status,
+            "last_error": last_error,
         }
+        if calendar_provider == "ics" and ics_path:
+            payload["calendar"]["ics_path"] = ics_path
     except Exception as exc:  # noqa: BLE001
         logger.debug("Unable to gather calendar status for health: %s", exc)
         payload["calendar"] = {
@@ -820,6 +892,7 @@ def _health_payload() -> Dict[str, Any]:
             "credentials_present": False,
             "last_fetch_iso": None,
             "status": "error",
+            "last_error": str(exc),
         }
 
     cache_store.store("health", payload)
@@ -865,29 +938,17 @@ async def upload_ics_file(
     file: UploadFile = File(..., description="ICS calendar file"),
     filename: Optional[str] = None,
 ) -> JSONResponse:
-    """Sube un archivo ICS y lo guarda en /var/lib/pantalla-reloj/ics/.
-    
-    Args:
-        file: Archivo ICS (máx 2 MB)
-        filename: Nombre opcional del archivo (si no se proporciona, se usa el nombre del archivo)
-    
-    Returns:
-        JSON con ics_path, size, events_detected
-    """
+    """Upload an ICS file, persist it to disk and enable the local calendar."""
+
     MAX_ICS_SIZE = 2 * 1024 * 1024  # 2 MB
-    
-    # Validar extensión
+
     original_filename = filename or file.filename or "calendar.ics"
     if not original_filename.lower().endswith(".ics"):
         raise HTTPException(
             status_code=400,
-            detail={
-                "error": "File must have .ics extension",
-                "filename": original_filename,
-            }
+            detail={"error": "File must have .ics extension", "filename": original_filename},
         )
-    
-    # Validar tamaño
+
     content = await file.read()
     if len(content) > MAX_ICS_SIZE:
         raise HTTPException(
@@ -896,78 +957,136 @@ async def upload_ics_file(
                 "error": f"File size exceeds maximum ({MAX_ICS_SIZE} bytes)",
                 "size": len(content),
                 "max_size": MAX_ICS_SIZE,
-            }
+            },
         )
-    
-    # Sanitizar nombre del archivo
-    safe_name = re.sub(r'[^a-zA-Z0-9._-]', '_', original_filename)
-    safe_name = safe_name[:128]  # Limitar longitud
-    if not safe_name.endswith(".ics"):
-        safe_name = safe_name + ".ics"
-    
-    # Crear directorio si no existe
-    ics_dir = Path("/var/lib/pantalla-reloj/ics")
+
     try:
-        ics_dir.mkdir(parents=True, exist_ok=True)
+        ICS_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+        os.chmod(ICS_STORAGE_DIR, 0o700)
     except (PermissionError, OSError) as exc:
-        logger.error("[config] Cannot create ICS directory %s: %s", ics_dir, exc)
+        logger.error("[config] Cannot create ICS directory %s: %s", ICS_STORAGE_DIR, exc)
         raise HTTPException(
             status_code=500,
-            detail={
-                "error": "Cannot create ICS directory",
-                "path": str(ics_dir),
-                "reason": str(exc),
-            }
+            detail={"error": "Cannot create ICS directory", "reason": str(exc)},
         ) from exc
-    
-    # Guardar archivo
-    ics_path = ics_dir / safe_name
+
+    uid = gid = None
     try:
-        # Escribir archivo
-        with ics_path.open("wb") as handle:
+        stat_info = config_manager.config_file.stat()
+        uid, gid = stat_info.st_uid, stat_info.st_gid
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        logger.debug("[config] Could not stat config file for ownership: %s", exc)
+
+    try:
+        with ICS_STORAGE_PATH.open("wb") as handle:
             handle.write(content)
-        
-        # Ajustar permisos: owner dani:dani, modo 640
-        try:
-            user = pwd.getpwnam("dani")
-            uid = user.pw_uid
-            gid = grp.getgrnam("dani").gr_gid
-            os.chown(ics_path, uid, gid)
-            os.chmod(ics_path, 0o640)
-        except (KeyError, OSError, PermissionError) as exc:
-            logger.warning("[config] Cannot chown/chmod ICS file %s: %s", ics_path, exc)
-        
-        # Verificar que se puede parsear
-        try:
-            events = fetch_ics_calendar_events(path=str(ics_path))
-            events_count = len(events)
-        except Exception as exc:
-            logger.warning("[config] ICS file may not be parseable: %s", exc)
-            events_count = 0
-        
-        logger.info(
-            "[config] ICS file uploaded: %s (size=%d, events=%d)",
-            ics_path,
-            len(content),
-            events_count,
-        )
-        
-        return JSONResponse(content={
-            "ics_path": str(ics_path),
-            "size": len(content),
-            "events_detected": events_count,
-        })
-        
+            handle.flush()
+            os.fsync(handle.fileno())
     except (OSError, PermissionError) as exc:
-        logger.error("[config] Cannot write ICS file %s: %s", ics_path, exc)
+        logger.error("[config] Cannot write ICS file %s: %s", ICS_STORAGE_PATH, exc)
         raise HTTPException(
             status_code=500,
-            detail={
-                "error": "Cannot write ICS file",
-                "path": str(ics_path),
-                "reason": str(exc),
-            }
+            detail={"error": "Cannot write ICS file", "reason": str(exc)},
         ) from exc
+
+    try:
+        if uid is not None or gid is not None:
+            os.chown(
+                ICS_STORAGE_DIR,
+                uid if uid is not None else -1,
+                gid if gid is not None else -1,
+            )
+            os.chown(
+                ICS_STORAGE_PATH,
+                uid if uid is not None else -1,
+                gid if gid is not None else -1,
+            )
+    except OSError as exc:
+        logger.debug("[config] Could not chown ICS storage: %s", exc)
+
+    try:
+        os.chmod(ICS_STORAGE_PATH, 0o644)
+    except OSError as exc:
+        logger.debug("[config] Could not chmod ICS file: %s", exc)
+
+    try:
+        preview_events = fetch_ics_calendar_events(path=str(ICS_STORAGE_PATH))
+    except ICSCalendarError as exc:
+        logger.warning("[config] Uploaded ICS file is not parseable: %s", exc)
+        raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+
+    try:
+        current_raw = load_raw_config(config_manager.config_file)
+    except json.JSONDecodeError as exc:
+        logger.error("[config] Current config is not valid JSON: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Current configuration file is not valid JSON", "reason": str(exc)},
+        ) from exc
+    except OSError as exc:
+        logger.error("[config] Could not read current config %s: %s", config_manager.config_file, exc)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Unable to read current configuration", "reason": str(exc)},
+        ) from exc
+
+    incoming = {
+        "panels": {
+            "calendar": {
+                "enabled": True,
+                "provider": "ics",
+                "ics_path": str(ICS_STORAGE_PATH),
+            }
+        },
+    }
+
+    merged = deep_merge(current_raw, incoming)
+    default_layers_if_missing(merged)
+    provider_final, enabled_final, final_ics_path = resolve_calendar_provider(merged)
+    try:
+        validate_calendar_provider(provider_final, enabled_final, final_ics_path)
+    except CalendarValidationError as exc:
+        logger.warning("[config] Calendar validation error after ICS upload: %s", exc)
+        raise HTTPException(
+            status_code=400,
+            detail={"error": str(exc), "missing": exc.missing},
+        ) from exc
+
+    try:
+        write_config_atomic(merged, config_manager.config_file)
+        logger.info("[config] ICS file uploaded and configuration updated: %s", ICS_STORAGE_PATH)
+    except (PermissionError, OSError) as exc:
+        logger.error("[config] Failed to persist configuration after ICS upload: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Failed to persist configuration", "reason": str(exc)},
+        ) from exc
+
+    secret_store.set_secret("calendar_ics_path", str(ICS_STORAGE_PATH))
+
+    reloaded = reload_runtime_config(config_manager)
+    if reloaded:
+        global map_reset_counter
+        map_reset_counter += 1
+    _update_calendar_runtime_state("ics", True, "stale", None, str(ICS_STORAGE_PATH))
+    calendar_state = _get_calendar_runtime_state()
+
+    response_payload = {
+        "ok": True,
+        "ics_path": str(ICS_STORAGE_PATH),
+        "provider": "ics",
+        "events_detected": len(preview_events),
+        "reloaded": reloaded,
+        "config_version": map_reset_counter,
+        "calendar": {
+            "status": calendar_state.get("status"),
+            "last_error": calendar_state.get("last_error"),
+        },
+    }
+
+    return JSONResponse(content=response_payload)
 
 
 @app.post("/api/config/reload")
@@ -1692,7 +1811,7 @@ def _handle_partial_opensky_update(payload: Dict[str, Any]) -> JSONResponse:
 
 @app.post("/api/config")
 async def save_config(request: Request) -> JSONResponse:
-    """Guarda configuración v2. Rechaza v1 con HTTP 400."""
+    """Persist configuration with non-destructive merge and hot reload."""
     body = await request.body()
     if len(body) > MAX_CONFIG_PAYLOAD_BYTES:
         logger.warning("Configuration payload exceeds size limit")
@@ -1713,42 +1832,39 @@ async def save_config(request: Request) -> JSONResponse:
     if payload and set(payload.keys()) <= {"opensky"}:
         return _handle_partial_opensky_update(payload)
 
-    # Verificar claves v1 y rechazar
     v1_keys = _check_v1_keys(payload)
     if v1_keys:
         logger.warning("Rejecting v1 keys in payload: %s", v1_keys)
         raise HTTPException(
             status_code=400,
-            detail={"error": "v1 keys not allowed", "v1_keys": v1_keys}
+            detail={"error": "v1 keys not allowed", "v1_keys": v1_keys},
         )
 
-    # Verificar que es v2
     if payload.get("version") != 2:
         logger.warning("Rejecting non-v2 config (version=%s)", payload.get("version"))
         raise HTTPException(
             status_code=400,
-            detail={"error": "Only v2 config allowed", "version": payload.get("version")}
-        )
-    
-    if "ui_map" not in payload:
-        logger.warning("Rejecting config without ui_map")
-        raise HTTPException(
-            status_code=400,
-            detail={"error": "ui_map required for v2"}
+            detail={"error": "Only v2 config allowed", "version": payload.get("version")},
         )
 
+    if "ui_map" not in payload:
+        logger.warning("Rejecting config without ui_map")
+        raise HTTPException(status_code=400, detail={"error": "ui_map required for v2"})
+
     payload = _sanitize_incoming_config_payload(payload)
+
+    persisted_config: Optional[Dict[str, Any]] = None
+    provider_final = "google"
+    enabled_final = False
+    final_ics_path: Optional[str] = None
+
     try:
-        # Extraer secrets antes de validar (se eliminarán del payload)
         secrets = payload.get("secrets", {})
         google_secrets = secrets.get("google", {}) if isinstance(secrets, dict) else {}
         calendar_ics_secrets = secrets.get("calendar_ics", {}) if isinstance(secrets, dict) else {}
 
-        # Extraer secrets de Google Calendar
         google_api_key = google_secrets.get("api_key") if isinstance(google_secrets, dict) else None
         google_calendar_id = google_secrets.get("calendar_id") if isinstance(google_secrets, dict) else None
-
-        # Extraer secrets de ICS
         calendar_ics_url = (
             calendar_ics_secrets.get("url") if isinstance(calendar_ics_secrets, dict) else None
         )
@@ -1756,8 +1872,13 @@ async def save_config(request: Request) -> JSONResponse:
             calendar_ics_secrets.get("path") if isinstance(calendar_ics_secrets, dict) else None
         )
 
-        calendar_provider, calendar_enabled, normalized_ics_path = _normalize_calendar_sections(payload)
+        payload_without_secrets = dict(payload)
+        payload_without_secrets.pop("secrets", None)
 
+        config_v2 = AppConfigV2.model_validate(payload_without_secrets)
+        config_dict = config_v2.model_dump(mode="json", exclude_none=True)
+
+        calendar_provider, calendar_enabled, normalized_ics_path = resolve_calendar_provider(config_dict)
         _validate_calendar_requirements(
             calendar_provider,
             calendar_enabled,
@@ -1766,27 +1887,53 @@ async def save_config(request: Request) -> JSONResponse:
             google_calendar_id,
         )
 
-        # Eliminar secrets del payload antes de validar (no van en config.json)
-        payload_without_secrets = dict(payload)
-        payload_without_secrets.pop("secrets", None)
+        default_layers_if_missing(config_dict)
 
-        # Validar como AppConfigV2
-        config_v2 = AppConfigV2.model_validate(payload_without_secrets)
-
-        # Guardar v2 usando persistencia atómica (write a tmp + mv)
-        config_dict = config_v2.model_dump(mode="json", exclude_none=True)
         try:
-            # Usar _atomic_write de config_manager para persistencia atómica
-            config_manager._atomic_write_v2(config_dict)
-            logger.info("[config] Configuration v2 saved atomically")
+            current_raw = load_raw_config(config_manager.config_file)
+        except json.JSONDecodeError as exc:
+            logger.error("[config] Current config is not valid JSON: %s", exc)
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "Current configuration file is not valid JSON",
+                    "reason": str(exc),
+                },
+            ) from exc
+        except OSError as exc:
+            logger.error("[config] Could not read current config %s: %s", config_manager.config_file, exc)
+            raise HTTPException(
+                status_code=500,
+                detail={"error": "Unable to read current configuration", "reason": str(exc)},
+            ) from exc
+
+        merged = deep_merge(current_raw, config_dict)
+        default_layers_if_missing(merged)
+        provider_final, enabled_final, final_ics_path = resolve_calendar_provider(merged)
+        try:
+            validate_calendar_provider(provider_final, enabled_final, final_ics_path)
+        except CalendarValidationError as exc:
+            logger.warning("[config] Calendar validation error: %s", exc)
+            raise HTTPException(
+                status_code=400,
+                detail={"error": str(exc), "missing": exc.missing},
+            ) from exc
+
+        try:
+            write_config_atomic(merged, config_manager.config_file)
+            logger.info(
+                "[config] Configuration persisted atomically to %s",
+                config_manager.config_file,
+            )
         except (PermissionError, OSError) as write_exc:
             logger.error("[config] Failed to write config atomically: %s", write_exc)
             raise HTTPException(
                 status_code=500,
-                detail={"error": "Failed to persist configuration", "reason": str(write_exc)}
-            )
-        
-        # Guardar secrets en SecretStore (sin loguear valores en claro)
+                detail={"error": "Failed to persist configuration", "reason": str(write_exc)},
+            ) from write_exc
+
+        persisted_config = merged
+
         if google_api_key:
             masked_key = _mask_secret(str(google_api_key))
             logger.info(
@@ -1796,10 +1943,9 @@ async def save_config(request: Request) -> JSONResponse:
             )
             secret_store.set_secret("google_calendar_api_key", str(google_api_key).strip())
         else:
-            # Eliminar si está vacío
             secret_store.set_secret("google_calendar_api_key", None)
             logger.info("[config] Google Calendar API key removed")
-        
+
         if google_calendar_id:
             logger.info(
                 "[config] Saving Google Calendar ID (length=%d)",
@@ -1809,8 +1955,7 @@ async def save_config(request: Request) -> JSONResponse:
         else:
             secret_store.set_secret("google_calendar_id", None)
             logger.info("[config] Google Calendar ID removed")
-        
-        # Guardar secrets de ICS
+
         if calendar_ics_url:
             logger.info("[config] Saving ICS calendar URL (length=%d)", len(str(calendar_ics_url)))
             secret_store.set_secret("calendar_ics_url", str(calendar_ics_url).strip())
@@ -1820,19 +1965,14 @@ async def save_config(request: Request) -> JSONResponse:
         ics_path_to_store: Optional[str] = None
         if isinstance(calendar_ics_path_secret, str) and calendar_ics_path_secret.strip():
             ics_path_to_store = calendar_ics_path_secret.strip()
-        if calendar_provider == "ics" and normalized_ics_path and not ics_path_to_store:
-            ics_path_to_store = normalized_ics_path
-
-        if ics_path_to_store and calendar_provider == "ics":
-            logger.info(
-                "[config] Saving ICS calendar path (length=%d)",
-                len(str(ics_path_to_store)),
-            )
+        if provider_final == "ics" and final_ics_path:
+            ics_path_to_store = final_ics_path
+        if ics_path_to_store and provider_final == "ics":
+            logger.info("[config] Saving ICS calendar path (length=%d)", len(str(ics_path_to_store)))
             secret_store.set_secret("calendar_ics_path", ics_path_to_store)
         else:
             secret_store.set_secret("calendar_ics_path", None)
 
-        # Aplicar cambios a servicios si es necesario
         if config_v2.layers and config_v2.layers.ships:
             try:
                 ships_service.apply_config(config_v2.layers.ships)
@@ -1841,7 +1981,6 @@ async def save_config(request: Request) -> JSONResponse:
 
     except ValidationError as exc:
         logger.debug("Configuration validation error: %s", exc.errors())
-        # Convertir errores de Pydantic a formato con missing y field_paths
         missing: List[str] = []
         field_paths: List[str] = []
         for error in exc.errors():
@@ -1856,13 +1995,11 @@ async def save_config(request: Request) -> JSONResponse:
                 "missing": missing,
                 "field_paths": field_paths,
                 "details": exc.errors(),
-            }
+            },
         ) from exc
     except HTTPException:
-        # Re-lanzar HTTPException tal cual (ya tiene status_code 400 con detalles)
         raise
     except (PermissionError, OSError) as exc:
-        # Errores de IO: devolver 500 con detalles útiles
         logger.exception("Failed to persist configuration: %s", exc)
         raise HTTPException(
             status_code=500,
@@ -1871,33 +2008,67 @@ async def save_config(request: Request) -> JSONResponse:
                 "reason": str(exc),
                 "errno": getattr(exc, "errno", None),
                 "hint": "Check file permissions and disk space",
-            }
+            },
         ) from exc
     except Exception as exc:  # noqa: BLE001
-        # Errores inesperados: devolver 500 con detalles
         logger.exception("Failed to persist configuration: %s", exc)
         raise HTTPException(
             status_code=500,
-            detail={
-                "error": "Unable to persist configuration",
-                "reason": str(exc),
-            }
+            detail={"error": "Unable to persist configuration", "reason": str(exc)},
         ) from exc
 
-    # Recargar configuración en memoria para reflejar cambios inmediatos (hot-reload)
-    try:
-        _, was_reloaded = config_manager.reload()
-        if was_reloaded:
-            logger.info("[config] Configuration reloaded in-memory after save (hot-reload)")
-            # Incrementar contador para notificar al frontend
-            global map_reset_counter
-            map_reset_counter += 1
-        else:
-            logger.warning("[config] Configuration reload after save did not report changes")
-    except Exception as exc:  # noqa: BLE001
-        logger.error("[config] Failed to reload configuration after save: %s", exc)
+    reloaded = reload_runtime_config(config_manager)
+    if reloaded:
+        global map_reset_counter
+        map_reset_counter += 1
+        logger.info("[config] Configuration reloaded in-memory after save (hot-reload)")
+    else:
+        logger.warning("[config] Configuration reload after save did not report changes")
 
-    return JSONResponse(content={"success": True, "config_version": map_reset_counter})
+    status_hint = "stale"
+    if provider_final == "google" and enabled_final:
+        status_hint = "ok"
+    _update_calendar_runtime_state(provider_final, enabled_final, status_hint, None, final_ics_path)
+    calendar_state = _get_calendar_runtime_state()
+
+    config_for_summary = persisted_config or config_dict
+    layers_cfg = config_for_summary.get("layers") if isinstance(config_for_summary, dict) else {}
+    flights_enabled = False
+    ships_enabled = False
+    if isinstance(layers_cfg, dict):
+        flights_data = layers_cfg.get("flights") if isinstance(layers_cfg.get("flights"), dict) else {}
+        ships_data = layers_cfg.get("ships") if isinstance(layers_cfg.get("ships"), dict) else {}
+        flights_enabled = bool(flights_data.get("enabled", False))
+        ships_enabled = bool(ships_data.get("enabled", False))
+
+    ui_global_cfg = config_for_summary.get("ui_global") if isinstance(config_for_summary, dict) else {}
+    radar_cfg = ui_global_cfg.get("radar") if isinstance(ui_global_cfg, dict) and isinstance(ui_global_cfg.get("radar"), dict) else {}
+    radar_summary = {
+        "enabled": bool(radar_cfg.get("enabled", False)),
+        "provider": radar_cfg.get("provider"),
+    }
+
+    calendar_payload: Dict[str, Any] = {
+        "enabled": enabled_final,
+        "provider": provider_final,
+        "status": calendar_state.get("status"),
+        "last_error": calendar_state.get("last_error"),
+    }
+    if provider_final == "ics" and final_ics_path:
+        calendar_payload["ics_path"] = final_ics_path
+
+    response_payload = {
+        "ok": True,
+        "path": str(config_manager.config_file),
+        "provider": provider_final,
+        "calendar": calendar_payload,
+        "layers": {"flights": flights_enabled, "ships": ships_enabled},
+        "radar": radar_summary,
+        "config_version": map_reset_counter,
+        "reloaded": reloaded,
+    }
+
+    return JSONResponse(content=response_payload)
 
 
 @app.post("/api/map/reset", response_model=MapResetResponse)
@@ -2961,7 +3132,7 @@ def get_calendar_events(
             note = "Credentials missing: api_key or calendar_id not found in secrets"
         else:  # ics
             note = "ICS source missing: readable calendar.ics_path not provided"
-        
+
         if inspect_mode:
             return {
                 "tz": tz_str,
@@ -2981,6 +3152,8 @@ def get_calendar_events(
                 "filtered_events_count": 0,
                 "note": note,
             }
+        if calendar_provider == "ics":
+            _update_calendar_runtime_state("ics", enabled, "error", note, ics_path)
         return []
     
     raw_events_count = 0
@@ -3007,6 +3180,7 @@ def get_calendar_events(
                 time_min=utc_start,
                 time_max=utc_end,
             )
+            _update_calendar_runtime_state("ics", enabled, "ok", None, ics_path)
         
         raw_events_count = len(events) if isinstance(events, list) else 0
         
@@ -3047,6 +3221,8 @@ def get_calendar_events(
     except Exception as exc:
         logger.warning("[Calendar] Failed to fetch calendar events (provider=%s): %s", calendar_provider, exc)
         note = f"API error: {exc}"
+        if calendar_provider == "ics":
+            _update_calendar_runtime_state("ics", enabled, "error", note, ics_path)
         if inspect_mode:
             return {
                 "tz": tz_str,
