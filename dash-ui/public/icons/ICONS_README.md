@@ -31,8 +31,9 @@ icons/
 │   └── sun/          # Iconos solares (futuro)
 ├── misc/             # Iconos misceláneos
 │   ├── santoral.svg  # Cruz dorada para santoral
-│   ├── calendar.svg   # Icono de calendario (futuro)
-│   └── news.svg      # Icono de noticias (futuro)
+│   ├── calendar.svg   # Icono de calendario
+│   ├── news.svg      # Icono de noticias
+│   └── efemerides.svg # Pergamino histórico para efemérides
 └── harvest/          # Iconos de hortalizas (ya existen)
 ```
 
@@ -80,8 +81,9 @@ icons/
 ### Misc Icons (Iconos Misceláneos)
 
 - **Santoral**: Cruz dorada con gradientes y glow
-- **Calendar**: (pendiente)
-- **News**: (pendiente)
+- **Calendar**: Calendario con espiral y diseño moderno
+- **News**: Periódico con header rojo y líneas de texto
+- **Efemerides**: Pergamino histórico con sello de cera y líneas de texto antiguas
 
 ## Uso en el Código
 

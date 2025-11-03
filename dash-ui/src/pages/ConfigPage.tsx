@@ -844,6 +844,9 @@ const ConfigPage: React.FC = () => {
       const result = await uploadHistoricalEventsFile(file);
       const successMessage = `Archivo subido correctamente: ${result.saved_path} (${result.items_total} eventos totales)`;
       setHistoricalEventsUploadResult({ ok: Boolean(result.ok), message: successMessage });
+      
+      // Invalidar cache del frontend tras upload exitoso
+      window.dispatchEvent(new CustomEvent('historical-events-cache-invalidated'));
 
       // Actualizar el formulario para habilitar el panel
       setForm((prev) => {
