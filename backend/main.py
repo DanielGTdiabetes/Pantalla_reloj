@@ -796,7 +796,7 @@ def _health_payload() -> Dict[str, Any]:
         logger.debug("Unable to gather OpenSky status for health: %s", exc)
         opensky_status = {
             "enabled": config.opensky.enabled,
-            "status": "error" if config.opensky.enabled else "stale",
+            "status": "stale",
         }
     auth_block = opensky_status.get("auth")
     if not isinstance(auth_block, dict):
@@ -805,6 +805,10 @@ def _health_payload() -> Dict[str, Any]:
             "token_cached": opensky_status.get("token_cached", False),
             "expires_in_sec": opensky_status.get("expires_in"),
         }
+    # Si falta auth, usar "stale" en lugar de "error"
+    status_value = opensky_status.get("status", "stale")
+    if status_value == "error" and not bool(auth_block.get("has_credentials", False)):
+        status_value = "stale"
     providers = {
         "opensky": {
             "enabled": bool(opensky_status.get("enabled", False)),
@@ -813,7 +817,7 @@ def _health_payload() -> Dict[str, Any]:
                 "token_cached": bool(auth_block.get("token_cached", False)),
                 "expires_in_sec": auth_block.get("expires_in_sec"),
             },
-            "status": opensky_status.get("status"),
+            "status": status_value,
             "last_fetch_iso": opensky_status.get("last_fetch_iso"),
             "items": opensky_status.get("items"),
             "rate_limit_hint": opensky_status.get("rate_limit_hint"),
@@ -1147,6 +1151,10 @@ def _health_payload_full_helper() -> Dict[str, Any]:
             "token_cached": opensky_status.get("token_cached"),
             "expires_in_sec": opensky_status.get("expires_in"),
         }
+    # Si falta auth, usar "stale" en lugar de "error"
+    status_value = opensky_status.get("status", "stale")
+    if status_value == "error" and not bool(auth_details.get("has_credentials", False)):
+        status_value = "stale"
     opensky_block = {
         "enabled": opensky_cfg.enabled,
         "mode": opensky_cfg.mode,
@@ -1155,7 +1163,7 @@ def _health_payload_full_helper() -> Dict[str, Any]:
         "has_credentials": auth_details.get("has_credentials"),
         "token_cached": auth_details.get("token_cached"),
         "expires_in_sec": auth_details.get("expires_in_sec"),
-        "status": opensky_status.get("status"),
+        "status": status_value,
         "last_fetch_ok": opensky_status.get("last_fetch_ok"),
         "last_fetch": last_fetch_iso,
         "last_fetch_age": last_fetch_age,
@@ -1615,119 +1623,6 @@ def _normalize_calendar_sections(payload: Dict[str, Any]) -> Tuple[str, bool, Op
     return provider, enabled, ics_path
 
 
-def _validate_calendar_requirements(
-    provider: str,
-    enabled: bool,
-    ics_path: Optional[str],
-    google_api_key: Optional[str],
-    google_calendar_id: Optional[str],
-) -> None:
-    """Validate provider-specific requirements for calendar configuration.
-    
-    Returns 400 with detailed error including missing fields and field_paths.
-    Never returns 500 for validation errors.
-    """
-
-    if provider == "google" and enabled:
-        missing: List[str] = []
-        field_paths: List[str] = []
-        if not google_api_key or not str(google_api_key).strip():
-            missing.append("secrets.google.api_key")
-            field_paths.append("secrets.google.api_key")
-        if not google_calendar_id or not str(google_calendar_id).strip():
-            missing.append("secrets.google.calendar_id")
-            field_paths.append("secrets.google.calendar_id")
-        if missing:
-            logger.warning(
-                "[config] Provider google requires credentials (missing=%s)",
-                ", ".join(missing),
-            )
-            logger.error(
-                "[config] Rejecting config save due to missing Google credentials (missing=%s)",
-                ", ".join(missing),
-            )
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "Calendar provider 'google' requires api_key and calendar_id",
-                    "missing": missing,
-                    "field_paths": field_paths,
-                },
-            )
-
-    if provider == "ics" and enabled:
-        if not ics_path or not str(ics_path).strip():
-            missing = ["panels.calendar.ics_path", "calendar.ics_path"]
-            logger.error("[config] Rejecting config save: ICS provider requires calendar.ics_path")
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "Calendar provider 'ics' requires calendar.ics_path",
-                    "missing": missing,
-                    "field_paths": missing,
-                },
-            )
-        path_obj = Path(str(ics_path).strip())
-        if not path_obj.exists() or not path_obj.is_file():
-            missing = ["panels.calendar.ics_path", "calendar.ics_path"]
-            logger.error(
-                "[config] Rejecting config save: ICS path %s not readable (exists=%s, is_file=%s)",
-                path_obj,
-                path_obj.exists(),
-                path_obj.is_file(),
-            )
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": f"Calendar provider 'ics' requires readable file at calendar.ics_path (not found: {path_obj})",
-                    "missing": missing,
-                    "field_paths": missing,
-                },
-            )
-        try:
-            # Leer y verificar que se puede parsear como ICS
-            with path_obj.open("r", encoding="utf-8") as handle:
-                content = handle.read()
-                # Intentar parsear con fetch_ics_calendar_events
-                events = fetch_ics_calendar_events(path=str(path_obj))
-                # Si no hay eventos pero el archivo está vacío o tiene formato válido, permitirlo
-                # Solo fallar si el contenido no parece ser un ICS válido
-                if content.strip() and not content.strip().startswith("BEGIN:VCALENDAR"):
-                    # Intentar buscar al menos un VEVENT como mínimo
-                    if "BEGIN:VEVENT" not in content.upper():
-                        raise ValueError("File does not contain valid ICS events (no VEVENT found)")
-        except (OSError, UnicodeDecodeError) as exc:
-            missing = ["panels.calendar.ics_path", "calendar.ics_path"]
-            logger.error(
-                "[config] Rejecting config save: ICS path %s not readable (%s)",
-                path_obj,
-                exc,
-            )
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": f"Calendar provider 'ics' requires readable file at calendar.ics_path ({exc})",
-                    "missing": missing,
-                    "field_paths": missing,
-                },
-            )
-        except Exception as exc:
-            missing = ["panels.calendar.ics_path", "calendar.ics_path"]
-            logger.error(
-                "[config] Rejecting config save: ICS path %s not parseable as ICS (%s)",
-                path_obj,
-                exc,
-            )
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": f"Calendar provider 'ics' requires parseable ICS file at calendar.ics_path ({exc})",
-                    "missing": missing,
-                    "field_paths": missing,
-                },
-            )
-
-
 def _resolve_calendar_settings(config_v2: AppConfigV2) -> Tuple[str, bool, Optional[str]]:
     """Return provider, enabled flag and ICS path for current calendar configuration."""
 
@@ -1878,14 +1773,23 @@ async def save_config(request: Request) -> JSONResponse:
         config_v2 = AppConfigV2.model_validate(payload_without_secrets)
         config_dict = config_v2.model_dump(mode="json", exclude_none=True)
 
+        # Validar Google Calendar antes del merge
         calendar_provider, calendar_enabled, normalized_ics_path = resolve_calendar_provider(config_dict)
-        _validate_calendar_requirements(
-            calendar_provider,
-            calendar_enabled,
-            normalized_ics_path,
-            google_api_key,
-            google_calendar_id,
-        )
+        if calendar_provider == "google" and calendar_enabled:
+            missing: List[str] = []
+            if not google_api_key or not str(google_api_key).strip():
+                missing.append("secrets.google.api_key")
+            if not google_calendar_id or not str(google_calendar_id).strip():
+                missing.append("secrets.google.calendar_id")
+            if missing:
+                logger.warning("[config] Provider google requires credentials (missing=%s)", ", ".join(missing))
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "Calendar provider 'google' requires api_key and calendar_id",
+                        "missing": missing,
+                    },
+                )
 
         default_layers_if_missing(config_dict)
 
@@ -1910,6 +1814,8 @@ async def save_config(request: Request) -> JSONResponse:
         merged = deep_merge(current_raw, config_dict)
         default_layers_if_missing(merged)
         provider_final, enabled_final, final_ics_path = resolve_calendar_provider(merged)
+        
+        # Validar ICS usando validate_calendar_provider (nunca 500, solo 400)
         try:
             validate_calendar_provider(provider_final, enabled_final, final_ics_path)
         except CalendarValidationError as exc:
@@ -2017,6 +1923,20 @@ async def save_config(request: Request) -> JSONResponse:
             detail={"error": "Unable to persist configuration", "reason": str(exc)},
         ) from exc
 
+    # Invalidar caché relacionado con configuración para forzar re-carga
+    # Esto asegura que los endpoints que dependen de config lean los nuevos valores
+    cache_keys_to_invalidate = [
+        "health",  # El health endpoint usa config
+        "calendar",  # El calendar endpoint usa config
+        "storm_mode",  # Storm mode usa config
+    ]
+    for cache_key in cache_keys_to_invalidate:
+        try:
+            cache_store.invalidate(cache_key)
+        except Exception as cache_exc:  # noqa: BLE001
+            logger.debug("[config] Failed to invalidate cache key %s: %s", cache_key, cache_exc)
+    
+    # Recargar configuración en runtime
     reloaded = reload_runtime_config(config_manager)
     if reloaded:
         global map_reset_counter
@@ -5106,24 +5026,52 @@ def get_global_satellite_frames() -> Dict[str, Any]:
 @app.get("/api/global/radar/frames")
 def get_global_radar_frames() -> Dict[str, Any]:
     """Obtiene lista de frames disponibles de radar global."""
-    config = config_manager.read()
-    global_config = config.layers.global_layers.radar
+    # Leer configuración V2 si está disponible
+    try:
+        config_v2, _ = _read_config_v2()
+        if config_v2.ui_global and config_v2.ui_global.radar:
+            # V2: leer de ui_global.radar
+            radar_config = config_v2.ui_global.radar
+            enabled = radar_config.enabled if radar_config else False
+            provider_name = radar_config.provider if radar_config else "rainviewer"
+        else:
+            enabled = False
+            provider_name = "rainviewer"
+    except Exception:
+        # Fallback a V1
+        config = config_manager.read()
+        global_config = config.layers.global_layers.radar
+        enabled = global_config.enabled
+        provider_name = global_config.provider
 
-    provider_name = global_config.provider
-
-    if not global_config.enabled:
+    if not enabled:
         return {"frames": [], "count": 0, "provider": provider_name, "status": "down"}
+
+    # Usar valores por defecto de history y frame_step para V2
+    history_minutes = 90
+    frame_step = 5
+    try:
+        config_v2, _ = _read_config_v2()
+        if config_v2.ui_global and config_v2.ui_global.radar:
+            # V2 no tiene history_minutes/frame_step, usar defaults
+            pass
+    except Exception:
+        # Fallback a V1 para history_minutes y frame_step
+        config = config_manager.read()
+        global_config = config.layers.global_layers.radar
+        history_minutes = global_config.history_minutes
+        frame_step = global_config.frame_step
 
     try:
         if provider_name == "openweathermap":
             frames = _openweather_provider.get_available_frames(
-                history_minutes=global_config.history_minutes,
-                frame_step=global_config.frame_step,
+                history_minutes=history_minutes,
+                frame_step=frame_step,
             )
         else:
             frames = _rainviewer_provider.get_available_frames(
-                history_minutes=global_config.history_minutes,
-                frame_step=global_config.frame_step,
+                history_minutes=history_minutes,
+                frame_step=frame_step,
             )
         status = "ok" if frames else "degraded"
         return {
@@ -5231,10 +5179,25 @@ async def get_global_radar_tile(
     request: Request
 ) -> Response:
     """Proxy de tiles de radar global con caché."""
-    config = config_manager.read()
-    global_config = config.layers.global_layers.radar
-    
-    if not global_config.enabled:
+    # Leer configuración V2 si está disponible
+    try:
+        config_v2, _ = _read_config_v2()
+        if config_v2.ui_global and config_v2.ui_global.radar:
+            # V2: leer de ui_global.radar
+            radar_config = config_v2.ui_global.radar
+            enabled = radar_config.enabled if radar_config else False
+            provider_name = radar_config.provider if radar_config else "rainviewer"
+        else:
+            enabled = False
+            provider_name = "rainviewer"
+    except Exception:
+        # Fallback a V1
+        config = config_manager.read()
+        global_config = config.layers.global_layers.radar
+        enabled = global_config.enabled
+        provider_name = global_config.provider
+
+    if not enabled:
         raise HTTPException(status_code=404, detail="Global radar layer disabled")
 
     # Caché de tiles en disco
@@ -5242,12 +5205,18 @@ async def get_global_radar_tile(
     cache_dir.mkdir(parents=True, exist_ok=True)
     tile_path = cache_dir / f"{timestamp}_{z}_{x}_{y}.png"
 
-    provider_name = global_config.provider
+    # Verificar caché en disco (usar TTL por defecto de 5 minutos)
+    refresh_minutes = 5
+    try:
+        config = config_manager.read()
+        global_config = config.layers.global_layers.radar
+        refresh_minutes = global_config.refresh_minutes
+    except Exception:
+        pass
 
-    # Verificar caché en disco
     if tile_path.exists():
         tile_age = datetime.now(timezone.utc).timestamp() - tile_path.stat().st_mtime
-        if tile_age < global_config.refresh_minutes * 60:
+        if tile_age < refresh_minutes * 60:
             tile_data = tile_path.read_bytes()
             return Response(
                 content=tile_data,

@@ -1455,6 +1455,85 @@ export default function GeoScopeMap() {
   }, [config, mapStyleVersion]);
 
 
+  // useEffect para actualizar vista cuando cambia ui_map.fixed (zoom/centro)
+  useEffect(() => {
+    if (!config || !mapRef.current || stormModeActiveRef.current) {
+      // No actualizar si storm mode está activo (tiene prioridad)
+      return;
+    }
+
+    const merged = withConfigDefaults(config);
+    const mapConfig = merged.ui?.map;
+    const fixedConfig = mapConfig?.fixed;
+    
+    // Soporte para v2: leer desde ui_map
+    const v2Config = config as unknown as { ui_map?: { fixed?: { center?: { lat?: number; lon?: number }; zoom?: number; bearing?: number; pitch?: number } } };
+    const v2Fixed = v2Config.ui_map?.fixed ?? fixedConfig;
+    
+    if (!v2Fixed || !v2Fixed.center || typeof v2Fixed.zoom !== "number") {
+      return;
+    }
+
+    const centerLat = v2Fixed.center.lat ?? 39.98;
+    const centerLng = v2Fixed.center.lon ?? 0.20;
+    const zoom = v2Fixed.zoom ?? 7.8;
+    const bearing = v2Fixed.bearing ?? 0;
+    const pitch = v2Fixed.pitch ?? 0;
+
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+
+    // Actualizar estado de vista
+    const viewState = viewStateRef.current;
+    if (!viewState) {
+      return;
+    }
+
+    // Solo actualizar si realmente cambió
+    const currentCenter = map.getCenter();
+    const currentZoom = map.getZoom();
+    const distanceThreshold = 0.001; // ~100m
+    const zoomThreshold = 0.01;
+    
+    const centerChanged = 
+      Math.abs(currentCenter.lat - centerLat) > distanceThreshold ||
+      Math.abs(currentCenter.lng - centerLng) > distanceThreshold;
+    const zoomChanged = Math.abs(currentZoom - zoom) > zoomThreshold;
+
+    if (!centerChanged && !zoomChanged) {
+      return;
+    }
+
+    viewState.lat = centerLat;
+    viewState.lng = centerLng;
+    viewState.zoom = zoom;
+    viewState.bearing = bearing;
+    viewState.pitch = pitch;
+
+    // Aplicar cambios al mapa con animación suave
+    if (map.isStyleLoaded()) {
+      map.easeTo({
+        center: [centerLng, centerLat],
+        zoom,
+        bearing,
+        pitch,
+        duration: 800 // Animación más rápida para hot-reload
+      });
+    } else {
+      map.once("load", () => {
+        map.easeTo({
+          center: [centerLng, centerLat],
+          zoom,
+          bearing,
+          pitch,
+          duration: 800
+        });
+      });
+    }
+  }, [config]);
+
   // useEffect para manejar cambios en Storm Mode
   useEffect(() => {
     if (!config || !mapRef.current) {

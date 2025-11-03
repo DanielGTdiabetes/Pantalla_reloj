@@ -126,8 +126,8 @@ install -d -m 0755 "$SESSION_PREFIX/bin" "$SESSION_PREFIX/openbox"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" /opt/pantalla-reloj/frontend/static
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$KIOSK_LOG_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$LOG_DIR"
-# Asegurar directorio principal con permisos 755 (legible por usuario)
-install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
+# Asegurar directorio principal con permisos 700 (alineado con StateDirectory)
+install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_RUNTIME"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "${STATE_RUNTIME}/chromium-kiosk"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "${STATE_RUNTIME}/firefox-kiosk"
@@ -302,9 +302,7 @@ if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
 fi
 SUMMARY+=("[install] dependencias Python validadas")
 
-# Asegurar directorio de configuración con permisos correctos
-install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
-
+# Estado de directorio ya creado arriba con permisos 0700
 CONFIG_FILE="$STATE_DIR/config.json"
 if [[ ! -f "$CONFIG_FILE" ]]; then
   # Crear config.json desde default_config_v2.json si existe, sino default_config.json

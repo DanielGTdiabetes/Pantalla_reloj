@@ -732,18 +732,51 @@ const ConfigPage: React.FC = () => {
         } as unknown as AppConfig;
       });
 
+      // Re-fetch config y rehidratar stores en caliente
       try {
         await refreshConfig();
+        await reloadConfig();
       } catch (refreshError) {
         console.warn("[ConfigPage] Failed to refresh config after ICS upload", refreshError);
       }
     } catch (error) {
       console.error("[ConfigPage] Failed to upload ICS file", error);
-      const errorMessage = error instanceof ApiError && typeof error.body === "object" && error.body !== null && "error" in error.body
-        ? String(error.body.error)
-        : error instanceof Error
-        ? error.message
-        : "No se pudo subir el archivo ICS";
+      let errorMessage = "No se pudo subir el archivo ICS";
+      const fieldErrors: FieldErrors = {};
+      
+      if (error instanceof ApiError) {
+        if (typeof error.body === "object" && error.body !== null) {
+          const errorBody = error.body as Record<string, unknown>;
+          
+          // Extraer error específico
+          if ("error" in errorBody && typeof errorBody.error === "string") {
+            errorMessage = errorBody.error;
+          }
+          
+          // Extraer errores de campo si existen
+          const backendFieldErrors = extractBackendErrors(errorBody);
+          Object.assign(fieldErrors, backendFieldErrors);
+          
+          // Extraer missing y field_paths
+          const missing = "missing" in errorBody && Array.isArray(errorBody.missing) ? errorBody.missing : [];
+          const fieldPaths = "field_paths" in errorBody && Array.isArray(errorBody.field_paths) ? errorBody.field_paths : [];
+          
+          // Añadir errores de campo para cada path faltante
+          for (const path of [...missing, ...fieldPaths]) {
+            if (typeof path === "string") {
+              fieldErrors[path] = errorMessage || "Campo requerido o inválido";
+            }
+          }
+        }
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
+      // Establecer errores de campo
+      if (Object.keys(fieldErrors).length > 0) {
+        setFieldErrors((prev) => ({ ...prev, ...fieldErrors }));
+      }
+      
       setIcsUploadResult({ ok: false, message: errorMessage });
     } finally {
       setUploadingIcs(false);
@@ -1476,14 +1509,39 @@ const ConfigPage: React.FC = () => {
           region: { postalCode: "12001" },
         };
         
-        // Extraer layers y ui_global desde el formulario
+        // Extraer layers y ui_global desde el formulario preservando todos los valores
         const v2FormWithLayers = form as unknown as { 
-          layers?: { flights?: { enabled?: boolean }; ships?: { enabled?: boolean } };
-          ui_global?: { radar?: { enabled?: boolean; provider?: string }; satellite?: { enabled?: boolean; provider?: string; opacity?: number } };
+          layers?: { 
+            flights?: { enabled?: boolean; [key: string]: unknown }; 
+            ships?: { enabled?: boolean; [key: string]: unknown };
+            global?: { [key: string]: unknown };
+          };
+          ui_global?: { 
+            radar?: { enabled?: boolean; provider?: string; [key: string]: unknown }; 
+            satellite?: { enabled?: boolean; provider?: string; opacity?: number; [key: string]: unknown };
+          };
         };
         
-        const layers = v2FormWithLayers.layers;
-        const ui_global = v2FormWithLayers.ui_global;
+        // Preservar toda la estructura de layers y ui_global del formulario
+        const layers = v2FormWithLayers.layers ? {
+          ...v2FormWithLayers.layers,
+          flights: v2FormWithLayers.layers.flights ? {
+            ...v2FormWithLayers.layers.flights,
+            enabled: v2FormWithLayers.layers.flights.enabled ?? false,
+          } : undefined,
+          ships: v2FormWithLayers.layers.ships ? {
+            ...v2FormWithLayers.layers.ships,
+            enabled: v2FormWithLayers.layers.ships.enabled ?? false,
+          } : undefined,
+        } : undefined;
+        
+        const ui_global = v2FormWithLayers.ui_global ? {
+          ...v2FormWithLayers.ui_global,
+          radar: v2FormWithLayers.ui_global.radar ? {
+            ...v2FormWithLayers.ui_global.radar,
+            enabled: v2FormWithLayers.ui_global.radar.enabled ?? false,
+          } : undefined,
+        } : undefined;
         
         const v2Payload: import("../types/config_v2").AppConfigV2 = {
           ...payload,
@@ -1499,20 +1557,31 @@ const ConfigPage: React.FC = () => {
         await saveConfigV2(v2Payload);
         let reloadOk = false;
         try {
+          // Re-fetch config y rehidratar stores en caliente
+          await refreshConfig();
           await reloadConfig();
           reloadOk = true;
         } catch (reloadError) {
           console.warn("[ConfigPage] Failed to reload config after save:", reloadError);
         }
         setBanner({ kind: "success", text: reloadOk ? "Config guardada y recargada" : "Config guardada" });
+        
+        // Disparar evento personalizado para que useConfig() haga re-fetch inmediato
+        // Esto permite que el mapa y otros componentes se actualicen sin esperar al polling
+        window.dispatchEvent(new CustomEvent("pantalla:config:saved", { detail: { version: 2 } }));
       } else {
         await saveConfig(payload);
+        // Re-fetch config y rehidratar stores en caliente
+        try {
+          await refreshConfig();
+          await reloadConfig();
+        } catch (refreshError) {
+          console.warn("[ConfigPage] Failed to refresh config after save", refreshError);
+        }
         setBanner({ kind: "success", text: "Guardado" });
-      }
-      try {
-        await refreshConfig();
-      } catch (refreshError) {
-        console.warn("[ConfigPage] Failed to refresh config after save", refreshError);
+        
+        // Disparar evento personalizado para que useConfig() haga re-fetch inmediato
+        window.dispatchEvent(new CustomEvent("pantalla:config:saved", { detail: { version: 1 } }));
       }
       setShowMaptilerKey(false);
       setShowAemetKey(false);
@@ -1528,35 +1597,50 @@ const ConfigPage: React.FC = () => {
       console.error("[ConfigPage] Failed to save configuration", error);
       if (error instanceof ApiError) {
         const backendErrors = extractBackendErrors(error.body);
-        setFieldErrors(backendErrors);
+        const fieldErrors: FieldErrors = { ...backendErrors };
+        let errorMessage = "";
         
-        // Extraer información detallada del error 400
-        let errorMessage = backendErrors.__root__ ?? "El backend rechazó la configuración";
-        if (error.status === 400 && typeof error.body === "object" && error.body !== null) {
+        if (typeof error.body === "object" && error.body !== null) {
           const errorBody = error.body as Record<string, unknown>;
+          
+          // Extraer mensaje de error específico del backend
           if ("error" in errorBody && typeof errorBody.error === "string") {
             errorMessage = errorBody.error;
+          } else if (backendErrors.__root__) {
+            errorMessage = backendErrors.__root__;
           }
           
-          // Mostrar missing y field_paths si están presentes
+          // Extraer missing y field_paths
           const missing = "missing" in errorBody && Array.isArray(errorBody.missing) ? errorBody.missing : [];
           const fieldPaths = "field_paths" in errorBody && Array.isArray(errorBody.field_paths) ? errorBody.field_paths : [];
           
-          if (missing.length > 0 || fieldPaths.length > 0) {
-            const missingFields = missing.length > 0 ? missing.join(", ") : fieldPaths.join(", ");
-            errorMessage = `${errorMessage}\n\nCampos faltantes o inválidos: ${missingFields}`;
-            
-            // Añadir errores de campo para cada field_path
-            const fieldPathErrors: FieldErrors = {};
-            for (const fieldPath of fieldPaths) {
-              if (typeof fieldPath === "string") {
-                fieldPathErrors[fieldPath] = `Campo requerido o inválido: ${fieldPath}`;
-              }
+          // Añadir errores de campo para cada path faltante o inválido
+          const allPaths = [...missing, ...fieldPaths];
+          for (const path of allPaths) {
+            if (typeof path === "string") {
+              // Usar el mensaje de error específico si está disponible, o uno genérico
+              fieldErrors[path] = errorMessage || "Campo requerido o inválido";
             }
-            setFieldErrors({ ...backendErrors, ...fieldPathErrors });
           }
         }
         
+        // Si no hay mensaje de error pero hay errores de campo, crear uno genérico
+        if (!errorMessage && Object.keys(fieldErrors).length > 0) {
+          const errorKeys = Object.keys(fieldErrors).filter(key => key !== "__root__");
+          if (errorKeys.length > 0) {
+            errorMessage = `Errores en: ${errorKeys.join(", ")}`;
+          }
+        }
+        
+        if (!errorMessage && backendErrors.__root__) {
+          errorMessage = backendErrors.__root__;
+        }
+        
+        if (!errorMessage) {
+          errorMessage = "Error al guardar la configuración";
+        }
+        
+        setFieldErrors(fieldErrors);
         setBanner({ kind: "error", text: errorMessage });
       } else {
         setBanner({ kind: "error", text: "Error al guardar" });

@@ -242,7 +242,11 @@ class OpenSkyService:
         status_value = "stale"
         if cfg.enabled:
             if self._last_fetch_ok is False:
-                status_value = "error"
+                # Si falta auth, usar "stale" en lugar de "error"
+                if not has_token and not bool(auth_info.get("has_credentials")):
+                    status_value = "stale"
+                else:
+                    status_value = "error"
             elif snapshot and self._last_fetch_at:
                 freshness = now - self._last_fetch_at
                 freshness_limit = max(poll_seconds * 2, poll_seconds + 30)

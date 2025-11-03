@@ -137,7 +137,7 @@
       "decimate": "grid",
       "grid_px": 24,
       "styleScale": 1.4,
-      "render_mode": "auto",
+      "render_mode": "circle",
       "circle": {
         "radius_base": 3.0,
         "radius_zoom_scale": 1.2,
@@ -165,7 +165,7 @@
       }
     },
     "ships": {
-      "enabled": false,
+      "enabled": true,
       "opacity": 0.9,
       "provider": "aisstream",
       "update_interval": 10,
