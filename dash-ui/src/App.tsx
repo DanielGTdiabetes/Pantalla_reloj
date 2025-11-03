@@ -4,7 +4,6 @@ import { Route, Routes } from "react-router-dom";
 import GeoScopeMap from "./components/GeoScope/GeoScopeMap";
 import { MapFrame } from "./components/MapFrame";
 import { RightPanel } from "./components/RightPanel";
-import SwiftShaderNotice from "./components/SwiftShaderNotice";
 import { ConfigPage } from "./pages/ConfigPage";
 import DiagnosticsAutoPan from "./pages/DiagnosticsAutoPan";
 
@@ -23,14 +22,11 @@ const DashboardShell: React.FC = () => {
 
 const App: React.FC = () => {
   return (
-    <>
-      <Routes>
-        <Route path="/" element={<DashboardShell />} />
-        <Route path="/config" element={<ConfigPage />} />
-        <Route path="/diagnostics/auto-pan" element={<DiagnosticsAutoPan />} />
-      </Routes>
-      <SwiftShaderNotice />
-    </>
+    <Routes>
+      <Route path="/" element={<DashboardShell />} />
+      <Route path="/config" element={<ConfigPage />} />
+      <Route path="/diagnostics/auto-pan" element={<DiagnosticsAutoPan />} />
+    </Routes>
   );
 };
 
