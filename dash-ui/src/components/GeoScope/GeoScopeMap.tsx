@@ -45,7 +45,7 @@ import {
 const DEFAULT_VIEW = {
   lng: 0.20,
   lat: 39.98,
-  zoom: 7.8,
+  zoom: 9.0,
   bearing: 0,
   pitch: 0
 };
@@ -489,7 +489,7 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
         viewMode: "fixed",
         fixed: {
           center: { lat: 39.98, lon: 0.20 },
-          zoom: 7.8,
+          zoom: 9.0,
           bearing: 0,
           pitch: 0,
         },
@@ -583,7 +583,7 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
       viewMode: "fixed",
       fixed: {
         center: { lat: 39.98, lon: 0.20 },
-        zoom: 7.8,
+        zoom: 9.0,
         bearing: 0,
         pitch: 0,
       },
@@ -945,7 +945,7 @@ export default function GeoScopeMap() {
           // Defaults de Castellón si no hay fixed config
           viewState.lat = 39.98;
           viewState.lng = 0.20;
-          viewState.zoom = 7.8;
+          viewState.zoom = 9.0;
           viewState.bearing = 0;
           viewState.pitch = 0;
         }
@@ -989,7 +989,7 @@ export default function GeoScopeMap() {
           style: runtime.style.style,
           center: viewState ? [viewState.lng, viewState.lat] : [0, 0],
           zoom: viewState?.zoom ?? 2.6,
-          minZoom: viewMode === "fixed" ? (mapSettings?.fixed?.zoom ?? 7.8) - 2 : 0,
+          minZoom: viewMode === "fixed" ? (mapSettings?.fixed?.zoom ?? 9.0) - 2 : 0,
           pitch: viewState?.pitch ?? 0,
           bearing: viewState?.bearing ?? 0,
           interactive: false,
@@ -1006,7 +1006,7 @@ export default function GeoScopeMap() {
       mapRef.current = map;
       // Configurar minZoom según viewMode
       if (viewMode === "fixed") {
-        const fixedZoom = mapSettings?.fixed?.zoom ?? 7.8;
+        const fixedZoom = mapSettings?.fixed?.zoom ?? 9.0;
         map.setMinZoom(Math.max(fixedZoom - 2, 0));
       } else {
         // Para otros modos, usar zoom mínimo razonable
@@ -1496,7 +1496,7 @@ export default function GeoScopeMap() {
 
     const centerLat = v2Fixed.center.lat ?? 39.98;
     const centerLng = v2Fixed.center.lon ?? 0.20;
-    const zoom = v2Fixed.zoom ?? 7.8;
+    const zoom = v2Fixed.zoom ?? 9.0;
     const bearing = v2Fixed.bearing ?? 0;
     const pitch = v2Fixed.pitch ?? 0;
 
@@ -1632,7 +1632,7 @@ export default function GeoScopeMap() {
         
         const centerLat = fixedConfig?.center?.lat ?? 39.98;
         const centerLng = fixedConfig?.center?.lon ?? 0.20;
-        const zoom = fixedConfig?.zoom ?? 7.8;
+        const zoom = fixedConfig?.zoom ?? 9.0;
 
         const viewState = viewStateRef.current;
         if (!viewState) {
