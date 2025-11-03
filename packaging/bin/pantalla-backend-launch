@@ -149,3 +149,4 @@ if [[ $HAS_HTTPTOOLS -eq 1 ]]; then
 fi
 
 exec "$VENV_PYTHON" -m uvicorn "${UVICORN_ARGS[@]}"
+
