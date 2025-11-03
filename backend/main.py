@@ -13,7 +13,6 @@ from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Literal, TypeVar, Union
 
-import multipart
 import requests
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
@@ -49,6 +48,8 @@ from .config_store import (
 )
 from .data_sources_ics import (
     ICSCalendarError,
+    ICSFileError,
+    ICSParseError,
     fetch_ics_calendar_events,
     get_last_error as get_last_ics_error,
 )
@@ -950,19 +951,24 @@ async def upload_ics_file(
     if not original_filename.lower().endswith(".ics"):
         raise HTTPException(
             status_code=400,
-            detail={"error": "File must have .ics extension", "filename": original_filename},
+            detail={"error": "File must have .ics extension", "missing": ["file.extension"]},
         )
 
     content = await file.read()
     if len(content) > MAX_ICS_SIZE:
         raise HTTPException(
-            status_code=413,
+            status_code=400,
             detail={
                 "error": f"File size exceeds maximum ({MAX_ICS_SIZE} bytes)",
-                "size": len(content),
-                "max_size": MAX_ICS_SIZE,
+                "missing": ["file.size"],
             },
         )
+    
+    # Validar formato ICS básico ANTES de escribir
+    try:
+        _validate_ics_basic(content)
+    except HTTPException:
+        raise
 
     try:
         ICS_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
@@ -970,8 +976,8 @@ async def upload_ics_file(
     except (PermissionError, OSError) as exc:
         logger.error("[config] Cannot create ICS directory %s: %s", ICS_STORAGE_DIR, exc)
         raise HTTPException(
-            status_code=500,
-            detail={"error": "Cannot create ICS directory", "reason": str(exc)},
+            status_code=400,
+            detail={"error": f"Cannot create ICS directory: {str(exc)}", "missing": ["storage.dir"]},
         ) from exc
 
     uid = gid = None
@@ -991,8 +997,8 @@ async def upload_ics_file(
     except (OSError, PermissionError) as exc:
         logger.error("[config] Cannot write ICS file %s: %s", ICS_STORAGE_PATH, exc)
         raise HTTPException(
-            status_code=500,
-            detail={"error": "Cannot write ICS file", "reason": str(exc)},
+            status_code=400,
+            detail={"error": f"Cannot write ICS file: {str(exc)}", "missing": ["storage.file"]},
         ) from exc
 
     try:
@@ -1019,21 +1025,24 @@ async def upload_ics_file(
         preview_events = fetch_ics_calendar_events(path=str(ICS_STORAGE_PATH))
     except ICSCalendarError as exc:
         logger.warning("[config] Uploaded ICS file is not parseable: %s", exc)
-        raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        raise HTTPException(
+            status_code=400,
+            detail={"error": f"ICS file is not parseable: {str(exc)}", "missing": ["file.format"]},
+        ) from exc
 
     try:
         current_raw = load_raw_config(config_manager.config_file)
     except json.JSONDecodeError as exc:
         logger.error("[config] Current config is not valid JSON: %s", exc)
         raise HTTPException(
-            status_code=500,
-            detail={"error": "Current configuration file is not valid JSON", "reason": str(exc)},
+            status_code=400,
+            detail={"error": f"Current configuration file is not valid JSON: {str(exc)}", "missing": ["config.json"]},
         ) from exc
     except OSError as exc:
         logger.error("[config] Could not read current config %s: %s", config_manager.config_file, exc)
         raise HTTPException(
-            status_code=500,
-            detail={"error": "Unable to read current configuration", "reason": str(exc)},
+            status_code=400,
+            detail={"error": f"Unable to read current configuration: {str(exc)}", "missing": ["config.read"]},
         ) from exc
 
     incoming = {
@@ -1055,7 +1064,7 @@ async def upload_ics_file(
         logger.warning("[config] Calendar validation error after ICS upload: %s", exc)
         raise HTTPException(
             status_code=400,
-            detail={"error": str(exc), "missing": exc.missing},
+            detail={"error": str(exc), "missing": exc.missing if exc.missing else []},
         ) from exc
 
     try:
@@ -1064,8 +1073,8 @@ async def upload_ics_file(
     except (PermissionError, OSError) as exc:
         logger.error("[config] Failed to persist configuration after ICS upload: %s", exc)
         raise HTTPException(
-            status_code=500,
-            detail={"error": "Failed to persist configuration", "reason": str(exc)},
+            status_code=400,
+            detail={"error": f"Failed to persist configuration: {str(exc)}", "missing": ["config.write"]},
         ) from exc
 
     secret_store.set_secret("calendar_ics_path", str(ICS_STORAGE_PATH))
@@ -1076,21 +1085,23 @@ async def upload_ics_file(
         map_reset_counter += 1
     _update_calendar_runtime_state("ics", True, "stale", None, str(ICS_STORAGE_PATH))
     calendar_state = _get_calendar_runtime_state()
+    
+    # Obtener metadatos del archivo guardado
+    try:
+        stat_info = ICS_STORAGE_PATH.stat()
+        mtime_iso = datetime.fromtimestamp(stat_info.st_mtime, tz=timezone.utc).isoformat()
+        file_size = stat_info.st_size
+    except OSError:
+        mtime_iso = datetime.now(timezone.utc).isoformat()
+        file_size = len(content)
 
     response_payload = {
         "ok": True,
         "ics_path": str(ICS_STORAGE_PATH),
-        "provider": "ics",
-        "events_detected": len(preview_events),
-        "reloaded": reloaded,
-        "config_version": map_reset_counter,
-        "calendar": {
-            "status": calendar_state.get("status"),
-            "last_error": calendar_state.get("last_error"),
-        },
+        "size": file_size,
     }
 
-    return JSONResponse(content=response_payload)
+    return JSONResponse(content=response_payload, status_code=200)
 
 
 @app.post("/api/config/reload")
@@ -1563,7 +1574,12 @@ _CONFIG_METADATA_KEYS = {
 
 def _sanitize_incoming_config_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Remove metadata keys that should not be persisted."""
-
+    ignored_keys = [key for key in payload.keys() if key in _CONFIG_METADATA_KEYS]
+    if ignored_keys:
+        logger.warning(
+            "[config] Ignoring ephemeral fields from payload: %s",
+            ", ".join(sorted(ignored_keys)),
+        )
     return {key: value for key, value in payload.items() if key not in _CONFIG_METADATA_KEYS}
 
 
@@ -1663,6 +1679,44 @@ def _ics_path_is_readable(ics_path: Optional[str]) -> bool:
     except OSError:
         return False
     return True
+
+
+def _validate_ics_basic(content: bytes) -> None:
+    """Valida formato ICS básico (BEGIN:VCALENDAR y al menos un VEVENT).
+    
+    Raises HTTPException con 400 si no cumple.
+    """
+    try:
+        content_str = content.decode('utf-8', errors='replace')
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "ICS file is not valid UTF-8", "reason": str(exc)},
+        ) from exc
+    
+    # Validar que tiene BEGIN:VCALENDAR
+    if "BEGIN:VCALENDAR" not in content_str.upper():
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "ICS file must contain BEGIN:VCALENDAR"},
+        )
+    
+    # Validar que tiene al menos un VEVENT
+    if "BEGIN:VEVENT" not in content_str.upper():
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "ICS file must contain at least one BEGIN:VEVENT"},
+        )
+    
+    # Intentar parsear con icalendar para validar sintaxis
+    try:
+        from icalendar import Calendar
+        Calendar.from_ical(content)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": f"Invalid ICS format: {str(exc)}"},
+        ) from exc
 
 
 def _handle_partial_opensky_update(payload: Dict[str, Any]) -> JSONResponse:
@@ -1822,7 +1876,7 @@ async def save_config(request: Request) -> JSONResponse:
             logger.warning("[config] Calendar validation error: %s", exc)
             raise HTTPException(
                 status_code=400,
-                detail={"error": str(exc), "missing": exc.missing},
+                detail={"error": str(exc), "missing": exc.missing if exc.missing else []},
             ) from exc
 
         try:
@@ -3172,12 +3226,9 @@ def get_calendar_status() -> Dict[str, Any]:
         config_v2, _ = _read_config_v2()
     except Exception as exc:
         return {
-            "provider": "unknown",
-            "enabled": False,
-            "credentials_present": False,
             "status": "error",
-            "last_fetch_iso": None,
-            "note": f"Config read failed: {exc}",
+            "provider": "unknown",
+            "detail": f"Config read failed: {exc}",
         }
     
     # Determinar provider de calendario
@@ -3186,19 +3237,14 @@ def get_calendar_status() -> Dict[str, Any]:
     # Si provider es "disabled" o enabled es False, retornar inmediatamente
     if calendar_provider == "disabled" or not enabled:
         return {
+            "status": "empty",
             "provider": calendar_provider,
-            "enabled": False,
-            "credentials_present": False,
-            "status": "stale",
-            "last_fetch_iso": None,
-            "note": "Calendar disabled",
+            "detail": "Calendar disabled",
         }
     
     # Leer credenciales según provider
-    credentials_present = False
-    status = "stale"
-    last_fetch_iso: Optional[str] = None
-    note: Optional[str] = None
+    status = "error"
+    detail: Optional[str] = None
     
     if calendar_provider == "google":
         api_key = secret_store.get_secret("google_calendar_api_key") or secret_store.get_secret("google_api_key")
@@ -3207,36 +3253,48 @@ def get_calendar_status() -> Dict[str, Any]:
         
         if enabled and credentials_present:
             status = "ok"
+            detail = "Google Calendar configured and ready"
         elif enabled and not credentials_present:
             status = "error"
-            note = "Google Calendar API key or calendar ID missing"
+            detail = "Calendar provider 'google' requires api_key and calendar_id"
         else:
-            status = "stale"
-            note = "Calendar disabled"
+            status = "empty"
+            detail = "Calendar disabled"
     
     elif calendar_provider == "ics":
         credentials_present = _ics_path_is_readable(ics_path)
 
         if enabled and credentials_present:
             status = "ok"
+            detail = "ICS calendar file accessible"
         elif enabled and not credentials_present:
-            status = "error"
-            note = "ICS calendar path missing or unreadable"
+            if not ics_path or not ics_path.strip():
+                status = "empty"
+                detail = "ICS calendar path not configured"
+            else:
+                status = "error"
+                path_obj = Path(ics_path.strip())
+                if path_obj.exists() and path_obj.is_file():
+                    detail = f"Calendar provider 'ics' requires readable file at calendar.ics_path (permission denied: {path_obj})"
+                else:
+                    detail = f"Calendar provider 'ics' requires readable file at calendar.ics_path (not found: {path_obj})"
         else:
-            status = "stale"
-            note = "Calendar disabled"
+            status = "empty"
+            detail = "Calendar disabled"
     else:
         status = "error"
-        note = f"Unknown provider: {calendar_provider}"
+        detail = f"Unknown provider: {calendar_provider}"
     
-    return {
-        "provider": calendar_provider,
-        "enabled": enabled,
-        "credentials_present": credentials_present,
+    result: Dict[str, Any] = {
         "status": status,
-        "last_fetch_iso": last_fetch_iso,
-        "note": note or "OK",
+        "provider": calendar_provider,
+        "detail": detail or "OK",
     }
+    
+    if calendar_provider == "ics" and ics_path:
+        result["ics_path"] = ics_path
+    
+    return result
 
 
 @app.get("/api/calendar")

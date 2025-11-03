@@ -73,3 +73,131 @@ def test_ics_provider_persists_and_syncs_panel(app_module: Tuple[object, Path], 
     assert panel_calendar["ics_path"] == str(ics_file)
 
     assert module.secret_store.get_secret("calendar_ics_path") == str(ics_file)
+
+
+def test_config_merge_preserves_layers_flags(app_module: Tuple[object, Path]) -> None:
+    """Test que POST /api/config preserva flags de layers.flights/ships en merge no destructivo."""
+    module, config_file = app_module
+    client = TestClient(module.app)
+
+    # Cargar config actual
+    payload = _load_current_config(client)
+
+    # Asegurar que layers.flights/ships existen y están habilitados
+    if "layers" not in payload:
+        payload["layers"] = {}
+    if "flights" not in payload["layers"]:
+        payload["layers"]["flights"] = {"enabled": True}
+    if "ships" not in payload["layers"]:
+        payload["layers"]["ships"] = {"enabled": True}
+
+    # Guardar config con flags activados
+    payload["layers"]["flights"]["enabled"] = True
+    payload["layers"]["ships"]["enabled"] = True
+
+    response = client.post("/api/config", json=payload)
+    assert response.status_code == 200
+
+    # Actualizar solo calendar
+    payload["panels"] = {"calendar": {"provider": "ics", "enabled": False}}
+
+    response = client.post("/api/config", json=payload)
+    assert response.status_code == 200
+
+    # Verificar que los flags se preservaron
+    refreshed = _load_current_config(client)
+    assert refreshed["layers"]["flights"]["enabled"] is True
+    assert refreshed["layers"]["ships"]["enabled"] is True
+
+
+def test_config_merge_preserves_radar_flags(app_module: Tuple[object, Path]) -> None:
+    """Test que POST /api/config preserva flags de ui_global.radar en merge no destructivo."""
+    module, config_file = app_module
+    client = TestClient(module.app)
+
+    # Cargar config actual
+    payload = _load_current_config(client)
+
+    # Asegurar que ui_global.radar existe
+    if "ui_global" not in payload:
+        payload["ui_global"] = {}
+    if "radar" not in payload["ui_global"]:
+        payload["ui_global"]["radar"] = {"enabled": True, "provider": "aemet"}
+
+    payload["ui_global"]["radar"]["enabled"] = True
+
+    response = client.post("/api/config", json=payload)
+    assert response.status_code == 200
+
+    # Actualizar solo calendar
+    payload["panels"] = {"calendar": {"provider": "google", "enabled": False}}
+
+    response = client.post("/api/config", json=payload)
+    assert response.status_code == 200
+
+    # Verificar que el flag se preservó
+    refreshed = _load_current_config(client)
+    assert refreshed["ui_global"]["radar"]["enabled"] is True
+
+
+def test_ics_path_validation_error_messages(app_module: Tuple[object, Path], tmp_path: Path) -> None:
+    """Test que POST /api/config devuelve mensajes 400 claros cuando ics_path no existe."""
+    module, _ = app_module
+    client = TestClient(module.app)
+
+    payload = _load_current_config(client)
+
+    # Configurar ICS provider con path inexistente
+    payload.setdefault("panels", {})["calendar"] = {
+        "enabled": True,
+        "provider": "ics",
+        "ics_path": str(tmp_path / "nonexistent.ics"),
+    }
+
+    response = client.post("/api/config", json=payload)
+    assert response.status_code == 400
+
+    detail = response.json()
+    assert "ics_path" in detail["error"].lower() or "readable" in detail["error"].lower()
+
+
+def test_ics_upload_validation_basic_format(app_module: Tuple[object, Path], tmp_path: Path) -> None:
+    """Test que POST /api/config/upload/ics valida formato ICS básico."""
+    module, _ = app_module
+    client = TestClient(module.app)
+
+    # Archivo inválido (sin BEGIN:VCALENDAR)
+    invalid_content = b"This is not an ICS file"
+
+    response = client.post(
+        "/api/config/upload/ics",
+        files={"file": ("invalid.ics", invalid_content, "text/calendar")},
+    )
+    assert response.status_code == 400
+
+    detail = response.json()
+    assert "VCALENDAR" in detail["error"]
+
+    # Archivo válido mínimo
+    valid_ics = b"""BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+SUMMARY:Test Event
+DTSTART:20250101T120000Z
+DTEND:20250101T130000Z
+END:VEVENT
+END:VCALENDAR
+"""
+
+    response = client.post(
+        "/api/config/upload/ics",
+        files={"file": ("valid.ics", valid_ics, "text/calendar")},
+    )
+    assert response.status_code == 200
+
+    result = response.json()
+    assert "path" in result
+    assert "size" in result
+    assert "mtime_iso" in result
+    assert result["size"] > 0

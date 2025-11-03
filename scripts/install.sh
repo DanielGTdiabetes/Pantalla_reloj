@@ -49,35 +49,38 @@ log_ok()   { printf '[OK] %s\n' "$*"; }
 log_error(){ printf '[ERROR] %s\n' "$*" >&2; }
 
 wait_for_backend_ready() {
-  local max_wait=${BACKEND_WAIT_TIMEOUT:-120}
-  local sleep_interval=2
+  local max_wait=60
+  local sleep_interval=5
   local waited=0
   local backend_url="http://127.0.0.1:8081/api/health"
   local backend_service="pantalla-dash-backend@${USER_NAME}.service"
 
-  log_info "Esperando backend en ${backend_url} (timeout ${max_wait}s)"
-  until curl -sfS "$backend_url" >/dev/null; do
-    if (( waited >= max_wait )); then
-      log_error "Backend no responde en 127.0.0.1:8081 tras ${max_wait}s"
-      systemctl --no-pager -l status "$backend_service" | sed -n '1,60p' || true
-      if [[ -f /tmp/backend-launch.log ]]; then
-        log_warn "Últimos mensajes de /tmp/backend-launch.log:"
-        tail -n 40 /tmp/backend-launch.log || true
+  log_info "Esperando backend en ${backend_url} (timeout ${max_wait}s, interval ${sleep_interval}s)"
+  while [[ $waited -lt $max_wait ]]; do
+    # Verificar que health responde con status=ok
+    if HEALTH_RESPONSE=$(curl -sfS --max-time 5 "$backend_url" 2>/dev/null); then
+      if echo "$HEALTH_RESPONSE" | jq -e '.status == "ok"' >/dev/null 2>&1; then
+        log_ok "Backend health responde con status=ok"
+        SUMMARY+=('[install] backend /api/health responde')
+        return 0
+      else
+        log_info "Backend responde pero status != ok; esperando..."
       fi
-      log_warn "Últimos registros de systemd (${backend_service}):"
-      journalctl --no-pager -n 80 -u "$backend_service" || true
-      return 1
-    fi
-    if (( waited > 0 && (waited % 20) == 0 )); then
+    else
       log_info "Backend aún no responde tras ${waited}s; esperando..."
     fi
+    
     sleep "$sleep_interval"
     waited=$((waited + sleep_interval))
   done
 
-  log_ok "Backend health responde (/api/health)"
-  SUMMARY+=('[install] backend /api/health responde')
-  return 0
+  # Timeout alcanzado
+  log_error "Backend no responde correctamente en 127.0.0.1:8081 tras ${max_wait}s"
+  log_warn "Estado del servicio:"
+  systemctl --no-pager -l status "$backend_service" | sed -n '1,30p' || true
+  log_warn "Últimos 150 registros de systemd (${backend_service}):"
+  journalctl -u "$backend_service" -n 150 -o short-iso || true
+  return 1
 }
 
 USERNAME="${USERNAME:-${SUDO_USER:-$USER}}"

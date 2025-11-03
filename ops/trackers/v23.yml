@@ -1,0 +1,350 @@
+# Trackers v23 - Pantalla_reloj
+
+version: 23.0
+platform: Ubuntu 24.04 + 8.8" 1920×480
+date_start: 2025-01-XX
+date_target: D+20
+
+agents:
+  - id: A0
+    name: Orquestador
+    role: Coordinator
+    status: in_progress
+    todos:
+      - item: Crear A0-plan.md
+        status: done
+        file: ops/agents/A0-plan.md
+      - item: Crear trackers/v23.yml
+        status: in_progress
+        file: ops/trackers/v23.yml
+      - item: Crear plantillas de reporte
+        status: pending
+        file: ops/agents/
+      - item: Setup release/v23 branch
+        status: pending
+    blockers: []
+
+  - id: A1
+    name: Backend Core
+    role: Developer
+    status: pending
+    deliverables:
+      - /api/config GET/PATCH persiste sin rechazos
+      - Servicios systemd estables (pantalla-dash-backend@dani)
+      - Instalación idempotente
+      - python-multipart en venv
+      - Logs claros
+    acceptance_criteria:
+      - pytest backend/tests/ -v pasa
+      - curl -sS http://127.0.0.1:8081/api/health retorna {"status":"ok"}
+      - /api/config GET/PATCH persiste correctamente
+      - systemctl status pantalla-dash-backend@dani active
+      - python-multipart importa correctamente
+    branch: feature/A1-backend-config
+    prs: []
+    tests: [smoke_v23.sh test 1/5]
+    dependencias: []
+    blockers: []
+    estimated_hours: 24
+
+  - id: A2
+    name: ICS & Calendar
+    role: Developer
+    status: pending
+    deliverables:
+      - ICS uploader estable
+      - Calendar ICS por defecto funcionando
+      - Endpoints /api/config/upload/ics, /api/calendar/events, /api/calendar/status
+    acceptance_criteria:
+      - curl -X POST -F "file=@test.ics" http://127.0.0.1:8081/api/config/upload/ics retorna 200
+      - GET /api/calendar/events retorna eventos del ICS por defecto
+      - GET /api/calendar/status retorna {"status":"ok"}
+      - Valida archivos .ics correctamente (< 2MB)
+      - Maneja errores de upload gracefully
+    branch: feature/A2-ics-calendar
+    prs: []
+    tests: [smoke_v23.sh tests 2-4]
+    dependencias: [A1]
+    blockers: []
+    estimated_hours: 16
+
+  - id: A3
+    name: Frontend Rotador
+    role: Developer
+    status: pending
+    deliverables:
+      - Rotador de paneles (hora, clima actual, clima semanal, efemérides, santoral, calendario ICS)
+      - Iconos full-color renderizando
+      - Control radar AEMET en UI
+    acceptance_criteria:
+      - npm run build sin warnings
+      - npm test pasa
+      - Rotador muestra 6 paneles correctamente
+      - Iconos full-color visible (astro, harvest, misc, moon, weather)
+      - Control AEMET toggle funciona
+      - UI responsiva 1920×480
+      - No memory leaks detectados
+    branch: feature/A3-frontend-rotator
+    prs: []
+    tests: [npm test, npm run build]
+    dependencias: [A1, A2]
+    blockers: []
+    estimated_hours: 32
+
+  - id: A4
+    name: AEMET Provider
+    role: Developer
+    status: pending
+    deliverables:
+      - Integración AEMET radar + CAP
+      - Endpoints /api/aemet/test_key, /api/aemet/radar, /api/aemet/cap
+      - Manejo de credenciales seguro
+    acceptance_criteria:
+      - curl http://127.0.0.1:8081/api/aemet/test_key valida API key
+      - GET /api/aemet/radar devuelve tiles válidos
+      - GET /api/aemet/cap devuelve GeoJSON válido
+      - Rate limiting implementado
+      - Fallbacks en caso de error
+    branch: feature/A4-aemet
+    prs: []
+    tests: [manual API tests]
+    dependencias: [A1]
+    blockers: []
+    estimated_hours: 20
+
+  - id: A5
+    name: OpenSky Provider
+    role: Developer
+    status: pending
+    deliverables:
+      - OAuth2 implementado
+      - Autenticación OpenSky estable
+      - Rate limiting
+    acceptance_criteria:
+      - OAuth2 flow funciona correctamente
+      - Autenticación persiste entre requests
+      - Rate limit 6 req/min respetado
+      - Manejo de tokens refresh
+      - Fallbacks en caso de error
+    branch: feature/A5-opensky
+    prs: []
+    tests: [manual OAuth2 tests]
+    dependencias: [A1]
+    blockers: []
+    estimated_hours: 16
+
+  - id: A6
+    name: AIS Provider
+    role: Developer
+    status: pending
+    deliverables:
+      - Integración AIS operativa
+      - Barcos mostrados en mapa
+      - Actualización en tiempo real
+    acceptance_criteria:
+      - GET /api/layers/ships devuelve barcos válidos
+      - Barcos se renderizan en mapa
+      - Actualización cada 10s funciona
+      - Rate limiting implementado
+      - Fallbacks en caso de error
+    branch: feature/A6-ais
+    prs: []
+    tests: [manual map tests]
+    dependencias: [A1]
+    blockers: []
+    estimated_hours: 20
+
+  - id: A7
+    name: QA & Docs
+    role: QA
+    status: pending
+    deliverables:
+      - smoke_v23.sh pasa 5/5
+      - README actualizado
+      - CHANGELOG actualizado
+      - Pruebas visuales documentadas
+    acceptance_criteria:
+      - ./scripts/smoke_v23.sh dani pasa 5/5 tests
+      - README documenta v23
+      - CHANGELOG tiene entrada v23
+      - Guía de pruebas visuales disponible
+      - Reporte final de QA completo
+    branch: feature/A7-qa-docs
+    prs: []
+    tests: [smoke_v23.sh completo]
+    dependencias: [A1, A2, A3, A4, A5, A6]
+    blockers: []
+    estimated_hours: 24
+
+milestones:
+  - name: Backend estable
+    target_date: D+3
+    agents: [A1, A2]
+    criteria: Smoke tests 1-3 pasan
+    status: pending
+
+  - name: Frontend rotador
+    target_date: D+7
+    agents: [A3]
+    criteria: Rotador muestra 6 paneles, iconos renderizan
+    status: pending
+
+  - name: Proveedores integrados
+    target_date: D+10
+    agents: [A4, A5, A6]
+    criteria: AEMET/OpenSky/AIS funcionando
+    status: pending
+
+  - name: Systemd robusto
+    target_date: D+12
+    agents: [A1]
+    criteria: Instalación idempotente, todos servicios OK
+    status: pending
+
+  - name: Smoke completo
+    target_date: D+15
+    agents: [A7]
+    criteria: smoke_v23.sh 5/5, docs actualizados
+    status: pending
+
+  - name: Release
+    target_date: D+20
+    agents: [A0]
+    criteria: PR merged, changelog, tag creado
+    status: pending
+
+risks:
+  - id: R1
+    description: Usuario hardcodeado en systemd
+    probability: alta
+    impact: crítico
+    mitigation: Usar @.service con parámetros dinámicos
+    owner: A1
+    status: open
+
+  - id: R2
+    description: python-multipart no instalado
+    probability: media
+    impact: alto
+    mitigation: Verificar en install.sh + tests
+    owner: A1
+    status: open
+
+  - id: R3
+    description: ICS uploader inestable
+    probability: media
+    impact: medio
+    mitigation: Validar < 2MB + errores
+    owner: A2
+    status: open
+
+  - id: R4
+    description: Iconos full-color no renderizan
+    probability: baja
+    impact: medio
+    mitigation: Tests visuales + fallback
+    owner: A3
+    status: open
+
+  - id: R5
+    description: Radar AEMET no carga
+    probability: media
+    impact: alto
+    mitigation: Verificar credenciales + caché
+    owner: A4
+    status: open
+
+  - id: R6
+    description: Rotador bloquea UI
+    probability: baja
+    impact: alto
+    mitigation: Debounce + lazy loading
+    owner: A3
+    status: open
+
+  - id: R7
+    description: Smoke tests fallan
+    probability: media
+    impact: alto
+    mitigation: Docker para tests repetibles
+    owner: A7
+    status: open
+
+  - id: R8
+    description: Dependencias faltantes
+    probability: media
+    impact: crítico
+    mitigation: Checklist en install.sh
+    owner: A1
+    status: open
+
+tests:
+  smoke_v23:
+    description: Smoke tests E2E para v23
+    script: ./scripts/smoke_v23.sh
+    tests:
+      - id: 1
+        name: Health 200
+        command: curl -sS http://127.0.0.1:8081/api/health
+        expected: HTTP 200, status=ok
+        owner: A1
+      - id: 2
+        name: ICS Upload
+        command: curl -X POST -F "file=@test.ics" http://127.0.0.1:8081/api/config/upload/ics
+        expected: HTTP 200
+        owner: A2
+      - id: 3
+        name: Activate Layers
+        command: curl -X POST -H "Content-Type: application/json" -d '{"layers":{...}}' http://127.0.0.1:8081/api/config
+        expected: HTTP 200
+        owner: A2
+      - id: 4
+        name: Calendar Events >= 1
+        command: curl http://127.0.0.1:8081/api/calendar/events
+        expected: >= 1 evento
+        owner: A2
+      - id: 5
+        name: Calendar Status OK
+        command: curl http://127.0.0.1:8081/api/calendar/status
+        expected: {"status":"ok"}
+        owner: A2
+
+report_template:
+  agent: "agent-N"
+  branch: "feature/xyz"
+  prs: []
+  changed_files: []
+  tests_ok: false
+  manual_checks_ok: false
+  api_health:
+    ok: false
+    status_code: 0
+  config_persists: false
+  open_risks: []
+  next_actions: []
+  verification_commands: []
+  verification_outputs: {}
+  health_check_curl: ""
+  compatibility_explanation: ""
+
+merge_order:
+  - A1
+  - A5
+  - A2
+  - A4
+  - A6
+  - A3
+  - A7
+
+final_checklist:
+  - item: Todos los tests pasan
+    checked: false
+  - item: Documentación actualizada
+    checked: false
+  - item: CHANGELOG v23 entry
+    checked: false
+  - item: Release tag creado
+    checked: false
+  - item: Deployment verificado
+    checked: false
+
