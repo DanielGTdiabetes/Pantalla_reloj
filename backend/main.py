@@ -203,6 +203,49 @@ app.add_middleware(
 )
 
 
+def _ensure_ics_storage_directory() -> None:
+    """Asegurar que el directorio de almacenamiento ICS existe con permisos adecuados."""
+    try:
+        uid = gid = None
+        try:
+            stat_info = config_manager.config_file.stat()
+            uid, gid = stat_info.st_uid, stat_info.st_gid
+        except FileNotFoundError:
+            try:
+                parent_stat = config_manager.config_file.parent.stat()
+                uid, gid = parent_stat.st_uid, parent_stat.st_gid
+            except OSError:
+                pass
+        except OSError:
+            pass
+
+        if not ICS_STORAGE_DIR.exists():
+            ICS_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+            if uid is not None and gid is not None:
+                try:
+                    os.chown(ICS_STORAGE_DIR, uid, gid)
+                except OSError:
+                    pass
+            try:
+                os.chmod(ICS_STORAGE_DIR, 0o755)
+            except OSError:
+                pass
+            logger.info("[config] Created ICS storage directory: %s", ICS_STORAGE_DIR)
+        else:
+            # Verificar permisos existentes
+            if not os.access(ICS_STORAGE_DIR, os.W_OK):
+                logger.warning("[config] ICS storage directory exists but is not writable: %s", ICS_STORAGE_DIR)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[config] Could not ensure ICS storage directory: %s", exc)
+
+
+@app.on_event("startup")
+def _startup_services() -> None:
+    """Inicializar servicios y directorios al inicio."""
+    _ensure_ics_storage_directory()
+    # Otros servicios se inicializan en otro evento startup más abajo
+
+
 @app.on_event("shutdown")
 def _shutdown_services() -> None:
     opensky_service.close()
@@ -1036,24 +1079,48 @@ async def upload_ics_file(
     except HTTPException:
         raise
 
-    try:
-        ICS_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-        os.chmod(ICS_STORAGE_DIR, 0o700)
-    except (PermissionError, OSError) as exc:
-        logger.error("[config] Cannot create ICS directory %s: %s", ICS_STORAGE_DIR, exc)
-        raise HTTPException(
-            status_code=400,
-            detail={"error": f"Cannot create ICS directory: {str(exc)}", "missing": ["storage.dir"]},
-        ) from exc
-
+    # Obtener UID/GID del propietario del config antes de crear directorios
     uid = gid = None
     try:
         stat_info = config_manager.config_file.stat()
         uid, gid = stat_info.st_uid, stat_info.st_gid
     except FileNotFoundError:
-        pass
+        # Si el config no existe, intentar obtener del directorio padre
+        try:
+            parent_stat = config_manager.config_file.parent.stat()
+            uid, gid = parent_stat.st_uid, parent_stat.st_gid
+        except OSError:
+            pass
     except OSError as exc:
         logger.debug("[config] Could not stat config file for ownership: %s", exc)
+
+    # Crear directorio ICS con permisos adecuados
+    try:
+        if not ICS_STORAGE_DIR.exists():
+            ICS_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+            if uid is not None and gid is not None:
+                try:
+                    os.chown(ICS_STORAGE_DIR, uid, gid)
+                except OSError as exc:
+                    logger.debug("[config] Could not chown ICS directory: %s", exc)
+            try:
+                os.chmod(ICS_STORAGE_DIR, 0o755)
+            except OSError as exc:
+                logger.debug("[config] Could not chmod ICS directory: %s", exc)
+        else:
+            # Verificar que el directorio sea escribible
+            if not os.access(ICS_STORAGE_DIR, os.W_OK):
+                logger.error("[config] ICS directory exists but is not writable: %s", ICS_STORAGE_DIR)
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": f"ICS directory is not writable: {ICS_STORAGE_DIR}", "missing": ["storage.dir"]},
+                )
+    except (PermissionError, OSError) as exc:
+        logger.error("[config] Cannot create or access ICS directory %s: %s", ICS_STORAGE_DIR, exc)
+        raise HTTPException(
+            status_code=400,
+            detail={"error": f"Cannot create ICS directory: {str(exc)}", "missing": ["storage.dir"]},
+        ) from exc
 
     try:
         with ICS_STORAGE_PATH.open("wb") as handle:
@@ -1067,21 +1134,13 @@ async def upload_ics_file(
             detail={"error": f"Cannot write ICS file: {str(exc)}", "missing": ["storage.file"]},
         ) from exc
 
+    # Asegurar permisos correctos del archivo después de escribirlo
     try:
-        if uid is not None or gid is not None:
-            os.chown(
-                ICS_STORAGE_DIR,
-                uid if uid is not None else -1,
-                gid if gid is not None else -1,
-            )
-            os.chown(
-                ICS_STORAGE_PATH,
-                uid if uid is not None else -1,
-                gid if gid is not None else -1,
-            )
+        if uid is not None and gid is not None:
+            os.chown(ICS_STORAGE_PATH, uid, gid)
     except OSError as exc:
-        logger.debug("[config] Could not chown ICS storage: %s", exc)
-
+        logger.debug("[config] Could not chown ICS file after writing: %s", exc)
+    
     try:
         os.chmod(ICS_STORAGE_PATH, 0o644)
     except OSError as exc:

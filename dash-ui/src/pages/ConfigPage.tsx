@@ -4452,6 +4452,493 @@ const ConfigPage: React.FC = () => {
                     />
                     {renderHelp("Tiempo máximo antes de ocultar datos antiguos (10-600)")}
                   </div>
+
+                  <div className="config-field">
+                    <label htmlFor="v2_flights_opacity">Opacidad</label>
+                    <input
+                      id="v2_flights_opacity"
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={(form as unknown as { layers?: { flights?: { opacity?: number } } }).layers?.flights?.opacity ?? 0.9}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const opacity = Number(event.target.value);
+                        if (!Number.isNaN(opacity)) {
+                          setForm((prev) => {
+                            const v2 = prev as unknown as { layers?: { flights?: Record<string, unknown> } };
+                            return {
+                              ...prev,
+                              layers: {
+                                ...v2.layers,
+                                flights: {
+                                  ...v2.layers?.flights,
+                                  opacity: Math.max(0, Math.min(1, opacity)),
+                                },
+                              },
+                            } as unknown as AppConfig;
+                          });
+                        }
+                      }}
+                    />
+                    <span>{Math.round(((form as unknown as { layers?: { flights?: { opacity?: number } } }).layers?.flights?.opacity ?? 0.9) * 100)}%</span>
+                    {renderHelp("Opacidad de la capa de aviones (0.0 - 1.0)")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="v2_flights_provider">Proveedor</label>
+                    <select
+                      id="v2_flights_provider"
+                      value={(form as unknown as { layers?: { flights?: { provider?: string } } }).layers?.flights?.provider ?? "opensky"}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const provider = event.target.value as "opensky" | "aviationstack" | "custom";
+                        setForm((prev) => {
+                          const v2 = prev as unknown as { layers?: { flights?: Record<string, unknown> } };
+                          return {
+                            ...prev,
+                            layers: {
+                              ...v2.layers,
+                              flights: {
+                                ...v2.layers?.flights,
+                                provider,
+                              },
+                            },
+                          } as unknown as AppConfig;
+                        });
+                      }}
+                    >
+                      <option value="opensky">OpenSky Network</option>
+                      <option value="aviationstack">AviationStack</option>
+                      <option value="custom">Custom</option>
+                    </select>
+                    {renderHelp("Selecciona el proveedor de datos de vuelos")}
+                  </div>
+
+                  {supports("layers.flights.render_mode") && (
+                    <div className="config-field">
+                      <label htmlFor="v2_flights_render_mode">Modo de renderizado</label>
+                      <select
+                        id="v2_flights_render_mode"
+                        value={(form as unknown as { layers?: { flights?: { render_mode?: string } } }).layers?.flights?.render_mode ?? "auto"}
+                        disabled={disableInputs}
+                        onChange={(event) => {
+                          const render_mode = event.target.value as "auto" | "symbol" | "circle";
+                          setForm((prev) => {
+                            const v2 = prev as unknown as { layers?: { flights?: Record<string, unknown> } };
+                            return {
+                              ...prev,
+                              layers: {
+                                ...v2.layers,
+                                flights: {
+                                  ...v2.layers?.flights,
+                                  render_mode,
+                                },
+                              },
+                            } as unknown as AppConfig;
+                          });
+                        }}
+                      >
+                        <option value="auto">Automático</option>
+                        <option value="symbol">Icono</option>
+                        <option value="circle">Círculo</option>
+                      </select>
+                      {renderHelp("Selecciona cómo se dibujan los vuelos sobre el mapa")}
+                    </div>
+                  )}
+
+                  {supports("layers.flights.circle.radius_vh") && (
+                    <div className="config-field">
+                      <label htmlFor="v2_flights_circle_radius_vh">Radio en viewport height (%)</label>
+                      <input
+                        id="v2_flights_circle_radius_vh"
+                        type="number"
+                        min="0.1"
+                        max="10"
+                        step="0.1"
+                        value={(form as unknown as { layers?: { flights?: { circle?: { radius_vh?: number } } } }).layers?.flights?.circle?.radius_vh ?? 0.9}
+                        disabled={disableInputs}
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          if (!Number.isNaN(value)) {
+                            const radius_vh = Math.max(0.1, Math.min(10, value));
+                            setForm((prev) => {
+                              const v2 = prev as unknown as { layers?: { flights?: { circle?: Record<string, unknown> } } };
+                              const currentCircle = v2.layers?.flights?.circle ?? {};
+                              return {
+                                ...prev,
+                                layers: {
+                                  ...v2.layers,
+                                  flights: {
+                                    ...v2.layers?.flights,
+                                    circle: {
+                                      ...currentCircle,
+                                      radius_vh,
+                                    },
+                                  },
+                                },
+                              } as unknown as AppConfig;
+                            });
+                          }
+                        }}
+                      />
+                      {renderHelp("Radio del círculo en porcentaje del viewport height (0.1 - 10)")}
+                    </div>
+                  )}
+
+                  {supports("layers.flights.circle.opacity") && (
+                    <div className="config-field">
+                      <label htmlFor="v2_flights_circle_opacity">Opacidad base del círculo</label>
+                      <input
+                        id="v2_flights_circle_opacity"
+                        type="number"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={(form as unknown as { layers?: { flights?: { circle?: { opacity?: number } } } }).layers?.flights?.circle?.opacity ?? 1}
+                        disabled={disableInputs}
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          if (!Number.isNaN(value)) {
+                            const opacity = Math.max(0, Math.min(1, value));
+                            setForm((prev) => {
+                              const v2 = prev as unknown as { layers?: { flights?: { circle?: Record<string, unknown> } } };
+                              const currentCircle = v2.layers?.flights?.circle ?? {};
+                              return {
+                                ...prev,
+                                layers: {
+                                  ...v2.layers,
+                                  flights: {
+                                    ...v2.layers?.flights,
+                                    circle: {
+                                      ...currentCircle,
+                                      opacity,
+                                    },
+                                  },
+                                },
+                              } as unknown as AppConfig;
+                            });
+                          }
+                        }}
+                      />
+                      {renderHelp("Multiplicador adicional de opacidad para círculos (0.0 - 1.0)")}
+                    </div>
+                  )}
+
+                  {supports("layers.flights.circle.color") && (
+                    <div className="config-field">
+                      <label htmlFor="v2_flights_circle_color">Color del círculo</label>
+                      <input
+                        id="v2_flights_circle_color"
+                        type="text"
+                        maxLength={32}
+                        value={(form as unknown as { layers?: { flights?: { circle?: { color?: string } } } }).layers?.flights?.circle?.color ?? "#00D1FF"}
+                        disabled={disableInputs}
+                        onChange={(event) => {
+                          const color = event.target.value;
+                          setForm((prev) => {
+                            const v2 = prev as unknown as { layers?: { flights?: { circle?: Record<string, unknown> } } };
+                            const currentCircle = v2.layers?.flights?.circle ?? {};
+                            return {
+                              ...prev,
+                              layers: {
+                                ...v2.layers,
+                                flights: {
+                                  ...v2.layers?.flights,
+                                  circle: {
+                                    ...currentCircle,
+                                    color,
+                                  },
+                                },
+                              },
+                            } as unknown as AppConfig;
+                          });
+                        }}
+                      />
+                      {renderHelp("Color de relleno del círculo (hex o valor CSS válido)")}
+                    </div>
+                  )}
+
+                  {supports("layers.flights.circle.stroke_color") && (
+                    <div className="config-field">
+                      <label htmlFor="v2_flights_circle_stroke_color">Color del borde</label>
+                      <input
+                        id="v2_flights_circle_stroke_color"
+                        type="text"
+                        maxLength={32}
+                        value={(form as unknown as { layers?: { flights?: { circle?: { stroke_color?: string } } } }).layers?.flights?.circle?.stroke_color ?? "#002A33"}
+                        disabled={disableInputs}
+                        onChange={(event) => {
+                          const stroke_color = event.target.value;
+                          setForm((prev) => {
+                            const v2 = prev as unknown as { layers?: { flights?: { circle?: Record<string, unknown> } } };
+                            const currentCircle = v2.layers?.flights?.circle ?? {};
+                            return {
+                              ...prev,
+                              layers: {
+                                ...v2.layers,
+                                flights: {
+                                  ...v2.layers?.flights,
+                                  circle: {
+                                    ...currentCircle,
+                                    stroke_color,
+                                  },
+                                },
+                              },
+                            } as unknown as AppConfig;
+                          });
+                        }}
+                      />
+                      {renderHelp("Color del borde del círculo")}
+                    </div>
+                  )}
+
+                  {supports("layers.flights.circle.stroke_width") && (
+                    <div className="config-field">
+                      <label htmlFor="v2_flights_circle_stroke_width">Ancho del borde</label>
+                      <input
+                        id="v2_flights_circle_stroke_width"
+                        type="number"
+                        min="0"
+                        max="10"
+                        step="0.1"
+                        value={(form as unknown as { layers?: { flights?: { circle?: { stroke_width?: number } } } }).layers?.flights?.circle?.stroke_width ?? 1}
+                        disabled={disableInputs}
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          if (!Number.isNaN(value)) {
+                            const stroke_width = Math.max(0, Math.min(10, value));
+                            setForm((prev) => {
+                              const v2 = prev as unknown as { layers?: { flights?: { circle?: Record<string, unknown> } } };
+                              const currentCircle = v2.layers?.flights?.circle ?? {};
+                              return {
+                                ...prev,
+                                layers: {
+                                  ...v2.layers,
+                                  flights: {
+                                    ...v2.layers?.flights,
+                                    circle: {
+                                      ...currentCircle,
+                                      stroke_width,
+                                    },
+                                  },
+                                },
+                              } as unknown as AppConfig;
+                            });
+                          }
+                        }}
+                      />
+                      {renderHelp("Grosor del borde del círculo (0.0 - 10.0)")}
+                    </div>
+                  )}
+
+                  {(form as unknown as { layers?: { flights?: { provider?: string } } }).layers?.flights?.provider === "opensky" && (
+                    <>
+                      <div className="config-field">
+                        <label htmlFor="v2_flights_opensky_username">Usuario OpenSky (opcional)</label>
+                        <input
+                          id="v2_flights_opensky_username"
+                          type="text"
+                          maxLength={128}
+                          value={(form as unknown as { layers?: { flights?: { opensky?: { username?: string | null } } } }).layers?.flights?.opensky?.username || ""}
+                          disabled={disableInputs}
+                          onChange={(event) => {
+                            const username = event.target.value.trim() || null;
+                            setForm((prev) => {
+                              const v2 = prev as unknown as { layers?: { flights?: { opensky?: Record<string, unknown> } } };
+                              const currentOpensky = v2.layers?.flights?.opensky ?? {};
+                              return {
+                                ...prev,
+                                layers: {
+                                  ...v2.layers,
+                                  flights: {
+                                    ...v2.layers?.flights,
+                                    opensky: {
+                                      ...currentOpensky,
+                                      username,
+                                    },
+                                  },
+                                },
+                              } as unknown as AppConfig;
+                            });
+                          }}
+                        />
+                        {renderHelp("Usuario de OpenSky Network (opcional, mejora límites de tasa)")}
+                      </div>
+
+                      <div className="config-field">
+                        <label htmlFor="v2_flights_opensky_password">Contraseña OpenSky (opcional)</label>
+                        <input
+                          id="v2_flights_opensky_password"
+                          type="password"
+                          maxLength={128}
+                          value={(form as unknown as { layers?: { flights?: { opensky?: { password?: string | null } } } }).layers?.flights?.opensky?.password || ""}
+                          disabled={disableInputs}
+                          onChange={(event) => {
+                            const password = event.target.value.trim() || null;
+                            setForm((prev) => {
+                              const v2 = prev as unknown as { layers?: { flights?: { opensky?: Record<string, unknown> } } };
+                              const currentOpensky = v2.layers?.flights?.opensky ?? {};
+                              return {
+                                ...prev,
+                                layers: {
+                                  ...v2.layers,
+                                  flights: {
+                                    ...v2.layers?.flights,
+                                    opensky: {
+                                      ...currentOpensky,
+                                      password,
+                                    },
+                                  },
+                                },
+                              } as unknown as AppConfig;
+                            });
+                          }}
+                        />
+                        {renderHelp("Contraseña de OpenSky Network (opcional)")}
+                      </div>
+                    </>
+                  )}
+
+                  {(form as unknown as { layers?: { flights?: { provider?: string } } }).layers?.flights?.provider === "custom" && (
+                    <div className="config-grid">
+                      {supports("layers.flights.custom.api_url") && (
+                        <div className="config-field">
+                          <label htmlFor="v2_flights_custom_url">URL de API</label>
+                          <input
+                            id="v2_flights_custom_url"
+                            type="url"
+                            value={(form as unknown as { layers?: { flights?: { custom?: { api_url?: string | null } } } }).layers?.flights?.custom?.api_url ?? ""}
+                            disabled={disableInputs}
+                            onChange={(event) => {
+                              const api_url = event.target.value || null;
+                              setForm((prev) => {
+                                const v2 = prev as unknown as { layers?: { flights?: { custom?: Record<string, unknown> } } };
+                                const currentCustom = v2.layers?.flights?.custom ?? {};
+                                return {
+                                  ...prev,
+                                  layers: {
+                                    ...v2.layers,
+                                    flights: {
+                                      ...v2.layers?.flights,
+                                      custom: {
+                                        ...currentCustom,
+                                        api_url,
+                                      },
+                                    },
+                                  },
+                                } as unknown as AppConfig;
+                              });
+                            }}
+                            placeholder="https://api.example.com/flights"
+                          />
+                          {renderHelp("URL del endpoint que devuelve GeoJSON FeatureCollection")}
+                        </div>
+                      )}
+                      {supports("layers.flights.custom.api_key") && (
+                        <div className="config-field">
+                          <label htmlFor="v2_flights_custom_key">API Key (opcional)</label>
+                          <input
+                            id="v2_flights_custom_key"
+                            type="password"
+                            value={(form as unknown as { layers?: { flights?: { custom?: { api_key?: string | null } } } }).layers?.flights?.custom?.api_key ?? ""}
+                            disabled={disableInputs}
+                            onChange={(event) => {
+                              const api_key = event.target.value || null;
+                              setForm((prev) => {
+                                const v2 = prev as unknown as { layers?: { flights?: { custom?: Record<string, unknown> } } };
+                                const currentCustom = v2.layers?.flights?.custom ?? {};
+                                return {
+                                  ...prev,
+                                  layers: {
+                                    ...v2.layers,
+                                    flights: {
+                                      ...v2.layers?.flights,
+                                      custom: {
+                                        ...currentCustom,
+                                        api_key,
+                                      },
+                                    },
+                                  },
+                                } as unknown as AppConfig;
+                              });
+                            }}
+                            placeholder="API Key para autenticación"
+                          />
+                          {renderHelp("API Key opcional para autenticación Bearer")}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {(form as unknown as { layers?: { flights?: { provider?: string } } }).layers?.flights?.provider === "aviationstack" && (
+                    <>
+                      <div className="config-field">
+                        <label htmlFor="v2_flights_aviationstack_base_url">URL Base AviationStack</label>
+                        <input
+                          id="v2_flights_aviationstack_base_url"
+                          type="url"
+                          maxLength={256}
+                          value={(form as unknown as { layers?: { flights?: { aviationstack?: { base_url?: string | null } } } }).layers?.flights?.aviationstack?.base_url || ""}
+                          disabled={disableInputs}
+                          onChange={(event) => {
+                            const base_url = event.target.value.trim() || null;
+                            setForm((prev) => {
+                              const v2 = prev as unknown as { layers?: { flights?: { aviationstack?: Record<string, unknown> } } };
+                              const currentAviationstack = v2.layers?.flights?.aviationstack ?? {};
+                              return {
+                                ...prev,
+                                layers: {
+                                  ...v2.layers,
+                                  flights: {
+                                    ...v2.layers?.flights,
+                                    aviationstack: {
+                                      ...currentAviationstack,
+                                      base_url,
+                                    },
+                                  },
+                                },
+                              } as unknown as AppConfig;
+                            });
+                          }}
+                        />
+                        {renderHelp("URL base de la API de AviationStack")}
+                      </div>
+
+                      <div className="config-field">
+                        <label htmlFor="v2_flights_aviationstack_api_key">API Key AviationStack</label>
+                        <input
+                          id="v2_flights_aviationstack_api_key"
+                          type="text"
+                          maxLength={256}
+                          value={(form as unknown as { layers?: { flights?: { aviationstack?: { api_key?: string | null } } } }).layers?.flights?.aviationstack?.api_key || ""}
+                          disabled={disableInputs}
+                          onChange={(event) => {
+                            const api_key = event.target.value.trim() || null;
+                            setForm((prev) => {
+                              const v2 = prev as unknown as { layers?: { flights?: { aviationstack?: Record<string, unknown> } } };
+                              const currentAviationstack = v2.layers?.flights?.aviationstack ?? {};
+                              return {
+                                ...prev,
+                                layers: {
+                                  ...v2.layers,
+                                  flights: {
+                                    ...v2.layers?.flights,
+                                    aviationstack: {
+                                      ...currentAviationstack,
+                                      api_key,
+                                    },
+                                  },
+                                },
+                              } as unknown as AppConfig;
+                            });
+                          }}
+                        />
+                        {renderHelp("API key de AviationStack (requerida para usar este proveedor)")}
+                      </div>
+                    </>
+                  )}
                 </>
               )}
 
@@ -4551,6 +5038,360 @@ const ConfigPage: React.FC = () => {
                     />
                     {renderHelp("Tiempo máximo antes de ocultar datos antiguos (10-600)")}
                   </div>
+
+                  <div className="config-field">
+                    <label htmlFor="v2_ships_provider">Proveedor</label>
+                    <select
+                      id="v2_ships_provider"
+                      value={(form as unknown as { layers?: { ships?: { provider?: string } } }).layers?.ships?.provider ?? "ais_generic"}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const provider = event.target.value as "ais_generic" | "aisstream" | "aishub" | "custom";
+                        setForm((prev) => {
+                          const v2 = prev as unknown as { layers?: { ships?: Record<string, unknown> } };
+                          return {
+                            ...prev,
+                            layers: {
+                              ...v2.layers,
+                              ships: {
+                                ...v2.layers?.ships,
+                                provider,
+                              },
+                            },
+                          } as unknown as AppConfig;
+                        });
+                      }}
+                    >
+                      <option value="ais_generic">Generic AIS (Demo)</option>
+                      <option value="aisstream">AISStream</option>
+                      <option value="aishub">AISHub</option>
+                      <option value="custom">Custom</option>
+                    </select>
+                    {renderHelp("Selecciona el proveedor de datos de barcos")}
+                  </div>
+
+                  {(form as unknown as { layers?: { ships?: { provider?: string } } }).layers?.ships?.provider === "ais_generic" && (
+                    <>
+                      <div className="config-field">
+                        <label htmlFor="v2_ships_ais_generic_api_url">URL API AIS (opcional)</label>
+                        <input
+                          id="v2_ships_ais_generic_api_url"
+                          type="url"
+                          maxLength={256}
+                          value={(form as unknown as { layers?: { ships?: { ais_generic?: { api_url?: string | null } } } }).layers?.ships?.ais_generic?.api_url || ""}
+                          disabled={disableInputs}
+                          onChange={(event) => {
+                            const api_url = event.target.value.trim() || null;
+                            setForm((prev) => {
+                              const v2 = prev as unknown as { layers?: { ships?: { ais_generic?: Record<string, unknown> } } };
+                              const currentAisGeneric = v2.layers?.ships?.ais_generic ?? {};
+                              return {
+                                ...prev,
+                                layers: {
+                                  ...v2.layers,
+                                  ships: {
+                                    ...v2.layers?.ships,
+                                    ais_generic: {
+                                      ...currentAisGeneric,
+                                      api_url,
+                                    },
+                                  },
+                                },
+                              } as unknown as AppConfig;
+                            });
+                          }}
+                        />
+                        {renderHelp("URL de la API AIS personalizada (opcional, usa demo si está vacío)")}
+                      </div>
+
+                      <div className="config-field">
+                        <label htmlFor="v2_ships_ais_generic_api_key">API Key AIS (opcional)</label>
+                        <input
+                          id="v2_ships_ais_generic_api_key"
+                          type="text"
+                          maxLength={256}
+                          value={(form as unknown as { layers?: { ships?: { ais_generic?: { api_key?: string | null } } } }).layers?.ships?.ais_generic?.api_key || ""}
+                          disabled={disableInputs}
+                          onChange={(event) => {
+                            const api_key = event.target.value.trim() || null;
+                            setForm((prev) => {
+                              const v2 = prev as unknown as { layers?: { ships?: { ais_generic?: Record<string, unknown> } } };
+                              const currentAisGeneric = v2.layers?.ships?.ais_generic ?? {};
+                              return {
+                                ...prev,
+                                layers: {
+                                  ...v2.layers,
+                                  ships: {
+                                    ...v2.layers?.ships,
+                                    ais_generic: {
+                                      ...currentAisGeneric,
+                                      api_key,
+                                    },
+                                  },
+                                },
+                              } as unknown as AppConfig;
+                            });
+                          }}
+                        />
+                        {renderHelp("API key de la API AIS personalizada (opcional)")}
+                      </div>
+                    </>
+                  )}
+
+                  {(form as unknown as { layers?: { ships?: { provider?: string } } }).layers?.ships?.provider === "aisstream" && (
+                    <>
+                      <div className="config-field">
+                        <label htmlFor="v2_ships_aisstream_ws_url">WebSocket/URL AISStream</label>
+                        <input
+                          id="v2_ships_aisstream_ws_url"
+                          type="url"
+                          maxLength={256}
+                          value={(form as unknown as { layers?: { ships?: { aisstream?: { ws_url?: string | null } } } }).layers?.ships?.aisstream?.ws_url || ""}
+                          disabled={disableInputs}
+                          onChange={(event) => {
+                            const ws_url = event.target.value.trim() || null;
+                            setForm((prev) => {
+                              const v2 = prev as unknown as { layers?: { ships?: { aisstream?: Record<string, unknown> } } };
+                              const currentAisstream = v2.layers?.ships?.aisstream ?? {};
+                              return {
+                                ...prev,
+                                layers: {
+                                  ...v2.layers,
+                                  ships: {
+                                    ...v2.layers?.ships,
+                                    aisstream: {
+                                      ...currentAisstream,
+                                      ws_url,
+                                    },
+                                  },
+                                },
+                              } as unknown as AppConfig;
+                            });
+                          }}
+                        />
+                        {renderHelp("URL WebSocket o REST de AISStream")}
+                      </div>
+
+                      <div className="config-field">
+                        <label htmlFor="v2_ships_aisstream_api_key">API key de AISStream</label>
+                        <div className="config-field__secret">
+                          {showAisstreamKey ? (
+                            <input
+                              id="v2_ships_aisstream_api_key"
+                              type="text"
+                              value={aisstreamKeyInput}
+                              disabled={disableInputs}
+                              onChange={(event) => {
+                                setAisstreamKeyInput(event.target.value);
+                                setShipsTestResult(null);
+                              }}
+                              placeholder="Introduce la API key de AISStream"
+                              autoComplete="off"
+                              spellCheck={false}
+                            />
+                          ) : (
+                            <input
+                              id="v2_ships_aisstream_api_key_masked"
+                              type="text"
+                              value={maskedAisstreamKey}
+                              readOnly
+                              disabled
+                              placeholder="Sin clave guardada"
+                            />
+                          )}
+                          <button
+                            type="button"
+                            className="config-button"
+                            onClick={handleToggleAisstreamKeyVisibility}
+                            disabled={disableInputs}
+                          >
+                            {showAisstreamKey ? "Ocultar" : hasStoredAisstreamKey ? "Mostrar" : "Añadir"}
+                          </button>
+                        </div>
+                        <div className="config-field__hint">
+                          La clave se guarda cifrada en el backend y no se muestra completa.
+                        </div>
+                        <div className="config-field__actions">
+                          {showAisstreamKey && (
+                            <button
+                              type="button"
+                              className="config-button primary"
+                              onClick={() => void handleSaveAisstreamKey()}
+                              disabled={
+                                disableInputs ||
+                                !canPersistAisstreamKey ||
+                                savingAisstreamKey
+                              }
+                            >
+                              Guardar clave
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="config-button"
+                            onClick={() => void handleTestShipsLayer()}
+                            disabled={
+                              disableInputs ||
+                              !canTestShips ||
+                              testingShips
+                            }
+                          >
+                            {testingShips ? "Comprobando…" : "Probar"}
+                          </button>
+                        </div>
+                        {shipsTestResult && (
+                          <div
+                            className={`config-field__hint ${
+                              shipsTestResult.ok
+                                ? "config-field__hint--success"
+                                : "config-field__hint--error"
+                            }`}
+                          >
+                            {shipsTestResult.message}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {(form as unknown as { layers?: { ships?: { provider?: string } } }).layers?.ships?.provider === "aishub" && (
+                    <>
+                      <div className="config-field">
+                        <label htmlFor="v2_ships_aishub_base_url">URL Base AISHub</label>
+                        <input
+                          id="v2_ships_aishub_base_url"
+                          type="url"
+                          maxLength={256}
+                          value={(form as unknown as { layers?: { ships?: { aishub?: { base_url?: string | null } } } }).layers?.ships?.aishub?.base_url || ""}
+                          disabled={disableInputs}
+                          onChange={(event) => {
+                            const base_url = event.target.value.trim() || null;
+                            setForm((prev) => {
+                              const v2 = prev as unknown as { layers?: { ships?: { aishub?: Record<string, unknown> } } };
+                              const currentAishub = v2.layers?.ships?.aishub ?? {};
+                              return {
+                                ...prev,
+                                layers: {
+                                  ...v2.layers,
+                                  ships: {
+                                    ...v2.layers?.ships,
+                                    aishub: {
+                                      ...currentAishub,
+                                      base_url,
+                                    },
+                                  },
+                                },
+                              } as unknown as AppConfig;
+                            });
+                          }}
+                        />
+                        {renderHelp("URL base de la API de AISHub")}
+                      </div>
+
+                      <div className="config-field">
+                        <label htmlFor="v2_ships_aishub_api_key">API Key AISHub</label>
+                        <input
+                          id="v2_ships_aishub_api_key"
+                          type="text"
+                          maxLength={256}
+                          value={(form as unknown as { layers?: { ships?: { aishub?: { api_key?: string | null } } } }).layers?.ships?.aishub?.api_key || ""}
+                          disabled={disableInputs}
+                          onChange={(event) => {
+                            const api_key = event.target.value.trim() || null;
+                            setForm((prev) => {
+                              const v2 = prev as unknown as { layers?: { ships?: { aishub?: Record<string, unknown> } } };
+                              const currentAishub = v2.layers?.ships?.aishub ?? {};
+                              return {
+                                ...prev,
+                                layers: {
+                                  ...v2.layers,
+                                  ships: {
+                                    ...v2.layers?.ships,
+                                    aishub: {
+                                      ...currentAishub,
+                                      api_key,
+                                    },
+                                  },
+                                },
+                              } as unknown as AppConfig;
+                            });
+                          }}
+                        />
+                        {renderHelp("API key de AISHub (requerida para usar este proveedor)")}
+                      </div>
+                    </>
+                  )}
+
+                  {(form as unknown as { layers?: { ships?: { provider?: string } } }).layers?.ships?.provider === "custom" && (
+                    <div className="config-grid">
+                      {supports("layers.ships.custom.api_url") && (
+                        <div className="config-field">
+                          <label htmlFor="v2_ships_custom_url">URL de API</label>
+                          <input
+                            id="v2_ships_custom_url"
+                            type="url"
+                            value={(form as unknown as { layers?: { ships?: { custom?: { api_url?: string | null } } } }).layers?.ships?.custom?.api_url ?? ""}
+                            disabled={disableInputs}
+                            onChange={(event) => {
+                              const api_url = event.target.value || null;
+                              setForm((prev) => {
+                                const v2 = prev as unknown as { layers?: { ships?: { custom?: Record<string, unknown> } } };
+                                const currentCustom = v2.layers?.ships?.custom ?? {};
+                                return {
+                                  ...prev,
+                                  layers: {
+                                    ...v2.layers,
+                                    ships: {
+                                      ...v2.layers?.ships,
+                                      custom: {
+                                        ...currentCustom,
+                                        api_url,
+                                      },
+                                    },
+                                  },
+                                } as unknown as AppConfig;
+                              });
+                            }}
+                            placeholder="https://api.example.com/ships"
+                          />
+                          {renderHelp("URL del endpoint que devuelve GeoJSON FeatureCollection")}
+                        </div>
+                      )}
+                      {supports("layers.ships.custom.api_key") && (
+                        <div className="config-field">
+                          <label htmlFor="v2_ships_custom_key">API Key (opcional)</label>
+                          <input
+                            id="v2_ships_custom_key"
+                            type="password"
+                            value={(form as unknown as { layers?: { ships?: { custom?: { api_key?: string | null } } } }).layers?.ships?.custom?.api_key ?? ""}
+                            disabled={disableInputs}
+                            onChange={(event) => {
+                              const api_key = event.target.value || null;
+                              setForm((prev) => {
+                                const v2 = prev as unknown as { layers?: { ships?: { custom?: Record<string, unknown> } } };
+                                const currentCustom = v2.layers?.ships?.custom ?? {};
+                                return {
+                                  ...prev,
+                                  layers: {
+                                    ...v2.layers,
+                                    ships: {
+                                      ...v2.layers?.ships,
+                                      custom: {
+                                        ...currentCustom,
+                                        api_key,
+                                      },
+                                    },
+                                  },
+                                } as unknown as AppConfig;
+                              });
+                            }}
+                            placeholder="API Key para autenticación"
+                          />
+                          {renderHelp("API Key opcional para autenticación Bearer")}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
 
