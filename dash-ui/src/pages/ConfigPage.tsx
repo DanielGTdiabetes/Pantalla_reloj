@@ -2203,9 +2203,9 @@ const ConfigPage: React.FC = () => {
                         });
                         resetErrorsFor("ui_map.maptiler.styleUrl");
                       }}
-                      placeholder="https://api.maptiler.com/maps/dark/style.json"
+                      placeholder="https://api.maptiler.com/tiles/satellite/tiles.json?key=TU_API_KEY"
                     />
-                    {renderHelp("URL del estilo de MapTiler (ej: dark, streets, bright)")}
+                    {renderHelp("URL del estilo de MapTiler. Ejemplos: https://api.maptiler.com/tiles/satellite/tiles.json?key=TU_API_KEY para satélite, o https://api.maptiler.com/maps/dark/style.json?key=TU_API_KEY para vectorial")}
                     {renderFieldError("ui_map.maptiler.styleUrl")}
                   </div>
                 </>
@@ -3980,7 +3980,7 @@ const ConfigPage: React.FC = () => {
               {configVersion === 2 && (form as unknown as { panels?: { calendar?: { provider?: string } } }).panels?.calendar?.provider === "ics" && (
                 <>
                   {/* FAQ/Help sobre ICS */}
-                  <div className="config-field" style={{ gridColumn: "1 / -1", padding: "1rem", backgroundColor: "#f5f5f5", borderRadius: "4px", marginBottom: "1rem" }}>
+                  <div className="config-field" style={{ gridColumn: "1 / -1", padding: "1rem", backgroundColor: "rgba(255, 255, 255, 0.05)", borderRadius: "4px", marginBottom: "1rem", border: "1px solid rgba(255, 255, 255, 0.1)" }}>
                     <h3 style={{ marginTop: 0, marginBottom: "0.5rem", fontSize: "1rem", fontWeight: "bold" }}>ℹ️ Ayuda: Calendario ICS</h3>
                     <ul style={{ margin: 0, paddingLeft: "1.5rem", fontSize: "0.9em", lineHeight: "1.6" }}>
                       <li><strong>¿Cómo subir un ICS?</strong> Haz clic en "Subir ICS…" y selecciona un archivo .ics desde tu PC. El sistema lo guardará automáticamente.</li>
@@ -4008,7 +4008,7 @@ const ConfigPage: React.FC = () => {
                           type="file"
                           accept=".ics,text/calendar"
                           style={{ display: "none" }}
-                          disabled={disableInputs || uploadingIcs || !((form as unknown as { panels?: { calendar?: { enabled?: boolean } } }).panels?.calendar?.enabled)}
+                          disabled={disableInputs || uploadingIcs}
                           onChange={handleUploadIcs}
                         />
                       </label>
@@ -4376,6 +4376,235 @@ const ConfigPage: React.FC = () => {
                 </label>
                 {renderHelp("Muestra imágenes satelitales de GIBS/NASA")}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Sección de Capas en Tiempo Real para v2 */}
+        {configVersion === 2 && (
+          <div className="config-card">
+            <div>
+              <h2>Capas en Tiempo Real</h2>
+              <p>Configura las capas de aviones, barcos, rayos y modo tormenta en tiempo real.</p>
+            </div>
+            <div className="config-grid">
+              {/* Configuración de Aviones (OpenSky) */}
+              {(form as unknown as { layers?: { flights?: { enabled?: boolean } } }).layers?.flights?.enabled && (
+                <>
+                  <div className="config-field">
+                    <label htmlFor="v2_flights_refresh_seconds">Intervalo de actualización (segundos)</label>
+                    <input
+                      id="v2_flights_refresh_seconds"
+                      type="number"
+                      min="5"
+                      max="300"
+                      value={(form as unknown as { layers?: { flights?: { refresh_seconds?: number } } }).layers?.flights?.refresh_seconds ?? 10}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isNaN(value)) {
+                          setForm((prev) => {
+                            const v2 = prev as unknown as { layers?: { flights?: Record<string, unknown> } };
+                            return {
+                              ...prev,
+                              layers: {
+                                ...v2.layers,
+                                flights: {
+                                  ...v2.layers?.flights,
+                                  refresh_seconds: Math.max(5, Math.min(300, Math.round(value))),
+                                },
+                              },
+                            } as unknown as AppConfig;
+                          });
+                        }
+                      }}
+                    />
+                    {renderHelp("Cada cuántos segundos se actualizan los datos de aviones (5-300)")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="v2_flights_max_age_seconds">Máxima edad de datos (segundos)</label>
+                    <input
+                      id="v2_flights_max_age_seconds"
+                      type="number"
+                      min="10"
+                      max="600"
+                      value={(form as unknown as { layers?: { flights?: { max_age_seconds?: number } } }).layers?.flights?.max_age_seconds ?? 180}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isNaN(value)) {
+                          setForm((prev) => {
+                            const v2 = prev as unknown as { layers?: { flights?: Record<string, unknown> } };
+                            return {
+                              ...prev,
+                              layers: {
+                                ...v2.layers,
+                                flights: {
+                                  ...v2.layers?.flights,
+                                  max_age_seconds: Math.max(10, Math.min(600, Math.round(value))),
+                                },
+                              },
+                            } as unknown as AppConfig;
+                          });
+                        }
+                      }}
+                    />
+                    {renderHelp("Tiempo máximo antes de ocultar datos antiguos (10-600)")}
+                  </div>
+                </>
+              )}
+
+              {/* Configuración de Barcos (AISStream) */}
+              {(form as unknown as { layers?: { ships?: { enabled?: boolean } } }).layers?.ships?.enabled && (
+                <>
+                  <div className="config-field">
+                    <label htmlFor="v2_ships_opacity">Opacidad</label>
+                    <input
+                      id="v2_ships_opacity"
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={(form as unknown as { layers?: { ships?: { opacity?: number } } }).layers?.ships?.opacity ?? 0.9}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isNaN(value)) {
+                          setForm((prev) => {
+                            const v2 = prev as unknown as { layers?: { ships?: Record<string, unknown> } };
+                            return {
+                              ...prev,
+                              layers: {
+                                ...v2.layers,
+                                ships: {
+                                  ...v2.layers?.ships,
+                                  opacity: Math.max(0, Math.min(1, value)),
+                                },
+                              },
+                            } as unknown as AppConfig;
+                          });
+                        }
+                      }}
+                    />
+                    {renderHelp(`Opacidad de la capa de barcos: ${Math.round(((form as unknown as { layers?: { ships?: { opacity?: number } } }).layers?.ships?.opacity ?? 0.9) * 100)}%`)}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="v2_ships_refresh_seconds">Intervalo de actualización (segundos)</label>
+                    <input
+                      id="v2_ships_refresh_seconds"
+                      type="number"
+                      min="1"
+                      max="300"
+                      value={(form as unknown as { layers?: { ships?: { refresh_seconds?: number } } }).layers?.ships?.refresh_seconds ?? 10}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isNaN(value)) {
+                          setForm((prev) => {
+                            const v2 = prev as unknown as { layers?: { ships?: Record<string, unknown> } };
+                            return {
+                              ...prev,
+                              layers: {
+                                ...v2.layers,
+                                ships: {
+                                  ...v2.layers?.ships,
+                                  refresh_seconds: Math.max(1, Math.min(300, Math.round(value))),
+                                },
+                              },
+                            } as unknown as AppConfig;
+                          });
+                        }
+                      }}
+                    />
+                    {renderHelp("Cada cuántos segundos se sincroniza el buffer de barcos (1-300)")}
+                  </div>
+
+                  <div className="config-field">
+                    <label htmlFor="v2_ships_max_age_seconds">Máxima edad de datos (segundos)</label>
+                    <input
+                      id="v2_ships_max_age_seconds"
+                      type="number"
+                      min="10"
+                      max="600"
+                      value={(form as unknown as { layers?: { ships?: { max_age_seconds?: number } } }).layers?.ships?.max_age_seconds ?? 180}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isNaN(value)) {
+                          setForm((prev) => {
+                            const v2 = prev as unknown as { layers?: { ships?: Record<string, unknown> } };
+                            return {
+                              ...prev,
+                              layers: {
+                                ...v2.layers,
+                                ships: {
+                                  ...v2.layers?.ships,
+                                  max_age_seconds: Math.max(10, Math.min(600, Math.round(value))),
+                                },
+                              },
+                            } as unknown as AppConfig;
+                          });
+                        }
+                      }}
+                    />
+                    {renderHelp("Tiempo máximo antes de ocultar datos antiguos (10-600)")}
+                  </div>
+                </>
+              )}
+
+              {/* Configuración de Rayos (Blitzortung) - solo mostrar si existe en v1 y necesitamos agregarlo a v2 */}
+              {supports("blitzortung") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="v2_blitzortung_enabled">
+                    <input
+                      id="v2_blitzortung_enabled"
+                      type="checkbox"
+                      checked={form.blitzortung?.enabled ?? false}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          blitzortung: {
+                            ...prev.blitzortung,
+                            enabled,
+                          },
+                        }));
+                      }}
+                    />
+                    Rayos (Blitzortung)
+                  </label>
+                  {renderHelp("Muestra rayos en tiempo real desde Blitzortung Network")}
+                </div>
+              )}
+
+              {/* Configuración de Tormenta (Storm Mode) - solo mostrar si existe en v1 y necesitamos agregarlo a v2 */}
+              {supports("storm") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="v2_storm_enabled">
+                    <input
+                      id="v2_storm_enabled"
+                      type="checkbox"
+                      checked={form.storm.enabled ?? false}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          storm: {
+                            ...prev.storm,
+                            enabled,
+                          },
+                        }));
+                      }}
+                    />
+                    Modo Tormenta
+                  </label>
+                  {renderHelp("Activa el modo tormenta para enfocar el mapa en tormentas activas")}
+                </div>
+              )}
             </div>
           </div>
         )}
