@@ -51,5 +51,28 @@ class CacheStore:
         path.write_text(cached.model_dump_json(indent=2, exclude_none=True), encoding="utf-8")
         return cached
 
+    def invalidate(self, key: str) -> None:
+        """Invalidate a cached entry by deleting its file."""
+        path = self._path(key)
+        if path.exists():
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+    def invalidate_pattern(self, pattern: str) -> None:
+        """Invalidate all cache entries whose key contains the pattern."""
+        if not self.cache_dir.exists():
+            return
+        try:
+            for path in self.cache_dir.glob("*.json"):
+                if pattern in path.stem:
+                    try:
+                        path.unlink()
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+
 
 __all__ = ["CacheStore"]

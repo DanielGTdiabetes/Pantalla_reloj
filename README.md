@@ -99,6 +99,47 @@ Pantalla_reloj/
 - `GET /api/config` nunca devuelve la clave completa; expone `has_api_key` y
   `api_key_last4` para saber si se ha cargado correctamente.
 
+### Calendario ICS
+
+El sistema soporta calendarios ICS (iCalendar) que pueden configurarse mediante subida de archivos o rutas locales.
+
+#### Subida de archivo ICS
+
+1. **Subir archivo ICS**: Usa el endpoint `POST /api/config/upload/ics` para subir un archivo `.ics`:
+   ```bash
+   curl -X POST \
+     -F "file=@/ruta/a/tu/calendario.ics" \
+     -F "filename=calendario.ics" \
+     http://127.0.0.1:8081/api/config/upload/ics
+   ```
+   El archivo se almacena de forma segura y se valida automáticamente.
+
+2. **Configuración desde UI**: Desde la interfaz de configuración (`/#/config`), selecciona el proveedor `ics` y proporciona:
+   - **Ruta local**: Ruta absoluta al archivo ICS en el sistema de archivos
+   - **URL remota**: URL HTTP/HTTPS para descargar el archivo ICS
+
+3. **Validación**: El backend valida que:
+   - El archivo existe y es legible (rutas locales)
+   - La URL es accesible (rutas remotas)
+   - El formato ICS es válido
+   - El tamaño no excede 2 MB
+
+#### Endpoints relacionados
+
+- `GET /api/calendar/events`: Obtiene eventos del calendario ICS
+- `GET /api/calendar/status`: Verifica el estado del calendario ICS (devuelve `status: "ok"` si está funcionando correctamente)
+- `POST /api/config/upload/ics`: Sube un archivo ICS al servidor
+- `GET /api/health`: Incluye información del calendario en el campo `calendar.status`
+
+#### Formato ICS soportado
+
+El sistema soporta el formato estándar iCalendar (RFC 5545) con eventos `VEVENT` básicos:
+- `UID`: Identificador único del evento
+- `DTSTART` / `DTEND`: Fechas de inicio y fin
+- `SUMMARY`: Título del evento
+- `DESCRIPTION`: Descripción opcional
+- `LOCATION`: Ubicación opcional
+
 ### Timezone y rangos de fecha
 
 - **Configuración**: El timezone se define en `config.display.timezone` (por defecto `Europe/Madrid`).
@@ -437,6 +478,123 @@ También desinstala las unidades systemd sin reactivar ningún display manager.
 - Verificar backend por systemd: `sudo systemctl status pantalla-dash-backend@dani.service`.
 - Logs del backend: `/tmp/backend-launch.log`.
 - Errores de Nginx: `/var/log/nginx/pantalla-reloj.error.log`.
+
+### Solución de problemas
+
+#### Problemas comunes con calendario ICS
+
+1. **El calendario no muestra eventos**:
+   - Verifica que el archivo ICS se haya subido correctamente:
+     ```bash
+     curl -s http://127.0.0.1:8081/api/calendar/status
+     ```
+     Debe devolver `"status": "ok"` si está funcionando.
+   - Verifica que el proveedor esté configurado como `ics`:
+     ```bash
+     curl -s http://127.0.0.1:8081/api/config | python3 -m json.tool | grep -A 5 calendar
+     ```
+   - Comprueba que el archivo ICS tenga el formato correcto:
+     ```bash
+     head -n 5 /var/lib/pantalla-reloj/ics/calendar.ics
+     ```
+     Debe comenzar con `BEGIN:VCALENDAR`.
+
+2. **Error al subir archivo ICS**:
+   - Verifica que el archivo no exceda 2 MB:
+     ```bash
+     ls -lh tu_archivo.ics
+     ```
+   - Verifica que el archivo tenga extensión `.ics`:
+     ```bash
+     file tu_archivo.ics
+     ```
+   - Revisa los logs del backend:
+     ```bash
+     journalctl -u pantalla-dash-backend@dani.service -n 50 --no-pager | grep -i ics
+     ```
+
+3. **El calendario muestra `status: "error"`**:
+   - Verifica que el archivo ICS existe y es legible:
+     ```bash
+     sudo -u dani test -r /var/lib/pantalla-reloj/ics/calendar.ics && echo "OK" || echo "ERROR"
+     ```
+   - Verifica los permisos del directorio ICS:
+     ```bash
+     ls -ld /var/lib/pantalla-reloj/ics/
+     ```
+   - Revisa el estado del calendario:
+     ```bash
+     curl -s http://127.0.0.1:8081/api/calendar/status | python3 -m json.tool
+     ```
+     Busca el campo `note` para ver el mensaje de error específico.
+
+#### Problemas con layers (radar/aviones/barcos)
+
+1. **Las capas no se activan**:
+   - Verifica la configuración actual:
+     ```bash
+     curl -s http://127.0.0.1:8081/api/config | python3 -m json.tool | grep -A 10 layers
+     ```
+   - Activa las capas manualmente:
+     ```bash
+     curl -X POST http://127.0.0.1:8081/api/config \
+       -H "Content-Type: application/json" \
+       -d '{"version": 2, "ui_map": {}, "layers": {"flights": {"enabled": true}, "ships": {"enabled": true}}, "ui_global": {"radar": {"enabled": true}}}'
+     ```
+
+2. **El radar no se muestra**:
+   - Verifica que AEMET esté configurado:
+     ```bash
+     curl -s http://127.0.0.1:8081/api/config | python3 -m json.tool | grep -A 5 aemet
+     ```
+   - Verifica el estado de AEMET en el health:
+     ```bash
+     curl -s http://127.0.0.1:8081/api/health | python3 -m json.tool | grep -A 10 aemet
+     ```
+
+#### Problemas con la persistencia de configuración
+
+1. **Los cambios en `/config` no se guardan**:
+   - Verifica los permisos del archivo de configuración:
+     ```bash
+     ls -l /var/lib/pantalla-reloj/config.json
+     ```
+   - Verifica que el directorio tenga permisos correctos:
+     ```bash
+     ls -ld /var/lib/pantalla-reloj/
+     ```
+   - Revisa los logs del backend para errores de escritura:
+     ```bash
+     journalctl -u pantalla-dash-backend@dani.service -n 50 --no-pager | grep -i "config\|persist\|write"
+     ```
+
+2. **La configuración se corrompe**:
+   - Verifica que el archivo JSON sea válido:
+     ```bash
+     python3 -m json.tool /var/lib/pantalla-reloj/config.json > /dev/null && echo "OK" || echo "ERROR"
+     ```
+   - Restaura desde un backup si es necesario:
+     ```bash
+     sudo cp /var/lib/pantalla-reloj/config.json.backup /var/lib/pantalla-reloj/config.json
+     ```
+
+#### Smoke test E2E
+
+Ejecuta el script de smoke test para verificar que todos los componentes funcionan correctamente:
+
+```bash
+chmod +x scripts/smoke_v23.sh
+bash scripts/smoke_v23.sh
+```
+
+El script verifica:
+1. Health endpoint (HTTP 200)
+2. Subida de archivo ICS
+3. Activación de layers (radar/aviones/barcos)
+4. Eventos de calendario (>= 1 evento)
+5. Calendar status ("ok")
+
+Si algún test falla, el script mostrará el error específico y sugerencias de diagnóstico.
 
 ### Runbook: pantalla negra + puntero
 

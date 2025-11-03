@@ -101,11 +101,43 @@ export function useConfig() {
         cfg = await getConfig();
       }
       
-      const newData = isV2 
+      let processedData = isV2 
         ? (withConfigDefaultsV2(cfg as unknown as AppConfigV2) as unknown as AppConfig)
         : withConfigDefaults((cfg ?? {}) as AppConfig);
       
+      // Mapear ui_global → layers.global si viene de V2
+      if (isV2 && cfg) {
+        const v2Config = cfg as unknown as AppConfigV2;
+        if (v2Config.ui_global) {
+          processedData = {
+            ...processedData,
+            layers: {
+              ...processedData.layers,
+              global: {
+                satellite: {
+                  enabled: v2Config.ui_global.satellite?.enabled ?? true,
+                  provider: "gibs" as const,
+                  refresh_minutes: 10,
+                  history_minutes: 90,
+                  frame_step: 10,
+                  opacity: v2Config.ui_global.satellite?.opacity ?? 1.0,
+                },
+                radar: {
+                  enabled: v2Config.ui_global.radar?.enabled ?? false,
+                  provider: v2Config.ui_global.radar?.provider === "aemet" ? "rainviewer" as const : "rainviewer" as const,
+                  refresh_minutes: 5,
+                  history_minutes: 90,
+                  frame_step: 5,
+                  opacity: 0.7,
+                },
+              },
+            },
+          };
+        }
+      }
+      
       setData((prev) => {
+        const newData = processedData;
         if (!prev) {
           return newData;
         }
@@ -174,8 +206,17 @@ export function useConfig() {
       void load();
     }, CONFIG_POLL_INTERVAL_MS);
 
+    // Escuchar eventos de actualización de config desde ConfigPage
+    const handleConfigSaved = () => {
+      console.log("[useConfig] Config saved event received, forcing reload");
+      void load();
+    };
+    
+    window.addEventListener("pantalla:config:saved", handleConfigSaved);
+
     return () => {
       clearInterval(intervalId);
+      window.removeEventListener("pantalla:config:saved", handleConfigSaved);
     };
   }, [load]);
 

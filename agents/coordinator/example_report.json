@@ -1,0 +1,35 @@
+{
+  "agent": "agent-1",
+  "branch": "feature/example",
+  "prs": ["https://github.com/user/repo/pull/123"],
+  "changed_files": [
+    "backend/main.py",
+    "backend/models.py"
+  ],
+  "tests_ok": true,
+  "manual_checks_ok": true,
+  "api_health": {
+    "ok": true,
+    "status_code": 200,
+    "response_body": "{\"status\":\"ok\",\"timestamp\":\"2025-01-15T10:30:00Z\"}"
+  },
+  "config_persists": true,
+  "open_risks": [],
+  "next_actions": [
+    "Revisar merge con agent-5",
+    "Ejecutar pruebas de integración"
+  ],
+  "verification_commands": [
+    "pytest backend/tests/ -v",
+    "curl -sS http://127.0.0.1:8081/api/health",
+    "curl -sS http://127.0.0.1:8081/api/config"
+  ],
+  "verification_outputs": {
+    "pytest": "========== test session starts ==========\n... passed: 15\n========== 15 passed in 2.34s ==========",
+    "curl_health": "{\"status\":\"ok\",\"timestamp\":\"2025-01-15T10:30:00Z\"}",
+    "curl_config": "{\"layers\":{...},\"map\":{...}}"
+  },
+  "health_check_curl": "{\"status\":\"ok\",\"timestamp\":\"2025-01-15T10:30:00Z\"}",
+  "compatibility_explanation": "Los cambios son compatibles hacia atrás porque:\n1. Se agregaron campos opcionales a los modelos\n2. Los endpoints existentes mantienen su comportamiento\n3. No se removieron campos requeridos\n4. Las migraciones de configuración son automáticas"
+}
+
