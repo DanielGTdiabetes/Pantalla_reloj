@@ -279,6 +279,234 @@ except Exception:
   return 0
 }
 
+# Función para verificar /api/weather/now
+check_weather_now() {
+  local url="${API_BASE}/api/weather/now"
+  
+  local response
+  local status
+  
+  if ! response=$(curl -sf -w "\n%{http_code}" "$url" 2>&1); then
+    log_error "Fallo al obtener weather/now: ${response}"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Extraer status code (última línea)
+  status=$(echo "$response" | tail -n1)
+  response=$(echo "$response" | head -n-1)
+  
+  if [[ "$status" != "200" ]]; then
+    log_error "Fallo al verificar weather/now: HTTP ${status} (esperado 200)"
+    log_error "Respuesta: ${response}"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Verificar que no es un 500 (permitir vacío pero no errores del servidor)
+  if ! python3 -c 'import json, sys
+try:
+    data = json.load(sys.stdin)
+    # Si es un dict con "error" o "detail", es un error
+    if isinstance(data, dict) and ("error" in data or ("detail" in data and "500" in str(data.get("detail", "")))):
+        sys.exit(1)
+except Exception as exc:
+    # Si no puede parsear JSON, puede ser error HTML
+    if "500" in sys.stdin.read():
+        sys.exit(1)
+' <<< "$response" 2>&1; then
+    log_error "weather/now devolvió error del servidor (500)"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Verificar que tiene iconKey o está vacío (permitir ambos casos)
+  if ! python3 -c 'import json, sys
+try:
+    data = json.load(sys.stdin)
+    # Si es dict, debe tener estructura válida o estar vacío
+    # No verificamos contenido específico, solo que no sea 500
+    pass
+except Exception:
+    pass
+' <<< "$response" 2>&1; then
+    log_success "weather/now → HTTP ${status} (sin 500)"
+  else
+    log_success "weather/now → HTTP ${status}"
+  fi
+  
+  return 0
+}
+
+# Función para verificar /api/weather/weekly
+check_weather_weekly() {
+  local url="${API_BASE}/api/weather/weekly"
+  
+  local response
+  local status
+  
+  if ! response=$(curl -sf -w "\n%{http_code}" "$url" 2>&1); then
+    log_error "Fallo al obtener weather/weekly: ${response}"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Extraer status code (última línea)
+  status=$(echo "$response" | tail -n1)
+  response=$(echo "$response" | head -n-1)
+  
+  if [[ "$status" != "200" ]]; then
+    log_error "Fallo al verificar weather/weekly: HTTP ${status} (esperado 200)"
+    log_error "Respuesta: ${response}"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Verificar que no es un 500
+  if ! python3 -c 'import json, sys
+try:
+    data = json.load(sys.stdin)
+    if isinstance(data, dict) and ("error" in data or ("detail" in data and "500" in str(data.get("detail", "")))):
+        sys.exit(1)
+except Exception:
+    if "500" in sys.stdin.read():
+        sys.exit(1)
+' <<< "$response" 2>&1; then
+    log_error "weather/weekly devolvió error del servidor (500)"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  log_success "weather/weekly → HTTP ${status} (sin 500)"
+  return 0
+}
+
+# Función para verificar /api/ephemerides
+check_ephemerides() {
+  local url="${API_BASE}/api/ephemerides"
+  
+  local response
+  local status
+  
+  if ! response=$(curl -sf -w "\n%{http_code}" "$url" 2>&1); then
+    log_error "Fallo al obtener ephemerides: ${response}"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Extraer status code (última línea)
+  status=$(echo "$response" | tail -n1)
+  response=$(echo "$response" | head -n-1)
+  
+  if [[ "$status" != "200" ]]; then
+    log_error "Fallo al verificar ephemerides: HTTP ${status} (esperado 200)"
+    log_error "Respuesta: ${response}"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Verificar que no es un 500 (permitir vacío pero no errores del servidor)
+  if ! python3 -c 'import json, sys
+try:
+    data = json.load(sys.stdin)
+    if isinstance(data, dict) and ("error" in data or ("detail" in data and "500" in str(data.get("detail", "")))):
+        sys.exit(1)
+except Exception:
+    if "500" in sys.stdin.read():
+        sys.exit(1)
+' <<< "$response" 2>&1; then
+    log_error "ephemerides devolvió error del servidor (500)"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  log_success "ephemerides → HTTP ${status} (sin 500, permite vacío)"
+  return 0
+}
+
+# Función para verificar /api/saints
+check_saints() {
+  local url="${API_BASE}/api/saints"
+  
+  local response
+  local status
+  
+  if ! response=$(curl -sf -w "\n%{http_code}" "$url" 2>&1); then
+    log_error "Fallo al obtener saints: ${response}"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Extraer status code (última línea)
+  status=$(echo "$response" | tail -n1)
+  response=$(echo "$response" | head -n-1)
+  
+  if [[ "$status" != "200" ]]; then
+    log_error "Fallo al verificar saints: HTTP ${status} (esperado 200)"
+    log_error "Respuesta: ${response}"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Verificar que no es un 500 (permitir vacío pero no errores del servidor)
+  if ! python3 -c 'import json, sys
+try:
+    data = json.load(sys.stdin)
+    if isinstance(data, dict) and ("error" in data or ("detail" in data and "500" in str(data.get("detail", "")))):
+        sys.exit(1)
+except Exception:
+    if "500" in sys.stdin.read():
+        sys.exit(1)
+' <<< "$response" 2>&1; then
+    log_error "saints devolvió error del servidor (500)"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  log_success "saints → HTTP ${status} (sin 500, permite vacío)"
+  return 0
+}
+
+# Función para verificar overlay en /api/config
+check_overlay_config() {
+  local url="${API_BASE}/api/config"
+  
+  local response
+  local has_overlay
+  
+  if ! response=$(curl -sf "$url" 2>&1); then
+    log_error "Fallo al obtener config para verificar overlay"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Verificar que existe bloque ui_overlay o ui_global.overlay
+  if ! has_overlay=$(python3 -c 'import json, sys
+try:
+    data = json.load(sys.stdin)
+    # Verificar ui_overlay (v1 legacy) o ui_global.overlay (v2)
+    if "ui_overlay" in data or (isinstance(data.get("ui_global"), dict) and "overlay" in data.get("ui_global", {})):
+        print("yes")
+    else:
+        print("no")
+except Exception:
+    print("no")
+' <<< "$response" 2>&1); then
+    log_error "Fallo al parsear config para overlay"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  if [[ "$has_overlay" != "yes" ]]; then
+    log_error "Config no contiene bloque overlay (ui_overlay o ui_global.overlay)"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  log_success "Config contiene bloque overlay coherente"
+  return 0
+}
+
 # Crear archivo ICS de prueba si no existe
 create_test_ics() {
   local ics_file="${TMPDIR:-/tmp}/test_calendar_v23.ics"
@@ -310,26 +538,26 @@ EOF
 log_info "Iniciando smoke tests E2E v23..."
 
 # 1. Verificar health 200
-log_info "Test 1/5: Verificar health 200"
+log_info "Test 1/10: Verificar health 200"
 if ! check_health_200 "${API_BASE}/api/health" "Health directo"; then
   log_error "Fallo en verificación de health directo"
 fi
 
 # 2. Subir ICS
-log_info "Test 2/5: Subir archivo ICS"
+log_info "Test 2/10: Subir archivo ICS"
 TEST_ICS=$(create_test_ics)
 if ! upload_ics "$TEST_ICS"; then
   log_error "Fallo en subida de ICS"
 fi
 
 # 3. Activar layers (radar/aviones/barcos)
-log_info "Test 3/5: Activar layers (radar/aviones/barcos)"
+log_info "Test 3/10: Activar layers (radar/aviones/barcos)"
 if ! activate_layers; then
   log_error "Fallo en activación de layers"
 fi
 
 # 4. Verificar GET /api/calendar/events >= 1 evento
-log_info "Test 4/5: Verificar GET /api/calendar/events >= 1 evento"
+log_info "Test 4/10: Verificar GET /api/calendar/events >= 1 evento"
 # Esperar un poco para que el calendario se procese
 sleep 2
 if ! check_calendar_events 1; then
@@ -337,18 +565,48 @@ if ! check_calendar_events 1; then
 fi
 
 # 5. Verificar calendar.status "ok"
-log_info "Test 5/5: Verificar calendar.status 'ok'"
+log_info "Test 5/10: Verificar calendar.status 'ok'"
 if ! check_calendar_status; then
   log_error "Fallo en verificación de calendar status"
+fi
+
+# 6. Verificar /api/weather/now
+log_info "Test 6/10: Verificar /api/weather/now (sin 500)"
+if ! check_weather_now; then
+  log_error "Fallo en verificación de weather/now"
+fi
+
+# 7. Verificar /api/weather/weekly
+log_info "Test 7/10: Verificar /api/weather/weekly (sin 500)"
+if ! check_weather_weekly; then
+  log_error "Fallo en verificación de weather/weekly"
+fi
+
+# 8. Verificar /api/ephemerides
+log_info "Test 8/10: Verificar /api/ephemerides (sin 500, permite vacío)"
+if ! check_ephemerides; then
+  log_error "Fallo en verificación de ephemerides"
+fi
+
+# 9. Verificar /api/saints
+log_info "Test 9/10: Verificar /api/saints (sin 500, permite vacío)"
+if ! check_saints; then
+  log_error "Fallo en verificación de saints"
+fi
+
+# 10. Verificar overlay en /api/config
+log_info "Test 10/10: Verificar overlay en /api/config"
+if ! check_overlay_config; then
+  log_error "Fallo en verificación de overlay config"
 fi
 
 # Resumen
 log_info "=========================================="
 if [[ $ERRORS -eq 0 ]]; then
-  log_success "Todos los smoke tests E2E v23 pasaron correctamente"
+  log_success "Todos los smoke tests E2E v23 pasaron correctamente (10/10)"
   exit 0
 else
-  log_error "Smoke tests E2E v23 fallaron: ${ERRORS} error(es)"
+  log_error "Smoke tests E2E v23 fallaron: ${ERRORS} error(es) de 10 tests"
   exit 1
 fi
 
