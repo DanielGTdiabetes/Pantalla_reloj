@@ -1765,8 +1765,8 @@ const ConfigPage: React.FC = () => {
           } : undefined,
         } : undefined;
         
+        // Construir payload v2 limpio sin campos v1
         const v2Payload: import("../types/config_v2").AppConfigV2 = {
-          ...payload,
           version: 2,
           ui_map,
           panels,
@@ -2351,6 +2351,103 @@ const ConfigPage: React.FC = () => {
                 </>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Botón para guardar solo la configuración del mapa */}
+        {configVersion === 2 && (
+          <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginBottom: "24px" }}>
+            <button
+              type="button"
+              className="config-button primary"
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!isReady || saving) {
+                  return;
+                }
+                
+                // Validar solo configuración del mapa
+                const v2Form = form as unknown as { ui_map?: MapConfigV2 };
+                const mapValidationErrors: FieldErrors = {};
+                
+                if (v2Form.ui_map?.provider === "maptiler_vector") {
+                  const apiKey = v2Form.ui_map.maptiler?.apiKey;
+                  const styleUrl = v2Form.ui_map.maptiler?.styleUrl;
+                  
+                  if (!apiKey || !apiKey.trim()) {
+                    mapValidationErrors["ui_map.maptiler.apiKey"] = "Introduce la API key de MapTiler";
+                  } else if (!MAPTILER_KEY_PATTERN.test(apiKey.trim())) {
+                    mapValidationErrors["ui_map.maptiler.apiKey"] = "La API key solo puede incluir letras, números, punto, guion y guion bajo";
+                  }
+                  
+                  if (!styleUrl || !styleUrl.trim()) {
+                    mapValidationErrors["ui_map.maptiler.styleUrl"] = "Introduce la URL del estilo de MapTiler";
+                  }
+                }
+                
+                if (Object.keys(mapValidationErrors).length > 0) {
+                  setFieldErrors(mapValidationErrors);
+                  setBanner({ kind: "error", text: "Revisa los errores en la configuración del mapa" });
+                  return;
+                }
+                
+                setSaving(true);
+                setBanner(null);
+                try {
+                  // Obtener config actual para preservar el resto
+                  const current = await getConfigV2();
+                  if (!current || current.version !== 2) {
+                    setBanner({ kind: "error", text: "La configuración actual no es v2" });
+                    setSaving(false);
+                    return;
+                  }
+                  
+                  // Construir payload solo con ui_map actualizado
+                  const mapOnlyPayload: import("../types/config_v2").AppConfigV2 = {
+                    ...current,
+                    ui_map: v2Form.ui_map || current.ui_map,
+                  };
+                  
+                  await saveConfigV2(mapOnlyPayload);
+                  await refreshConfig();
+                  await reloadConfig();
+                  setSaveStatus("saved");
+                  setBanner({ kind: "success", text: "Configuración del mapa guardada ✅" });
+                  
+                  window.dispatchEvent(new CustomEvent("pantalla:config:saved", { detail: { version: 2 } }));
+                  
+                  setTimeout(() => {
+                    if (isMountedRef.current) {
+                      setSaveStatus("idle");
+                    }
+                  }, 3000);
+                } catch (error) {
+                  console.error("[ConfigPage] Failed to save map configuration", error);
+                  if (error instanceof ApiError) {
+                    const backendErrors = extractBackendErrors(error.body);
+                    setFieldErrors(backendErrors);
+                    setSaveStatus("error");
+                    setBanner({ kind: "error", text: "Error al guardar la configuración del mapa" });
+                  } else {
+                    setSaveStatus("error");
+                    setBanner({ kind: "error", text: "Error al guardar" });
+                  }
+                  setTimeout(() => {
+                    if (isMountedRef.current && saveStatus === "error") {
+                      setSaveStatus("idle");
+                    }
+                  }, 5000);
+                } finally {
+                  setSaving(false);
+                  resetErrorsFor("ui_map.maptiler.apiKey");
+                  resetErrorsFor("ui_map.maptiler.styleUrl");
+                  resetErrorsFor("ui_map.provider");
+                }
+              }}
+              disabled={disableInputs}
+            >
+              Guardar configuración del mapa
+            </button>
           </div>
         )}
 
