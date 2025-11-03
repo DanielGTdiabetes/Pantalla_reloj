@@ -703,6 +703,76 @@ const ConfigPage: React.FC = () => {
     }
   }, [configVersion, form, googleCalendarKeyInput, googleCalendarIdInput, testingCalendar]);
 
+  const refreshConfig = useCallback(async () => {
+    // Intentar cargar v2 primero
+    let cfg: AppConfig | undefined;
+    try {
+      const v2Cfg = await getConfigV2();
+      if (v2Cfg && v2Cfg.version === 2 && v2Cfg.ui_map) {
+        // Convertir v2 a formato interno compatible (mantener ui_map como está)
+        cfg = {
+          ...(v2Cfg as unknown as AppConfig),
+          ui_map: v2Cfg.ui_map,
+        } as unknown as AppConfig;
+        setConfigVersion(2);
+      } else {
+        cfg = await getConfig();
+        const version = (cfg as { version?: number })?.version;
+        setConfigVersion(version ?? null);
+      }
+    } catch (e) {
+      // Si falla v2, intentar v1
+      cfg = await getConfig();
+      const version = (cfg as { version?: number })?.version;
+      setConfigVersion(version ?? null);
+    }
+    
+    // Si es v2, mantener ui_map directamente en form
+    const mergedCfg = withConfigDefaults(cfg ?? undefined);
+    const detectedVersion = (cfg as { version?: number })?.version ?? null;
+    if (detectedVersion === 2 && cfg && (cfg as unknown as { ui_map?: MapConfigV2 }).ui_map) {
+      setForm({
+        ...mergedCfg,
+        ui_map: (cfg as unknown as { ui_map?: MapConfigV2 }).ui_map,
+      } as unknown as AppConfig);
+    } else {
+      setForm(mergedCfg);
+    }
+    setShowMaptilerKey(false);
+    setShowAemetKey(false);
+    setAemetKeyInput("");
+    setAemetTestResult(null);
+    setShowAisstreamKey(false);
+    setAisstreamKeyInput("");
+    setShipsTestResult(null);
+    setShowOpenWeatherKey(false);
+    setOpenWeatherKeyInput("");
+    setOpenSkyStatusData(null);
+    setOpenSkyStatusError(null);
+    setShowGoogleCalendarKey(false);
+    setGoogleCalendarKeyInput("");
+    setGoogleCalendarIdInput("");
+    setIcsUrlInput("");
+    
+    // Cargar ics_path desde la configuración v2 si existe
+    if (detectedVersion === 2 && cfg) {
+      const v2Cfg = cfg as unknown as { panels?: { calendar?: { ics_path?: string } }; calendar?: { ics_path?: string } };
+      const icsPath = v2Cfg.panels?.calendar?.ics_path || v2Cfg.calendar?.ics_path;
+      if (icsPath && typeof icsPath === "string") {
+        setIcsPathInput(icsPath);
+      } else {
+        setIcsPathInput("");
+      }
+    } else {
+      setIcsPathInput("");
+    }
+    
+    setCalendarTestResult(null);
+    
+    // Nota: Los secrets no se devuelven en GET /api/config por seguridad.
+    // El usuario debe introducirlos desde la UI.
+  }, []);
+
   const handleUploadIcs = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
@@ -1138,96 +1208,7 @@ const ConfigPage: React.FC = () => {
     }
   }, [testingOpenSky]);
 
-  const refreshConfig = useCallback(async () => {
-    // Intentar cargar v2 primero
-    let cfg: AppConfig | undefined;
-    try {
-      const v2Cfg = await getConfigV2();
-      if (v2Cfg && v2Cfg.version === 2 && v2Cfg.ui_map) {
-        // Convertir v2 a formato interno compatible (mantener ui_map como está)
-        cfg = {
-          ...(v2Cfg as unknown as AppConfig),
-          ui_map: v2Cfg.ui_map,
-        } as unknown as AppConfig;
-        setConfigVersion(2);
-      } else {
-        cfg = await getConfig();
-        const version = (cfg as { version?: number })?.version;
-        setConfigVersion(version ?? null);
-      }
-    } catch (e) {
-      // Si falla v2, intentar v1
-      cfg = await getConfig();
-      const version = (cfg as { version?: number })?.version;
-      setConfigVersion(version ?? null);
-    }
-    
-    // Si es v2, mantener ui_map directamente en form
-    const mergedCfg = withConfigDefaults(cfg ?? undefined);
-    const detectedVersion = (cfg as { version?: number })?.version ?? null;
-    if (detectedVersion === 2 && cfg && (cfg as unknown as { ui_map?: MapConfigV2 }).ui_map) {
-      setForm({
-        ...mergedCfg,
-        ui_map: (cfg as unknown as { ui_map?: MapConfigV2 }).ui_map,
-      } as unknown as AppConfig);
-    } else {
-      setForm(mergedCfg);
-    }
-    setShowMaptilerKey(false);
-    setShowAemetKey(false);
-    setAemetKeyInput("");
-    setAemetTestResult(null);
-    setShowAisstreamKey(false);
-    setAisstreamKeyInput("");
-    setShipsTestResult(null);
-    setShowOpenWeatherKey(false);
-    setOpenWeatherKeyInput("");
-    setOpenSkyStatusData(null);
-    setOpenSkyStatusError(null);
-    setShowGoogleCalendarKey(false);
-    setGoogleCalendarKeyInput("");
-    setGoogleCalendarIdInput("");
-    setIcsUrlInput("");
-    
-    // Cargar ics_path desde la configuración v2 si existe
-    if (detectedVersion === 2 && cfg) {
-      const v2Cfg = cfg as unknown as { panels?: { calendar?: { ics_path?: string } }; calendar?: { ics_path?: string } };
-      const icsPath = v2Cfg.panels?.calendar?.ics_path || v2Cfg.calendar?.ics_path;
-      if (icsPath && typeof icsPath === "string") {
-        setIcsPathInput(icsPath);
-      } else {
-        setIcsPathInput("");
-      }
-    } else {
-      setIcsPathInput("");
-    }
-    
-    setCalendarTestResult(null);
-    
-    // Nota: Los secrets no se devuelven en GET /api/config por seguridad.
-    // El usuario debe introducirlos desde la UI.
-  }, []);
-
   // Esta función se define después para evitar dependencias circulares
-  const loadCalendarStatus = useCallback(async () => {
-    setCalendarStatusLoading(true);
-    try {
-      const status = await getCalendarStatus();
-      if (isMountedRef.current) {
-        setCalendarStatus(status);
-      }
-    } catch (error) {
-      console.error("[ConfigPage] Failed to load calendar status", error);
-      if (isMountedRef.current) {
-        setCalendarStatus(null);
-      }
-    } finally {
-      if (isMountedRef.current) {
-        setCalendarStatusLoading(false);
-      }
-    }
-  }, []);
-
   const loadCalendarStatus = useCallback(async () => {
     setCalendarStatusLoading(true);
     try {

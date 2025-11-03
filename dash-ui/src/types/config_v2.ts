@@ -81,6 +81,7 @@ export type RotatorDurationsConfig = {
   santoral: number;
   calendar: number;
   news: number;
+  historicalEvents: number;
 };
 
 export type RotatorConfig = {
