@@ -1,6 +1,29 @@
 import type { AppConfig } from "../types/config";
 import type { AppConfigV2 } from "../types/config_v2";
 
+export type SaveConfigResponse = {
+  ok: boolean;
+  path?: string;
+  provider: string;
+  calendar?: {
+    enabled?: boolean;
+    provider?: string;
+    ics_path?: string;
+    status?: string;
+    last_error?: string | null;
+  };
+  layers?: {
+    flights?: boolean;
+    ships?: boolean;
+  };
+  radar?: {
+    enabled?: boolean;
+    provider?: string | null;
+  };
+  config_version?: number;
+  reloaded?: boolean;
+};
+
 const BASE = window.location.origin;
 
 const withBase = (path: string) => {
@@ -86,7 +109,7 @@ export async function getConfig() {
 }
 
 export async function saveConfig(data: AppConfig) {
-  return apiPost<AppConfig>("/api/config", data);
+  return apiPost<SaveConfigResponse>("/api/config", data);
 }
 
 // V2 API functions
@@ -111,7 +134,7 @@ export async function getConfigV2(): Promise<AppConfigV2> {
   return config;
 }
 
-export async function saveConfigV2(config: AppConfigV2): Promise<AppConfigV2> {
+export async function saveConfigV2(config: AppConfigV2): Promise<SaveConfigResponse> {
   // Verificar que es v2
   if (config.version !== 2) {
     throw new ApiError(400, { error: "Only v2 config allowed", version: config.version });
@@ -130,7 +153,7 @@ export async function saveConfigV2(config: AppConfigV2): Promise<AppConfigV2> {
     throw new ApiError(400, { error: "v1 keys not allowed", v1_keys: v1Keys.filter(k => k in config) });
   }
   
-  return apiPost<AppConfigV2>("/api/config", config);
+  return apiPost<SaveConfigResponse>("/api/config", config);
 }
 
 export async function reloadConfig(): Promise<{ success: boolean; message: string; config_path?: string; config_loaded_at?: string }> {
@@ -442,9 +465,16 @@ export async function getCalendarEvents(from: string, to: string): Promise<Calen
 
 // ICS Upload API
 export type IcsUploadResponse = {
+  ok: boolean;
   ics_path: string;
-  size: number;
-  events_detected: number;
+  provider: string;
+  events_detected?: number;
+  reloaded?: boolean;
+  config_version?: number;
+  calendar?: {
+    status?: string;
+    last_error?: string | null;
+  };
 };
 
 export async function uploadIcsFile(file: File, filename?: string): Promise<IcsUploadResponse> {

@@ -2,6 +2,8 @@ fastapi
 uvicorn[standard]
 requests
 pydantic
+python-multipart
+icalendar
 aiofiles
 shapely>=2.0.0
 astral>=3.2
