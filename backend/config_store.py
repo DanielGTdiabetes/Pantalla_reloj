@@ -159,18 +159,18 @@ def validate_calendar_provider(
         missing = ["panels.calendar.ics_path", "calendar.ics_path"]
         if not ics_path or not ics_path.strip():
             raise CalendarValidationError(
-                "Calendar provider 'ics' requires readable file at panels.calendar.ics_path",
+                "Calendar provider 'ics' requires readable file at calendar.ics_path",
                 missing,
             )
         path_obj = Path(ics_path.strip())
         if not path_obj.exists() or not path_obj.is_file():
             raise CalendarValidationError(
-                f"Calendar provider 'ics' requires readable file at panels.calendar.ics_path (not found: {path_obj})",
+                f"Calendar provider 'ics' requires readable file at calendar.ics_path (not found: {path_obj})",
                 missing,
             )
         if not os.access(path_obj, os.R_OK):
             raise CalendarValidationError(
-                f"Calendar provider 'ics' requires readable file at panels.calendar.ics_path (permission denied: {path_obj})",
+                f"Calendar provider 'ics' requires readable file at calendar.ics_path (permission denied: {path_obj})",
                 missing,
             )
 

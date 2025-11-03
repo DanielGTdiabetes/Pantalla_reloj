@@ -18,6 +18,8 @@ import {
   uploadIcsFile,
   getCalendarEvents,
   type CalendarEvent,
+  getCalendarStatus,
+  type CalendarStatusResponse,
   updateAemetApiKey,
   updateAISStreamApiKey,
   updateOpenWeatherMapApiKey,
@@ -382,9 +384,12 @@ const ConfigPage: React.FC = () => {
   const [schema, setSchema] = useState<Record<string, unknown> | null>(null);
   const [status, setStatus] = useState<LoadStatus>("loading");
   const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [banner, setBanner] = useState<Banner>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [calendarStatus, setCalendarStatus] = useState<CalendarStatusResponse | null>(null);
+  const [calendarStatusLoading, setCalendarStatusLoading] = useState(false);
   const [newPanel, setNewPanel] = useState("");
   const [showMaptilerKey, setShowMaptilerKey] = useState(false);
   const [showAemetKey, setShowAemetKey] = useState(false);
@@ -732,10 +737,35 @@ const ConfigPage: React.FC = () => {
         } as unknown as AppConfig;
       });
 
+      // Si el backend no persistió automáticamente (según la respuesta), guardar manualmente
+      // El backend debería haberlo hecho en /api/config/upload/ics, pero por si acaso:
+      if (configVersion === 2) {
+        try {
+          const current = await getConfigV2();
+          if (current && current.version === 2) {
+            const updatedConfig: import("../types/config_v2").AppConfigV2 = {
+              ...current,
+              panels: {
+                ...current.panels,
+                calendar: {
+                  enabled: true,
+                  provider: "ics",
+                  ics_path: result.ics_path,
+                },
+              },
+            };
+            await saveConfigV2(updatedConfig);
+          }
+        } catch (saveError) {
+          console.warn("[ConfigPage] Failed to save config after ICS upload", saveError);
+        }
+      }
+
       // Re-fetch config y rehidratar stores en caliente
       try {
         await refreshConfig();
         await reloadConfig();
+        await loadCalendarStatus();
       } catch (refreshError) {
         console.warn("[ConfigPage] Failed to refresh config after ICS upload", refreshError);
       }
@@ -1101,6 +1131,141 @@ const ConfigPage: React.FC = () => {
     // Nota: Los secrets no se devuelven en GET /api/config por seguridad.
     // El usuario debe introducirlos desde la UI.
   }, []);
+
+  // Esta función se define después para evitar dependencias circulares
+  const loadCalendarStatus = useCallback(async () => {
+    setCalendarStatusLoading(true);
+    try {
+      const status = await getCalendarStatus();
+      if (isMountedRef.current) {
+        setCalendarStatus(status);
+      }
+    } catch (error) {
+      console.error("[ConfigPage] Failed to load calendar status", error);
+      if (isMountedRef.current) {
+        setCalendarStatus(null);
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setCalendarStatusLoading(false);
+      }
+    }
+  }, []);
+
+  const loadCalendarStatus = useCallback(async () => {
+    setCalendarStatusLoading(true);
+    try {
+      const status = await getCalendarStatus();
+      if (isMountedRef.current) {
+        setCalendarStatus(status);
+      }
+    } catch (error) {
+      console.error("[ConfigPage] Failed to load calendar status", error);
+      if (isMountedRef.current) {
+        setCalendarStatus(null);
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setCalendarStatusLoading(false);
+      }
+    }
+  }, []);
+
+  // Cargar calendar status al montar y después de cambios
+  useEffect(() => {
+    if (isReady) {
+      void loadCalendarStatus();
+    }
+  }, [isReady, loadCalendarStatus]);
+
+  const handleRestoreDefaultsV23 = useCallback(async () => {
+    if (!window.confirm("¿Restaurar valores por defecto de v23? Esto activará radar, aviones y barcos, y restaurará el calendario ICS si existe. Los secrets no se modificarán.")) {
+      return;
+    }
+    
+    setSaving(true);
+    setBanner(null);
+    try {
+      // Obtener config actual para preservar secrets y ui_map
+      const current = await getConfigV2();
+      if (!current || current.version !== 2) {
+        setBanner({ kind: "error", text: "La configuración actual no es v2" });
+        return;
+      }
+      
+      // Restaurar valores por defecto de v23
+      const v23Defaults: import("../types/config_v2").AppConfigV2 = {
+        ...current,
+        ui_global: {
+          ...current.ui_global,
+          radar: {
+            enabled: true,
+            provider: "aemet",
+          },
+        },
+        layers: {
+          ...current.layers,
+          flights: current.layers?.flights ? {
+            ...current.layers.flights,
+            enabled: true,
+            provider: current.layers.flights.provider || "opensky",
+          } : {
+            enabled: true,
+            provider: "opensky",
+            refresh_seconds: 10,
+            max_age_seconds: 300,
+            max_items_global: 1000,
+            max_items_view: 100,
+            rate_limit_per_min: 60,
+            decimate: "none",
+            grid_px: 50,
+            styleScale: 1.0,
+            render_mode: "auto",
+          },
+          ships: current.layers?.ships ? {
+            ...current.layers.ships,
+            enabled: true,
+            provider: current.layers.ships.provider || "aisstream",
+          } : {
+            enabled: true,
+            provider: "aisstream",
+            refresh_seconds: 30,
+            max_age_seconds: 600,
+            max_items_global: 5000,
+            max_items_view: 500,
+            decimate: "grid",
+            grid_px: 50,
+            styleScale: 1.0,
+          },
+        },
+        panels: {
+          ...current.panels,
+          calendar: current.panels?.calendar?.ics_path
+            ? {
+                enabled: true,
+                provider: "ics",
+                ics_path: current.panels.calendar.ics_path,
+              }
+            : current.panels?.calendar,
+        },
+        // Preservar secrets (no se tocan)
+        secrets: current.secrets,
+        // Preservar ui_map completo (especialmente fixed.zoom)
+        ui_map: current.ui_map,
+      };
+      
+      await saveConfigV2(v23Defaults);
+      await refreshConfig();
+      setBanner({ kind: "success", text: "Valores por defecto de v23 restaurados" });
+      window.dispatchEvent(new CustomEvent("pantalla:config:saved", { detail: { version: 2 } }));
+    } catch (error) {
+      console.error("[ConfigPage] Failed to restore defaults", error);
+      const message = resolveApiErrorMessage(error, "Error al restaurar valores por defecto");
+      setBanner({ kind: "error", text: message });
+    } finally {
+      setSaving(false);
+    }
+  }, [refreshConfig]);
 
   // WiFi functions
   const loadWifiStatus = useCallback(async () => {
@@ -1564,11 +1729,22 @@ const ConfigPage: React.FC = () => {
         } catch (reloadError) {
           console.warn("[ConfigPage] Failed to reload config after save:", reloadError);
         }
-        setBanner({ kind: "success", text: reloadOk ? "Config guardada y recargada" : "Config guardada" });
+        setSaveStatus("saved");
+        setBanner({ kind: "success", text: reloadOk ? "Config guardada y recargada ✅" : "Config guardada ✅" });
+        
+        // Cargar estado del calendario actualizado
+        void loadCalendarStatus();
         
         // Disparar evento personalizado para que useConfig() haga re-fetch inmediato
         // Esto permite que el mapa y otros componentes se actualicen sin esperar al polling
         window.dispatchEvent(new CustomEvent("pantalla:config:saved", { detail: { version: 2 } }));
+        
+        // Resetear estado "saved" después de 3 segundos
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            setSaveStatus("idle");
+          }
+        }, 3000);
       } else {
         await saveConfig(payload);
         // Re-fetch config y rehidratar stores en caliente
@@ -1578,10 +1754,18 @@ const ConfigPage: React.FC = () => {
         } catch (refreshError) {
           console.warn("[ConfigPage] Failed to refresh config after save", refreshError);
         }
-        setBanner({ kind: "success", text: "Guardado" });
+        setSaveStatus("saved");
+        setBanner({ kind: "success", text: "Guardado ✅" });
         
         // Disparar evento personalizado para que useConfig() haga re-fetch inmediato
         window.dispatchEvent(new CustomEvent("pantalla:config:saved", { detail: { version: 1 } }));
+        
+        // Resetear estado "saved" después de 3 segundos
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            setSaveStatus("idle");
+          }
+        }, 3000);
       }
       setShowMaptilerKey(false);
       setShowAemetKey(false);
@@ -1641,8 +1825,10 @@ const ConfigPage: React.FC = () => {
         }
         
         setFieldErrors(fieldErrors);
+        setSaveStatus("error");
         setBanner({ kind: "error", text: errorMessage });
       } else {
+        setSaveStatus("error");
         setBanner({ kind: "error", text: "Error al guardar" });
       }
       try {
@@ -1653,6 +1839,12 @@ const ConfigPage: React.FC = () => {
       }
     } finally {
       setSaving(false);
+      // Resetear estado de error después de 5 segundos
+      setTimeout(() => {
+        if (isMountedRef.current && saveStatus === "error") {
+          setSaveStatus("idle");
+        }
+      }, 5000);
     }
   };
 
@@ -3422,6 +3614,7 @@ const ConfigPage: React.FC = () => {
                           },
                         } as unknown as AppConfig;
                       });
+                      void loadCalendarStatus();
                     }}
                   >
                     <option value="google">Google Calendar</option>
@@ -3429,6 +3622,37 @@ const ConfigPage: React.FC = () => {
                     <option value="disabled">Deshabilitado</option>
                   </select>
                   {renderHelp("Selecciona el proveedor de calendario")}
+                  
+                  {/* Estado del calendario */}
+                  {calendarStatus && !calendarStatusLoading && (form as unknown as { panels?: { calendar?: { enabled?: boolean } } }).panels?.calendar?.enabled && (
+                    <div className={`config-field__hint ${
+                      calendarStatus.status === "ok" ? "config-field__hint--success" :
+                      calendarStatus.status === "error" || calendarStatus.status === "empty" ? "config-field__hint--error" :
+                      "config-field__hint--warning"
+                    }`} style={{ marginTop: "0.5rem" }}>
+                      <strong>Estado:</strong> {calendarStatus.status === "ok" ? "✅ OK" : calendarStatus.status === "error" ? "❌ Error" : calendarStatus.status === "empty" ? "⚠️ Sin archivo" : "⏳ Stale"}
+                      {calendarStatus.note && calendarStatus.note !== "OK" && (
+                        <span style={{ display: "block", marginTop: "0.25rem", fontSize: "0.9em" }}>
+                          {calendarStatus.note}
+                        </span>
+                      )}
+                      {calendarStatus.provider === "google" && !calendarStatus.credentials_present && (
+                        <span style={{ display: "block", marginTop: "0.25rem", fontSize: "0.9em", fontWeight: "bold" }}>
+                          ⚠️ Faltan credenciales: introduce API key y Calendar ID
+                        </span>
+                      )}
+                      {calendarStatus.provider === "ics" && calendarStatus.status === "empty" && (
+                        <span style={{ display: "block", marginTop: "0.25rem", fontSize: "0.9em", fontWeight: "bold" }}>
+                          ⚠️ Sube un archivo ICS para continuar
+                        </span>
+                      )}
+                      {calendarStatus.provider === "ics" && calendarStatus.status === "error" && !icsPathInput.trim() && (
+                        <span style={{ display: "block", marginTop: "0.25rem", fontSize: "0.9em", fontWeight: "bold" }}>
+                          ⚠️ El archivo ICS no existe o no es accesible
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -3527,6 +3751,17 @@ const ConfigPage: React.FC = () => {
               {/* ICS fields (solo v2) */}
               {configVersion === 2 && (form as unknown as { panels?: { calendar?: { provider?: string } } }).panels?.calendar?.provider === "ics" && (
                 <>
+                  {/* FAQ/Help sobre ICS */}
+                  <div className="config-field" style={{ gridColumn: "1 / -1", padding: "1rem", backgroundColor: "#f5f5f5", borderRadius: "4px", marginBottom: "1rem" }}>
+                    <h3 style={{ marginTop: 0, marginBottom: "0.5rem", fontSize: "1rem", fontWeight: "bold" }}>ℹ️ Ayuda: Calendario ICS</h3>
+                    <ul style={{ margin: 0, paddingLeft: "1.5rem", fontSize: "0.9em", lineHeight: "1.6" }}>
+                      <li><strong>¿Cómo subir un ICS?</strong> Haz clic en "Subir ICS…" y selecciona un archivo .ics desde tu PC. El sistema lo guardará automáticamente.</li>
+                      <li><strong>¿Qué valida el sistema?</strong> El archivo debe tener extensión .ics y formato iCalendar válido. Máximo 2MB.</li>
+                      <li><strong>¿Qué pasa después de subir?</strong> El sistema automáticamente establecerá el provider a "ics", guardará la ruta y activará el calendario.</li>
+                      <li><strong>¿Puedo usar una ruta manual?</strong> Sí, pero asegúrate de que el archivo existe y es accesible en esa ruta del servidor.</li>
+                    </ul>
+                  </div>
+
                   <div className="config-field">
                     <label htmlFor="ics_path">Ruta local del archivo ICS</label>
                     <div className="config-field__input-group">
@@ -3543,7 +3778,7 @@ const ConfigPage: React.FC = () => {
                         <input
                           id="ics_file_upload"
                           type="file"
-                          accept=".ics"
+                          accept=".ics,text/calendar"
                           style={{ display: "none" }}
                           disabled={disableInputs || uploadingIcs || !((form as unknown as { panels?: { calendar?: { enabled?: boolean } } }).panels?.calendar?.enabled)}
                           onChange={handleUploadIcs}
@@ -3551,7 +3786,7 @@ const ConfigPage: React.FC = () => {
                       </label>
                     </div>
                     {renderFieldError("panels.calendar.ics_path")}
-                    {renderHelp("Sube un archivo ICS desde tu PC o introduce la ruta manualmente")}
+                    {renderHelp("Sube un archivo ICS desde tu PC (se guardará automáticamente)")}
                     {icsUploadResult && (
                       <div
                         className={`config-field__hint ${
@@ -6122,8 +6357,18 @@ const ConfigPage: React.FC = () => {
 
         <div className="config-actions">
           <button type="submit" className="config-button primary" disabled={disableInputs}>
-            {saving ? "Guardando…" : "Guardar"}
+            {saveStatus === "saving" || saving ? "Guardando…" : saveStatus === "saved" ? "Guardado ✅" : "Guardar"}
           </button>
+          {configVersion === 2 && (
+            <button
+              type="button"
+              className="config-button secondary"
+              onClick={() => void handleRestoreDefaultsV23()}
+              disabled={disableInputs}
+            >
+              Restaurar valores por defecto de v23
+            </button>
+          )}
         </div>
       </form>
     </div>

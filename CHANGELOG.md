@@ -22,4 +22,5 @@ Todos los cambios notables del proyecto se documentarán en este archivo.
 - Endpoint `/api/config/upload/ics` para subida de calendarios ICS
 - Validación de archivos ICS con manejo de errores mejorado
 - Endpoint `/api/calendar/status` para verificación del estado del calendario
+- Frontend `/config` re-hecho: uploader ICS, merge seguro, toggles capas, mensajes de error claros
 

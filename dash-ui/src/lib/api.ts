@@ -463,6 +463,20 @@ export async function getCalendarEvents(from: string, to: string): Promise<Calen
   return apiGet<CalendarEvent[]>(`/api/calendar/events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
 }
 
+// Calendar Status API
+export type CalendarStatusResponse = {
+  provider: string;
+  enabled: boolean;
+  credentials_present: boolean;
+  status: "ok" | "error" | "stale" | "empty";
+  last_fetch_iso?: string | null;
+  note?: string | null;
+};
+
+export async function getCalendarStatus(): Promise<CalendarStatusResponse> {
+  return apiGet<CalendarStatusResponse>("/api/calendar/status");
+}
+
 // ICS Upload API
 export type IcsUploadResponse = {
   ok: boolean;
