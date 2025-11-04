@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from .config_manager import ConfigManager
 
@@ -47,7 +49,12 @@ def load_raw_config(path: Path | None = None) -> Dict[str, Any]:
 
 
 def deep_merge(base: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
-    """Deep merge two dictionaries without mutating the inputs."""
+    """Deep merge two dictionaries without mutating the inputs.
+    
+    This function performs a recursive merge where keys present in `incoming`
+    overwrite corresponding keys in `base`, but keys not present in `incoming`
+    are preserved from `base`.
+    """
 
     result: Dict[str, Any] = deepcopy(base)
     for key, value in incoming.items():
@@ -60,6 +67,41 @@ def deep_merge(base: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]
         else:
             result[key] = deepcopy(value)
     return result
+
+
+def normalize_maptiler_url(api_key: str, url: str) -> str:
+    """Normalize MapTiler URL by ensuring ?key= parameter is present.
+    
+    Args:
+        api_key: The MapTiler API key to use
+        url: The style URL (may or may not already have ?key=)
+        
+    Returns:
+        Normalized URL with ?key= parameter (existing key= is replaced)
+    """
+    if not url or not url.strip():
+        return url
+    
+    parsed = urlparse(url.strip())
+    query_params = parse_qs(parsed.query, keep_blank_values=True)
+    
+    # Reemplazar o añadir key=
+    query_params["key"] = [api_key]
+    
+    # Reconstruir query string
+    new_query = urlencode(query_params, doseq=True)
+    
+    # Reconstruir URL
+    normalized = urlunparse((
+        parsed.scheme,
+        parsed.netloc,
+        parsed.path,
+        parsed.params,
+        new_query,
+        parsed.fragment
+    ))
+    
+    return normalized
 
 
 def resolve_calendar_provider(payload: Dict[str, Any]) -> Tuple[str, bool, Optional[str]]:

@@ -42,6 +42,7 @@ from .config_store import (
     default_layers_if_missing,
     default_panels_if_missing,
     load_raw_config,
+    normalize_maptiler_url,
     reload_runtime_config,
     resolve_calendar_provider,
     validate_calendar_provider,
@@ -2064,7 +2065,125 @@ def _handle_partial_opensky_update(payload: Dict[str, Any]) -> JSONResponse:
     return JSONResponse(content={"success": True})
 
 
+def _validate_and_normalize_maptiler(config: Dict[str, Any]) -> None:
+    """Valida y normaliza URLs de MapTiler en el config.
+    
+    Args:
+        config: Diccionario de configuración (modificado in-place)
+        
+    Raises:
+        HTTPException con status_code 400 si hay error de validación
+    """
+    ui_map = config.get("ui_map", {})
+    if not isinstance(ui_map, dict):
+        return
+    
+    provider = ui_map.get("provider")
+    if provider != "maptiler_vector":
+        return
+    
+    maptiler = ui_map.get("maptiler")
+    if not isinstance(maptiler, dict):
+        return
+    
+    api_key = maptiler.get("apiKey") or maptiler.get("api_key")
+    if not api_key or not isinstance(api_key, str):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "api_key is empty",
+                "field": "ui_map.maptiler.api_key",
+            },
+        )
+    
+    api_key = str(api_key).strip()
+    if not api_key:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "api_key is empty",
+                "field": "ui_map.maptiler.api_key",
+            },
+        )
+    
+    if len(api_key) < 10:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "api_key must be at least 10 characters",
+                "field": "ui_map.maptiler.api_key",
+            },
+        )
+    
+    # Validar formato de api_key (solo letras, números, guiones y guiones bajos)
+    if not re.match(r"^[A-Za-z0-9\-_]+$", api_key):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "api_key contains invalid characters",
+                "field": "ui_map.maptiler.api_key",
+            },
+        )
+    
+    # Normalizar URLs de estilo
+    # Buscar en urls.styleUrl o directamente en styleUrl
+    urls = maptiler.get("urls", {})
+    if not isinstance(urls, dict):
+        urls = {}
+    
+    # Normalizar styleUrl (si está presente en urls o directamente)
+    style_url = maptiler.get("styleUrl")
+    if not style_url and isinstance(urls, dict):
+        style_url = urls.get("styleUrl")
+    
+    if style_url and isinstance(style_url, str) and style_url.strip():
+        normalized_url = normalize_maptiler_url(api_key, style_url.strip())
+        maptiler["styleUrl"] = normalized_url
+        if isinstance(urls, dict) and "styleUrl" in urls:
+            urls["styleUrl"] = normalized_url
+    
+    # Normalizar styleUrlDark (si está presente)
+    style_url_dark = maptiler.get("styleUrlDark")
+    if not style_url_dark and isinstance(urls, dict):
+        style_url_dark = urls.get("styleUrlDark")
+    
+    if style_url_dark and isinstance(style_url_dark, str) and style_url_dark.strip():
+        normalized_url = normalize_maptiler_url(api_key, style_url_dark.strip())
+        maptiler["styleUrlDark"] = normalized_url
+        if isinstance(urls, dict) and "styleUrlDark" in urls:
+            urls["styleUrlDark"] = normalized_url
+    
+    # Normalizar styleUrlLight (si está presente)
+    style_url_light = maptiler.get("styleUrlLight")
+    if not style_url_light and isinstance(urls, dict):
+        style_url_light = urls.get("styleUrlLight")
+    
+    if style_url_light and isinstance(style_url_light, str) and style_url_light.strip():
+        normalized_url = normalize_maptiler_url(api_key, style_url_light.strip())
+        maptiler["styleUrlLight"] = normalized_url
+        if isinstance(urls, dict) and "styleUrlLight" in urls:
+            urls["styleUrlLight"] = normalized_url
+    
+    # Normalizar styleUrlBright (si está presente)
+    style_url_bright = maptiler.get("styleUrlBright")
+    if not style_url_bright and isinstance(urls, dict):
+        style_url_bright = urls.get("styleUrlBright")
+    
+    if style_url_bright and isinstance(style_url_bright, str) and style_url_bright.strip():
+        normalized_url = normalize_maptiler_url(api_key, style_url_bright.strip())
+        maptiler["styleUrlBright"] = normalized_url
+        if isinstance(urls, dict) and "styleUrlBright" in urls:
+            urls["styleUrlBright"] = normalized_url
+    
+    # Asegurar que apiKey está en el formato correcto
+    maptiler["apiKey"] = api_key
+    if "api_key" in maptiler:
+        del maptiler["api_key"]
+
+
 @app.post("/api/config")
+@app.put("/api/config")
+@app.patch("/api/config")
 async def save_config(request: Request) -> JSONResponse:
     """Persist configuration with non-destructive merge and hot reload."""
     body = await request.body()
@@ -2095,18 +2214,19 @@ async def save_config(request: Request) -> JSONResponse:
             detail={"error": "v1 keys not allowed", "v1_keys": v1_keys},
         )
 
-    if payload.get("version") != 2:
-        logger.warning("Rejecting non-v2 config (version=%s)", payload.get("version"))
+    # Permitir payload sin version (asumir v2)
+    incoming_version = payload.get("version")
+    if incoming_version is not None and incoming_version != 2:
+        logger.warning("Rejecting non-v2 config (version=%s)", incoming_version)
         raise HTTPException(
             status_code=400,
-            detail={"error": "Only v2 config allowed", "version": payload.get("version")},
+            detail={"error": "Only v2 supported", "field": "version"},
         )
 
-    if "ui_map" not in payload:
-        logger.warning("Rejecting config without ui_map")
-        raise HTTPException(status_code=400, detail={"error": "ui_map required for v2"})
-
     payload = _sanitize_incoming_config_payload(payload)
+    
+    # Log del método HTTP recibido
+    logger.info("[config] Received %s /api/config", request.method)
 
     persisted_config: Optional[Dict[str, Any]] = None
     provider_final = "google"
@@ -2114,46 +2234,7 @@ async def save_config(request: Request) -> JSONResponse:
     final_ics_path: Optional[str] = None
 
     try:
-        secrets = payload.get("secrets", {})
-        google_secrets = secrets.get("google", {}) if isinstance(secrets, dict) else {}
-        calendar_ics_secrets = secrets.get("calendar_ics", {}) if isinstance(secrets, dict) else {}
-
-        google_api_key = google_secrets.get("api_key") if isinstance(google_secrets, dict) else None
-        google_calendar_id = google_secrets.get("calendar_id") if isinstance(google_secrets, dict) else None
-        calendar_ics_url = (
-            calendar_ics_secrets.get("url") if isinstance(calendar_ics_secrets, dict) else None
-        )
-        calendar_ics_path_secret = (
-            calendar_ics_secrets.get("path") if isinstance(calendar_ics_secrets, dict) else None
-        )
-
-        payload_without_secrets = dict(payload)
-        payload_without_secrets.pop("secrets", None)
-
-        config_v2 = AppConfigV2.model_validate(payload_without_secrets)
-        config_dict = config_v2.model_dump(mode="json", exclude_none=True)
-
-        # Validar Google Calendar antes del merge
-        calendar_provider, calendar_enabled, normalized_ics_path = resolve_calendar_provider(config_dict)
-        if calendar_provider == "google" and calendar_enabled:
-            missing: List[str] = []
-            if not google_api_key or not str(google_api_key).strip():
-                missing.append("secrets.google.api_key")
-            if not google_calendar_id or not str(google_calendar_id).strip():
-                missing.append("secrets.google.calendar_id")
-            if missing:
-                logger.warning("[config] Provider google requires credentials (missing=%s)", ", ".join(missing))
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "error": "Calendar provider 'google' requires api_key and calendar_id",
-                        "missing": missing,
-                    },
-                )
-
-        default_layers_if_missing(config_dict)
-        default_panels_if_missing(config_dict)
-
+        # Cargar config actual para hacer deep-merge
         try:
             current_raw = load_raw_config(config_manager.config_file)
         except json.JSONDecodeError as exc:
@@ -2172,10 +2253,86 @@ async def save_config(request: Request) -> JSONResponse:
                 detail={"error": "Unable to read current configuration", "reason": str(exc)},
             ) from exc
 
-        merged = deep_merge(current_raw, config_dict)
+        # Hacer deep-merge con el config actual (parche parcial)
+        logger.info("[config] Performing deep-merge with current config (partial patch)")
+        merged = deep_merge(current_raw, payload)
+        
+        # Forzar version=2 si falta o es None
+        if merged.get("version") is None or merged.get("version") != 2:
+            merged["version"] = 2
+            logger.info("[config] Forced version=2 in merged config")
+        
+        # Validar y normalizar MapTiler si provider=maptiler_vector
+        if merged.get("ui_map", {}).get("provider") == "maptiler_vector":
+            logger.info("[config] Validating and normalizing MapTiler URLs")
+            try:
+                _validate_and_normalize_maptiler(merged)
+            except HTTPException:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.error("[config] MapTiler validation error: %s", exc)
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": f"MapTiler validation failed: {str(exc)}",
+                        "field": "ui_map.maptiler",
+                    },
+                ) from exc
+        
+        # Aplicar defaults
         default_layers_if_missing(merged)
         default_panels_if_missing(merged)
+        
+        # Validar con Pydantic
+        try:
+            config_v2 = AppConfigV2.model_validate(merged)
+            config_dict = config_v2.model_dump(mode="json", exclude_none=True)
+        except ValidationError as exc:
+            logger.warning("[config] Validation error after merge: %s", exc.errors())
+            # Extraer el primer error para formato {"error": "...", "field": "..."}
+            first_error = exc.errors()[0] if exc.errors() else {}
+            field_path = ".".join(str(x) for x in first_error.get("loc", []))
+            error_msg = first_error.get("msg", "Validation failed")
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": error_msg,
+                    "field": field_path,
+                },
+            ) from exc
+        
+        # Procesar secrets
+        secrets = payload.get("secrets", {})
+        google_secrets = secrets.get("google", {}) if isinstance(secrets, dict) else {}
+        calendar_ics_secrets = secrets.get("calendar_ics", {}) if isinstance(secrets, dict) else {}
+
+        google_api_key = google_secrets.get("api_key") if isinstance(google_secrets, dict) else None
+        google_calendar_id = google_secrets.get("calendar_id") if isinstance(google_secrets, dict) else None
+        calendar_ics_url = (
+            calendar_ics_secrets.get("url") if isinstance(calendar_ics_secrets, dict) else None
+        )
+        calendar_ics_path_secret = (
+            calendar_ics_secrets.get("path") if isinstance(calendar_ics_secrets, dict) else None
+        )
+        
         provider_final, enabled_final, final_ics_path = resolve_calendar_provider(merged)
+        
+        # Validar Google Calendar
+        if provider_final == "google" and enabled_final:
+            missing: List[str] = []
+            if not google_api_key or not str(google_api_key).strip():
+                missing.append("secrets.google.api_key")
+            if not google_calendar_id or not str(google_calendar_id).strip():
+                missing.append("secrets.google.calendar_id")
+            if missing:
+                logger.warning("[config] Provider google requires credentials (missing=%s)", ", ".join(missing))
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "Calendar provider 'google' requires api_key and calendar_id",
+                        "missing": missing,
+                    },
+                )
         
         # Validar ICS usando validate_calendar_provider (nunca 500, solo 400)
         try:
@@ -2187,6 +2344,7 @@ async def save_config(request: Request) -> JSONResponse:
                 detail={"error": str(exc), "missing": exc.missing if exc.missing else []},
             ) from exc
 
+        # Guardar config normalizado
         try:
             write_config_atomic(merged, config_manager.config_file)
             logger.info(
@@ -2197,7 +2355,7 @@ async def save_config(request: Request) -> JSONResponse:
             logger.error("[config] Failed to write config atomically: %s", write_exc)
             raise HTTPException(
                 status_code=500,
-                detail={"error": "Failed to persist configuration", "reason": str(write_exc)},
+                detail={"error": "config write failed"},
             ) from write_exc
 
         persisted_config = merged
@@ -2247,42 +2405,32 @@ async def save_config(request: Request) -> JSONResponse:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("[config] Skipping ships config apply due to error: %s", exc)
 
+    except HTTPException:
+        raise
     except ValidationError as exc:
-        logger.debug("Configuration validation error: %s", exc.errors())
-        missing: List[str] = []
-        field_paths: List[str] = []
-        for error in exc.errors():
-            field = ".".join(str(x) for x in error.get("loc", []))
-            if field:
-                missing.append(field)
-                field_paths.append(field)
+        logger.warning("[config] Validation error: %s", exc.errors())
+        # Extraer el primer error para formato {"error": "...", "field": "..."}
+        first_error = exc.errors()[0] if exc.errors() else {}
+        field_path = ".".join(str(x) for x in first_error.get("loc", []))
+        error_msg = first_error.get("msg", "Validation failed")
         raise HTTPException(
             status_code=400,
             detail={
-                "error": "Configuration validation failed",
-                "missing": missing,
-                "field_paths": field_paths,
-                "details": exc.errors(),
+                "error": error_msg,
+                "field": field_path,
             },
         ) from exc
-    except HTTPException:
-        raise
     except (PermissionError, OSError) as exc:
-        logger.exception("Failed to persist configuration: %s", exc)
+        logger.error("[config] Failed to persist configuration: %s", exc)
         raise HTTPException(
             status_code=500,
-            detail={
-                "error": "Failed to persist configuration",
-                "reason": str(exc),
-                "errno": getattr(exc, "errno", None),
-                "hint": "Check file permissions and disk space",
-            },
+            detail={"error": "config write failed"},
         ) from exc
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Failed to persist configuration: %s", exc)
+        logger.error("[config] Unexpected error: %s", exc)
         raise HTTPException(
             status_code=500,
-            detail={"error": "Unable to persist configuration", "reason": str(exc)},
+            detail={"error": "config write failed"},
         ) from exc
 
     # Invalidar caché relacionado con configuración para forzar re-carga
@@ -2310,50 +2458,8 @@ async def save_config(request: Request) -> JSONResponse:
     else:
         logger.warning("[config] Configuration reload after save did not report changes")
 
-    status_hint = "stale"
-    if provider_final == "google" and enabled_final:
-        status_hint = "ok"
-    _update_calendar_runtime_state(provider_final, enabled_final, status_hint, None, final_ics_path)
-    calendar_state = _get_calendar_runtime_state()
-
-    config_for_summary = persisted_config or config_dict
-    layers_cfg = config_for_summary.get("layers") if isinstance(config_for_summary, dict) else {}
-    flights_enabled = False
-    ships_enabled = False
-    if isinstance(layers_cfg, dict):
-        flights_data = layers_cfg.get("flights") if isinstance(layers_cfg.get("flights"), dict) else {}
-        ships_data = layers_cfg.get("ships") if isinstance(layers_cfg.get("ships"), dict) else {}
-        flights_enabled = bool(flights_data.get("enabled", False))
-        ships_enabled = bool(ships_data.get("enabled", False))
-
-    ui_global_cfg = config_for_summary.get("ui_global") if isinstance(config_for_summary, dict) else {}
-    radar_cfg = ui_global_cfg.get("radar") if isinstance(ui_global_cfg, dict) and isinstance(ui_global_cfg.get("radar"), dict) else {}
-    radar_summary = {
-        "enabled": bool(radar_cfg.get("enabled", False)),
-        "provider": radar_cfg.get("provider"),
-    }
-
-    calendar_payload: Dict[str, Any] = {
-        "enabled": enabled_final,
-        "provider": provider_final,
-        "status": calendar_state.get("status"),
-        "last_error": calendar_state.get("last_error"),
-    }
-    if provider_final == "ics" and final_ics_path:
-        calendar_payload["ics_path"] = final_ics_path
-
-    response_payload = {
-        "ok": True,
-        "path": str(config_manager.config_file),
-        "provider": provider_final,
-        "calendar": calendar_payload,
-        "layers": {"flights": flights_enabled, "ships": ships_enabled},
-        "radar": radar_summary,
-        "config_version": map_reset_counter,
-        "reloaded": reloaded,
-    }
-
-    return JSONResponse(content=response_payload)
+    # Devolver config completo normalizado
+    return JSONResponse(content=persisted_config)
 
 
 @app.post("/api/map/reset", response_model=MapResetResponse)
