@@ -1663,7 +1663,7 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     }
     
     # Información de global layers
-    global_config = config.layers.global_layers
+    global_config = getattr(config.layers, "global_", None)
     
     # Global Satellite
     global_sat_status = "down"
@@ -1671,7 +1671,7 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     global_sat_last_fetch = None
     global_sat_cache_age = None
     
-    if global_config.satellite.enabled:
+    if global_config and global_config.satellite.enabled:
         try:
             frames = _gibs_provider.get_available_frames(
                 history_minutes=global_config.satellite.history_minutes,
@@ -2914,7 +2914,7 @@ def get_aemet_radar_tile(z: int, x: int, y: int) -> Response:
     
     Nota: AEMET OpenData no proporciona tiles de radar en su API pública.
     Este endpoint retorna 501 (Not Implemented) como indicación.
-    Para radar, se debe usar RainViewer (global_layers.radar).
+    Para radar, se debe usar RainViewer (layers.global_.radar).
     """
     config = config_manager.read()
     aemet_config = config.aemet
@@ -2936,7 +2936,7 @@ def get_aemet_sat_tile(z: int, x: int, y: int) -> Response:
     
     Nota: AEMET OpenData no proporciona tiles de satélite en su API pública.
     Este endpoint retorna 501 (Not Implemented) como indicación.
-    Para satélite, se debe usar GIBS (global_layers.satellite).
+    Para satélite, se debe usar GIBS (layers.global_.satellite).
     """
     config = config_manager.read()
     aemet_config = config.aemet
@@ -6027,7 +6027,10 @@ def _get_openweather_provider(layer_type: Optional[str] = None) -> OpenWeatherMa
 def get_global_satellite_frames() -> Dict[str, Any]:
     """Obtiene lista de frames disponibles de satélite global."""
     config = config_manager.read()
-    global_config = config.layers.global_layers.satellite
+    gl = getattr(config.layers, "global_", None)
+    if not gl:
+        return {"frames": []}
+    global_config = gl.satellite
     
     if not global_config.enabled:
         return {"frames": []}
@@ -6064,9 +6067,14 @@ def get_global_radar_frames() -> Dict[str, Any]:
     except Exception:
         # Fallback a V1
         config = config_manager.read()
-        global_config = config.layers.global_layers.radar
-        enabled = global_config.enabled
-        provider_name = global_config.provider
+        gl = getattr(config.layers, "global_", None)
+        if not gl:
+            enabled = False
+            provider_name = "rainviewer"
+        else:
+            global_config = gl.radar
+            enabled = global_config.enabled
+            provider_name = global_config.provider
 
     if not enabled:
         return {"frames": [], "count": 0, "provider": provider_name, "status": "down"}
@@ -6082,9 +6090,11 @@ def get_global_radar_frames() -> Dict[str, Any]:
     except Exception:
         # Fallback a V1 para history_minutes y frame_step
         config = config_manager.read()
-        global_config = config.layers.global_layers.radar
-        history_minutes = global_config.history_minutes
-        frame_step = global_config.frame_step
+        gl = getattr(config.layers, "global_", None)
+        if gl:
+            global_config = gl.radar
+            history_minutes = global_config.history_minutes
+            frame_step = global_config.frame_step
 
     try:
         if provider_name == "openweathermap":
@@ -6092,9 +6102,10 @@ def get_global_radar_frames() -> Dict[str, Any]:
             layer_type = "precipitation_new"
             try:
                 global_config = config_manager.get_config()
-                if hasattr(global_config, "layers") and hasattr(global_config.layers, "global"):
-                    if hasattr(global_config.layers.global, "radar"):
-                        layer_type = getattr(global_config.layers.global.radar, "layer_type", "precipitation_new")
+                if hasattr(global_config, "layers") and hasattr(global_config.layers, "global_"):
+                    gl = getattr(global_config.layers, "global_", None)
+                    if gl and hasattr(gl, "radar"):
+                        layer_type = getattr(gl.radar, "layer_type", "precipitation_new")
             except Exception:
                 pass  # Usar valor por defecto si hay error
             
@@ -6145,7 +6156,10 @@ async def get_global_satellite_tile(
 ) -> Response:
     """Proxy de tiles de satélite global con caché."""
     config = config_manager.read()
-    global_config = config.layers.global_layers.satellite
+    gl = getattr(config.layers, "global_", None)
+    if not gl:
+        raise HTTPException(status_code=404, detail="Global layers not configured")
+    global_config = gl.satellite
     
     if not global_config.enabled:
         raise HTTPException(status_code=404, detail="Global satellite layer disabled")
@@ -6228,9 +6242,14 @@ async def get_global_radar_tile(
     except Exception:
         # Fallback a V1
         config = config_manager.read()
-        global_config = config.layers.global_layers.radar
-        enabled = global_config.enabled
-        provider_name = global_config.provider
+        gl = getattr(config.layers, "global_", None)
+        if not gl:
+            enabled = False
+            provider_name = "rainviewer"
+        else:
+            global_config = gl.radar
+            enabled = global_config.enabled
+            provider_name = global_config.provider
 
     if not enabled:
         raise HTTPException(status_code=404, detail="Global radar layer disabled")
@@ -6244,8 +6263,10 @@ async def get_global_radar_tile(
     refresh_minutes = 5
     try:
         config = config_manager.read()
-        global_config = config.layers.global_layers.radar
-        refresh_minutes = global_config.refresh_minutes
+        gl = getattr(config.layers, "global_", None)
+        if gl:
+            global_config = gl.radar
+            refresh_minutes = global_config.refresh_minutes
     except Exception:
         pass
 
@@ -6269,9 +6290,10 @@ async def get_global_radar_tile(
             layer_type = "precipitation_new"
             try:
                 global_config = config_manager.get_config()
-                if hasattr(global_config, "layers") and hasattr(global_config.layers, "global"):
-                    if hasattr(global_config.layers.global, "radar"):
-                        layer_type = getattr(global_config.layers.global.radar, "layer_type", "precipitation_new")
+                if hasattr(global_config, "layers") and hasattr(global_config.layers, "global_"):
+                    gl = getattr(global_config.layers, "global_", None)
+                    if gl and hasattr(gl, "radar"):
+                        layer_type = getattr(gl.radar, "layer_type", "precipitation_new")
             except Exception:
                 pass  # Usar valor por defecto si hay error
             

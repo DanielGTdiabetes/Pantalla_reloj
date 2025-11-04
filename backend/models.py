@@ -398,11 +398,11 @@ class GlobalLayers(BaseModel):
 
 
 class LayersConfig(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
     flights: FlightsLayer = Field(default_factory=FlightsLayer)
     ships: ShipsLayer = Field(default_factory=ShipsLayer)
-    global_layers: GlobalLayers = Field(default_factory=GlobalLayers, alias="global")
+    global_: Optional[GlobalLayers] = Field(default_factory=GlobalLayers, alias="global")
 
 
 class MapBackend(BaseModel):

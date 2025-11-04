@@ -663,9 +663,10 @@ def load_or_build_focus_mask(
     aemet_config = config.aemet
     if mode_key == "cap" and not (aemet_config.enabled and aemet_config.cap_enabled):
         return None, False
-    if mode_key == "radar" and not config.layers.global_layers.radar.enabled:
+    gl = getattr(config.layers, "global_", None)
+    if mode_key == "radar" and (not gl or not gl.radar.enabled):
         return None, False
-    if mode_key == "both" and not ((aemet_config.enabled and aemet_config.cap_enabled) and config.layers.global_layers.radar.enabled):
+    if mode_key == "both" and (not gl or not ((aemet_config.enabled and aemet_config.cap_enabled) and gl.radar.enabled)):
         return None, False
     
     # Determinar TTL según refresh de CAP/Radar
@@ -704,7 +705,8 @@ def load_or_build_focus_mask(
         if mode_key in ["radar", "both"]:
             # Usar RainViewer global para datos de radar
             # AEMET no proporciona tiles de radar en su API OpenData pública
-            if config.layers.global_layers.radar.enabled:
+            gl = getattr(config.layers, "global_", None)
+            if gl and gl.radar.enabled:
                 try:
                     from .global_providers import RainViewerProvider
                     provider = RainViewerProvider()
