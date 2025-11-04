@@ -98,9 +98,13 @@
     "calendar": { "enabled": true },
     "historicalEvents": {
       "enabled": true,
-      "provider": "local",
-      "local": {
-        "data_path": "/var/lib/pantalla-reloj/data/efemerides.json"
+      "provider": "wikimedia",
+      "wikimedia": {
+        "language": "es",
+        "event_type": "all",
+        "api_user_agent": "PantallaReloj/1.0 (https://github.com/DanielGTdiabetes/Pantalla_reloj; contact@example.com)",
+        "max_items": 10,
+        "timeout_seconds": 10
       },
       "rotation_seconds": 6,
       "max_items": 5

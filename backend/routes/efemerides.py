@@ -11,6 +11,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import requests
 from fastapi import HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
 
@@ -70,17 +71,120 @@ def load_efemerides_data(data_path: str) -> Dict[str, List[str]]:
         return {}
 
 
+def fetch_wikimedia_onthisday(
+    month: int,
+    day: int,
+    language: str = "es",
+    event_type: str = "all",
+    api_user_agent: str = "PantallaReloj/1.0 (https://github.com/DanielGTdiabetes/Pantalla_reloj; contact@example.com)",
+    max_items: int = 10,
+    timeout_seconds: int = 10
+) -> Dict[str, Any]:
+    """Obtiene efemérides desde la API de Wikimedia OnThisDay.
+    
+    Args:
+        month: Mes (1-12)
+        day: Día (1-31)
+        language: Código de idioma ISO 639-1 (por defecto: "es")
+        event_type: Tipo de eventos: "all", "events", "births", "deaths", "holidays"
+        api_user_agent: User-Agent para la API de Wikimedia
+        max_items: Máximo de items por tipo a retornar
+        timeout_seconds: Timeout en segundos para la petición
+        
+    Returns:
+        Diccionario con estructura normalizada:
+        {
+            "events": ["texto1", "texto2", ...],
+            "births": ["texto1", "texto2", ...],
+            "deaths": ["texto1", "texto2", ...],
+            "holidays": ["texto1", "texto2", ...]
+        }
+    """
+    # Validar mes y día
+    if not (1 <= month <= 12):
+        raise ValueError(f"Month must be between 1 and 12, got: {month}")
+    if not (1 <= day <= 31):
+        raise ValueError(f"Day must be between 1 and 31, got: {day}")
+    
+    # Construir URL
+    base_url = "https://api.wikimedia.org/feed/v1/wikipedia"
+    url = f"{base_url}/{language}/onthisday/{event_type}/{month:02d}/{day:02d}"
+    
+    # Headers con Api-User-Agent
+    headers = {
+        "Api-User-Agent": api_user_agent,
+        "Accept": "application/json"
+    }
+    
+    try:
+        # Realizar petición
+        response = requests.get(url, headers=headers, timeout=timeout_seconds)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        # Normalizar respuesta
+        normalized = {
+            "events": [],
+            "births": [],
+            "deaths": [],
+            "holidays": []
+        }
+        
+        # Mapear datos de Wikimedia a nuestro formato
+        if event_type == "all":
+            # Si pedimos "all", la respuesta tiene todos los tipos
+            for event_type_key in ["events", "births", "deaths", "holidays"]:
+                items = data.get(event_type_key, [])
+                for item in items[:max_items]:
+                    text = item.get("text", "")
+                    year = item.get("year", "")
+                    if text:
+                        # Formato: "YYYY: texto"
+                        if year:
+                            normalized[event_type_key].append(f"{year}: {text}")
+                        else:
+                            normalized[event_type_key].append(text)
+        else:
+            # Si pedimos un tipo específico, solo ese tipo está en la respuesta
+            items = data.get(event_type, [])
+            for item in items[:max_items]:
+                text = item.get("text", "")
+                year = item.get("year", "")
+                if text:
+                    if year:
+                        normalized[event_type].append(f"{year}: {text}")
+                    else:
+                        normalized[event_type].append(text)
+        
+        return normalized
+        
+    except requests.exceptions.Timeout:
+        logger.warning(f"Timeout fetching Wikimedia OnThisDay for {month:02d}-{day:02d}")
+        return {"events": [], "births": [], "deaths": [], "holidays": []}
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"Error fetching Wikimedia OnThisDay: {e}")
+        return {"events": [], "births": [], "deaths": [], "holidays": []}
+    except (KeyError, ValueError, TypeError) as e:
+        logger.warning(f"Error parsing Wikimedia OnThisDay response: {e}")
+        return {"events": [], "births": [], "deaths": [], "holidays": []}
+
+
 def get_efemerides_for_date(
-    data_path: str,
+    data_path: Optional[str] = None,
     target_date: Optional[date] = None,
-    tz_str: str = "Europe/Madrid"
+    tz_str: str = "Europe/Madrid",
+    provider: str = "local",
+    wikimedia_config: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """Obtiene efemérides para una fecha específica.
     
     Args:
-        data_path: Ruta al archivo JSON de efemérides
+        data_path: Ruta al archivo JSON de efemérides (solo para provider="local")
         target_date: Fecha objetivo (por defecto: hoy en timezone especificado)
         tz_str: Timezone a usar (por defecto: Europe/Madrid)
+        provider: Proveedor a usar: "local" o "wikimedia"
+        wikimedia_config: Configuración para proveedor Wikimedia (solo si provider="wikimedia")
         
     Returns:
         Diccionario con {"date": "YYYY-MM-DD", "count": N, "items": [...]}
@@ -97,6 +201,47 @@ def get_efemerides_for_date(
             now = datetime.now(timezone.utc)
             target_date = now.date()
     
+    # Si el proveedor es Wikimedia, usar la API
+    if provider == "wikimedia":
+        if not wikimedia_config:
+            wikimedia_config = {
+                "language": "es",
+                "event_type": "all",
+                "api_user_agent": "PantallaReloj/1.0 (https://github.com/DanielGTdiabetes/Pantalla_reloj; contact@example.com)",
+                "max_items": 10,
+                "timeout_seconds": 10
+            }
+        
+        month = target_date.month
+        day = target_date.day
+        
+        wikimedia_data = fetch_wikimedia_onthisday(
+            month=month,
+            day=day,
+            language=wikimedia_config.get("language", "es"),
+            event_type=wikimedia_config.get("event_type", "all"),
+            api_user_agent=wikimedia_config.get("api_user_agent", "PantallaReloj/1.0"),
+            max_items=wikimedia_config.get("max_items", 10),
+            timeout_seconds=wikimedia_config.get("timeout_seconds", 10)
+        )
+        
+        # Combinar todos los tipos en una sola lista
+        all_items = []
+        for event_type in ["events", "births", "deaths", "holidays"]:
+            all_items.extend(wikimedia_data.get(event_type, []))
+        
+        return {
+            "date": target_date.isoformat(),
+            "count": len(all_items),
+            "items": all_items,
+            "source": "wikimedia",
+            "by_type": wikimedia_data  # Incluir datos por tipo para uso futuro
+        }
+    
+    # Proveedor local (código original)
+    if not data_path:
+        data_path = "/var/lib/pantalla-reloj/data/efemerides.json"
+    
     # Formatear fecha como "MM-DD"
     date_key = target_date.strftime("%m-%d")
     
@@ -109,7 +254,8 @@ def get_efemerides_for_date(
     return {
         "date": target_date.isoformat(),
         "count": len(events),
-        "items": events
+        "items": events,
+        "source": "local"
     }
 
 

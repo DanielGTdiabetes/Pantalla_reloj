@@ -83,6 +83,7 @@ from .routes.efemerides import (
     load_efemerides_data,
     save_efemerides_data,
     upload_efemerides_file,
+    fetch_wikimedia_onthisday,
 )
 from .secret_store import SecretStore
 from .services.opensky_auth import DEFAULT_TOKEN_URL, OpenSkyAuthError
@@ -1005,28 +1006,65 @@ def _health_payload() -> Dict[str, Any]:
         if config_v2.panels and config_v2.panels.historicalEvents:
             historical_events_config = config_v2.panels.historicalEvents
             enabled = historical_events_config.enabled
-            provider = historical_events_config.provider
+            provider = historical_events_config.provider or "local"
             if historical_events_config.local:
                 data_path = historical_events_config.local.data_path
         
-        # Verificar estado del archivo
-        path = Path(data_path)
+        # Verificar estado según el proveedor
         status = "ok"
         last_load_iso = None
         
-        if not path.exists():
-            status = "missing"
-        else:
+        if provider == "local":
+            # Verificar estado del archivo
+            path = Path(data_path)
+            if not path.exists():
+                status = "missing"
+            else:
+                try:
+                    from .routes.efemerides import load_efemerides_data
+                    data = load_efemerides_data(data_path)
+                    if data:
+                        mtime = path.stat().st_mtime
+                        last_load_iso = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+                    else:
+                        status = "empty"
+                except Exception as e:
+                    logger.debug("Error loading efemerides for health: %s", e)
+                    status = "error"
+        elif provider == "wikimedia":
+            # Para Wikimedia, verificar conectividad
             try:
-                from .routes.efemerides import load_efemerides_data
-                data = load_efemerides_data(data_path)
-                if data:
-                    mtime = path.stat().st_mtime
-                    last_load_iso = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+                # Hacer una petición de prueba (hoy)
+                today = date.today()
+                test_config = {
+                    "language": "es",
+                    "event_type": "all",
+                    "api_user_agent": "PantallaReloj/1.0 (https://github.com/DanielGTdiabetes/Pantalla_reloj; contact@example.com)",
+                    "max_items": 1,
+                    "timeout_seconds": 5
+                }
+                if historical_events_config and historical_events_config.wikimedia:
+                    test_config = {
+                        "language": historical_events_config.wikimedia.language,
+                        "event_type": historical_events_config.wikimedia.event_type,
+                        "api_user_agent": historical_events_config.wikimedia.api_user_agent,
+                        "max_items": 1,
+                        "timeout_seconds": historical_events_config.wikimedia.timeout_seconds
+                    }
+                
+                test_result = fetch_wikimedia_onthisday(
+                    month=today.month,
+                    day=today.day,
+                    **test_config
+                )
+                
+                if test_result and (test_result.get("events") or test_result.get("births")):
+                    status = "ok"
+                    last_load_iso = datetime.now(timezone.utc).isoformat()
                 else:
                     status = "empty"
             except Exception as e:
-                logger.debug("Error loading efemerides for health: %s", e)
+                logger.debug("Error checking Wikimedia API status for health: %s", e)
                 status = "error"
         
         payload["historicalEvents"] = {
@@ -3155,13 +3193,35 @@ def get_efemerides(target_date: Optional[str] = None) -> Dict[str, Any]:
         
         # Obtener configuración del panel
         historical_events_config = None
+        provider = "local"
+        data_path = "/var/lib/pantalla-reloj/data/efemerides.json"
+        wikimedia_config = None
+        
         if config_v2.panels and config_v2.panels.historicalEvents:
             historical_events_config = config_v2.panels.historicalEvents
-        
-        # Ruta por defecto si no hay configuración
-        data_path = "/var/lib/pantalla-reloj/data/efemerides.json"
-        if historical_events_config and historical_events_config.local:
-            data_path = historical_events_config.local.data_path
+            provider = historical_events_config.provider or "local"
+            
+            if provider == "local":
+                if historical_events_config.local:
+                    data_path = historical_events_config.local.data_path
+            elif provider == "wikimedia":
+                if historical_events_config.wikimedia:
+                    wikimedia_config = {
+                        "language": historical_events_config.wikimedia.language,
+                        "event_type": historical_events_config.wikimedia.event_type,
+                        "api_user_agent": historical_events_config.wikimedia.api_user_agent,
+                        "max_items": historical_events_config.wikimedia.max_items,
+                        "timeout_seconds": historical_events_config.wikimedia.timeout_seconds
+                    }
+                else:
+                    # Configuración por defecto si no hay wikimedia config
+                    wikimedia_config = {
+                        "language": "es",
+                        "event_type": "all",
+                        "api_user_agent": "PantallaReloj/1.0 (https://github.com/DanielGTdiabetes/Pantalla_reloj; contact@example.com)",
+                        "max_items": 10,
+                        "timeout_seconds": 10
+                    }
         
         # Parsear fecha si se proporciona
         parsed_date = None
@@ -3180,7 +3240,13 @@ def get_efemerides(target_date: Optional[str] = None) -> Dict[str, Any]:
             tz_str = config_v2.display.timezone or "Europe/Madrid"
         
         # Obtener efemérides
-        result = get_efemerides_for_date(data_path, parsed_date, tz_str=tz_str)
+        result = get_efemerides_for_date(
+            data_path=data_path if provider == "local" else None,
+            parsed_date,
+            tz_str=tz_str,
+            provider=provider,
+            wikimedia_config=wikimedia_config
+        )
         return result
     
     except HTTPException:
@@ -3213,29 +3279,67 @@ def get_efemerides_status() -> Dict[str, Any]:
         if config_v2.panels and config_v2.panels.historicalEvents:
             historical_events_config = config_v2.panels.historicalEvents
             enabled = historical_events_config.enabled
-            provider = historical_events_config.provider
+            provider = historical_events_config.provider or "local"
             if historical_events_config.local:
                 data_path = historical_events_config.local.data_path
         
-        # Verificar estado del archivo
-        path = Path(data_path)
+        # Verificar estado según el proveedor
         status = "ok"
         last_load_iso = None
         
-        if not path.exists():
-            status = "missing"
-        else:
+        if provider == "local":
+            # Verificar estado del archivo
+            path = Path(data_path)
+            if not path.exists():
+                status = "missing"
+            else:
+                try:
+                    # Intentar cargar datos para verificar validez
+                    data = load_efemerides_data(data_path)
+                    if data:
+                        # Obtener fecha de modificación
+                        mtime = path.stat().st_mtime
+                        last_load_iso = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+                    else:
+                        status = "empty"
+                except Exception as e:
+                    logger.warning("Error loading efemerides for status: %s", e)
+                    status = "error"
+                    last_load_iso = None
+        elif provider == "wikimedia":
+            # Para Wikimedia, verificar conectividad
             try:
-                # Intentar cargar datos para verificar validez
-                data = load_efemerides_data(data_path)
-                if data:
-                    # Obtener fecha de modificación
-                    mtime = path.stat().st_mtime
-                    last_load_iso = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+                # Hacer una petición de prueba (hoy)
+                today = date.today()
+                test_config = {
+                    "language": "es",
+                    "event_type": "all",
+                    "api_user_agent": "PantallaReloj/1.0 (https://github.com/DanielGTdiabetes/Pantalla_reloj; contact@example.com)",
+                    "max_items": 1,
+                    "timeout_seconds": 5
+                }
+                if historical_events_config and historical_events_config.wikimedia:
+                    test_config = {
+                        "language": historical_events_config.wikimedia.language,
+                        "event_type": historical_events_config.wikimedia.event_type,
+                        "api_user_agent": historical_events_config.wikimedia.api_user_agent,
+                        "max_items": 1,
+                        "timeout_seconds": historical_events_config.wikimedia.timeout_seconds
+                    }
+                
+                test_result = fetch_wikimedia_onthisday(
+                    month=today.month,
+                    day=today.day,
+                    **test_config
+                )
+                
+                if test_result and (test_result.get("events") or test_result.get("births")):
+                    status = "ok"
+                    last_load_iso = datetime.now(timezone.utc).isoformat()
                 else:
                     status = "empty"
             except Exception as e:
-                logger.warning("Error loading efemerides for status: %s", e)
+                logger.warning("Error checking Wikimedia API status: %s", e)
                 status = "error"
                 last_load_iso = None
         
@@ -3244,7 +3348,7 @@ def get_efemerides_status() -> Dict[str, Any]:
             "provider": provider,
             "status": status,
             "last_load_iso": last_load_iso,
-            "data_path": data_path
+            "data_path": data_path if provider == "local" else None
         }
     
     except Exception as e:

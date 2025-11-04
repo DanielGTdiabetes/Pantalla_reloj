@@ -196,11 +196,29 @@ class PanelHistoricalEventsLocalConfig(BaseModel):
     data_path: str = Field(default="/var/lib/pantalla-reloj/data/efemerides.json", max_length=1024)
 
 
+class PanelHistoricalEventsWikimediaConfig(BaseModel):
+    """Configuración para proveedor Wikimedia OnThisDay."""
+    language: str = Field(default="es", pattern="^[a-z]{2}$")  # Código ISO 639-1
+    event_type: Literal["all", "events", "births", "deaths", "holidays"] = Field(default="all")
+    api_user_agent: str = Field(
+        default="PantallaReloj/1.0 (https://github.com/DanielGTdiabetes/Pantalla_reloj; contact@example.com)",
+        max_length=256
+    )
+    max_items: int = Field(default=10, ge=1, le=50)  # Límite de items por tipo
+    timeout_seconds: int = Field(default=10, ge=1, le=30)
+
+
 class PanelHistoricalEventsConfig(BaseModel):
     """Configuración de panel de efemérides históricas."""
     enabled: bool = True
-    provider: Literal["local"] = "local"
+    provider: Literal["local", "wikimedia"] = "wikimedia"  # Cambiar default a wikimedia
+    
+    # Configuración para proveedor local
     local: Optional[PanelHistoricalEventsLocalConfig] = None
+    
+    # Configuración para proveedor Wikimedia
+    wikimedia: Optional[PanelHistoricalEventsWikimediaConfig] = None
+    
     rotation_seconds: int = Field(default=6, ge=3, le=60)
     max_items: int = Field(default=5, ge=1, le=20)
 
