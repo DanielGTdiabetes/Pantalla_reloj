@@ -3244,7 +3244,7 @@ def get_efemerides(target_date: Optional[str] = None) -> Dict[str, Any]:
         # Obtener efemérides
         result = get_efemerides_for_date(
             data_path=data_path if provider == "local" else None,
-            parsed_date,
+            target_date=parsed_date,
             tz_str=tz_str,
             provider=provider,
             wikimedia_config=wikimedia_config
