@@ -6,10 +6,12 @@ import json
 import logging
 import os
 import pwd
+import re
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional, Tuple
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from pydantic import ValidationError
 
@@ -533,9 +535,6 @@ class ConfigManager:
         Returns:
             Tuple de (maptiler_migrado, was_changed)
         """
-        import re
-        from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
-        
         changed = False
         migrated = dict(maptiler)
         api_key = migrated.get("apiKey") or migrated.get("api_key") or migrated.get("key")
@@ -590,17 +589,22 @@ class ConfigManager:
                 return migrated, changed
             
             # Si ya es un estilo *-v2 válido, solo añadir key si falta
-            if "-v2" in style_url or "streets-v2" in style_url or "dark-v2" in style_url or "bright-v2" in style_url:
-                # Verificar si ya tiene key=
-                if "?key=" not in style_url and "&key=" not in style_url:
-                    # Añadir key=
-                    separator = "&" if "?" in style_url else "?"
-                    migrated["styleUrl"] = f"{style_url}{separator}key={api_key}"
-                    changed = True
-                    self.logger.info("[config] Added ?key= parameter to MapTiler styleUrl")
+            is_v2_style = "-v2" in style_url or "streets-v2" in style_url or "dark-v2" in style_url or "bright-v2" in style_url
+            has_key_param = "?key=" in style_url or "&key=" in style_url
+            
+            if is_v2_style:
+                # Si es v2 y ya tiene key, no hacer nada más
+                if has_key_param:
                     return migrated, changed
-            # Si no es v2 y no es legacy, añadir key si falta
-            elif "?key=" not in style_url and "&key=" not in style_url:
+                # Si es v2 pero no tiene key, añadirlo
+                separator = "&" if "?" in style_url else "?"
+                migrated["styleUrl"] = f"{style_url}{separator}key={api_key}"
+                changed = True
+                self.logger.info("[config] Added ?key= parameter to MapTiler styleUrl")
+                return migrated, changed
+            
+            # Si no es v2 ni legacy, añadir key si falta
+            if not has_key_param:
                 separator = "&" if "?" in style_url else "?"
                 migrated["styleUrl"] = f"{style_url}{separator}key={api_key}"
                 changed = True
