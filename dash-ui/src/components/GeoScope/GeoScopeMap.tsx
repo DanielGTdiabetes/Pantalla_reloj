@@ -1162,32 +1162,46 @@ export default function GeoScopeMap() {
           }
 
           // Weather Layer (z-index 12, entre radar/satélite y AEMET warnings)
-          const aemetConfig = mergedConfig.aemet;
-          if (aemetConfig?.enabled && aemetConfig?.cap_enabled) {
+          // Leer configuración AEMET desde v2 o v1
+          const configAsV2Init = config as unknown as { version?: number; aemet?: { enabled?: boolean; cap_enabled?: boolean; cache_minutes?: number } };
+          const aemetConfigInit = configAsV2Init.version === 2 
+            ? configAsV2Init.aemet 
+            : mergedConfig.aemet;
+          if (aemetConfigInit?.enabled && aemetConfigInit?.cap_enabled) {
             const weatherLayer = new WeatherLayer({
               enabled: true,
               opacity: 0.3,
-              refreshSeconds: (aemetConfig.cache_minutes ?? 15) * 60,
+              refreshSeconds: (aemetConfigInit.cache_minutes ?? 15) * 60,
             });
             layerRegistry.add(weatherLayer);
             weatherLayerRef.current = weatherLayer;
           }
 
           // AEMET Warnings Layer (z-index 15, entre radar y vuelos)
-          if (aemetConfig?.enabled && aemetConfig?.cap_enabled) {
+          if (aemetConfigInit?.enabled && aemetConfigInit?.cap_enabled) {
             const aemetWarningsLayer = new AEMETWarningsLayer({
               enabled: true,
               opacity: 0.6,
               minSeverity: "moderate",
-              refreshSeconds: (aemetConfig.cache_minutes ?? 15) * 60,
+              refreshSeconds: (aemetConfigInit.cache_minutes ?? 15) * 60,
             });
             layerRegistry.add(aemetWarningsLayer);
             aemetWarningsLayerRef.current = aemetWarningsLayer;
           }
 
           // AircraftLayer
-          const flightsConfig = mergedConfig.layers.flights;
-          const openskyConfig = mergedConfig.opensky;
+          // Leer configuración desde v2 o v1
+          const configAsV2Init = config as unknown as { 
+            version?: number; 
+            layers?: { flights?: typeof mergedConfig.layers.flights }; 
+            opensky?: typeof mergedConfig.opensky;
+          };
+          const flightsConfig = configAsV2Init.version === 2 && configAsV2Init.layers?.flights
+            ? configAsV2Init.layers.flights
+            : mergedConfig.layers.flights;
+          const openskyConfig = configAsV2Init.version === 2 && configAsV2Init.opensky
+            ? configAsV2Init.opensky
+            : mergedConfig.opensky;
 
           const initializeAircraftLayer = async () => {
             let spriteAvailable = false;
@@ -1219,7 +1233,14 @@ export default function GeoScopeMap() {
           void initializeAircraftLayer();
 
           // ShipsLayer
-          const shipsConfig = mergedConfig.layers.ships;
+          // Leer configuración desde v2 o v1
+          const configAsV2ShipsInit = config as unknown as { 
+            version?: number; 
+            layers?: { ships?: typeof mergedConfig.layers.ships };
+          };
+          const shipsConfig = configAsV2ShipsInit.version === 2 && configAsV2ShipsInit.layers?.ships
+            ? configAsV2ShipsInit.layers.ships
+            : mergedConfig.layers.ships;
           let spriteAvailableShips = false;
           try {
             const style = map.getStyle() as StyleSpecification | undefined;
@@ -1763,9 +1784,26 @@ export default function GeoScopeMap() {
     }
 
     const merged = withConfigDefaults(config);
-    const flightsConfig = merged.layers.flights;
-    const shipsConfig = merged.layers.ships;
-    const openskyConfig = merged.opensky;
+    
+    // Leer configuración desde v2 o v1
+    const configAsV2Update = config as unknown as { 
+      version?: number; 
+      layers?: { 
+        flights?: typeof merged.layers.flights;
+        ships?: typeof merged.layers.ships;
+      }; 
+      opensky?: typeof merged.opensky;
+    };
+    
+    const flightsConfig = configAsV2Update.version === 2 && configAsV2Update.layers?.flights
+      ? configAsV2Update.layers.flights
+      : merged.layers.flights;
+    const shipsConfig = configAsV2Update.version === 2 && configAsV2Update.layers?.ships
+      ? configAsV2Update.layers.ships
+      : merged.layers.ships;
+    const openskyConfig = configAsV2Update.version === 2 && configAsV2Update.opensky
+      ? configAsV2Update.opensky
+      : merged.opensky;
 
     // Actualizar AircraftLayer
     const aircraftLayer = aircraftLayerRef.current;
@@ -1792,9 +1830,14 @@ export default function GeoScopeMap() {
       shipsLayer.setSymbolOptions(shipsConfig.symbol);
     }
 
-    // Actualizar Weather Layer
+    // Actualizar Weather Layer y AEMET Warnings Layer
+    // Leer configuración AEMET desde v2 o v1
+    const configAsV2 = config as unknown as { version?: number; aemet?: { enabled?: boolean; cap_enabled?: boolean; cache_minutes?: number } };
+    const aemetConfig = configAsV2.version === 2 
+      ? configAsV2.aemet 
+      : merged.aemet;
+    
     const weatherLayer = weatherLayerRef.current;
-    const aemetConfig = merged.aemet;
     if (weatherLayer && aemetConfig?.enabled && aemetConfig?.cap_enabled) {
       weatherLayer.setEnabled(true);
       weatherLayer.setOpacity(0.3);

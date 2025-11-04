@@ -101,39 +101,42 @@ export function useConfig() {
         cfg = await getConfig();
       }
       
-      let processedData = isV2 
-        ? (withConfigDefaultsV2(cfg as unknown as AppConfigV2) as unknown as AppConfig)
-        : withConfigDefaults((cfg ?? {}) as AppConfig);
+      let processedData: AppConfig;
       
-      // Mapear ui_global → layers.global si viene de V2
       if (isV2 && cfg) {
-        const v2Config = cfg as unknown as AppConfigV2;
-        if (v2Config.ui_global) {
-          processedData = {
-            ...processedData,
-            layers: {
-              ...processedData.layers,
-              global: {
-                satellite: {
-                  enabled: v2Config.ui_global.satellite?.enabled ?? true,
-                  provider: "gibs" as const,
-                  refresh_minutes: 10,
-                  history_minutes: 90,
-                  frame_step: 10,
-                  opacity: v2Config.ui_global.satellite?.opacity ?? 1.0,
-                },
-                radar: {
-                  enabled: v2Config.ui_global.radar?.enabled ?? false,
-                  provider: v2Config.ui_global.radar?.provider === "aemet" ? "rainviewer" as const : "rainviewer" as const,
-                  refresh_minutes: 5,
-                  history_minutes: 90,
-                  frame_step: 5,
-                  opacity: 0.7,
-                },
+        // Procesar v2 preservando la estructura completa
+        const v2Config = withConfigDefaultsV2(cfg as unknown as AppConfigV2);
+        // Preservar ui_map y version en processedData para que las comparaciones funcionen
+        processedData = {
+          ...(v2Config as unknown as AppConfig),
+          version: 2,
+          ui_map: v2Config.ui_map,
+          ui_global: v2Config.ui_global,
+          // Mapear ui_global → layers.global para compatibilidad con código legacy
+          layers: {
+            ...(v2Config.layers as unknown as AppConfig["layers"]),
+            global: {
+              satellite: {
+                enabled: v2Config.ui_global.satellite?.enabled ?? true,
+                provider: "gibs" as const,
+                refresh_minutes: 10,
+                history_minutes: 90,
+                frame_step: 10,
+                opacity: v2Config.ui_global.satellite?.opacity ?? 1.0,
+              },
+              radar: {
+                enabled: v2Config.ui_global.radar?.enabled ?? false,
+                provider: v2Config.ui_global.radar?.provider === "aemet" ? "rainviewer" as const : "rainviewer" as const,
+                refresh_minutes: 5,
+                history_minutes: 90,
+                frame_step: 5,
+                opacity: 0.7,
               },
             },
-          };
-        }
+          },
+        } as AppConfig & { version: number; ui_map: AppConfigV2["ui_map"]; ui_global: AppConfigV2["ui_global"] };
+      } else {
+        processedData = withConfigDefaults((cfg ?? {}) as AppConfig);
       }
       
       setData((prev) => {
@@ -143,27 +146,57 @@ export function useConfig() {
         }
 
         // Comparar configuración de mapa (v2 o v1)
-        const prevMapConfig = {
-          provider: prev.ui?.map?.provider,
-          style: prev.ui?.map?.style,
-          xyz: prev.ui?.map?.xyz,
-          fixed: prev.ui?.map?.fixed,
-          viewMode: prev.ui?.map?.viewMode,
-        };
-        const newMapConfig = {
-          provider: newData.ui?.map?.provider,
-          style: newData.ui?.map?.style,
-          xyz: newData.ui?.map?.xyz,
-          fixed: newData.ui?.map?.fixed,
-          viewMode: newData.ui?.map?.viewMode,
-        };
+        // Para v2, usar ui_map; para v1, usar ui.map
+        const prevAsV2 = prev as unknown as AppConfigV2;
+        const newAsV2 = newData as unknown as AppConfigV2;
+        
+        const isPrevV2 = prevAsV2.version === 2 && prevAsV2.ui_map;
+        const isNewV2 = newAsV2.version === 2 && newAsV2.ui_map;
+        
+        let prevMapConfig: Record<string, unknown>;
+        let newMapConfig: Record<string, unknown>;
+        
+        if (isPrevV2 && isNewV2) {
+          // Comparar v2
+          prevMapConfig = {
+            provider: prevAsV2.ui_map?.provider,
+            style: prevAsV2.ui_map?.maptiler?.styleUrl || prevAsV2.ui_map?.customXyz?.tileUrl || prevAsV2.ui_map?.local?.tileUrl,
+            fixed: prevAsV2.ui_map?.fixed,
+            viewMode: prevAsV2.ui_map?.viewMode,
+          };
+          newMapConfig = {
+            provider: newAsV2.ui_map?.provider,
+            style: newAsV2.ui_map?.maptiler?.styleUrl || newAsV2.ui_map?.customXyz?.tileUrl || newAsV2.ui_map?.local?.tileUrl,
+            fixed: newAsV2.ui_map?.fixed,
+            viewMode: newAsV2.ui_map?.viewMode,
+          };
+        } else {
+          // Comparar v1 (legacy)
+          prevMapConfig = {
+            provider: prev.ui?.map?.provider,
+            style: prev.ui?.map?.style,
+            xyz: prev.ui?.map?.xyz,
+            fixed: prev.ui?.map?.fixed,
+            viewMode: prev.ui?.map?.viewMode,
+          };
+          newMapConfig = {
+            provider: newData.ui?.map?.provider,
+            style: newData.ui?.map?.style,
+            xyz: newData.ui?.map?.xyz,
+            fixed: newData.ui?.map?.fixed,
+            viewMode: newData.ui?.map?.viewMode,
+          };
+        }
 
         const prevJson = JSON.stringify(prevMapConfig);
         const newJson = JSON.stringify(newMapConfig);
         const mapConfigChanged = prevJson !== newJson;
 
         if (mapConfigChanged) {
-          console.log("[useConfig] Detected map config change");
+          console.log("[useConfig] Detected map config change", {
+            prev: prevMapConfig,
+            new: newMapConfig,
+          });
         }
 
         const prevDescriptor = extractMapHotSwapDescriptor(prev);
