@@ -92,6 +92,7 @@ from .services.opensky_service import OpenSkyService
 from .services.ships_service import AISStreamService
 from .services.aemet_service import fetch_aemet_warnings, AEMETServiceError
 from .services.blitzortung_service import BlitzortungService, LightningStrike
+from .services import ephemerides
 from .config_migrator import migrate_config_to_v2, migrate_v1_to_v2, apply_postal_geocoding
 from .rate_limiter import check_rate_limit
 
@@ -206,6 +207,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Registrar routers
+app.include_router(ephemerides.router)
+
 
 def _ensure_ics_storage_directory() -> None:
     """Asegurar que el directorio de almacenamiento ICS existe con permisos adecuados."""
@@ -247,6 +251,8 @@ def _ensure_ics_storage_directory() -> None:
 def _startup_services() -> None:
     """Inicializar servicios y directorios al inicio."""
     _ensure_ics_storage_directory()
+    # Inicializar caché del servicio de efemérides
+    ephemerides.init_cache(cache_store)
     # Otros servicios se inicializan en otro evento startup más abajo
 
 
