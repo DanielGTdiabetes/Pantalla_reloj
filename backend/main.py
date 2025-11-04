@@ -8,6 +8,7 @@ import re
 import subprocess
 import tempfile
 import time
+import traceback
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -38,6 +39,7 @@ from .config_store import (
     ICS_STORAGE_DIR,
     ICS_STORAGE_PATH,
     CalendarValidationError,
+    ConfigWriteError,
     deep_merge,
     default_layers_if_missing,
     default_panels_if_missing,
@@ -2345,14 +2347,34 @@ async def save_config(request: Request) -> JSONResponse:
             ) from exc
 
         # Guardar config normalizado
+        # Calcular tamaño del payload antes de guardar
+        config_size = len(json.dumps(merged, ensure_ascii=False).encode('utf-8'))
+        logger.info(
+            "[config] Will save config to %s (size=%d bytes)",
+            config_manager.config_file,
+            config_size,
+        )
+        
         try:
             write_config_atomic(merged, config_manager.config_file)
             logger.info(
                 "[config] Configuration persisted atomically to %s",
                 config_manager.config_file,
             )
+        except ConfigWriteError as write_exc:
+            # ConfigWriteError ya tiene logging completo con traceback
+            raise HTTPException(
+                status_code=500,
+                detail={"error": "config write failed"},
+            ) from write_exc
         except (PermissionError, OSError) as write_exc:
-            logger.error("[config] Failed to write config atomically: %s", write_exc)
+            # Log con traceback completo
+            traceback_str = traceback.format_exc()
+            logger.error(
+                "[config] Failed to write config atomically: %s\n%s",
+                write_exc,
+                traceback_str,
+            )
             raise HTTPException(
                 status_code=500,
                 detail={"error": "config write failed"},
@@ -2420,14 +2442,32 @@ async def save_config(request: Request) -> JSONResponse:
                 "field": field_path,
             },
         ) from exc
+    except ConfigWriteError as exc:
+        # ConfigWriteError ya tiene logging completo con traceback
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "config write failed"},
+        ) from exc
     except (PermissionError, OSError) as exc:
-        logger.error("[config] Failed to persist configuration: %s", exc)
+        # Log con traceback completo
+        traceback_str = traceback.format_exc()
+        logger.error(
+            "[config] Failed to persist configuration: %s\n%s",
+            exc,
+            traceback_str,
+        )
         raise HTTPException(
             status_code=500,
             detail={"error": "config write failed"},
         ) from exc
     except Exception as exc:  # noqa: BLE001
-        logger.error("[config] Unexpected error: %s", exc)
+        # Log con traceback completo
+        traceback_str = traceback.format_exc()
+        logger.error(
+            "[config] Unexpected error: %s\n%s",
+            exc,
+            traceback_str,
+        )
         raise HTTPException(
             status_code=500,
             detail={"error": "config write failed"},

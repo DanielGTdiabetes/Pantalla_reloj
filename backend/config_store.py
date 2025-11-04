@@ -4,6 +4,8 @@ import json
 import logging
 import os
 import re
+import time
+import traceback
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
@@ -24,6 +26,12 @@ class CalendarValidationError(Exception):
     def __init__(self, message: str, missing: Optional[Iterable[str]] = None) -> None:
         super().__init__(message)
         self.missing = list(missing or [])
+
+
+class ConfigWriteError(Exception):
+    """Raised when configuration write fails."""
+
+    pass
 
 
 def load_raw_config(path: Path | None = None) -> Dict[str, Any]:
@@ -249,42 +257,79 @@ def validate_calendar_provider(
 
 
 def write_config_atomic(config: Dict[str, Any], path: Path | None = None) -> None:
-    """Persist configuration atomically using tmp+fsync+rename."""
-
+    """Persist configuration atomically using tmp+fsync+rename.
+    
+    Args:
+        config: Configuration dictionary to write
+        path: Target path (defaults to CONFIG_PATH)
+        
+    Raises:
+        ConfigWriteError: If write fails for any reason
+    """
     config_path = path or CONFIG_PATH
+    config_path = config_path.resolve()  # Ensure absolute path
+    
+    # Ensure parent directory exists
     config_path.parent.mkdir(parents=True, exist_ok=True)
-
+    
+    # Get ownership from existing file if it exists
     try:
         stat_info = config_path.stat()
         uid, gid = stat_info.st_uid, stat_info.st_gid
     except FileNotFoundError:
         uid = gid = None
-
+    
+    # Create temporary file with safe name: .config.json.tmp-<pid>-<timestamp>
+    pid = os.getpid()
+    timestamp = int(time.time() * 1000000)  # microseconds
+    tmp_name = f".{config_path.name}.tmp-{pid}-{timestamp}"
+    tmp_path = config_path.parent / tmp_name
+    tmp_path_str = str(tmp_path)
+    
     tmp_fd = None
-    tmp_path: Optional[str] = None
+    dir_fd = None
     try:
-        tmp_fd, tmp_path = os.mkstemp(
-            dir=str(config_path.parent),
-            prefix=config_path.name + ".",
-            suffix=".tmp",
+        # Create temporary file in the same directory as final
+        tmp_fd = os.open(
+            tmp_path_str,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o644,  # Set permissions immediately
         )
-        with os.fdopen(tmp_fd, "w", encoding="utf-8") as handle:
-            json.dump(config, handle, indent=2, ensure_ascii=False)
-            handle.flush()
-            os.fsync(handle.fileno())
+        
+        # Serialize config to JSON
+        json_bytes = json.dumps(
+            config,
+            ensure_ascii=False,
+            separators=(',', ':'),
+        ).encode('utf-8')
+        
+        # Write using os.write
+        written = 0
+        while written < len(json_bytes):
+            chunk = os.write(tmp_fd, json_bytes[written:])
+            written += chunk
+        
+        # Sync file data to disk
+        os.fsync(tmp_fd)
+        
+        # Open directory fd for fsync
+        dir_fd = os.open(str(config_path.parent), os.O_RDONLY)
+        
+        # Sync directory metadata
+        os.fsync(dir_fd)
+        
+        # Close dir_fd before replace
+        os.close(dir_fd)
+        dir_fd = None
+        
+        # Close tmp_fd before replace
+        os.close(tmp_fd)
         tmp_fd = None
-
-        os.replace(tmp_path, config_path)
-
-        try:
-            dir_fd = os.open(str(config_path.parent), os.O_RDONLY)
-            try:
-                os.fsync(dir_fd)
-            finally:
-                os.close(dir_fd)
-        except OSError as exc:
-            LOGGER.debug("Could not fsync directory %s: %s", config_path.parent, exc)
-
+        
+        # Atomic replace
+        os.replace(tmp_path_str, str(config_path))
+        
+        # Restore ownership if we had it
         if uid is not None or gid is not None:
             try:
                 os.chown(
@@ -294,20 +339,54 @@ def write_config_atomic(config: Dict[str, Any], path: Path | None = None) -> Non
                 )
             except OSError as exc:
                 LOGGER.debug("Could not chown %s to %s:%s: %s", config_path, uid, gid, exc)
-
+        
+        # Ensure final permissions
         try:
             os.chmod(config_path, 0o644)
         except OSError as exc:
             LOGGER.debug("Could not chmod %s to 0644: %s", config_path, exc)
+        
+    except Exception as exc:
+        # Log full error details
+        exc_type = type(exc).__name__
+        exc_msg = str(exc)
+        traceback_str = traceback.format_exc()
+        
+        LOGGER.error(
+            "[config] Failed to write config atomically: final=%s, tmp=%s, type=%s, msg=%s\n%s",
+            config_path,
+            tmp_path_str,
+            exc_type,
+            exc_msg,
+            traceback_str,
+        )
+        
+        # Clean up temporary file if it exists
+        if tmp_path.exists():
+            try:
+                os.unlink(tmp_path_str)
+            except OSError:
+                pass
+        
+        # Re-raise as ConfigWriteError
+        raise ConfigWriteError(f"Failed to write config: {exc_msg}") from exc
+        
     finally:
+        # Cleanup: close file descriptors
         if tmp_fd is not None:
             try:
                 os.close(tmp_fd)
             except OSError:
                 pass
-        if tmp_path is not None:
+        if dir_fd is not None:
             try:
-                os.unlink(tmp_path)
+                os.close(dir_fd)
+            except OSError:
+                pass
+        # Cleanup: remove temporary file if it still exists
+        if tmp_path.exists():
+            try:
+                os.unlink(tmp_path_str)
             except OSError:
                 pass
 
