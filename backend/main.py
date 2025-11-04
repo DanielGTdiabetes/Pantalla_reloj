@@ -94,6 +94,7 @@ from .services.ships_service import AISStreamService
 from .services.aemet_service import fetch_aemet_warnings, AEMETServiceError
 from .services.blitzortung_service import BlitzortungService, LightningStrike
 from .services import ephemerides
+from .services.tests import TEST_FUNCTIONS
 from .config_migrator import migrate_config_to_v2, migrate_v1_to_v2, apply_postal_geocoding
 from .rate_limiter import check_rate_limit
 
@@ -2691,6 +2692,173 @@ async def save_config(request: Request) -> JSONResponse:
 
     # Devolver config completo normalizado (recargado desde disco)
     return JSONResponse(content=persisted_config)
+
+
+@app.patch("/api/config/group/{group_name}")
+async def save_config_group(group_name: str, request: Request) -> JSONResponse:
+    """
+    Guarda un grupo específico de configuración.
+    Hace deep-merge solo del subobjeto del grupo.
+    
+    Args:
+        group_name: Nombre del grupo (map, aemet, weather, etc.)
+        request: Request con el payload JSON del grupo
+        
+    Returns:
+        JSONResponse con la configuración completa actualizada
+    """
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="Empty payload")
+    
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(exc)}")
+    
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Payload must be a JSON object")
+    
+    logger.info("[config] PATCH /api/config/group/%s", group_name)
+    
+    # Leer configuración actual desde disco
+    try:
+        current_config = read_json(CONFIG_PATH)
+    except FileNotFoundError:
+        # Si no existe, usar defaults
+        current_config = _defaults_json()
+    except Exception as e:
+        logger.error("[config] Failed to read current config: %s", e)
+        raise HTTPException(status_code=500, detail=f"Failed to read config: {str(e)}")
+    
+    # Hacer deep-merge solo del grupo
+    merged_config = deep_merge(current_config, {group_name: payload})
+    
+    # Validar configuración completa
+    try:
+        config_v2 = AppConfigV2.model_validate(merged_config)
+    except ValidationError as exc:
+        logger.warning("[config] Validation error: %s", exc.errors())
+        first_error = exc.errors()[0] if exc.errors() else {}
+        field_path = ".".join(str(x) for x in first_error.get("loc", []))
+        error_msg = first_error.get("msg", "Validation failed")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": error_msg,
+                "field": field_path,
+            },
+        ) from exc
+    
+    # Guardar atómicamente
+    try:
+        write_json(CONFIG_PATH, merged_config)
+        logger.info("[config] Group '%s' saved successfully", group_name)
+    except Exception as e:
+        logger.error("[config] Failed to save config: %s", e)
+        raise HTTPException(status_code=500, detail=f"Failed to save config: {str(e)}")
+    
+    # Hot-reload global_config
+    try:
+        global global_config
+        global_config = load_effective_config()
+        logger.info("[config] Hot-reloaded global_config after group '%s' save", group_name)
+    except Exception as reload_exc:
+        logger.warning("[config] Failed to hot-reload global_config: %s", reload_exc)
+    
+    # Recargar configuración desde disco para devolver
+    try:
+        persisted_config = read_json(CONFIG_PATH)
+    except Exception as reload_exc:
+        logger.warning("[config] Failed to reload config after save: %s", reload_exc)
+        persisted_config = merged_config
+    
+    return JSONResponse(content=persisted_config)
+
+
+@app.post("/api/test/{test_name}")
+async def test_config_group(test_name: str, request: Request) -> JSONResponse:
+    """
+    Ejecuta un test para un grupo de configuración.
+    
+    Args:
+        test_name: Nombre del test (map, aemet, weather, etc.)
+        request: Request opcional con configuración del grupo a testear
+        
+    Returns:
+        JSONResponse con resultado del test
+    """
+    logger.info("[test] POST /api/test/%s", test_name)
+    
+    # Obtener función de test
+    test_func = TEST_FUNCTIONS.get(test_name)
+    if not test_func:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown test: {test_name}. Available: {', '.join(TEST_FUNCTIONS.keys())}"
+        )
+    
+    # Obtener configuración del grupo desde disco o desde request body
+    group_config = {}
+    try:
+        body = await request.body()
+        if body:
+            try:
+                payload = json.loads(body)
+                if isinstance(payload, dict):
+                    group_config = payload
+            except json.JSONDecodeError:
+                pass  # Si no es JSON válido, usar configuración de disco
+    except Exception:
+        pass
+    
+    # Si no viene en body, leer desde disco
+    if not group_config:
+        try:
+            current_config = read_json(CONFIG_PATH)
+            # Mapear nombres de grupos a claves en config
+            group_key_map = {
+                "map": "ui_map",
+                "radar": "aemet",
+                "aemet": "aemet",
+                "weather": "weather",
+                "news": "news",
+                "astronomy": "astronomy",
+                "ephemerides": "ephemerides",
+                "calendar": "calendar",
+                "storm": "storm",
+                "ships": "layers",
+                "flights": "layers",
+            }
+            
+            config_key = group_key_map.get(test_name)
+            if config_key:
+                if config_key == "layers":
+                    if test_name == "ships":
+                        group_config = current_config.get("layers", {}).get("ships", {})
+                    elif test_name == "flights":
+                        group_config = current_config.get("layers", {}).get("flights", {}).get("opensky", {})
+                else:
+                    group_config = current_config.get(config_key, {})
+        except FileNotFoundError:
+            group_config = {}
+        except Exception as e:
+            logger.warning("[test] Failed to read config from disk: %s", e)
+            group_config = {}
+    
+    # Ejecutar test
+    try:
+        result = await test_func(group_config)
+        return JSONResponse(content=result)
+    except Exception as e:
+        logger.exception("[test] Error executing test %s", test_name)
+        return JSONResponse(
+            content={
+                "ok": False,
+                "detail": f"Test execution error: {str(e)}"
+            },
+            status_code=500
+        )
 
 
 @app.post("/api/map/reset", response_model=MapResetResponse)
