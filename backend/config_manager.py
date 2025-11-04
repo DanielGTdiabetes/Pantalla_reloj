@@ -593,54 +593,83 @@ class ConfigManager:
         if "ui_map" in migrated and isinstance(migrated["ui_map"], dict):
             ui_map = migrated["ui_map"]
             
-            # Normalizar provider legacy
-            provider_old = ui_map.get("provider", "xyz")
-            if provider_old in ["xyz", "osm", "local"]:
-                provider_new = "local_raster_xyz"
-                if provider_old != provider_new:
-                    ui_map["provider"] = provider_new
-                    changed = True
-                    self.logger.info("[config] Migrated ui_map.provider from '%s' to '%s'", provider_old, provider_new)
-            elif provider_old == "maptiler":
-                provider_new = "maptiler_vector"
-                ui_map["provider"] = provider_new
-                changed = True
-                self.logger.info("[config] Migrated ui_map.provider from 'maptiler' to 'maptiler_vector'")
+            # Detectar provider actual (sin default agresivo)
+            provider_old = str(ui_map.get("provider", "")).strip() or ""
             
-            # Migrar estructura según provider
-            provider = ui_map.get("provider", "local_raster_xyz")
+            # Detectar key de MapTiler en v1 o v2
+            maptiler_api_key_v1 = None
+            if isinstance(data.get("map"), dict):
+                maptiler_api_key_v1 = data["map"].get("maptiler_api_key")
+            
+            maptiler_api_key_v2 = None
+            if isinstance(ui_map.get("maptiler"), dict):
+                maptiler_api_key_v2 = ui_map["maptiler"].get("apiKey") or ui_map["maptiler"].get("api_key")
+            
+            has_maptiler_key = bool(
+                (maptiler_api_key_v1 and str(maptiler_api_key_v1).strip()) or
+                (maptiler_api_key_v2 and str(maptiler_api_key_v2).strip())
+            )
+            
+            # 1) Si hay key de MapTiler, imponemos maptiler_vector
+            if has_maptiler_key:
+                if provider_old != "maptiler_vector":
+                    ui_map["provider"] = "maptiler_vector"
+                    changed = True
+                    self.logger.info("[config] Using maptiler_vector due to present MapTiler API key")
+            # 2) Si NO hay key y hay provider válido, respetarlo (no tocar)
+            elif provider_old:
+                # Migrar nombre legacy "maptiler" → "maptiler_vector"
+                if provider_old == "maptiler":
+                    ui_map["provider"] = "maptiler_vector"
+                    changed = True
+                    self.logger.info("[config] Migrated ui_map.provider from 'maptiler' to 'maptiler_vector'")
+                # Otros providers válidos se respetan sin cambios
+            # 3) Si no hay nada, fallback a local_raster_xyz
+            else:
+                if ui_map.get("provider") != "local_raster_xyz":
+                    ui_map["provider"] = "local_raster_xyz"
+                    changed = True
+                    self.logger.info("[config] Defaulting ui_map.provider to local_raster_xyz (no provider/key found)")
+            
+            # Migrar estructura según provider (sin forzar cambio de provider aquí)
+            provider = str(ui_map.get("provider") or "").strip()
             
             # Si tiene xyz/xyz legacy, migrar a local o customXyz según el caso
+            # Solo cambia provider si está vacío
             if "xyz" in ui_map and isinstance(ui_map["xyz"], dict):
                 xyz_old = ui_map["xyz"]
-                tile_url = xyz_old.get("urlTemplate")
+                tile_url = (xyz_old.get("urlTemplate") or "").strip()
+                provider_cur = str(ui_map.get("provider") or "").strip()
                 
-                # Si es OSM, usar local_raster_xyz
-                if tile_url and "openstreetmap" in tile_url.lower():
-                    if provider != "local_raster_xyz":
-                        ui_map["provider"] = "local_raster_xyz"
-                        changed = True
-                    if "local" not in ui_map:
-                        ui_map["local"] = {
-                            "tileUrl": tile_url,
-                            "minzoom": xyz_old.get("minzoom", 0),
-                            "maxzoom": xyz_old.get("maxzoom", 19)
-                        }
-                        changed = True
-                        self.logger.info("[config] Migrated ui_map.xyz to ui_map.local")
-                # Si es otro proveedor, usar customXyz
-                elif tile_url:
-                    if provider != "custom_xyz":
-                        ui_map["provider"] = "custom_xyz"
-                        changed = True
-                    if "customXyz" not in ui_map:
-                        ui_map["customXyz"] = {
-                            "tileUrl": tile_url,
-                            "minzoom": xyz_old.get("minzoom", 0),
-                            "maxzoom": xyz_old.get("maxzoom", 19)
-                        }
-                        changed = True
-                        self.logger.info("[config] Migrated ui_map.xyz to ui_map.customXyz")
+                if tile_url:
+                    # Si es OSM, usar local_raster_xyz (solo si provider está vacío)
+                    if "openstreetmap" in tile_url.lower():
+                        if not provider_cur:
+                            ui_map["provider"] = "local_raster_xyz"
+                            changed = True
+                            self.logger.info("[config] Set provider to local_raster_xyz due to OSM XYZ")
+                        if "local" not in ui_map:
+                            ui_map["local"] = {
+                                "tileUrl": tile_url,
+                                "minzoom": xyz_old.get("minzoom", 0),
+                                "maxzoom": xyz_old.get("maxzoom", 19)
+                            }
+                            changed = True
+                            self.logger.info("[config] Migrated ui_map.xyz to ui_map.local")
+                    # Si es otro proveedor, usar customXyz (solo si provider está vacío)
+                    else:
+                        if not provider_cur:
+                            ui_map["provider"] = "custom_xyz"
+                            changed = True
+                            self.logger.info("[config] Set provider to custom_xyz due to non-OSM XYZ")
+                        if "customXyz" not in ui_map:
+                            ui_map["customXyz"] = {
+                                "tileUrl": tile_url,
+                                "minzoom": xyz_old.get("minzoom", 0),
+                                "maxzoom": xyz_old.get("maxzoom", 19)
+                            }
+                            changed = True
+                            self.logger.info("[config] Migrated ui_map.xyz to ui_map.customXyz")
                 
                 # Eliminar xyz legacy
                 del ui_map["xyz"]
@@ -680,6 +709,7 @@ class ConfigManager:
                     changed = True
             
             # Asegurar que existen los 3 bloques (local, maptiler, customXyz)
+            # Sin cambiar provider aquí
             if "local" not in ui_map:
                 ui_map["local"] = {
                     "tileUrl": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
