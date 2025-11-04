@@ -25,6 +25,7 @@ from threading import Lock
 
 from .cache import CacheStore
 from .config_manager import ConfigManager
+from .services.config_loader import read_json, write_json, merge_defaults
 from .data_sources import (
     calculate_extended_astronomy,
     calculate_moon_phase,
@@ -98,7 +99,93 @@ from .rate_limiter import check_rate_limit
 
 APP_START = datetime.now(timezone.utc)
 logger = configure_logging()
+
+# Configuración de ruta
+CONFIG_PATH = os.getenv("PANTALLA_CONFIG", "/var/lib/pantalla-reloj/config.json")
 config_manager = ConfigManager()
+
+
+def _defaults_json() -> Dict[str, Any]:
+    """
+    Genera defaults a partir del modelo, NO los persiste salvo que no exista archivo.
+    
+    Returns:
+        Diccionario con defaults desde AppConfig()
+    """
+    try:
+        return AppConfig().model_dump(by_alias=True)  # Pydantic v2
+    except AttributeError:
+        return AppConfig().dict(by_alias=True)  # Pydantic v1
+
+
+def load_effective_config() -> AppConfig:
+    """
+    Carga configuración efectiva con prioridad: disco > defaults.
+    
+    Flujo:
+    1. Genera defaults desde modelo (AppConfig())
+    2. Si existe CONFIG_PATH, lee JSON de disco y fusiona con prioridad de disco
+    3. Valida con Pydantic
+    4. Si no existe archivo, inicializa con defaults y opcionalmente crea archivo semilla
+    5. Si hay error de validación, NO falla silenciosamente - lanza excepción
+    
+    Returns:
+        AppConfig validado
+        
+    Raises:
+        FileNotFoundError: Si el archivo no existe (solo si no se puede crear)
+        ValidationError: Si la validación Pydantic falla
+        OSError: Si hay error de lectura/escritura
+    """
+    defaults = _defaults_json()
+    
+    try:
+        # Intentar leer desde disco
+        disk = read_json(CONFIG_PATH)
+        
+        # Fusionar con prioridad de disco
+        merged = merge_defaults(defaults, disk)
+        
+        # Validar con Pydantic
+        try:
+            cfg = AppConfig.model_validate(merged)
+        except AttributeError:
+            cfg = AppConfig.parse_obj(merged)
+        
+        # Contar cuántas claves provinieron de disco
+        disk_keys = len(disk) if isinstance(disk, dict) else 0
+        logger.info(
+            "[config] Loaded from %s (merged with defaults, %d top-level keys from disk)",
+            CONFIG_PATH,
+            disk_keys
+        )
+        return cfg
+        
+    except FileNotFoundError:
+        # Solo si NO hay archivo, inicializa con defaults y (opcional) crea archivo semilla
+        logger.warning("[config] %s not found. Using defaults.", CONFIG_PATH)
+        
+        try:
+            write_json(CONFIG_PATH, defaults)  # seed opcional
+            logger.info("[config] Seeded defaults to %s", CONFIG_PATH)
+        except Exception as e:
+            logger.warning("[config] Could not seed defaults: %s", e)
+        
+        try:
+            return AppConfig.model_validate(defaults)
+        except AttributeError:
+            return AppConfig.parse_obj(defaults)
+            
+    except Exception as e:
+        logger.exception(
+            "[config] Failed to read %s, NOT falling back silently to defaults",
+            CONFIG_PATH
+        )
+        raise
+
+
+# Cargar configuración efectiva al inicio
+global_config = load_effective_config()
 cache_store = CacheStore()
 secret_store = SecretStore()
 opensky_service = OpenSkyService(secret_store, logger)
@@ -1407,7 +1494,7 @@ async def upload_ics_file(
     }
 
     merged = deep_merge(current_raw, incoming)
-    default_layers_if_missing(merged)
+    # NO aplicar defaults aquí - mantener solo lo que está en disco y payload
     provider_final, enabled_final, final_ics_path = resolve_calendar_provider(merged)
     try:
         validate_calendar_provider(provider_final, enabled_final, final_ics_path)
@@ -1495,6 +1582,24 @@ def reload_config() -> Dict[str, Any]:
 def _health_payload_full_helper() -> Dict[str, Any]:
     """Helper para health full que lee config adicional."""
     payload = _health_payload()
+    
+    # Agregar información de configuración (config_source y checksum)
+    import hashlib
+    try:
+        config_raw = read_json(CONFIG_PATH)
+        config_str = json.dumps(config_raw, sort_keys=True)
+        config_checksum = hashlib.sha256(config_str.encode("utf-8")).hexdigest()
+        config_source = "disk"
+    except FileNotFoundError:
+        config_checksum = None
+        config_source = "defaults"
+    except Exception as e:
+        logger.warning("[health] Failed to compute config checksum: %s", e)
+        config_checksum = None
+        config_source = "error"
+    
+    payload["config_source"] = config_source
+    payload["config_checksum"] = config_checksum
     
     config = config_manager.read()
     
@@ -1803,11 +1908,25 @@ def opensky_manual_refresh() -> Dict[str, Any]:
 
 @app.get("/api/config")
 def get_config(request: Request) -> JSONResponse:
-    """Obtiene la configuración v2 actual con headers anti-cache."""
-    logger.info("Fetching configuration v2")
+    """
+    Obtiene la configuración exactamente como está en disco.
+    NO reinyecta defaults para evitar resetear valores.
+    """
+    logger.info("Fetching configuration from disk")
     
-    # Leer/migrar a v2
-    config_v2, was_migrated = _read_config_v2()
+    # Leer JSON crudo de disco (única fuente de verdad)
+    try:
+        disk_config = read_json(CONFIG_PATH)
+    except FileNotFoundError:
+        logger.warning("[config] Config file not found, returning defaults")
+        # Si no existe, devolver defaults (pero no crear archivo desde GET)
+        disk_config = _defaults_json()
+    except Exception as e:
+        logger.error("[config] Failed to read config from disk: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to read config from disk: {str(e)}"
+        )
     
     # Agregar headers anti-cache
     from datetime import datetime
@@ -1820,11 +1939,17 @@ def get_config(request: Request) -> JSONResponse:
     
     # Verificar si el cliente tiene una versión en caché
     if_none_match = request.headers.get("if-none-match")
-    if if_none_match == config_etag and not was_migrated:
+    if if_none_match == config_etag:
         return Response(status_code=304)  # Not Modified
     
-    # Construir respuesta solo con v2 (sin claves v1)
-    public_config = _build_public_config_v2(config_v2)
+    # Construir respuesta desde disco (sin reinyectar defaults)
+    # Si es v2, usar _build_public_config_v2, si no, devolver tal cual
+    try:
+        config_v2, _ = _read_config_v2()
+        public_config = _build_public_config_v2(config_v2)
+    except Exception:
+        # Si no es v2 o hay error, devolver tal cual desde disco
+        public_config = disk_config
     
     # Añadir metadatos de configuración
     config_metadata = config_manager.get_config_metadata()
@@ -2327,9 +2452,8 @@ async def save_config(request: Request) -> JSONResponse:
                     },
                 ) from exc
         
-        # Aplicar defaults
-        default_layers_if_missing(merged)
-        default_panels_if_missing(merged)
+        # NO aplicar defaults aquí - mantener solo lo que está en disco y payload
+        # Los defaults se aplican solo en load_effective_config() al iniciar
         
         # Validar con Pydantic
         try:
@@ -2540,10 +2664,17 @@ async def save_config(request: Request) -> JSONResponse:
         except Exception as cache_exc:  # noqa: BLE001
             logger.debug("[config] Failed to invalidate cache key %s: %s", cache_key, cache_exc)
     
-    # Recargar configuración en runtime
+    # Recargar configuración en runtime (hot-reload)
     try:
         reloaded = reload_runtime_config(config_manager)
         if reloaded:
+            # Recargar global_config desde disco (sin reinyectar defaults)
+            try:
+                global global_config
+                global_config = load_effective_config()
+                logger.info("[config] Hot-reloaded global_config from disk")
+            except Exception as reload_exc:
+                logger.warning("[config] Failed to hot-reload global_config: %s", reload_exc)
             global map_reset_counter
             map_reset_counter += 1
             logger.info("[config] Configuration reloaded in-memory after save (hot-reload)")
