@@ -26,6 +26,7 @@ from threading import Lock
 from .cache import CacheStore
 from .config_manager import ConfigManager
 from .services.config_loader import read_json, write_json, merge_defaults
+from .services.config_sanitize import sanitize_config
 from .data_sources import (
     calculate_extended_astronomy,
     calculate_moon_phase,
@@ -147,16 +148,33 @@ def load_effective_config() -> AppConfig:
         # Fusionar con prioridad de disco
         merged = merge_defaults(defaults, disk)
         
+        # Sanitizar antes de validar (migra valores legacy/inválidos)
+        sanitized = sanitize_config(merged)
+        
         # Validar con Pydantic
         try:
-            cfg = AppConfig.model_validate(merged)
+            cfg = AppConfig.model_validate(sanitized)
         except AttributeError:
-            cfg = AppConfig.parse_obj(merged)
+            cfg = AppConfig.parse_obj(sanitized)
+        
+        # Si sanitized difiere de disk (migración), persiste cambio
+        if sanitized != disk:
+            try:
+                write_json(CONFIG_PATH, sanitized)
+                logger.info(
+                    "[config-migrate] Cambios persistidos en %s (migración de valores legacy)",
+                    CONFIG_PATH
+                )
+            except Exception as e:
+                logger.warning(
+                    "[config-migrate] No se pudo persistir migración: %s",
+                    e
+                )
         
         # Contar cuántas claves provinieron de disco
         disk_keys = len(disk) if isinstance(disk, dict) else 0
         logger.info(
-            "[config] Loaded from %s (merged with defaults, %d top-level keys from disk)",
+            "[config] Loaded from %s (merged with defaults, sanitized, %d top-level keys from disk)",
             CONFIG_PATH,
             disk_keys
         )
@@ -1495,8 +1513,10 @@ async def upload_ics_file(
     }
 
     merged = deep_merge(current_raw, incoming)
+    # Sanitizar antes de validar (migra valores legacy/inválidos)
+    sanitized_ics = sanitize_config(merged)
     # NO aplicar defaults aquí - mantener solo lo que está en disco y payload
-    provider_final, enabled_final, final_ics_path = resolve_calendar_provider(merged)
+    provider_final, enabled_final, final_ics_path = resolve_calendar_provider(sanitized_ics)
     try:
         validate_calendar_provider(provider_final, enabled_final, final_ics_path)
     except CalendarValidationError as exc:
@@ -1507,7 +1527,7 @@ async def upload_ics_file(
         ) from exc
 
     try:
-        write_config_atomic(merged, config_manager.config_file)
+        write_config_atomic(sanitized_ics, config_manager.config_file)
         logger.info("[config] ICS file uploaded and configuration updated: %s", ICS_STORAGE_PATH)
     except (PermissionError, OSError) as exc:
         logger.error("[config] Failed to persist configuration after ICS upload: %s", exc)
@@ -2436,11 +2456,14 @@ async def save_config(request: Request) -> JSONResponse:
             merged["version"] = 2
             logger.info("[config] Forced version=2 in merged config")
         
+        # Sanitizar antes de validar (migra valores legacy/inválidos)
+        sanitized = sanitize_config(merged)
+        
         # Validar y normalizar MapTiler si provider=maptiler_vector
-        if merged.get("ui_map", {}).get("provider") == "maptiler_vector":
+        if sanitized.get("ui_map", {}).get("provider") == "maptiler_vector":
             logger.info("[config] Validating and normalizing MapTiler URLs")
             try:
-                _validate_and_normalize_maptiler(merged)
+                _validate_and_normalize_maptiler(sanitized)
             except HTTPException:
                 raise
             except Exception as exc:  # noqa: BLE001
@@ -2456,9 +2479,9 @@ async def save_config(request: Request) -> JSONResponse:
         # NO aplicar defaults aquí - mantener solo lo que está en disco y payload
         # Los defaults se aplican solo en load_effective_config() al iniciar
         
-        # Validar con Pydantic
+        # Validar con Pydantic (usar sanitized)
         try:
-            config_v2 = AppConfigV2.model_validate(merged)
+            config_v2 = AppConfigV2.model_validate(sanitized)
             config_dict = config_v2.model_dump(mode="json", exclude_none=True)
         except ValidationError as exc:
             logger.warning("[config] Validation error after merge: %s", exc.errors())
@@ -2519,8 +2542,8 @@ async def save_config(request: Request) -> JSONResponse:
             ) from exc
 
         # Guardar config normalizado
-        # Calcular tamaño del payload antes de guardar
-        config_size = len(json.dumps(merged, ensure_ascii=False).encode('utf-8'))
+        # Calcular tamaño del payload antes de guardar (usar sanitized)
+        config_size = len(json.dumps(sanitized, ensure_ascii=False).encode('utf-8'))
         logger.info(
             "[config] Will save config to %s (size=%d bytes)",
             config_manager.config_file,
@@ -2528,7 +2551,7 @@ async def save_config(request: Request) -> JSONResponse:
         )
         
         try:
-            write_config_atomic(merged, config_manager.config_file)
+            write_config_atomic(sanitized, config_manager.config_file)
             logger.info(
                 "[config] Configuration persisted atomically to %s",
                 config_manager.config_file,
@@ -2558,8 +2581,8 @@ async def save_config(request: Request) -> JSONResponse:
             logger.info("[config] Reloaded config from disk after save")
         except (json.JSONDecodeError, OSError) as reload_exc:
             logger.warning("[config] Failed to reload config from disk after save: %s", reload_exc)
-            # Usar merged como fallback
-            persisted_config = merged
+            # Usar sanitized como fallback
+            persisted_config = sanitized
 
         if google_api_key:
             masked_key = _mask_secret(str(google_api_key))
@@ -2734,9 +2757,12 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
     # Hacer deep-merge solo del grupo
     merged_config = deep_merge(current_config, {group_name: payload})
     
-    # Validar configuración completa
+    # Sanitizar antes de validar (migra valores legacy/inválidos)
+    sanitized_config = sanitize_config(merged_config)
+    
+    # Validar configuración completa (usar sanitized)
     try:
-        config_v2 = AppConfigV2.model_validate(merged_config)
+        config_v2 = AppConfigV2.model_validate(sanitized_config)
     except ValidationError as exc:
         logger.warning("[config] Validation error: %s", exc.errors())
         first_error = exc.errors()[0] if exc.errors() else {}
@@ -2750,9 +2776,9 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
             },
         ) from exc
     
-    # Guardar atómicamente
+    # Guardar atómicamente (usar sanitized)
     try:
-        write_json(CONFIG_PATH, merged_config)
+        write_json(CONFIG_PATH, sanitized_config)
         logger.info("[config] Group '%s' saved successfully", group_name)
     except Exception as e:
         logger.error("[config] Failed to save config: %s", e)
@@ -2771,7 +2797,7 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
         persisted_config = read_json(CONFIG_PATH)
     except Exception as reload_exc:
         logger.warning("[config] Failed to reload config after save: %s", reload_exc)
-        persisted_config = merged_config
+        persisted_config = sanitized_config
     
     return JSONResponse(content=persisted_config)
 
