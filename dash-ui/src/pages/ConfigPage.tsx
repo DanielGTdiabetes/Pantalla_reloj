@@ -39,6 +39,16 @@ import {
   type OpenSkyStatus,
   migrateConfig,
   type MigrateConfigResponse,
+  testOpenSky,
+  testAISStream,
+  testAISHub,
+  testWikimedia,
+  testLightning,
+  type OpenSkyTestResponse,
+  type AISStreamTestResponse,
+  type AISHubTestResponse,
+  type WikimediaTestResponse,
+  type LightningTestResponse,
 } from "../lib/api";
 import type { AppConfig, GlobalLayersConfig, MapConfig, XyzConfig } from "../types/config";
 import type { MapConfigV2 } from "../types/config_v2";
@@ -430,6 +440,31 @@ const ConfigPage: React.FC = () => {
   const [historicalEventsUploadResult, setHistoricalEventsUploadResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [historicalEventsPreview, setHistoricalEventsPreview] = useState<HistoricalEventsResponse | null>(null);
   const [loadingHistoricalEventsPreview, setLoadingHistoricalEventsPreview] = useState(false);
+  
+  // Group-specific saving states
+  const [savingMaps, setSavingMaps] = useState(false);
+  const [savingWeather, setSavingWeather] = useState(false);
+  const [savingLightning, setSavingLightning] = useState(false);
+  const [savingAircraft, setSavingAircraft] = useState(false);
+  const [savingShips, setSavingShips] = useState(false);
+  const [savingCalendar, setSavingCalendar] = useState(false);
+  const [savingRotator, setSavingRotator] = useState(false);
+  const [savingNews, setSavingNews] = useState(false);
+  const [savingEphemerides, setSavingEphemerides] = useState(false);
+  const [savingStorm, setSavingStorm] = useState(false);
+  
+  // Group-specific test states (using existing testingOpenSky state)
+  const [openskyTestResult, setOpenSkyTestResult] = useState<OpenSkyTestResponse | null>(null);
+  const [testingAISStream, setTestingAISStream] = useState(false);
+  const [aisstreamTestResult, setAISStreamTestResult] = useState<AISStreamTestResponse | null>(null);
+  const [testingAISHub, setTestingAISHub] = useState(false);
+  const [aishubTestResult, setAISHubTestResult] = useState<AISHubTestResponse | null>(null);
+  const [testingWikimedia, setTestingWikimedia] = useState(false);
+  const [wikimediaTestResult, setWikimediaTestResult] = useState<WikimediaTestResponse | null>(null);
+  const [testingLightning, setTestingLightning] = useState(false);
+  const [lightningTestResult, setLightningTestResult] = useState<LightningTestResponse | null>(null);
+  const [testingOpenWeather, setTestingOpenWeather] = useState(false);
+  const [openWeatherTestResult, setOpenWeatherTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   
   // WiFi state
   const [wifiNetworkList, setWifiNetworkList] = useState<WiFiNetwork[]>([]);
@@ -1581,6 +1616,190 @@ const ConfigPage: React.FC = () => {
     setNewPanel("");
   };
 
+  // Group-specific test functions
+  const handleTestOpenSkyGroup = useCallback(async () => {
+    if (testingOpenSky) {
+      return;
+    }
+    setTestingOpenSky(true);
+    setOpenSkyTestResult(null);
+    try {
+      const result = await testOpenSky();
+      if (!isMountedRef.current) {
+        return;
+      }
+      setOpenSkyTestResult(result);
+      if (result.ok) {
+        setBanner({ kind: "success", text: "OpenSky conectado correctamente" });
+      } else {
+        setBanner({ kind: "error", text: `Error probando OpenSky: ${result.reason || "error desconocido"}` });
+      }
+    } catch (error) {
+      console.error("Failed to test OpenSky:", error);
+      if (isMountedRef.current) {
+        const errorMsg = resolveApiErrorMessage(error, "Error al probar OpenSky");
+        setOpenSkyTestResult({ ok: false, reason: errorMsg });
+        setBanner({ kind: "error", text: errorMsg });
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setTestingOpenSky(false);
+      }
+    }
+  }, [testingOpenSky]);
+
+  const handleTestAISStream = useCallback(async () => {
+    if (testingAISStream) {
+      return;
+    }
+    setTestingAISStream(true);
+    setAISStreamTestResult(null);
+    try {
+      const result = await testAISStream();
+      if (!isMountedRef.current) {
+        return;
+      }
+      setAISStreamTestResult(result);
+      if (result.ok) {
+        setBanner({ kind: "success", text: `AISStream conectado correctamente (${result.features_count || 0} features)` });
+      } else {
+        setBanner({ kind: "error", text: `Error probando AISStream: ${result.reason || "error desconocido"}` });
+      }
+    } catch (error) {
+      console.error("Failed to test AISStream:", error);
+      if (isMountedRef.current) {
+        const errorMsg = resolveApiErrorMessage(error, "Error al probar AISStream");
+        setAISStreamTestResult({ ok: false, reason: errorMsg });
+        setBanner({ kind: "error", text: errorMsg });
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setTestingAISStream(false);
+      }
+    }
+  }, [testingAISStream]);
+
+  const handleTestAISHub = useCallback(async () => {
+    if (testingAISHub) {
+      return;
+    }
+    setTestingAISHub(true);
+    setAISHubTestResult(null);
+    try {
+      const result = await testAISHub();
+      if (!isMountedRef.current) {
+        return;
+      }
+      setAISHubTestResult(result);
+      if (result.ok) {
+        setBanner({ kind: "success", text: "AISHub conectado correctamente" });
+      } else {
+        setBanner({ kind: "error", text: `Error probando AISHub: ${result.reason || "error desconocido"}` });
+      }
+    } catch (error) {
+      console.error("Failed to test AISHub:", error);
+      if (isMountedRef.current) {
+        const errorMsg = resolveApiErrorMessage(error, "Error al probar AISHub");
+        setAISHubTestResult({ ok: false, reason: errorMsg });
+        setBanner({ kind: "error", text: errorMsg });
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setTestingAISHub(false);
+      }
+    }
+  }, [testingAISHub]);
+
+  const handleTestWikimedia = useCallback(async () => {
+    if (testingWikimedia) {
+      return;
+    }
+    setTestingWikimedia(true);
+    setWikimediaTestResult(null);
+    try {
+      const result = await testWikimedia();
+      if (!isMountedRef.current) {
+        return;
+      }
+      setWikimediaTestResult(result);
+      if (result.ok) {
+        setBanner({ kind: "success", text: `Wikimedia API conectada correctamente (${result.count || 0} items)` });
+      } else {
+        setBanner({ kind: "error", text: `Error probando Wikimedia: ${result.reason || "error desconocido"}` });
+      }
+    } catch (error) {
+      console.error("Failed to test Wikimedia:", error);
+      if (isMountedRef.current) {
+        const errorMsg = resolveApiErrorMessage(error, "Error al probar Wikimedia");
+        setWikimediaTestResult({ ok: false, reason: errorMsg });
+        setBanner({ kind: "error", text: errorMsg });
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setTestingWikimedia(false);
+      }
+    }
+  }, [testingWikimedia]);
+
+  const handleTestLightning = useCallback(async () => {
+    if (testingLightning) {
+      return;
+    }
+    setTestingLightning(true);
+    setLightningTestResult(null);
+    try {
+      const result = await testLightning();
+      if (!isMountedRef.current) {
+        return;
+      }
+      setLightningTestResult(result);
+      if (result.ok) {
+        setBanner({ kind: "success", text: `Blitzortung conectado correctamente (${result.features_count || 0} features)` });
+      } else {
+        setBanner({ kind: "error", text: `Error probando Blitzortung: ${result.reason || "error desconocido"}` });
+      }
+    } catch (error) {
+      console.error("Failed to test Lightning:", error);
+      if (isMountedRef.current) {
+        const errorMsg = resolveApiErrorMessage(error, "Error al probar Blitzortung");
+        setLightningTestResult({ ok: false, reason: errorMsg });
+        setBanner({ kind: "error", text: errorMsg });
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setTestingLightning(false);
+      }
+    }
+  }, [testingLightning]);
+
+  const handleTestOpenWeather = useCallback(async () => {
+    if (testingOpenWeather) {
+      return;
+    }
+    setTestingOpenWeather(true);
+    setOpenWeatherTestResult(null);
+    try {
+      // Test OpenWeatherMap by checking if radar layer can be loaded
+      const response = await getShipsLayer();
+      if (!isMountedRef.current) {
+        return;
+      }
+      setOpenWeatherTestResult({ ok: true, message: "OpenWeatherMap conectado correctamente" });
+      setBanner({ kind: "success", text: "OpenWeatherMap conectado correctamente" });
+    } catch (error) {
+      console.error("Failed to test OpenWeatherMap:", error);
+      if (isMountedRef.current) {
+        const errorMsg = resolveApiErrorMessage(error, "Error al probar OpenWeatherMap");
+        setOpenWeatherTestResult({ ok: false, message: errorMsg });
+        setBanner({ kind: "error", text: errorMsg });
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setTestingOpenWeather(false);
+      }
+    }
+  }, [testingOpenWeather]);
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!isReady || saving) {
@@ -2354,9 +2573,30 @@ const ConfigPage: React.FC = () => {
           </div>
         )}
 
-        {/* Botón para guardar solo la configuración del mapa */}
+        {/* Grupo 1: Configuración de Mapas - Botones de acción */}
         {configVersion === 2 && (
           <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginBottom: "24px" }}>
+            {(form as unknown as { ui_map?: MapConfigV2 }).ui_map?.provider === "maptiler_vector" && (
+              <button
+                type="button"
+                className="config-button secondary"
+                onClick={async () => {
+                  // Test MapTiler connection
+                  const v2Form = form as unknown as { ui_map?: MapConfigV2 };
+                  const apiKey = v2Form.ui_map?.maptiler?.apiKey;
+                  const styleUrl = v2Form.ui_map?.maptiler?.styleUrl;
+                  if (!apiKey || !styleUrl) {
+                    setBanner({ kind: "error", text: "Introduce API key y Style URL antes de probar MapTiler" });
+                    return;
+                  }
+                  setBanner({ kind: "success", text: "MapTiler: Verificar conexión en el mapa después de guardar" });
+                }}
+                disabled={disableInputs}
+                style={{ marginRight: "8px" }}
+              >
+                Probar MapTiler
+              </button>
+            )}
             <button
               type="button"
               className="config-button primary"
@@ -3284,6 +3524,36 @@ const ConfigPage: React.FC = () => {
                 </div>
               )}
             </div>
+            {/* Grupo 7: Configuración del Panel Rotatorio - Botones de acción */}
+            <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
+              <button
+                type="button"
+                className="config-button primary"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  if (!isReady || savingRotator) {
+                    return;
+                  }
+                  setSavingRotator(true);
+                  setBanner(null);
+                  try {
+                    const payload = JSON.parse(JSON.stringify(form)) as AppConfig;
+                    await saveConfig(payload);
+                    await reloadConfig();
+                    setBanner({ kind: "success", text: "Configuración del rotador guardada ✅" });
+                  } catch (error) {
+                    console.error("[ConfigPage] Failed to save rotator configuration", error);
+                    const errorMsg = resolveApiErrorMessage(error, "Error al guardar configuración del rotador");
+                    setBanner({ kind: "error", text: errorMsg });
+                  } finally {
+                    setSavingRotator(false);
+                  }
+                }}
+                disabled={disableInputs || savingRotator}
+              >
+                {savingRotator ? "Guardando..." : "Guardar configuración del rotador"}
+              </button>
+            </div>
           </div>
         )}
 
@@ -3492,6 +3762,36 @@ const ConfigPage: React.FC = () => {
                   {renderFieldError("storm.auto_disable_after_minutes")}
                 </div>
               )}
+            </div>
+            {/* Grupo 11: Configuración del Modo Tormenta - Botones de acción */}
+            <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
+              <button
+                type="button"
+                className="config-button primary"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  if (!isReady || savingStorm) {
+                    return;
+                  }
+                  setSavingStorm(true);
+                  setBanner(null);
+                  try {
+                    const payload = JSON.parse(JSON.stringify(form)) as AppConfig;
+                    await saveConfig(payload);
+                    await reloadConfig();
+                    setBanner({ kind: "success", text: "Configuración de modo tormenta guardada ✅" });
+                  } catch (error) {
+                    console.error("[ConfigPage] Failed to save storm mode configuration", error);
+                    const errorMsg = resolveApiErrorMessage(error, "Error al guardar configuración de modo tormenta");
+                    setBanner({ kind: "error", text: errorMsg });
+                  } finally {
+                    setSavingStorm(false);
+                  }
+                }}
+                disabled={disableInputs || savingStorm}
+              >
+                {savingStorm ? "Guardando..." : "Guardar configuración de modo tormenta"}
+              </button>
             </div>
           </div>
         )}
@@ -3881,6 +4181,29 @@ const ConfigPage: React.FC = () => {
                 </div>
               )}
             </div>
+            {/* Grupo 3: Configuración de Rayos - Botones de acción */}
+            <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
+              <button
+                type="button"
+                className="config-button secondary"
+                onClick={() => void handleTestLightning()}
+                disabled={disableInputs || testingLightning || !form.blitzortung?.enabled}
+              >
+                {testingLightning ? "Comprobando..." : "Probar conexión"}
+              </button>
+              {lightningTestResult && (
+                <div
+                  className={`config-field__hint ${
+                    lightningTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                  }`}
+                  style={{ marginTop: "8px" }}
+                >
+                  {lightningTestResult.ok
+                    ? `Blitzortung conectado correctamente (${lightningTestResult.features_count || 0} features)`
+                    : `Error: ${lightningTestResult.reason || "error desconocido"}`}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -4003,6 +4326,36 @@ const ConfigPage: React.FC = () => {
                   {renderFieldError("news.refresh_minutes")}
                 </div>
               )}
+            </div>
+            {/* Grupo 9: Configuración de Noticias RSS - Botones de acción */}
+            <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
+              <button
+                type="button"
+                className="config-button primary"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  if (!isReady || savingNews) {
+                    return;
+                  }
+                  setSavingNews(true);
+                  setBanner(null);
+                  try {
+                    const payload = JSON.parse(JSON.stringify(form)) as AppConfig;
+                    await saveConfig(payload);
+                    await reloadConfig();
+                    setBanner({ kind: "success", text: "Configuración de noticias RSS guardada ✅" });
+                  } catch (error) {
+                    console.error("[ConfigPage] Failed to save news RSS configuration", error);
+                    const errorMsg = resolveApiErrorMessage(error, "Error al guardar configuración de noticias RSS");
+                    setBanner({ kind: "error", text: errorMsg });
+                  } finally {
+                    setSavingNews(false);
+                  }
+                }}
+                disabled={disableInputs || savingNews}
+              >
+                {savingNews ? "Guardando..." : "Guardar configuración de noticias"}
+              </button>
             </div>
           </div>
         )}
@@ -4310,6 +4663,37 @@ const ConfigPage: React.FC = () => {
                 </>
               )}
             </div>
+            {/* Grupo 6: Configuración del Calendario - Botones de acción */}
+            <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
+              <button
+                type="button"
+                className="config-button primary"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  if (!isReady || savingCalendar) {
+                    return;
+                  }
+                  setSavingCalendar(true);
+                  setBanner(null);
+                  try {
+                    const payload = JSON.parse(JSON.stringify(form)) as AppConfig;
+                    await saveConfig(payload);
+                    await reloadConfig();
+                    void loadCalendarStatus();
+                    setBanner({ kind: "success", text: "Configuración de calendario guardada ✅" });
+                  } catch (error) {
+                    console.error("[ConfigPage] Failed to save calendar configuration", error);
+                    const errorMsg = resolveApiErrorMessage(error, "Error al guardar configuración de calendario");
+                    setBanner({ kind: "error", text: errorMsg });
+                  } finally {
+                    setSavingCalendar(false);
+                  }
+                }}
+                disabled={disableInputs || savingCalendar}
+              >
+                {savingCalendar ? "Guardando..." : "Guardar configuración de calendario"}
+              </button>
+            </div>
           </div>
         )}
 
@@ -4473,11 +4857,40 @@ const ConfigPage: React.FC = () => {
                 </div>
               )}
             </div>
+            {/* Grupo 10: Configuración de Efemérides Históricas - Botones de acción */}
+            <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
+              {(form as unknown as { panels?: { historicalEvents?: { provider?: string; enabled?: boolean } } }).panels?.historicalEvents?.provider === "wikimedia" && (
+                <button
+                  type="button"
+                  className="config-button secondary"
+                  onClick={() => void handleTestWikimedia()}
+                  disabled={disableInputs || testingWikimedia || !((form as unknown as { panels?: { historicalEvents?: { enabled?: boolean } } }).panels?.historicalEvents?.enabled)}
+                >
+                  {testingWikimedia ? "Comprobando..." : "Probar Wikimedia API"}
+                </button>
+              )}
+              {wikimediaTestResult && (
+                <div
+                  className={`config-field__hint ${
+                    wikimediaTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                  }`}
+                  style={{ marginTop: "8px" }}
+                >
+                  {wikimediaTestResult.ok
+                    ? `Wikimedia API conectada correctamente (${wikimediaTestResult.count || 0} items)`
+                    : `Error: ${wikimediaTestResult.reason || "error desconocido"}`}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
-        {/* Sección de Capas para v2 */}
-        {configVersion === 2 && (
+        {/* Sección de Capas para v2 - DUPLICADO: Esta sección está duplicada.
+            Las configuraciones de Aviones están en Grupo 4 (Aviones/OpenSky),
+            Barcos están en Grupo 5 (Barcos/AIS),
+            Radar y Satélite están en Grupo 2 (Clima/AEMET).
+            Se mantiene comentada para referencia pero no debería mostrarse.
+        {configVersion === 2 && false && (
           <div className="config-card">
             <div>
               <h2>Capas del Mapa</h2>
@@ -4620,10 +5033,15 @@ const ConfigPage: React.FC = () => {
               </div>
             </div>
           </div>
-        )}
+        )} */}
 
-        {/* Sección de Capas en Tiempo Real para v2 */}
-        {configVersion === 2 && (
+        {/* Sección de Capas en Tiempo Real para v2 - DUPLICADO: Esta sección está duplicada.
+            Las configuraciones de Aviones están en Grupo 4 (Aviones/OpenSky),
+            Barcos están en Grupo 5 (Barcos/AIS),
+            Rayos están en Grupo 3 (Blitzortung/Rayos),
+            Modo Tormenta está en Grupo 11 (Modo Tormenta).
+            Se mantiene comentada para referencia pero no debería mostrarse.
+        {configVersion === 2 && false && (
           <div className="config-card">
             <div>
               <h2>Capas en Tiempo Real</h2>
@@ -5690,7 +6108,7 @@ const ConfigPage: React.FC = () => {
               )}
             </div>
           </div>
-        )}
+        )} */}
 
         {supports("harvest") && (
           <div className="config-card">
@@ -6389,6 +6807,29 @@ const ConfigPage: React.FC = () => {
                   </ul>
                 )}
               </div>
+            </div>
+            {/* Grupo 4: Configuración de Aviones - Botones de acción */}
+            <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
+              <button
+                type="button"
+                className="config-button secondary"
+                onClick={() => void handleTestOpenSkyGroup()}
+                disabled={disableInputs || testingOpenSky || !openskyCredentialsConfigured}
+              >
+                {testingOpenSky ? "Comprobando..." : "Probar OpenSky"}
+              </button>
+              {openskyTestResult && (
+                <div
+                  className={`config-field__hint ${
+                    openskyTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                  }`}
+                  style={{ marginTop: "8px" }}
+                >
+                  {openskyTestResult.ok
+                    ? `OpenSky conectado correctamente${openskyTestResult.token_valid ? " (token válido)" : ""}`
+                    : `Error: ${openskyTestResult.reason || "error desconocido"}`}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -7405,6 +7846,53 @@ const ConfigPage: React.FC = () => {
                 </>
               )}
             </div>
+            {/* Grupo 5: Configuración de Barcos - Botones de acción */}
+            <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
+              {form.layers.ships.provider === "aisstream" && (
+                <button
+                  type="button"
+                  className="config-button secondary"
+                  onClick={() => void handleTestAISStream()}
+                  disabled={disableInputs || testingAISStream || !form.layers.ships.enabled || !hasStoredAisstreamKey}
+                >
+                  {testingAISStream ? "Comprobando..." : "Probar AISStream"}
+                </button>
+              )}
+              {form.layers.ships.provider === "aishub" && (
+                <button
+                  type="button"
+                  className="config-button secondary"
+                  onClick={() => void handleTestAISHub()}
+                  disabled={disableInputs || testingAISHub || !form.layers.ships.enabled}
+                >
+                  {testingAISHub ? "Comprobando..." : "Probar AISHub"}
+                </button>
+              )}
+              {aisstreamTestResult && (
+                <div
+                  className={`config-field__hint ${
+                    aisstreamTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                  }`}
+                  style={{ marginTop: "8px" }}
+                >
+                  {aisstreamTestResult.ok
+                    ? `AISStream conectado correctamente (${aisstreamTestResult.features_count || 0} features)`
+                    : `Error: ${aisstreamTestResult.reason || "error desconocido"}`}
+                </div>
+              )}
+              {aishubTestResult && (
+                <div
+                  className={`config-field__hint ${
+                    aishubTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                  }`}
+                  style={{ marginTop: "8px" }}
+                >
+                  {aishubTestResult.ok
+                    ? "AISHub conectado correctamente"
+                    : `Error: ${aishubTestResult.reason || "error desconocido"}`}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -7900,6 +8388,31 @@ const ConfigPage: React.FC = () => {
               )}
               </div>
             </div>
+            {/* Grupo 2: Configuración del Clima y AEMET - Botones de acción */}
+            <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
+              {form.layers.global?.radar?.provider === "openweathermap" && (
+                <button
+                  type="button"
+                  className="config-button secondary"
+                  onClick={() => void handleTestOpenWeather()}
+                  disabled={disableInputs || testingOpenWeather || !form.layers.global?.radar?.enabled}
+                >
+                  {testingOpenWeather ? "Comprobando..." : "Probar OpenWeatherMap"}
+                </button>
+              )}
+              {openWeatherTestResult && (
+                <div
+                  className={`config-field__hint ${
+                    openWeatherTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                  }`}
+                  style={{ marginTop: "8px" }}
+                >
+                  {openWeatherTestResult.ok
+                    ? openWeatherTestResult.message || "OpenWeatherMap conectado correctamente"
+                    : `Error: ${openWeatherTestResult.message || "error desconocido"}`}
+                </div>
+              )}
+            </div>
           );
         })()}
 
@@ -7907,6 +8420,9 @@ const ConfigPage: React.FC = () => {
           <div>
             <h2>WiFi</h2>
             <p>Gestiona las conexiones de red inalámbrica.</p>
+            <div className="config-field__hint config-field__hint--warning" style={{ marginTop: "8px", padding: "8px", backgroundColor: "var(--warning-bg, rgba(255, 193, 7, 0.1))", borderRadius: "4px" }}>
+              <strong>⚠️ Requiere reinicio:</strong> Los cambios en la configuración de WiFi requieren reiniciar la aplicación para aplicar los cambios.
+            </div>
           </div>
           <div className="config-grid">
             <div className="config-field">

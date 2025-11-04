@@ -590,3 +590,98 @@ export type AemetWarningsResponse = {
 export async function getAemetWarnings(): Promise<AemetWarningsResponse> {
   return apiGet<AemetWarningsResponse>("/api/aemet/warnings");
 }
+
+// Test functions for APIs
+export type OpenSkyTestResponse = {
+  ok: boolean;
+  reason?: string;
+  token_valid?: boolean;
+  expires_in?: number;
+};
+
+export async function testOpenSky(): Promise<OpenSkyTestResponse> {
+  return apiGet<OpenSkyTestResponse>("/api/opensky/test");
+}
+
+export type AISStreamTestResponse = {
+  ok: boolean;
+  reason?: string;
+  features_count?: number;
+};
+
+export async function testAISStream(): Promise<AISStreamTestResponse> {
+  try {
+    const response = await apiGet<{ type: string; features: unknown[]; meta?: { ok?: boolean; reason?: string } }>("/api/layers/ships?max_items_view=1");
+    const meta = response.meta || {};
+    return {
+      ok: meta.ok !== false,
+      reason: meta.reason || undefined,
+      features_count: Array.isArray(response.features) ? response.features.length : 0,
+    };
+  } catch (error) {
+    return { ok: false, reason: "connection_error" };
+  }
+}
+
+export type AISHubTestResponse = {
+  ok: boolean;
+  reason?: string;
+};
+
+export async function testAISHub(): Promise<AISHubTestResponse> {
+  // AISHub no tiene endpoint específico, usar el endpoint de ships y verificar meta
+  try {
+    const response = await apiGet<{ meta?: { ok?: boolean; reason?: string; provider?: string } }>("/api/layers/ships?max_items_view=1");
+    const meta = response.meta || {};
+    if (meta.provider === "aishub") {
+      return {
+        ok: meta.ok !== false,
+        reason: meta.reason || undefined,
+      };
+    }
+    return { ok: false, reason: "provider_not_aishub" };
+  } catch (error) {
+    return { ok: false, reason: "connection_error" };
+  }
+}
+
+export type WikimediaTestResponse = {
+  ok: boolean;
+  reason?: string;
+  count?: number;
+};
+
+export async function testWikimedia(): Promise<WikimediaTestResponse> {
+  try {
+    // Usar el endpoint de efemérides con fecha de hoy para test
+    const today = new Date().toISOString().split("T")[0];
+    const response = await apiGet<{ count: number; items: unknown[]; source?: string }>(`/api/efemerides?target_date=${today}`);
+    if (response.source === "wikimedia") {
+      return {
+        ok: true,
+        count: response.count,
+      };
+    }
+    return { ok: false, reason: "provider_not_wikimedia" };
+  } catch (error) {
+    return { ok: false, reason: "connection_error" };
+  }
+}
+
+export type LightningTestResponse = {
+  ok: boolean;
+  reason?: string;
+  features_count?: number;
+};
+
+export async function testLightning(): Promise<LightningTestResponse> {
+  try {
+    const response = await apiGet<{ type: string; features: unknown[] }>("/api/lightning");
+    return {
+      ok: true,
+      features_count: Array.isArray(response.features) ? response.features.length : 0,
+    };
+  } catch (error) {
+    return { ok: false, reason: "connection_error" };
+  }
+}
