@@ -2333,6 +2333,7 @@ async def save_config(request: Request) -> JSONResponse:
                     detail={
                         "error": "Calendar provider 'google' requires api_key and calendar_id",
                         "missing": missing,
+                        "tip": "Desactiva calendar o rellena secrets.google.api_key y secrets.google.calendar_id",
                     },
                 )
         

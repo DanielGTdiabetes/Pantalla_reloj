@@ -523,8 +523,8 @@ class ConfigManager:
         
         Aplica las siguientes reglas:
         1. Inyectar apiKey desde MAPTILER_API_KEY si está vacío
-        2. Si styleUrl no incluye ?key= y existe apiKey, añadir ?key=<apiKey>
-        3. Si styleUrl apunta a dark o dark-v2, reemplazar por streets-v2
+        2. Normalizar estilos obsoletos (dark, streets, bright) → streets-v2
+        3. Si styleUrl no incluye ?key= y existe apiKey, añadir ?key=<apiKey>
         4. Si apiKey está presente y styleUrl vacío, set al streets-v2
         
         Args:
@@ -533,9 +533,12 @@ class ConfigManager:
         Returns:
             Tuple de (maptiler_migrado, was_changed)
         """
+        import re
+        from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+        
         changed = False
         migrated = dict(maptiler)
-        api_key = migrated.get("apiKey")
+        api_key = migrated.get("apiKey") or migrated.get("api_key") or migrated.get("key")
         style_url = migrated.get("styleUrl")
         
         # Regla 1: Inyectar apiKey desde variable de entorno si está vacío
@@ -547,28 +550,64 @@ class ConfigManager:
                 changed = True
                 self.logger.info("[config] Injected MapTiler API key from MAPTILER_API_KEY env")
         
+        # Normalizar apiKey a "apiKey"
+        if "apiKey" not in migrated:
+            if "api_key" in migrated:
+                migrated["apiKey"] = migrated.pop("api_key")
+                changed = True
+            elif "key" in migrated:
+                migrated["apiKey"] = migrated.pop("key")
+                changed = True
+        
         # Si aún no hay apiKey, no podemos hacer nada más
         if not api_key:
             return migrated, changed
         
-        # Regla 2 y 3: Reemplazar estilos obsoletos o vacíos por streets-v2
+        # Regla 2: Normalizar estilos obsoletos (dark, streets, bright) → streets-v2
         if style_url:
-            # Reemplazar dark-v2 y dark por streets-v2
-            if "/dark-v2/" in style_url or style_url.endswith("/dark/style.json"):
-                new_style_url = f"https://api.maptiler.com/maps/streets-v2/style.json?key={api_key}"
+            style_url = str(style_url).strip()
+            
+            # Detectar estilos obsoletos: /maps/(dark|streets|bright)/style.json (con o sin ?key=)
+            legacy_pattern = re.compile(r'/maps/(dark|streets|bright)(?:-v2)?/style\.json', re.IGNORECASE)
+            if legacy_pattern.search(style_url):
+                # Reescribir a streets-v2
+                base_url = "https://api.maptiler.com/maps/streets-v2/style.json"
+                
+                # Extraer query params existentes
+                parsed = urlparse(style_url)
+                query_params = parse_qs(parsed.query, keep_blank_values=True)
+                
+                # Añadir o reemplazar key=
+                query_params["key"] = [api_key]
+                
+                # Reconstruir URL
+                new_query = urlencode(query_params, doseq=True)
+                new_style_url = f"{base_url}?{new_query}" if new_query else f"{base_url}?key={api_key}"
+                
                 migrated["styleUrl"] = new_style_url
                 changed = True
-                self.logger.info("[config] Replaced obsolete MapTiler style with streets-v2")
+                self.logger.info("[config] Normalized legacy MapTiler style to streets-v2")
                 return migrated, changed
-            # Si el styleUrl no incluye ?key=, añadirlo
-            if "?key=" not in style_url:
+            
+            # Si ya es un estilo *-v2 válido, solo añadir key si falta
+            if "-v2" in style_url or "streets-v2" in style_url or "dark-v2" in style_url or "bright-v2" in style_url:
+                # Verificar si ya tiene key=
+                if "?key=" not in style_url and "&key=" not in style_url:
+                    # Añadir key=
+                    separator = "&" if "?" in style_url else "?"
+                    migrated["styleUrl"] = f"{style_url}{separator}key={api_key}"
+                    changed = True
+                    self.logger.info("[config] Added ?key= parameter to MapTiler styleUrl")
+                    return migrated, changed
+            # Si no es v2 y no es legacy, añadir key si falta
+            elif "?key=" not in style_url and "&key=" not in style_url:
                 separator = "&" if "?" in style_url else "?"
                 migrated["styleUrl"] = f"{style_url}{separator}key={api_key}"
                 changed = True
                 self.logger.info("[config] Added ?key= parameter to MapTiler styleUrl")
                 return migrated, changed
         else:
-            # Regla 3: Si apiKey está presente y styleUrl vacío, set streets-v2
+            # Regla 4: Si apiKey está presente y styleUrl vacío, set streets-v2
             new_style_url = f"https://api.maptiler.com/maps/streets-v2/style.json?key={api_key}"
             migrated["styleUrl"] = new_style_url
             changed = True
@@ -596,29 +635,41 @@ class ConfigManager:
             # Detectar provider actual (sin default agresivo)
             provider_old = str(ui_map.get("provider", "")).strip() or ""
             
-            # Detectar key de MapTiler en v1 o v2
-            maptiler_api_key_v1 = None
-            if isinstance(data.get("map"), dict):
-                maptiler_api_key_v1 = data["map"].get("maptiler_api_key")
+            # Detectar MapTiler válido (apiKey + styleUrl presentes)
+            maptiler_config = ui_map.get("maptiler")
+            maptiler_api_key = None
+            maptiler_style_url = None
             
-            maptiler_api_key_v2 = None
-            if isinstance(ui_map.get("maptiler"), dict):
-                maptiler_api_key_v2 = ui_map["maptiler"].get("apiKey") or ui_map["maptiler"].get("api_key")
+            if isinstance(maptiler_config, dict):
+                maptiler_api_key = maptiler_config.get("apiKey") or maptiler_config.get("api_key") or maptiler_config.get("key")
+                maptiler_style_url = maptiler_config.get("styleUrl") or maptiler_config.get("styleUrlDark") or maptiler_config.get("styleUrlLight") or maptiler_config.get("styleUrlBright")
             
-            has_maptiler_key = bool(
-                (maptiler_api_key_v1 and str(maptiler_api_key_v1).strip()) or
-                (maptiler_api_key_v2 and str(maptiler_api_key_v2).strip())
+            # También verificar v1 map.maptiler_api_key
+            if not maptiler_api_key and isinstance(data.get("map"), dict):
+                maptiler_api_key = data["map"].get("maptiler_api_key")
+            
+            has_valid_maptiler = bool(
+                maptiler_api_key and str(maptiler_api_key).strip() and
+                maptiler_style_url and str(maptiler_style_url).strip()
             )
             
-            # 1) Si hay key de MapTiler, imponemos maptiler_vector
-            if has_maptiler_key:
-                if provider_old != "maptiler_vector":
+            # 1) Si MapTiler está válidamente configurado (apiKey + styleUrl), preservar o migrar a maptiler_vector
+            if has_valid_maptiler:
+                if provider_old in {"maptiler", "maptiler_vector"}:
+                    # Si es "maptiler", migrar a "maptiler_vector"
+                    if provider_old == "maptiler":
+                        ui_map["provider"] = "maptiler_vector"
+                        changed = True
+                        self.logger.info("[config] Migrated ui_map.provider from 'maptiler' to 'maptiler_vector' (preserving MapTiler config)")
+                    # Si ya es "maptiler_vector", no cambiar
+                else:
+                    # Si provider no es maptiler pero hay config válida, cambiar a maptiler_vector
                     ui_map["provider"] = "maptiler_vector"
                     changed = True
-                    self.logger.info("[config] Using maptiler_vector due to present MapTiler API key")
-            # 2) Si NO hay key y hay provider válido, respetarlo (no tocar)
+                    self.logger.info("[config] Set ui_map.provider to 'maptiler_vector' (valid MapTiler config found)")
+            # 2) Si NO hay MapTiler válido pero hay provider válido, respetarlo (no tocar)
             elif provider_old:
-                # Migrar nombre legacy "maptiler" → "maptiler_vector"
+                # Migrar nombre legacy "maptiler" → "maptiler_vector" incluso sin config válida
                 if provider_old == "maptiler":
                     ui_map["provider"] = "maptiler_vector"
                     changed = True
@@ -686,8 +737,9 @@ class ConfigManager:
             if "maptiler" in ui_map and isinstance(ui_map["maptiler"], dict):
                 maptiler_old = ui_map["maptiler"]
                 # Si tiene key/styleUrlDark/Light/Bright legacy, normalizar
-                api_key = maptiler_old.get("key")
+                api_key = maptiler_old.get("apiKey") or maptiler_old.get("api_key") or maptiler_old.get("key")
                 style_url = (
+                    maptiler_old.get("styleUrl") or
                     maptiler_old.get("styleUrlDark") or
                     maptiler_old.get("styleUrlLight") or
                     maptiler_old.get("styleUrlBright")
@@ -701,8 +753,8 @@ class ConfigManager:
                 changed = True
                 self.logger.info("[config] Migrated ui_map.maptiler to new structure")
             
-            # Aplicar migración automática de MapTiler si el proveedor es maptiler_vector
-            if ui_map.get("provider") == "maptiler_vector" and "maptiler" in ui_map and isinstance(ui_map["maptiler"], dict):
+            # Aplicar migración automática de MapTiler si el proveedor es maptiler_vector o si hay config válida
+            if "maptiler" in ui_map and isinstance(ui_map["maptiler"], dict):
                 maptiler_migrated, maptiler_changed = self._migrate_maptiler_config(ui_map["maptiler"])
                 if maptiler_changed:
                     ui_map["maptiler"] = maptiler_migrated
@@ -718,7 +770,12 @@ class ConfigManager:
                 }
                 changed = True
             
-            if "maptiler" not in ui_map:
+            # Si provider es maptiler_vector pero falta el bloque, crear bloque vacío (sin cambiar provider)
+            if ui_map.get("provider") == "maptiler_vector" and "maptiler" not in ui_map:
+                ui_map["maptiler"] = {"apiKey": None, "styleUrl": None}
+                changed = True
+            # Si no hay bloque maptiler, crear uno vacío
+            elif "maptiler" not in ui_map:
                 ui_map["maptiler"] = {"apiKey": None, "styleUrl": None}
                 changed = True
             
