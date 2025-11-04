@@ -209,6 +209,7 @@ export async function testCalendarConnection(apiKey?: string, calendarId?: strin
   return apiPost<CalendarTestResponse | undefined>("/api/calendar/test", body);
 }
 
+
 export async function updateOpenWeatherMapApiKey(apiKey: string | null) {
   return apiPost<undefined>("/api/config/secret/openweathermap_api_key", { api_key: apiKey });
 }

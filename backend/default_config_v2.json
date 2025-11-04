@@ -38,7 +38,7 @@
   },
   "ui_global": {
     "satellite": { "enabled": true, "provider": "gibs", "opacity": 1.0 },
-    "radar": { "enabled": false, "provider": "rainviewer" },
+    "radar": { "enabled": false, "provider": "rainviewer", "layer_type": "precipitation_new" },
     "overlay": {
       "rotator": {
         "enabled": true,

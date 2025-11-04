@@ -1708,13 +1708,15 @@ def _health_payload_full_helper() -> Dict[str, Any]:
 
     if global_config.radar.enabled:
         if radar_provider == "openweathermap":
-            api_key = _openweather_provider.resolve_api_key()
+            layer_type = getattr(global_config.radar, "layer_type", "precipitation_new")
+            openweather_provider = _get_openweather_provider(layer_type)
+            api_key = openweather_provider.resolve_api_key()
             if not api_key:
                 global_radar_last_error = "OWM API key missing"
                 global_radar_status = "down"
             else:
                 try:
-                    frames = _openweather_provider.get_available_frames(
+                    frames = openweather_provider.get_available_frames(
                         history_minutes=global_config.radar.history_minutes,
                         frame_step=global_config.radar.frame_step,
                     )
@@ -6011,10 +6013,14 @@ async def serve_frontend(full_path: str, request: Request):
 # Proveedores globales
 _gibs_provider = GIBSProvider()
 _rainviewer_provider = RainViewerProvider()
-_openweather_provider = OpenWeatherMapRadarProvider(
-    api_key_resolver=lambda: secret_store.get_secret("openweathermap_api_key"),
-    layer=os.getenv("PANTALLA_GLOBAL_RADAR_LAYER", "precipitation_new"),
-)
+
+
+def _get_openweather_provider(layer_type: Optional[str] = None) -> OpenWeatherMapRadarProvider:
+    """Obtiene una instancia del proveedor OpenWeatherMap con la capa especificada."""
+    return OpenWeatherMapRadarProvider(
+        api_key_resolver=lambda: secret_store.get_secret("openweathermap_api_key"),
+        layer=layer_type or os.getenv("PANTALLA_GLOBAL_RADAR_LAYER", "precipitation_new"),
+    )
 
 
 @app.get("/api/global/satellite/frames")
@@ -6082,7 +6088,18 @@ def get_global_radar_frames() -> Dict[str, Any]:
 
     try:
         if provider_name == "openweathermap":
-            frames = _openweather_provider.get_available_frames(
+            # Obtener layer_type de la configuración global
+            layer_type = "precipitation_new"
+            try:
+                global_config = config_manager.get_config()
+                if hasattr(global_config, "layers") and hasattr(global_config.layers, "global"):
+                    if hasattr(global_config.layers.global, "radar"):
+                        layer_type = getattr(global_config.layers.global.radar, "layer_type", "precipitation_new")
+            except Exception:
+                pass  # Usar valor por defecto si hay error
+            
+            openweather_provider = _get_openweather_provider(layer_type)
+            frames = openweather_provider.get_available_frames(
                 history_minutes=history_minutes,
                 frame_step=frame_step,
             )
@@ -6248,7 +6265,18 @@ async def get_global_radar_tile(
     # Descargar tile
     try:
         if provider_name == "openweathermap":
-            tile_url = _openweather_provider.get_tile_url(timestamp, z, x, y)
+            # Obtener layer_type de la configuración global
+            layer_type = "precipitation_new"
+            try:
+                global_config = config_manager.get_config()
+                if hasattr(global_config, "layers") and hasattr(global_config.layers, "global"):
+                    if hasattr(global_config.layers.global, "radar"):
+                        layer_type = getattr(global_config.layers.global.radar, "layer_type", "precipitation_new")
+            except Exception:
+                pass  # Usar valor por defecto si hay error
+            
+            openweather_provider = _get_openweather_provider(layer_type)
+            tile_url = openweather_provider.get_tile_url(timestamp, z, x, y)
         else:
             tile_url = _rainviewer_provider.get_tile_url(timestamp, z, x, y)
         response = requests.get(tile_url, timeout=10, stream=True)

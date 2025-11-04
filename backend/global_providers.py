@@ -246,10 +246,31 @@ class OpenWeatherMapApiKeyError(RuntimeError):
 
 
 class OpenWeatherMapRadarProvider:
-    """Proveedor de radar global utilizando los tiles de precipitación de OpenWeatherMap."""
+    """Proveedor de capas globales utilizando los tiles de OpenWeatherMap.
+    
+    Soporta múltiples tipos de capas meteorológicas:
+    - precipitation_new: Precipitación (por defecto)
+    - precipitation: Precipitación (legacy)
+    - temp_new: Temperatura
+    - clouds: Nubes
+    - rain: Lluvia
+    - wind: Viento
+    - pressure: Presión
+    """
 
     BASE_URL = "https://tile.openweathermap.org/map"
     DEFAULT_LAYER = "precipitation_new"
+    
+    # Capas disponibles según la documentación de OpenWeatherMap
+    VALID_LAYERS = {
+        "precipitation_new",
+        "precipitation",
+        "temp_new",
+        "clouds",
+        "rain",
+        "wind",
+        "pressure",
+    }
 
     def __init__(
         self,
@@ -258,8 +279,8 @@ class OpenWeatherMapRadarProvider:
     ) -> None:
         self._api_key_resolver = api_key_resolver
         candidate_layer = (layer or self.DEFAULT_LAYER).strip() or self.DEFAULT_LAYER
-        # Solo permitimos las capas documentadas
-        if candidate_layer not in {"precipitation_new", "precipitation"}:
+        # Validar que la capa esté en la lista de capas válidas
+        if candidate_layer not in self.VALID_LAYERS:
             candidate_layer = self.DEFAULT_LAYER
         self._layer = candidate_layer
 

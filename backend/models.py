@@ -378,6 +378,11 @@ class GlobalRadarLayer(BaseModel):
 
     enabled: bool = True
     provider: Literal["rainviewer", "openweathermap"] = Field(default="rainviewer")
+    # Solo aplica cuando provider == "openweathermap"
+    layer_type: Literal["precipitation_new", "precipitation", "temp_new", "clouds", "rain", "wind", "pressure"] = Field(
+        default="precipitation_new",
+        description="Tipo de capa OpenWeatherMap (solo para proveedor openweathermap)"
+    )
     refresh_minutes: int = Field(default=5, ge=1, le=1440)
     history_minutes: int = Field(default=90, ge=1, le=1440)
     frame_step: int = Field(default=5, ge=1, le=1440)

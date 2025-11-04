@@ -381,6 +381,7 @@ export type GlobalSatelliteLayerConfig = {
 export type GlobalRadarLayerConfig = {
   enabled: boolean;
   provider: "rainviewer" | "openweathermap";
+  layer_type?: "precipitation_new" | "precipitation" | "temp_new" | "clouds" | "rain" | "wind" | "pressure";
   refresh_minutes: number;
   history_minutes: number;
   frame_step: number;

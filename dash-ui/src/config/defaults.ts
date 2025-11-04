@@ -280,6 +280,7 @@ export const createDefaultGlobalSatelliteLayer = (): GlobalSatelliteLayerConfig 
 export const createDefaultGlobalRadarLayer = (): GlobalRadarLayerConfig => ({
   enabled: true,
   provider: "rainviewer",
+  layer_type: "precipitation_new",
   refresh_minutes: 5,
   history_minutes: 90,
   frame_step: 5,

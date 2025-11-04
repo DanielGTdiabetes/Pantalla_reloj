@@ -605,13 +605,13 @@ const ConfigPage: React.FC = () => {
     return "••••";
   }, [form.layers.global?.radar]);
 
+  const openWeatherSelected = form.layers.global?.radar?.provider === "openweathermap";
   const trimmedOpenWeatherKeyInput = openWeatherKeyInput.trim();
   const hasStoredOpenWeatherKey = Boolean(form.layers.global?.radar?.has_api_key);
   const canPersistOpenWeatherKey =
     showOpenWeatherKey &&
     !savingOpenWeatherKey &&
     (trimmedOpenWeatherKeyInput.length > 0 || hasStoredOpenWeatherKey);
-  const openWeatherSelected = form.layers.global?.radar?.provider === "openweathermap";
 
   const handleToggleAemetKeyVisibility = useCallback(() => {
     setShowAemetKey((prev) => {
@@ -780,8 +780,6 @@ const ConfigPage: React.FC = () => {
     setShowAisstreamKey(false);
     setAisstreamKeyInput("");
     setShipsTestResult(null);
-    setShowOpenWeatherKey(false);
-    setOpenWeatherKeyInput("");
     setOpenSkyStatusData(null);
     setOpenSkyStatusError(null);
     setShowGoogleCalendarKey(false);
@@ -1162,6 +1160,7 @@ const ConfigPage: React.FC = () => {
     setForm,
     showOpenWeatherKey,
   ]);
+
 
   const handleTestShipsLayer = useCallback(async () => {
     if (testingShips) {
@@ -7916,6 +7915,7 @@ const ConfigPage: React.FC = () => {
                 enabled: currentGlobal?.radar?.enabled ?? defaultGlobal.radar.enabled,
                 provider:
                   (currentGlobal?.radar?.provider ?? defaultGlobal.radar.provider ?? "rainviewer") as GlobalLayers["radar"]["provider"],
+                layer_type: currentGlobal?.radar?.layer_type ?? defaultGlobal.radar.layer_type ?? "precipitation_new",
                 refresh_minutes: currentGlobal?.radar?.refresh_minutes ?? defaultGlobal.radar.refresh_minutes,
                 history_minutes: currentGlobal?.radar?.history_minutes ?? defaultGlobal.radar.history_minutes,
                 frame_step: currentGlobal?.radar?.frame_step ?? defaultGlobal.radar.frame_step,
@@ -8239,6 +8239,47 @@ const ConfigPage: React.FC = () => {
                       )}
                     </div>
                   </div>
+
+                  {form.layers.global?.radar?.provider === "openweathermap" && (
+                    <div className="config-field">
+                      <label htmlFor="global_radar_layer_type">Tipo de capa OpenWeatherMap</label>
+                      <select
+                        id="global_radar_layer_type"
+                        value={form.layers.global?.radar?.layer_type ?? "precipitation_new"}
+                        disabled={disableInputs || !form.layers.global?.radar.enabled}
+                        onChange={(event) => {
+                          const layer_type = event.target.value as "precipitation_new" | "precipitation" | "temp_new" | "clouds" | "rain" | "wind" | "pressure";
+                          setForm((prev) => {
+                            const globalWithDefaults = getGlobalWithDefaults(prev);
+                            return {
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                global: {
+                                  ...globalWithDefaults,
+                                  radar: {
+                                    ...globalWithDefaults.radar,
+                                    layer_type,
+                                  },
+                                },
+                              },
+                            };
+                          });
+                          resetErrorsFor("layers.global.radar.layer_type");
+                        }}
+                      >
+                        <option value="precipitation_new">Precipitación (nueva)</option>
+                        <option value="precipitation">Precipitación (legacy)</option>
+                        <option value="temp_new">Temperatura</option>
+                        <option value="clouds">Nubes</option>
+                        <option value="rain">Lluvia</option>
+                        <option value="wind">Viento</option>
+                        <option value="pressure">Presión</option>
+                      </select>
+                      {renderHelp("Selecciona el tipo de capa meteorológica de OpenWeatherMap a mostrar")}
+                      {renderFieldError("layers.global.radar.layer_type")}
+                    </div>
+                  )}
 
                   <div className="config-field">
                     <label htmlFor="global_radar_opacity">Opacidad</label>
