@@ -18,7 +18,7 @@ import requests
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse, Response
+from fastapi.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from threading import Lock
@@ -27,6 +27,13 @@ from .cache import CacheStore
 from .config_manager import ConfigManager
 from .services.config_loader import read_json, write_json, merge_defaults
 from .services.config_sanitize import sanitize_config
+from .services.config_events import (
+    subscribe,
+    unsubscribe,
+    publish_config_changed_async,
+    publish_config_changed_sync,
+    send_heartbeat
+)
 from .data_sources import (
     calculate_extended_astronomy,
     calculate_moon_phase,
@@ -1293,10 +1300,17 @@ def healthcheck() -> Dict[str, Any]:
 
 
 @app.get("/api/health/full")
-def healthcheck_full() -> Dict[str, Any]:
+def healthcheck_full() -> JSONResponse:
     """Health check completo con información de todas las capas."""
     logger.debug("Full health check requested")
-    return _health_payload()
+    payload = _health_payload_full_helper()
+    
+    # Crear respuesta con headers anti-cache
+    response = JSONResponse(content=payload)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.get("/api/config/meta")
@@ -2037,13 +2051,85 @@ def get_config(request: Request) -> JSONResponse:
     public_config.setdefault("secrets", {}).setdefault("calendar_ics", {})
 
     response = JSONResponse(content=public_config)
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     response.headers["ETag"] = config_etag
     response.headers["Last-Modified"] = datetime.fromtimestamp(config_mtime).strftime("%a, %d %b %Y %H:%M:%S GMT")
     
     return response
+
+
+@app.get("/api/config/stream")
+async def stream_config_events(request: Request) -> StreamingResponse:
+    """
+    Endpoint SSE para recibir eventos de cambios de configuración.
+    Emite eventos config_changed cuando la configuración cambia.
+    """
+    import asyncio
+    
+    async def event_generator():
+        """Generador de eventos SSE."""
+        queue = None
+        try:
+            # Suscribirse al bus de eventos
+            queue = await subscribe()
+            
+            # Enviar evento inicial de conexión
+            yield f"data: {json.dumps({'type': 'connected', 'ts': int(datetime.now(timezone.utc).timestamp())})}\n\n"
+            
+            # Heartbeat cada 25 segundos
+            last_heartbeat = datetime.now(timezone.utc)
+            heartbeat_interval = 25
+            
+            while True:
+                # Verificar si el cliente se desconectó
+                if await request.is_disconnected():
+                    logger.info("[config-events] Cliente desconectado")
+                    break
+                
+                try:
+                    # Esperar evento con timeout para permitir heartbeats
+                    event = await asyncio.wait_for(queue.get(), timeout=1.0)
+                    
+                    # Formatear como SSE
+                    event_json = json.dumps(event)
+                    yield f"data: {event_json}\n\n"
+                    
+                    # Resetear timer de heartbeat
+                    last_heartbeat = datetime.now(timezone.utc)
+                    
+                except asyncio.TimeoutError:
+                    # Enviar heartbeat si pasó el intervalo
+                    now = datetime.now(timezone.utc)
+                    elapsed = (now - last_heartbeat).total_seconds()
+                    if elapsed >= heartbeat_interval:
+                        if await send_heartbeat(queue):
+                            last_heartbeat = now
+                            yield f"data: {json.dumps({'type': 'heartbeat', 'ts': int(now.timestamp())})}\n\n"
+                    continue
+                except Exception as e:
+                    logger.error("[config-events] Error en generador de eventos: %s", e)
+                    break
+                    
+        except Exception as e:
+            logger.error("[config-events] Error en stream SSE: %s", e)
+        finally:
+            # Desuscribirse al salir
+            if queue:
+                await unsubscribe(queue)
+                logger.info("[config-events] Cliente desuscrito")
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "X-Accel-Buffering": "no",  # Para Nginx
+        }
+    )
 
 
 @app.get("/api/config/meta")
@@ -2556,6 +2642,15 @@ async def save_config(request: Request) -> JSONResponse:
                 "[config] Configuration persisted atomically to %s",
                 config_manager.config_file,
             )
+            
+            # Publicar evento config_changed después de guardar exitosamente
+            try:
+                publish_config_changed_sync(
+                    str(config_manager.config_file),
+                    changed_groups=["all"]  # POST/PATCH completo afecta todo
+                )
+            except Exception as pub_exc:
+                logger.warning("[config-events] No se pudo publicar evento: %s", pub_exc)
         except ConfigWriteError as write_exc:
             # ConfigWriteError ya tiene logging completo con traceback
             raise HTTPException(
@@ -2780,6 +2875,15 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
     try:
         write_json(CONFIG_PATH, sanitized_config)
         logger.info("[config] Group '%s' saved successfully", group_name)
+        
+        # Publicar evento config_changed después de guardar exitosamente
+        try:
+            publish_config_changed_sync(
+                CONFIG_PATH,
+                changed_groups=[group_name]
+            )
+        except Exception as pub_exc:
+            logger.warning("[config-events] No se pudo publicar evento: %s", pub_exc)
     except Exception as e:
         logger.error("[config] Failed to save config: %s", e)
         raise HTTPException(status_code=500, detail=f"Failed to save config: {str(e)}")
