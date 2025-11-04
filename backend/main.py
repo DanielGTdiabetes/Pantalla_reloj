@@ -2380,7 +2380,14 @@ async def save_config(request: Request) -> JSONResponse:
                 detail={"error": "config write failed"},
             ) from write_exc
 
-        persisted_config = merged
+        # Recargar config desde disco para devolver la versión final normalizada
+        try:
+            persisted_config = load_raw_config(config_manager.config_file)
+            logger.info("[config] Reloaded config from disk after save")
+        except (json.JSONDecodeError, OSError) as reload_exc:
+            logger.warning("[config] Failed to reload config from disk after save: %s", reload_exc)
+            # Usar merged como fallback
+            persisted_config = merged
 
         if google_api_key:
             masked_key = _mask_secret(str(google_api_key))
@@ -2487,18 +2494,24 @@ async def save_config(request: Request) -> JSONResponse:
             logger.debug("[config] Failed to invalidate cache key %s: %s", cache_key, cache_exc)
     
     # Recargar configuración en runtime
-    reloaded = reload_runtime_config(config_manager)
-    if reloaded:
-        global map_reset_counter
-        map_reset_counter += 1
-        logger.info("[config] Configuration reloaded in-memory after save (hot-reload)")
-        # Inicializar/actualizar servicios según nueva configuración
-        config_after_reload = config_manager.get_config()
-        _ensure_blitzortung_service(config_after_reload)
-    else:
-        logger.warning("[config] Configuration reload after save did not report changes")
+    try:
+        reloaded = reload_runtime_config(config_manager)
+        if reloaded:
+            global map_reset_counter
+            map_reset_counter += 1
+            logger.info("[config] Configuration reloaded in-memory after save (hot-reload)")
+            # Inicializar/actualizar servicios según nueva configuración
+            try:
+                config_after_reload = config_manager.read()
+                _ensure_blitzortung_service(config_after_reload)
+            except Exception as blitz_exc:  # noqa: BLE001
+                logger.warning("[config] Failed to reload config for blitzortung service: %s", blitz_exc)
+        else:
+            logger.warning("[config] Configuration reload after save did not report changes")
+    except Exception as reload_exc:  # noqa: BLE001
+        logger.warning("[config] Failed to reload runtime config: %s", reload_exc)
 
-    # Devolver config completo normalizado
+    # Devolver config completo normalizado (recargado desde disco)
     return JSONResponse(content=persisted_config)
 
 
@@ -4366,7 +4379,7 @@ def get_lightning(bbox: Optional[str] = None) -> Dict[str, Any]:
     """
     try:
         # Cargar configuración para inicializar servicio si es necesario
-        config = config_manager.get_config()
+        config = config_manager.read()
         _ensure_blitzortung_service(config)
         
         # Obtener rayos del servicio o caché
