@@ -4884,1230 +4884,43 @@ const ConfigPage: React.FC = () => {
           </div>
         )}
 
-        {/* Sección de Capas para v2 - DUPLICADO: Esta sección está duplicada.
-            Las configuraciones de Aviones están en Grupo 4 (Aviones/OpenSky),
-            Barcos están en Grupo 5 (Barcos/AIS),
-            Radar y Satélite están en Grupo 2 (Clima/AEMET).
-            Se mantiene comentada para referencia pero no debería mostrarse.
-        {configVersion === 2 && false && (
+
+
+        {supports("harvest") && (
           <div className="config-card">
             <div>
-              <h2>Capas del Mapa</h2>
-              <p>Activa o desactiva las capas en tiempo real del mapa: vuelos, barcos, radar y satélite.</p>
+              <h2>Hortalizas y Cultivos</h2>
+              <p>Configura los cultivos estacionales y personalizados a mostrar.</p>
             </div>
             <div className="config-grid">
-              {/* Flights Layer */}
-              <div className="config-field config-field--checkbox">
-                <label htmlFor="v2_layers_flights_enabled">
-                  <input
-                    id="v2_layers_flights_enabled"
-                    type="checkbox"
-                    checked={
-                      (form as unknown as { layers?: { flights?: { enabled?: boolean } } }).layers?.flights?.enabled ?? false
-                    }
-                    disabled={disableInputs}
-                    onChange={(event) => {
-                      const enabled = event.target.checked;
-                      setForm((prev) => {
-                        const v2 = prev as unknown as { layers?: { flights?: { enabled?: boolean } } };
-                        return {
-                          ...prev,
-                          layers: {
-                            ...v2.layers,
-                            flights: {
-                              ...v2.layers?.flights,
-                              enabled,
-                            },
-                          },
-                        } as unknown as AppConfig;
-                      });
-                      resetErrorsFor("layers.flights.enabled");
-                    }}
-                  />
-                  Aviones (OpenSky)
-                </label>
-                {renderHelp("Muestra aviones en tiempo real desde OpenSky Network")}
-              </div>
-
-              {/* Ships Layer */}
-              <div className="config-field config-field--checkbox">
-                <label htmlFor="v2_layers_ships_enabled">
-                  <input
-                    id="v2_layers_ships_enabled"
-                    type="checkbox"
-                    checked={
-                      (form as unknown as { layers?: { ships?: { enabled?: boolean } } }).layers?.ships?.enabled ?? false
-                    }
-                    disabled={disableInputs}
-                    onChange={(event) => {
-                      const enabled = event.target.checked;
-                      setForm((prev) => {
-                        const v2 = prev as unknown as { layers?: { ships?: { enabled?: boolean } } };
-                        return {
-                          ...prev,
-                          layers: {
-                            ...v2.layers,
-                            ships: {
-                              ...v2.layers?.ships,
-                              enabled,
-                            },
-                          },
-                        } as unknown as AppConfig;
-                      });
-                      resetErrorsFor("layers.ships.enabled");
-                    }}
-                  />
-                  Barcos
-                </label>
-                {renderHelp("Muestra barcos en tiempo real (AIS)")}
-              </div>
-
-              {/* Radar (AEMET) */}
-              <div className="config-field config-field--checkbox">
-                <label htmlFor="v2_ui_global_radar_enabled">
-                  <input
-                    id="v2_ui_global_radar_enabled"
-                    type="checkbox"
-                    checked={
-                      (form as unknown as { ui_global?: { radar?: { enabled?: boolean } } }).ui_global?.radar?.enabled ?? false
-                    }
-                    disabled={disableInputs}
-                    onChange={(event) => {
-                      const enabled = event.target.checked;
-                      setForm((prev) => {
-                        const v2 = prev as unknown as { ui_global?: { radar?: { enabled?: boolean; provider?: string } } };
-                        return {
-                          ...prev,
-                          ui_global: {
-                            ...v2.ui_global,
-                            radar: {
-                              ...v2.ui_global?.radar,
-                              enabled,
-                              provider: v2.ui_global?.radar?.provider || "aemet",
-                            },
-                          },
-                        } as unknown as AppConfig;
-                      });
-                      resetErrorsFor("ui_global.radar.enabled");
-                    }}
-                  />
-                  Radar (AEMET)
-                </label>
-                {renderHelp("Muestra radar meteorológico de AEMET")}
-              </div>
-
-              {/* Satellite (GIBS) */}
-              <div className="config-field config-field--checkbox">
-                <label htmlFor="v2_ui_global_satellite_enabled">
-                  <input
-                    id="v2_ui_global_satellite_enabled"
-                    type="checkbox"
-                    checked={
-                      (form as unknown as { ui_global?: { satellite?: { enabled?: boolean } } }).ui_global?.satellite?.enabled ?? false
-                    }
-                    disabled={disableInputs}
-                    onChange={(event) => {
-                      const enabled = event.target.checked;
-                      setForm((prev) => {
-                        const v2 = prev as unknown as { ui_global?: { satellite?: { enabled?: boolean; provider?: string; opacity?: number } } };
-                        return {
-                          ...prev,
-                          ui_global: {
-                            ...v2.ui_global,
-                            satellite: {
-                              ...v2.ui_global?.satellite,
-                              enabled,
-                              provider: v2.ui_global?.satellite?.provider || "gibs",
-                              opacity: v2.ui_global?.satellite?.opacity ?? 1.0,
-                            },
-                          },
-                        } as unknown as AppConfig;
-                      });
-                      resetErrorsFor("ui_global.satellite.enabled");
-                    }}
-                  />
-                  Satélite (GIBS)
-                </label>
-                {renderHelp("Muestra imágenes satelitales de GIBS/NASA")}
-              </div>
-            </div>
-          </div>
-        )} */}
-
-        {/* Sección de Capas en Tiempo Real para v2 - DUPLICADO: Esta sección está duplicada.
-            Las configuraciones de Aviones están en Grupo 4 (Aviones/OpenSky),
-            Barcos están en Grupo 5 (Barcos/AIS),
-            Rayos están en Grupo 3 (Blitzortung/Rayos),
-            Modo Tormenta está en Grupo 11 (Modo Tormenta).
-            Se mantiene comentada para referencia pero no debería mostrarse.
-        {configVersion === 2 && false && (
-          <div className="config-card">
-            <div>
-              <h2>Capas en Tiempo Real</h2>
-              <p>Configura las capas de aviones, barcos, rayos y modo tormenta en tiempo real.</p>
-            </div>
-            <div className="config-grid">
-              {/* Configuración de Aviones (OpenSky) */}
-              {(form as unknown as { layers?: { flights?: { enabled?: boolean } } }).layers?.flights?.enabled && (
-                <>
-                  <div className="config-field">
-                    <label htmlFor="v2_flights_refresh_seconds">Intervalo de actualización (segundos)</label>
-                    <input
-                      id="v2_flights_refresh_seconds"
-                      type="number"
-                      min="5"
-                      max="300"
-                      value={(form as unknown as { layers?: { flights?: { refresh_seconds?: number } } }).layers?.flights?.refresh_seconds ?? 10}
-                      disabled={disableInputs}
-                      onChange={(event) => {
-                        const value = Number(event.target.value);
-                        if (!Number.isNaN(value)) {
-                          setForm((prev) => {
-                            const v2 = prev as unknown as { layers?: { flights?: Record<string, unknown> } };
-                            return {
-                              ...prev,
-                              layers: {
-                                ...v2.layers,
-                                flights: {
-                                  ...v2.layers?.flights,
-                                  refresh_seconds: Math.max(5, Math.min(300, Math.round(value))),
-                                },
-                              },
-                            } as unknown as AppConfig;
-                          });
-                        }
-                      }}
-                    />
-                    {renderHelp("Cada cuántos segundos se actualizan los datos de aviones (5-300)")}
-                  </div>
-
-                  <div className="config-field">
-                    <label htmlFor="v2_flights_max_age_seconds">Máxima edad de datos (segundos)</label>
-                    <input
-                      id="v2_flights_max_age_seconds"
-                      type="number"
-                      min="10"
-                      max="600"
-                      value={(form as unknown as { layers?: { flights?: { max_age_seconds?: number } } }).layers?.flights?.max_age_seconds ?? 180}
-                      disabled={disableInputs}
-                      onChange={(event) => {
-                        const value = Number(event.target.value);
-                        if (!Number.isNaN(value)) {
-                          setForm((prev) => {
-                            const v2 = prev as unknown as { layers?: { flights?: Record<string, unknown> } };
-                            return {
-                              ...prev,
-                              layers: {
-                                ...v2.layers,
-                                flights: {
-                                  ...v2.layers?.flights,
-                                  max_age_seconds: Math.max(10, Math.min(600, Math.round(value))),
-                                },
-                              },
-                            } as unknown as AppConfig;
-                          });
-                        }
-                      }}
-                    />
-                    {renderHelp("Tiempo máximo antes de ocultar datos antiguos (10-600)")}
-                  </div>
-
-                  <div className="config-field">
-                    <label htmlFor="v2_flights_opacity">Opacidad</label>
-                    <input
-                      id="v2_flights_opacity"
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.1"
-                      value={(form as unknown as { layers?: { flights?: { opacity?: number } } }).layers?.flights?.opacity ?? 0.9}
-                      disabled={disableInputs}
-                      onChange={(event) => {
-                        const opacity = Number(event.target.value);
-                        if (!Number.isNaN(opacity)) {
-                          setForm((prev) => {
-                            const v2 = prev as unknown as { layers?: { flights?: Record<string, unknown> } };
-                            return {
-                              ...prev,
-                              layers: {
-                                ...v2.layers,
-                                flights: {
-                                  ...v2.layers?.flights,
-                                  opacity: Math.max(0, Math.min(1, opacity)),
-                                },
-                              },
-                            } as unknown as AppConfig;
-                          });
-                        }
-                      }}
-                    />
-                    <span>{Math.round(((form as unknown as { layers?: { flights?: { opacity?: number } } }).layers?.flights?.opacity ?? 0.9) * 100)}%</span>
-                    {renderHelp("Opacidad de la capa de aviones (0.0 - 1.0)")}
-                  </div>
-
-                  <div className="config-field">
-                    <label htmlFor="v2_flights_provider">Proveedor</label>
-                    <select
-                      id="v2_flights_provider"
-                      value={(form as unknown as { layers?: { flights?: { provider?: string } } }).layers?.flights?.provider ?? "opensky"}
-                      disabled={disableInputs}
-                      onChange={(event) => {
-                        const provider = event.target.value as "opensky" | "aviationstack" | "custom";
-                        setForm((prev) => {
-                          const v2 = prev as unknown as { layers?: { flights?: Record<string, unknown> } };
-                          return {
-                            ...prev,
-                            layers: {
-                              ...v2.layers,
-                              flights: {
-                                ...v2.layers?.flights,
-                                provider,
-                              },
-                            },
-                          } as unknown as AppConfig;
-                        });
-                      }}
-                    >
-                      <option value="opensky">OpenSky Network</option>
-                      <option value="aviationstack">AviationStack</option>
-                      <option value="custom">Custom</option>
-                    </select>
-                    {renderHelp("Selecciona el proveedor de datos de vuelos")}
-                  </div>
-
-                  {supports("layers.flights.render_mode") && (
-                    <div className="config-field">
-                      <label htmlFor="v2_flights_render_mode">Modo de renderizado</label>
-                      <select
-                        id="v2_flights_render_mode"
-                        value={(form as unknown as { layers?: { flights?: { render_mode?: string } } }).layers?.flights?.render_mode ?? "auto"}
-                        disabled={disableInputs}
-                        onChange={(event) => {
-                          const render_mode = event.target.value as "auto" | "symbol" | "circle";
-                          setForm((prev) => {
-                            const v2 = prev as unknown as { layers?: { flights?: Record<string, unknown> } };
-                            return {
-                              ...prev,
-                              layers: {
-                                ...v2.layers,
-                                flights: {
-                                  ...v2.layers?.flights,
-                                  render_mode,
-                                },
-                              },
-                            } as unknown as AppConfig;
-                          });
-                        }}
-                      >
-                        <option value="auto">Automático</option>
-                        <option value="symbol">Icono</option>
-                        <option value="circle">Círculo</option>
-                      </select>
-                      {renderHelp("Selecciona cómo se dibujan los vuelos sobre el mapa")}
-                    </div>
-                  )}
-
-                  {supports("layers.flights.circle.radius_vh") && (
-                    <div className="config-field">
-                      <label htmlFor="v2_flights_circle_radius_vh">Radio en viewport height (%)</label>
-                      <input
-                        id="v2_flights_circle_radius_vh"
-                        type="number"
-                        min="0.1"
-                        max="10"
-                        step="0.1"
-                        value={(form as unknown as { layers?: { flights?: { circle?: { radius_vh?: number } } } }).layers?.flights?.circle?.radius_vh ?? 0.9}
-                        disabled={disableInputs}
-                        onChange={(event) => {
-                          const value = Number(event.target.value);
-                          if (!Number.isNaN(value)) {
-                            const radius_vh = Math.max(0.1, Math.min(10, value));
-                            setForm((prev) => {
-                              const v2 = prev as unknown as { layers?: { flights?: { circle?: Record<string, unknown> } } };
-                              const currentCircle = v2.layers?.flights?.circle ?? {};
-                              return {
-                                ...prev,
-                                layers: {
-                                  ...v2.layers,
-                                  flights: {
-                                    ...v2.layers?.flights,
-                                    circle: {
-                                      ...currentCircle,
-                                      radius_vh,
-                                    },
-                                  },
-                                },
-                              } as unknown as AppConfig;
-                            });
-                          }
-                        }}
-                      />
-                      {renderHelp("Radio del círculo en porcentaje del viewport height (0.1 - 10)")}
-                    </div>
-                  )}
-
-                  {supports("layers.flights.circle.opacity") && (
-                    <div className="config-field">
-                      <label htmlFor="v2_flights_circle_opacity">Opacidad base del círculo</label>
-                      <input
-                        id="v2_flights_circle_opacity"
-                        type="number"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        value={(form as unknown as { layers?: { flights?: { circle?: { opacity?: number } } } }).layers?.flights?.circle?.opacity ?? 1}
-                        disabled={disableInputs}
-                        onChange={(event) => {
-                          const value = Number(event.target.value);
-                          if (!Number.isNaN(value)) {
-                            const opacity = Math.max(0, Math.min(1, value));
-                            setForm((prev) => {
-                              const v2 = prev as unknown as { layers?: { flights?: { circle?: Record<string, unknown> } } };
-                              const currentCircle = v2.layers?.flights?.circle ?? {};
-                              return {
-                                ...prev,
-                                layers: {
-                                  ...v2.layers,
-                                  flights: {
-                                    ...v2.layers?.flights,
-                                    circle: {
-                                      ...currentCircle,
-                                      opacity,
-                                    },
-                                  },
-                                },
-                              } as unknown as AppConfig;
-                            });
-                          }
-                        }}
-                      />
-                      {renderHelp("Multiplicador adicional de opacidad para círculos (0.0 - 1.0)")}
-                    </div>
-                  )}
-
-                  {supports("layers.flights.circle.color") && (
-                    <div className="config-field">
-                      <label htmlFor="v2_flights_circle_color">Color del círculo</label>
-                      <input
-                        id="v2_flights_circle_color"
-                        type="text"
-                        maxLength={32}
-                        value={(form as unknown as { layers?: { flights?: { circle?: { color?: string } } } }).layers?.flights?.circle?.color ?? "#00D1FF"}
-                        disabled={disableInputs}
-                        onChange={(event) => {
-                          const color = event.target.value;
-                          setForm((prev) => {
-                            const v2 = prev as unknown as { layers?: { flights?: { circle?: Record<string, unknown> } } };
-                            const currentCircle = v2.layers?.flights?.circle ?? {};
-                            return {
-                              ...prev,
-                              layers: {
-                                ...v2.layers,
-                                flights: {
-                                  ...v2.layers?.flights,
-                                  circle: {
-                                    ...currentCircle,
-                                    color,
-                                  },
-                                },
-                              },
-                            } as unknown as AppConfig;
-                          });
-                        }}
-                      />
-                      {renderHelp("Color de relleno del círculo (hex o valor CSS válido)")}
-                    </div>
-                  )}
-
-                  {supports("layers.flights.circle.stroke_color") && (
-                    <div className="config-field">
-                      <label htmlFor="v2_flights_circle_stroke_color">Color del borde</label>
-                      <input
-                        id="v2_flights_circle_stroke_color"
-                        type="text"
-                        maxLength={32}
-                        value={(form as unknown as { layers?: { flights?: { circle?: { stroke_color?: string } } } }).layers?.flights?.circle?.stroke_color ?? "#002A33"}
-                        disabled={disableInputs}
-                        onChange={(event) => {
-                          const stroke_color = event.target.value;
-                          setForm((prev) => {
-                            const v2 = prev as unknown as { layers?: { flights?: { circle?: Record<string, unknown> } } };
-                            const currentCircle = v2.layers?.flights?.circle ?? {};
-                            return {
-                              ...prev,
-                              layers: {
-                                ...v2.layers,
-                                flights: {
-                                  ...v2.layers?.flights,
-                                  circle: {
-                                    ...currentCircle,
-                                    stroke_color,
-                                  },
-                                },
-                              },
-                            } as unknown as AppConfig;
-                          });
-                        }}
-                      />
-                      {renderHelp("Color del borde del círculo")}
-                    </div>
-                  )}
-
-                  {supports("layers.flights.circle.stroke_width") && (
-                    <div className="config-field">
-                      <label htmlFor="v2_flights_circle_stroke_width">Ancho del borde</label>
-                      <input
-                        id="v2_flights_circle_stroke_width"
-                        type="number"
-                        min="0"
-                        max="10"
-                        step="0.1"
-                        value={(form as unknown as { layers?: { flights?: { circle?: { stroke_width?: number } } } }).layers?.flights?.circle?.stroke_width ?? 1}
-                        disabled={disableInputs}
-                        onChange={(event) => {
-                          const value = Number(event.target.value);
-                          if (!Number.isNaN(value)) {
-                            const stroke_width = Math.max(0, Math.min(10, value));
-                            setForm((prev) => {
-                              const v2 = prev as unknown as { layers?: { flights?: { circle?: Record<string, unknown> } } };
-                              const currentCircle = v2.layers?.flights?.circle ?? {};
-                              return {
-                                ...prev,
-                                layers: {
-                                  ...v2.layers,
-                                  flights: {
-                                    ...v2.layers?.flights,
-                                    circle: {
-                                      ...currentCircle,
-                                      stroke_width,
-                                    },
-                                  },
-                                },
-                              } as unknown as AppConfig;
-                            });
-                          }
-                        }}
-                      />
-                      {renderHelp("Grosor del borde del círculo (0.0 - 10.0)")}
-                    </div>
-                  )}
-
-                  {(form as unknown as { layers?: { flights?: { provider?: string } } }).layers?.flights?.provider === "opensky" && (
-                    <>
-                      <div className="config-field">
-                        <label htmlFor="v2_flights_opensky_username">Usuario OpenSky (opcional)</label>
-                        <input
-                          id="v2_flights_opensky_username"
-                          type="text"
-                          maxLength={128}
-                          value={(form as unknown as { layers?: { flights?: { opensky?: { username?: string | null } } } }).layers?.flights?.opensky?.username || ""}
-                          disabled={disableInputs}
-                          onChange={(event) => {
-                            const username = event.target.value.trim() || null;
-                            setForm((prev) => {
-                              const v2 = prev as unknown as { layers?: { flights?: { opensky?: Record<string, unknown> } } };
-                              const currentOpensky = v2.layers?.flights?.opensky ?? {};
-                              return {
-                                ...prev,
-                                layers: {
-                                  ...v2.layers,
-                                  flights: {
-                                    ...v2.layers?.flights,
-                                    opensky: {
-                                      ...currentOpensky,
-                                      username,
-                                    },
-                                  },
-                                },
-                              } as unknown as AppConfig;
-                            });
-                          }}
-                        />
-                        {renderHelp("Usuario de OpenSky Network (opcional, mejora límites de tasa)")}
-                      </div>
-
-                      <div className="config-field">
-                        <label htmlFor="v2_flights_opensky_password">Contraseña OpenSky (opcional)</label>
-                        <input
-                          id="v2_flights_opensky_password"
-                          type="password"
-                          maxLength={128}
-                          value={(form as unknown as { layers?: { flights?: { opensky?: { password?: string | null } } } }).layers?.flights?.opensky?.password || ""}
-                          disabled={disableInputs}
-                          onChange={(event) => {
-                            const password = event.target.value.trim() || null;
-                            setForm((prev) => {
-                              const v2 = prev as unknown as { layers?: { flights?: { opensky?: Record<string, unknown> } } };
-                              const currentOpensky = v2.layers?.flights?.opensky ?? {};
-                              return {
-                                ...prev,
-                                layers: {
-                                  ...v2.layers,
-                                  flights: {
-                                    ...v2.layers?.flights,
-                                    opensky: {
-                                      ...currentOpensky,
-                                      password,
-                                    },
-                                  },
-                                },
-                              } as unknown as AppConfig;
-                            });
-                          }}
-                        />
-                        {renderHelp("Contraseña de OpenSky Network (opcional)")}
-                      </div>
-                    </>
-                  )}
-
-                  {(form as unknown as { layers?: { flights?: { provider?: string } } }).layers?.flights?.provider === "custom" && (
-                    <div className="config-grid">
-                      {supports("layers.flights.custom.api_url") && (
-                        <div className="config-field">
-                          <label htmlFor="v2_flights_custom_url">URL de API</label>
-                          <input
-                            id="v2_flights_custom_url"
-                            type="url"
-                            value={(form as unknown as { layers?: { flights?: { custom?: { api_url?: string | null } } } }).layers?.flights?.custom?.api_url ?? ""}
-                            disabled={disableInputs}
-                            onChange={(event) => {
-                              const api_url = event.target.value || null;
-                              setForm((prev) => {
-                                const v2 = prev as unknown as { layers?: { flights?: { custom?: Record<string, unknown> } } };
-                                const currentCustom = v2.layers?.flights?.custom ?? {};
-                                return {
-                                  ...prev,
-                                  layers: {
-                                    ...v2.layers,
-                                    flights: {
-                                      ...v2.layers?.flights,
-                                      custom: {
-                                        ...currentCustom,
-                                        api_url,
-                                      },
-                                    },
-                                  },
-                                } as unknown as AppConfig;
-                              });
-                            }}
-                            placeholder="https://api.example.com/flights"
-                          />
-                          {renderHelp("URL del endpoint que devuelve GeoJSON FeatureCollection")}
-                        </div>
-                      )}
-                      {supports("layers.flights.custom.api_key") && (
-                        <div className="config-field">
-                          <label htmlFor="v2_flights_custom_key">API Key (opcional)</label>
-                          <input
-                            id="v2_flights_custom_key"
-                            type="password"
-                            value={(form as unknown as { layers?: { flights?: { custom?: { api_key?: string | null } } } }).layers?.flights?.custom?.api_key ?? ""}
-                            disabled={disableInputs}
-                            onChange={(event) => {
-                              const api_key = event.target.value || null;
-                              setForm((prev) => {
-                                const v2 = prev as unknown as { layers?: { flights?: { custom?: Record<string, unknown> } } };
-                                const currentCustom = v2.layers?.flights?.custom ?? {};
-                                return {
-                                  ...prev,
-                                  layers: {
-                                    ...v2.layers,
-                                    flights: {
-                                      ...v2.layers?.flights,
-                                      custom: {
-                                        ...currentCustom,
-                                        api_key,
-                                      },
-                                    },
-                                  },
-                                } as unknown as AppConfig;
-                              });
-                            }}
-                            placeholder="API Key para autenticación"
-                          />
-                          {renderHelp("API Key opcional para autenticación Bearer")}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {(form as unknown as { layers?: { flights?: { provider?: string } } }).layers?.flights?.provider === "aviationstack" && (
-                    <>
-                      <div className="config-field">
-                        <label htmlFor="v2_flights_aviationstack_base_url">URL Base AviationStack</label>
-                        <input
-                          id="v2_flights_aviationstack_base_url"
-                          type="url"
-                          maxLength={256}
-                          value={(form as unknown as { layers?: { flights?: { aviationstack?: { base_url?: string | null } } } }).layers?.flights?.aviationstack?.base_url || ""}
-                          disabled={disableInputs}
-                          onChange={(event) => {
-                            const base_url = event.target.value.trim() || null;
-                            setForm((prev) => {
-                              const v2 = prev as unknown as { layers?: { flights?: { aviationstack?: Record<string, unknown> } } };
-                              const currentAviationstack = v2.layers?.flights?.aviationstack ?? {};
-                              return {
-                                ...prev,
-                                layers: {
-                                  ...v2.layers,
-                                  flights: {
-                                    ...v2.layers?.flights,
-                                    aviationstack: {
-                                      ...currentAviationstack,
-                                      base_url,
-                                    },
-                                  },
-                                },
-                              } as unknown as AppConfig;
-                            });
-                          }}
-                        />
-                        {renderHelp("URL base de la API de AviationStack")}
-                      </div>
-
-                      <div className="config-field">
-                        <label htmlFor="v2_flights_aviationstack_api_key">API Key AviationStack</label>
-                        <input
-                          id="v2_flights_aviationstack_api_key"
-                          type="text"
-                          maxLength={256}
-                          value={(form as unknown as { layers?: { flights?: { aviationstack?: { api_key?: string | null } } } }).layers?.flights?.aviationstack?.api_key || ""}
-                          disabled={disableInputs}
-                          onChange={(event) => {
-                            const api_key = event.target.value.trim() || null;
-                            setForm((prev) => {
-                              const v2 = prev as unknown as { layers?: { flights?: { aviationstack?: Record<string, unknown> } } };
-                              const currentAviationstack = v2.layers?.flights?.aviationstack ?? {};
-                              return {
-                                ...prev,
-                                layers: {
-                                  ...v2.layers,
-                                  flights: {
-                                    ...v2.layers?.flights,
-                                    aviationstack: {
-                                      ...currentAviationstack,
-                                      api_key,
-                                    },
-                                  },
-                                },
-                              } as unknown as AppConfig;
-                            });
-                          }}
-                        />
-                        {renderHelp("API key de AviationStack (requerida para usar este proveedor)")}
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-
-              {/* Configuración de Barcos (AISStream) */}
-              {(form as unknown as { layers?: { ships?: { enabled?: boolean } } }).layers?.ships?.enabled && (
-                <>
-                  <div className="config-field">
-                    <label htmlFor="v2_ships_opacity">Opacidad</label>
-                    <input
-                      id="v2_ships_opacity"
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.1"
-                      value={(form as unknown as { layers?: { ships?: { opacity?: number } } }).layers?.ships?.opacity ?? 0.9}
-                      disabled={disableInputs}
-                      onChange={(event) => {
-                        const value = Number(event.target.value);
-                        if (!Number.isNaN(value)) {
-                          setForm((prev) => {
-                            const v2 = prev as unknown as { layers?: { ships?: Record<string, unknown> } };
-                            return {
-                              ...prev,
-                              layers: {
-                                ...v2.layers,
-                                ships: {
-                                  ...v2.layers?.ships,
-                                  opacity: Math.max(0, Math.min(1, value)),
-                                },
-                              },
-                            } as unknown as AppConfig;
-                          });
-                        }
-                      }}
-                    />
-                    {renderHelp(`Opacidad de la capa de barcos: ${Math.round(((form as unknown as { layers?: { ships?: { opacity?: number } } }).layers?.ships?.opacity ?? 0.9) * 100)}%`)}
-                  </div>
-
-                  <div className="config-field">
-                    <label htmlFor="v2_ships_refresh_seconds">Intervalo de actualización (segundos)</label>
-                    <input
-                      id="v2_ships_refresh_seconds"
-                      type="number"
-                      min="1"
-                      max="300"
-                      value={(form as unknown as { layers?: { ships?: { refresh_seconds?: number } } }).layers?.ships?.refresh_seconds ?? 10}
-                      disabled={disableInputs}
-                      onChange={(event) => {
-                        const value = Number(event.target.value);
-                        if (!Number.isNaN(value)) {
-                          setForm((prev) => {
-                            const v2 = prev as unknown as { layers?: { ships?: Record<string, unknown> } };
-                            return {
-                              ...prev,
-                              layers: {
-                                ...v2.layers,
-                                ships: {
-                                  ...v2.layers?.ships,
-                                  refresh_seconds: Math.max(1, Math.min(300, Math.round(value))),
-                                },
-                              },
-                            } as unknown as AppConfig;
-                          });
-                        }
-                      }}
-                    />
-                    {renderHelp("Cada cuántos segundos se sincroniza el buffer de barcos (1-300)")}
-                  </div>
-
-                  <div className="config-field">
-                    <label htmlFor="v2_ships_max_age_seconds">Máxima edad de datos (segundos)</label>
-                    <input
-                      id="v2_ships_max_age_seconds"
-                      type="number"
-                      min="10"
-                      max="600"
-                      value={(form as unknown as { layers?: { ships?: { max_age_seconds?: number } } }).layers?.ships?.max_age_seconds ?? 180}
-                      disabled={disableInputs}
-                      onChange={(event) => {
-                        const value = Number(event.target.value);
-                        if (!Number.isNaN(value)) {
-                          setForm((prev) => {
-                            const v2 = prev as unknown as { layers?: { ships?: Record<string, unknown> } };
-                            return {
-                              ...prev,
-                              layers: {
-                                ...v2.layers,
-                                ships: {
-                                  ...v2.layers?.ships,
-                                  max_age_seconds: Math.max(10, Math.min(600, Math.round(value))),
-                                },
-                              },
-                            } as unknown as AppConfig;
-                          });
-                        }
-                      }}
-                    />
-                    {renderHelp("Tiempo máximo antes de ocultar datos antiguos (10-600)")}
-                  </div>
-
-                  <div className="config-field">
-                    <label htmlFor="v2_ships_provider">Proveedor</label>
-                    <select
-                      id="v2_ships_provider"
-                      value={(form as unknown as { layers?: { ships?: { provider?: string } } }).layers?.ships?.provider ?? "ais_generic"}
-                      disabled={disableInputs}
-                      onChange={(event) => {
-                        const provider = event.target.value as "ais_generic" | "aisstream" | "aishub" | "custom";
-                        setForm((prev) => {
-                          const v2 = prev as unknown as { layers?: { ships?: Record<string, unknown> } };
-                          return {
-                            ...prev,
-                            layers: {
-                              ...v2.layers,
-                              ships: {
-                                ...v2.layers?.ships,
-                                provider,
-                              },
-                            },
-                          } as unknown as AppConfig;
-                        });
-                      }}
-                    >
-                      <option value="ais_generic">Generic AIS (Demo)</option>
-                      <option value="aisstream">AISStream</option>
-                      <option value="aishub">AISHub</option>
-                      <option value="custom">Custom</option>
-                    </select>
-                    {renderHelp("Selecciona el proveedor de datos de barcos")}
-                  </div>
-
-                  {(form as unknown as { layers?: { ships?: { provider?: string } } }).layers?.ships?.provider === "ais_generic" && (
-                    <>
-                      <div className="config-field">
-                        <label htmlFor="v2_ships_ais_generic_api_url">URL API AIS (opcional)</label>
-                        <input
-                          id="v2_ships_ais_generic_api_url"
-                          type="url"
-                          maxLength={256}
-                          value={(form as unknown as { layers?: { ships?: { ais_generic?: { api_url?: string | null } } } }).layers?.ships?.ais_generic?.api_url || ""}
-                          disabled={disableInputs}
-                          onChange={(event) => {
-                            const api_url = event.target.value.trim() || null;
-                            setForm((prev) => {
-                              const v2 = prev as unknown as { layers?: { ships?: { ais_generic?: Record<string, unknown> } } };
-                              const currentAisGeneric = v2.layers?.ships?.ais_generic ?? {};
-                              return {
-                                ...prev,
-                                layers: {
-                                  ...v2.layers,
-                                  ships: {
-                                    ...v2.layers?.ships,
-                                    ais_generic: {
-                                      ...currentAisGeneric,
-                                      api_url,
-                                    },
-                                  },
-                                },
-                              } as unknown as AppConfig;
-                            });
-                          }}
-                        />
-                        {renderHelp("URL de la API AIS personalizada (opcional, usa demo si está vacío)")}
-                      </div>
-
-                      <div className="config-field">
-                        <label htmlFor="v2_ships_ais_generic_api_key">API Key AIS (opcional)</label>
-                        <input
-                          id="v2_ships_ais_generic_api_key"
-                          type="text"
-                          maxLength={256}
-                          value={(form as unknown as { layers?: { ships?: { ais_generic?: { api_key?: string | null } } } }).layers?.ships?.ais_generic?.api_key || ""}
-                          disabled={disableInputs}
-                          onChange={(event) => {
-                            const api_key = event.target.value.trim() || null;
-                            setForm((prev) => {
-                              const v2 = prev as unknown as { layers?: { ships?: { ais_generic?: Record<string, unknown> } } };
-                              const currentAisGeneric = v2.layers?.ships?.ais_generic ?? {};
-                              return {
-                                ...prev,
-                                layers: {
-                                  ...v2.layers,
-                                  ships: {
-                                    ...v2.layers?.ships,
-                                    ais_generic: {
-                                      ...currentAisGeneric,
-                                      api_key,
-                                    },
-                                  },
-                                },
-                              } as unknown as AppConfig;
-                            });
-                          }}
-                        />
-                        {renderHelp("API key de la API AIS personalizada (opcional)")}
-                      </div>
-                    </>
-                  )}
-
-                  {(form as unknown as { layers?: { ships?: { provider?: string } } }).layers?.ships?.provider === "aisstream" && (
-                    <>
-                      <div className="config-field">
-                        <label htmlFor="v2_ships_aisstream_ws_url">WebSocket/URL AISStream</label>
-                        <input
-                          id="v2_ships_aisstream_ws_url"
-                          type="url"
-                          maxLength={256}
-                          value={(form as unknown as { layers?: { ships?: { aisstream?: { ws_url?: string | null } } } }).layers?.ships?.aisstream?.ws_url || ""}
-                          disabled={disableInputs}
-                          onChange={(event) => {
-                            const ws_url = event.target.value.trim() || null;
-                            setForm((prev) => {
-                              const v2 = prev as unknown as { layers?: { ships?: { aisstream?: Record<string, unknown> } } };
-                              const currentAisstream = v2.layers?.ships?.aisstream ?? {};
-                              return {
-                                ...prev,
-                                layers: {
-                                  ...v2.layers,
-                                  ships: {
-                                    ...v2.layers?.ships,
-                                    aisstream: {
-                                      ...currentAisstream,
-                                      ws_url,
-                                    },
-                                  },
-                                },
-                              } as unknown as AppConfig;
-                            });
-                          }}
-                        />
-                        {renderHelp("URL WebSocket o REST de AISStream")}
-                      </div>
-
-                      <div className="config-field">
-                        <label htmlFor="v2_ships_aisstream_api_key">API key de AISStream</label>
-                        <div className="config-field__secret">
-                          {showAisstreamKey ? (
-                            <input
-                              id="v2_ships_aisstream_api_key"
-                              type="text"
-                              value={aisstreamKeyInput}
-                              disabled={disableInputs}
-                              onChange={(event) => {
-                                setAisstreamKeyInput(event.target.value);
-                                setShipsTestResult(null);
-                              }}
-                              placeholder="Introduce la API key de AISStream"
-                              autoComplete="off"
-                              spellCheck={false}
-                            />
-                          ) : (
-                            <input
-                              id="v2_ships_aisstream_api_key_masked"
-                              type="text"
-                              value={maskedAisstreamKey}
-                              readOnly
-                              disabled
-                              placeholder="Sin clave guardada"
-                            />
-                          )}
-                          <button
-                            type="button"
-                            className="config-button"
-                            onClick={handleToggleAisstreamKeyVisibility}
-                            disabled={disableInputs}
-                          >
-                            {showAisstreamKey ? "Ocultar" : hasStoredAisstreamKey ? "Mostrar" : "Añadir"}
-                          </button>
-                        </div>
-                        <div className="config-field__hint">
-                          La clave se guarda cifrada en el backend y no se muestra completa.
-                        </div>
-                        <div className="config-field__actions">
-                          {showAisstreamKey && (
-                            <button
-                              type="button"
-                              className="config-button primary"
-                              onClick={() => void handleSaveAisstreamKey()}
-                              disabled={
-                                disableInputs ||
-                                !canPersistAisstreamKey ||
-                                savingAisstreamKey
-                              }
-                            >
-                              Guardar clave
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            className="config-button"
-                            onClick={() => void handleTestShipsLayer()}
-                            disabled={
-                              disableInputs ||
-                              !canTestShips ||
-                              testingShips
-                            }
-                          >
-                            {testingShips ? "Comprobando…" : "Probar"}
-                          </button>
-                        </div>
-                        {shipsTestResult && (
-                          <div
-                            className={`config-field__hint ${
-                              shipsTestResult.ok
-                                ? "config-field__hint--success"
-                                : "config-field__hint--error"
-                            }`}
-                          >
-                            {shipsTestResult.message}
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  )}
-
-                  {(form as unknown as { layers?: { ships?: { provider?: string } } }).layers?.ships?.provider === "aishub" && (
-                    <>
-                      <div className="config-field">
-                        <label htmlFor="v2_ships_aishub_base_url">URL Base AISHub</label>
-                        <input
-                          id="v2_ships_aishub_base_url"
-                          type="url"
-                          maxLength={256}
-                          value={(form as unknown as { layers?: { ships?: { aishub?: { base_url?: string | null } } } }).layers?.ships?.aishub?.base_url || ""}
-                          disabled={disableInputs}
-                          onChange={(event) => {
-                            const base_url = event.target.value.trim() || null;
-                            setForm((prev) => {
-                              const v2 = prev as unknown as { layers?: { ships?: { aishub?: Record<string, unknown> } } };
-                              const currentAishub = v2.layers?.ships?.aishub ?? {};
-                              return {
-                                ...prev,
-                                layers: {
-                                  ...v2.layers,
-                                  ships: {
-                                    ...v2.layers?.ships,
-                                    aishub: {
-                                      ...currentAishub,
-                                      base_url,
-                                    },
-                                  },
-                                },
-                              } as unknown as AppConfig;
-                            });
-                          }}
-                        />
-                        {renderHelp("URL base de la API de AISHub")}
-                      </div>
-
-                      <div className="config-field">
-                        <label htmlFor="v2_ships_aishub_api_key">API Key AISHub</label>
-                        <input
-                          id="v2_ships_aishub_api_key"
-                          type="text"
-                          maxLength={256}
-                          value={(form as unknown as { layers?: { ships?: { aishub?: { api_key?: string | null } } } }).layers?.ships?.aishub?.api_key || ""}
-                          disabled={disableInputs}
-                          onChange={(event) => {
-                            const api_key = event.target.value.trim() || null;
-                            setForm((prev) => {
-                              const v2 = prev as unknown as { layers?: { ships?: { aishub?: Record<string, unknown> } } };
-                              const currentAishub = v2.layers?.ships?.aishub ?? {};
-                              return {
-                                ...prev,
-                                layers: {
-                                  ...v2.layers,
-                                  ships: {
-                                    ...v2.layers?.ships,
-                                    aishub: {
-                                      ...currentAishub,
-                                      api_key,
-                                    },
-                                  },
-                                },
-                              } as unknown as AppConfig;
-                            });
-                          }}
-                        />
-                        {renderHelp("API key de AISHub (requerida para usar este proveedor)")}
-                      </div>
-                    </>
-                  )}
-
-                  {(form as unknown as { layers?: { ships?: { provider?: string } } }).layers?.ships?.provider === "custom" && (
-                    <div className="config-grid">
-                      {supports("layers.ships.custom.api_url") && (
-                        <div className="config-field">
-                          <label htmlFor="v2_ships_custom_url">URL de API</label>
-                          <input
-                            id="v2_ships_custom_url"
-                            type="url"
-                            value={(form as unknown as { layers?: { ships?: { custom?: { api_url?: string | null } } } }).layers?.ships?.custom?.api_url ?? ""}
-                            disabled={disableInputs}
-                            onChange={(event) => {
-                              const api_url = event.target.value || null;
-                              setForm((prev) => {
-                                const v2 = prev as unknown as { layers?: { ships?: { custom?: Record<string, unknown> } } };
-                                const currentCustom = v2.layers?.ships?.custom ?? {};
-                                return {
-                                  ...prev,
-                                  layers: {
-                                    ...v2.layers,
-                                    ships: {
-                                      ...v2.layers?.ships,
-                                      custom: {
-                                        ...currentCustom,
-                                        api_url,
-                                      },
-                                    },
-                                  },
-                                } as unknown as AppConfig;
-                              });
-                            }}
-                            placeholder="https://api.example.com/ships"
-                          />
-                          {renderHelp("URL del endpoint que devuelve GeoJSON FeatureCollection")}
-                        </div>
-                      )}
-                      {supports("layers.ships.custom.api_key") && (
-                        <div className="config-field">
-                          <label htmlFor="v2_ships_custom_key">API Key (opcional)</label>
-                          <input
-                            id="v2_ships_custom_key"
-                            type="password"
-                            value={(form as unknown as { layers?: { ships?: { custom?: { api_key?: string | null } } } }).layers?.ships?.custom?.api_key ?? ""}
-                            disabled={disableInputs}
-                            onChange={(event) => {
-                              const api_key = event.target.value || null;
-                              setForm((prev) => {
-                                const v2 = prev as unknown as { layers?: { ships?: { custom?: Record<string, unknown> } } };
-                                const currentCustom = v2.layers?.ships?.custom ?? {};
-                                return {
-                                  ...prev,
-                                  layers: {
-                                    ...v2.layers,
-                                    ships: {
-                                      ...v2.layers?.ships,
-                                      custom: {
-                                        ...currentCustom,
-                                        api_key,
-                                      },
-                                    },
-                                  },
-                                } as unknown as AppConfig;
-                              });
-                            }}
-                            placeholder="API Key para autenticación"
-                          />
-                          {renderHelp("API Key opcional para autenticación Bearer")}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* Configuración de Rayos (Blitzortung) - solo mostrar si existe en v1 y necesitamos agregarlo a v2 */}
-              {supports("blitzortung") && (
+              {supports("harvest.enabled") && (
                 <div className="config-field config-field--checkbox">
-                  <label htmlFor="v2_blitzortung_enabled">
+                  <label htmlFor="harvest_enabled">
                     <input
-                      id="v2_blitzortung_enabled"
+                      id="harvest_enabled"
                       type="checkbox"
-                      checked={form.blitzortung?.enabled ?? false}
+                      checked={form.harvest.enabled}
                       disabled={disableInputs}
                       onChange={(event) => {
                         const enabled = event.target.checked;
                         setForm((prev) => ({
                           ...prev,
-                          blitzortung: {
-                            ...prev.blitzortung,
+                          harvest: {
+                            ...prev.harvest,
                             enabled,
                           },
                         }));
+                        resetErrorsFor("harvest.enabled");
                       }}
                     />
-                    Rayos (Blitzortung)
+                    Hortalizas
                   </label>
-                  {renderHelp("Muestra rayos en tiempo real desde Blitzortung Network")}
-                </div>
-              )}
-
-              {/* Configuración de Tormenta (Storm Mode) - solo mostrar si existe en v1 y necesitamos agregarlo a v2 */}
-              {supports("storm") && (
-                <div className="config-field config-field--checkbox">
-                  <label htmlFor="v2_storm_enabled">
-                    <input
-                      id="v2_storm_enabled"
-                      type="checkbox"
-                      checked={form.storm.enabled ?? false}
-                      disabled={disableInputs}
-                      onChange={(event) => {
-                        const enabled = event.target.checked;
-                        setForm((prev) => ({
-                          ...prev,
-                          storm: {
-                            ...prev.storm,
-                            enabled,
-                          },
-                        }));
-                      }}
-                    />
-                    Modo Tormenta
-                  </label>
-                  {renderHelp("Activa el modo tormenta para enfocar el mapa en tormentas activas")}
+                  {renderHelp("Muestra cultivos estacionales y personalizados")}
                 </div>
               )}
             </div>
           </div>
-        )} */}
+        )}
 
         {supports("harvest") && (
           <div className="config-card">
@@ -6147,7 +4960,7 @@ const ConfigPage: React.FC = () => {
                   <label>Items personalizados (JSON)</label>
                   <textarea
                     rows={6}
-                    value={JSON.stringify(form.harvest.custom_items, null, 2)}
+                    value={JSON.stringify(form.harvest.custom_items ?? [], null, 2)}
                     disabled={disableInputs || !form.harvest.enabled}
                     onChange={(event) => {
                       try {
@@ -6170,6 +4983,249 @@ const ConfigPage: React.FC = () => {
                   />
                   {renderHelp("Items personalizados de cultivos en formato JSON (se combinan con los estacionales)")}
                   {renderFieldError("harvest.custom_items")}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {supports("saints") && (
+          <div className="config-card">
+            <div>
+              <h2>Santoral</h2>
+              <p>Configura el santoral y onomásticos del día.</p>
+            </div>
+            <div className="config-grid">
+              {supports("saints.enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="saints_enabled">
+                    <input
+                      id="saints_enabled"
+                      type="checkbox"
+                      checked={form.saints.enabled}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          saints: {
+                            ...prev.saints,
+                            enabled,
+                          },
+                        }));
+                        resetErrorsFor("saints.enabled");
+                      }}
+                    />
+                    Activar santoral
+                  </label>
+                  {renderHelp("Muestra los santos del día en el panel rotativo")}
+                </div>
+              )}
+
+              {supports("saints.include_namedays") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="saints_namedays">
+                    <input
+                      id="saints_namedays"
+                      type="checkbox"
+                      checked={form.saints.include_namedays}
+                      disabled={disableInputs || !form.saints.enabled}
+                      onChange={(event) => {
+                        const include_namedays = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          saints: {
+                            ...prev.saints,
+                            include_namedays,
+                          },
+                        }));
+                        resetErrorsFor("saints.include_namedays");
+                      }}
+                    />
+                    Incluir onomásticos
+                  </label>
+                  {renderHelp("Incluye los onomásticos junto con los santos del día")}
+                </div>
+              )}
+
+              {supports("saints.locale") && (
+                <div className="config-field">
+                  <label htmlFor="saints_locale">Locale</label>
+                  <input
+                    id="saints_locale"
+                    type="text"
+                    maxLength={5}
+                    value={form.saints.locale}
+                    disabled={disableInputs || !form.saints.enabled}
+                    onChange={(event) => {
+                      const locale = event.target.value.substring(0, 5);
+                      setForm((prev) => ({
+                        ...prev,
+                        saints: {
+                          ...prev.saints,
+                          locale,
+                        },
+                      }));
+                      resetErrorsFor("saints.locale");
+                    }}
+                  />
+                  {renderHelp("Locale para el santoral (p. ej. 'es', 'en')")}
+                  {renderFieldError("saints.locale")}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {supports("harvest") && (
+          <div className="config-card">
+            <div>
+              <h2>Hortalizas y Cultivos</h2>
+              <p>Configura los cultivos estacionales y personalizados a mostrar.</p>
+            </div>
+            <div className="config-grid">
+              {supports("harvest.enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="harvest_enabled">
+                    <input
+                      id="harvest_enabled"
+                      type="checkbox"
+                      checked={form.harvest.enabled}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          harvest: {
+                            ...prev.harvest,
+                            enabled,
+                          },
+                        }));
+                        resetErrorsFor("harvest.enabled");
+                      }}
+                    />
+                    Activar hortalizas estacionales
+                  </label>
+                  {renderHelp("Muestra las hortalizas y cultivos en temporada según el mes actual")}
+                </div>
+              )}
+
+              {supports("harvest.custom_items") && (
+                <div className="config-field">
+                  <label>Items personalizados (JSON)</label>
+                  <textarea
+                    rows={6}
+                    value={JSON.stringify(form.harvest.custom_items ?? [], null, 2)}
+                    disabled={disableInputs || !form.harvest.enabled}
+                    onChange={(event) => {
+                      try {
+                        const items = JSON.parse(event.target.value);
+                        if (Array.isArray(items)) {
+                          setForm((prev) => ({
+                            ...prev,
+                            harvest: {
+                              ...prev.harvest,
+                              custom_items: items,
+                            },
+                          }));
+                          resetErrorsFor("harvest.custom_items");
+                        }
+                      } catch {
+                        // Ignore invalid JSON
+                      }
+                    }}
+                    placeholder='[{"name": "Tomates", "status": "Temporada"}, ...]'
+                  />
+                  {renderHelp("Items personalizados de cultivos en formato JSON (se combinan con los estacionales)")}
+                  {renderFieldError("harvest.custom_items")}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {supports("saints") && (
+          <div className="config-card">
+            <div>
+              <h2>Santoral</h2>
+              <p>Configura el santoral y onomásticos del día.</p>
+            </div>
+            <div className="config-grid">
+              {supports("saints.enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="saints_enabled">
+                    <input
+                      id="saints_enabled"
+                      type="checkbox"
+                      checked={form.saints.enabled}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          saints: {
+                            ...prev.saints,
+                            enabled,
+                          },
+                        }));
+                        resetErrorsFor("saints.enabled");
+                      }}
+                    />
+                    Activar santoral
+                  </label>
+                  {renderHelp("Muestra los santos del día en el panel rotativo")}
+                </div>
+              )}
+
+              {supports("saints.include_namedays") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="saints_namedays">
+                    <input
+                      id="saints_namedays"
+                      type="checkbox"
+                      checked={form.saints.include_namedays}
+                      disabled={disableInputs || !form.saints.enabled}
+                      onChange={(event) => {
+                        const include_namedays = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          saints: {
+                            ...prev.saints,
+                            include_namedays,
+                          },
+                        }));
+                        resetErrorsFor("saints.include_namedays");
+                      }}
+                    />
+                    Incluir onomásticos
+                  </label>
+                  {renderHelp("Incluye los onomásticos junto con los santos del día")}
+                </div>
+              )}
+
+              {supports("saints.locale") && (
+                <div className="config-field">
+                  <label htmlFor="saints_locale">Locale</label>
+                  <input
+                    id="saints_locale"
+                    type="text"
+                    maxLength={5}
+                    value={form.saints.locale}
+                    disabled={disableInputs || !form.saints.enabled}
+                    onChange={(event) => {
+                      const locale = event.target.value.substring(0, 5);
+                      setForm((prev) => ({
+                        ...prev,
+                        saints: {
+                          ...prev.saints,
+                          locale,
+                        },
+                      }));
+                      resetErrorsFor("saints.locale");
+                    }}
+                  />
+                  {renderHelp("Locale para el santoral (p. ej. 'es', 'en')")}
+                  {renderFieldError("saints.locale")}
                 </div>
               )}
             </div>
@@ -8428,38 +7484,39 @@ const ConfigPage: React.FC = () => {
                 </>
               )}
               </div>
-            </div>
-            {/* Grupo 2: Configuración del Clima y AEMET - Botones de acción */}
-            <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
-              {form.layers.global?.radar?.provider === "openweathermap" && (
-                <button
-                  type="button"
-                  className="config-button secondary"
-                  onClick={() => void handleTestOpenWeather()}
-                  disabled={disableInputs || testingOpenWeather || !form.layers.global?.radar?.enabled}
-                >
-                  {testingOpenWeather ? "Comprobando..." : "Probar OpenWeatherMap"}
-                </button>
-              )}
-              {openWeatherTestResult && (
-                <div
-                  className={`config-field__hint ${
-                    openWeatherTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
-                  }`}
-                  style={{ marginTop: "8px" }}
-                >
-                  {openWeatherTestResult.ok
-                    ? openWeatherTestResult.message || "OpenWeatherMap conectado correctamente"
-                    : `Error: ${openWeatherTestResult.message || "error desconocido"}`}
-                </div>
-              )}
+              {/* Grupo 2: Configuración del Clima y AEMET - Botones de acción */}
+              <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
+                {form.layers.global?.radar?.provider === "openweathermap" && (
+                  <button
+                    type="button"
+                    className="config-button secondary"
+                    onClick={() => void handleTestOpenWeather()}
+                    disabled={disableInputs || testingOpenWeather || !form.layers.global?.radar?.enabled}
+                  >
+                    {testingOpenWeather ? "Comprobando..." : "Probar OpenWeatherMap"}
+                  </button>
+                )}
+                {openWeatherTestResult && (
+                  <div
+                    className={`config-field__hint ${
+                      openWeatherTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                    }`}
+                    style={{ marginTop: "8px" }}
+                  >
+                    {openWeatherTestResult.ok
+                      ? openWeatherTestResult.message || "OpenWeatherMap conectado correctamente"
+                      : `Error: ${openWeatherTestResult.message || "error desconocido"}`}
+                  </div>
+                )}
+              </div>
             </div>
           );
         })()}
 
-        <div className="config-card">
-          <div>
-            <h2>WiFi</h2>
+        {supports("wifi") && (
+          <div className="config-card">
+            <div>
+              <h2>WiFi</h2>
             <p>Gestiona las conexiones de red inalámbrica.</p>
             <div className="config-field__hint config-field__hint--warning" style={{ marginTop: "8px", padding: "8px", backgroundColor: "var(--warning-bg, rgba(255, 193, 7, 0.1))", borderRadius: "4px" }}>
               <strong>⚠️ Requiere reinicio:</strong> Los cambios en la configuración de WiFi requieren reiniciar la aplicación para aplicar los cambios.
@@ -8614,6 +7671,7 @@ const ConfigPage: React.FC = () => {
             </div>
           </div>
         </div>
+        )}
 
         <div className="config-actions">
           <button type="submit" className="config-button primary" disabled={disableInputs}>
