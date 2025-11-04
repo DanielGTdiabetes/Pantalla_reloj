@@ -1163,7 +1163,12 @@ export default function GeoScopeMap() {
 
           // Weather Layer (z-index 12, entre radar/satélite y AEMET warnings)
           // Leer configuración AEMET desde v2 o v1
-          const configAsV2Init = config as unknown as { version?: number; aemet?: { enabled?: boolean; cap_enabled?: boolean; cache_minutes?: number } };
+          const configAsV2Init = config as unknown as { 
+            version?: number; 
+            aemet?: { enabled?: boolean; cap_enabled?: boolean; cache_minutes?: number };
+            layers?: { flights?: typeof mergedConfig.layers.flights }; 
+            opensky?: typeof mergedConfig.opensky;
+          };
           const aemetConfigInit = configAsV2Init.version === 2 
             ? configAsV2Init.aemet 
             : mergedConfig.aemet;
@@ -1190,12 +1195,7 @@ export default function GeoScopeMap() {
           }
 
           // AircraftLayer
-          // Leer configuración desde v2 o v1
-          const configAsV2Init = config as unknown as { 
-            version?: number; 
-            layers?: { flights?: typeof mergedConfig.layers.flights }; 
-            opensky?: typeof mergedConfig.opensky;
-          };
+          // Leer configuración desde v2 o v1 (usando la misma variable configAsV2Init)
           const flightsConfig = configAsV2Init.version === 2 && configAsV2Init.layers?.flights
             ? configAsV2Init.layers.flights
             : mergedConfig.layers.flights;

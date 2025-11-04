@@ -117,16 +117,16 @@ export function useConfig() {
             ...(v2Config.layers as unknown as AppConfig["layers"]),
             global: {
               satellite: {
-                enabled: v2Config.ui_global.satellite?.enabled ?? true,
+                enabled: v2Config.ui_global?.satellite?.enabled ?? true,
                 provider: "gibs" as const,
                 refresh_minutes: 10,
                 history_minutes: 90,
                 frame_step: 10,
-                opacity: v2Config.ui_global.satellite?.opacity ?? 1.0,
+                opacity: v2Config.ui_global?.satellite?.opacity ?? 1.0,
               },
               radar: {
-                enabled: v2Config.ui_global.radar?.enabled ?? false,
-                provider: v2Config.ui_global.radar?.provider === "aemet" ? "rainviewer" as const : "rainviewer" as const,
+                enabled: v2Config.ui_global?.radar?.enabled ?? false,
+                provider: v2Config.ui_global?.radar?.provider === "aemet" ? "rainviewer" as const : "rainviewer" as const,
                 refresh_minutes: 5,
                 history_minutes: 90,
                 frame_step: 5,
