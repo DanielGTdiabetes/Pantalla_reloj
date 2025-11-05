@@ -442,16 +442,10 @@ const ConfigPage: React.FC = () => {
   const [loadingHistoricalEventsPreview, setLoadingHistoricalEventsPreview] = useState(false);
   
   // Group-specific saving states
-  const [savingMaps, setSavingMaps] = useState(false);
-  const [savingWeather, setSavingWeather] = useState(false);
-  const [savingLightning, setSavingLightning] = useState(false);
-  const [savingAircraft, setSavingAircraft] = useState(false);
-  const [savingShips, setSavingShips] = useState(false);
-  const [savingCalendar, setSavingCalendar] = useState(false);
-  const [savingRotator, setSavingRotator] = useState(false);
-  const [savingNews, setSavingNews] = useState(false);
-  const [savingEphemerides, setSavingEphemerides] = useState(false);
-  const [savingStorm, setSavingStorm] = useState(false);
+  const [savingDisplay, setSavingDisplay] = useState(false);
+  const [savingLayersGroup, setSavingLayersGroup] = useState(false); // Grupo de Capas del Mapa
+  const [savingPanelGroup, setSavingPanelGroup] = useState(false); // Grupo de Panel Rotatorio
+  const [savingWifi, setSavingWifi] = useState(false);
   
   // Group-specific test states (using existing testingOpenSky state)
   const [openskyTestResult, setOpenSkyTestResult] = useState<OpenSkyTestResponse | null>(null);
@@ -2176,6 +2170,7 @@ const ConfigPage: React.FC = () => {
       )}
 
       <form onSubmit={handleSubmit} className="config-form">
+        {/* Grupo 1: Display/Reloj */}
         {supports("display") && (
           <div className="config-card">
             <div>
@@ -2231,8 +2226,45 @@ const ConfigPage: React.FC = () => {
                 </div>
               )}
             </div>
+            {/* Grupo 15: Configuración del Reloj - Botones de acción */}
+            <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
+              <button
+                type="button"
+                className="config-button primary"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  if (!isReady || savingDisplay) {
+                    return;
+                  }
+                  setSavingDisplay(true);
+                  setBanner(null);
+                  try {
+                    const payload = JSON.parse(JSON.stringify(form)) as AppConfig;
+                    await saveConfig(payload);
+                    await reloadConfig();
+                    setBanner({ kind: "success", text: "Configuración del reloj guardada ✅" });
+                  } catch (error) {
+                    console.error("[ConfigPage] Failed to save display configuration", error);
+                    const errorMsg = resolveApiErrorMessage(error, "Error al guardar configuración del reloj");
+                    setBanner({ kind: "error", text: errorMsg });
+                  } finally {
+                    setSavingDisplay(false);
+                  }
+                }}
+                disabled={disableInputs || savingDisplay}
+              >
+                {savingDisplay ? "Guardando..." : "Guardar configuración del reloj"}
+              </button>
+            </div>
           </div>
         )}
+
+        {/* Grupo 2: Capas del Mapa - Mapas, AEMET, Rayos, Aviones, Barcos, Clima, Modo Tormenta */}
+        <div style={{ border: "2px solid var(--border-primary, rgba(255,255,255,0.2))", borderRadius: "12px", padding: "24px", marginBottom: "32px", backgroundColor: "var(--background-secondary, rgba(255,255,255,0.05))" }}>
+          <div style={{ marginBottom: "24px", paddingBottom: "16px", borderBottom: "2px solid var(--border-primary, rgba(255,255,255,0.2))" }}>
+            <h1 style={{ fontSize: "1.5rem", fontWeight: "bold", margin: 0 }}>Grupo: Capas del Mapa</h1>
+            <p style={{ marginTop: "8px", opacity: 0.8 }}>Configuración de mapas, estilos, capas de datos (AEMET, rayos, aviones, barcos, clima) y modo tormenta</p>
+          </div>
 
         {/* Sección de Mapas v2 */}
         {configVersion === 2 && (
@@ -2572,7 +2604,7 @@ const ConfigPage: React.FC = () => {
           </div>
         )}
 
-        {/* Grupo 1: Configuración de Mapas - Botones de acción */}
+        {/* Botones de test para Mapas */}
         {configVersion === 2 && (
           <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginBottom: "24px" }}>
             {(form as unknown as { ui_map?: MapConfigV2 }).ui_map?.provider === "maptiler_vector" && (
@@ -2591,247 +2623,10 @@ const ConfigPage: React.FC = () => {
                   setBanner({ kind: "success", text: "MapTiler: Verificar conexión en el mapa después de guardar" });
                 }}
                 disabled={disableInputs}
-                style={{ marginRight: "8px" }}
               >
                 Probar MapTiler
               </button>
             )}
-            <button
-              type="button"
-              className="config-button primary"
-              onClick={async (e) => {
-                e.preventDefault();
-                if (!isReady || saving) {
-                  return;
-                }
-                
-                // Validar solo configuración del mapa
-                const v2Form = form as unknown as { ui_map?: MapConfigV2 };
-                const mapValidationErrors: FieldErrors = {};
-                
-                if (v2Form.ui_map?.provider === "maptiler_vector") {
-                  const apiKey = v2Form.ui_map.maptiler?.apiKey;
-                  const styleUrl = v2Form.ui_map.maptiler?.styleUrl;
-                  
-                  if (!apiKey || !apiKey.trim()) {
-                    mapValidationErrors["ui_map.maptiler.apiKey"] = "Introduce la API key de MapTiler";
-                  } else if (!MAPTILER_KEY_PATTERN.test(apiKey.trim())) {
-                    mapValidationErrors["ui_map.maptiler.apiKey"] = "La API key solo puede incluir letras, números, punto, guion y guion bajo";
-                  }
-                  
-                  if (!styleUrl || !styleUrl.trim()) {
-                    mapValidationErrors["ui_map.maptiler.styleUrl"] = "Introduce la URL del estilo de MapTiler";
-                  }
-                }
-                
-                if (Object.keys(mapValidationErrors).length > 0) {
-                  setFieldErrors(mapValidationErrors);
-                  setBanner({ kind: "error", text: "Revisa los errores en la configuración del mapa" });
-                  return;
-                }
-                
-                setSaving(true);
-                setBanner(null);
-                try {
-                  // Construir el mismo payload que el botón de "Guardar" principal
-                  // para evitar problemas de tipos mezclados
-                  const v2FormWithSecrets = form as unknown as { 
-                    panels?: { calendar?: { enabled?: boolean; provider?: string } }; 
-                    secrets?: { 
-                      google?: { api_key?: string; calendar_id?: string }; 
-                      calendar_ics?: { url?: string; path?: string };
-                      opensky?: Record<string, unknown>;
-                      aemet?: Record<string, unknown>;
-                    } 
-                  };
-                  
-                  const secrets: import("../types/config_v2").SecretsConfig = {
-                    opensky: v2FormWithSecrets.secrets?.opensky || {},
-                    aemet: v2FormWithSecrets.secrets?.aemet || {},
-                    google: {
-                      api_key: (showGoogleCalendarKey && googleCalendarKeyInput.trim()) 
-                        ? googleCalendarKeyInput.trim() 
-                        : undefined,
-                      calendar_id: googleCalendarIdInput.trim() 
-                        ? googleCalendarIdInput.trim() 
-                        : undefined,
-                    },
-                    calendar_ics: {
-                      url: icsUrlInput.trim() ? icsUrlInput.trim() : undefined,
-                      path: icsPathInput.trim() ? icsPathInput.trim() : undefined,
-                    },
-                  };
-                  
-                  const existingCalendar = v2FormWithSecrets.panels?.calendar as import("../types/config_v2").PanelCalendarConfig | undefined;
-                  const calendarProvider = (existingCalendar?.provider === "ics" ? "ics" : existingCalendar?.provider === "disabled" ? "disabled" : "google") as "google" | "ics" | "disabled";
-                  const calendarIcsPath = icsPathInput.trim() || existingCalendar?.ics_path;
-                  const panels: import("../types/config_v2").PanelsConfigV2 = {
-                    ...(v2FormWithSecrets.panels as import("../types/config_v2").PanelsConfigV2 || {}),
-                    calendar: existingCalendar && typeof existingCalendar.enabled === "boolean"
-                      ? {
-                          enabled: existingCalendar.enabled,
-                          provider: calendarProvider,
-                          ...(calendarProvider === "ics" && calendarIcsPath ? { ics_path: calendarIcsPath } : {}),
-                        }
-                      : { enabled: false, provider: "google" as const },
-                  };
-                  
-                  const calendar = calendarProvider === "ics" && calendarIcsPath
-                    ? {
-                        enabled: existingCalendar?.enabled ?? false,
-                        provider: "ics" as const,
-                        ics_path: calendarIcsPath,
-                      }
-                    : existingCalendar && typeof existingCalendar.enabled === "boolean"
-                    ? {
-                        enabled: existingCalendar.enabled,
-                        provider: calendarProvider,
-                        ...(calendarProvider === "ics" && calendarIcsPath ? { ics_path: calendarIcsPath } : {}),
-                      }
-                    : undefined;
-                  
-                  const v2FormWithMap = form as unknown as { ui_map?: MapConfigV2 };
-                  const existingMap = v2FormWithMap.ui_map;
-                  
-                  // Construir ui_map completo con valores por defecto seguros
-                  // Asegurarse de que todos los campos requeridos estén presentes
-                  const viewMode = existingMap?.viewMode || "fixed";
-                  
-                  const ui_map: MapConfigV2 = {
-                    engine: existingMap?.engine || "maplibre",
-                    provider: existingMap?.provider || "local_raster_xyz",
-                    renderWorldCopies: existingMap?.renderWorldCopies ?? true,
-                    interactive: existingMap?.interactive ?? false,
-                    controls: existingMap?.controls ?? false,
-                    viewMode,
-                    local: existingMap?.local || { tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", minzoom: 0, maxzoom: 19 },
-                    maptiler: existingMap?.maptiler || { apiKey: null, styleUrl: null },
-                    customXyz: existingMap?.customXyz || { tileUrl: null, minzoom: 0, maxzoom: 19 },
-                    fixed: viewMode === "fixed" 
-                      ? (existingMap?.fixed || { center: { lat: 39.98, lon: 0.20 }, zoom: 7.8, bearing: 0, pitch: 0 })
-                      : undefined,
-                    aoiCycle: viewMode === "aoiCycle"
-                      ? (existingMap?.aoiCycle || { intervalSec: 30, stops: [] })
-                      : undefined,
-                    region: existingMap?.region || { postalCode: "12001" },
-                  };
-                  
-                  const v2FormWithLayers = form as unknown as { 
-                    layers?: { 
-                      flights?: { enabled?: boolean; [key: string]: unknown }; 
-                      ships?: { enabled?: boolean; [key: string]: unknown };
-                      global?: { [key: string]: unknown };
-                    };
-                    ui_global?: { 
-                      radar?: { enabled?: boolean; provider?: string; [key: string]: unknown }; 
-                      satellite?: { enabled?: boolean; provider?: string; opacity?: number; [key: string]: unknown };
-                    };
-                  };
-                  
-                  const layers = v2FormWithLayers.layers ? {
-                    ...v2FormWithLayers.layers,
-                    flights: v2FormWithLayers.layers.flights ? {
-                      ...v2FormWithLayers.layers.flights,
-                      enabled: v2FormWithLayers.layers.flights.enabled ?? false,
-                    } : undefined,
-                    ships: v2FormWithLayers.layers.ships ? {
-                      ...v2FormWithLayers.layers.ships,
-                      enabled: v2FormWithLayers.layers.ships.enabled ?? false,
-                    } : undefined,
-                  } : undefined;
-                  
-                  const ui_global = v2FormWithLayers.ui_global ? {
-                    ...v2FormWithLayers.ui_global,
-                    radar: v2FormWithLayers.ui_global.radar ? {
-                      ...v2FormWithLayers.ui_global.radar,
-                      enabled: v2FormWithLayers.ui_global.radar.enabled ?? false,
-                    } : undefined,
-                  } : undefined;
-                  
-                  const mapOnlyPayload: import("../types/config_v2").AppConfigV2 = {
-                    version: 2,
-                    ui_map,
-                    panels,
-                    secrets,
-                    layers,
-                    ui_global,
-                    calendar,
-                  } as unknown as import("../types/config_v2").AppConfigV2;
-                  
-                  await saveConfigV2(mapOnlyPayload);
-                  
-                  let reloadOk = false;
-                  try {
-                    await refreshConfig();
-                    await reloadConfig();
-                    reloadOk = true;
-                  } catch (reloadError) {
-                    console.warn("[ConfigPage] Failed to reload config after map save:", reloadError);
-                  }
-                  
-                  setSaveStatus("saved");
-                  setBanner({ kind: "success", text: reloadOk ? "Config guardada y recargada ✅" : "Config guardada ✅" });
-                  
-                  void loadCalendarStatus();
-                  window.dispatchEvent(new CustomEvent("pantalla:config:saved", { detail: { version: 2 } }));
-                  
-                  setTimeout(() => {
-                    if (isMountedRef.current) {
-                      setSaveStatus("idle");
-                    }
-                  }, 3000);
-                } catch (error) {
-                  console.error("[ConfigPage] Failed to save map configuration", error);
-                  if (error instanceof ApiError) {
-                    const backendErrors = extractBackendErrors(error.body);
-                    setFieldErrors(backendErrors);
-                    setSaveStatus("error");
-                    
-                    // Construir mensaje de error más detallado
-                    let errorMessage = "Error al guardar la configuración del mapa";
-                    if (typeof error.body === "object" && error.body !== null) {
-                      if ("error" in error.body) {
-                        errorMessage = String(error.body.error);
-                      } else if ("detail" in error.body) {
-                        const detail = error.body.detail;
-                        if (typeof detail === "string") {
-                          errorMessage = detail;
-                        } else if (typeof detail === "object" && detail !== null && "error" in detail) {
-                          errorMessage = String(detail.error);
-                        }
-                      }
-                      
-                      // Agregar información adicional si está disponible
-                      if (typeof error.body === "object" && error.body !== null && "field_paths" in error.body) {
-                        const fieldPaths = (error.body.field_paths as string[]) || [];
-                        if (fieldPaths.length > 0) {
-                          errorMessage += ` (campos: ${fieldPaths.join(", ")})`;
-                        }
-                      }
-                    }
-                    
-                    setBanner({ kind: "error", text: errorMessage });
-                  } else {
-                    setSaveStatus("error");
-                    const errorMsg = error instanceof Error ? error.message : "Error al guardar";
-                    setBanner({ kind: "error", text: errorMsg });
-                  }
-                  setTimeout(() => {
-                    if (isMountedRef.current && saveStatus === "error") {
-                      setSaveStatus("idle");
-                    }
-                  }, 5000);
-                } finally {
-                  setSaving(false);
-                  resetErrorsFor("ui_map.maptiler.apiKey");
-                  resetErrorsFor("ui_map.maptiler.styleUrl");
-                  resetErrorsFor("ui_map.provider");
-                }
-              }}
-              disabled={disableInputs}
-            >
-              Guardar configuración del mapa
-            </button>
           </div>
         )}
 
@@ -3426,134 +3221,6 @@ const ConfigPage: React.FC = () => {
           </div>
         )}
 
-        {supports("ui.rotation") && (
-          <div className="config-card">
-            <div>
-              <h2>Rotación de paneles</h2>
-              <p>Controla la duración y las tarjetas presentes en la rotación.</p>
-            </div>
-            <div className="config-grid">
-              {supports("ui.rotation.enabled") && (
-                <div className="config-field config-field--checkbox">
-                  <label htmlFor="rotation_enabled">
-                    <input
-                      id="rotation_enabled"
-                      type="checkbox"
-                      checked={form.ui.rotation.enabled}
-                      disabled={disableInputs}
-                      onChange={(event) => {
-                        const enabled = event.target.checked;
-                        updateForm("ui", {
-                          ...form.ui,
-                          rotation: { ...form.ui.rotation, enabled },
-                        });
-                        resetErrorsFor("ui.rotation.enabled");
-                      }}
-                    />
-                    Activar rotación automática
-                  </label>
-                  {renderHelp("Permite alternar los módulos en orden secuencial")}
-                </div>
-              )}
-
-              {supports("ui.rotation.duration_sec") && (
-                <div className="config-field">
-                  <label htmlFor="rotation_duration">Duración por panel</label>
-                  <input
-                    id="rotation_duration"
-                    type="number"
-                    min={3}
-                    max={3600}
-                    value={form.ui.rotation.duration_sec}
-                    disabled={disableInputs}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (Number.isNaN(value)) return;
-                      updateForm("ui", {
-                        ...form.ui,
-                        rotation: { ...form.ui.rotation, duration_sec: value },
-                      });
-                      resetErrorsFor("ui.rotation.duration_sec");
-                    }}
-                  />
-                  {renderHelp("Segundos que dura cada tarjeta en pantalla")}
-                  {renderFieldError("ui.rotation.duration_sec")}
-                </div>
-              )}
-
-              {supports("ui.rotation.panels") && (
-                <div className="config-field">
-                  <label htmlFor="rotation_panels">Paneles en rotación</label>
-                  <select
-                    id="rotation_panels"
-                    multiple
-                    value={form.ui.rotation.panels}
-                    disabled={disableInputs}
-                    onChange={(event) => {
-                      const selected = Array.from(event.target.selectedOptions).map((option) => option.value);
-                      handlePanelsChange(selected);
-                      resetErrorsFor("ui.rotation.panels");
-                    }}
-                  >
-                    {panelOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                  {renderHelp("Selecciona los paneles que deben rotar")}
-                  {renderFieldError("ui.rotation.panels")}
-                  <div className="config-field__inline">
-                    <input
-                      type="text"
-                      value={newPanel}
-                      disabled={disableInputs}
-                      placeholder="Añadir panel personalizado"
-                      onChange={(event) => setNewPanel(event.target.value)}
-                    />
-                    <button
-                      type="button"
-                      className="config-button"
-                      disabled={disableInputs || !newPanel.trim()}
-                      onClick={addPanel}
-                    >
-                      Añadir
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-            {/* Grupo 7: Configuración del Panel Rotatorio - Botones de acción */}
-            <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
-              <button
-                type="button"
-                className="config-button primary"
-                onClick={async (e) => {
-                  e.preventDefault();
-                  if (!isReady || savingRotator) {
-                    return;
-                  }
-                  setSavingRotator(true);
-                  setBanner(null);
-                  try {
-                    const payload = JSON.parse(JSON.stringify(form)) as AppConfig;
-                    await saveConfig(payload);
-                    await reloadConfig();
-                  } catch (error) {
-                    console.error("[ConfigPage] Failed to save rotator configuration", error);
-                    const errorMsg = resolveApiErrorMessage(error, "Error al guardar configuración del rotador");
-                    setBanner({ kind: "error", text: errorMsg });
-                  } finally {
-                    setSavingRotator(false);
-                  }
-                }}
-                disabled={disableInputs || savingRotator}
-              >
-                {savingRotator ? "Guardando..." : "Guardar configuración del rotador"}
-              </button>
-            </div>
-          </div>
-        )}
 
         {supports("ai.enabled") && (
           <div className="config-card">
@@ -3760,36 +3427,6 @@ const ConfigPage: React.FC = () => {
                   {renderFieldError("storm.auto_disable_after_minutes")}
                 </div>
               )}
-            </div>
-            {/* Grupo 11: Configuración del Modo Tormenta - Botones de acción */}
-            <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
-              <button
-                type="button"
-                className="config-button primary"
-                onClick={async (e) => {
-                  e.preventDefault();
-                  if (!isReady || savingStorm) {
-                    return;
-                  }
-                  setSavingStorm(true);
-                  setBanner(null);
-                  try {
-                    const payload = JSON.parse(JSON.stringify(form)) as AppConfig;
-                    await saveConfig(payload);
-                    await reloadConfig();
-                    setBanner({ kind: "success", text: "Configuración de modo tormenta guardada ✅" });
-                  } catch (error) {
-                    console.error("[ConfigPage] Failed to save storm mode configuration", error);
-                    const errorMsg = resolveApiErrorMessage(error, "Error al guardar configuración de modo tormenta");
-                    setBanner({ kind: "error", text: errorMsg });
-                  } finally {
-                    setSavingStorm(false);
-                  }
-                }}
-                disabled={disableInputs || savingStorm}
-              >
-                {savingStorm ? "Guardando..." : "Guardar configuración de modo tormenta"}
-              </button>
             </div>
           </div>
         )}
@@ -4205,6 +3842,114 @@ const ConfigPage: React.FC = () => {
           </div>
         )}
 
+        {/* Grupo 4: Panel Rotatorio - Rotación, Noticias, Calendario, Efemérides, Hortalizas, Santoral */}
+        <div style={{ border: "2px solid var(--border-primary, rgba(255,255,255,0.2))", borderRadius: "12px", padding: "24px", marginBottom: "32px", backgroundColor: "var(--background-secondary, rgba(255,255,255,0.05))" }}>
+          <div style={{ marginBottom: "24px", paddingBottom: "16px", borderBottom: "2px solid var(--border-primary, rgba(255,255,255,0.2))" }}>
+            <h1 style={{ fontSize: "1.5rem", fontWeight: "bold", margin: 0 }}>Grupo: Panel Rotatorio</h1>
+            <p style={{ marginTop: "8px", opacity: 0.8 }}>Configuración del panel rotatorio: rotación, noticias, calendario, efemérides, hortalizas y santoral</p>
+          </div>
+
+        {/* Sección de Rotación de paneles */}
+        {supports("ui.rotation") && (
+          <div className="config-card">
+            <div>
+              <h2>Rotación de paneles</h2>
+              <p>Controla la duración y las tarjetas presentes en la rotación.</p>
+            </div>
+            <div className="config-grid">
+              {supports("ui.rotation.enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="rotation_enabled">
+                    <input
+                      id="rotation_enabled"
+                      type="checkbox"
+                      checked={form.ui.rotation.enabled}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        updateForm("ui", {
+                          ...form.ui,
+                          rotation: { ...form.ui.rotation, enabled },
+                        });
+                        resetErrorsFor("ui.rotation.enabled");
+                      }}
+                    />
+                    Activar rotación automática
+                  </label>
+                  {renderHelp("Permite alternar los módulos en orden secuencial")}
+                </div>
+              )}
+
+              {supports("ui.rotation.duration_sec") && (
+                <div className="config-field">
+                  <label htmlFor="rotation_duration">Duración por panel</label>
+                  <input
+                    id="rotation_duration"
+                    type="number"
+                    min={3}
+                    max={3600}
+                    value={form.ui.rotation.duration_sec}
+                    disabled={disableInputs}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (Number.isNaN(value)) return;
+                      updateForm("ui", {
+                        ...form.ui,
+                        rotation: { ...form.ui.rotation, duration_sec: value },
+                      });
+                      resetErrorsFor("ui.rotation.duration_sec");
+                    }}
+                  />
+                  {renderHelp("Segundos que dura cada tarjeta en pantalla")}
+                  {renderFieldError("ui.rotation.duration_sec")}
+                </div>
+              )}
+
+              {supports("ui.rotation.panels") && (
+                <div className="config-field">
+                  <label htmlFor="rotation_panels">Paneles en rotación</label>
+                  <select
+                    id="rotation_panels"
+                    multiple
+                    value={form.ui.rotation.panels}
+                    disabled={disableInputs}
+                    onChange={(event) => {
+                      const selected = Array.from(event.target.selectedOptions).map((option) => option.value);
+                      handlePanelsChange(selected);
+                      resetErrorsFor("ui.rotation.panels");
+                    }}
+                  >
+                    {panelOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                  {renderHelp("Selecciona los paneles que deben rotar")}
+                  {renderFieldError("ui.rotation.panels")}
+                  <div className="config-field__inline">
+                    <input
+                      type="text"
+                      value={newPanel}
+                      disabled={disableInputs}
+                      placeholder="Añadir panel personalizado"
+                      onChange={(event) => setNewPanel(event.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="config-button"
+                      disabled={disableInputs || !newPanel.trim()}
+                      onClick={addPanel}
+                    >
+                      Añadir
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {supports("news") && (
           <div className="config-card">
             <div>
@@ -4324,36 +4069,6 @@ const ConfigPage: React.FC = () => {
                   {renderFieldError("news.refresh_minutes")}
                 </div>
               )}
-            </div>
-            {/* Grupo 9: Configuración de Noticias RSS - Botones de acción */}
-            <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
-              <button
-                type="button"
-                className="config-button primary"
-                onClick={async (e) => {
-                  e.preventDefault();
-                  if (!isReady || savingNews) {
-                    return;
-                  }
-                  setSavingNews(true);
-                  setBanner(null);
-                  try {
-                    const payload = JSON.parse(JSON.stringify(form)) as AppConfig;
-                    await saveConfig(payload);
-                    await reloadConfig();
-                    setBanner({ kind: "success", text: "Configuración de noticias RSS guardada ✅" });
-                  } catch (error) {
-                    console.error("[ConfigPage] Failed to save news RSS configuration", error);
-                    const errorMsg = resolveApiErrorMessage(error, "Error al guardar configuración de noticias RSS");
-                    setBanner({ kind: "error", text: errorMsg });
-                  } finally {
-                    setSavingNews(false);
-                  }
-                }}
-                disabled={disableInputs || savingNews}
-              >
-                {savingNews ? "Guardando..." : "Guardar configuración de noticias"}
-              </button>
             </div>
           </div>
         )}
@@ -4661,37 +4376,32 @@ const ConfigPage: React.FC = () => {
                 </>
               )}
             </div>
-            {/* Grupo 6: Configuración del Calendario - Botones de acción */}
-            <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
-              <button
-                type="button"
-                className="config-button primary"
-                onClick={async (e) => {
-                  e.preventDefault();
-                  if (!isReady || savingCalendar) {
-                    return;
+            {/* Botones de test para Calendario (mantener tests, eliminar guardar individual) */}
+            {configVersion === 2 && (form as unknown as { panels?: { calendar?: { provider?: string; enabled?: boolean } } }).panels?.calendar?.provider === "google" && (
+              <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
+                <button
+                  type="button"
+                  className="config-button secondary"
+                  onClick={() => void handleTestCalendar()}
+                  disabled={
+                    disableInputs ||
+                    testingCalendar ||
+                    (configVersion === 2 && !((form as unknown as { panels?: { calendar?: { enabled?: boolean } } }).panels?.calendar?.enabled))
                   }
-                  setSavingCalendar(true);
-                  setBanner(null);
-                  try {
-                    const payload = JSON.parse(JSON.stringify(form)) as AppConfig;
-                    await saveConfig(payload);
-                    await reloadConfig();
-                    void loadCalendarStatus();
-                    setBanner({ kind: "success", text: "Configuración de calendario guardada ✅" });
-                  } catch (error) {
-                    console.error("[ConfigPage] Failed to save calendar configuration", error);
-                    const errorMsg = resolveApiErrorMessage(error, "Error al guardar configuración de calendario");
-                    setBanner({ kind: "error", text: errorMsg });
-                  } finally {
-                    setSavingCalendar(false);
-                  }
-                }}
-                disabled={disableInputs || savingCalendar}
-              >
-                {savingCalendar ? "Guardando..." : "Guardar configuración de calendario"}
-              </button>
-            </div>
+                >
+                  {testingCalendar ? "Comprobando…" : "Probar conexión"}
+                </button>
+                {calendarTestResult && (
+                  <div
+                    className={`config-field__hint ${
+                      calendarTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                    }`}
+                  >
+                    {calendarTestResult.message}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -5160,541 +4870,41 @@ const ConfigPage: React.FC = () => {
           </div>
         )}
 
-        {supports("opensky") && (
-          <div className="config-card">
-            <div>
-              <h2>Aviones (OpenSky)</h2>
-              <p>Configura las credenciales y el área de la integración con OpenSky Network.</p>
-            </div>
-            <div className="config-grid">
-              {supports("opensky.enabled") && (
-                <div className="config-field config-field--checkbox">
-                  <label htmlFor="opensky_enabled">
-                    <input
-                      id="opensky_enabled"
-                      type="checkbox"
-                      checked={form.opensky.enabled}
-                      disabled={disableInputs}
-                      onChange={(event) => {
-                        const enabled = event.target.checked;
-                        setForm((prev) => ({
-                          ...prev,
-                          opensky: {
-                            ...prev.opensky,
-                            enabled,
-                          },
-                        }));
-                        resetErrorsFor("opensky.enabled");
-                      }}
-                    />
-                    Activar OpenSky
-                  </label>
-                  {renderHelp("Habilita la capa de vuelos en tiempo real con datos de OpenSky")}
-                </div>
-              )}
+        {/* Botón de guardar para todo el Grupo de Panel Rotatorio */}
+        <div className="config-actions" style={{ padding: "24px", backgroundColor: "var(--background-primary)", borderRadius: "8px", marginTop: "32px", border: "2px solid var(--border-primary, rgba(255,255,255,0.3))" }}>
+          <button
+            type="button"
+            className="config-button primary"
+            style={{ fontSize: "1.1rem", padding: "12px 24px" }}
+            onClick={async (e) => {
+              e.preventDefault();
+              if (!isReady || savingPanelGroup) {
+                return;
+              }
+              setSavingPanelGroup(true);
+              setBanner(null);
+              try {
+                const payload = JSON.parse(JSON.stringify(form)) as AppConfig;
+                await saveConfig(payload);
+                await reloadConfig();
+                void loadCalendarStatus();
+                setBanner({ kind: "success", text: "Configuración del grupo de Panel Rotatorio guardada ✅" });
+              } catch (error) {
+                console.error("[ConfigPage] Failed to save panel group configuration", error);
+                const errorMsg = resolveApiErrorMessage(error, "Error al guardar configuración del grupo de Panel Rotatorio");
+                setBanner({ kind: "error", text: errorMsg });
+              } finally {
+                setSavingPanelGroup(false);
+              }
+            }}
+            disabled={disableInputs || savingPanelGroup}
+          >
+            {savingPanelGroup ? "Guardando..." : "Guardar configuración del Grupo de Panel Rotatorio"}
+          </button>
+        </div>
+        </div>
 
-              {supports("opensky.poll_seconds") && (
-                <div className="config-field">
-                  <label htmlFor="opensky_poll_seconds">Intervalo de sondeo (segundos)</label>
-                  <input
-                    id="opensky_poll_seconds"
-                    type="number"
-                    min={openskyMinPoll}
-                    max={3600}
-                    value={form.opensky.poll_seconds}
-                    disabled={disableInputs || !form.opensky.enabled}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (Number.isNaN(value)) {
-                        return;
-                      }
-                      const clamped = Math.max(openskyMinPoll, Math.min(3600, Math.round(value)));
-                      setForm((prev) => ({
-                        ...prev,
-                        opensky: {
-                          ...prev.opensky,
-                          poll_seconds: clamped,
-                        },
-                      }));
-                      resetErrorsFor("opensky.poll_seconds");
-                    }}
-                  />
-                  {renderHelp(
-                    openskyCredentialsConfigured
-                      ? "Mínimo 5s con credenciales OAuth válidas"
-                      : "Mínimo 10s en modo anónimo"
-                  )}
-                  {renderFieldError("opensky.poll_seconds")}
-                </div>
-              )}
-
-              {supports("opensky.mode") && (
-                <div className="config-field">
-                  <label htmlFor="opensky_mode">Modo de cobertura</label>
-                  <select
-                    id="opensky_mode"
-                    value={form.opensky.mode}
-                    disabled={disableInputs || !form.opensky.enabled}
-                    onChange={(event) => {
-                      const mode = event.target.value === "global" ? "global" : "bbox";
-                      setForm((prev) => ({
-                        ...prev,
-                        opensky: {
-                          ...prev.opensky,
-                          mode,
-                        },
-                      }));
-                      resetErrorsFor("opensky.mode");
-                    }}
-                  >
-                    <option value="bbox">Área limitada (bbox)</option>
-                    <option value="global">Global</option>
-                  </select>
-                  {renderHelp("Limita la consulta a un rectángulo geográfico o consulta global")}
-                  {renderFieldError("opensky.mode")}
-                </div>
-              )}
-
-              {form.opensky.mode === "bbox" && (
-                <>
-                  {supports("opensky.bbox.lamin") && (
-                    <div className="config-field">
-                      <label htmlFor="opensky_lamin">Latitud mínima</label>
-                      <input
-                        id="opensky_lamin"
-                        type="number"
-                        step={0.1}
-                        min={-90}
-                        max={90}
-                        value={form.opensky.bbox.lamin}
-                        disabled={disableInputs || !form.opensky.enabled}
-                        onChange={(event) => {
-                          const value = Number(event.target.value);
-                          if (Number.isNaN(value)) {
-                            return;
-                          }
-                          setForm((prev) => ({
-                            ...prev,
-                            opensky: {
-                              ...prev.opensky,
-                              bbox: {
-                                ...prev.opensky.bbox,
-                                lamin: Math.max(-90, Math.min(90, value)),
-                              },
-                            },
-                          }));
-                          resetErrorsFor("opensky.bbox.lamin");
-                        }}
-                      />
-                      {renderFieldError("opensky.bbox.lamin")}
-                    </div>
-                  )}
-
-                  {supports("opensky.bbox.lamax") && (
-                    <div className="config-field">
-                      <label htmlFor="opensky_lamax">Latitud máxima</label>
-                      <input
-                        id="opensky_lamax"
-                        type="number"
-                        step={0.1}
-                        min={-90}
-                        max={90}
-                        value={form.opensky.bbox.lamax}
-                        disabled={disableInputs || !form.opensky.enabled}
-                        onChange={(event) => {
-                          const value = Number(event.target.value);
-                          if (Number.isNaN(value)) {
-                            return;
-                          }
-                          setForm((prev) => ({
-                            ...prev,
-                            opensky: {
-                              ...prev.opensky,
-                              bbox: {
-                                ...prev.opensky.bbox,
-                                lamax: Math.max(-90, Math.min(90, value)),
-                              },
-                            },
-                          }));
-                          resetErrorsFor("opensky.bbox.lamax");
-                        }}
-                      />
-                      {renderFieldError("opensky.bbox.lamax")}
-                    </div>
-                  )}
-
-                  {supports("opensky.bbox.lomin") && (
-                    <div className="config-field">
-                      <label htmlFor="opensky_lomin">Longitud mínima</label>
-                      <input
-                        id="opensky_lomin"
-                        type="number"
-                        step={0.1}
-                        min={-180}
-                        max={180}
-                        value={form.opensky.bbox.lomin}
-                        disabled={disableInputs || !form.opensky.enabled}
-                        onChange={(event) => {
-                          const value = Number(event.target.value);
-                          if (Number.isNaN(value)) {
-                            return;
-                          }
-                          setForm((prev) => ({
-                            ...prev,
-                            opensky: {
-                              ...prev.opensky,
-                              bbox: {
-                                ...prev.opensky.bbox,
-                                lomin: Math.max(-180, Math.min(180, value)),
-                              },
-                            },
-                          }));
-                          resetErrorsFor("opensky.bbox.lomin");
-                        }}
-                      />
-                      {renderFieldError("opensky.bbox.lomin")}
-                    </div>
-                  )}
-
-                  {supports("opensky.bbox.lomax") && (
-                    <div className="config-field">
-                      <label htmlFor="opensky_lomax">Longitud máxima</label>
-                      <input
-                        id="opensky_lomax"
-                        type="number"
-                        step={0.1}
-                        min={-180}
-                        max={180}
-                        value={form.opensky.bbox.lomax}
-                        disabled={disableInputs || !form.opensky.enabled}
-                        onChange={(event) => {
-                          const value = Number(event.target.value);
-                          if (Number.isNaN(value)) {
-                            return;
-                          }
-                          setForm((prev) => ({
-                            ...prev,
-                            opensky: {
-                              ...prev.opensky,
-                              bbox: {
-                                ...prev.opensky.bbox,
-                                lomax: Math.max(-180, Math.min(180, value)),
-                              },
-                            },
-                          }));
-                          resetErrorsFor("opensky.bbox.lomax");
-                        }}
-                      />
-                      {renderFieldError("opensky.bbox.lomax")}
-                    </div>
-                  )}
-                </>
-              )}
-
-              {supports("opensky.max_aircraft") && (
-                <div className="config-field">
-                  <label htmlFor="opensky_max_aircraft">Máximo de aeronaves</label>
-                  <input
-                    id="opensky_max_aircraft"
-                    type="number"
-                    min={100}
-                    max={1000}
-                    value={form.opensky.max_aircraft}
-                    disabled={disableInputs || !form.opensky.enabled}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (Number.isNaN(value)) {
-                        return;
-                      }
-                      const clamped = Math.max(100, Math.min(1000, Math.round(value)));
-                      setForm((prev) => ({
-                        ...prev,
-                        opensky: {
-                          ...prev.opensky,
-                          max_aircraft: clamped,
-                        },
-                      }));
-                      resetErrorsFor("opensky.max_aircraft");
-                    }}
-                  />
-                  {renderHelp("Número máximo de aeronaves a mostrar en simultáneo (100-1000)")}
-                  {renderFieldError("opensky.max_aircraft")}
-                </div>
-              )}
-
-              {supports("opensky.cluster") && (
-                <div className="config-field config-field--checkbox">
-                  <label htmlFor="opensky_cluster">
-                    <input
-                      id="opensky_cluster"
-                      type="checkbox"
-                      checked={form.opensky.cluster}
-                      disabled={disableInputs || !form.opensky.enabled}
-                      onChange={(event) => {
-                        const enabled = event.target.checked;
-                        setForm((prev) => ({
-                          ...prev,
-                          opensky: {
-                            ...prev.opensky,
-                            cluster: enabled,
-                          },
-                        }));
-                        resetErrorsFor("opensky.cluster");
-                      }}
-                    />
-                    Activar clustering en el mapa
-                  </label>
-                  {renderHelp("Agrupa aeronaves cercanas para mejorar la legibilidad")}
-                </div>
-              )}
-
-              {supports("opensky.extended") && (
-                <div className="config-field config-field--checkbox">
-                  <label htmlFor="opensky_extended">
-                    <input
-                      id="opensky_extended"
-                      type="checkbox"
-                      checked={form.opensky.extended === 1}
-                      disabled={disableInputs || !form.opensky.enabled}
-                      onChange={(event) => {
-                        const enabled = event.target.checked;
-                        setForm((prev) => ({
-                          ...prev,
-                          opensky: {
-                            ...prev.opensky,
-                            extended: enabled ? 1 : 0,
-                          },
-                        }));
-                        resetErrorsFor("opensky.extended");
-                      }}
-                    />
-                    Solicitar datos extendidos
-                  </label>
-                  {renderHelp("Incluye información adicional como categoría y origen")}
-                </div>
-              )}
-
-              <div className="config-field">
-                <label htmlFor="opensky_client_id">
-                  Client ID OAuth2
-                  {openskyCredentialBadge}
-                </label>
-                <input
-                  id="opensky_client_id"
-                  type="password"
-                  value={form.opensky.oauth2.client_id ?? ""}
-                  disabled={disableInputs}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setForm((prev) => ({
-                      ...prev,
-                      opensky: {
-                        ...prev.opensky,
-                        oauth2: {
-                          ...prev.opensky.oauth2,
-                          client_id: value,
-                        },
-                      },
-                    }));
-                    resetErrorsFor("opensky.oauth2.client_id");
-                  }}
-                  placeholder="Introduce el client_id proporcionado por OpenSky"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                {renderHelp(openskyCredentialHelp)}
-              </div>
-
-              <div className="config-field">
-                <label htmlFor="opensky_client_secret">Client secret OAuth2</label>
-                <input
-                  id="opensky_client_secret"
-                  type="password"
-                  value={form.opensky.oauth2.client_secret ?? ""}
-                  disabled={disableInputs}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setForm((prev) => ({
-                      ...prev,
-                      opensky: {
-                        ...prev.opensky,
-                        oauth2: {
-                          ...prev.opensky.oauth2,
-                          client_secret: value,
-                        },
-                      },
-                    }));
-                    resetErrorsFor("opensky.oauth2.client_secret");
-                  }}
-                  placeholder="Introduce el client_secret proporcionado por OpenSky"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                {renderHelp(
-                  "Introduce el client_secret proporcionado por OpenSky Network y pulsa Guardar configuración para actualizarlo."
-                )}
-              </div>
-
-              <div className="config-field">
-                <label>Diagnóstico</label>
-                <div className="config-field__actions">
-                  <button
-                    type="button"
-                    className="config-button"
-                    onClick={handleTestOpenSky}
-                    disabled={disableInputs || testingOpenSky}
-                  >
-                    {testingOpenSky ? "Comprobando..." : "Probar conexión"}
-                  </button>
-                </div>
-                {openskyStatusError && <p className="config-error">{openskyStatusError}</p>}
-                {openskyStatusData && (
-                  <ul className="config-status-list">
-                    <li>
-                      Estado proveedor: {openskyStatusData.status ?? (openskyStatusData.has_credentials ? "stale" : "sin credenciales")}
-                    </li>
-                    <li>
-                      Token en caché: {(() => {
-                        const auth = openskyStatusData.auth;
-                        const cached = auth?.token_cached ?? openskyStatusData.token_cached ?? false;
-                        const expires = auth?.expires_in_sec ?? openskyStatusData.expires_in_sec ?? openskyStatusData.expires_in;
-                        return `${cached ? "sí" : "no"}${typeof expires === "number" && expires > 0 ? ` (expira en ${expires} s)` : ""}`;
-                      })()}
-                    </li>
-                    <li>
-                      Última respuesta: {openskyStatusData.last_fetch_iso ? new Date(openskyStatusData.last_fetch_iso).toLocaleString() : "sin datos"}
-                    </li>
-                    <li>
-                      Aeronaves cacheadas: {openskyStatusData.items ?? openskyStatusData.items_count ?? 0}
-                    </li>
-                    {openskyStatusData.rate_limit_hint && (
-                      <li>Rate limit restante (pista): {openskyStatusData.rate_limit_hint}</li>
-                    )}
-                    {openskyStatusData.last_error && <li>Error reciente: {openskyStatusData.last_error}</li>}
-                    <li>
-                      Área configurada: {openskyStatusData.bbox.lamin.toFixed(2)} / {openskyStatusData.bbox.lamax.toFixed(2)} lat,
-                      {" "}
-                      {openskyStatusData.bbox.lomin.toFixed(2)} / {openskyStatusData.bbox.lomax.toFixed(2)} lon
-                    </li>
-                  </ul>
-                )}
-              </div>
-            </div>
-            {/* Grupo 4: Configuración de Aviones - Botones de acción */}
-            <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
-              <button
-                type="button"
-                className="config-button secondary"
-                onClick={() => void handleTestOpenSkyGroup()}
-                disabled={disableInputs || testingOpenSky || !openskyCredentialsConfigured}
-              >
-                {testingOpenSky ? "Comprobando..." : "Probar OpenSky"}
-              </button>
-              {openskyTestResult && (
-                <div
-                  className={`config-field__hint ${
-                    openskyTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
-                  }`}
-                  style={{ marginTop: "8px" }}
-                >
-                  {openskyTestResult.ok
-                    ? `OpenSky conectado correctamente${openskyTestResult.token_valid ? " (token válido)" : ""}`
-                    : `Error: ${openskyTestResult.reason || "error desconocido"}`}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {supports("layers") && (
-          <div className="config-card">
-            <div>
-              <h2>Capas en Tiempo Real</h2>
-              <p>Configura las capas de aviones (flights) y barcos (ships) en tiempo real.</p>
-            </div>
-            <div className="config-grid">
-              {SHOW_FLIGHTS_CONTROLS && supports("layers.flights") && (
-                <>
-                  <div className="config-field config-field--checkbox">
-                    <label htmlFor="flights_enabled">
-                      <input
-                        id="flights_enabled"
-                        type="checkbox"
-                        checked={form.layers.flights.enabled}
-                        disabled={disableInputs}
-                        onChange={(event) => {
-                          const enabled = event.target.checked;
-                          setForm((prev) => ({
-                            ...prev,
-                            layers: {
-                              ...prev.layers,
-                              flights: {
-                                ...prev.layers.flights,
-                                enabled,
-                              },
-                            },
-                          }));
-                          resetErrorsFor("layers.flights.enabled");
-                        }}
-                      />
-                      Activar capa de aviones
-                    </label>
-                    {renderHelp("Muestra aviones en tiempo real en el mapa")}
-                  </div>
-
-                  <div className="config-field">
-                    <label htmlFor="flights_opacity">Opacidad</label>
-                    <input
-                      id="flights_opacity"
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.1"
-                      value={form.layers.flights.opacity}
-                      disabled={disableInputs || !form.layers.flights.enabled}
-                      onChange={(event) => {
-                        const opacity = Number(event.target.value);
-                        if (!Number.isNaN(opacity)) {
-                          setForm((prev) => ({
-                            ...prev,
-                            layers: {
-                              ...prev.layers,
-                              flights: {
-                                ...prev.layers.flights,
-                                opacity: Math.max(0, Math.min(1, opacity)),
-                              },
-                            },
-                          }));
-                          resetErrorsFor("layers.flights.opacity");
-                        }
-                      }}
-                    />
-                    <span>{Math.round(form.layers.flights.opacity * 100)}%</span>
-                    {renderHelp("Opacidad de la capa de aviones (0.0 - 1.0)")}
-                  </div>
-
-                  <div className="config-field">
-                    <label htmlFor="flights_refresh">Intervalo de actualización (segundos)</label>
-                    <input
-                      id="flights_refresh"
-                      type="number"
-                      min="1"
-                      max="300"
-                      value={form.layers.flights.refresh_seconds}
-                      disabled={disableInputs || !form.layers.flights.enabled}
-                      onChange={(event) => {
-                        const value = Number(event.target.value);
-                        if (!Number.isNaN(value)) {
-                          setForm((prev) => ({
-                            ...prev,
-                            layers: {
-                              ...prev.layers,
-                              flights: {
-                                ...prev.layers.flights,
-                                refresh_seconds: Math.max(1, Math.min(300, Math.round(value))),
-                              },
-                            },
-                          }));
+        {/* Las secciones de OpenSky, Flights/Ships y Global Layers están ahora dentro del Grupo de Capas del Mapa */}
                           resetErrorsFor("layers.flights.refresh_seconds");
                         }
                       }}
@@ -6665,6 +5875,53 @@ const ConfigPage: React.FC = () => {
                 </div>
               )}
             </div>
+            {/* Botones de test para Capas en Tiempo Real */}
+            <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
+              {form.layers.ships.provider === "aisstream" && (
+                <button
+                  type="button"
+                  className="config-button secondary"
+                  onClick={() => void handleTestAISStream()}
+                  disabled={disableInputs || testingAISStream || !form.layers.ships.enabled || !hasStoredAisstreamKey}
+                >
+                  {testingAISStream ? "Comprobando..." : "Probar AISStream"}
+                </button>
+              )}
+              {form.layers.ships.provider === "aishub" && (
+                <button
+                  type="button"
+                  className="config-button secondary"
+                  onClick={() => void handleTestAISHub()}
+                  disabled={disableInputs || testingAISHub || !form.layers.ships.enabled}
+                >
+                  {testingAISHub ? "Comprobando..." : "Probar AISHub"}
+                </button>
+              )}
+              {aisstreamTestResult && (
+                <div
+                  className={`config-field__hint ${
+                    aisstreamTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                  }`}
+                  style={{ marginTop: "8px" }}
+                >
+                  {aisstreamTestResult.ok
+                    ? `AISStream conectado correctamente (${aisstreamTestResult.features_count || 0} features)`
+                    : `Error: ${aisstreamTestResult.reason || "error desconocido"}`}
+                </div>
+              )}
+              {aishubTestResult && (
+                <div
+                  className={`config-field__hint ${
+                    aishubTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                  }`}
+                  style={{ marginTop: "8px" }}
+                >
+                  {aishubTestResult.ok
+                    ? "AISHub conectado correctamente"
+                    : `Error: ${aishubTestResult.reason || "error desconocido"}`}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -7201,7 +6458,7 @@ const ConfigPage: React.FC = () => {
                 </>
               )}
               </div>
-              {/* Grupo 2: Configuración del Clima y AEMET - Botones de acción */}
+              {/* Botones de test para Capas Globales */}
               <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
                 {form.layers.global?.radar?.provider === "openweathermap" && (
                   <button
@@ -7230,16 +6487,550 @@ const ConfigPage: React.FC = () => {
           );
         })()}
 
+        {/* Mover OpenSky, Flights/Ships y Global Layers aquí dentro del grupo de capas del mapa */}
+        {supports("opensky") && (
+          <div className="config-card">
+            <div>
+              <h2>Aviones (OpenSky)</h2>
+              <p>Configura las credenciales y el área de la integración con OpenSky Network.</p>
+            </div>
+            <div className="config-grid">
+              {supports("opensky.enabled") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="opensky_enabled">
+                    <input
+                      id="opensky_enabled"
+                      type="checkbox"
+                      checked={form.opensky.enabled}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          opensky: {
+                            ...prev.opensky,
+                            enabled,
+                          },
+                        }));
+                        resetErrorsFor("opensky.enabled");
+                      }}
+                    />
+                    Activar OpenSky
+                  </label>
+                  {renderHelp("Habilita la capa de vuelos en tiempo real con datos de OpenSky")}
+                </div>
+              )}
+
+              {supports("opensky.poll_seconds") && (
+                <div className="config-field">
+                  <label htmlFor="opensky_poll_seconds">Intervalo de sondeo (segundos)</label>
+                  <input
+                    id="opensky_poll_seconds"
+                    type="number"
+                    min={openskyMinPoll}
+                    max={3600}
+                    value={form.opensky.poll_seconds}
+                    disabled={disableInputs || !form.opensky.enabled}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (Number.isNaN(value)) {
+                        return;
+                      }
+                      const clamped = Math.max(openskyMinPoll, Math.min(3600, Math.round(value)));
+                      setForm((prev) => ({
+                        ...prev,
+                        opensky: {
+                          ...prev.opensky,
+                          poll_seconds: clamped,
+                        },
+                      }));
+                      resetErrorsFor("opensky.poll_seconds");
+                    }}
+                  />
+                  {renderHelp(
+                    openskyCredentialsConfigured
+                      ? "Mínimo 5s con credenciales OAuth válidas"
+                      : "Mínimo 10s en modo anónimo"
+                  )}
+                  {renderFieldError("opensky.poll_seconds")}
+                </div>
+              )}
+
+              {supports("opensky.mode") && (
+                <div className="config-field">
+                  <label htmlFor="opensky_mode">Modo de cobertura</label>
+                  <select
+                    id="opensky_mode"
+                    value={form.opensky.mode}
+                    disabled={disableInputs || !form.opensky.enabled}
+                    onChange={(event) => {
+                      const mode = event.target.value === "global" ? "global" : "bbox";
+                      setForm((prev) => ({
+                        ...prev,
+                        opensky: {
+                          ...prev.opensky,
+                          mode,
+                        },
+                      }));
+                      resetErrorsFor("opensky.mode");
+                    }}
+                  >
+                    <option value="bbox">Área limitada (bbox)</option>
+                    <option value="global">Global</option>
+                  </select>
+                  {renderHelp("Limita la consulta a un rectángulo geográfico o consulta global")}
+                  {renderFieldError("opensky.mode")}
+                </div>
+              )}
+            </div>
+            {/* Botones de test para OpenSky */}
+            <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
+              <button
+                type="button"
+                className="config-button secondary"
+                onClick={() => void handleTestOpenSkyGroup()}
+                disabled={disableInputs || testingOpenSky || !openskyCredentialsConfigured}
+              >
+                {testingOpenSky ? "Comprobando..." : "Probar OpenSky"}
+              </button>
+              {openskyTestResult && (
+                <div
+                  className={`config-field__hint ${
+                    openskyTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                  }`}
+                  style={{ marginTop: "8px" }}
+                >
+                  {openskyTestResult.ok
+                    ? `OpenSky conectado correctamente${openskyTestResult.token_valid ? " (token válido)" : ""}`
+                    : `Error: ${openskyTestResult.reason || "error desconocido"}`}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {supports("layers") && (
+          <div className="config-card">
+            <div>
+              <h2>Capas en Tiempo Real</h2>
+              <p>Configura las capas de vuelos y barcos en tiempo real.</p>
+            </div>
+            <div className="config-grid">
+              {supports("layers.flights") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="flights_enabled">
+                    <input
+                      id="flights_enabled"
+                      type="checkbox"
+                      checked={form.layers.flights.enabled}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          layers: {
+                            ...prev.layers,
+                            flights: {
+                              ...prev.layers.flights,
+                              enabled,
+                            },
+                          },
+                        }));
+                        resetErrorsFor("layers.flights.enabled");
+                      }}
+                    />
+                    Activar capa de vuelos
+                  </label>
+                  {renderHelp("Habilita la visualización de vuelos en tiempo real")}
+                </div>
+              )}
+
+              {supports("layers.flights.opacity") && (
+                <div className="config-field">
+                  <label htmlFor="flights_opacity">Opacidad de vuelos</label>
+                  <input
+                    id="flights_opacity"
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.1}
+                    value={form.layers.flights.opacity}
+                    disabled={disableInputs || !form.layers.flights.enabled}
+                    onChange={(event) => {
+                      const opacity = Number(event.target.value);
+                      if (Number.isNaN(opacity)) {
+                        return;
+                      }
+                      setForm((prev) => ({
+                        ...prev,
+                        layers: {
+                          ...prev.layers,
+                          flights: {
+                            ...prev.layers.flights,
+                            opacity: Math.max(0, Math.min(1, opacity)),
+                          },
+                        },
+                      }));
+                      resetErrorsFor("layers.flights.opacity");
+                    }}
+                  />
+                  <span>{Math.round(form.layers.flights.opacity * 100)}%</span>
+                  {renderHelp("Opacidad de la capa de vuelos (0.0 - 1.0)")}
+                </div>
+              )}
+
+              {supports("layers.ships") && (
+                <div className="config-field config-field--checkbox">
+                  <label htmlFor="ships_enabled">
+                    <input
+                      id="ships_enabled"
+                      type="checkbox"
+                      checked={form.layers.ships.enabled}
+                      disabled={disableInputs}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          layers: {
+                            ...prev.layers,
+                            ships: {
+                              ...prev.layers.ships,
+                              enabled,
+                            },
+                          },
+                        }));
+                        resetErrorsFor("layers.ships.enabled");
+                      }}
+                    />
+                    Activar capa de barcos
+                  </label>
+                  {renderHelp("Habilita la visualización de barcos en tiempo real")}
+                </div>
+              )}
+
+              {supports("layers.ships.provider") && (
+                <div className="config-field">
+                  <label htmlFor="ships_provider">Proveedor de barcos</label>
+                  <select
+                    id="ships_provider"
+                    value={form.layers.ships.provider}
+                    disabled={disableInputs || !form.layers.ships.enabled}
+                    onChange={(event) => {
+                      const provider = event.target.value as "aisstream" | "aishub";
+                      setForm((prev) => ({
+                        ...prev,
+                        layers: {
+                          ...prev.layers,
+                          ships: {
+                            ...prev.layers.ships,
+                            provider,
+                          },
+                        },
+                      }));
+                      resetErrorsFor("layers.ships.provider");
+                    }}
+                  >
+                    <option value="aisstream">AISStream</option>
+                    <option value="aishub">AISHub</option>
+                  </select>
+                  {renderHelp("Elige el proveedor de datos de barcos")}
+                </div>
+              )}
+
+              {supports("layers.ships.opacity") && (
+                <div className="config-field">
+                  <label htmlFor="ships_opacity">Opacidad de barcos</label>
+                  <input
+                    id="ships_opacity"
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.1}
+                    value={form.layers.ships.opacity}
+                    disabled={disableInputs || !form.layers.ships.enabled}
+                    onChange={(event) => {
+                      const opacity = Number(event.target.value);
+                      if (Number.isNaN(opacity)) {
+                        return;
+                      }
+                      setForm((prev) => ({
+                        ...prev,
+                        layers: {
+                          ...prev.layers,
+                          ships: {
+                            ...prev.layers.ships,
+                            opacity: Math.max(0, Math.min(1, opacity)),
+                          },
+                        },
+                      }));
+                      resetErrorsFor("layers.ships.opacity");
+                    }}
+                  />
+                  <span>{Math.round(form.layers.ships.opacity * 100)}%</span>
+                  {renderHelp("Opacidad de la capa de barcos (0.0 - 1.0)")}
+                </div>
+              )}
+            </div>
+            {/* Botones de test para Capas en Tiempo Real */}
+            <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
+              {form.layers.ships.provider === "aisstream" && (
+                <button
+                  type="button"
+                  className="config-button secondary"
+                  onClick={() => void handleTestAISStream()}
+                  disabled={disableInputs || testingAISStream || !form.layers.ships.enabled || !hasStoredAisstreamKey}
+                >
+                  {testingAISStream ? "Comprobando..." : "Probar AISStream"}
+                </button>
+              )}
+              {form.layers.ships.provider === "aishub" && (
+                <button
+                  type="button"
+                  className="config-button secondary"
+                  onClick={() => void handleTestAISHub()}
+                  disabled={disableInputs || testingAISHub || !form.layers.ships.enabled}
+                >
+                  {testingAISHub ? "Comprobando..." : "Probar AISHub"}
+                </button>
+              )}
+              {aisstreamTestResult && (
+                <div
+                  className={`config-field__hint ${
+                    aisstreamTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                  }`}
+                  style={{ marginTop: "8px" }}
+                >
+                  {aisstreamTestResult.ok
+                    ? `AISStream conectado correctamente (${aisstreamTestResult.features_count || 0} features)`
+                    : `Error: ${aisstreamTestResult.reason || "error desconocido"}`}
+                </div>
+              )}
+              {aishubTestResult && (
+                <div
+                  className={`config-field__hint ${
+                    aishubTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                  }`}
+                  style={{ marginTop: "8px" }}
+                >
+                  {aishubTestResult.ok
+                    ? "AISHub conectado correctamente"
+                    : `Error: ${aishubTestResult.reason || "error desconocido"}`}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {supports("layers.global") && (() => {
+          // Helper para obtener valores de global con defaults completos
+          const getGlobalWithDefaults = (prev: AppConfig) => {
+            const defaultGlobal: GlobalLayersConfig =
+              DEFAULT_CONFIG.layers.global ?? createDefaultGlobalLayers();
+            const currentGlobal = prev.layers.global;
+            
+            return {
+              satellite: {
+                enabled: currentGlobal?.satellite?.enabled ?? defaultGlobal.satellite.enabled,
+                provider: currentGlobal?.satellite?.provider ?? defaultGlobal.satellite.provider,
+                opacity: currentGlobal?.satellite?.opacity ?? defaultGlobal.satellite.opacity,
+                refresh_minutes: currentGlobal?.satellite?.refresh_minutes ?? defaultGlobal.satellite.refresh_minutes,
+                history_minutes: currentGlobal?.satellite?.history_minutes ?? defaultGlobal.satellite.history_minutes,
+                frame_step: currentGlobal?.satellite?.frame_step ?? defaultGlobal.satellite.frame_step,
+              },
+              radar: {
+                enabled: currentGlobal?.radar?.enabled ?? defaultGlobal.radar.enabled,
+                provider: currentGlobal?.radar?.provider ?? defaultGlobal.radar.provider,
+                refresh_minutes: currentGlobal?.radar?.refresh_minutes ?? defaultGlobal.radar.refresh_minutes,
+                history_minutes: currentGlobal?.radar?.history_minutes ?? defaultGlobal.radar.history_minutes,
+                frame_step: currentGlobal?.radar?.frame_step ?? defaultGlobal.radar.frame_step,
+              },
+            };
+          };
+
+          return (
+            <div className="config-card">
+              <div>
+                <h2>Capas Globales</h2>
+                <p>Configura las capas globales de satélite y radar meteorológico.</p>
+              </div>
+              <div className="config-grid">
+                {supports("layers.global.satellite") && (
+                  <div className="config-field config-field--checkbox">
+                    <label htmlFor="satellite_enabled">
+                      <input
+                        id="satellite_enabled"
+                        type="checkbox"
+                        checked={form.layers.global?.satellite?.enabled ?? false}
+                        disabled={disableInputs}
+                        onChange={(event) => {
+                          const enabled = event.target.checked;
+                          setForm((prev) => {
+                            const updated = getGlobalWithDefaults(prev);
+                            return {
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                global: {
+                                  ...updated,
+                                  satellite: {
+                                    ...updated.satellite,
+                                    enabled,
+                                  },
+                                },
+                              },
+                            };
+                          });
+                          resetErrorsFor("layers.global.satellite.enabled");
+                        }}
+                      />
+                      Activar capa de satélite
+                    </label>
+                    {renderHelp("Habilita la visualización de imágenes satelitales")}
+                  </div>
+                )}
+
+                {supports("layers.global.radar") && (
+                  <div className="config-field config-field--checkbox">
+                    <label htmlFor="radar_enabled">
+                      <input
+                        id="radar_enabled"
+                        type="checkbox"
+                        checked={form.layers.global?.radar?.enabled ?? false}
+                        disabled={disableInputs}
+                        onChange={(event) => {
+                          const enabled = event.target.checked;
+                          setForm((prev) => {
+                            const updated = getGlobalWithDefaults(prev);
+                            return {
+                              ...prev,
+                              layers: {
+                                ...prev.layers,
+                                global: {
+                                  ...updated,
+                                  radar: {
+                                    ...updated.radar,
+                                    enabled,
+                                  },
+                                },
+                              },
+                            };
+                          });
+                          resetErrorsFor("layers.global.radar.enabled");
+                        }}
+                      />
+                      Activar capa de radar
+                    </label>
+                    {renderHelp("Habilita la visualización de radar meteorológico")}
+                  </div>
+                )}
+
+                {supports("layers.global.radar.provider") && form.layers.global?.radar?.enabled && (
+                  <div className="config-field">
+                    <label htmlFor="radar_provider">Proveedor de radar</label>
+                    <select
+                      id="radar_provider"
+                      value={form.layers.global?.radar?.provider ?? "openweathermap"}
+                      disabled={disableInputs || !form.layers.global?.radar?.enabled}
+                      onChange={(event) => {
+                        const provider = event.target.value as "openweathermap";
+                        setForm((prev) => {
+                          const updated = getGlobalWithDefaults(prev);
+                          return {
+                            ...prev,
+                            layers: {
+                              ...prev.layers,
+                              global: {
+                                ...updated,
+                                radar: {
+                                  ...updated.radar,
+                                  provider,
+                                },
+                              },
+                            },
+                          };
+                        });
+                        resetErrorsFor("layers.global.radar.provider");
+                      }}
+                    >
+                      <option value="openweathermap">OpenWeatherMap</option>
+                    </select>
+                    {renderHelp("Elige el proveedor de datos de radar")}
+                  </div>
+                )}
+              </div>
+              {/* Botones de test para Capas Globales */}
+              <div className="config-actions" style={{ padding: "16px", backgroundColor: "var(--background-secondary)", borderRadius: "8px", marginTop: "16px" }}>
+                {form.layers.global?.radar?.provider === "openweathermap" && (
+                  <button
+                    type="button"
+                    className="config-button secondary"
+                    onClick={() => void handleTestOpenWeather()}
+                    disabled={disableInputs || testingOpenWeather || !form.layers.global?.radar?.enabled}
+                  >
+                    {testingOpenWeather ? "Comprobando..." : "Probar OpenWeatherMap"}
+                  </button>
+                )}
+                {openWeatherTestResult && (
+                  <div
+                    className={`config-field__hint ${
+                      openWeatherTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                    }`}
+                    style={{ marginTop: "8px" }}
+                  >
+                    {openWeatherTestResult.ok
+                      ? openWeatherTestResult.message || "OpenWeatherMap conectado correctamente"
+                      : `Error: ${openWeatherTestResult.message || "error desconocido"}`}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Botón de guardar para todo el Grupo de Capas del Mapa */}
+        <div className="config-actions" style={{ padding: "24px", backgroundColor: "var(--background-primary)", borderRadius: "8px", marginTop: "32px", border: "2px solid var(--border-primary, rgba(255,255,255,0.3))" }}>
+          <button
+            type="button"
+            className="config-button primary"
+            style={{ fontSize: "1.1rem", padding: "12px 24px" }}
+            onClick={async (e) => {
+              e.preventDefault();
+              if (!isReady || savingLayersGroup) {
+                return;
+              }
+              setSavingLayersGroup(true);
+              setBanner(null);
+              try {
+                const payload = JSON.parse(JSON.stringify(form)) as AppConfig;
+                await saveConfig(payload);
+                await reloadConfig();
+                setBanner({ kind: "success", text: "Configuración del grupo de Capas del Mapa guardada ✅" });
+              } catch (error) {
+                console.error("[ConfigPage] Failed to save layers group configuration", error);
+                const errorMsg = resolveApiErrorMessage(error, "Error al guardar configuración del grupo de Capas del Mapa");
+                setBanner({ kind: "error", text: errorMsg });
+              } finally {
+                setSavingLayersGroup(false);
+              }
+            }}
+            disabled={disableInputs || savingLayersGroup}
+          >
+            {savingLayersGroup ? "Guardando..." : "Guardar configuración del Grupo de Capas del Mapa"}
+          </button>
+        </div>
+        </div>
+
+        {/* Grupo 3: WiFi */}
         {supports("wifi") && (
           <div className="config-card">
             <div>
               <h2>WiFi</h2>
-            <p>Gestiona las conexiones de red inalámbrica.</p>
-            <div className="config-field__hint config-field__hint--warning" style={{ marginTop: "8px", padding: "8px", backgroundColor: "var(--warning-bg, rgba(255, 193, 7, 0.1))", borderRadius: "4px" }}>
-              <strong>⚠️ Requiere reinicio:</strong> Los cambios en la configuración de WiFi requieren reiniciar la aplicación para aplicar los cambios.
+              <p>Gestiona las conexiones de red inalámbrica.</p>
+              <div className="config-field__hint config-field__hint--warning" style={{ marginTop: "8px", padding: "8px", backgroundColor: "var(--warning-bg, rgba(255, 193, 7, 0.1))", borderRadius: "4px" }}>
+                <strong>⚠️ Requiere reinicio:</strong> Los cambios en la configuración de WiFi requieren reiniciar la aplicación para aplicar los cambios.
+              </div>
             </div>
-          </div>
-          <div className="config-grid">
+            <div className="config-grid">
             <div className="config-field">
               <div className="config-field-row">
                 <label>Estado de conexión</label>
@@ -7386,8 +7177,40 @@ const ConfigPage: React.FC = () => {
                 </div>
               )}
             </div>
+            </div>
+            {/* Botón de guardar para el Grupo WiFi */}
+            <div className="config-actions" style={{ padding: "24px", backgroundColor: "var(--background-primary)", borderRadius: "8px", marginTop: "32px", border: "2px solid var(--border-primary, rgba(255,255,255,0.3))" }}>
+              <button
+                type="button"
+                className="config-button primary"
+                style={{ fontSize: "1.1rem", padding: "12px 24px" }}
+                onClick={async (e) => {
+                  e.preventDefault();
+                  if (!isReady || savingWifi) {
+                    return;
+                  }
+                  setSavingWifi(true);
+                  setBanner(null);
+                  try {
+                    const payload = JSON.parse(JSON.stringify(form)) as AppConfig;
+                    await saveConfig(payload);
+                    await reloadConfig();
+                    await loadWifiStatus();
+                    setBanner({ kind: "success", text: "Configuración de WiFi guardada ✅" });
+                  } catch (error) {
+                    console.error("[ConfigPage] Failed to save WiFi configuration", error);
+                    const errorMsg = resolveApiErrorMessage(error, "Error al guardar configuración de WiFi");
+                    setBanner({ kind: "error", text: errorMsg });
+                  } finally {
+                    setSavingWifi(false);
+                  }
+                }}
+                disabled={disableInputs || savingWifi}
+              >
+                {savingWifi ? "Guardando..." : "Guardar configuración de WiFi"}
+              </button>
+            </div>
           </div>
-        </div>
         )}
 
         <div className="config-actions">
