@@ -173,3 +173,44 @@ def test_test_key_allows_long_api_key(monkeypatch: pytest.MonkeyPatch, app_modul
 
     # Con 200 sin estado 401/403, debe considerarse ok
     assert result == {"ok": True}
+
+
+def test_test_aemet_endpoint_disabled_returns_disabled(app_module: Tuple[object, Path]) -> None:
+    """Test que /api/aemet/test retorna {ok: false, reason: "disabled"} cuando enabled=false."""
+    module, _ = app_module
+    
+    # Configurar aemet.enabled=false en la configuración
+    config = module.config_manager.read()
+    payload = config.model_dump(mode="python", by_alias=True)
+    if "aemet" not in payload:
+        payload["aemet"] = {}
+    payload["aemet"]["enabled"] = False
+    module.config_manager.write(payload)
+    
+    # Llamar al endpoint de test
+    result = module.test_aemet_key_saved()
+    
+    # Debe retornar disabled sin requerir token
+    assert result == {"ok": False, "reason": "disabled"}
+
+
+def test_test_aemet_endpoint_with_enabled_true_checks_key(app_module: Tuple[object, Path]) -> None:
+    """Test que /api/aemet/test verifica key cuando enabled=true."""
+    module, _ = app_module
+    
+    # Configurar aemet.enabled=true y sin key
+    config = module.config_manager.read()
+    payload = config.model_dump(mode="python", by_alias=True)
+    if "aemet" not in payload:
+        payload["aemet"] = {}
+    payload["aemet"]["enabled"] = True
+    module.config_manager.write(payload)
+    
+    # Limpiar key
+    _write_aemet_key(module, None)
+    
+    # Llamar al endpoint de test
+    result = module.test_aemet_key_saved()
+    
+    # Debe retornar missing_api_key cuando enabled=true pero no hay key
+    assert result == {"ok": False, "reason": "missing_api_key"}

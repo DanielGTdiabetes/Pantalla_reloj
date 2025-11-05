@@ -2,6 +2,32 @@
 
 Todos los cambios notables del proyecto se documentarán en este archivo.
 
+## v24 - 2025-01
+
+### Fixed
+- **RainViewerProvider corregido para esquema v4**: El proveedor ahora maneja correctamente el formato JSON v4 de RainViewer que retorna frames como objetos `{time, path}` en lugar de timestamps directos. Esto corrige el error `'dict' object cannot be interpreted as an integer`.
+
+### Changed
+- **Sustitución de AEMET por RainViewer v4 para radar global**: El radar global ahora usa RainViewer v4 por defecto (sin clave API requerida) en lugar de AEMET. AEMET se mantiene en la configuración pero deshabilitado por defecto y solo se usará en futuras capas (avisos CAP, radar ES, satélite ES) si se reactiva.
+- **Endpoint AEMET test ajustado**: `/api/aemet/test` ahora retorna `{ok: false, reason: "disabled"}` cuando `aemet.enabled=false` sin requerir token, evitando errores en health checks.
+
+### Added
+- **Endpoints RainViewer**:
+  - `GET /api/rainviewer/frames` → Retorna array de timestamps disponibles (combina `radar.past` + `radar.nowcast`)
+  - `GET /api/rainviewer/tiles/{timestamp}/{z}/{x}/{y}.png` → Proxy/cache de tiles desde RainViewer v4
+  - `GET /api/rainviewer/test` → Verificación de conectividad y disponibilidad de frames
+- **Funciones de API frontend para RainViewer y GIBS**: `testRainViewer()`, `getRainViewerFrames()`, `getRainViewerTileUrl()`, `testGIBS()`
+- **Tests unitarios**:
+  - `test_rainviewer_provider.py`: Tests del parser RainViewer v4 con manejo de formatos legacy y v4
+  - `test_routes_rainviewer.py`: Tests de endpoints de RainViewer
+  - Tests adicionales en `test_aemet_endpoints.py` para verificar comportamiento cuando `enabled=false`
+
+### Technical Details
+- RainViewerProvider ahora soporta reintentos (2 intentos) con timeouts para mayor robustez
+- URL de tiles actualizada al formato v4: `https://tilecache.rainviewer.com/v2/radar/{timestamp}/256/{z}/{x}/{y}/2/1_1.png`
+- Filtros `history_minutes` y `frame_step` aplicados correctamente en el backend
+- Configuración por defecto: `layers.global.radar.provider="rainviewer"`, `aemet.enabled=false`
+
 ## v23 - 2025-01
 
 ### Fixed
