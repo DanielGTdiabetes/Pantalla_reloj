@@ -4,7 +4,7 @@ import type { Feature, FeatureCollection, GeoJsonProperties, Geometry, Point } f
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 
-import { apiGet, saveConfig } from "../../lib/api";
+import { apiGet, apiPost, saveConfig } from "../../lib/api";
 import { useConfig } from "../../lib/useConfig";
 import { kioskRuntime } from "../../lib/runtimeFlags";
 import AircraftLayer from "./layers/AircraftLayer";
@@ -1354,6 +1354,24 @@ export default function GeoScopeMap() {
     let cancelled = false;
     const map = mapRef.current;
     let cleanup: (() => void) | null = null;
+    let styleLoadTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    // Función para loguear errores al backend
+    const logError = async (error: Error | string) => {
+      try {
+        const errorMessage = typeof error === "string" ? error : error.message || String(error);
+        const errorStack = error instanceof Error ? error.stack : undefined;
+        await apiPost("/api/logs/client", {
+          level: "error",
+          message: `[GeoScopeMap] ${errorMessage}`,
+          stack: errorStack,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (logError) {
+        // Ignorar errores de logging
+        console.warn("[GeoScopeMap] Failed to log error to backend", logError);
+      }
+    };
 
     const applyStyleChange = async () => {
       if (!map) {
@@ -1375,6 +1393,17 @@ export default function GeoScopeMap() {
         const mapPreferences = merged.map ?? createDefaultMapPreferences();
 
         // Convertir a MapConfigV2 para loadMapStyle
+        // Calcular checksum para cache-buster (usar mapStyleVersion o timestamp)
+        const configChecksum = mapStyleVersion || Date.now();
+        
+        // Agregar cache-buster al styleUrl si existe
+        let styleUrlWithCacheBuster = mapSettings.maptiler?.styleUrlDark || null;
+        if (styleUrlWithCacheBuster) {
+          const url = new URL(styleUrlWithCacheBuster);
+          url.searchParams.set("v", String(configChecksum));
+          styleUrlWithCacheBuster = url.toString();
+        }
+        
         const ui_map: MapConfigV2 = {
           engine: "maplibre",
           provider: mapSettings.provider === "maptiler" ? "maptiler_vector" : "local_raster_xyz",
@@ -1388,7 +1417,7 @@ export default function GeoScopeMap() {
           },
           maptiler: mapSettings.maptiler ? {
             apiKey: mapSettings.maptiler.key || null,
-            styleUrl: mapSettings.maptiler.styleUrlDark || null,
+            styleUrl: styleUrlWithCacheBuster,
           } : undefined,
           customXyz: undefined,
           viewMode: mapSettings.viewMode || "fixed",
@@ -1440,6 +1469,12 @@ export default function GeoScopeMap() {
             return;
           }
           map.off("style.load", handleStyleLoad);
+          
+          // Limpiar timeout si existe
+          if (styleLoadTimeout) {
+            clearTimeout(styleLoadTimeout);
+            styleLoadTimeout = null;
+          }
 
           let spriteAvailable = false;
           try {
@@ -1467,20 +1502,72 @@ export default function GeoScopeMap() {
           if (styleType && theme) {
             applyThemeToMap(map, styleType, theme);
           }
+          
+          // Reinyectar capas después de style.load
+          // Esto reinyecta todas las capas registradas: radar AEMET, avisos, barcos, aviones, rayos
           layerRegistryRef.current?.reapply();
+          
+          // Reinyectar capas específicas que tienen métodos ensure*
+          const merged = withConfigDefaults(config);
+          const configAsV2 = config as unknown as {
+            version?: number;
+            aemet?: { enabled?: boolean; cap_enabled?: boolean };
+            layers?: { flights?: typeof merged.layers.flights; ships?: typeof merged.layers.ships };
+            opensky?: typeof merged.opensky;
+          };
+          
+          // Reinyectar radar AEMET (avisos)
+          if (configAsV2.aemet?.enabled && configAsV2.aemet?.cap_enabled) {
+            const aemetWarningsLayer = aemetWarningsLayerRef.current;
+            if (aemetWarningsLayer) {
+              await aemetWarningsLayer.ensureWarningsLayer();
+            }
+          }
+          
+          // Reinyectar barcos
+          const shipsLayer = shipsLayerRef.current;
+          if (shipsLayer) {
+            await shipsLayer.ensureShipsLayer();
+          }
+          
+          // Reinyectar aviones
+          const aircraftLayer = aircraftLayerRef.current;
+          if (aircraftLayer) {
+            await aircraftLayer.ensureFlightsLayer();
+          }
+          
           mapStateMachineRef.current?.notifyStyleData("config-style-change");
           setStyleChangeInProgress(false);
         };
 
+        // Timeout de 8s: si no llega style.load, recargar la página
+        styleLoadTimeout = setTimeout(() => {
+          if (!cancelled) {
+            void logError("Style load timeout: reloading page after 8s");
+            window.location.reload();
+          }
+        }, 8000);
+
         cleanup = () => {
           map.off("style.load", handleStyleLoad);
+          if (styleLoadTimeout) {
+            clearTimeout(styleLoadTimeout);
+            styleLoadTimeout = null;
+          }
         };
 
         map.once("style.load", handleStyleLoad);
-        map.setStyle(styleResult.resolved.style as maplibregl.StyleSpecification, { diff: true });
+        
+        try {
+          map.setStyle(styleResult.resolved.style as maplibregl.StyleSpecification, { diff: false });
+        } catch (error) {
+          void logError(error instanceof Error ? error : new Error(String(error)));
+          throw error;
+        }
       } catch (error) {
         if (!cancelled) {
           console.error("[GeoScopeMap] Error applying live style change", error);
+          void logError(error instanceof Error ? error : new Error(String(error)));
           setStyleChangeInProgress(false);
         }
       }

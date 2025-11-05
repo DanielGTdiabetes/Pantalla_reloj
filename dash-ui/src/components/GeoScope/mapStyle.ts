@@ -133,16 +133,53 @@ export const loadMapStyle = async (
   // Manejar proveedor maptiler_vector
   else if (provider === "maptiler_vector") {
     const maptilerConfig = mapConfig.maptiler;
-    const styleUrl = sanitizeOptionalString(maptilerConfig?.styleUrl);
+    let styleUrl = sanitizeOptionalString(maptilerConfig?.styleUrl);
 
     if (styleUrl) {
       try {
-        // Usar styleUrl tal cual viene del backend (ya incluye ?key= si es necesario)
-        const response = await fetch(styleUrl);
-        if (!response.ok) {
-          throw new Error(`Failed to load style: HTTP ${response.status}`);
+        // Preflight: verificar que el styleUrl es válido antes de usarlo
+        // Intentar HEAD primero, luego GET si es necesario
+        let preflightResponse: Response;
+        let needsBody = false;
+        try {
+          preflightResponse = await fetch(styleUrl, {
+            method: "HEAD",
+            cache: "no-store",
+          });
+          needsBody = true; // Si HEAD funciona, necesitamos GET para obtener el body
+        } catch {
+          // Si HEAD falla, intentar GET directamente
+          preflightResponse = await fetch(styleUrl, {
+            method: "GET",
+            cache: "no-store",
+          });
+          needsBody = false; // Ya tenemos el body
         }
+
+        // Si el status no es 200, usar fallback
+        if (preflightResponse.status !== 200) {
+          throw new Error(`Preflight failed: HTTP ${preflightResponse.status}`);
+        }
+
+        // Si es HEAD, obtener el body con GET
+        let response: Response = preflightResponse;
+        if (needsBody) {
+          response = await fetch(styleUrl, {
+            method: "GET",
+            cache: "no-store",
+          });
+          if (!response.ok) {
+            throw new Error(`Failed to load style: HTTP ${response.status}`);
+          }
+        }
+
         const styleText = await response.text();
+        
+        // Verificar que el body es >= 1 KB
+        if (styleText.length < 1024) {
+          throw new Error(`Style body too small: ${styleText.length} bytes`);
+        }
+
         const parsed = JSON.parse(styleText) as StyleSpecification;
         resolvedStyle = {
           type: "vector",
@@ -152,8 +189,28 @@ export const loadMapStyle = async (
         };
         usedFallback = false;
       } catch (error) {
-        console.warn("[map] MapTiler style failed, using OpenStreetMap fallback", error);
+        console.warn("[map] MapTiler style failed, using fallback", error);
+        // Cambiar a fallback de MapLibre
+        const fallbackUrl = "https://demotiles.maplibre.org/style.json";
         usedFallback = true;
+        
+        try {
+          const fallbackResponse = await fetch(fallbackUrl, {
+            cache: "no-store",
+          });
+          if (fallbackResponse.ok) {
+            const styleText = await fallbackResponse.text();
+            const parsed = JSON.parse(styleText) as StyleSpecification;
+            resolvedStyle = {
+              type: "vector",
+              style: parsed,
+              variant,
+              name: "maptiler_vector_fallback",
+            };
+          }
+        } catch (fallbackError) {
+          console.warn("[map] MapLibre fallback also failed", fallbackError);
+        }
       }
     } else {
       console.warn("[map] MapTiler provider requires styleUrl, using fallback");
