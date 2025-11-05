@@ -3539,7 +3539,6 @@ const ConfigPage: React.FC = () => {
                     const payload = JSON.parse(JSON.stringify(form)) as AppConfig;
                     await saveConfig(payload);
                     await reloadConfig();
-                    setBanner({ kind: "success", text: "Configuración del rotador guardada ✅" });
                   } catch (error) {
                     console.error("[ConfigPage] Failed to save rotator configuration", error);
                     const errorMsg = resolveApiErrorMessage(error, "Error al guardar configuración del rotador");
