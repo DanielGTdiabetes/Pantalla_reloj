@@ -710,6 +710,7 @@ export default function GeoScopeMap() {
   const [tintColor, setTintColor] = useState<string | null>(null);
   const mapStateMachineRef = useRef<MapStateMachine | null>(null);
   const runtimeRef = useRef<RuntimePreferences | null>(null);
+  const styleLoadedHandlerRef = useRef<(() => void) | null>(null);
 
 
   const updateMapView = (map: maplibregl.Map) => {
@@ -1409,26 +1410,7 @@ export default function GeoScopeMap() {
       window.addEventListener("map:style:loaded", handleStyleLoaded);
       
       // Guardar handler para cleanup
-      const styleLoadedHandler = handleStyleLoaded;
-      const cleanupStyleLoaded = () => {
-        window.removeEventListener("map:style:loaded", styleLoadedHandler);
-      };
-      
-      // Añadir cleanup al cleanup existente
-      const originalCleanup = () => {
-        cleanupStyleLoaded();
-      };
-      
-      // Guardar cleanup original si existe
-      if (typeof cleanup === "function") {
-        const prevCleanup = cleanup;
-        cleanup = () => {
-          prevCleanup();
-          originalCleanup();
-        };
-      } else {
-        cleanup = originalCleanup;
-      }
+      styleLoadedHandlerRef.current = handleStyleLoaded;
     };
 
     if (typeof document !== "undefined") {
@@ -1491,6 +1473,14 @@ export default function GeoScopeMap() {
         map.remove();
         mapRef.current = null;
       }
+      
+      // Limpiar listener de map:style:loaded
+      const styleLoadedHandler = styleLoadedHandlerRef.current;
+      if (styleLoadedHandler) {
+        window.removeEventListener("map:style:loaded", styleLoadedHandler);
+        styleLoadedHandlerRef.current = null;
+      }
+      
       mapStateMachineRef.current = null;
     };
   }, []);
