@@ -686,3 +686,65 @@ export async function testLightning(): Promise<LightningTestResponse> {
     return { ok: false, reason: "connection_error" };
   }
 }
+
+export type RainViewerTestResponse = {
+  ok: boolean;
+  frames_count: number;
+  reason?: string;
+};
+
+export async function testRainViewer(): Promise<RainViewerTestResponse> {
+  try {
+    return apiGet<RainViewerTestResponse>("/api/rainviewer/test");
+  } catch (error) {
+    return { ok: false, frames_count: 0, reason: "connection_error" };
+  }
+}
+
+export async function getRainViewerFrames(
+  history_minutes?: number,
+  frame_step?: number
+): Promise<number[]> {
+  try {
+    const params = new URLSearchParams();
+    if (history_minutes !== undefined) {
+      params.append("history_minutes", history_minutes.toString());
+    }
+    if (frame_step !== undefined) {
+      params.append("frame_step", frame_step.toString());
+    }
+    const query = params.toString();
+    const path = `/api/rainviewer/frames${query ? `?${query}` : ""}`;
+    return apiGet<number[]>(path);
+  } catch (error) {
+    return [];
+  }
+}
+
+export async function getRainViewerTileUrl(
+  timestamp: number,
+  z: number,
+  x: number,
+  y: number
+): Promise<string> {
+  return `${BASE}/api/rainviewer/tiles/${timestamp}/${z}/${x}/${y}.png`;
+}
+
+export type GIBSTestResponse = {
+  ok: boolean;
+  reason?: string;
+};
+
+export async function testGIBS(): Promise<GIBSTestResponse> {
+  // GIBS no tiene endpoint específico de test, usar un tile de ejemplo
+  try {
+    // Intentar obtener un tile de ejemplo (z=2, x=1, y=1)
+    const response = await fetch(`${BASE}/api/global/sat/tiles/2/1/1.png`);
+    if (response.ok && response.headers.get("content-type")?.includes("image")) {
+      return { ok: true };
+    }
+    return { ok: false, reason: "tile_not_available" };
+  } catch (error) {
+    return { ok: false, reason: "connection_error" };
+  }
+}

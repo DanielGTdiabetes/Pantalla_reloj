@@ -116,11 +116,25 @@ class RainViewerProvider:
         Returns:
             Lista de dicts con timestamp y path para tiles
         """
+        # Intentar con reintentos (2 reintentos)
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            try:
+                # RainViewer API: GET /public/weather-maps.json
+                url = f"{self.base_url}/public/weather-maps.json"
+                response = requests.get(url, timeout=10)
+                response.raise_for_status()
+                break
+            except requests.RequestException as e:
+                if attempt < max_retries:
+                    logger.warning(f"RainViewer API attempt {attempt + 1} failed: {e}, retrying...")
+                    time.sleep(0.5)  # Esperar medio segundo antes de reintentar
+                    continue
+                else:
+                    logger.error(f"RainViewer API failed after {max_retries + 1} attempts: {e}")
+                    return []
+        
         try:
-            # RainViewer API: GET /public/weather-maps.json
-            url = f"{self.base_url}/public/weather-maps.json"
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
             
             data = response.json()
             
@@ -143,9 +157,23 @@ class RainViewerProvider:
             cutoff_time = now - timedelta(minutes=history_minutes)
             
             frames = []
-            for frame in all_frames:
-                # frame es un timestamp Unix
-                frame_time = datetime.fromtimestamp(frame, tz=timezone.utc)
+            for frame_item in all_frames:
+                # RainViewer v4: frame_item puede ser un dict con "time" y "path", o un timestamp int
+                if isinstance(frame_item, dict):
+                    frame_timestamp = frame_item.get("time")
+                    frame_path = frame_item.get("path", str(frame_timestamp))
+                elif isinstance(frame_item, (int, float)):
+                    # Formato legacy: timestamp directo
+                    frame_timestamp = int(frame_item)
+                    frame_path = str(frame_timestamp)
+                else:
+                    continue
+                
+                if frame_timestamp is None:
+                    continue
+                
+                # frame_timestamp es un timestamp Unix
+                frame_time = datetime.fromtimestamp(frame_timestamp, tz=timezone.utc)
                 
                 # Filtrar por tiempo
                 if frame_time < cutoff_time:
@@ -160,9 +188,9 @@ class RainViewerProvider:
                         continue
                 
                 frames.append({
-                    "timestamp": frame,
+                    "timestamp": frame_timestamp,
                     "iso": frame_time.isoformat(),
-                    "path": str(frame)  # RainViewer usa timestamp como path
+                    "path": frame_path
                 })
             
             # Ordenar por timestamp
@@ -197,9 +225,10 @@ class RainViewerProvider:
         Returns:
             URL del tile
         """
-        # RainViewer tile format:
-        # /public/weather-maps/{timestamp}/{z}/{x}/{y}/{color}/{smooth}/{snow}.png
-        return f"{self.base_url}/public/weather-maps/{timestamp}/{z}/{x}/{y}/{color}/{smooth}/{snow}.png"
+        # RainViewer v4 tile format:
+        # https://tilecache.rainviewer.com/v2/radar/{timestamp}/256/{z}/{x}/{y}/2/1_1.png
+        # Usamos el formato estándar de tilecache
+        return f"https://tilecache.rainviewer.com/v2/radar/{timestamp}/256/{z}/{x}/{y}/2/1_1.png"
     
     def get_radar_data_for_focus(
         self,

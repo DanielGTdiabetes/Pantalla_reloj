@@ -3277,6 +3277,22 @@ _aemet_last_error: Optional[str] = None
 @app.get("/api/aemet/test")
 def test_aemet_key_saved() -> Dict[str, Any]:
     """Prueba la key de AEMET guardada en el SecretStore."""
+    try:
+        config_v2, _ = _read_config_v2()
+        # Verificar si AEMET está habilitado
+        aemet_enabled = False
+        try:
+            if hasattr(config_v2, "aemet") and config_v2.aemet:
+                aemet_enabled = getattr(config_v2.aemet, "enabled", False)
+        except Exception:
+            pass
+        
+        if not aemet_enabled:
+            return {"ok": False, "reason": "disabled"}
+    except Exception:
+        # Si no se puede leer config, seguir con la verificación de API key
+        pass
+    
     stored = secret_store.get_secret("aemet_api_key")
     if not stored:
         _update_aemet_health(False, "missing_api_key")
@@ -3409,6 +3425,129 @@ def get_aemet_sat_tile(z: int, x: int, y: int) -> Response:
         status_code=501,
         detail="AEMET OpenData no proporciona tiles de satélite. Use GIBS para datos de satélite."
     )
+
+
+# ============================================================================
+# RainViewer endpoints
+# ============================================================================
+
+@app.get("/api/rainviewer/frames")
+def get_rainviewer_frames(
+    history_minutes: int = 90,
+    frame_step: int = 5
+) -> List[int]:
+    """
+    Obtiene lista de frames disponibles de RainViewer.
+    
+    Args:
+        history_minutes: Minutos de historia a buscar (default: 90)
+        frame_step: Intervalo entre frames en minutos (default: 5)
+        
+    Returns:
+        Lista de timestamps ordenados (number[])
+    """
+    try:
+        provider = RainViewerProvider()
+        frames = provider.get_available_frames(
+            history_minutes=history_minutes,
+            frame_step=frame_step
+        )
+        
+        # Extraer solo los timestamps como array de números
+        timestamps = [f["timestamp"] for f in frames]
+        
+        return timestamps
+    except Exception as e:
+        logger.warning("Error fetching RainViewer frames: %s", e)
+        return []
+
+
+@app.get("/api/rainviewer/tiles/{timestamp}/{z}/{x}/{y}.png")
+def get_rainviewer_tile(
+    timestamp: int,
+    z: int,
+    x: int,
+    y: int
+) -> Response:
+    """
+    Proxy/cache de tiles de RainViewer.
+    
+    Args:
+        timestamp: Unix timestamp del frame
+        z: Zoom level
+        x: Tile X
+        y: Tile Y
+        
+    Returns:
+        PNG tile desde RainViewer
+    """
+    try:
+        provider = RainViewerProvider()
+        tile_url = provider.get_tile_url(timestamp=timestamp, z=z, x=x, y=y)
+        
+        # Intentar obtener desde caché primero
+        cache_key = f"rainviewer_tile_{timestamp}_{z}_{x}_{y}"
+        cached = cache_store.load(cache_key, max_age_minutes=5)
+        if cached and cached.payload:
+            # Si está en caché como bytes, retornarlo
+            if isinstance(cached.payload, bytes):
+                return Response(
+                    content=cached.payload,
+                    media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=300"}
+                )
+        
+        # Obtener tile desde RainViewer con reintentos
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            try:
+                response = requests.get(tile_url, timeout=10)
+                response.raise_for_status()
+                break
+            except requests.RequestException as e:
+                if attempt < max_retries:
+                    logger.warning(f"RainViewer tile attempt {attempt + 1} failed: {e}, retrying...")
+                    time.sleep(0.5)
+                    continue
+                else:
+                    logger.warning(f"RainViewer tile failed after {max_retries + 1} attempts: {e}")
+                    raise HTTPException(status_code=404, detail="Tile no disponible")
+        
+        # Guardar en caché
+        cache_store.store(cache_key, response.content)
+        
+        return Response(
+            content=response.content,
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=300"}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("Error fetching RainViewer tile: %s", e)
+        raise HTTPException(status_code=404, detail="Tile no disponible")
+
+
+@app.get("/api/rainviewer/test")
+def test_rainviewer() -> Dict[str, Any]:
+    """
+    Prueba la funcionalidad de RainViewer.
+    
+    Returns:
+        {ok: boolean, frames_count: number}
+    """
+    try:
+        provider = RainViewerProvider()
+        frames = provider.get_available_frames(history_minutes=90, frame_step=5)
+        frames_count = len(frames)
+        
+        if frames_count > 0:
+            return {"ok": True, "frames_count": frames_count}
+        else:
+            return {"ok": False, "frames_count": 0, "reason": "no_frames_available"}
+    except Exception as e:
+        logger.warning("Error testing RainViewer: %s", e)
+        return {"ok": False, "frames_count": 0, "reason": str(e)}
 
 
 @app.post("/api/config/migrate")
