@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type MutableRefObject } from "react";
 
 import { apiGet, apiPost, saveConfig } from "../../lib/api";
 import { useConfig } from "../../lib/useConfig";
+import { applyMapStyle, computeStyleUrlFromConfig } from "../../kiosk/mapStyle";
 import { kioskRuntime } from "../../lib/runtimeFlags";
 import AircraftLayer from "./layers/AircraftLayer";
 import GlobalRadarLayer from "./layers/GlobalRadarLayer";
@@ -653,6 +654,36 @@ export default function GeoScopeMap() {
   useEffect(() => {
     webglErrorRef.current = webglError;
   }, [webglError]);
+  
+  // Listeners globales de errores (opcional)
+  useEffect(() => {
+    const handleWindowError = (ev: ErrorEvent) => {
+      const errorMsg = ev.error?.message || ev.message || String(ev.error || ev);
+      fetch("/api/logs/client", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ts: Date.now(), where: "window.error", msg: errorMsg, level: "error" }),
+      }).catch(() => {});
+    };
+    
+    const handleUnhandledRejection = (ev: PromiseRejectionEvent) => {
+      const reason = (ev as any)?.reason || "unhandled";
+      fetch("/api/logs/client", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ts: Date.now(), where: "promise", msg: String(reason), level: "error" }),
+      }).catch(() => {});
+    };
+    
+    window.addEventListener("error", handleWindowError);
+    window.addEventListener("unhandledrejection", handleUnhandledRejection);
+    
+    return () => {
+      window.removeEventListener("error", handleWindowError);
+      window.removeEventListener("unhandledrejection", handleUnhandledRejection);
+    };
+  }, []);
+  
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const dprMediaRef = useRef<MediaQueryList | null>(null);
@@ -1277,6 +1308,127 @@ export default function GeoScopeMap() {
           refreshRuntimePolicy(runtime.respectReducedMotion);
         }
       });
+
+      // Watchdog por checksum: polling cada 5s para detectar cambios de configuración
+      let lastChecksum: string | null = null;
+      
+      async function pollHealthAndReact(map: maplibregl.Map) {
+        try {
+          const h = await fetch("/api/health/full", { cache: "no-store" }).then((r) => r.json());
+          const current = h?.config_checksum || null;
+          
+          if (current && current !== lastChecksum) {
+            lastChecksum = current;
+            
+            // Leer config fresca
+            const cfg = await fetch("/api/config", { cache: "no-store" }).then((r) => r.json());
+            
+            // Obtener styleUrl desde la configuración
+            const merged = withConfigDefaults(cfg);
+            const mapSettings = merged.ui?.map;
+            const styleUrl = computeStyleUrlFromConfig(mapSettings?.maptiler ? {
+              maptiler: mapSettings.maptiler,
+              style: mapSettings.style || "vector-dark",
+            } : null);
+            
+            if (styleUrl) {
+              await applyMapStyle(map, styleUrl, current);
+            }
+          }
+        } catch (e) {
+          // Log error pero continuar polling
+          console.warn("[map] pollHealthAndReact error:", e);
+          try {
+            await fetch("/api/logs/client", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ts: Date.now(), where: "pollHealthAndReact", msg: String(e), level: "error" }),
+            }).catch(() => {});
+          } catch {}
+        } finally {
+          if (!destroyed) {
+            setTimeout(() => pollHealthAndReact(map), 5000);
+          }
+        }
+      }
+      
+      // Iniciar polling después de que el mapa esté listo
+      map.once("load", () => {
+        if (!destroyed && mapRef.current) {
+          // Obtener checksum inicial
+          fetch("/api/health/full", { cache: "no-store" })
+            .then((r) => r.json())
+            .then((h) => {
+              lastChecksum = h?.config_checksum || null;
+              // Iniciar polling
+              setTimeout(() => pollHealthAndReact(map), 5000);
+            })
+            .catch(() => {
+              // Si falla, iniciar polling de todos modos
+              setTimeout(() => pollHealthAndReact(map), 5000);
+            });
+        }
+      });
+
+      // Listener para reinyectar capas después de cambiar estilo
+      const handleStyleLoaded = () => {
+        if (destroyed || !mapRef.current) return;
+        // Reinyectar capas usando LayerRegistry
+        layerRegistryRef.current?.reapply();
+        
+        // Reinyectar capas específicas que tienen métodos ensure*
+        const merged = withConfigDefaults(config || {});
+        const configAsV2 = (config || {}) as unknown as {
+          version?: number;
+          aemet?: { enabled?: boolean; cap_enabled?: boolean };
+          layers?: { flights?: typeof merged.layers.flights; ships?: typeof merged.layers.ships };
+          opensky?: typeof merged.opensky;
+        };
+        
+        // Reinyectar radar AEMET (avisos)
+        if (configAsV2.aemet?.enabled && configAsV2.aemet?.cap_enabled) {
+          const aemetWarningsLayer = aemetWarningsLayerRef.current;
+          if (aemetWarningsLayer) {
+            void aemetWarningsLayer.ensureWarningsLayer();
+          }
+        }
+        
+        // Reinyectar barcos
+        const shipsLayer = shipsLayerRef.current;
+        if (shipsLayer) {
+          void shipsLayer.ensureShipsLayer();
+        }
+        
+        // Reinyectar aviones
+        const aircraftLayer = aircraftLayerRef.current;
+        if (aircraftLayer) {
+          void aircraftLayer.ensureFlightsLayer();
+        }
+      };
+      
+      window.addEventListener("map:style:loaded", handleStyleLoaded);
+      
+      // Guardar handler para cleanup
+      const styleLoadedHandler = handleStyleLoaded;
+      const cleanupStyleLoaded = () => {
+        window.removeEventListener("map:style:loaded", styleLoadedHandler);
+      };
+      
+      // Añadir cleanup al cleanup existente
+      const originalCleanup = () => {
+        cleanupStyleLoaded();
+      };
+      
+      // Guardar cleanup original si existe
+      if (typeof cleanup === "function") {
+        const prevCleanup = cleanup;
+        cleanup = () => {
+          prevCleanup();
+          originalCleanup();
+        };
+      } else {
+        cleanup = originalCleanup;
+      }
     };
 
     if (typeof document !== "undefined") {

@@ -1577,6 +1577,31 @@ async def upload_ics_file(
     return JSONResponse(content=response_payload, status_code=200)
 
 
+@app.post("/api/logs/client")
+async def client_log(request: Request) -> Dict[str, Any]:
+    """Registra logs del cliente (warnings/errors) para verlos en journalctl."""
+    try:
+        body = await request.json()
+        ts = body.get("ts")
+        where = body.get("where", "unknown")
+        msg = body.get("msg", "")
+        level = body.get("level", "warning")
+        
+        # Log al logger del backend (se verá en journalctl)
+        log_msg = f"[client:{where}] {msg}"
+        if level == "error":
+            logger.error(log_msg)
+        elif level == "warning":
+            logger.warning(log_msg)
+        else:
+            logger.info(log_msg)
+        
+        return {"ok": True}
+    except Exception as exc:
+        logger.warning("[logs] Failed to process client log: %s", exc)
+        return {"ok": False, "error": str(exc)}
+
+
 @app.post("/api/config/reload")
 def reload_config() -> Dict[str, Any]:
     """Recarga la configuración desde el archivo efectivo sin reiniciar el servicio."""
