@@ -17,8 +17,6 @@ import WeatherLayer from "./layers/WeatherLayer";
 import { LayerRegistry } from "./layers/LayerRegistry";
 import ShipsLayer from "./layers/ShipsLayer";
 import MapSpinner from "../MapSpinner";
-import { RadarControls } from "./RadarControls";
-import "./RadarControls.css";
 import { hasSprite } from "./utils/styleSprite";
 import {
   createDefaultMapPreferences,
@@ -2404,11 +2402,6 @@ export default function GeoScopeMap() {
     );
   }
 
-  // Obtener configuración de radar para controles
-  const merged = config ? withConfigDefaults(config) : null;
-  const globalConfig = merged?.layers?.global;
-  const radarEnabled = globalConfig?.radar?.enabled ?? false;
-
   return (
     <div className="map-host">
       <div ref={mapFillRef} className="map-fill" />
@@ -2416,17 +2409,6 @@ export default function GeoScopeMap() {
       {tintColor ? (
         <div className="map-tint" style={{ background: tintColor }} aria-hidden="true" />
       ) : null}
-      {radarEnabled && (
-        <RadarControls
-          enabled={radarEnabled}
-          playing={radarPlaying}
-          playbackSpeed={radarPlaybackSpeed}
-          opacity={radarOpacity}
-          onPlayPause={setRadarPlaying}
-          onSpeedChange={setRadarPlaybackSpeed}
-          onOpacityChange={setRadarOpacity}
-        />
-      )}
     </div>
   );
 }
