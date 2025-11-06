@@ -944,17 +944,74 @@ def _read_config_v2() -> Tuple[AppConfigV2, bool]:
 
 
 def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
-    """Construye configuración pública v2 (sin secrets ni rutas internas)."""
+    """Construye configuración pública v2 (sin secrets ni rutas internas).
+    
+    Oculta todos los valores sensibles de secrets.* pero mantiene la estructura
+    para que el frontend sepa qué secretos están configurados.
+    """
     payload = config.model_dump(mode="json", exclude_none=True)
     
-    # Secrets ya no se exponen en la API pública (solo metadata vacía)
+    # Ocultar todos los secretos pero mantener estructura
+    # Solo metadata, nunca valores reales
     if "secrets" in payload:
-        payload["secrets"] = {
-            "opensky": {},
-            "google": {},
-            "aemet": {},
-            "calendar_ics": {},
-        }
+        secrets_public = {}
+        
+        # MapTiler
+        if "maptiler" in payload.get("secrets", {}):
+            secrets_public["maptiler"] = {"api_key": None}
+        
+        # OpenSky
+        if "opensky" in payload.get("secrets", {}):
+            opensky_secrets = payload["secrets"].get("opensky", {})
+            secrets_public["opensky"] = {
+                "oauth2": {
+                    "client_id": None,
+                    "client_secret": None,
+                    "token_url": opensky_secrets.get("oauth2", {}).get("token_url", "https://auth.opensky-network.org/oauth/token"),
+                    "scope": None
+                } if opensky_secrets.get("oauth2") else {},
+                "basic": {
+                    "username": None,
+                    "password": None
+                } if opensky_secrets.get("basic") else {}
+            }
+            # Añadir indicadores de si hay credenciales (sin exponer valores)
+            stored_id = secret_store.get_secret("opensky_client_id")
+            stored_secret = secret_store.get_secret("opensky_client_secret")
+            stored_username = secret_store.get_secret("opensky_username")
+            stored_password = secret_store.get_secret("opensky_password")
+            if secrets_public["opensky"].get("oauth2"):
+                secrets_public["opensky"]["oauth2"]["has_credentials"] = bool(stored_id and stored_secret)
+                if stored_id and len(stored_id) >= 4:
+                    secrets_public["opensky"]["oauth2"]["client_id_last4"] = stored_id[-4:]
+            if secrets_public["opensky"].get("basic"):
+                secrets_public["opensky"]["basic"]["has_credentials"] = bool(stored_username and stored_password)
+        
+        # Google Calendar
+        if "google" in payload.get("secrets", {}):
+            secrets_public["google"] = {"api_key": None, "calendar_id": None}
+        
+        # AEMET (opcional)
+        if "aemet" in payload.get("secrets", {}):
+            secrets_public["aemet"] = {"api_key": None}
+        
+        # Calendar ICS
+        if "calendar_ics" in payload.get("secrets", {}):
+            secrets_public["calendar_ics"] = {"url": None, "path": None}
+        
+        # AviationStack
+        if "aviationstack" in payload.get("secrets", {}):
+            secrets_public["aviationstack"] = {"api_key": None}
+        
+        # AISStream
+        if "aisstream" in payload.get("secrets", {}):
+            secrets_public["aisstream"] = {"api_key": None}
+        
+        # AISHub
+        if "aishub" in payload.get("secrets", {}):
+            secrets_public["aishub"] = {"api_key": None}
+        
+        payload["secrets"] = secrets_public
     
     # Filtrar stored_path del calendar.ics (no exponer rutas internas)
     if "calendar" in payload and isinstance(payload["calendar"], dict):
@@ -964,6 +1021,37 @@ def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
             # Eliminar stored_path y file_path (rutas internas)
             ics.pop("stored_path", None)
             ics.pop("file_path", None)
+    
+    # Ocultar cualquier api_key o secret que pueda estar en otros lugares
+    # (por seguridad adicional), pero NO tocar la estructura de secrets que ya construimos
+    def _sanitize_secrets_recursive(obj: Any, path: str = "") -> Any:
+        """Recursivamente sanitiza secretos en el objeto, excluyendo secrets.*."""
+        if path.startswith("secrets"):
+            # No sanitizar dentro de secrets (ya lo hicimos arriba)
+            return obj
+        
+        if isinstance(obj, dict):
+            result = {}
+            for key, value in obj.items():
+                new_path = f"{path}.{key}" if path else key
+                # Ocultar campos sensibles fuera de secrets
+                if key in ["api_key", "apiKey", "client_id", "client_secret", "clientId", "clientSecret", 
+                          "username", "password", "token", "secret", "key"] and not new_path.startswith("secrets"):
+                    result[key] = None
+                else:
+                    result[key] = _sanitize_secrets_recursive(value, new_path)
+            return result
+        elif isinstance(obj, list):
+            return [_sanitize_secrets_recursive(item, path) for item in obj]
+        else:
+            return obj
+    
+    # Aplicar sanitización adicional (por si acaso) pero proteger secrets
+    secrets_backup = payload.get("secrets")
+    payload = _sanitize_secrets_recursive(payload)
+    # Restaurar secrets después de sanitización
+    if secrets_backup:
+        payload["secrets"] = secrets_backup
     
     return payload
 
@@ -1017,6 +1105,7 @@ _ALLOWED_SECRET_KEYS = {
     "openweathermap_api_key",
     "aviationstack_api_key",
     "aishub_api_key",
+    "maptiler_api_key",
 }
 
 def _canonical_secret_key(key: str) -> str:
@@ -3567,6 +3656,16 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
                 if "api_key" in payload["aishub"]:
                     secret_store.set_secret("aishub_api_key", _sanitize_secret(payload["aishub"]["api_key"]))
             
+            # maptiler
+            if "maptiler" in payload and isinstance(payload["maptiler"], dict):
+                if "api_key" in payload["maptiler"]:
+                    secret_store.set_secret("maptiler_api_key", _sanitize_secret(payload["maptiler"]["api_key"]))
+            
+            # aemet (opcional)
+            if "aemet" in payload and isinstance(payload["aemet"], dict):
+                if "api_key" in payload["aemet"]:
+                    secret_store.set_secret("aemet_api_key", _sanitize_secret(payload["aemet"]["api_key"]))
+            
             logger.info("[secrets] Updated secrets via PATCH /api/config/group/secrets")
         except Exception as secret_exc:
             logger.warning("[secrets] Error updating secrets: %s", secret_exc)
@@ -3593,18 +3692,26 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
                         secrets_meta[key][subkey] = payload[key][subkey]
         merged_config = current_config
     else:
-        # Manejar grupos anidados (ej: "layers.flights", "layers.ships")
+        # Manejar grupos anidados (ej: "layers.flights", "layers.ships", "ui_global.satellite")
+        # Soporta grupos de múltiples niveles: "a.b.c" -> {"a": {"b": {"c": payload}}}
         if "." in group_name:
             parts = group_name.split(".")
-            if len(parts) != 2:
+            if len(parts) < 2:
                 raise HTTPException(status_code=400, detail=f"Invalid nested group name: {group_name}")
-            parent_key, child_key = parts
-            # Construir estructura anidada para el merge
-            merge_payload = {parent_key: {child_key: payload}}
+            
+            # Construir estructura anidada recursivamente
+            merge_payload: Dict[str, Any] = {}
+            current = merge_payload
+            for i, part in enumerate(parts[:-1]):
+                current[part] = {}
+                current = current[part]
+            # Última parte contiene el payload
+            current[parts[-1]] = payload
         else:
             merge_payload = {group_name: payload}
         
         # Hacer deep-merge solo del grupo
+        # deep_merge preserva todas las claves no presentes en merge_payload
         merged_config = deep_merge(current_config, merge_payload)
     
     # Sanitizar antes de validar (migra valores legacy/inválidos)
@@ -4841,6 +4948,67 @@ async def post_news_rss(request: Request) -> Dict[str, Any]:
     all_items = all_items[:20]
     
     return {"items": all_items}
+
+
+@app.get("/api/news/sample")
+def get_news_sample(limit: int = 10) -> Dict[str, Any]:
+    """Obtiene una muestra de noticias de los feeds configurados.
+    
+    Args:
+        limit: Número máximo de noticias a retornar (por defecto: 10)
+        
+    Returns:
+        Diccionario con {"items": [...], "updated_at": "..."}
+    """
+    try:
+        config_v2, _ = _read_config_v2()
+        
+        # Usar feeds de v2 panels.news si existe
+        feeds = []
+        if config_v2.panels and config_v2.panels.news and config_v2.panels.news.feeds:
+            feeds = config_v2.panels.news.feeds
+        
+        # Fallback a news top-level
+        if not feeds and config_v2.news and config_v2.news.rss_feeds:
+            feeds = config_v2.news.rss_feeds
+        
+        if not feeds:
+            return {"items": [], "updated_at": datetime.now(timezone.utc).isoformat()}
+        
+        # Obtener noticias de todos los feeds
+        all_items: List[Dict[str, Any]] = []
+        
+        for feed_url in feeds[:10]:  # Máximo 10 feeds
+            if not feed_url or not feed_url.strip():
+                continue
+            
+            try:
+                items = parse_rss_feed(feed_url.strip(), max_items=limit)
+                all_items.extend(items)
+            except Exception as exc:
+                logger.warning("Failed to fetch RSS feed %s: %s", feed_url, exc)
+                continue
+        
+        # Ordenar por fecha (más recientes primero)
+        all_items.sort(key=lambda x: x.get("published_at", ""), reverse=True)
+        
+        # Limitar total
+        all_items = all_items[:limit]
+        
+        return {
+            "items": all_items,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "count": len(all_items)
+        }
+    except Exception as exc:
+        logger.error("[news] Error getting news sample: %s", exc)
+        return {"items": [], "updated_at": datetime.now(timezone.utc).isoformat(), "count": 0}
+
+
+@app.post("/api/news/test")
+async def test_news(request: NewsTestFeedsRequest) -> Dict[str, Any]:
+    """Alias para POST /api/news/test_feeds."""
+    return await test_news_feeds(request)
 
 
 @app.post("/api/news/test_feeds")
@@ -6663,6 +6831,89 @@ def get_lightning_sample(limit: int = 50) -> Dict[str, Any]:
     except Exception as exc:
         logger.error("[lightning] Error getting sample: %s", exc)
         return {"count": 0, "items": []}
+
+
+@app.get("/api/history")
+def get_history(date: Optional[str] = None, lang: str = "es") -> Dict[str, Any]:
+    """Obtiene efemérides históricas para una fecha específica.
+    
+    Args:
+        date: Fecha en formato MM-DD (por defecto: hoy)
+        lang: Código de idioma ISO 639-1 (por defecto: "es")
+        
+    Returns:
+        Diccionario con {"date": "YYYY-MM-DD", "count": N, "items": [...]}
+    """
+    try:
+        # Parsear fecha
+        target_date = None
+        if date:
+            try:
+                parts = date.split("-")
+                if len(parts) == 2:
+                    month = int(parts[0])
+                    day = int(parts[1])
+                    # Usar año actual
+                    now = datetime.now(timezone.utc)
+                    target_date = date(now.year, month, day)
+            except (ValueError, IndexError):
+                logger.warning("Invalid date format: %s, using today", date)
+        
+        # Leer configuración V2
+        config_v2, _ = _read_config_v2()
+        
+        # Obtener configuración de efemérides históricas
+        historical_events_config = None
+        provider = "wikimedia"
+        data_path = None
+        wikimedia_config = None
+        
+        if config_v2.panels and config_v2.panels.historicalEvents:
+            historical_events_config = config_v2.panels.historicalEvents
+            provider = historical_events_config.provider or "wikimedia"
+            
+            if provider == "local" and historical_events_config.local:
+                data_path = historical_events_config.local.data_path
+            elif provider == "wikimedia" and historical_events_config.wikimedia:
+                wikimedia_config = {
+                    "language": historical_events_config.wikimedia.language or lang,
+                    "event_type": historical_events_config.wikimedia.event_type or "all",
+                    "api_user_agent": historical_events_config.wikimedia.api_user_agent,
+                    "max_items": historical_events_config.wikimedia.max_items or 10,
+                    "timeout_seconds": historical_events_config.wikimedia.timeout_seconds or 10
+                }
+        
+        # Usar lang del parámetro si no está en config
+        if wikimedia_config and not wikimedia_config.get("language"):
+            wikimedia_config["language"] = lang
+        
+        # Cache key basado en fecha y lang
+        cache_key = f"history_{date or 'today'}_{lang}"
+        cached = cache_store.load(cache_key, max_age_minutes=24 * 60)  # 24 horas
+        if cached:
+            logger.debug("History cache hit for %s", cache_key)
+            return cached.payload
+        
+        # Obtener efemérides
+        result = get_efemerides_for_date(
+            data_path=data_path,
+            target_date=target_date,
+            tz_str="Europe/Madrid",
+            provider=provider,
+            wikimedia_config=wikimedia_config
+        )
+        
+        # Guardar en caché (24h)
+        cache_store.store(cache_key, result)
+        
+        return result
+    except Exception as exc:
+        logger.error("[history] Error getting historical events: %s", exc)
+        return {
+            "date": date or datetime.now(timezone.utc).date().isoformat(),
+            "count": 0,
+            "items": []
+        }
 
 
 # WiFi Configuration
@@ -8685,28 +8936,60 @@ def _get_openweather_provider(layer_type: Optional[str] = None) -> OpenWeatherMa
 @app.get("/api/global/satellite/frames")
 def get_global_satellite_frames() -> Dict[str, Any]:
     """Obtiene lista de frames disponibles de satélite global."""
-    config = config_manager.read()
-    gl = getattr(config.layers, "global_", None)
-    if not gl:
-        return {"frames": []}
-    global_config = gl.satellite
+    # Leer configuración V2 si está disponible
+    try:
+        config_v2, _ = _read_config_v2()
+        if config_v2.layers and config_v2.layers.global_ and config_v2.layers.global_.satellite:
+            # V2: leer de layers.global.satellite
+            satellite_config = config_v2.layers.global_.satellite
+            enabled = satellite_config.enabled
+            provider_name = satellite_config.provider
+            history_minutes = satellite_config.history_minutes
+            frame_step = satellite_config.frame_step
+        elif config_v2.ui_global and config_v2.ui_global.satellite:
+            # V2: fallback a ui_global.satellite (configuración legacy)
+            satellite_config = config_v2.ui_global.satellite
+            enabled = satellite_config.enabled
+            provider_name = satellite_config.provider
+            history_minutes = 90  # defaults
+            frame_step = 10
+        else:
+            enabled = False
+            provider_name = "gibs"
+            history_minutes = 90
+            frame_step = 10
+    except Exception:
+        # Fallback a V1
+        try:
+            config = config_manager.read()
+            gl = getattr(config.layers, "global_", None)
+            if not gl:
+                return {"frames": []}
+            global_config = gl.satellite
+            enabled = global_config.enabled
+            provider_name = global_config.provider
+            history_minutes = global_config.history_minutes
+            frame_step = global_config.frame_step
+        except Exception:
+            return {"frames": [], "count": 0, "provider": "gibs", "status": "down"}
     
-    if not global_config.enabled:
-        return {"frames": []}
+    if not enabled:
+        return {"frames": [], "count": 0, "provider": provider_name, "status": "down"}
     
     try:
         frames = _gibs_provider.get_available_frames(
-            history_minutes=global_config.history_minutes,
-            frame_step=global_config.frame_step
+            history_minutes=history_minutes,
+            frame_step=frame_step
         )
         return {
             "frames": frames,
             "count": len(frames),
-            "provider": global_config.provider
+            "provider": provider_name,
+            "status": "ok" if frames else "degraded"
         }
     except Exception as exc:
         logger.error("Failed to get global satellite frames: %s", exc)
-        return {"frames": [], "error": str(exc)}
+        return {"frames": [], "count": 0, "provider": provider_name, "status": "down", "error": str(exc)}
 
 
 @app.get("/api/global/radar/frames")
@@ -8715,45 +8998,46 @@ def get_global_radar_frames() -> Dict[str, Any]:
     # Leer configuración V2 si está disponible
     try:
         config_v2, _ = _read_config_v2()
-        if config_v2.ui_global and config_v2.ui_global.radar:
-            # V2: leer de ui_global.radar
+        if config_v2.layers and config_v2.layers.global_ and config_v2.layers.global_.radar:
+            # V2: leer de layers.global.radar (prioridad)
+            radar_config = config_v2.layers.global_.radar
+            enabled = radar_config.enabled
+            provider_name = radar_config.provider
+            history_minutes = radar_config.history_minutes
+            frame_step = radar_config.frame_step
+        elif config_v2.ui_global and config_v2.ui_global.radar:
+            # V2: fallback a ui_global.radar (configuración legacy)
             radar_config = config_v2.ui_global.radar
             enabled = radar_config.enabled if radar_config else False
             provider_name = radar_config.provider if radar_config else "rainviewer"
+            history_minutes = 90  # defaults
+            frame_step = 5
         else:
             enabled = False
             provider_name = "rainviewer"
+            history_minutes = 90
+            frame_step = 5
     except Exception:
         # Fallback a V1
-        config = config_manager.read()
-        gl = getattr(config.layers, "global_", None)
-        if not gl:
-            enabled = False
-            provider_name = "rainviewer"
-        else:
-            global_config = gl.radar
-            enabled = global_config.enabled
-            provider_name = global_config.provider
+        try:
+            config = config_manager.read()
+            gl = getattr(config.layers, "global_", None)
+            if not gl:
+                enabled = False
+                provider_name = "rainviewer"
+                history_minutes = 90
+                frame_step = 5
+            else:
+                global_config = gl.radar
+                enabled = global_config.enabled
+                provider_name = global_config.provider
+                history_minutes = global_config.history_minutes
+                frame_step = global_config.frame_step
+        except Exception:
+            return {"frames": [], "count": 0, "provider": "rainviewer", "status": "down"}
 
     if not enabled:
         return {"frames": [], "count": 0, "provider": provider_name, "status": "down"}
-
-    # Usar valores por defecto de history y frame_step para V2
-    history_minutes = 90
-    frame_step = 5
-    try:
-        config_v2, _ = _read_config_v2()
-        if config_v2.ui_global and config_v2.ui_global.radar:
-            # V2 no tiene history_minutes/frame_step, usar defaults
-            pass
-    except Exception:
-        # Fallback a V1 para history_minutes y frame_step
-        config = config_manager.read()
-        gl = getattr(config.layers, "global_", None)
-        if gl:
-            global_config = gl.radar
-            history_minutes = global_config.history_minutes
-            frame_step = global_config.frame_step
 
     try:
         if provider_name == "openweathermap":
@@ -8814,13 +9098,33 @@ async def get_global_satellite_tile(
     request: Request
 ) -> Response:
     """Proxy de tiles de satélite global con caché."""
-    config = config_manager.read()
-    gl = getattr(config.layers, "global_", None)
-    if not gl:
-        raise HTTPException(status_code=404, detail="Global layers not configured")
-    global_config = gl.satellite
+    # Leer configuración V2 si está disponible
+    enabled = False
+    refresh_minutes = 10
+    try:
+        config_v2, _ = _read_config_v2()
+        if config_v2.layers and config_v2.layers.global_ and config_v2.layers.global_.satellite:
+            # V2: leer de layers.global.satellite
+            satellite_config = config_v2.layers.global_.satellite
+            enabled = satellite_config.enabled
+            refresh_minutes = satellite_config.refresh_minutes
+        elif config_v2.ui_global and config_v2.ui_global.satellite:
+            # V2: fallback a ui_global.satellite
+            enabled = config_v2.ui_global.satellite.enabled
+            refresh_minutes = 10  # default
+    except Exception:
+        # Fallback a V1
+        try:
+            config = config_manager.read()
+            gl = getattr(config.layers, "global_", None)
+            if gl:
+                global_config = gl.satellite
+                enabled = global_config.enabled
+                refresh_minutes = global_config.refresh_minutes
+        except Exception:
+            enabled = False
     
-    if not global_config.enabled:
+    if not enabled:
         raise HTTPException(status_code=404, detail="Global satellite layer disabled")
     
     # Caché de tiles en disco
@@ -8831,7 +9135,7 @@ async def get_global_satellite_tile(
     # Verificar caché en disco
     if tile_path.exists():
         tile_age = datetime.now(timezone.utc).timestamp() - tile_path.stat().st_mtime
-        if tile_age < global_config.refresh_minutes * 60:
+        if tile_age < refresh_minutes * 60:
             tile_data = tile_path.read_bytes()
             return Response(
                 content=tile_data,
@@ -8888,27 +9192,39 @@ async def get_global_radar_tile(
 ) -> Response:
     """Proxy de tiles de radar global con caché."""
     # Leer configuración V2 si está disponible
+    enabled = False
+    provider_name = "rainviewer"
+    refresh_minutes = 5
+    layer_type = "precipitation_new"
     try:
         config_v2, _ = _read_config_v2()
-        if config_v2.ui_global and config_v2.ui_global.radar:
-            # V2: leer de ui_global.radar
+        if config_v2.layers and config_v2.layers.global_ and config_v2.layers.global_.radar:
+            # V2: leer de layers.global.radar (prioridad)
+            radar_config = config_v2.layers.global_.radar
+            enabled = radar_config.enabled
+            provider_name = radar_config.provider
+            refresh_minutes = radar_config.refresh_minutes
+            layer_type = radar_config.layer_type or "precipitation_new"
+        elif config_v2.ui_global and config_v2.ui_global.radar:
+            # V2: fallback a ui_global.radar
             radar_config = config_v2.ui_global.radar
             enabled = radar_config.enabled if radar_config else False
             provider_name = radar_config.provider if radar_config else "rainviewer"
-        else:
-            enabled = False
-            provider_name = "rainviewer"
+            layer_type = radar_config.layer_type or "precipitation_new"
+            refresh_minutes = 5  # default
     except Exception:
         # Fallback a V1
-        config = config_manager.read()
-        gl = getattr(config.layers, "global_", None)
-        if not gl:
+        try:
+            config = config_manager.read()
+            gl = getattr(config.layers, "global_", None)
+            if gl:
+                global_config = gl.radar
+                enabled = global_config.enabled
+                provider_name = global_config.provider
+                refresh_minutes = global_config.refresh_minutes
+                layer_type = getattr(global_config, "layer_type", "precipitation_new")
+        except Exception:
             enabled = False
-            provider_name = "rainviewer"
-        else:
-            global_config = gl.radar
-            enabled = global_config.enabled
-            provider_name = global_config.provider
 
     if not enabled:
         raise HTTPException(status_code=404, detail="Global radar layer disabled")
@@ -8917,17 +9233,6 @@ async def get_global_radar_tile(
     cache_dir = Path("/var/cache/pantalla/global/radar")
     cache_dir.mkdir(parents=True, exist_ok=True)
     tile_path = cache_dir / f"{timestamp}_{z}_{x}_{y}.png"
-
-    # Verificar caché en disco (usar TTL por defecto de 5 minutos)
-    refresh_minutes = 5
-    try:
-        config = config_manager.read()
-        gl = getattr(config.layers, "global_", None)
-        if gl:
-            global_config = gl.radar
-            refresh_minutes = global_config.refresh_minutes
-    except Exception:
-        pass
 
     if tile_path.exists():
         tile_age = datetime.now(timezone.utc).timestamp() - tile_path.stat().st_mtime

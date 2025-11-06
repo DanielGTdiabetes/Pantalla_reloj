@@ -1,7 +1,8 @@
 {
   "version": 2,
   "display": {
-    "timezone": "Europe/Madrid"
+    "timezone": "Europe/Madrid",
+    "module_cycle_seconds": 20
   },
   "ui_map": {
     "engine": "maplibre",
@@ -19,6 +20,12 @@
       "maxzoom": 19
     },
     "maptiler": {
+      "style": "vector-dark",
+      "urls": {
+        "styleUrlDark": null,
+        "styleUrlLight": null,
+        "styleUrlBright": null
+      },
       "apiKey": null,
       "styleUrl": null
     },
@@ -30,7 +37,7 @@
     "viewMode": "fixed",
     "fixed": {
       "center": { "lat": 39.98, "lon": 0.20 },
-      "zoom": 9.0,
+      "zoom": 7.8,
       "bearing": 0,
       "pitch": 0
     },
@@ -38,7 +45,7 @@
   },
   "ui_global": {
     "satellite": { "enabled": true, "provider": "gibs", "opacity": 1.0 },
-    "radar": { "enabled": false, "provider": "rainviewer", "layer_type": "precipitation_new" },
+    "radar": { "enabled": true, "provider": "rainviewer", "opacity": 0.7, "layer_type": "precipitation_new" },
     "overlay": {
       "rotator": {
         "enabled": true,
@@ -57,6 +64,22 @@
     }
   },
   "layers": {
+    "global": {
+      "satellite": {
+        "enabled": true,
+        "provider": "gibs",
+        "refresh_minutes": 10,
+        "history_minutes": 90,
+        "frame_step": 10
+      },
+      "radar": {
+        "enabled": true,
+        "provider": "rainviewer",
+        "refresh_minutes": 5,
+        "history_minutes": 90,
+        "frame_step": 5
+      }
+    },
     "flights": {
       "enabled": true,
       "provider": "opensky",
@@ -68,7 +91,8 @@
       "decimate": "none",
       "grid_px": 24,
       "styleScale": 3.2,
-      "render_mode": "symbol_custom",
+      "render_mode": "circle",
+      "cluster": true,
       "circle": {
         "radius_base": 7.5,
         "radius_zoom_scale": 1.7,
@@ -125,8 +149,8 @@
   "panels": {
     "weatherWeekly": { "enabled": true },
     "ephemerides": { "enabled": true },
-    "news": { "enabled": true, "feeds": [] },
-    "calendar": { "enabled": true },
+    "news": { "enabled": true, "feeds": [], "max_items_per_feed": 10, "refresh_minutes": 30 },
+    "calendar": { "enabled": true, "days_ahead": 14 },
     "historicalEvents": {
       "enabled": true,
       "provider": "wikimedia",
@@ -138,10 +162,72 @@
         "timeout_seconds": 10
       },
       "rotation_seconds": 6,
-      "max_items": 5
+      "max_items": 6,
+      "lang": "es",
+      "cache_hours": 24
     }
   },
+  "storm": {
+    "enabled": true,
+    "center_lat": 39.986,
+    "center_lng": -0.051,
+    "zoom": 9.0,
+    "auto_enable": true,
+    "auto_disable_after_minutes": 60
+  },
+  "blitzortung": {
+    "enabled": true,
+    "mqtt_host": "127.0.0.1",
+    "mqtt_port": 1883,
+    "mqtt_topic": "blitzortung/1",
+    "auto_storm_mode": {
+      "enabled": true,
+      "radius_km": 30,
+      "min_events_in_5min": 3,
+      "cooldown_minutes": 60
+    },
+    "retention_minutes": 30,
+    "max_points": 1500
+  },
+  "news": {
+    "rss_feeds": []
+  },
+  "ephemerides": {
+    "latitude": 39.986,
+    "longitude": -0.051,
+    "timezone": "Europe/Madrid"
+  },
+  "calendar": {
+    "enabled": true,
+    "provider": "ics",
+    "days_ahead": 14
+  },
+  "opensky": {
+    "enabled": false,
+    "mode": "bbox",
+    "bbox": {
+      "lamin": 39.5,
+      "lamax": 41.0,
+      "lomin": -1.0,
+      "lomax": 1.5
+    },
+    "poll_seconds": 10,
+    "oauth2": {
+      "client_id": null,
+      "client_secret": null,
+      "token_url": "https://auth.opensky-network.org/oauth/token",
+      "scope": null
+    }
+  },
+  "ais": {
+    "enabled": false,
+    "provider": "aisstream",
+    "ws_url": "wss://stream.aisstream.io/v0/stream"
+  },
   "secrets": {
+    "maptiler": {
+      "api_key": null
+    },
     "opensky": {
       "oauth2": {
         "client_id": null,

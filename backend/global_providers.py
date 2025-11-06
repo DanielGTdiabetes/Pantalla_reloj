@@ -151,23 +151,35 @@ class RainViewerProvider:
             # Extraer timestamps de ambos arrays
             all_timestamps = []
             
-            # Procesar past
+            # Procesar past - asegurar que solo se añaden ints
             for item in past_frames:
                 if isinstance(item, (int, float)):
                     all_timestamps.append(int(item))
                 elif isinstance(item, dict):
                     timestamp = item.get("time")
                     if timestamp is not None:
-                        all_timestamps.append(int(timestamp))
+                        try:
+                            all_timestamps.append(int(timestamp))
+                        except (TypeError, ValueError):
+                            logger.warning("Invalid timestamp in past_frames dict: %s", timestamp)
+                            continue
+                else:
+                    logger.warning("Unexpected type in past_frames: %s (type: %s)", item, type(item))
             
-            # Procesar nowcast
+            # Procesar nowcast - asegurar que solo se añaden ints
             for item in nowcast_frames:
                 if isinstance(item, (int, float)):
                     all_timestamps.append(int(item))
                 elif isinstance(item, dict):
                     timestamp = item.get("time")
                     if timestamp is not None:
-                        all_timestamps.append(int(timestamp))
+                        try:
+                            all_timestamps.append(int(timestamp))
+                        except (TypeError, ValueError):
+                            logger.warning("Invalid timestamp in nowcast_frames dict: %s", timestamp)
+                            continue
+                else:
+                    logger.warning("Unexpected type in nowcast_frames: %s (type: %s)", item, type(item))
             
             if not all_timestamps:
                 logger.warning("RainViewer API: no valid timestamps found")

@@ -7,6 +7,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, Literal, List, Dict, Any
 
 
+class DisplayConfig(BaseModel):
+    """Configuración de display."""
+    timezone: str = Field(default="Europe/Madrid", min_length=1)
+    module_cycle_seconds: Optional[int] = Field(default=20, ge=1, le=300)
+
+
 class MapCenter(BaseModel):
     """Coordenadas del centro del mapa."""
     lat: float = Field(ge=-90, le=90)
@@ -20,8 +26,18 @@ class LocalRasterConfig(BaseModel):
     maxzoom: int = Field(default=19, ge=0, le=24)
 
 
+class MapTilerUrlsConfig(BaseModel):
+    """URLs de estilos MapTiler v2."""
+    styleUrlDark: Optional[str] = Field(default=None, max_length=512)
+    styleUrlLight: Optional[str] = Field(default=None, max_length=512)
+    styleUrlBright: Optional[str] = Field(default=None, max_length=512)
+
+
 class MapTilerConfig(BaseModel):
     """Configuración del proveedor MapTiler vector."""
+    style: Optional[str] = Field(default=None, max_length=64)  # "vector-dark", "streets-v2", etc.
+    urls: Optional[MapTilerUrlsConfig] = None
+    # Legacy fields
     apiKey: Optional[str] = Field(default=None, max_length=256)
     styleUrl: Optional[str] = Field(default=None, max_length=512)
 
@@ -88,6 +104,8 @@ class RadarConfig(BaseModel):
     """Configuración de radar global."""
     enabled: bool = False
     provider: Literal["rainviewer", "aemet"] = "rainviewer"
+    opacity: float = Field(default=0.7, ge=0.0, le=1.0)
+    layer_type: Optional[str] = Field(default="precipitation_new", max_length=64)
 
 
 class RotatorDurationsConfig(BaseModel):
@@ -219,10 +237,35 @@ class ShipsLayerConfig(BaseModel):
     custom: Optional[CustomShipProviderConfig] = None
 
 
+class GlobalSatelliteLayerConfig(BaseModel):
+    """Configuración de capa de satélite global."""
+    enabled: bool = True
+    provider: Literal["gibs"] = "gibs"
+    refresh_minutes: int = Field(default=10, ge=1, le=60)
+    history_minutes: int = Field(default=90, ge=1, le=1440)
+    frame_step: int = Field(default=10, ge=1, le=60)
+
+
+class GlobalRadarLayerConfig(BaseModel):
+    """Configuración de capa de radar global."""
+    enabled: bool = True
+    provider: Literal["rainviewer"] = "rainviewer"
+    refresh_minutes: int = Field(default=5, ge=1, le=60)
+    history_minutes: int = Field(default=90, ge=1, le=1440)
+    frame_step: int = Field(default=5, ge=1, le=60)
+
+
+class GlobalLayersConfig(BaseModel):
+    """Configuración de capas globales."""
+    satellite: Optional[GlobalSatelliteLayerConfig] = None
+    radar: Optional[GlobalRadarLayerConfig] = None
+
+
 class LayersConfig(BaseModel):
     """Configuración de capas v2."""
     flights: Optional[FlightsLayerConfig] = None
     ships: Optional[ShipsLayerConfig] = None
+    global_: Optional[GlobalLayersConfig] = Field(default=None, alias="global")
 
 
 class PanelWeatherWeeklyConfig(BaseModel):
@@ -239,6 +282,8 @@ class PanelNewsConfig(BaseModel):
     """Configuración de panel de noticias RSS."""
     enabled: bool = True
     feeds: List[str] = Field(default_factory=list)
+    max_items_per_feed: Optional[int] = Field(default=10, ge=1, le=50)
+    refresh_minutes: Optional[int] = Field(default=30, ge=1, le=1440)
 
 
 class PanelCalendarConfig(BaseModel):
@@ -246,6 +291,7 @@ class PanelCalendarConfig(BaseModel):
     enabled: bool = True
     provider: Literal["google", "ics", "disabled"] = Field(default="google")
     ics_path: Optional[str] = Field(default=None, max_length=1024)
+    days_ahead: Optional[int] = Field(default=14, ge=1, le=90)
 
 
 class PanelHistoricalEventsLocalConfig(BaseModel):
@@ -278,6 +324,9 @@ class PanelHistoricalEventsConfig(BaseModel):
     
     rotation_seconds: int = Field(default=6, ge=3, le=60)
     max_items: int = Field(default=5, ge=1, le=20)
+    # Campos adicionales para compatibilidad con el objetivo
+    lang: Optional[str] = Field(default="es", pattern="^[a-z]{2}$")
+    cache_hours: Optional[int] = Field(default=24, ge=1, le=168)
 
 
 class CalendarICSConfig(BaseModel):
@@ -370,8 +419,92 @@ class AISHubSecretsConfig(BaseModel):
     api_key: Optional[str] = Field(default=None, max_length=512)
 
 
+class MapTilerSecretsConfig(BaseModel):
+    """Secrets para MapTiler (metadata only)."""
+    api_key: Optional[str] = Field(default=None, max_length=512)
+
+
+class StormModeConfig(BaseModel):
+    """Configuración de modo tormenta."""
+    enabled: bool = True
+    center_lat: float = Field(default=39.986, ge=-90, le=90)
+    center_lng: float = Field(default=-0.051, ge=-180, le=180)
+    zoom: float = Field(default=9.0, ge=1, le=20)
+    auto_enable: bool = Field(default=True)
+    auto_disable_after_minutes: int = Field(default=60, ge=1, le=1440)
+
+
+class BlitzortungAutoStormConfig(BaseModel):
+    """Configuración de auto-activación de modo tormenta."""
+    enabled: bool = True
+    radius_km: float = Field(default=30, ge=1, le=500)
+    min_events_in_5min: int = Field(default=3, ge=1, le=100)
+    cooldown_minutes: int = Field(default=60, ge=1, le=1440)
+
+
+class BlitzortungConfig(BaseModel):
+    """Configuración de Blitzortung (rayos)."""
+    enabled: bool = True
+    mqtt_host: str = Field(default="127.0.0.1", max_length=256)
+    mqtt_port: int = Field(default=1883, ge=1, le=65535)
+    mqtt_topic: str = Field(default="blitzortung/1", max_length=256)
+    auto_storm_mode: Optional[BlitzortungAutoStormConfig] = None
+    retention_minutes: int = Field(default=30, ge=1, le=1440)
+    max_points: int = Field(default=1500, ge=1, le=10000)
+    # Legacy fields
+    ws_enabled: Optional[bool] = None
+    ws_url: Optional[str] = None
+    buffer_max: Optional[int] = None
+    prune_seconds: Optional[int] = None
+
+
+class NewsTopLevelConfig(BaseModel):
+    """Configuración top-level de noticias."""
+    rss_feeds: List[str] = Field(default_factory=list)
+
+
+class EphemeridesTopLevelConfig(BaseModel):
+    """Configuración top-level de efemérides astronómicas."""
+    latitude: float = Field(default=39.986, ge=-90, le=90)
+    longitude: float = Field(default=-0.051, ge=-180, le=180)
+    timezone: str = Field(default="Europe/Madrid", min_length=1)
+
+
+class OpenSkyOAuth2Config(BaseModel):
+    """Configuración OAuth2 para OpenSky."""
+    client_id: Optional[str] = Field(default=None, max_length=512)
+    client_secret: Optional[str] = Field(default=None, max_length=512)
+    token_url: str = Field(default="https://auth.opensky-network.org/oauth/token", max_length=512)
+    scope: Optional[str] = Field(default=None, max_length=256)
+
+
+class OpenSkyBBoxTopLevelConfig(BaseModel):
+    """Bounding box top-level para OpenSky."""
+    lamin: float = Field(default=39.5, ge=-90, le=90)
+    lamax: float = Field(default=41.0, ge=-90, le=90)
+    lomin: float = Field(default=-1.0, ge=-180, le=180)
+    lomax: float = Field(default=1.5, ge=-180, le=180)
+
+
+class OpenSkyTopLevelConfig(BaseModel):
+    """Configuración top-level de OpenSky."""
+    enabled: bool = False
+    mode: Literal["bbox", "oauth2"] = "bbox"
+    bbox: Optional[OpenSkyBBoxTopLevelConfig] = None
+    poll_seconds: int = Field(default=10, ge=1, le=300)
+    oauth2: Optional[OpenSkyOAuth2Config] = None
+
+
+class AISConfig(BaseModel):
+    """Configuración top-level de AIS (barcos)."""
+    enabled: bool = False
+    provider: Literal["aisstream", "aishub", "generic"] = "aisstream"
+    ws_url: Optional[str] = Field(default=None, max_length=512)
+
+
 class SecretsConfig(BaseModel):
     """Secrets (metadata only, no valores reales)."""
+    maptiler: Optional[MapTilerSecretsConfig] = None
     opensky: Optional[OpenSkySecretsConfig] = None
     google: Optional[GoogleSecretsConfig] = None
     aemet: Optional[Dict[str, Any]] = None
@@ -386,9 +519,16 @@ class AppConfigV2(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     version: int = Field(default=2, ge=2, le=2)
+    display: Optional[DisplayConfig] = None
     ui_map: MapConfig
     ui_global: Optional[UIGlobalConfig] = None
-    layers: Optional[LayersConfig] = None
     panels: Optional[PanelsConfig] = None
-    secrets: Optional[SecretsConfig] = None
+    layers: Optional[LayersConfig] = None
+    storm: Optional[StormModeConfig] = None
+    blitzortung: Optional[BlitzortungConfig] = None
+    news: Optional[NewsTopLevelConfig] = None
+    ephemerides: Optional[EphemeridesTopLevelConfig] = None
     calendar: Optional[CalendarConfig] = None
+    opensky: Optional[OpenSkyTopLevelConfig] = None
+    ais: Optional[AISConfig] = None
+    secrets: Optional[SecretsConfig] = None
