@@ -14,7 +14,12 @@ import {
   testGIBS,
   testLightningMqtt,
   testLightningWs,
+  testMapTiler,
+  testNewsFeeds,
   testRainViewer,
+  testXyz,
+  updateAemetApiKey,
+  type NewsFeedTestResult,
   type WiFiNetwork,
   wifiConnect,
   wifiDisconnect,
@@ -45,6 +50,10 @@ export const ConfigPage: React.FC = () => {
 
   // Grupo 2: Mapas y Capas
   const [mapAndLayersSaving, setMapAndLayersSaving] = useState(false);
+  const [maptilerTestResult, setMaptilerTestResult] = useState<{ ok: boolean; bytes?: number; error?: string } | null>(null);
+  const [maptilerTesting, setMaptilerTesting] = useState(false);
+  const [xyzTestResult, setXyzTestResult] = useState<{ ok: boolean; bytes?: number; contentType?: string; error?: string } | null>(null);
+  const [xyzTesting, setXyzTesting] = useState(false);
   const [aemetTestResult, setAemetTestResult] = useState<{ ok: boolean; reason?: string } | null>(null);
   const [aemetTesting, setAemetTesting] = useState(false);
   const [aemetApiKey, setAemetApiKey] = useState<string>("");
@@ -75,14 +84,21 @@ export const ConfigPage: React.FC = () => {
   const [panelRotatorSaving, setPanelRotatorSaving] = useState(false);
   const [calendarTestResult, setCalendarTestResult] = useState<{ ok: boolean; message?: string; reason?: string } | null>(null);
   const [calendarTesting, setCalendarTesting] = useState(false);
+  const [newsFeedsTestResult, setNewsFeedsTestResult] = useState<NewsFeedTestResult[] | null>(null);
+  const [newsFeedsTesting, setNewsFeedsTesting] = useState(false);
 
   useEffect(() => {
     const loadInitialData = async () => {
       try {
         setLoading(true);
         const loadedConfig = await getConfigV2();
-        setConfig(withConfigDefaultsV2(loadedConfig));
+        const configWithDefaults = withConfigDefaultsV2(loadedConfig);
+        setConfig(configWithDefaults);
 
+        // Cargar API key de AEMET desde secrets (no se expone en config, pero podemos intentar leerla)
+        // La API key se guarda en secrets, no en config pública, así que no la podemos leer directamente
+        // El usuario tendrá que escribirla de nuevo o usar el botón de test que usa GET /api/aemet/test
+        
         // Cargar estado WiFi
         const status = await wifiStatus();
         setWifiStatusData(status);
@@ -183,6 +199,59 @@ export const ConfigPage: React.FC = () => {
   };
 
   // ===== GRUPO 2: Mapas y Capas =====
+  const handleTestMapTiler = async () => {
+    if (!config) return;
+    
+    setMaptilerTesting(true);
+    setMaptilerTestResult(null);
+    
+    try {
+      const styleUrl = config.ui_map.maptiler?.styleUrl;
+      if (!styleUrl) {
+        setMaptilerTestResult({ ok: false, error: "styleUrl no configurado" });
+        return;
+      }
+      
+      const result = await testMapTiler({ styleUrl });
+      setMaptilerTestResult(result);
+    } catch (error) {
+      setMaptilerTestResult({ ok: false, error: "Error al probar MapTiler" });
+      console.error("Error testing MapTiler:", error);
+    } finally {
+      setMaptilerTesting(false);
+    }
+  };
+
+  const handleTestXyz = async () => {
+    if (!config) return;
+    
+    setXyzTesting(true);
+    setXyzTestResult(null);
+    
+    try {
+      let tileUrl: string | null = null;
+      
+      if (config.ui_map.provider === "local_raster_xyz") {
+        tileUrl = config.ui_map.local?.tileUrl || "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+      } else if (config.ui_map.provider === "custom_xyz") {
+        tileUrl = config.ui_map.customXyz?.tileUrl || null;
+      }
+      
+      if (!tileUrl) {
+        setXyzTestResult({ ok: false, error: "tileUrl no configurado" });
+        return;
+      }
+      
+      const result = await testXyz({ tileUrl: tileUrl });
+      setXyzTestResult(result);
+    } catch (error) {
+      setXyzTestResult({ ok: false, error: "Error al probar XYZ" });
+      console.error("Error testing XYZ:", error);
+    } finally {
+      setXyzTesting(false);
+    }
+  };
+
   const handleTestRainViewer = async () => {
     setRainviewerTesting(true);
     setRainviewerTestResult(null);
@@ -265,13 +334,45 @@ export const ConfigPage: React.FC = () => {
     setAemetTesting(true);
     setAemetTestResult(null);
     try {
-      const result = await testAemetApiKey(aemetApiKey || undefined);
-      setAemetTestResult(result || { ok: false, reason: "Sin respuesta" });
+      // Si hay apiKey en el input, probarla; si no, usar GET /api/aemet/test
+      if (aemetApiKey && aemetApiKey.trim().length > 0) {
+        const result = await testAemetApiKey(aemetApiKey);
+        setAemetTestResult(result || { ok: false, reason: "Sin respuesta" });
+      } else {
+        // Usar GET /api/aemet/test para probar la key guardada
+        try {
+          const response = await fetch(`${window.location.origin}/api/aemet/test`);
+          const result = await response.json();
+          setAemetTestResult(result || { ok: false, reason: "Sin respuesta" });
+        } catch (fetchError) {
+          setAemetTestResult({ ok: false, reason: "Error al probar AEMET" });
+        }
+      }
     } catch (error) {
       setAemetTestResult({ ok: false, reason: "Error al probar la API key" });
       console.error("Error testing AEMET:", error);
     } finally {
       setAemetTesting(false);
+    }
+  };
+
+  const handleUpdateAemetApiKey = async (apiKey: string | null) => {
+    try {
+      await updateAemetApiKey(apiKey);
+      // Actualizar secrets en config
+      setConfig({
+        ...config!,
+        secrets: {
+          ...config!.secrets,
+          aemet: {
+            ...(config!.secrets?.aemet as any),
+            api_key: apiKey,
+          } as any,
+        },
+      });
+    } catch (error) {
+      console.error("Error updating AEMET API key:", error);
+      alert("Error al guardar la API key de AEMET");
     }
   };
 
@@ -378,6 +479,29 @@ export const ConfigPage: React.FC = () => {
   };
 
   // ===== GRUPO 3: Panel Rotativo =====
+  const handleTestNewsFeeds = async () => {
+    if (!config) return;
+    
+    setNewsFeedsTesting(true);
+    setNewsFeedsTestResult(null);
+    
+    try {
+      const feeds = config.panels?.news?.feeds || [];
+      if (feeds.length === 0) {
+        setNewsFeedsTestResult([]);
+        return;
+      }
+      
+      const result = await testNewsFeeds({ feeds });
+      setNewsFeedsTestResult(result.results || []);
+    } catch (error) {
+      console.error("Error testing news feeds:", error);
+      setNewsFeedsTestResult([]);
+    } finally {
+      setNewsFeedsTesting(false);
+    }
+  };
+
   const handleTestCalendar = async () => {
     setCalendarTesting(true);
     setCalendarTestResult(null);
@@ -759,10 +883,22 @@ export const ConfigPage: React.FC = () => {
               <label>
                 <input
                   type="checkbox"
-                  checked={false} // TODO: Leer desde config.aemet.enabled
-                  onChange={(e) => {
-                    // TODO: Actualizar config.aemet.enabled
-                    alert("Configuración de AEMET pendiente de implementar");
+                  checked={(config as any).aemet?.enabled || false}
+                  onChange={async (e) => {
+                    const newConfig = {
+                      ...config,
+                      aemet: {
+                        ...(config as any).aemet,
+                        enabled: e.target.checked,
+                      } as any,
+                    };
+                    setConfig(newConfig as AppConfigV2);
+                    // Guardar inmediatamente
+                    try {
+                      await saveConfigV2(newConfig as AppConfigV2);
+                    } catch (error) {
+                      console.error("Error saving AEMET enabled:", error);
+                    }
                   }}
                 />
                 Habilitar AEMET
@@ -775,8 +911,18 @@ export const ConfigPage: React.FC = () => {
                 <input
                   type="text"
                   value={aemetApiKey}
-                  onChange={(e) => setAemetApiKey(e.target.value)}
+                  onChange={(e) => {
+                    const newKey = e.target.value || null;
+                    setAemetApiKey(newKey || "");
+                    // Guardar en secrets cuando se escribe
+                    handleUpdateAemetApiKey(newKey);
+                  }}
                   placeholder="API Key de AEMET"
+                  style={{
+                    borderColor: aemetTestResult && !aemetTestResult.ok && aemetTestResult.reason === "missing_api_key" 
+                      ? "rgba(255, 82, 82, 0.5)" 
+                      : undefined
+                  }}
                 />
                 <button
                   className="config-button"
@@ -1253,9 +1399,9 @@ export const ConfigPage: React.FC = () => {
             </div>
 
             {config.ui_map.provider === "maptiler_vector" && (
-              <div className="config-field">
-                <label>MapTiler API Key</label>
-                <div className="config-field__secret">
+              <>
+                <div className="config-field">
+                  <label>MapTiler API Key</label>
                   <input
                     type="text"
                     value={config.ui_map.maptiler?.apiKey || ""}
@@ -1274,39 +1420,149 @@ export const ConfigPage: React.FC = () => {
                     }}
                     placeholder="API Key de MapTiler"
                   />
-                  <button
-                    className="config-button"
-                    onClick={() => {
-                      alert("Test de MapTiler aún no implementado");
+                </div>
+                
+                <div className="config-field">
+                  <label>Style URL (Dark)</label>
+                  <input
+                    type="text"
+                    value={config.ui_map.maptiler?.styleUrl || ""}
+                    onChange={(e) => {
+                      setConfig({
+                        ...config,
+                        ui_map: {
+                          ...config.ui_map,
+                          maptiler: {
+                            ...config.ui_map.maptiler,
+                            apiKey: config.ui_map.maptiler?.apiKey || null,
+                            styleUrl: e.target.value || null,
+                          },
+                        },
+                      });
                     }}
+                    placeholder="https://api.maptiler.com/maps/vector-dark/style.json?key=..."
+                  />
+                </div>
+                
+                <div className="config-field__actions">
+                  <button
+                    className="config-button primary"
+                    onClick={handleTestMapTiler}
+                    disabled={maptilerTesting}
                   >
-                    Test
+                    {maptilerTesting ? "Probando..." : "Probar MapTiler"}
                   </button>
                 </div>
-              </div>
+                
+                {maptilerTestResult && (
+                  <div
+                    className={`config-field__hint ${
+                      maptilerTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                    }`}
+                  >
+                    {maptilerTestResult.ok ? (
+                      <>
+                        ✓ MapTiler funcionando correctamente
+                        {maptilerTestResult.bytes !== undefined && (
+                          <span className="config-badge" style={{ marginLeft: "8px" }}>
+                            {maptilerTestResult.bytes} bytes
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      `✗ Error: ${maptilerTestResult.error || "Desconocido"}`
+                    )}
+                  </div>
+                )}
+              </>
             )}
 
-            {config.ui_map.provider === "custom_xyz" && (
-              <div className="config-field">
-                <label>URL de Tiles Personalizado</label>
-                <input
-                  type="text"
-                  value={config.ui_map.customXyz?.tileUrl || ""}
-                  onChange={(e) => {
-                    setConfig({
-                      ...config,
-                      ui_map: {
-                        ...config.ui_map,
-                        customXyz: {
-                          ...config.ui_map.customXyz!,
-                          tileUrl: e.target.value || null,
-                        },
-                      },
-                    });
-                  }}
-                  placeholder="https://example.com/{z}/{x}/{y}.png"
-                />
-              </div>
+            {(config.ui_map.provider === "local_raster_xyz" || config.ui_map.provider === "custom_xyz") && (
+              <>
+                {config.ui_map.provider === "local_raster_xyz" && (
+                  <div className="config-field">
+                    <label>URL de Tiles Local</label>
+                    <input
+                      type="text"
+                      value={config.ui_map.local?.tileUrl || "https://tile.openstreetmap.org/{z}/{x}/{y}.png"}
+                      onChange={(e) => {
+                        setConfig({
+                          ...config,
+                          ui_map: {
+                            ...config.ui_map,
+                            local: {
+                              ...config.ui_map.local,
+                              tileUrl: e.target.value || "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                              minzoom: config.ui_map.local?.minzoom || 0,
+                              maxzoom: config.ui_map.local?.maxzoom || 19,
+                            },
+                          },
+                        });
+                      }}
+                      placeholder="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
+                  </div>
+                )}
+                
+                {config.ui_map.provider === "custom_xyz" && (
+                  <div className="config-field">
+                    <label>URL de Tiles Personalizado</label>
+                    <input
+                      type="text"
+                      value={config.ui_map.customXyz?.tileUrl || ""}
+                      onChange={(e) => {
+                        setConfig({
+                          ...config,
+                          ui_map: {
+                            ...config.ui_map,
+                            customXyz: {
+                              ...config.ui_map.customXyz!,
+                              tileUrl: e.target.value || null,
+                            },
+                          },
+                        });
+                      }}
+                      placeholder="https://example.com/{z}/{x}/{y}.png"
+                    />
+                  </div>
+                )}
+                
+                <div className="config-field__actions">
+                  <button
+                    className="config-button primary"
+                    onClick={handleTestXyz}
+                    disabled={xyzTesting}
+                  >
+                    {xyzTesting ? "Probando..." : "Probar XYZ"}
+                  </button>
+                </div>
+                
+                {xyzTestResult && (
+                  <div
+                    className={`config-field__hint ${
+                      xyzTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                    }`}
+                  >
+                    {xyzTestResult.ok ? (
+                      <>
+                        ✓ XYZ funcionando correctamente
+                        {xyzTestResult.bytes !== undefined && (
+                          <span className="config-badge" style={{ marginLeft: "8px" }}>
+                            {xyzTestResult.bytes} bytes
+                          </span>
+                        )}
+                        {xyzTestResult.contentType && (
+                          <span className="config-badge" style={{ marginLeft: "8px" }}>
+                            {xyzTestResult.contentType}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      `✗ Error: ${xyzTestResult.error || "Desconocido"}`
+                    )}
+                  </div>
+                )}
+              </>
             )}
 
             {/* Capa Vuelos */}
@@ -1558,14 +1814,41 @@ export const ConfigPage: React.FC = () => {
                   />
                   <button
                     className="config-button"
-                    onClick={() => {
-                      // Test de feeds RSS (si existe función)
-                      alert("Test de feeds RSS aún no implementado");
-                    }}
+                    onClick={handleTestNewsFeeds}
+                    disabled={newsFeedsTesting}
                     style={{ marginTop: "8px" }}
                   >
-                    Test Feeds
+                    {newsFeedsTesting ? "Probando..." : "Test Feeds"}
                   </button>
+                  
+                  {newsFeedsTestResult && newsFeedsTestResult.length > 0 && (
+                    <div className="config-table" style={{ marginTop: "12px" }}>
+                      <div className="config-table__header">
+                        <span>Resultados de Test de Feeds</span>
+                      </div>
+                      {newsFeedsTestResult.map((result, idx) => (
+                        <div key={idx} className="config-table__row">
+                          <div style={{ flex: 1 }}>
+                            <strong>{result.url}</strong>
+                            {result.title && (
+                              <div style={{ fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)", marginTop: "4px" }}>
+                                {result.title}
+                              </div>
+                            )}
+                            {result.reachable ? (
+                              <span className="config-badge config-badge--success" style={{ marginLeft: "8px" }}>
+                                {result.items} items
+                              </span>
+                            ) : (
+                              <span className="config-badge config-badge--error" style={{ marginLeft: "8px" }}>
+                                {result.error || "Error"}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1613,6 +1896,13 @@ export const ConfigPage: React.FC = () => {
                     <option value="google">Google Calendar</option>
                     <option value="disabled">Deshabilitado</option>
                   </select>
+                  
+                  {config.panels.calendar.provider === "google" && (
+                    <div className="config-field__hint config-field__hint--warning" style={{ marginTop: "8px" }}>
+                      ⚠ Para usar Google Calendar, configura api_key y calendar_id en secrets.google
+                    </div>
+                  )}
+                  
                   <button
                     className="config-button"
                     onClick={handleTestCalendar}

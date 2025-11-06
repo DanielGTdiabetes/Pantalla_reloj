@@ -206,6 +206,26 @@ def default_panels_if_missing(config: Dict[str, Any]) -> None:
     if panels_raw is not panels:
         config["panels"] = panels
     
+    # News panel defaults
+    news_raw = panels.get("news")
+    if isinstance(news_raw, dict):
+        news = news_raw
+    else:
+        news = {}
+        panels["news"] = news
+    news.setdefault("enabled", True)
+    if "feeds" not in news or not isinstance(news.get("feeds"), list):
+        news["feeds"] = []
+    
+    # Calendar panel defaults
+    calendar_raw = panels.get("calendar")
+    if isinstance(calendar_raw, dict):
+        calendar = calendar_raw
+    else:
+        calendar = {}
+        panels["calendar"] = calendar
+    calendar.setdefault("enabled", False)  # Por defecto off hasta configurar secrets
+    
     # Historical Events panel defaults
     historical_events_raw = panels.get("historicalEvents")
     if isinstance(historical_events_raw, dict):

@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Literal, TypeVar, Union
 
+import html
 import math
 import requests
 
@@ -507,6 +508,23 @@ class LightningWsTestRequest(BaseModel):
     timeout_sec: int = Field(default=3, ge=1, le=10)
 
 
+class MapTilerTestRequest(BaseModel):
+    styleUrl: str = Field(min_length=1, max_length=512)
+
+
+class XyzTestRequest(BaseModel):
+    tileUrl: str = Field(min_length=1, max_length=512)
+
+
+class NewsTestFeedsRequest(BaseModel):
+    feeds: List[str] = Field(min_length=1, max_length=20)
+
+
+class CalendarTestRequest(BaseModel):
+    api_key: Optional[str] = Field(default=None, max_length=512)
+    calendar_id: Optional[str] = Field(default=None, max_length=512)
+
+
 class AISStreamSecretRequest(BaseModel):
     api_key: Optional[str] = Field(default=None, max_length=256)
 
@@ -709,7 +727,36 @@ def _read_config_v2() -> Tuple[AppConfigV2, bool]:
         version = config_data.get("version", 1)
         
         if version == 2 and "ui_map" in config_data:
-            # Ya es v2, validar y devolver
+            # Ya es v2, validar y aplicar defaults si faltan
+            # Aplicar defaults para campos faltantes antes de validar
+            ui_map = config_data.get("ui_map", {})
+            if isinstance(ui_map, dict):
+                provider = ui_map.get("provider")
+                valid_providers = ["maptiler_vector", "local_raster_xyz", "custom_xyz"]
+                if provider not in valid_providers:
+                    logger.warning("Invalid provider %s, defaulting to maptiler_vector", provider)
+                    ui_map["provider"] = "maptiler_vector"
+                    config_data["ui_map"] = ui_map
+            
+            # Asegurar que panels.news.feeds existe
+            panels = config_data.get("panels", {})
+            if isinstance(panels, dict):
+                news = panels.get("news", {})
+                if not isinstance(news, dict):
+                    news = {}
+                    panels["news"] = news
+                if "feeds" not in news or not isinstance(news.get("feeds"), list):
+                    news["feeds"] = []
+                    panels["news"] = news
+                config_data["panels"] = panels
+            
+            # Asegurar que secrets.aemet existe
+            secrets = config_data.get("secrets", {})
+            if isinstance(secrets, dict):
+                if "aemet" not in secrets or not isinstance(secrets.get("aemet"), dict):
+                    secrets["aemet"] = {}
+                config_data["secrets"] = secrets
+            
             try:
                 config_v2 = AppConfigV2.model_validate(config_data)
                 return config_v2, False
@@ -1417,6 +1464,99 @@ def validate_map_config() -> Dict[str, Any]:
         return {
             "ok": False,
             "error": str(exc)
+        }
+
+
+@app.post("/api/maps/test_maptiler")
+async def test_maptiler(request: MapTilerTestRequest) -> Dict[str, Any]:
+    """Prueba una URL de estilo de MapTiler.
+    
+    Descarga el JSON del estilo y verifica que sea válido.
+    """
+    try:
+        response = requests.get(request.styleUrl, timeout=5, allow_redirects=True)
+        if response.status_code == 200:
+            try:
+                style_json = response.json()
+                # Verificar estructura básica
+                if isinstance(style_json, dict) and ("glyphs" in style_json or "sources" in style_json):
+                    return {
+                        "ok": True,
+                        "bytes": len(response.content)
+                    }
+                else:
+                    return {
+                        "ok": False,
+                        "status": 200,
+                        "error": "Invalid style format"
+                    }
+            except ValueError:
+                return {
+                    "ok": False,
+                    "status": 200,
+                    "error": "Not valid JSON"
+                }
+        else:
+            return {
+                "ok": False,
+                "status": response.status_code,
+                "error": f"HTTP {response.status_code}"
+            }
+    except requests.RequestException as exc:
+        return {
+            "ok": False,
+            "status": 0,
+            "error": str(exc)
+        }
+    except Exception as exc:
+        logger.error("[maps] Error testing MapTiler: %s", exc)
+        return {
+            "ok": False,
+            "status": 0,
+            "error": "internal_error"
+        }
+
+
+@app.post("/api/maps/test_xyz")
+async def test_xyz(request: XyzTestRequest) -> Dict[str, Any]:
+    """Prueba una URL de tiles XYZ descargando una muestra.
+    
+    Descarga un tile de ejemplo (z=2, x=1, y=1) y verifica que sea una imagen.
+    """
+    try:
+        # Reemplazar placeholders en la URL
+        test_url = request.tileUrl.replace("{z}", "2").replace("{x}", "1").replace("{y}", "1")
+        
+        response = requests.get(test_url, timeout=5, allow_redirects=True)
+        if response.status_code == 200:
+            content_type = response.headers.get("content-type", "").lower()
+            if "image" in content_type:
+                return {
+                    "ok": True,
+                    "bytes": len(response.content),
+                    "contentType": content_type
+                }
+            else:
+                return {
+                    "ok": False,
+                    "error": f"Not an image (content-type: {content_type})"
+                }
+        else:
+            return {
+                "ok": False,
+                "status": response.status_code,
+                "error": f"HTTP {response.status_code}"
+            }
+    except requests.RequestException as exc:
+        return {
+            "ok": False,
+            "error": str(exc)
+        }
+    except Exception as exc:
+        logger.error("[maps] Error testing XYZ: %s", exc)
+        return {
+            "ok": False,
+            "error": "internal_error"
         }
 
 
@@ -4140,6 +4280,91 @@ async def post_news_rss(request: Request) -> Dict[str, Any]:
     return {"items": all_items}
 
 
+@app.post("/api/news/test_feeds")
+async def test_news_feeds(request: NewsTestFeedsRequest) -> Dict[str, Any]:
+    """Prueba múltiples feeds RSS/Atom y devuelve información detallada de cada uno.
+    
+    Para cada feed:
+    - Verifica que sea accesible (timeout 3-5s)
+    - Sigue redirecciones
+    - Verifica content-type (rss/atom/xml)
+    - Cuenta items
+    - Extrae título del feed
+    """
+    results: List[Dict[str, Any]] = []
+    
+    for feed_url in request.feeds[:10]:  # Máximo 10 feeds
+        if not feed_url or not feed_url.strip():
+            continue
+        
+        feed_url = feed_url.strip()
+        result: Dict[str, Any] = {
+            "url": feed_url,
+            "reachable": False,
+            "items": 0,
+            "title": None,
+            "error": None
+        }
+        
+        try:
+            # Hacer petición con timeout corto (5s máximo)
+            response = requests.get(
+                feed_url,
+                timeout=5,
+                allow_redirects=True,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (compatible; PantallaReloj/1.0)"
+                }
+            )
+            
+            # Verificar status code
+            if response.status_code != 200:
+                result["error"] = f"HTTP {response.status_code}"
+                results.append(result)
+                continue
+            
+            # Verificar content-type
+            content_type = response.headers.get("content-type", "").lower()
+            if "xml" not in content_type and "rss" not in content_type and "atom" not in content_type:
+                result["error"] = f"Invalid content-type: {content_type}"
+                results.append(result)
+                continue
+            
+            # Parsear feed
+            try:
+                items = parse_rss_feed(feed_url, max_items=100, timeout=5)
+                result["reachable"] = True
+                result["items"] = len(items)
+                
+                # Intentar extraer título del feed principal
+                content = response.text
+                title_match = re.search(
+                    r'<(?:title|dc:title)[^>]*>(.*?)</(?:title|dc:title)>',
+                    content[:2000],  # Buscar solo en los primeros 2000 caracteres
+                    re.DOTALL | re.IGNORECASE
+                )
+                if title_match:
+                    title = html.unescape(re.sub(r'<[^>]+>', '', title_match.group(1)).strip())
+                    result["title"] = title[:100]  # Limitar a 100 caracteres
+            except Exception as parse_exc:
+                result["error"] = f"Parse error: {str(parse_exc)}"
+                result["reachable"] = True  # El feed es accesible pero no se puede parsear
+            
+        except requests.Timeout:
+            result["error"] = "timeout"
+        except requests.RequestException as exc:
+            result["error"] = str(exc)
+        except Exception as exc:
+            result["error"] = f"internal_error: {str(exc)}"
+        
+        results.append(result)
+    
+    return {
+        "ok": True,
+        "results": results
+    }
+
+
 # Legacy news endpoint code removed - using v2-compatible version above
 
 
@@ -4681,6 +4906,71 @@ def get_calendar_status() -> Dict[str, Any]:
         result["ics_path"] = ics_path
     
     return result
+
+
+@app.post("/api/calendar/test")
+async def test_calendar(request: CalendarTestRequest) -> Dict[str, Any]:
+    """Prueba una conexión a Google Calendar con api_key y calendar_id.
+    
+    Hace una query mínima de próximos eventos y devuelve el resultado.
+    """
+    api_key = request.api_key
+    calendar_id = request.calendar_id
+    
+    # Si no se proporcionan, intentar obtener de secrets
+    if not api_key:
+        api_key = secret_store.get_secret("google_calendar_api_key") or secret_store.get_secret("google_api_key")
+    if not calendar_id:
+        calendar_id = secret_store.get_secret("google_calendar_id")
+    
+    if not api_key or not calendar_id:
+        return {
+            "ok": False,
+            "reason": "missing_credentials",
+            "message": "api_key or calendar_id missing"
+        }
+    
+    try:
+        # Hacer una query mínima (próximos 7 días, máximo 5 eventos)
+        now = datetime.now(timezone.utc)
+        time_min = now
+        time_max = now + timedelta(days=7)
+        
+        events = fetch_google_calendar_events(
+            api_key=api_key,
+            calendar_id=calendar_id,
+            days_ahead=7,
+            max_results=5,
+            time_min=time_min,
+            time_max=time_max
+        )
+        
+        return {
+            "ok": True,
+            "count": len(events),
+            "message": f"Successfully connected. Found {len(events)} events in next 7 days."
+        }
+    except requests.HTTPError as exc:
+        status_code = exc.response.status_code if hasattr(exc, 'response') else 0
+        if status_code == 401 or status_code == 403:
+            return {
+                "ok": False,
+                "reason": "unauthorized",
+                "message": "Invalid API key or calendar ID"
+            }
+        else:
+            return {
+                "ok": False,
+                "reason": "http_error",
+                "message": f"HTTP {status_code}: {str(exc)}"
+            }
+    except Exception as exc:
+        logger.error("[calendar] Error testing calendar: %s", exc)
+        return {
+            "ok": False,
+            "reason": "internal_error",
+            "message": str(exc)
+        }
 
 
 @app.get("/api/calendar")

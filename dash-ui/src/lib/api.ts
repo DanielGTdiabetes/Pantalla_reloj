@@ -209,6 +209,71 @@ export async function testCalendarConnection(apiKey?: string, calendarId?: strin
   return apiPost<CalendarTestResponse | undefined>("/api/calendar/test", body);
 }
 
+// Maps test endpoints
+export type MapTilerTestRequest = {
+  styleUrl: string;
+};
+
+export type MapTilerTestResponse = {
+  ok: boolean;
+  bytes?: number;
+  status?: number;
+  error?: string;
+};
+
+export async function testMapTiler(request: MapTilerTestRequest): Promise<MapTilerTestResponse> {
+  try {
+    return apiPost<MapTilerTestResponse>("/api/maps/test_maptiler", request);
+  } catch (error) {
+    return { ok: false, error: "connection_error" };
+  }
+}
+
+export type XyzTestRequest = {
+  tileUrl: string;
+};
+
+export type XyzTestResponse = {
+  ok: boolean;
+  bytes?: number;
+  contentType?: string;
+  error?: string;
+};
+
+export async function testXyz(request: XyzTestRequest): Promise<XyzTestResponse> {
+  try {
+    return apiPost<XyzTestResponse>("/api/maps/test_xyz", request);
+  } catch (error) {
+    return { ok: false, error: "connection_error" };
+  }
+}
+
+// News feeds test endpoint
+export type NewsTestFeedsRequest = {
+  feeds: string[];
+};
+
+export type NewsFeedTestResult = {
+  url: string;
+  reachable: boolean;
+  items: number;
+  title: string | null;
+  error: string | null;
+};
+
+export type NewsTestFeedsResponse = {
+  ok: boolean;
+  results: NewsFeedTestResult[];
+};
+
+export async function testNewsFeeds(request: NewsTestFeedsRequest): Promise<NewsTestFeedsResponse> {
+  try {
+    return apiPost<NewsTestFeedsResponse>("/api/news/test_feeds", request);
+  } catch (error) {
+    return { ok: false, results: [] };
+  }
+}
+
 
 export async function updateOpenWeatherMapApiKey(apiKey: string | null) {
   return apiPost<undefined>("/api/config/secret/openweathermap_api_key", { api_key: apiKey });

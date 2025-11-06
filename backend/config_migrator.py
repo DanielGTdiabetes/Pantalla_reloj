@@ -44,7 +44,7 @@ def migrate_v1_to_v2(
     
     # Determinar proveedor y migrar configuración
     provider_v1 = map_v1.get("provider", "osm")
-    provider_v2 = "local_raster_xyz"  # Por defecto
+    provider_v2 = "maptiler_vector"  # Por defecto a maptiler_vector
     
     # Migrar proveedores legacy
     if provider_v1 in ["xyz", "osm", "local"]:
@@ -56,6 +56,12 @@ def migrate_v1_to_v2(
         xyz_config = map_v1["xyz"]
         if xyz_config.get("urlTemplate") and "openstreetmap" not in xyz_config.get("urlTemplate", "").lower():
             provider_v2 = "custom_xyz"
+    
+    # Validar provider_v2 (debe ser uno de los valores válidos)
+    valid_providers = ["maptiler_vector", "local_raster_xyz", "custom_xyz"]
+    if provider_v2 not in valid_providers:
+        logger.warning("Invalid provider %s, defaulting to maptiler_vector", provider_v2)
+        provider_v2 = "maptiler_vector"
     
     # Inicializar estructura base
     v2["ui_map"] = {
@@ -263,7 +269,7 @@ def migrate_v1_to_v2(
         },
         "news": {
             "enabled": True,
-            "feeds": config_v1.get("news", {}).get("feeds", ui_v1.get("panel", {}).get("news", {}).get("feeds", []))
+            "feeds": config_v1.get("news", {}).get("feeds", ui_v1.get("panel", {}).get("news", {}).get("feeds", [])) if isinstance(config_v1.get("news", {}).get("feeds", ui_v1.get("panel", {}).get("news", {}).get("feeds", [])), list) else []
         },
         "calendar": {
             "enabled": True
