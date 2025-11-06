@@ -24,7 +24,7 @@ ExecStartPre=/bin/sh -c 'curl -sf --max-time 5 http://127.0.0.1:8081/api/health 
 ExecStart=/usr/local/bin/pantalla-kiosk-chromium
 Restart=on-failure
 RestartSec=5
-StartLimitIntervalSec=60
+StartLimitInterval=60
 StartLimitBurst=3
 
 [Install]

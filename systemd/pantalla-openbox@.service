@@ -17,7 +17,7 @@ ExecStartPre=/bin/sh -c 'i=0; while [ $i -lt 10 ]; do if test -r "$XAUTHORITY"; 
 ExecStart=/usr/bin/openbox --startup /opt/pantalla/openbox/autostart
 Restart=on-failure
 RestartSec=5
-StartLimitIntervalSec=60
+StartLimitInterval=60
 StartLimitBurst=3
 
 [Install]
