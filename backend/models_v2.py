@@ -282,22 +282,34 @@ class PanelHistoricalEventsConfig(BaseModel):
 
 class CalendarICSConfig(BaseModel):
     """Configuración de calendario ICS."""
-    mode: Literal["upload", "url"] = Field(default="upload")
+    filename: Optional[str] = Field(default=None, max_length=256)  # nombre almacenado (solo lectura)
+    stored_path: Optional[str] = Field(default=None, max_length=1024)  # ruta en disco (solo backend, no se expone)
+    max_events: int = Field(default=50, ge=1, le=1000)
+    days_ahead: int = Field(default=14, ge=1, le=90)
+    # Legacy fields para retrocompatibilidad
+    mode: Optional[Literal["upload", "url"]] = Field(default=None)
     file_path: Optional[str] = Field(default=None, max_length=1024)
     url: Optional[str] = Field(default=None, max_length=2048)
     last_ok: Optional[str] = Field(default=None, max_length=64)  # ISO datetime
     last_error: Optional[str] = Field(default=None, max_length=512)
 
 
+class CalendarGoogleConfig(BaseModel):
+    """Configuración de Google Calendar."""
+    api_key: Optional[str] = Field(default=None, max_length=512)
+    calendar_id: Optional[str] = Field(default=None, max_length=512)
+
+
 class CalendarConfig(BaseModel):
     """Configuración de calendario top-level."""
     enabled: bool = True
     source: Literal["google", "ics"] = Field(default="google")
+    ics: Optional[CalendarICSConfig] = Field(default=None)
+    google: Optional[CalendarGoogleConfig] = Field(default=None)
+    # Legacy fields para retrocompatibilidad
     google_api_key: Optional[str] = Field(default=None, max_length=512)
     google_calendar_id: Optional[str] = Field(default=None, max_length=512)
-    ics: Optional[CalendarICSConfig] = Field(default=None)
-    days_ahead: int = Field(default=14, ge=1, le=60)
-    # Legacy: mantener provider e ics_path para retrocompatibilidad
+    days_ahead: Optional[int] = Field(default=None, ge=1, le=60)
     provider: Optional[Literal["google", "ics", "disabled"]] = Field(default=None)
     ics_path: Optional[str] = Field(default=None, max_length=1024)
 

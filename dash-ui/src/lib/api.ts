@@ -203,9 +203,19 @@ export async function testAemetApiKey(apiKey?: string) {
 
 export type CalendarTestResponse = {
   ok: boolean;
+  source?: string;
+  count?: number;
+  sample?: Array<{
+    title: string;
+    start: string;
+    end: string;
+    location: string;
+    allDay: boolean;
+  }>;
+  range_days?: number;
   message?: string;
   reason?: string;
-  event_count?: number;
+  tip?: string;
 };
 
 export async function testCalendarConnection(apiKey?: string, calendarId?: string) {
@@ -296,8 +306,8 @@ export async function testNewsFeeds(request: NewsTestFeedsRequest): Promise<News
 // Calendar ICS endpoints
 export type CalendarICSUploadResponse = {
   ok: boolean;
-  stored?: string;
-  events?: number;
+  events_parsed?: number;
+  range_days?: number;
   error?: string;
   detail?: string;
 };

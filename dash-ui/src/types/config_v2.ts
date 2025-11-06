@@ -206,21 +206,32 @@ export type PanelNewsConfig = {
 };
 
 export type CalendarICSConfig = {
-  mode: "upload" | "url";
+  filename?: string | null;
+  stored_path?: string | null;  // Solo backend, no se expone en GET
+  max_events?: number;
+  days_ahead?: number;
+  // Legacy fields
+  mode?: "upload" | "url";
   file_path?: string | null;
   url?: string | null;
   last_ok?: string | null;
   last_error?: string | null;
 };
 
+export type CalendarGoogleConfig = {
+  api_key?: string | null;
+  calendar_id?: string | null;
+};
+
 export type CalendarConfig = {
   enabled: boolean;
   source: "google" | "ics";
+  ics?: CalendarICSConfig;
+  google?: CalendarGoogleConfig;
+  // Legacy fields
   google_api_key?: string | null;
   google_calendar_id?: string | null;
-  ics?: CalendarICSConfig;
   days_ahead?: number;
-  // Legacy
   provider?: "google" | "ics" | "disabled";
   ics_path?: string;
 };

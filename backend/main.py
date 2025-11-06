@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import time
 import traceback
+import uuid
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -943,7 +944,7 @@ def _read_config_v2() -> Tuple[AppConfigV2, bool]:
 
 
 def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
-    """Construye configuración pública v2 (sin secrets)."""
+    """Construye configuración pública v2 (sin secrets ni rutas internas)."""
     payload = config.model_dump(mode="json", exclude_none=True)
     
     # Secrets ya no se exponen en la API pública (solo metadata vacía)
@@ -954,6 +955,15 @@ def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
             "aemet": {},
             "calendar_ics": {},
         }
+    
+    # Filtrar stored_path del calendar.ics (no exponer rutas internas)
+    if "calendar" in payload and isinstance(payload["calendar"], dict):
+        calendar = payload["calendar"]
+        if "ics" in calendar and isinstance(calendar["ics"], dict):
+            ics = calendar["ics"]
+            # Eliminar stored_path y file_path (rutas internas)
+            ics.pop("stored_path", None)
+            ics.pop("file_path", None)
     
     return payload
 
@@ -1894,12 +1904,18 @@ async def upload_ics_file(
 async def upload_calendar_ics_file(
     file: UploadFile = File(..., description="ICS calendar file"),
 ) -> Dict[str, Any]:
-    """Sube un archivo ICS y lo guarda en disco.
+    """Sube un archivo ICS y lo guarda en disco de forma transaccional.
     
-    Valida el formato, guarda en /var/lib/pantalla-reloj/calendar/calendar.ics
-    y actualiza la configuración del calendario.
+    Pasos:
+    1. Guardar a tmp (/var/lib/pantalla-reloj/calendar/tmp/<uuid>.ics)
+    2. Parsear con icalendar/ics para validar
+    3. Mover a /var/lib/pantalla-reloj/calendar/current.ics de forma atómica
+    4. Hacer PATCH merge seguro de config (calendar.enabled=true, source="ics", etc.)
+    
+    Returns:
+        {ok: true, events_parsed: N, range_days: 14}
     """
-    MAX_ICS_SIZE = 3 * 1024 * 1024  # 3 MB
+    MAX_ICS_SIZE = 2 * 1024 * 1024  # 2 MB (configurable)
     
     # Validar extensión
     if file.filename and not file.filename.lower().endswith(".ics"):
@@ -1920,6 +1936,13 @@ async def upload_calendar_ics_file(
         }
     
     # Validar tamaño
+    if len(content) == 0:
+        return {
+            "ok": False,
+            "error": "empty_file",
+            "detail": "File is empty"
+        }
+    
     if len(content) > MAX_ICS_SIZE:
         return {
             "ok": False,
@@ -1939,6 +1962,8 @@ async def upload_calendar_ics_file(
     
     # Crear directorio si no existe
     _ensure_ics_storage_directory()
+    tmp_dir = ICS_STORAGE_DIR / "tmp"
+    tmp_dir.mkdir(exist_ok=True)
     
     # Obtener UID/GID del propietario del config
     uid = gid = None
@@ -1952,9 +1977,10 @@ async def upload_calendar_ics_file(
         except OSError:
             pass
     
-    # Guardar archivo
+    # Paso 1: Guardar a tmp/<uuid>.ics
+    tmp_file = tmp_dir / f"{uuid.uuid4().hex}.ics"
     try:
-        with ICS_STORAGE_PATH.open("wb") as handle:
+        with tmp_file.open("wb") as handle:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
@@ -1962,57 +1988,123 @@ async def upload_calendar_ics_file(
         # Ajustar permisos
         if uid is not None and gid is not None:
             try:
-                os.chown(ICS_STORAGE_PATH, uid, gid)
+                os.chown(tmp_file, uid, gid)
             except OSError:
                 pass
         try:
-            os.chmod(ICS_STORAGE_PATH, 0o640)
+            os.chmod(tmp_file, 0o640)
         except OSError:
             pass
     except (OSError, PermissionError) as exc:
         return {
             "ok": False,
-            "error": "write_error",
-            "detail": f"Cannot write ICS file: {str(exc)}"
+            "error": "io_error",
+            "detail": f"Cannot write temporary ICS file: {str(exc)}"
         }
     
-    # Contar eventos
+    # Paso 2: Parsear y validar ICS
     try:
-        events = fetch_ics_calendar_events(path=str(ICS_STORAGE_PATH))
+        events = fetch_ics_calendar_events(path=str(tmp_file))
         events_count = len(events)
-    except Exception:
-        events_count = 0
+    except ICSCalendarError as exc:
+        # Limpiar tmp file
+        try:
+            tmp_file.unlink()
+        except OSError:
+            pass
+        return {
+            "ok": False,
+            "error": "invalid_ics",
+            "detail": f"Invalid ICS file: {str(exc)}"
+        }
+    except Exception as exc:
+        # Limpiar tmp file
+        try:
+            tmp_file.unlink()
+        except OSError:
+            pass
+        return {
+            "ok": False,
+            "error": "parse_error",
+            "detail": f"Cannot parse ICS file: {str(exc)}"
+        }
     
-    # Actualizar configuración v2
+    # Paso 3: Mover a current.ics de forma atómica
+    current_ics_path = ICS_STORAGE_DIR / "current.ics"
+    try:
+        # Reemplazar atómicamente
+        tmp_file.replace(current_ics_path)
+        # Ajustar permisos del archivo final
+        if uid is not None and gid is not None:
+            try:
+                os.chown(current_ics_path, uid, gid)
+            except OSError:
+                pass
+        try:
+            os.chmod(current_ics_path, 0o640)
+        except OSError:
+            pass
+    except (OSError, PermissionError) as exc:
+        # Limpiar tmp file si todavía existe
+        try:
+            if tmp_file.exists():
+                tmp_file.unlink()
+        except OSError:
+            pass
+        return {
+            "ok": False,
+            "error": "io_error",
+            "detail": f"Cannot move ICS file to final location: {str(exc)}"
+        }
+    
+    # Paso 4: PATCH merge seguro de config
     try:
         config_v2, _ = _read_config_v2()
-        config_data = config_v2.model_dump(mode="json", exclude_none=True)
+        config_data = config_v2.model_dump(mode="json", exclude_unset=False)
         
-        # Actualizar calendar config
+        # Asegurar que calendar existe
         if "calendar" not in config_data:
             config_data["calendar"] = {}
         
-        config_data["calendar"]["enabled"] = True
-        config_data["calendar"]["source"] = "ics"
-        if "ics" not in config_data["calendar"]:
-            config_data["calendar"]["ics"] = {}
+        calendar_data = config_data["calendar"]
         
-        config_data["calendar"]["ics"]["mode"] = "upload"
-        config_data["calendar"]["ics"]["file_path"] = str(ICS_STORAGE_PATH)
-        config_data["calendar"]["ics"]["url"] = None
-        config_data["calendar"]["ics"]["last_ok"] = datetime.now(timezone.utc).isoformat()
-        config_data["calendar"]["ics"]["last_error"] = None
+        # Merge seguro: solo actualizar campos específicos sin borrar otros
+        calendar_data["enabled"] = True
+        calendar_data["source"] = "ics"
         
-        # Guardar configuración
+        # Asegurar que ics existe
+        if "ics" not in calendar_data:
+            calendar_data["ics"] = {}
+        
+        ics_data = calendar_data["ics"]
+        
+        # Actualizar campos ICS sin borrar otros (merge seguro)
+        ics_data["filename"] = "current.ics"
+        ics_data["stored_path"] = str(current_ics_path)
+        # Preservar max_events y days_ahead si existen, sino usar defaults
+        if "max_events" not in ics_data:
+            ics_data["max_events"] = 50
+        if "days_ahead" not in ics_data:
+            ics_data["days_ahead"] = 14
+        ics_data["last_ok"] = datetime.now(timezone.utc).isoformat()
+        ics_data["last_error"] = None
+        # Preservar google si existe
+        if "google" not in calendar_data:
+            calendar_data["google"] = {}
+        
+        # Guardar configuración de forma atómica
         config_manager._atomic_write_v2(config_data)
     except Exception as exc:
         logger.warning("[calendar] Failed to update config after ICS upload: %s", exc)
         # No fallar, el archivo ya está guardado
     
+    # Obtener range_days de la config
+    range_days = ics_data.get("days_ahead", 14) if "ics" in calendar_data else 14
+    
     return {
         "ok": True,
-        "stored": str(ICS_STORAGE_PATH),
-        "events": events_count
+        "events_parsed": events_count,
+        "range_days": range_days
     }
 
 
@@ -5406,14 +5498,21 @@ async def test_calendar(request: Optional[CalendarTestRequest] = Body(default=No
         if source == "ics":
             # Verificar ICS
             ics_config = calendar_config.get("ics", {})
-            file_path = ics_config.get("file_path")
+            # Intentar obtener stored_path primero, luego file_path (legacy)
+            file_path = ics_config.get("stored_path") or ics_config.get("file_path")
+            # Si no hay stored_path, intentar current.ics como fallback
+            if not file_path:
+                current_ics_path = ICS_STORAGE_DIR / "current.ics"
+                if current_ics_path.exists():
+                    file_path = str(current_ics_path)
             
             if not file_path:
                 return {
                     "ok": False,
                     "source": "ics",
-                    "reason": "missing_file_path",
-                    "message": "ICS file path not configured"
+                    "reason": "no_ics_uploaded",
+                    "message": "No ICS file uploaded. Please upload an ICS file first.",
+                    "tip": "Upload an ICS file via /api/calendar/ics/upload"
                 }
             
             # Verificar que el archivo existe y es legible
@@ -5437,13 +5536,49 @@ async def test_calendar(request: Optional[CalendarTestRequest] = Body(default=No
             # Parsear y contar eventos
             try:
                 now = datetime.now(timezone.utc)
-                time_max = now + timedelta(days=days_ahead)
+                days_ahead_actual = ics_config.get("days_ahead", days_ahead) if isinstance(ics_config, dict) else days_ahead
+                time_max = now + timedelta(days=min(days_ahead_actual, 90))
                 
-                events_all = fetch_ics_calendar_events(path=file_path)
-                events_upcoming = fetch_ics_calendar_events(path=file_path, time_min=now, time_max=time_max)
+                # Obtener eventos próximos (limitados a 5 para sample)
+                events_raw = fetch_ics_calendar_events(path=file_path, time_min=now, time_max=time_max)
+                
+                # Normalizar eventos para devolver sample (próximos 5)
+                sample_events = []
+                for event in events_raw[:5]:
+                    start_str = event.get("start", "")
+                    end_str = event.get("end", start_str)
+                    
+                    # Determinar si es allDay (evento sin hora específica)
+                    all_day = False
+                    try:
+                        if start_str:
+                            # Si es solo fecha (sin hora), es allDay
+                            if "T" not in start_str:
+                                all_day = True
+                            else:
+                                # Verificar si la hora es 00:00:00
+                                start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                                if start_dt.hour == 0 and start_dt.minute == 0 and start_dt.second == 0:
+                                    # Verificar si termina al día siguiente a las 00:00:00
+                                    if end_str:
+                                        end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+                                        if (end_dt - start_dt).days == 1 and end_dt.hour == 0:
+                                            all_day = True
+                    except Exception:
+                        pass
+                    
+                    sample_events.append({
+                        "title": event.get("title", "Evento sin título"),
+                        "start": start_str,
+                        "end": end_str,
+                        "location": event.get("location", ""),
+                        "allDay": all_day
+                    })
                 
                 # Actualizar last_ok en config
                 try:
+                    if "ics" not in calendar_config:
+                        calendar_config["ics"] = {}
                     calendar_config["ics"]["last_ok"] = datetime.now(timezone.utc).isoformat()
                     calendar_config["ics"]["last_error"] = None
                     config_data["calendar"] = calendar_config
@@ -5454,13 +5589,15 @@ async def test_calendar(request: Optional[CalendarTestRequest] = Body(default=No
                 return {
                     "ok": True,
                     "source": "ics",
-                    "events_total": len(events_all),
-                    "upcoming_count": len(events_upcoming),
-                    "range_days": days_ahead
+                    "count": len(events_raw),
+                    "sample": sample_events,
+                    "range_days": days_ahead_actual
                 }
             except ICSCalendarError as exc:
                 # Actualizar last_error en config
                 try:
+                    if "ics" not in calendar_config:
+                        calendar_config["ics"] = {}
                     calendar_config["ics"]["last_error"] = str(exc)
                     config_data["calendar"] = calendar_config
                     config_manager._atomic_write_v2(config_data)
@@ -5471,7 +5608,8 @@ async def test_calendar(request: Optional[CalendarTestRequest] = Body(default=No
                     "ok": False,
                     "source": "ics",
                     "reason": "parse_error",
-                    "message": f"Invalid ICS file: {str(exc)}"
+                    "message": f"Invalid ICS file: {str(exc)}",
+                    "tip": "Please check the ICS file format and try again."
                 }
         
         elif source == "google":
@@ -5494,12 +5632,13 @@ async def test_calendar(request: Optional[CalendarTestRequest] = Body(default=No
                 return {
                     "ok": False,
                     "source": "google",
-                    "reason": "missing_credentials",
-                    "message": "Google Calendar requires api_key and calendar_id"
+                    "reason": "missing_google_config",
+                    "message": "Google Calendar requires api_key and calendar_id",
+                    "tip": "Please configure Google Calendar API key and Calendar ID in secrets."
                 }
             
             try:
-                # Hacer una query mínima
+                # Hacer una query mínima con timeout
                 now = datetime.now(timezone.utc)
                 time_min = now
                 time_max = now + timedelta(days=min(days_ahead, 7))
@@ -5513,10 +5652,28 @@ async def test_calendar(request: Optional[CalendarTestRequest] = Body(default=No
                     time_max=time_max
                 )
                 
+                # Normalizar eventos para devolver sample (próximos 5)
+                sample_events = []
+                for event in events[:5]:
+                    start_str = event.get("start", "")
+                    end_str = event.get("end", start_str)
+                    
+                    # Determinar si es allDay
+                    all_day = event.get("allDay", False)
+                    
+                    sample_events.append({
+                        "title": event.get("title", "Evento sin título"),
+                        "start": start_str,
+                        "end": end_str,
+                        "location": event.get("location", ""),
+                        "allDay": all_day
+                    })
+                
                 return {
                     "ok": True,
                     "source": "google",
                     "count": len(events),
+                    "sample": sample_events,
                     "message": f"Successfully connected. Found {len(events)} events in next {min(days_ahead, 7)} days."
                 }
             except requests.HTTPError as exc:

@@ -36,7 +36,7 @@ import {
   wifiScan,
   wifiStatus,
 } from "../lib/api";
-import type { AppConfigV2, FlightsLayerConfigV2, ShipsLayerConfigV2 } from "../types/config_v2";
+import type { AppConfigV2, CalendarConfig, FlightsLayerConfigV2, ShipsLayerConfigV2 } from "../types/config_v2";
 
 export const ConfigPage: React.FC = () => {
   // Estado general
@@ -108,7 +108,7 @@ export const ConfigPage: React.FC = () => {
 
   // Grupo 3: Panel Rotativo
   const [panelRotatorSaving, setPanelRotatorSaving] = useState(false);
-  const [calendarTestResult, setCalendarTestResult] = useState<{ ok: boolean; message?: string; reason?: string; source?: string; upcoming_count?: number; events_total?: number } | null>(null);
+  const [calendarTestResult, setCalendarTestResult] = useState<{ ok: boolean; message?: string; reason?: string; source?: string; count?: number; range_days?: number } | null>(null);
   const [calendarTesting, setCalendarTesting] = useState(false);
   const [calendarPreview, setCalendarPreview] = useState<CalendarPreviewItem[] | null>(null);
   const [calendarPreviewLoading, setCalendarPreviewLoading] = useState(false);
@@ -703,14 +703,34 @@ export const ConfigPage: React.FC = () => {
     setCalendarPreview(null);
     try {
       const result = await testCalendarConnection();
-      setCalendarTestResult(result || { ok: false, reason: "Sin respuesta" });
-      
-      // Si el test es exitoso, cargar preview
-      if (result?.ok) {
-        await handleLoadCalendarPreview();
+      if (result) {
+        setCalendarTestResult({
+          ok: result.ok,
+          reason: result.reason,
+          message: result.message || (result.ok ? `Test exitoso. ${result.count || 0} eventos encontrados.` : "Error al probar el calendario"),
+          source: result.source,
+          count: result.count,
+          range_days: result.range_days
+        });
+        
+        // Si el test es exitoso y hay sample, usar sample para preview
+        if (result.ok && result.sample && result.sample.length > 0) {
+          setCalendarPreview(result.sample.map(item => ({
+            title: item.title,
+            start: item.start,
+            end: item.end,
+            location: item.location,
+            all_day: item.allDay
+          })));
+        } else if (result.ok) {
+          // Si no hay sample pero el test fue exitoso, cargar preview
+          await handleLoadCalendarPreview();
+        }
+      } else {
+        setCalendarTestResult({ ok: false, reason: "Sin respuesta" });
       }
     } catch (error) {
-      setCalendarTestResult({ ok: false, reason: "Error al probar el calendario" });
+      setCalendarTestResult({ ok: false, reason: "Error al probar el calendario", message: String(error) });
       console.error("Error testing calendar:", error);
     } finally {
       setCalendarTesting(false);
@@ -746,10 +766,10 @@ export const ConfigPage: React.FC = () => {
         const loadedConfig = await getConfigV2();
         setConfig(withConfigDefaultsV2(loadedConfig));
         
-        // Mostrar mensaje de éxito
+        // Mostrar mensaje de éxito con eventos parseados
         setCalendarTestResult({ 
           ok: true, 
-          message: `Archivo subido correctamente. ${result.events || 0} eventos encontrados.` 
+          message: `Archivo subido correctamente. ${result.events_parsed || 0} eventos encontrados (rango: ${result.range_days || 14} días).` 
         });
         
         // Cargar preview
@@ -815,17 +835,32 @@ export const ConfigPage: React.FC = () => {
     
     setPanelRotatorSaving(true);
     try {
-      // Guardar configuración del calendario
-      await saveCalendarConfig({
-        enabled: config.calendar?.enabled || false,
+      // Guardar solo los campos que han cambiado (merge seguro)
+      const calendarToSave: Partial<CalendarConfig> = {
+        enabled: config.calendar?.enabled ?? true,
         source: config.calendar?.source || "google",
-        days_ahead: config.calendar?.days_ahead || 14,
-        ics: config.calendar?.ics ? {
-          mode: config.calendar.ics.mode,
-          url: config.calendar.ics.url,
-          // No enviar file_path, se actualiza al subir archivo
-        } : undefined,
-      });
+      };
+      
+      // Solo incluir ics si existe y tiene cambios
+      if (config.calendar?.ics) {
+        calendarToSave.ics = {
+          max_events: config.calendar.ics.max_events ?? 50,
+          days_ahead: config.calendar.ics.days_ahead ?? 14,
+          // No enviar stored_path ni filename (solo lectura)
+          // No enviar url si no ha cambiado
+          url: config.calendar.ics.url || undefined,
+        };
+      }
+      
+      // Solo incluir google si existe y tiene cambios
+      if (config.calendar?.google) {
+        calendarToSave.google = {
+          api_key: config.calendar.google.api_key || undefined,
+          calendar_id: config.calendar.google.calendar_id || undefined,
+        };
+      }
+      
+      await saveCalendarConfig(calendarToSave);
       
       // Recargar config
       const loadedConfig = await getConfigV2();
@@ -3313,9 +3348,9 @@ export const ConfigPage: React.FC = () => {
                       {calendarTestResult.ok ? (
                         <>
                           ✓ {calendarTestResult.message || "Conexión exitosa"}
-                          {calendarTestResult.upcoming_count !== undefined && (
+                          {calendarTestResult.count !== undefined && (
                             <span className="config-badge" style={{ marginLeft: "8px" }}>
-                              {calendarTestResult.upcoming_count} próximos eventos
+                              {calendarTestResult.count} eventos
                             </span>
                           )}
                         </>
