@@ -401,18 +401,7 @@ install -D -m 0755 "$CHROMIUM_KIOSK_BIN_SRC" "$CHROMIUM_KIOSK_BIN_DST"
 SUMMARY+=("[install] launcher de kiosk instalado en ${KIOSK_BIN_DST}")
 SUMMARY+=("[install] launcher Chromium kiosk disponible en ${CHROMIUM_KIOSK_BIN_DST}")
 
-if command -v chromium-browser >/dev/null 2>&1; then
-  chromium_realpath="$(readlink -f "$(command -v chromium-browser)" || true)"
-  if [[ -n "$chromium_realpath" ]]; then
-    if grep -q '/snap/' <<<"$chromium_realpath"; then
-      log_info "chromium-browser apunta al snap (${chromium_realpath})"
-    else
-      log_info "chromium-browser localizado en ${chromium_realpath}"
-    fi
-  fi
-else
-  log_warn "chromium-browser no se encontró en PATH durante la instalación"
-fi
+# Esta verificación se hace más adelante en el script durante la instalación de Chromium
 
 install -D -m 0755 "$BACKEND_LAUNCHER_SRC" "$BACKEND_LAUNCHER_DST"
 SUMMARY+=("[install] launcher de backend instalado en ${BACKEND_LAUNCHER_DST}")
@@ -684,21 +673,127 @@ else
   log_ok "Nginx responde correctamente"
 fi
 
-# Validar Chromium antes de habilitar servicios kiosk
-log_info "Verificando que Chromium esté disponible"
+# Instalar y validar Chromium (evitar paquetes transicionales a snap)
+log_info "Instalando y verificando Chromium (evitando paquetes transicionales a snap)"
+
+# Función para verificar si un binario es desde snap
+is_snap_binary() {
+  local bin_path="$1"
+  if [[ -z "$bin_path" ]]; then
+    return 1
+  fi
+  local realpath
+  realpath="$(readlink -f "$bin_path" 2>/dev/null || echo "$bin_path")"
+  if [[ "$realpath" == *"/snap/"* ]]; then
+    return 0
+  fi
+  return 1
+}
+
+# Función para instalar Chromium real (no snap)
+install_chromium_real() {
+  log_info "Instalando Chromium real (no snap)..."
+  
+  # Desinstalar chromium-browser transicional si existe y apunta a snap
+  if command -v chromium-browser >/dev/null 2>&1; then
+    if is_snap_binary "$(command -v chromium-browser)"; then
+      log_info "Desinstalando chromium-browser transicional (snap)..."
+      apt remove -y chromium-browser 2>/dev/null || true
+    fi
+  fi
+  
+  # Intentar instalar chromium desde repositorios
+  if ! command -v chromium >/dev/null 2>&1 || is_snap_binary "$(command -v chromium 2>/dev/null || echo '')"; then
+    log_info "Instalando chromium desde repositorios..."
+    apt update
+    if apt install -y chromium 2>&1; then
+      if command -v chromium >/dev/null 2>&1 && ! is_snap_binary "$(command -v chromium)"; then
+        log_ok "Chromium instalado desde repositorios: $(command -v chromium)"
+        return 0
+      fi
+    fi
+    
+    # Si falla, intentar desde PPA
+    log_info "Intentando instalar desde PPA de Chromium..."
+    add-apt-repository -y ppa:saiarcot895/chromium-beta 2>/dev/null || true
+    apt update
+    if apt install -y chromium 2>&1; then
+      if command -v chromium >/dev/null 2>&1 && ! is_snap_binary "$(command -v chromium)"; then
+        log_ok "Chromium instalado desde PPA: $(command -v chromium)"
+        return 0
+      fi
+    fi
+  fi
+  
+  return 1
+}
+
+# Función para arreglar permisos del perfil de Chromium
+fix_chromium_profile_permissions() {
+  local profile_dir="$1"
+  local cache_dir="$2"
+  
+  if [[ -d "$profile_dir" ]]; then
+    log_info "Arreglando permisos del perfil de Chromium: $profile_dir"
+    # Eliminar archivos de bloqueo residuales
+    find "$profile_dir" -type f \( -name "SingletonLock" -o -name "SingletonCookie" -o -name "SingletonSocket" -o -name "LOCK" \) -delete 2>/dev/null || true
+    # Cambiar propietario y permisos
+    chown -R "${USER_NAME}:${USER_NAME}" "$profile_dir" 2>/dev/null || true
+    chmod -R u+rwX "$profile_dir" 2>/dev/null || true
+    log_ok "Permisos del perfil arreglados"
+  fi
+  
+  if [[ -d "$cache_dir" ]]; then
+    log_info "Arreglando permisos del cache de Chromium: $cache_dir"
+    find "$cache_dir" -type f -name "LOCK" -delete 2>/dev/null || true
+    chown -R "${USER_NAME}:${USER_NAME}" "$cache_dir" 2>/dev/null || true
+    chmod -R u+rwX "$cache_dir" 2>/dev/null || true
+    log_ok "Permisos del cache arreglados"
+  fi
+}
+
 CHROMIUM_FOUND=0
+CHROMIUM_BIN=""
+
+# Verificar si ya hay un Chromium real instalado
 if command -v chromium-browser >/dev/null 2>&1; then
-  CHROMIUM_FOUND=1
-  log_ok "chromium-browser encontrado: $(command -v chromium-browser)"
-elif command -v chromium >/dev/null 2>&1; then
-  CHROMIUM_FOUND=1
-  log_ok "chromium encontrado: $(command -v chromium)"
-elif [[ -x /snap/bin/chromium ]]; then
-  CHROMIUM_FOUND=1
-  log_ok "chromium (snap) encontrado: /snap/bin/chromium"
-elif [[ -x /snap/chromium/current/usr/lib/chromium-browser/chrome ]]; then
-  CHROMIUM_FOUND=1
-  log_ok "chromium (snap) encontrado: /snap/chromium/current/usr/lib/chromium-browser/chrome"
+  if ! is_snap_binary "$(command -v chromium-browser)"; then
+    CHROMIUM_BIN="$(command -v chromium-browser)"
+    CHROMIUM_FOUND=1
+    log_ok "chromium-browser encontrado (no snap): $CHROMIUM_BIN"
+  fi
+fi
+
+if [[ $CHROMIUM_FOUND -eq 0 ]] && command -v chromium >/dev/null 2>&1; then
+  if ! is_snap_binary "$(command -v chromium)"; then
+    CHROMIUM_BIN="$(command -v chromium)"
+    CHROMIUM_FOUND=1
+    log_ok "chromium encontrado (no snap): $CHROMIUM_BIN"
+  fi
+fi
+
+# Si no hay Chromium real, intentar instalarlo
+if [[ $CHROMIUM_FOUND -eq 0 ]]; then
+  if install_chromium_real; then
+    if command -v chromium >/dev/null 2>&1 && ! is_snap_binary "$(command -v chromium)"; then
+      CHROMIUM_BIN="$(command -v chromium)"
+      CHROMIUM_FOUND=1
+      log_ok "Chromium instalado y verificado: $CHROMIUM_BIN"
+    fi
+  fi
+fi
+
+# Fallback a snap solo si no hay alternativa (no recomendado)
+if [[ $CHROMIUM_FOUND -eq 0 ]]; then
+  if [[ -x /snap/bin/chromium ]]; then
+    CHROMIUM_BIN="/snap/bin/chromium"
+    CHROMIUM_FOUND=1
+    log_warn "Usando Chromium desde snap (no recomendado): $CHROMIUM_BIN"
+  elif [[ -x /snap/chromium/current/usr/lib/chromium-browser/chrome ]]; then
+    CHROMIUM_BIN="/snap/chromium/current/usr/lib/chromium-browser/chrome"
+    CHROMIUM_FOUND=1
+    log_warn "Usando Chromium desde snap (no recomendado): $CHROMIUM_BIN"
+  fi
 fi
 
 if [[ $CHROMIUM_FOUND -eq 0 ]]; then
@@ -706,8 +801,29 @@ if [[ $CHROMIUM_FOUND -eq 0 ]]; then
   log_warn "El servicio kiosk no funcionará hasta que se instale Chromium"
   SUMMARY+=('[install] WARN: Chromium no encontrado - servicio kiosk no funcionará')
 else
-  log_ok "Chromium disponible para kiosk"
+  log_ok "Chromium disponible para kiosk: $CHROMIUM_BIN"
   SUMMARY+=('[install] Chromium verificado y disponible')
+  
+  # Arreglar permisos del perfil de Chromium
+  fix_chromium_profile_permissions "$CHROMIUM_HOME_DATA_DIR" "$CHROMIUM_HOME_CACHE_DIR"
+  
+  # Configurar kiosk.env con CHROMIUM_BIN_OVERRIDE si no está configurado
+  KIOSK_ENV="/var/lib/pantalla-reloj/state/kiosk.env"
+  if [[ -n "$CHROMIUM_BIN" ]] && ! is_snap_binary "$CHROMIUM_BIN"; then
+    mkdir -p "$(dirname "$KIOSK_ENV")"
+    if [[ -f "$KIOSK_ENV" ]]; then
+      if ! grep -q "^CHROMIUM_BIN_OVERRIDE=" "$KIOSK_ENV"; then
+        echo "CHROMIUM_BIN_OVERRIDE=$CHROMIUM_BIN" >> "$KIOSK_ENV"
+        log_ok "CHROMIUM_BIN_OVERRIDE agregado a kiosk.env"
+      else
+        sed -i "s|^CHROMIUM_BIN_OVERRIDE=.*|CHROMIUM_BIN_OVERRIDE=$CHROMIUM_BIN|" "$KIOSK_ENV"
+        log_ok "CHROMIUM_BIN_OVERRIDE actualizado en kiosk.env"
+      fi
+    else
+      echo "CHROMIUM_BIN_OVERRIDE=$CHROMIUM_BIN" > "$KIOSK_ENV"
+      log_ok "kiosk.env creado con CHROMIUM_BIN_OVERRIDE"
+    fi
+  fi
 fi
 
 # Validar permisos de caché

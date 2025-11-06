@@ -21,23 +21,102 @@ ensure_packages() {
   log "Asegurando paquetes (Chromium, utilidades X11)…"
   sudo apt-get update -y
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y x11-xserver-utils wmctrl
-  if ! sudo DEBIAN_FRONTEND=noninteractive apt-get install -y chromium-browser; then
-    log "chromium-browser no disponible; intentando con paquete chromium"
-    if ! sudo DEBIAN_FRONTEND=noninteractive apt-get install -y chromium; then
-      log_err "No fue posible instalar chromium-browser ni chromium"
-      exit 1
+  
+  # Función para verificar si un binario es desde snap
+  is_snap_binary() {
+    local bin_path="$1"
+    if [[ -z "$bin_path" ]]; then
+      return 1
     fi
+    local realpath
+    realpath="$(readlink -f "$bin_path" 2>/dev/null || echo "$bin_path")"
+    if [[ "$realpath" == *"/snap/"* ]]; then
+      return 0
+    fi
+    return 1
+  }
+  
+  # Desinstalar chromium-browser transicional si apunta a snap
+  if command -v chromium-browser >/dev/null 2>&1; then
+    if is_snap_binary "$(command -v chromium-browser)"; then
+      log "Desinstalando chromium-browser transicional (snap)..."
+      sudo apt-get remove -y chromium-browser 2>/dev/null || true
+    fi
+  fi
+  
+  # Intentar instalar chromium real
+  CHROMIUM_INSTALLED=0
+  if ! command -v chromium >/dev/null 2>&1 || (command -v chromium >/dev/null 2>&1 && is_snap_binary "$(command -v chromium)"); then
+    log "Instalando chromium desde repositorios..."
+    if sudo DEBIAN_FRONTEND=noninteractive apt-get install -y chromium 2>&1; then
+      if command -v chromium >/dev/null 2>&1 && ! is_snap_binary "$(command -v chromium)"; then
+        CHROMIUM_INSTALLED=1
+        log "✓ Chromium instalado desde repositorios"
+      fi
+    fi
+    
+    # Si falla, intentar desde PPA
+    if [[ $CHROMIUM_INSTALLED -eq 0 ]]; then
+      log "Intentando instalar desde PPA de Chromium..."
+      sudo add-apt-repository -y ppa:saiarcot895/chromium-beta 2>/dev/null || true
+      sudo apt-get update
+      if sudo DEBIAN_FRONTEND=noninteractive apt-get install -y chromium 2>&1; then
+        if command -v chromium >/dev/null 2>&1 && ! is_snap_binary "$(command -v chromium)"; then
+          CHROMIUM_INSTALLED=1
+          log "✓ Chromium instalado desde PPA"
+        fi
+      fi
+    fi
+  else
+    # Verificar que el chromium existente no es snap
+    if command -v chromium >/dev/null 2>&1 && ! is_snap_binary "$(command -v chromium)"; then
+      CHROMIUM_INSTALLED=1
+      log "✓ Chromium ya está instalado (no snap)"
+    fi
+  fi
+  
+  if [[ $CHROMIUM_INSTALLED -eq 0 ]]; then
+    log_err "No fue posible instalar Chromium real (no snap)"
+    log_err "El paquete chromium-browser es transicional a snap y no es compatible"
+    exit 1
   fi
 }
 
 find_chromium_bin() {
-  local candidate
-  for candidate in chromium-browser chromium /snap/bin/chromium; do
-    if command -v "$candidate" >/dev/null 2>&1; then
-      command -v "$candidate"
+  # Función para verificar si un binario es desde snap
+  is_snap_binary() {
+    local bin_path="$1"
+    if [[ -z "$bin_path" ]]; then
+      return 1
+    fi
+    local realpath
+    realpath="$(readlink -f "$bin_path" 2>/dev/null || echo "$bin_path")"
+    if [[ "$realpath" == *"/snap/"* ]]; then
       return 0
     fi
+    return 1
+  }
+  
+  # Priorizar binarios reales (no snap)
+  local candidate
+  for candidate in chromium chromium-browser; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      local bin_path
+      bin_path="$(command -v "$candidate")"
+      if ! is_snap_binary "$bin_path"; then
+        echo "$bin_path"
+        return 0
+      fi
+    fi
   done
+  
+  # Fallback a snap solo si no hay alternativa
+  if [[ -x /snap/bin/chromium ]]; then
+    log "⚠ Usando Chromium desde snap (no recomendado)"
+    echo "/snap/bin/chromium"
+    return 0
+  fi
+  
   return 1
 }
 
@@ -46,6 +125,11 @@ prepare_dirs() {
   sudo install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR" "$CACHE_DIR"
   sudo install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$CHROMIUM_STATE"
   sudo install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$CHROMIUM_CACHE"
+  
+  # Limpiar archivos de bloqueo residuales
+  log "Limpiando archivos de bloqueo residuales..."
+  find "$CHROMIUM_STATE" -type f \( -name "SingletonLock" -o -name "SingletonCookie" -o -name "SingletonSocket" -o -name "LOCK" \) -delete 2>/dev/null || true
+  find "$CHROMIUM_CACHE" -type f -name "LOCK" -delete 2>/dev/null || true
 }
 
 disable_epiphany() {

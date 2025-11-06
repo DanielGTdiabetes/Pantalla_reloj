@@ -46,7 +46,9 @@ cleanup_profile_artifacts() {
   local base
   for base in "$profile_dir" "$cache_dir"; do
     [[ -d "$base" ]] || continue
+    # Eliminar archivos de bloqueo singleton
     find "$base" -maxdepth 2 -type f \( -name "${singleton_patterns[0]}" -o -name "${singleton_patterns[1]}" -o -name "${singleton_patterns[2]}" \) -delete 2>/dev/null || true
+    # Eliminar archivos LOCK
     local -a locks=()
     mapfile -t locks < <(find "$base" -maxdepth 3 -type f -name 'LOCK' -print 2>/dev/null)
     if ((${#locks[@]} > 0)); then
@@ -55,6 +57,11 @@ cleanup_profile_artifacts() {
         rm -f "$lock"
       done
       log "eliminados ${#locks[@]} LOCK residuales en ${base}"
+    fi
+    # Asegurar permisos correctos del directorio
+    if [[ -d "$base" ]]; then
+      chown -R "$(id -u):$(id -g)" "$base" 2>/dev/null || true
+      chmod -R u+rwX "$base" 2>/dev/null || true
     fi
   done
 }
