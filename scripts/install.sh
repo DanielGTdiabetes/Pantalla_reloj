@@ -994,24 +994,61 @@ if systemctl enable --now "$XORG_SERVICE" 2>&1; then
   log_ok "pantalla-xorg.service habilitado e iniciado"
   SUMMARY+=("[install] pantalla-xorg.service habilitado e iniciado")
   
-  # Esperar a que Xorg genere .Xauthority
-  log_info "Esperando a que Xorg genere .Xauthority..."
-  for i in {1..10}; do
+  # Esperar a que Xorg esté completamente iniciado y genere .Xauthority
+  log_info "Esperando a que Xorg esté completamente iniciado..."
+  XORG_READY=0
+  for i in {1..15}; do
     sleep 1
-    if [[ -f "$STATE_XAUTH" ]] && [[ -s "$STATE_XAUTH" ]]; then
-      break
+    # Verificar que el servicio está activo
+    if systemctl is-active --quiet "$XORG_SERVICE" 2>/dev/null; then
+      # Verificar que .Xauthority existe y no está vacío
+      if [[ -f "$STATE_XAUTH" ]] && [[ -s "$STATE_XAUTH" ]]; then
+        # Verificar que DISPLAY :0 funciona
+        if DISPLAY=:0 XAUTHORITY="$STATE_XAUTH" xset q >/dev/null 2>&1; then
+          XORG_READY=1
+          log_ok "Xorg está completamente iniciado y DISPLAY :0 funciona"
+          break
+        fi
+      fi
     fi
   done
   
-  # Copiar .Xauthority a home del usuario
+  if [[ $XORG_READY -eq 0 ]]; then
+    log_warn "Xorg puede no estar completamente listo, pero continuando..."
+    log_warn "Si hay problemas, espera unos segundos más y reinicia los servicios"
+  fi
+  
+  # Copiar .Xauthority a home del usuario (esperar un poco más si no existe)
+  if [[ ! -f "$STATE_XAUTH" ]] || [[ ! -s "$STATE_XAUTH" ]]; then
+    log_info "Esperando adicional para que Xorg genere .Xauthority..."
+    sleep 3
+  fi
+  
   if [[ -f "$STATE_XAUTH" ]] && [[ -s "$STATE_XAUTH" ]]; then
     cp -f "$STATE_XAUTH" "$HOME_XAUTH"
     chown "$USER_NAME:$USER_NAME" "$HOME_XAUTH"
     chmod 600 "$HOME_XAUTH"
     log_ok ".Xauthority copiado a $HOME_XAUTH"
-    SUMMARY+=("[install] .Xauthority configurado correctamente")
+    
+    # Verificar que el archivo es legible
+    if [[ ! -r "$HOME_XAUTH" ]]; then
+      log_error "ERROR: .Xauthority no es legible por $USER_NAME"
+      exit 1
+    fi
+    
+    # Verificar que DISPLAY funciona con el .Xauthority del usuario
+    if DISPLAY=:0 XAUTHORITY="$HOME_XAUTH" xset q >/dev/null 2>&1; then
+      log_ok "DISPLAY :0 funciona correctamente con .Xauthority del usuario"
+      SUMMARY+=("[install] .Xauthority configurado correctamente y DISPLAY verificado")
+    else
+      log_warn "DISPLAY :0 no funciona con .Xauthority del usuario (puede tardar unos segundos más)"
+    fi
   else
-    log_warn ".Xauthority aún no generado (se generará al arrancar Xorg)"
+    log_error "ERROR: .Xauthority no se generó después de esperar"
+    log_error "Verificando estado de Xorg..."
+    systemctl status "$XORG_SERVICE" --no-pager -l | head -20
+    journalctl -u "$XORG_SERVICE" -n 30 --no-pager | sed 's/^/  /' || true
+    exit 1
   fi
 else
   log_error "ERROR: No se pudo iniciar pantalla-xorg.service"
@@ -1033,30 +1070,19 @@ fi
 # Crear /run/user/<uid> correcto para el usuario kiosk (no asumir 1000)
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "/run/user/${USER_UID}"
 
-# Asegurar XAUTHORITY real (no symlink) con la cookie actual
-install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "/home/${USER_NAME}"
-HOME_XAUTH="/home/${USER_NAME}/.Xauthority"
-STATE_XAUTH="/var/lib/pantalla-reloj/.Xauthority"
-
-# Esperar a que xorg-launch.sh genere el .Xauthority si no existe
-if [[ ! -f "$STATE_XAUTH" ]]; then
-  log_info "Esperando a que Xorg genere .Xauthority..."
-  sleep 2
-fi
-
-if [[ -f "$STATE_XAUTH" ]]; then
-  cp -f "$STATE_XAUTH" "$HOME_XAUTH"
-  chown "$USER_NAME:$USER_NAME" "$HOME_XAUTH"
-  chmod 600 "$HOME_XAUTH"
-  log_ok "XAUTHORITY copiado a ${HOME_XAUTH}"
-  
-  # Validar que el archivo sea legible
-  if [[ ! -r "$HOME_XAUTH" ]]; then
-    log_error "XAUTHORITY no es legible por ${USER_NAME}"
+# Verificar que DISPLAY funciona antes de iniciar Openbox
+log_info "Verificando que DISPLAY :0 funciona antes de iniciar Openbox..."
+if DISPLAY=:0 XAUTHORITY="$HOME_XAUTH" xset q >/dev/null 2>&1; then
+  log_ok "DISPLAY :0 funciona correctamente"
+else
+  log_warn "DISPLAY :0 no funciona aún, esperando 3 segundos más..."
+  sleep 3
+  if ! DISPLAY=:0 XAUTHORITY="$HOME_XAUTH" xset q >/dev/null 2>&1; then
+    log_error "ERROR: DISPLAY :0 no funciona después de esperar"
+    log_error "Verificando estado de Xorg..."
+    systemctl status "$XORG_SERVICE" --no-pager -l | head -20
     exit 1
   fi
-else
-  log_warn "No se encontró XAUTHORITY en ${STATE_XAUTH}, se generará al arrancar Xorg"
 fi
 
 # Verificar que openbox service existe antes de iniciarlo
@@ -1065,7 +1091,15 @@ if systemctl list-units --full --all "$OPENBOX_SERVICE_INSTANCE" >/dev/null 2>&1
   log_info "Iniciando pantalla-openbox@${USER_NAME}.service"
   if systemctl enable --now "$OPENBOX_SERVICE_INSTANCE" 2>&1; then
     log_ok "pantalla-openbox@${USER_NAME}.service habilitado e iniciado"
+    sleep 2
     SUMMARY+=("[install] pantalla-openbox@${USER_NAME}.service habilitado e iniciado")
+    
+    # Verificar que Openbox está corriendo
+    if systemctl is-active --quiet "$OPENBOX_SERVICE_INSTANCE" 2>/dev/null; then
+      log_ok "pantalla-openbox@${USER_NAME}.service está activo"
+    else
+      log_warn "pantalla-openbox@${USER_NAME}.service puede no estar completamente iniciado"
+    fi
   else
     log_error "ERROR: No se pudo iniciar pantalla-openbox@${USER_NAME}.service"
     journalctl -u "$OPENBOX_SERVICE_INSTANCE" -n 30 --no-pager | sed 's/^/  /' || true
