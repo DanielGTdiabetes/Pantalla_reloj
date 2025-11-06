@@ -91,6 +91,7 @@ export const DEFAULT_SHIPS_LAYER_CONFIG: ShipsLayerConfigV2 = {
   max_age_seconds: 180,
   max_items_global: 1500,
   max_items_view: 420,
+  rate_limit_per_min: 4,
   decimate: "grid",
   grid_px: 24,
   styleScale: 1.4,
