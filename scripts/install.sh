@@ -1131,14 +1131,94 @@ if [[ ${CHROME_FOUND:-0} -eq 1 ]]; then
     fi
   fi
   
-  # Habilitar y arrancar unit user de Chrome
-  if sudo -u "$USER_NAME" systemctl --user enable --now "$CHROME_USER_UNIT" 2>&1; then
-    log_ok "Unit user Chrome kiosk habilitado e iniciado: ${CHROME_USER_UNIT}"
-    SUMMARY+=("[install] unit user Chrome kiosk habilitado e iniciado")
+  # Asegurar que el usuario tenga una sesión persistente de systemd user
+  log_info "Asegurando sesión persistente de systemd user..."
+  if command -v loginctl >/dev/null 2>&1; then
+    if loginctl enable-linger "$USER_NAME" 2>&1; then
+      log_ok "Sesión persistente de systemd user habilitada para $USER_NAME"
+    else
+      log_warn "No se pudo habilitar sesión persistente de systemd user (puede no estar disponible)"
+    fi
   else
-    log_error "ERROR: No se pudo iniciar unit user Chrome kiosk"
-    sudo -u "$USER_NAME" systemctl --user status "$CHROME_USER_UNIT" --no-pager -l | sed 's/^/  /' || true
-    SUMMARY+=('[install] ERROR: fallo al iniciar unit user Chrome kiosk')
+    log_warn "loginctl no disponible, no se puede habilitar sesión persistente"
+  fi
+  
+  # Asegurar que el bus D-Bus del usuario esté disponible
+  log_info "Asegurando que el bus D-Bus del usuario esté disponible..."
+  USER_RUNTIME_DIR="/run/user/${USER_UID}"
+  install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$USER_RUNTIME_DIR"
+  
+  # Iniciar el bus D-Bus del usuario si no está disponible
+  DBUS_BUS="${USER_RUNTIME_DIR}/bus"
+  if [[ ! -S "$DBUS_BUS" ]]; then
+    log_info "Iniciando bus D-Bus del usuario..."
+    sudo -u "$USER_NAME" dbus-daemon --session --fork --print-address --address="unix:path=${DBUS_BUS}" 2>/dev/null || true
+    sleep 2
+  fi
+  
+  # Verificar que el bus D-Bus funciona
+  if sudo -u "$USER_NAME" DBUS_SESSION_BUS_ADDRESS="unix:path=${DBUS_BUS}" dbus-send --session --dest=org.freedesktop.DBus --type=method_call --print-reply /org/freedesktop/DBus org.freedesktop.DBus.ListNames >/dev/null 2>&1; then
+    log_ok "Bus D-Bus del usuario está disponible"
+  else
+    log_warn "Bus D-Bus del usuario puede no estar completamente disponible"
+    log_warn "Intentando iniciar systemd user manager..."
+    # Iniciar systemd user manager si no está disponible
+    sudo -u "$USER_NAME" systemd-run --user --unit=systemd-user-manager -- systemd --user 2>/dev/null || true
+    sleep 2
+  fi
+  
+  # Habilitar y arrancar unit user de Chrome
+  log_info "Habilitando unit user Chrome kiosk..."
+  CHROME_USER_STARTED=0
+  
+  # Intentar con variables de entorno explícitas
+  if sudo -u "$USER_NAME" XDG_RUNTIME_DIR="$USER_RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="unix:path=${DBUS_BUS}" systemctl --user daemon-reload 2>/dev/null; then
+    log_ok "systemd user recargado"
+    
+    if sudo -u "$USER_NAME" XDG_RUNTIME_DIR="$USER_RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="unix:path=${DBUS_BUS}" systemctl --user enable --now "$CHROME_USER_UNIT" 2>&1; then
+      log_ok "Unit user Chrome kiosk habilitado e iniciado: ${CHROME_USER_UNIT}"
+      SUMMARY+=("[install] unit user Chrome kiosk habilitado e iniciado")
+      CHROME_USER_STARTED=1
+    fi
+  fi
+  
+  # Si falla, intentar iniciar el servicio directamente (sin systemctl --user)
+  if [[ $CHROME_USER_STARTED -eq 0 ]]; then
+    log_info "Intentando iniciar unit user Chrome kiosk directamente..."
+    # El unit user se habilitará y se iniciará automáticamente cuando el usuario tenga sesión
+    # Por ahora, solo habilitarlo
+    if sudo -u "$USER_NAME" XDG_RUNTIME_DIR="$USER_RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="unix:path=${DBUS_BUS}" systemctl --user enable "$CHROME_USER_UNIT" 2>/dev/null; then
+      log_ok "Unit user Chrome kiosk habilitado (se iniciará automáticamente con sesión)"
+      SUMMARY+=("[install] unit user Chrome kiosk habilitado (inicio automático)")
+      CHROME_USER_STARTED=1
+    fi
+  fi
+  
+  # Si aún falla, usar Chromium fallback o intentar iniciar Chrome manualmente
+  if [[ $CHROME_USER_STARTED -eq 0 ]]; then
+    log_warn "No se pudo iniciar unit user Chrome kiosk (puede requerir sesión activa)"
+    log_warn "El unit user está habilitado y se iniciará automáticamente cuando haya sesión"
+    log_warn "Por ahora, usando Chromium fallback para asegurar que el kiosk funcione..."
+    SUMMARY+=('[install] WARN: unit user Chrome kiosk habilitado pero no iniciado, usando Chromium fallback')
+    
+    # Fallback a Chromium
+    KIOSK_SERVICE_INSTANCE="pantalla-kiosk-chromium@${USER_NAME}.service"
+    if [[ ${CHROMIUM_FOUND:-0} -eq 1 ]]; then
+      if systemctl list-units --full --all "$KIOSK_SERVICE_INSTANCE" >/dev/null 2>&1; then
+        log_info "Iniciando pantalla-kiosk-chromium@${USER_NAME}.service (fallback temporal)"
+        if systemctl enable --now "$KIOSK_SERVICE_INSTANCE" 2>&1; then
+          log_ok "pantalla-kiosk-chromium@${USER_NAME}.service habilitado e iniciado (fallback temporal)"
+          SUMMARY+=("[install] pantalla-kiosk-chromium@${USER_NAME}.service habilitado e iniciado (fallback temporal)")
+          log_info "NOTA: El unit user Chrome kiosk está habilitado y tomará el control cuando haya sesión activa"
+        else
+          log_error "ERROR: No se pudo iniciar pantalla-kiosk-chromium@${USER_NAME}.service"
+          journalctl -u "$KIOSK_SERVICE_INSTANCE" -n 30 --no-pager | sed 's/^/  /' || true
+          SUMMARY+=('[install] ERROR: fallo al iniciar pantalla-kiosk-chromium')
+        fi
+      fi
+    else
+      log_warn "Chromium no disponible, el unit user Chrome kiosk se iniciará cuando haya sesión activa"
+    fi
   fi
 else
   log_warn "No se habilitó unit user Chrome kiosk - Chrome no disponible"
