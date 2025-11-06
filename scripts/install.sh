@@ -143,6 +143,12 @@ if (( DIAG_MODE == 1 )); then
   ACTIVE_KIOSK_URL="$DIAG_KIOSK_URL"
   SUMMARY+=("[install] modo diagnóstico habilitado (${ACTIVE_KIOSK_URL})")
 fi
+
+# Inicializar variables de navegador (se definirán más adelante)
+CHROME_FOUND=0
+CHROME_BIN=""
+CHROMIUM_FOUND=0
+CHROMIUM_BIN=""
 if [[ ! -f "$KIOSK_ENV_FILE" ]]; then
   cat >"$KIOSK_ENV_FILE" <<EOF
 # Pantalla_reloj kiosk configuration
@@ -850,11 +856,6 @@ fix_chromium_profile_permissions() {
     log_ok "Permisos del cache arreglados"
   fi
 }
-
-CHROME_FOUND=0
-CHROME_BIN=""
-CHROMIUM_FOUND=0
-CHROMIUM_BIN=""
 
 # Prioridad 1: Intentar instalar Google Chrome .deb (preferido)
 log_info "Verificando/instalando Google Chrome .deb (preferido sobre Chromium)..."
