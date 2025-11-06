@@ -555,6 +555,20 @@ deploy_unit() {
   fi
 }
 
+# Instalar scripts necesarios ANTES de instalar servicios systemd
+log_info "Instalando scripts necesarios para servicios systemd"
+
+# Asegurar que xorg-launch.sh esté instalado antes de instalar el servicio pantalla-xorg
+if [[ -f "$REPO_ROOT/usr/lib/pantalla-reloj/xorg-launch.sh" ]]; then
+  install -D -m 0755 "$REPO_ROOT/usr/lib/pantalla-reloj/xorg-launch.sh" /usr/lib/pantalla-reloj/xorg-launch.sh
+  log_ok "xorg-launch.sh instalado"
+else
+  log_error "No se encontró xorg-launch.sh en $REPO_ROOT/usr/lib/pantalla-reloj/xorg-launch.sh"
+  exit 1
+fi
+
+# Instalar servicios systemd
+log_info "Instalando servicios systemd"
 deploy_unit "$REPO_ROOT/systemd/pantalla-xorg@.service" /etc/systemd/system/pantalla-xorg@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-openbox@.service" /etc/systemd/system/pantalla-openbox@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk@.service" /etc/systemd/system/pantalla-kiosk@.service
@@ -568,6 +582,20 @@ install -D -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk@.service.d/10-sanitize-rol
   /etc/systemd/system/pantalla-kiosk@.service.d/10-sanitize-rollback.conf
 install -D -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk-watchdog@.service.d/10-rollback.conf" \
   /etc/systemd/system/pantalla-kiosk-watchdog@.service.d/10-rollback.conf
+
+# Recargar systemd DESPUÉS de instalar todos los servicios
+log_info "Recargando systemd después de instalar servicios"
+systemctl daemon-reload
+log_ok "systemd recargado"
+
+# Verificar que los servicios se instalaron correctamente
+log_info "Verificando que los servicios se instalaron correctamente"
+XORG_SERVICE="/etc/systemd/system/pantalla-xorg@.service"
+if [[ ! -f "$XORG_SERVICE" ]]; then
+  log_error "ERROR: pantalla-xorg@.service no se instaló correctamente en $XORG_SERVICE"
+  exit 1
+fi
+log_ok "Servicios systemd instalados y verificados"
 
 DROPIN_DIR="/etc/systemd/system/pantalla-kiosk-chromium@${USER_NAME}.service.d"
 DROPIN_OVERRIDE_SRC="${REPO_ROOT}/deploy/systemd/pantalla-kiosk-chromium@dani.service.d/override.conf"
@@ -834,9 +862,47 @@ if [[ ! -w /var/cache/pantalla ]]; then
 fi
 
 log_info "Enabling services"
-systemctl enable --now "pantalla-xorg@${USER_NAME}.service" || true
-systemctl enable --now pantalla-dash-backend@${USER_NAME}.service || true
+
+# Verificar que los servicios existen antes de intentar iniciarlos
+XORG_SERVICE_INSTANCE="pantalla-xorg@${USER_NAME}.service"
+BACKEND_SERVICE_INSTANCE="pantalla-dash-backend@${USER_NAME}.service"
+
+if ! systemctl list-units --full --all "$XORG_SERVICE_INSTANCE" >/dev/null 2>&1; then
+  log_error "ERROR: Servicio $XORG_SERVICE_INSTANCE no encontrado después de la instalación"
+  log_error "Verifica que pantalla-xorg@.service se instaló correctamente"
+  exit 1
+fi
+
+if ! systemctl list-units --full --all "$BACKEND_SERVICE_INSTANCE" >/dev/null 2>&1; then
+  log_error "ERROR: Servicio $BACKEND_SERVICE_INSTANCE no encontrado después de la instalación"
+  log_error "Verifica que pantalla-dash-backend@.service se instaló correctamente"
+  exit 1
+fi
+
+# Crear directorios necesarios antes de iniciar servicios
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" /var/lib/pantalla-reloj || true
+install -d -m 0755 -o root -g root /var/log/pantalla || true
+
+# Iniciar servicios
+log_info "Iniciando pantalla-xorg@${USER_NAME}.service"
+if systemctl enable --now "$XORG_SERVICE_INSTANCE" 2>&1; then
+  log_ok "pantalla-xorg@${USER_NAME}.service habilitado e iniciado"
+else
+  log_error "ERROR: No se pudo iniciar pantalla-xorg@${USER_NAME}.service"
+  log_error "Logs del servicio:"
+  journalctl -u "$XORG_SERVICE_INSTANCE" -n 30 --no-pager | sed 's/^/  /' || true
+  exit 1
+fi
+
+log_info "Iniciando pantalla-dash-backend@${USER_NAME}.service"
+if systemctl enable --now "$BACKEND_SERVICE_INSTANCE" 2>&1; then
+  log_ok "pantalla-dash-backend@${USER_NAME}.service habilitado e iniciado"
+else
+  log_error "ERROR: No se pudo iniciar pantalla-dash-backend@${USER_NAME}.service"
+  log_error "Logs del servicio:"
+  journalctl -u "$BACKEND_SERVICE_INSTANCE" -n 30 --no-pager | sed 's/^/  /' || true
+  exit 1
+fi
 
 # Crear /run/user/<uid> correcto para el usuario kiosk (no asumir 1000)
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "/run/user/${USER_UID}"
@@ -867,20 +933,44 @@ else
   log_warn "No se encontró XAUTHORITY en ${STATE_XAUTH}, se generará al arrancar Xorg"
 fi
 
-systemctl enable --now "pantalla-openbox@${USER_NAME}.service" || true
-
-systemctl daemon-reload
+# Verificar que openbox service existe antes de iniciarlo
+OPENBOX_SERVICE_INSTANCE="pantalla-openbox@${USER_NAME}.service"
+if systemctl list-units --full --all "$OPENBOX_SERVICE_INSTANCE" >/dev/null 2>&1; then
+  log_info "Iniciando pantalla-openbox@${USER_NAME}.service"
+  if systemctl enable --now "$OPENBOX_SERVICE_INSTANCE" 2>&1; then
+    log_ok "pantalla-openbox@${USER_NAME}.service habilitado e iniciado"
+  else
+    log_error "ERROR: No se pudo iniciar pantalla-openbox@${USER_NAME}.service"
+    journalctl -u "$OPENBOX_SERVICE_INSTANCE" -n 30 --no-pager | sed 's/^/  /' || true
+  fi
+else
+  log_error "ERROR: Servicio $OPENBOX_SERVICE_INSTANCE no encontrado"
+  exit 1
+fi
 
 # Asegurar que solo uno de los servicios kiosk esté habilitado
 systemctl disable --now "pantalla-kiosk@${USER_NAME}.service" 2>/dev/null || true
 
 # Solo habilitar kiosk-chromium si Chromium está disponible
+KIOSK_SERVICE_INSTANCE="pantalla-kiosk-chromium@${USER_NAME}.service"
 if [[ $CHROMIUM_FOUND -eq 1 ]]; then
-  systemctl enable --now "pantalla-kiosk-chromium@${USER_NAME}.service" || true
-  SUMMARY+=('[install] servicio kiosk-chromium habilitado')
+  if systemctl list-units --full --all "$KIOSK_SERVICE_INSTANCE" >/dev/null 2>&1; then
+    log_info "Iniciando pantalla-kiosk-chromium@${USER_NAME}.service"
+    if systemctl enable --now "$KIOSK_SERVICE_INSTANCE" 2>&1; then
+      log_ok "pantalla-kiosk-chromium@${USER_NAME}.service habilitado e iniciado"
+      SUMMARY+=('[install] servicio kiosk-chromium habilitado')
+    else
+      log_error "ERROR: No se pudo iniciar pantalla-kiosk-chromium@${USER_NAME}.service"
+      journalctl -u "$KIOSK_SERVICE_INSTANCE" -n 30 --no-pager | sed 's/^/  /' || true
+      SUMMARY+=('[install] ERROR: fallo al iniciar pantalla-kiosk-chromium')
+    fi
+  else
+    log_error "ERROR: Servicio $KIOSK_SERVICE_INSTANCE no encontrado"
+    SUMMARY+=('[install] ERROR: servicio kiosk-chromium no encontrado')
+  fi
 else
   log_warn "No se habilitó pantalla-kiosk-chromium@${USER_NAME}.service - Chromium no disponible"
-  systemctl disable --now "pantalla-kiosk-chromium@${USER_NAME}.service" 2>/dev/null || true
+  systemctl disable --now "$KIOSK_SERVICE_INSTANCE" 2>/dev/null || true
   SUMMARY+=('[install] WARN: servicio kiosk-chromium NO habilitado - Chromium no disponible')
 fi
 
@@ -889,21 +979,35 @@ systemctl disable --now "pantalla-kiosk-watchdog@${USER_NAME}.timer" "pantalla-k
 
 log_info "Restarting Pantalla services"
 
-# Restart Xorg primero
-log_info "Reiniciando pantalla-xorg@${USER_NAME}.service"
-if systemctl restart "pantalla-xorg@${USER_NAME}.service"; then
-  log_ok "pantalla-xorg@${USER_NAME}.service reiniciado"
-  # Esperar a que Xorg se inicie y genere .Xauthority
-  sleep 3
+# Verificar que Xorg está funcionando antes de reiniciar
+log_info "Verificando estado de pantalla-xorg@${USER_NAME}.service"
+if systemctl is-active --quiet "$XORG_SERVICE_INSTANCE" 2>/dev/null; then
+  log_ok "pantalla-xorg@${USER_NAME}.service está activo"
+  # Esperar a que Xorg genere .Xauthority si aún no existe
+  if [[ ! -f "$STATE_XAUTH" ]]; then
+    log_info "Esperando a que Xorg genere .Xauthority..."
+    for i in {1..10}; do
+      sleep 1
+      if [[ -f "$STATE_XAUTH" ]]; then
+        break
+      fi
+    done
+  fi
+  
+  # Copiar .Xauthority si existe
   if [[ -f "$STATE_XAUTH" ]]; then
     cp -f "$STATE_XAUTH" "$HOME_XAUTH"
     chown "$USER_NAME:$USER_NAME" "$HOME_XAUTH"
     chmod 600 "$HOME_XAUTH"
-    log_ok "XAUTHORITY actualizado después de reiniciar Xorg"
+    log_ok "XAUTHORITY copiado a ${HOME_XAUTH}"
+  else
+    log_warn "XAUTHORITY aún no existe en ${STATE_XAUTH} (puede tardar unos segundos más)"
   fi
 else
-  log_error "No se pudo reiniciar pantalla-xorg@${USER_NAME}.service"
-  SUMMARY+=('[install] ERROR: fallo al reiniciar pantalla-xorg')
+  log_error "ERROR: pantalla-xorg@${USER_NAME}.service NO está activo"
+  log_error "Logs del servicio:"
+  journalctl -u "$XORG_SERVICE_INSTANCE" -n 50 --no-pager | sed 's/^/  /' || true
+  SUMMARY+=('[install] ERROR: pantalla-xorg no está activo')
 fi
 
 if stat_output=$(stat -c '%U:%G %a %n' /var/lib/pantalla-reloj/.Xauthority 2>/dev/null); then
