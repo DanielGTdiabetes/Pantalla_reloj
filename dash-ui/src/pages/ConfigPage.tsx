@@ -113,6 +113,7 @@ export const ConfigPage: React.FC = () => {
   const [calendarPreview, setCalendarPreview] = useState<CalendarPreviewItem[] | null>(null);
   const [calendarPreviewLoading, setCalendarPreviewLoading] = useState(false);
   const [calendarUploading, setCalendarUploading] = useState(false);
+  const [calendarUploadProgress, setCalendarUploadProgress] = useState<number>(0);
   const [calendarUrlLoading, setCalendarUrlLoading] = useState(false);
   const [newsFeedsTestResult, setNewsFeedsTestResult] = useState<NewsFeedTestResult[] | null>(null);
   const [newsFeedsTesting, setNewsFeedsTesting] = useState(false);
@@ -562,24 +563,26 @@ export const ConfigPage: React.FC = () => {
     
     setMapAndLayersSaving(true);
     try {
-      // Guardar configuración de vuelos
+      // Guardar configuración de vuelos usando saveConfigGroup (deep-merge)
       if (config.layers?.flights) {
         await saveConfigGroup("layers.flights", config.layers.flights);
       }
       
-      // Guardar configuración de barcos
+      // Guardar configuración de barcos usando saveConfigGroup (deep-merge)
       if (config.layers?.ships) {
         await saveConfigGroup("layers.ships", config.layers.ships);
       }
       
-      // Guardar el resto de la configuración
-      const configToSave: AppConfigV2 = {
-        ...config,
-        ui_map: config.ui_map,
-        ui_global: config.ui_global,
-      };
+      // Guardar ui_map usando saveConfigGroup (deep-merge, no borra claves fuera del sub-árbol)
+      if (config.ui_map) {
+        await saveConfigGroup("ui_map", config.ui_map);
+      }
       
-      await saveConfigV2(configToSave);
+      // Guardar ui_global usando saveConfigGroup (deep-merge, no borra claves fuera del sub-árbol)
+      if (config.ui_global) {
+        await saveConfigGroup("ui_global", config.ui_global);
+      }
+      
       alert("Configuración de Mapas y Capas guardada correctamente");
       
       // Recargar config
@@ -754,26 +757,54 @@ export const ConfigPage: React.FC = () => {
     }
   };
 
+  const [calendarUploadProgress, setCalendarUploadProgress] = useState<number>(0);
+  
   const handleUploadICS = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
     
     setCalendarUploading(true);
+    setCalendarUploadProgress(0);
+    setCalendarTestResult(null);
+    
     try {
+      // Validar tipo de archivo
+      if (!file.name.toLowerCase().endsWith('.ics') && !file.type.includes('calendar')) {
+        setCalendarTestResult({ 
+          ok: false, 
+          reason: "invalid_file_type",
+          message: "El archivo debe ser un archivo ICS (.ics)"
+        });
+        return;
+      }
+      
+      // Simular progress (el backend no tiene progress real, pero podemos mostrar feedback)
+      setCalendarUploadProgress(10);
+      
       const result = await uploadCalendarICS(file);
+      
+      setCalendarUploadProgress(90);
+      
       if (result.ok) {
-        // Recargar config para reflejar cambios
+        // Recargar config para reflejar cambios (preserva configuración anterior)
         const loadedConfig = await getConfigV2();
         setConfig(withConfigDefaultsV2(loadedConfig));
+        
+        setCalendarUploadProgress(100);
         
         // Mostrar mensaje de éxito con eventos parseados
         setCalendarTestResult({ 
           ok: true, 
-          message: `Archivo subido correctamente. ${result.events_parsed || 0} eventos encontrados (rango: ${result.range_days || 14} días).` 
+          message: `Archivo ICS subido correctamente. ${result.events_parsed || 0} eventos encontrados (rango: ${result.range_days || 14} días).`,
+          source: "ics",
+          count: result.events_parsed || 0,
+          range_days: result.range_days || 14
         });
         
-        // Cargar preview
-        await handleLoadCalendarPreview();
+        // Cargar preview después de un breve delay para mostrar el resultado
+        setTimeout(async () => {
+          await handleLoadCalendarPreview();
+        }, 500);
       } else {
         setCalendarTestResult({ 
           ok: false, 
@@ -782,10 +813,18 @@ export const ConfigPage: React.FC = () => {
         });
       }
     } catch (error) {
-      setCalendarTestResult({ ok: false, reason: "upload_error", message: String(error) });
+      setCalendarTestResult({ 
+        ok: false, 
+        reason: "upload_error", 
+        message: error instanceof Error ? error.message : String(error)
+      });
       console.error("Error uploading ICS:", error);
     } finally {
       setCalendarUploading(false);
+      // Resetear progress después de un breve delay
+      setTimeout(() => {
+        setCalendarUploadProgress(0);
+      }, 1000);
       // Resetear input
       event.target.value = "";
     }
@@ -878,16 +917,16 @@ export const ConfigPage: React.FC = () => {
     
     setPanelRotatorSaving(true);
     try {
-      const configToSave: AppConfigV2 = {
-        ...config,
-        panels: config.panels,
-        ui_global: {
-          ...config.ui_global,
-          overlay: config.ui_global?.overlay,
-        },
-      };
+      // Guardar panels usando saveConfigGroup (deep-merge, no borra claves fuera del sub-árbol)
+      if (config.panels) {
+        await saveConfigGroup("panels", config.panels);
+      }
       
-      await saveConfigV2(configToSave);
+      // Guardar ui_global usando saveConfigGroup (deep-merge, no borra claves fuera del sub-árbol)
+      if (config.ui_global) {
+        await saveConfigGroup("ui_global", config.ui_global);
+      }
+      
       alert("Configuración del Panel Rotativo guardada correctamente");
     } catch (error) {
       console.error("Error saving panel rotator:", error);
@@ -2456,23 +2495,35 @@ export const ConfigPage: React.FC = () => {
                       style={{ marginTop: "8px" }}
                     >
                       {flightsTestResult.ok ? (
-                        <>
-                          ✓ {flightsTestResult.provider === "opensky" && flightsTestResult.auth === "oauth2" && (
-                            <>Token válido{flightsTestResult.expires_in && `, expira en ${Math.floor(flightsTestResult.expires_in / 60)} min`}</>
-                          )}
-                          {flightsTestResult.provider === "opensky" && flightsTestResult.auth === "basic" && "Credenciales válidas"}
-                          {flightsTestResult.provider === "aviationstack" && "API Key válida"}
-                          {flightsTestResult.provider === "custom" && "Conexión OK"}
-                        </>
-                      ) : (
-                        <>
-                          ✗ Error: {flightsTestResult.reason || "Desconocido"}
-                          {flightsTestResult.tip && (
-                            <div style={{ marginTop: "4px", fontSize: "0.875rem" }}>
-                              {flightsTestResult.tip}
+                        <div>
+                          <div style={{ fontWeight: 600, marginBottom: "4px" }}>
+                            ✓ {flightsTestResult.provider === "opensky" && flightsTestResult.auth === "oauth2" && "OpenSky: Token válido"}
+                            {flightsTestResult.provider === "opensky" && flightsTestResult.auth === "basic" && "OpenSky: Credenciales válidas"}
+                            {flightsTestResult.provider === "aviationstack" && "AviationStack: API Key válida"}
+                            {flightsTestResult.provider === "custom" && "Custom: Conexión OK"}
+                          </div>
+                          {flightsTestResult.expires_in !== undefined && (
+                            <div style={{ fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)", marginTop: "4px" }}>
+                              Token válido por {Math.floor(flightsTestResult.expires_in / 60)} minutos
                             </div>
                           )}
-                        </>
+                          {flightsTestResult.token_last4 && (
+                            <div style={{ fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)", marginTop: "4px" }}>
+                              Token: ...{flightsTestResult.token_last4}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div>
+                          <div style={{ fontWeight: 600, marginBottom: "4px" }}>
+                            ✗ Error: {flightsTestResult.reason || "Desconocido"}
+                          </div>
+                          {flightsTestResult.tip && (
+                            <div style={{ marginTop: "4px", fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)" }}>
+                              💡 {flightsTestResult.tip}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
@@ -2799,21 +2850,25 @@ export const ConfigPage: React.FC = () => {
                       style={{ marginTop: "8px" }}
                     >
                       {shipsTestResult.ok ? (
-                        <>
-                          ✓ {shipsTestResult.provider === "aisstream" && "API Key configurada"}
-                          {shipsTestResult.provider === "aishub" && "API Key válida"}
-                          {shipsTestResult.provider === "ais_generic" && "Conexión OK"}
-                          {shipsTestResult.provider === "custom" && "Conexión OK"}
-                        </>
+                        <div>
+                          <div style={{ fontWeight: 600 }}>
+                            ✓ {shipsTestResult.provider === "aisstream" && "AISStream: API Key configurada"}
+                            {shipsTestResult.provider === "aishub" && "AIS Hub: API Key válida"}
+                            {shipsTestResult.provider === "ais_generic" && "AIS Generic: Conexión OK"}
+                            {shipsTestResult.provider === "custom" && "Custom: Conexión OK"}
+                          </div>
+                        </div>
                       ) : (
-                        <>
-                          ✗ Error: {shipsTestResult.reason || "Desconocido"}
+                        <div>
+                          <div style={{ fontWeight: 600, marginBottom: "4px" }}>
+                            ✗ Error: {shipsTestResult.reason || "Desconocido"}
+                          </div>
                           {shipsTestResult.tip && (
-                            <div style={{ marginTop: "4px", fontSize: "0.875rem" }}>
-                              {shipsTestResult.tip}
+                            <div style={{ marginTop: "4px", fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)" }}>
+                              💡 {shipsTestResult.tip}
                             </div>
                           )}
-                        </>
+                        </div>
                       )}
                     </div>
                   )}
@@ -3152,13 +3207,43 @@ export const ConfigPage: React.FC = () => {
                             disabled={calendarUploading}
                             style={{ marginTop: "8px" }}
                           />
-                          {calendarUploading && <div style={{ marginTop: "4px", fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)" }}>Subiendo...</div>}
-                          {config.calendar?.ics?.file_path && (
+                          {calendarUploading && (
+                            <div style={{ marginTop: "8px" }}>
+                              <div style={{ fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)", marginBottom: "4px" }}>
+                                Subiendo archivo... {calendarUploadProgress > 0 && `${calendarUploadProgress}%`}
+                              </div>
+                              {calendarUploadProgress > 0 && (
+                                <div style={{ 
+                                  width: "100%", 
+                                  height: "4px", 
+                                  backgroundColor: "rgba(104, 162, 255, 0.2)", 
+                                  borderRadius: "2px",
+                                  overflow: "hidden"
+                                }}>
+                                  <div style={{ 
+                                    width: `${calendarUploadProgress}%`, 
+                                    height: "100%", 
+                                    backgroundColor: "rgba(104, 162, 255, 0.8)",
+                                    transition: "width 0.3s ease"
+                                  }} />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {!calendarUploading && config.calendar?.ics?.stored_path && (
                             <div style={{ marginTop: "8px", fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)" }}>
-                              Archivo: {config.calendar.ics.file_path.split("/").pop()}
-                              {config.calendar.ics.last_ok && (
-                                <span style={{ marginLeft: "8px" }}>
-                                  (Última carga: {new Date(config.calendar.ics.last_ok).toLocaleString()})
+                              <span className="config-badge config-badge--success" style={{ marginRight: "8px" }}>
+                                ✓ Archivo guardado
+                              </span>
+                              {config.calendar.ics.stored_path.split("/").pop()}
+                            </div>
+                          )}
+                          {calendarTestResult && calendarTestResult.ok && calendarTestResult.source === "ics" && (
+                            <div className="config-field__hint config-field__hint--success" style={{ marginTop: "8px" }}>
+                              ✓ {calendarTestResult.message}
+                              {calendarTestResult.count !== undefined && (
+                                <span className="config-badge" style={{ marginLeft: "8px" }}>
+                                  {calendarTestResult.count} eventos
                                 </span>
                               )}
                             </div>
@@ -3250,19 +3335,36 @@ export const ConfigPage: React.FC = () => {
                       className={`config-field__hint ${
                         calendarTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
                       }`}
-                      style={{ marginTop: "8px" }}
+                      style={{ marginTop: "8px", padding: "12px", borderRadius: "8px", border: calendarTestResult.ok ? "1px solid rgba(76, 175, 80, 0.3)" : "1px solid rgba(244, 67, 54, 0.3)" }}
                     >
                       {calendarTestResult.ok ? (
-                        <>
-                          ✓ {calendarTestResult.message || "Conexión exitosa"}
+                        <div>
+                          <div style={{ fontWeight: 600, marginBottom: "4px" }}>
+                            ✓ {calendarTestResult.message || "Conexión exitosa"}
+                          </div>
                           {calendarTestResult.count !== undefined && (
-                            <span className="config-badge" style={{ marginLeft: "8px" }}>
-                              {calendarTestResult.count} eventos
-                            </span>
+                            <div style={{ fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)", marginTop: "4px" }}>
+                              {calendarTestResult.count} eventos encontrados
+                              {calendarTestResult.range_days && ` (próximos ${calendarTestResult.range_days} días)`}
+                            </div>
                           )}
-                        </>
+                          {calendarTestResult.source && (
+                            <div style={{ fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)", marginTop: "4px" }}>
+                              Fuente: {calendarTestResult.source === "ics" ? "ICS" : calendarTestResult.source === "google" ? "Google Calendar" : calendarTestResult.source}
+                            </div>
+                          )}
+                        </div>
                       ) : (
-                        `✗ Error: ${calendarTestResult.reason || "Desconocido"}`
+                        <div>
+                          <div style={{ fontWeight: 600, marginBottom: "4px" }}>
+                            ✗ {calendarTestResult.message || calendarTestResult.reason || "Error desconocido"}
+                          </div>
+                          {calendarTestResult.reason && calendarTestResult.reason !== calendarTestResult.message && (
+                            <div style={{ fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)", marginTop: "4px" }}>
+                              Código: {calendarTestResult.reason}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
