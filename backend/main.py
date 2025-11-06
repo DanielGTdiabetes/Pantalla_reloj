@@ -771,7 +771,88 @@ def _read_config_v2() -> Tuple[AppConfigV2, bool]:
             if isinstance(secrets, dict):
                 if "aemet" not in secrets or not isinstance(secrets.get("aemet"), dict):
                     secrets["aemet"] = {}
+                
+                # Normalizar secrets.opensky
+                if "opensky" not in secrets or not isinstance(secrets.get("opensky"), dict):
+                    secrets["opensky"] = {
+                        "oauth2": {"client_id": None, "client_secret": None, "token_url": "https://auth.opensky-network.org/oauth/token", "scope": None},
+                        "basic": {"username": None, "password": None}
+                    }
+                else:
+                    opensky_secrets = secrets["opensky"]
+                    if "oauth2" not in opensky_secrets:
+                        opensky_secrets["oauth2"] = {"client_id": None, "client_secret": None, "token_url": "https://auth.opensky-network.org/oauth/token", "scope": None}
+                    if "basic" not in opensky_secrets:
+                        opensky_secrets["basic"] = {"username": None, "password": None}
+                
+                # Migrar campos antiguos de opensky a secrets
+                # Si hay username/password en layers.flights.opensky, moverlos a secrets
+                layers = config_data.get("layers", {})
+                if isinstance(layers, dict):
+                    flights = layers.get("flights", {})
+                    if isinstance(flights, dict):
+                        opensky_cfg = flights.get("opensky", {})
+                        if isinstance(opensky_cfg, dict):
+                            # Migrar username/password a secrets.opensky.basic
+                            if "username" in opensky_cfg or "password" in opensky_cfg:
+                                username = opensky_cfg.pop("username", None)
+                                password = opensky_cfg.pop("password", None)
+                                if username or password:
+                                    if not secrets.get("opensky", {}).get("basic"):
+                                        secrets.setdefault("opensky", {}).setdefault("basic", {})
+                                    secrets["opensky"]["basic"]["username"] = username
+                                    secrets["opensky"]["basic"]["password"] = password
+                                    # Guardar en secret_store también
+                                    if username:
+                                        secret_store.set_secret("opensky_username", username)
+                                    if password:
+                                        secret_store.set_secret("opensky_password", password)
+                                    logger.info("Migrated opensky username/password to secrets")
+                
+                # Añadir nuevos secretos si no existen
+                if "aviationstack" not in secrets:
+                    secrets["aviationstack"] = {"api_key": None}
+                if "aisstream" not in secrets:
+                    secrets["aisstream"] = {"api_key": None}
+                if "aishub" not in secrets:
+                    secrets["aishub"] = {"api_key": None}
+                
                 config_data["secrets"] = secrets
+            
+            # Normalizar layers.flights
+            layers = config_data.get("layers", {})
+            if isinstance(layers, dict):
+                flights = layers.get("flights", {})
+                if isinstance(flights, dict):
+                    # Asegurar bloques de proveedor
+                    if "opensky" not in flights:
+                        flights["opensky"] = {
+                            "mode": "oauth2",
+                            "bbox": {"lamin": 39.5, "lamax": 41.0, "lomin": -1.0, "lomax": 1.5},
+                            "extended": 0
+                        }
+                    if "aviationstack" not in flights:
+                        flights["aviationstack"] = {"base_url": "http://api.aviationstack.com/v1"}
+                    if "custom" not in flights:
+                        flights["custom"] = {"api_url": None, "api_key": None}
+                    layers["flights"] = flights
+                
+                # Normalizar layers.ships
+                ships = layers.get("ships", {})
+                if isinstance(ships, dict):
+                    if "aisstream" not in ships:
+                        ships["aisstream"] = {"ws_url": "wss://stream.aisstream.io/v0/stream"}
+                    if "aishub" not in ships:
+                        ships["aishub"] = {"base_url": "https://www.aishub.net/api"}
+                    if "ais_generic" not in ships:
+                        ships["ais_generic"] = {"api_url": None}
+                    if "custom" not in ships:
+                        ships["custom"] = {"api_url": None, "api_key": None}
+                    if "rate_limit_per_min" not in ships:
+                        ships["rate_limit_per_min"] = 4
+                    layers["ships"] = ships
+                
+                config_data["layers"] = layers
             
             # Migrar calendar config si existe
             calendar = config_data.get("calendar", {})
@@ -917,11 +998,15 @@ _ALLOWED_SECRET_KEYS = {
     "aemet_api_key",
     "opensky_client_id",
     "opensky_client_secret",
+    "opensky_username",
+    "opensky_password",
     # Compat (schema usa una sola 's')
     "aistream_api_key",
     # Canónica utilizada por servicios internos
     "aisstream_api_key",
     "openweathermap_api_key",
+    "aviationstack_api_key",
+    "aishub_api_key",
 }
 
 def _canonical_secret_key(key: str) -> str:
@@ -3322,9 +3407,10 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
     """
     Guarda un grupo específico de configuración.
     Hace deep-merge solo del subobjeto del grupo.
+    Soporta grupos anidados como "layers.flights" o "layers.ships".
     
     Args:
-        group_name: Nombre del grupo (map, aemet, weather, etc.)
+        group_name: Nombre del grupo (map, aemet, weather, layers.flights, layers.ships, secrets, etc.)
         request: Request con el payload JSON del grupo
         
     Returns:
@@ -3354,8 +3440,80 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
         logger.error("[config] Failed to read current config: %s", e)
         raise HTTPException(status_code=500, detail=f"Failed to read config: {str(e)}")
     
-    # Hacer deep-merge solo del grupo
-    merged_config = deep_merge(current_config, {group_name: payload})
+    # Manejar secrets de forma especial (no se guardan en config, solo en secret_store)
+    if group_name == "secrets":
+        # Guardar secrets en secret_store
+        try:
+            # opensky.oauth2
+            if "opensky" in payload and isinstance(payload["opensky"], dict):
+                opensky = payload["opensky"]
+                if "oauth2" in opensky and isinstance(opensky["oauth2"], dict):
+                    oauth2 = opensky["oauth2"]
+                    if "client_id" in oauth2:
+                        secret_store.set_secret("opensky_client_id", _sanitize_secret(oauth2["client_id"]))
+                    if "client_secret" in oauth2:
+                        secret_store.set_secret("opensky_client_secret", _sanitize_secret(oauth2["client_secret"]))
+                if "basic" in opensky and isinstance(opensky["basic"], dict):
+                    basic = opensky["basic"]
+                    if "username" in basic:
+                        secret_store.set_secret("opensky_username", _sanitize_secret(basic["username"]))
+                    if "password" in basic:
+                        secret_store.set_secret("opensky_password", _sanitize_secret(basic["password"]))
+            
+            # aviationstack
+            if "aviationstack" in payload and isinstance(payload["aviationstack"], dict):
+                if "api_key" in payload["aviationstack"]:
+                    secret_store.set_secret("aviationstack_api_key", _sanitize_secret(payload["aviationstack"]["api_key"]))
+            
+            # aisstream
+            if "aisstream" in payload and isinstance(payload["aisstream"], dict):
+                if "api_key" in payload["aisstream"]:
+                    secret_store.set_secret("aisstream_api_key", _sanitize_secret(payload["aisstream"]["api_key"]))
+            
+            # aishub
+            if "aishub" in payload and isinstance(payload["aishub"], dict):
+                if "api_key" in payload["aishub"]:
+                    secret_store.set_secret("aishub_api_key", _sanitize_secret(payload["aishub"]["api_key"]))
+            
+            logger.info("[secrets] Updated secrets via PATCH /api/config/group/secrets")
+        except Exception as secret_exc:
+            logger.warning("[secrets] Error updating secrets: %s", secret_exc)
+        
+        # Para secrets, no hacer merge en config, solo actualizar metadata
+        # Los valores reales nunca se guardan en config
+        if "secrets" not in current_config:
+            current_config["secrets"] = {}
+        secrets_meta = current_config["secrets"]
+        # Actualizar solo metadata (sin valores)
+        for key in payload:
+            if key not in secrets_meta:
+                secrets_meta[key] = {}
+            if isinstance(payload[key], dict) and isinstance(secrets_meta[key], dict):
+                for subkey in payload[key]:
+                    if isinstance(payload[key][subkey], dict):
+                        if subkey not in secrets_meta[key]:
+                            secrets_meta[key][subkey] = {}
+                        # Solo actualizar keys que no son valores sensibles
+                        for meta_key in payload[key][subkey]:
+                            if meta_key not in ["client_id", "client_secret", "username", "password", "api_key"]:
+                                secrets_meta[key][subkey][meta_key] = payload[key][subkey][meta_key]
+                    elif subkey not in ["client_id", "client_secret", "username", "password", "api_key"]:
+                        secrets_meta[key][subkey] = payload[key][subkey]
+        merged_config = current_config
+    else:
+        # Manejar grupos anidados (ej: "layers.flights", "layers.ships")
+        if "." in group_name:
+            parts = group_name.split(".")
+            if len(parts) != 2:
+                raise HTTPException(status_code=400, detail=f"Invalid nested group name: {group_name}")
+            parent_key, child_key = parts
+            # Construir estructura anidada para el merge
+            merge_payload = {parent_key: {child_key: payload}}
+        else:
+            merge_payload = {group_name: payload}
+        
+        # Hacer deep-merge solo del grupo
+        merged_config = deep_merge(current_config, merge_payload)
     
     # Sanitizar antes de validar (migra valores legacy/inválidos)
     sanitized_config = sanitize_config(merged_config)
@@ -7450,6 +7608,528 @@ def _augment_flights_payload(payload: Dict[str, Any], metadata: Dict[str, Any]) 
         combined_meta.update(existing_meta)
     combined_meta.update(metadata)
     payload["meta"] = combined_meta
+
+
+@app.post("/api/flights/test")
+async def test_flights() -> Dict[str, Any]:
+    """
+    Test de conexión para el proveedor de vuelos configurado.
+    Lee layers.flights.provider y prueba la conexión según el proveedor.
+    """
+    try:
+        config_v2, _ = _read_config_v2()
+        flights_config = config_v2.layers.flights if config_v2.layers else None
+        
+        if not flights_config or not flights_config.enabled:
+            return {
+                "ok": False,
+                "reason": "layer_disabled",
+                "tip": "Habilita la capa de vuelos primero"
+            }
+        
+        provider = flights_config.provider
+        
+        # OpenSky
+        if provider == "opensky":
+            opensky_cfg = flights_config.opensky
+            if not opensky_cfg:
+                return {
+                    "ok": False,
+                    "reason": "opensky_config_missing",
+                    "tip": "Configura OpenSky en layers.flights.opensky"
+                }
+            
+            mode = opensky_cfg.mode if opensky_cfg.mode else "oauth2"
+            
+            if mode == "oauth2":
+                client_id = secret_store.get_secret("opensky_client_id")
+                client_secret = secret_store.get_secret("opensky_client_secret")
+                
+                if not client_id or not client_secret:
+                    return {
+                        "ok": False,
+                        "reason": "missing_credentials",
+                        "tip": "Configura client_id y client_secret en secrets.opensky.oauth2"
+                    }
+                
+                # Intentar obtener token
+                try:
+                    token_url = opensky_cfg.token_url if opensky_cfg.token_url else "https://auth.opensky-network.org/oauth/token"
+                    
+                    import httpx
+                    timeout = httpx.Timeout(5.0, connect=5.0, read=5.0)
+                    with httpx.Client(timeout=timeout) as client:
+                        response = client.post(
+                            token_url,
+                            data={
+                                "grant_type": "client_credentials",
+                                "client_id": client_id,
+                                "client_secret": client_secret,
+                            }
+                        )
+                        
+                        if response.status_code in [401, 403]:
+                            return {
+                                "ok": False,
+                                "reason": "invalid_credentials",
+                                "tip": "Las credenciales OAuth2 son inválidas"
+                            }
+                        
+                        if response.status_code >= 400:
+                            return {
+                                "ok": False,
+                                "reason": f"auth_error_{response.status_code}",
+                                "tip": f"Error al autenticar: HTTP {response.status_code}"
+                            }
+                        
+                        token_data = response.json()
+                        token = token_data.get("access_token")
+                        expires_in = token_data.get("expires_in", 0)
+                        
+                        if not token:
+                            return {
+                                "ok": False,
+                                "reason": "invalid_token_response",
+                                "tip": "No se recibió token válido"
+                            }
+                        
+                        return {
+                            "ok": True,
+                            "provider": "opensky",
+                            "auth": "oauth2",
+                            "token_last4": token[-4:] if len(token) >= 4 else token,
+                            "expires_in": expires_in
+                        }
+                except Exception as exc:
+                    return {
+                        "ok": False,
+                        "reason": "connection_error",
+                        "tip": f"Error de conexión: {str(exc)}"
+                    }
+            
+            elif mode == "basic":
+                username = secret_store.get_secret("opensky_username")
+                password = secret_store.get_secret("opensky_password")
+                
+                if not username or not password:
+                    return {
+                        "ok": False,
+                        "reason": "missing_credentials",
+                        "tip": "Configura username y password en secrets.opensky.basic"
+                    }
+                
+                # Test básico con credenciales
+                try:
+                    bbox = opensky_cfg.bbox
+                    if bbox:
+                        params = {
+                            "lamin": bbox.lamin,
+                            "lamax": bbox.lamax,
+                            "lomin": bbox.lomin,
+                            "lomax": bbox.lomax
+                        }
+                    else:
+                        params = {"lamin": 39.5, "lamax": 41.0, "lomin": -1.0, "lomax": 1.5}
+                    
+                    response = requests.get(
+                        "https://opensky-network.org/api/states/all",
+                        params=params,
+                        auth=(username, password),
+                        timeout=5
+                    )
+                    
+                    if response.status_code == 401:
+                        return {
+                            "ok": False,
+                            "reason": "invalid_credentials",
+                            "tip": "Las credenciales básicas son inválidas"
+                        }
+                    
+                    if response.status_code >= 400:
+                        return {
+                            "ok": False,
+                            "reason": f"http_error_{response.status_code}",
+                            "tip": f"Error HTTP: {response.status_code}"
+                        }
+                    
+                    return {
+                        "ok": True,
+                        "provider": "opensky",
+                        "auth": "basic",
+                        "detail": "auth_ok"
+                    }
+                except Exception as exc:
+                    return {
+                        "ok": False,
+                        "reason": "connection_error",
+                        "tip": f"Error de conexión: {str(exc)}"
+                    }
+        
+        # AviationStack
+        elif provider == "aviationstack":
+            api_key = secret_store.get_secret("aviationstack_api_key")
+            
+            if not api_key:
+                return {
+                    "ok": False,
+                    "reason": "missing_api_key",
+                    "tip": "Configura api_key en secrets.aviationstack"
+                }
+            
+            try:
+                base_url = flights_config.aviationstack.base_url if flights_config.aviationstack else "http://api.aviationstack.com/v1"
+                response = requests.get(
+                    f"{base_url}/flights",
+                    params={"access_key": api_key, "limit": 1},
+                    timeout=5
+                )
+                
+                if response.status_code in [401, 403]:
+                    return {
+                        "ok": False,
+                        "reason": "invalid_api_key",
+                        "tip": "La API key de AviationStack es inválida"
+                    }
+                
+                if response.status_code >= 400:
+                    return {
+                        "ok": False,
+                        "reason": f"http_error_{response.status_code}",
+                        "tip": f"Error HTTP: {response.status_code}"
+                    }
+                
+                return {
+                    "ok": True,
+                    "provider": "aviationstack",
+                    "detail": "auth_ok"
+                }
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "reason": "connection_error",
+                    "tip": f"Error de conexión: {str(exc)}"
+                }
+        
+        # Custom
+        elif provider == "custom":
+            custom_cfg = flights_config.custom
+            if not custom_cfg or not custom_cfg.api_url:
+                return {
+                    "ok": False,
+                    "reason": "missing_api_url",
+                    "tip": "Configura api_url en layers.flights.custom"
+                }
+            
+            try:
+                api_url = custom_cfg.api_url
+                api_key = custom_cfg.api_key or secret_store.get_secret("custom_flights_api_key")
+                
+                # Intentar GET /health o endpoint básico
+                test_url = f"{api_url.rstrip('/')}/health" if not api_url.endswith('/health') else api_url
+                headers = {}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
+                
+                response = requests.get(test_url, headers=headers, timeout=5)
+                
+                if response.status_code >= 400:
+                    # Intentar con ?limit=1
+                    test_url2 = f"{api_url.rstrip('/')}?limit=1"
+                    response2 = requests.get(test_url2, headers=headers, timeout=5)
+                    if response2.status_code >= 400:
+                        return {
+                            "ok": False,
+                            "reason": f"http_error_{response2.status_code}",
+                            "tip": f"Error HTTP: {response2.status_code}"
+                        }
+                
+                return {
+                    "ok": True,
+                    "provider": "custom",
+                    "detail": "connection_ok"
+                }
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "reason": "connection_error",
+                    "tip": f"Error de conexión: {str(exc)}"
+                }
+        
+        else:
+            return {
+                "ok": False,
+                "reason": "unknown_provider",
+                "tip": f"Proveedor desconocido: {provider}"
+            }
+    
+    except Exception as exc:
+        logger.exception("[test] Error in test_flights")
+        return {
+            "ok": False,
+            "reason": "internal_error",
+            "tip": f"Error interno: {str(exc)}"
+        }
+
+
+@app.post("/api/ships/test")
+async def test_ships() -> Dict[str, Any]:
+    """
+    Test de conexión para el proveedor de barcos configurado.
+    Lee layers.ships.provider y prueba la conexión según el proveedor.
+    """
+    try:
+        config_v2, _ = _read_config_v2()
+        ships_config = config_v2.layers.ships if config_v2.layers else None
+        
+        if not ships_config or not ships_config.enabled:
+            return {
+                "ok": False,
+                "reason": "layer_disabled",
+                "tip": "Habilita la capa de barcos primero"
+            }
+        
+        provider = ships_config.provider
+        
+        # AISStream
+        if provider == "aisstream":
+            api_key = secret_store.get_secret("aisstream_api_key")
+            
+            if not api_key:
+                return {
+                    "ok": False,
+                    "reason": "missing_api_key",
+                    "tip": "Configura api_key en secrets.aisstream"
+                }
+            
+            try:
+                ws_url = ships_config.aisstream.ws_url if ships_config.aisstream else "wss://stream.aisstream.io/v0/stream"
+                
+                # Intentar conexión HTTP para verificar autenticación (no WebSocket completo)
+                # AISStream normalmente requiere WebSocket, pero podemos verificar la API key
+                # haciendo una petición HTTP a un endpoint de verificación si existe
+                # Por ahora, solo verificamos que la URL sea válida y que tengamos API key
+                if not ws_url or not ws_url.startswith("wss://"):
+                    return {
+                        "ok": False,
+                        "reason": "invalid_ws_url",
+                        "tip": "La URL WebSocket debe ser válida (wss://...)"
+                    }
+                
+                # Para AISStream, la verificación real requiere WebSocket, pero podemos
+                # hacer una verificación básica de formato
+                return {
+                    "ok": True,
+                    "provider": "aisstream",
+                    "detail": "api_key_configured",
+                    "tip": "La API key está configurada. La conexión WebSocket se establecerá automáticamente."
+                }
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "reason": "configuration_error",
+                    "tip": f"Error de configuración: {str(exc)}"
+                }
+        
+        # AIS Hub
+        elif provider == "aishub":
+            api_key = secret_store.get_secret("aishub_api_key")
+            
+            if not api_key:
+                return {
+                    "ok": False,
+                    "reason": "missing_api_key",
+                    "tip": "Configura api_key en secrets.aishub"
+                }
+            
+            try:
+                base_url = ships_config.aishub.base_url if ships_config.aishub else "https://www.aishub.net/api"
+                response = requests.get(
+                    f"{base_url}/",
+                    params={"username": api_key, "format": "json", "latmin": 39.5, "latmax": 41.0, "lonmin": -1.0, "lonmax": 1.5},
+                    timeout=5
+                )
+                
+                if response.status_code in [401, 403]:
+                    return {
+                        "ok": False,
+                        "reason": "invalid_api_key",
+                        "tip": "La API key de AIS Hub es inválida"
+                    }
+                
+                if response.status_code >= 400:
+                    return {
+                        "ok": False,
+                        "reason": f"http_error_{response.status_code}",
+                        "tip": f"Error HTTP: {response.status_code}"
+                    }
+                
+                return {
+                    "ok": True,
+                    "provider": "aishub",
+                    "detail": "auth_ok"
+                }
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "reason": "connection_error",
+                    "tip": f"Error de conexión: {str(exc)}"
+                }
+        
+        # AIS Generic / Custom
+        elif provider in ["ais_generic", "custom"]:
+            if provider == "ais_generic":
+                cfg = ships_config.ais_generic
+            else:
+                cfg = ships_config.custom
+            
+            if not cfg or not cfg.api_url:
+                return {
+                    "ok": False,
+                    "reason": "missing_api_url",
+                    "tip": f"Configura api_url en layers.ships.{provider}"
+                }
+            
+            try:
+                api_url = cfg.api_url
+                api_key = None
+                if provider == "custom" and cfg.api_key:
+                    api_key = cfg.api_key
+                
+                # Intentar GET /health o endpoint básico
+                test_url = f"{api_url.rstrip('/')}/health" if not api_url.endswith('/health') else api_url
+                headers = {}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
+                
+                response = requests.get(test_url, headers=headers, timeout=5)
+                
+                if response.status_code >= 400:
+                    # Intentar endpoint raíz
+                    test_url2 = api_url.rstrip('/')
+                    response2 = requests.get(test_url2, headers=headers, timeout=5)
+                    if response2.status_code >= 400:
+                        return {
+                            "ok": False,
+                            "reason": f"http_error_{response2.status_code}",
+                            "tip": f"Error HTTP: {response2.status_code}"
+                        }
+                
+                return {
+                    "ok": True,
+                    "provider": provider,
+                    "detail": "connection_ok"
+                }
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "reason": "connection_error",
+                    "tip": f"Error de conexión: {str(exc)}"
+                }
+        
+        else:
+            return {
+                "ok": False,
+                "reason": "unknown_provider",
+                "tip": f"Proveedor desconocido: {provider}"
+            }
+    
+    except Exception as exc:
+        logger.exception("[test] Error in test_ships")
+        return {
+            "ok": False,
+            "reason": "internal_error",
+            "tip": f"Error interno: {str(exc)}"
+        }
+
+
+@app.get("/api/flights/preview")
+async def get_flights_preview(limit: int = 20) -> Dict[str, Any]:
+    """Obtiene una vista previa de vuelos desde la caché si está activa la capa."""
+    try:
+        config_v2, _ = _read_config_v2()
+        flights_config = config_v2.layers.flights if config_v2.layers else None
+        
+        if not flights_config or not flights_config.enabled:
+            return {
+                "ok": False,
+                "reason": "layer_disabled",
+                "count": 0,
+                "items": []
+            }
+        
+        # Intentar obtener datos desde opensky_service si está disponible
+        try:
+            snapshot = opensky_service.get_last_snapshot()
+            if snapshot and snapshot.payload:
+                items = snapshot.payload.get("items", [])
+                limited_items = items[:limit] if items else []
+                return {
+                    "ok": True,
+                    "count": len(limited_items),
+                    "total": len(items),
+                    "items": limited_items
+                }
+        except Exception:
+            pass
+        
+        return {
+            "ok": True,
+            "count": 0,
+            "items": []
+        }
+    except Exception as exc:
+        logger.exception("[preview] Error in get_flights_preview")
+        return {
+            "ok": False,
+            "reason": "internal_error",
+            "count": 0,
+            "items": []
+        }
+
+
+@app.get("/api/ships/preview")
+async def get_ships_preview(limit: int = 20) -> Dict[str, Any]:
+    """Obtiene una vista previa de barcos desde la caché si está activa la capa."""
+    try:
+        config_v2, _ = _read_config_v2()
+        ships_config = config_v2.layers.ships if config_v2.layers else None
+        
+        if not ships_config or not ships_config.enabled:
+            return {
+                "ok": False,
+                "reason": "layer_disabled",
+                "count": 0,
+                "items": []
+            }
+        
+        # Intentar obtener datos desde cache_store
+        try:
+            cached_ships = cache_store.load("ships", max_age_minutes=None)
+            if cached_ships and cached_ships.payload:
+                features = cached_ships.payload.get("features", [])
+                limited_features = features[:limit] if features else []
+                return {
+                    "ok": True,
+                    "count": len(limited_features),
+                    "total": len(features),
+                    "items": limited_features
+                }
+        except Exception:
+            pass
+        
+        return {
+            "ok": True,
+            "count": 0,
+            "items": []
+        }
+    except Exception as exc:
+        logger.exception("[preview] Error in get_ships_preview")
+        return {
+            "ok": False,
+            "reason": "internal_error",
+            "count": 0,
+            "items": []
+        }
 
 
 @app.get("/api/layers/flights")

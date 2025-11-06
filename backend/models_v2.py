@@ -133,6 +133,34 @@ class FlightsLayerCircleConfig(BaseModel):
     stroke_width: float = Field(default=2.0, ge=0, le=10)
 
 
+class OpenSkyBBoxConfig(BaseModel):
+    """Configuración de bounding box para OpenSky."""
+    lamin: float = Field(default=39.5, ge=-90, le=90)
+    lamax: float = Field(default=41.0, ge=-90, le=90)
+    lomin: float = Field(default=-1.0, ge=-180, le=180)
+    lomax: float = Field(default=1.5, ge=-180, le=180)
+
+
+class OpenSkyProviderConfig(BaseModel):
+    """Configuración específica del proveedor OpenSky."""
+    mode: Literal["oauth2", "basic"] = Field(default="oauth2")
+    bbox: Optional[OpenSkyBBoxConfig] = None
+    extended: int = Field(default=0, ge=0, le=1)
+    token_url: Optional[str] = Field(default=None, max_length=512)
+    scope: Optional[str] = Field(default=None, max_length=256)
+
+
+class AviationStackProviderConfig(BaseModel):
+    """Configuración específica del proveedor AviationStack."""
+    base_url: str = Field(default="http://api.aviationstack.com/v1", max_length=512)
+
+
+class CustomFlightProviderConfig(BaseModel):
+    """Configuración específica del proveedor personalizado de vuelos."""
+    api_url: Optional[str] = Field(default=None, max_length=512)
+    api_key: Optional[str] = Field(default=None, max_length=512)
+
+
 class FlightsLayerConfig(BaseModel):
     """Configuración de capa de vuelos v2."""
     enabled: bool = True
@@ -147,6 +175,30 @@ class FlightsLayerConfig(BaseModel):
     styleScale: float = Field(default=3.2, ge=0.1, le=10)
     render_mode: Literal["circle", "symbol", "symbol_custom", "auto"] = "circle"
     circle: Optional[FlightsLayerCircleConfig] = None
+    opensky: Optional[OpenSkyProviderConfig] = None
+    aviationstack: Optional[AviationStackProviderConfig] = None
+    custom: Optional[CustomFlightProviderConfig] = None
+
+
+class AISStreamProviderConfig(BaseModel):
+    """Configuración específica del proveedor AISStream."""
+    ws_url: str = Field(default="wss://stream.aisstream.io/v0/stream", max_length=512)
+
+
+class AISHubProviderConfig(BaseModel):
+    """Configuración específica del proveedor AIS Hub."""
+    base_url: str = Field(default="https://www.aishub.net/api", max_length=512)
+
+
+class AISGenericProviderConfig(BaseModel):
+    """Configuración específica del proveedor AIS genérico."""
+    api_url: Optional[str] = Field(default=None, max_length=512)
+
+
+class CustomShipProviderConfig(BaseModel):
+    """Configuración específica del proveedor personalizado de barcos."""
+    api_url: Optional[str] = Field(default=None, max_length=512)
+    api_key: Optional[str] = Field(default=None, max_length=512)
 
 
 class ShipsLayerConfig(BaseModel):
@@ -157,9 +209,14 @@ class ShipsLayerConfig(BaseModel):
     max_age_seconds: int = Field(default=180, ge=10, le=600)
     max_items_global: int = Field(default=1500, ge=1, le=10000)
     max_items_view: int = Field(default=420, ge=1, le=5000)
+    rate_limit_per_min: int = Field(default=4, ge=1, le=60)
     decimate: Literal["grid", "none"] = "grid"
     grid_px: int = Field(default=24, ge=8, le=128)
     styleScale: float = Field(default=1.4, ge=0.1, le=10)
+    aisstream: Optional[AISStreamProviderConfig] = None
+    aishub: Optional[AISHubProviderConfig] = None
+    ais_generic: Optional[AISGenericProviderConfig] = None
+    custom: Optional[CustomShipProviderConfig] = None
 
 
 class LayersConfig(BaseModel):
@@ -266,12 +323,50 @@ class CalendarICSSecretsConfig(BaseModel):
     path: Optional[str] = Field(default=None, max_length=1024)
 
 
+class OpenSkyOAuth2SecretsConfig(BaseModel):
+    """Secrets OAuth2 para OpenSky."""
+    client_id: Optional[str] = Field(default=None, max_length=512)
+    client_secret: Optional[str] = Field(default=None, max_length=512)
+    token_url: Optional[str] = Field(default=None, max_length=512)
+    scope: Optional[str] = Field(default=None, max_length=256)
+
+
+class OpenSkyBasicSecretsConfig(BaseModel):
+    """Secrets Basic Auth para OpenSky."""
+    username: Optional[str] = Field(default=None, max_length=256)
+    password: Optional[str] = Field(default=None, max_length=256)
+
+
+class OpenSkySecretsConfig(BaseModel):
+    """Secrets para OpenSky (metadata only, no valores reales)."""
+    oauth2: Optional[OpenSkyOAuth2SecretsConfig] = None
+    basic: Optional[OpenSkyBasicSecretsConfig] = None
+
+
+class AviationStackSecretsConfig(BaseModel):
+    """Secrets para AviationStack (metadata only)."""
+    api_key: Optional[str] = Field(default=None, max_length=512)
+
+
+class AISStreamSecretsConfig(BaseModel):
+    """Secrets para AISStream (metadata only)."""
+    api_key: Optional[str] = Field(default=None, max_length=512)
+
+
+class AISHubSecretsConfig(BaseModel):
+    """Secrets para AIS Hub (metadata only)."""
+    api_key: Optional[str] = Field(default=None, max_length=512)
+
+
 class SecretsConfig(BaseModel):
     """Secrets (metadata only, no valores reales)."""
-    opensky: Optional[Dict[str, Any]] = None
+    opensky: Optional[OpenSkySecretsConfig] = None
     google: Optional[GoogleSecretsConfig] = None
     aemet: Optional[Dict[str, Any]] = None
     calendar_ics: Optional[CalendarICSSecretsConfig] = None
+    aviationstack: Optional[AviationStackSecretsConfig] = None
+    aisstream: Optional[AISStreamSecretsConfig] = None
+    aishub: Optional[AISHubSecretsConfig] = None
 
 
 class AppConfigV2(BaseModel):

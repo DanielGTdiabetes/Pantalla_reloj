@@ -76,6 +76,23 @@
         "color": "#FFD400",
         "stroke_color": "#000000",
         "stroke_width": 2.0
+      },
+      "opensky": {
+        "mode": "oauth2",
+        "bbox": {
+          "lamin": 39.5,
+          "lamax": 41.0,
+          "lomin": -1.0,
+          "lomax": 1.5
+        },
+        "extended": 0
+      },
+      "aviationstack": {
+        "base_url": "http://api.aviationstack.com/v1"
+      },
+      "custom": {
+        "api_url": null,
+        "api_key": null
       }
     },
     "ships": {
@@ -85,10 +102,24 @@
       "max_age_seconds": 180,
       "max_items_global": 1500,
       "max_items_view": 420,
+      "rate_limit_per_min": 4,
       "decimate": "grid",
       "grid_px": 24,
       "styleScale": 1.4,
-      "render_mode": "symbol_custom"
+      "render_mode": "symbol_custom",
+      "aisstream": {
+        "ws_url": "wss://stream.aisstream.io/v0/stream"
+      },
+      "aishub": {
+        "base_url": "https://www.aishub.net/api"
+      },
+      "ais_generic": {
+        "api_url": null
+      },
+      "custom": {
+        "api_url": null,
+        "api_key": null
+      }
     }
   },
   "panels": {
@@ -111,6 +142,18 @@
     }
   },
   "secrets": {
+    "opensky": {
+      "oauth2": {
+        "client_id": null,
+        "client_secret": null,
+        "token_url": "https://auth.opensky-network.org/oauth/token",
+        "scope": null
+      },
+      "basic": {
+        "username": null,
+        "password": null
+      }
+    },
     "google": {
       "api_key": null,
       "calendar_id": null
@@ -118,7 +161,16 @@
     "aemet": {
       "api_key": null
     },
-    "ics": {
+    "aviationstack": {
+      "api_key": null
+    },
+    "aisstream": {
+      "api_key": null
+    },
+    "aishub": {
+      "api_key": null
+    },
+    "calendar_ics": {
       "url": null,
       "path": null
     }

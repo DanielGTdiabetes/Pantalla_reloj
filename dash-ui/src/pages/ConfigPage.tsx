@@ -11,18 +11,22 @@ import {
   getRainViewerTileUrl,
   saveCalendarConfig,
   saveConfigV2,
+  saveConfigGroup,
   setCalendarICSUrl,
   testAemetApiKey,
   testCalendarConnection,
+  testFlights,
   testGIBS,
   testLightningMqtt,
   testLightningWs,
   testMapTiler,
   testNewsFeeds,
   testRainViewer,
+  testShips,
   testXyz,
-  uploadCalendarICS,
   updateAemetApiKey,
+  updateSecrets,
+  uploadCalendarICS,
   type CalendarPreviewItem,
   type NewsFeedTestResult,
   type WiFiNetwork,
@@ -32,7 +36,7 @@ import {
   wifiScan,
   wifiStatus,
 } from "../lib/api";
-import type { AppConfigV2 } from "../types/config_v2";
+import type { AppConfigV2, FlightsLayerConfigV2, ShipsLayerConfigV2 } from "../types/config_v2";
 
 export const ConfigPage: React.FC = () => {
   // Estado general
@@ -63,6 +67,23 @@ export const ConfigPage: React.FC = () => {
   const [aemetTesting, setAemetTesting] = useState(false);
   const [aemetApiKey, setAemetApiKey] = useState<string>("");
   const [openskyStatus, setOpenskyStatus] = useState<any>(null);
+  
+  // Flights test
+  const [flightsTestResult, setFlightsTestResult] = useState<{ ok: boolean; provider?: string; auth?: string; token_last4?: string; expires_in?: number; reason?: string; tip?: string } | null>(null);
+  const [flightsTesting, setFlightsTesting] = useState(false);
+  
+  // Ships test
+  const [shipsTestResult, setShipsTestResult] = useState<{ ok: boolean; provider?: string; reason?: string; tip?: string } | null>(null);
+  const [shipsTesting, setShipsTesting] = useState(false);
+  
+  // Secrets (local state for editing)
+  const [openskyOAuth2ClientId, setOpenskyOAuth2ClientId] = useState<string>("");
+  const [openskyOAuth2ClientSecret, setOpenskyOAuth2ClientSecret] = useState<string>("");
+  const [openskyBasicUsername, setOpenskyBasicUsername] = useState<string>("");
+  const [openskyBasicPassword, setOpenskyBasicPassword] = useState<string>("");
+  const [aviationstackApiKey, setAviationstackApiKey] = useState<string>("");
+  const [aisstreamApiKey, setAisstreamApiKey] = useState<string>("");
+  const [aishubApiKey, setAishubApiKey] = useState<string>("");
   
   // RainViewer
   const [rainviewerTestResult, setRainviewerTestResult] = useState<{ ok: boolean; frames_count?: number; reason?: string } | null>(null);
@@ -205,6 +226,48 @@ export const ConfigPage: React.FC = () => {
     } finally {
       setWifiSaving(false);
     }
+  };
+
+  // Helper functions to build complete config objects
+  const buildFlightsConfig = (updates?: Partial<FlightsLayerConfigV2>): FlightsLayerConfigV2 => {
+    const current = config?.layers?.flights;
+    return {
+      enabled: updates?.enabled !== undefined ? updates.enabled : (current?.enabled !== undefined ? current.enabled : true),
+      provider: updates?.provider ?? current?.provider ?? "opensky",
+      refresh_seconds: updates?.refresh_seconds ?? current?.refresh_seconds ?? 12,
+      max_age_seconds: updates?.max_age_seconds ?? current?.max_age_seconds ?? 120,
+      max_items_global: updates?.max_items_global ?? current?.max_items_global ?? 2000,
+      max_items_view: updates?.max_items_view ?? current?.max_items_view ?? 1500,
+      rate_limit_per_min: updates?.rate_limit_per_min ?? current?.rate_limit_per_min ?? 6,
+      decimate: updates?.decimate ?? current?.decimate ?? "none",
+      grid_px: updates?.grid_px ?? current?.grid_px ?? 24,
+      styleScale: updates?.styleScale ?? current?.styleScale ?? 3.2,
+      render_mode: updates?.render_mode ?? current?.render_mode ?? "circle",
+      circle: updates?.circle ?? current?.circle,
+      opensky: updates?.opensky ?? current?.opensky,
+      aviationstack: updates?.aviationstack ?? current?.aviationstack,
+      custom: updates?.custom ?? current?.custom,
+    };
+  };
+
+  const buildShipsConfig = (updates?: Partial<ShipsLayerConfigV2>): ShipsLayerConfigV2 => {
+    const current = config?.layers?.ships;
+    return {
+      enabled: updates?.enabled !== undefined ? updates.enabled : (current?.enabled !== undefined ? current.enabled : false),
+      provider: updates?.provider ?? current?.provider ?? "aisstream",
+      refresh_seconds: updates?.refresh_seconds ?? current?.refresh_seconds ?? 10,
+      max_age_seconds: updates?.max_age_seconds ?? current?.max_age_seconds ?? 180,
+      max_items_global: updates?.max_items_global ?? current?.max_items_global ?? 1500,
+      max_items_view: updates?.max_items_view ?? current?.max_items_view ?? 420,
+      rate_limit_per_min: updates?.rate_limit_per_min ?? current?.rate_limit_per_min ?? 4,
+      decimate: updates?.decimate ?? current?.decimate ?? "grid",
+      grid_px: updates?.grid_px ?? current?.grid_px ?? 24,
+      styleScale: updates?.styleScale ?? current?.styleScale ?? 3.2,
+      aisstream: updates?.aisstream ?? current?.aisstream,
+      aishub: updates?.aishub ?? current?.aishub,
+      ais_generic: updates?.ais_generic ?? current?.ais_generic,
+      custom: updates?.custom ?? current?.custom,
+    };
   };
 
   // ===== GRUPO 2: Mapas y Capas =====
@@ -385,20 +448,143 @@ export const ConfigPage: React.FC = () => {
     }
   };
 
+  const handleTestFlights = async () => {
+    if (!config) return;
+    
+    setFlightsTesting(true);
+    setFlightsTestResult(null);
+    
+    try {
+      // Primero guardar configuración si hay cambios
+      if (config.layers?.flights) {
+        await saveConfigGroup("layers.flights", config.layers.flights);
+      }
+      
+      const result = await testFlights();
+      setFlightsTestResult(result);
+    } catch (error) {
+      setFlightsTestResult({ ok: false, reason: "connection_error", tip: String(error) });
+      console.error("Error testing flights:", error);
+    } finally {
+      setFlightsTesting(false);
+    }
+  };
+
+  const handleTestShips = async () => {
+    if (!config) return;
+    
+    setShipsTesting(true);
+    setShipsTestResult(null);
+    
+    try {
+      // Primero guardar configuración si hay cambios
+      if (config.layers?.ships) {
+        await saveConfigGroup("layers.ships", config.layers.ships);
+      }
+      
+      const result = await testShips();
+      setShipsTestResult(result);
+    } catch (error) {
+      setShipsTestResult({ ok: false, reason: "connection_error", tip: String(error) });
+      console.error("Error testing ships:", error);
+    } finally {
+      setShipsTesting(false);
+    }
+  };
+
+  const handleSaveFlightsSecrets = async () => {
+    if (!config) return;
+    
+    try {
+      const secrets: any = {};
+      
+      if (config.layers?.flights?.provider === "opensky") {
+        const openskyCfg = config.layers.flights.opensky;
+        if (openskyCfg?.mode === "oauth2") {
+          secrets.opensky = {
+            oauth2: {
+              client_id: openskyOAuth2ClientId || null,
+              client_secret: openskyOAuth2ClientSecret || null,
+            }
+          };
+        } else if (openskyCfg?.mode === "basic") {
+          secrets.opensky = {
+            basic: {
+              username: openskyBasicUsername || null,
+              password: openskyBasicPassword || null,
+            }
+          };
+        }
+      } else if (config.layers?.flights?.provider === "aviationstack") {
+        secrets.aviationstack = {
+          api_key: aviationstackApiKey || null,
+        };
+      }
+      
+      if (Object.keys(secrets).length > 0) {
+        await updateSecrets(secrets);
+        alert("Secrets guardados correctamente");
+      }
+    } catch (error) {
+      console.error("Error saving flights secrets:", error);
+      alert("Error al guardar los secrets");
+    }
+  };
+
+  const handleSaveShipsSecrets = async () => {
+    if (!config) return;
+    
+    try {
+      const secrets: any = {};
+      
+      if (config.layers?.ships?.provider === "aisstream") {
+        secrets.aisstream = {
+          api_key: aisstreamApiKey || null,
+        };
+      } else if (config.layers?.ships?.provider === "aishub") {
+        secrets.aishub = {
+          api_key: aishubApiKey || null,
+        };
+      }
+      
+      if (Object.keys(secrets).length > 0) {
+        await updateSecrets(secrets);
+        alert("Secrets guardados correctamente");
+      }
+    } catch (error) {
+      console.error("Error saving ships secrets:", error);
+      alert("Error al guardar los secrets");
+    }
+  };
+
   const handleSaveMapAndLayers = async () => {
     if (!config) return;
     
     setMapAndLayersSaving(true);
     try {
+      // Guardar configuración de vuelos
+      if (config.layers?.flights) {
+        await saveConfigGroup("layers.flights", config.layers.flights);
+      }
+      
+      // Guardar configuración de barcos
+      if (config.layers?.ships) {
+        await saveConfigGroup("layers.ships", config.layers.ships);
+      }
+      
+      // Guardar el resto de la configuración
       const configToSave: AppConfigV2 = {
         ...config,
         ui_map: config.ui_map,
         ui_global: config.ui_global,
-        layers: config.layers,
       };
       
       await saveConfigV2(configToSave);
       alert("Configuración de Mapas y Capas guardada correctamente");
+      
+      // Recargar config
+      const loadedConfig = await getConfigV2();
+      setConfig(withConfigDefaultsV2(loadedConfig));
     } catch (error) {
       console.error("Error saving map and layers:", error);
       alert("Error al guardar la configuración");
@@ -1702,28 +1888,42 @@ export const ConfigPage: React.FC = () => {
             )}
 
             {/* Capa Vuelos */}
-            <div className="config-field">
+            <div className="config-field" style={{ marginTop: "24px", borderTop: "1px solid rgba(104, 162, 255, 0.2)", paddingTop: "16px" }}>
+              <h3 style={{ marginBottom: "12px" }}>Vuelos</h3>
               <label>
                 <input
                   type="checkbox"
                   checked={config.layers?.flights?.enabled || false}
                   onChange={(e) => {
+                    const currentFlights = config.layers?.flights;
                     setConfig({
                       ...config,
                       layers: {
                         ...config.layers,
                         flights: {
                           enabled: e.target.checked,
-                          provider: config.layers?.flights?.provider || "opensky",
-                          refresh_seconds: config.layers?.flights?.refresh_seconds || 12,
-                          max_age_seconds: config.layers?.flights?.max_age_seconds || 120,
-                          max_items_global: config.layers?.flights?.max_items_global || 2000,
-                          max_items_view: config.layers?.flights?.max_items_view || 1500,
-                          rate_limit_per_min: config.layers?.flights?.rate_limit_per_min || 6,
-                          decimate: config.layers?.flights?.decimate || "none",
-                          grid_px: config.layers?.flights?.grid_px || 24,
-                          styleScale: config.layers?.flights?.styleScale || 3.2,
-                          render_mode: config.layers?.flights?.render_mode || "circle",
+                          provider: currentFlights?.provider || "opensky",
+                          refresh_seconds: currentFlights?.refresh_seconds || 12,
+                          max_age_seconds: currentFlights?.max_age_seconds || 120,
+                          max_items_global: currentFlights?.max_items_global || 2000,
+                          max_items_view: currentFlights?.max_items_view || 1500,
+                          rate_limit_per_min: currentFlights?.rate_limit_per_min || 6,
+                          decimate: currentFlights?.decimate || "none",
+                          grid_px: currentFlights?.grid_px || 24,
+                          styleScale: currentFlights?.styleScale || 3.2,
+                          render_mode: currentFlights?.render_mode || "circle",
+                          opensky: currentFlights?.opensky || {
+                            mode: "oauth2",
+                            bbox: { lamin: 39.5, lamax: 41.0, lomin: -1.0, lomax: 1.5 },
+                            extended: 0
+                          },
+                          aviationstack: currentFlights?.aviationstack || {
+                            base_url: "http://api.aviationstack.com/v1"
+                          },
+                          custom: currentFlights?.custom || {
+                            api_url: null,
+                            api_key: null
+                          }
                         },
                       },
                     });
@@ -1731,43 +1931,616 @@ export const ConfigPage: React.FC = () => {
                 />
                 Habilitar Capa de Vuelos
               </label>
+              
               {config.layers?.flights?.enabled && (
-                <div className="config-field" style={{ marginLeft: "24px", marginTop: "8px" }}>
-                  <label>Proveedor</label>
-                  <select
-                    value={config.layers.flights.provider || "opensky"}
-                    onChange={(e) => {
-                      setConfig({
-                        ...config,
-                      layers: {
-                        ...config.layers,
-                        flights: {
-                          ...config.layers?.flights,
-                          enabled: config.layers?.flights?.enabled || false,
-                          provider: e.target.value as any,
-                          refresh_seconds: config.layers?.flights?.refresh_seconds || 12,
-                          max_age_seconds: config.layers?.flights?.max_age_seconds || 120,
-                          max_items_global: config.layers?.flights?.max_items_global || 2000,
-                          max_items_view: config.layers?.flights?.max_items_view || 1500,
-                          rate_limit_per_min: config.layers?.flights?.rate_limit_per_min || 6,
-                          decimate: config.layers?.flights?.decimate || "none",
-                          grid_px: config.layers?.flights?.grid_px || 24,
-                          styleScale: config.layers?.flights?.styleScale || 3.2,
-                          render_mode: config.layers?.flights?.render_mode || "circle",
-                        },
-                      },
-                      });
-                    }}
-                  >
-                    <option value="opensky">OpenSky</option>
-                    <option value="aviationstack">AviationStack</option>
-                    <option value="custom">Personalizado</option>
-                  </select>
-                  {config.layers.flights.provider === "opensky" && openskyStatus && (
-                    <div className="config-status" style={{ marginTop: "8px" }}>
-                      <p>Estado: {openskyStatus.status || "desconocido"}</p>
-                      {openskyStatus.items_count !== null && (
-                        <p>Vuelos: {openskyStatus.items_count}</p>
+                <div style={{ marginLeft: "24px", marginTop: "12px" }}>
+                  <div className="config-field">
+                    <label>Proveedor</label>
+                    <select
+                      value={config.layers.flights.provider || "opensky"}
+                      onChange={(e) => {
+                        const currentFlights = config.layers?.flights;
+                        setConfig({
+                          ...config,
+                          layers: {
+                            ...config.layers,
+                            flights: {
+                              enabled: currentFlights?.enabled || true,
+                              provider: e.target.value as any,
+                              refresh_seconds: currentFlights?.refresh_seconds || 12,
+                              max_age_seconds: currentFlights?.max_age_seconds || 120,
+                              max_items_global: currentFlights?.max_items_global || 2000,
+                              max_items_view: currentFlights?.max_items_view || 1500,
+                              rate_limit_per_min: currentFlights?.rate_limit_per_min || 6,
+                              decimate: currentFlights?.decimate || "none",
+                              grid_px: currentFlights?.grid_px || 24,
+                              styleScale: currentFlights?.styleScale || 3.2,
+                              render_mode: currentFlights?.render_mode || "circle",
+                              opensky: currentFlights?.opensky || {
+                                mode: "oauth2",
+                                bbox: { lamin: 39.5, lamax: 41.0, lomin: -1.0, lomax: 1.5 },
+                                extended: 0
+                              },
+                              aviationstack: currentFlights?.aviationstack || {
+                                base_url: "http://api.aviationstack.com/v1"
+                              },
+                              custom: currentFlights?.custom || {
+                                api_url: null,
+                                api_key: null
+                              }
+                            },
+                          },
+                        });
+                      }}
+                    >
+                      <option value="opensky">OpenSky</option>
+                      <option value="aviationstack">AviationStack</option>
+                      <option value="custom">Personalizado</option>
+                    </select>
+                  </div>
+
+                  {/* OpenSky Configuration */}
+                  {config.layers.flights.provider === "opensky" && (
+                    <div style={{ marginTop: "12px", padding: "12px", backgroundColor: "rgba(104, 162, 255, 0.1)", borderRadius: "4px" }}>
+                      <div className="config-field">
+                        <label>Modo de Autenticación</label>
+                        <div style={{ display: "flex", gap: "16px", marginTop: "8px" }}>
+                          <label style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                            <input
+                              type="radio"
+                              name="opensky_auth_mode"
+                              checked={config.layers.flights.opensky?.mode === "oauth2"}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  const currentFlights = config.layers?.flights;
+                                  const currentOpensky = currentFlights?.opensky;
+                                  setConfig({
+                                    ...config,
+                                    layers: {
+                                      ...config.layers,
+                                      flights: {
+                                        enabled: currentFlights?.enabled || true,
+                                        provider: currentFlights?.provider || "opensky",
+                                        refresh_seconds: currentFlights?.refresh_seconds || 12,
+                                        max_age_seconds: currentFlights?.max_age_seconds || 120,
+                                        max_items_global: currentFlights?.max_items_global || 2000,
+                                        max_items_view: currentFlights?.max_items_view || 1500,
+                                        rate_limit_per_min: currentFlights?.rate_limit_per_min || 6,
+                                        decimate: currentFlights?.decimate || "none",
+                                        grid_px: currentFlights?.grid_px || 24,
+                                        styleScale: currentFlights?.styleScale || 3.2,
+                                        render_mode: currentFlights?.render_mode || "circle",
+                                        opensky: {
+                                          mode: "oauth2",
+                                          bbox: currentOpensky?.bbox || { lamin: 39.5, lamax: 41.0, lomin: -1.0, lomax: 1.5 },
+                                          extended: currentOpensky?.extended || 0,
+                                          token_url: currentOpensky?.token_url || null,
+                                          scope: currentOpensky?.scope || null
+                                        },
+                                        aviationstack: currentFlights?.aviationstack,
+                                        custom: currentFlights?.custom
+                                      }
+                                    }
+                                  });
+                                }
+                              }}
+                            />
+                            OAuth2 (Recomendado)
+                          </label>
+                          <label style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                            <input
+                              type="radio"
+                              name="opensky_auth_mode"
+                              checked={config.layers.flights.opensky?.mode === "basic"}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  const currentFlights = config.layers?.flights;
+                                  const currentOpensky = currentFlights?.opensky;
+                                  setConfig({
+                                    ...config,
+                                    layers: {
+                                      ...config.layers,
+                                      flights: {
+                                        enabled: currentFlights?.enabled || true,
+                                        provider: currentFlights?.provider || "opensky",
+                                        refresh_seconds: currentFlights?.refresh_seconds || 12,
+                                        max_age_seconds: currentFlights?.max_age_seconds || 120,
+                                        max_items_global: currentFlights?.max_items_global || 2000,
+                                        max_items_view: currentFlights?.max_items_view || 1500,
+                                        rate_limit_per_min: currentFlights?.rate_limit_per_min || 6,
+                                        decimate: currentFlights?.decimate || "none",
+                                        grid_px: currentFlights?.grid_px || 24,
+                                        styleScale: currentFlights?.styleScale || 3.2,
+                                        render_mode: currentFlights?.render_mode || "circle",
+                                        opensky: {
+                                          mode: "basic",
+                                          bbox: currentOpensky?.bbox || { lamin: 39.5, lamax: 41.0, lomin: -1.0, lomax: 1.5 },
+                                          extended: currentOpensky?.extended || 0,
+                                          token_url: currentOpensky?.token_url || null,
+                                          scope: currentOpensky?.scope || null
+                                        },
+                                        aviationstack: currentFlights?.aviationstack,
+                                        custom: currentFlights?.custom
+                                      }
+                                    }
+                                  });
+                                }
+                              }}
+                            />
+                            Basic Auth
+                          </label>
+                        </div>
+                      </div>
+
+                      {config.layers.flights.opensky?.mode === "oauth2" && (
+                        <>
+                          <div className="config-field">
+                            <label>Client ID</label>
+                            <input
+                              type="text"
+                              value={openskyOAuth2ClientId}
+                              onChange={(e) => setOpenskyOAuth2ClientId(e.target.value)}
+                              placeholder="Client ID de OpenSky"
+                            />
+                          </div>
+                          <div className="config-field">
+                            <label>Client Secret</label>
+                            <input
+                              type="password"
+                              value={openskyOAuth2ClientSecret}
+                              onChange={(e) => setOpenskyOAuth2ClientSecret(e.target.value)}
+                              placeholder="Client Secret de OpenSky"
+                            />
+                          </div>
+                          <div className="config-field">
+                            <label>Token URL</label>
+                            <input
+                              type="text"
+                              value={config.layers.flights.opensky?.token_url || "https://auth.opensky-network.org/oauth/token"}
+                              onChange={(e) => {
+                                const currentFlights = config.layers?.flights;
+                                const currentOpensky = currentFlights?.opensky;
+                                setConfig({
+                                  ...config,
+                                  layers: {
+                                    ...config.layers,
+                                    flights: {
+                                      enabled: currentFlights?.enabled || true,
+                                      provider: currentFlights?.provider || "opensky",
+                                      refresh_seconds: currentFlights?.refresh_seconds || 12,
+                                      max_age_seconds: currentFlights?.max_age_seconds || 120,
+                                      max_items_global: currentFlights?.max_items_global || 2000,
+                                      max_items_view: currentFlights?.max_items_view || 1500,
+                                      rate_limit_per_min: currentFlights?.rate_limit_per_min || 6,
+                                      decimate: currentFlights?.decimate || "none",
+                                      grid_px: currentFlights?.grid_px || 24,
+                                      styleScale: currentFlights?.styleScale || 3.2,
+                                      render_mode: currentFlights?.render_mode || "circle",
+                                      opensky: {
+                                        mode: currentOpensky?.mode || "oauth2",
+                                        bbox: currentOpensky?.bbox || { lamin: 39.5, lamax: 41.0, lomin: -1.0, lomax: 1.5 },
+                                        extended: currentOpensky?.extended || 0,
+                                        token_url: e.target.value || "https://auth.opensky-network.org/oauth/token",
+                                        scope: currentOpensky?.scope || null
+                                      },
+                                      aviationstack: currentFlights?.aviationstack,
+                                      custom: currentFlights?.custom
+                                    }
+                                  }
+                                });
+                              }}
+                              placeholder="https://auth.opensky-network.org/oauth/token"
+                            />
+                            <div className="config-field__hint">Opcional, solo para configuración avanzada</div>
+                          </div>
+                          <div className="config-field">
+                            <label>Scope</label>
+                            <input
+                              type="text"
+                              value={config.layers.flights.opensky?.scope || ""}
+                              onChange={(e) => {
+                                const currentFlights = config.layers?.flights;
+                                const currentOpensky = currentFlights?.opensky;
+                                setConfig({
+                                  ...config,
+                                  layers: {
+                                    ...config.layers,
+                                    flights: {
+                                      enabled: currentFlights?.enabled || true,
+                                      provider: currentFlights?.provider || "opensky",
+                                      refresh_seconds: currentFlights?.refresh_seconds || 12,
+                                      max_age_seconds: currentFlights?.max_age_seconds || 120,
+                                      max_items_global: currentFlights?.max_items_global || 2000,
+                                      max_items_view: currentFlights?.max_items_view || 1500,
+                                      rate_limit_per_min: currentFlights?.rate_limit_per_min || 6,
+                                      decimate: currentFlights?.decimate || "none",
+                                      grid_px: currentFlights?.grid_px || 24,
+                                      styleScale: currentFlights?.styleScale || 3.2,
+                                      render_mode: currentFlights?.render_mode || "circle",
+                                      opensky: {
+                                        mode: currentOpensky?.mode || "oauth2",
+                                        bbox: currentOpensky?.bbox || { lamin: 39.5, lamax: 41.0, lomin: -1.0, lomax: 1.5 },
+                                        extended: currentOpensky?.extended || 0,
+                                        token_url: currentOpensky?.token_url || null,
+                                        scope: e.target.value || null
+                                      },
+                                      aviationstack: currentFlights?.aviationstack,
+                                      custom: currentFlights?.custom
+                                    }
+                                  }
+                                });
+                              }}
+                              placeholder="Opcional"
+                            />
+                          </div>
+                          <button
+                            className="config-button"
+                            onClick={handleSaveFlightsSecrets}
+                            style={{ marginTop: "8px" }}
+                          >
+                            Guardar Credenciales OAuth2
+                          </button>
+                        </>
+                      )}
+
+                      {config.layers.flights.opensky?.mode === "basic" && (
+                        <>
+                          <div className="config-field">
+                            <label>Username</label>
+                            <input
+                              type="text"
+                              value={openskyBasicUsername}
+                              onChange={(e) => setOpenskyBasicUsername(e.target.value)}
+                              placeholder="Username de OpenSky"
+                            />
+                          </div>
+                          <div className="config-field">
+                            <label>Password</label>
+                            <input
+                              type="password"
+                              value={openskyBasicPassword}
+                              onChange={(e) => setOpenskyBasicPassword(e.target.value)}
+                              placeholder="Password de OpenSky"
+                            />
+                          </div>
+                          <button
+                            className="config-button"
+                            onClick={handleSaveFlightsSecrets}
+                            style={{ marginTop: "8px" }}
+                          >
+                            Guardar Credenciales Basic
+                          </button>
+                        </>
+                      )}
+
+                      <div className="config-field" style={{ marginTop: "12px" }}>
+                        <label>BBox (Latitud/Longitud)</label>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                          <input
+                            type="number"
+                            step="0.0001"
+                            value={config.layers.flights.opensky?.bbox?.lamin || 39.5}
+                            onChange={(e) => {
+                              const currentOpensky = config.layers?.flights?.opensky;
+                              const currentBbox = currentOpensky?.bbox;
+                              setConfig({
+                                ...config,
+                                layers: {
+                                  ...config.layers,
+                                  flights: buildFlightsConfig({
+                                    opensky: {
+                                      mode: currentOpensky?.mode || "oauth2",
+                                      bbox: {
+                                        lamin: parseFloat(e.target.value) || 39.5,
+                                        lamax: currentBbox?.lamax ?? 41.0,
+                                        lomin: currentBbox?.lomin ?? -1.0,
+                                        lomax: currentBbox?.lomax ?? 1.5,
+                                      },
+                                      extended: currentOpensky?.extended ?? 0,
+                                      token_url: currentOpensky?.token_url ?? null,
+                                      scope: currentOpensky?.scope ?? null,
+                                    }
+                                  })
+                                }
+                              });
+                            }}
+                            placeholder="Min Lat"
+                          />
+                          <input
+                            type="number"
+                            step="0.0001"
+                            value={config.layers.flights.opensky?.bbox?.lamax || 41.0}
+                            onChange={(e) => {
+                              const currentOpensky = config.layers?.flights?.opensky;
+                              const currentBbox = currentOpensky?.bbox;
+                              setConfig({
+                                ...config,
+                                layers: {
+                                  ...config.layers,
+                                  flights: buildFlightsConfig({
+                                    opensky: {
+                                      mode: currentOpensky?.mode || "oauth2",
+                                      bbox: {
+                                        lamin: currentBbox?.lamin ?? 39.5,
+                                        lamax: parseFloat(e.target.value) || 41.0,
+                                        lomin: currentBbox?.lomin ?? -1.0,
+                                        lomax: currentBbox?.lomax ?? 1.5,
+                                      },
+                                      extended: currentOpensky?.extended ?? 0,
+                                      token_url: currentOpensky?.token_url ?? null,
+                                      scope: currentOpensky?.scope ?? null,
+                                    }
+                                  })
+                                }
+                              });
+                            }}
+                            placeholder="Max Lat"
+                          />
+                          <input
+                            type="number"
+                            step="0.0001"
+                            value={config.layers.flights.opensky?.bbox?.lomin || -1.0}
+                            onChange={(e) => {
+                              const currentOpensky = config.layers?.flights?.opensky;
+                              const currentBbox = currentOpensky?.bbox;
+                              setConfig({
+                                ...config,
+                                layers: {
+                                  ...config.layers,
+                                  flights: buildFlightsConfig({
+                                    opensky: {
+                                      mode: currentOpensky?.mode || "oauth2",
+                                      bbox: {
+                                        lamin: currentBbox?.lamin ?? 39.5,
+                                        lamax: currentBbox?.lamax ?? 41.0,
+                                        lomin: parseFloat(e.target.value) || -1.0,
+                                        lomax: currentBbox?.lomax ?? 1.5,
+                                      },
+                                      extended: currentOpensky?.extended ?? 0,
+                                      token_url: currentOpensky?.token_url ?? null,
+                                      scope: currentOpensky?.scope ?? null,
+                                    }
+                                  })
+                                }
+                              });
+                            }}
+                            placeholder="Min Lon"
+                          />
+                          <input
+                            type="number"
+                            step="0.0001"
+                            value={config.layers.flights.opensky?.bbox?.lomax || 1.5}
+                            onChange={(e) => {
+                              const currentOpensky = config.layers?.flights?.opensky;
+                              const currentBbox = currentOpensky?.bbox;
+                              setConfig({
+                                ...config,
+                                layers: {
+                                  ...config.layers,
+                                  flights: buildFlightsConfig({
+                                    opensky: {
+                                      mode: currentOpensky?.mode || "oauth2",
+                                      bbox: {
+                                        lamin: currentBbox?.lamin ?? 39.5,
+                                        lamax: currentBbox?.lamax ?? 41.0,
+                                        lomin: currentBbox?.lomin ?? -1.0,
+                                        lomax: parseFloat(e.target.value) || 1.5,
+                                      },
+                                      extended: currentOpensky?.extended ?? 0,
+                                      token_url: currentOpensky?.token_url ?? null,
+                                      scope: currentOpensky?.scope ?? null,
+                                    }
+                                  })
+                                }
+                              });
+                            }}
+                            placeholder="Max Lon"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="config-field">
+                        <label>Extended</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="1"
+                          value={config.layers.flights.opensky?.extended || 0}
+                          onChange={(e) => {
+                            const currentOpensky = config.layers?.flights?.opensky;
+                            setConfig({
+                              ...config,
+                              layers: {
+                                ...config.layers,
+                                flights: buildFlightsConfig({
+                                  opensky: {
+                                    mode: currentOpensky?.mode || "oauth2",
+                                    bbox: currentOpensky?.bbox,
+                                    extended: parseInt(e.target.value) || 0,
+                                    token_url: currentOpensky?.token_url ?? null,
+                                    scope: currentOpensky?.scope ?? null,
+                                  }
+                                })
+                              }
+                            });
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* AviationStack Configuration */}
+                  {config.layers.flights.provider === "aviationstack" && (
+                    <div style={{ marginTop: "12px", padding: "12px", backgroundColor: "rgba(104, 162, 255, 0.1)", borderRadius: "4px" }}>
+                      <div className="config-field">
+                        <label>API Key</label>
+                        <input
+                          type="text"
+                          value={aviationstackApiKey}
+                          onChange={(e) => setAviationstackApiKey(e.target.value)}
+                          placeholder="API Key de AviationStack"
+                        />
+                      </div>
+                      <div className="config-field">
+                        <label>Base URL</label>
+                        <input
+                          type="text"
+                          value={config.layers.flights.aviationstack?.base_url || "http://api.aviationstack.com/v1"}
+                          onChange={(e) => {
+                            setConfig({
+                              ...config,
+                              layers: {
+                                ...config.layers,
+                                flights: buildFlightsConfig({
+                                  aviationstack: {
+                                    base_url: e.target.value || "http://api.aviationstack.com/v1"
+                                  }
+                                })
+                              }
+                            });
+                          }}
+                        />
+                      </div>
+                      <button
+                        className="config-button"
+                        onClick={handleSaveFlightsSecrets}
+                        style={{ marginTop: "8px" }}
+                      >
+                        Guardar API Key
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Custom Configuration */}
+                  {config.layers.flights.provider === "custom" && (
+                    <div style={{ marginTop: "12px", padding: "12px", backgroundColor: "rgba(104, 162, 255, 0.1)", borderRadius: "4px" }}>
+                      <div className="config-field">
+                        <label>API URL</label>
+                        <input
+                          type="text"
+                          value={config.layers.flights.custom?.api_url || ""}
+                          onChange={(e) => {
+                            setConfig({
+                              ...config,
+                              layers: {
+                                ...config.layers,
+                                flights: buildFlightsConfig({
+                                  custom: {
+                                    api_url: e.target.value || null,
+                                    api_key: config.layers?.flights?.custom?.api_key ?? null
+                                  }
+                                })
+                              }
+                            });
+                          }}
+                          placeholder="https://api.example.com"
+                        />
+                      </div>
+                      <div className="config-field">
+                        <label>API Key (opcional)</label>
+                        <input
+                          type="text"
+                          value={config.layers.flights.custom?.api_key || ""}
+                          onChange={(e) => {
+                            setConfig({
+                              ...config,
+                              layers: {
+                                ...config.layers,
+                                flights: buildFlightsConfig({
+                                  custom: {
+                                    api_url: config.layers?.flights?.custom?.api_url ?? null,
+                                    api_key: e.target.value || null
+                                  }
+                                })
+                              }
+                            });
+                          }}
+                          placeholder="API Key"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Parámetros comunes */}
+                  <div style={{ marginTop: "12px" }}>
+                    <div className="config-field">
+                      <label>Refresh (segundos)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="300"
+                        value={config.layers.flights.refresh_seconds || 12}
+                        onChange={(e) => {
+                          setConfig({
+                            ...config,
+                            layers: {
+                              ...config.layers,
+                              flights: buildFlightsConfig({
+                                refresh_seconds: parseInt(e.target.value) || 12
+                              })
+                            }
+                          });
+                        }}
+                      />
+                    </div>
+                    <div className="config-field">
+                      <label>Rate Limit (por minuto)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="60"
+                        value={config.layers.flights.rate_limit_per_min || 6}
+                        onChange={(e) => {
+                          setConfig({
+                            ...config,
+                            layers: {
+                              ...config.layers,
+                              flights: buildFlightsConfig({
+                                rate_limit_per_min: parseInt(e.target.value) || 6
+                              })
+                            }
+                          });
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Botón de Test */}
+                  <div className="config-field__actions" style={{ marginTop: "12px" }}>
+                    <button
+                      className="config-button primary"
+                      onClick={handleTestFlights}
+                      disabled={flightsTesting}
+                    >
+                      {flightsTesting ? "Probando..." : "Test Vuelos"}
+                    </button>
+                  </div>
+
+                  {flightsTestResult && (
+                    <div
+                      className={`config-field__hint ${
+                        flightsTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                      }`}
+                      style={{ marginTop: "8px" }}
+                    >
+                      {flightsTestResult.ok ? (
+                        <>
+                          ✓ {flightsTestResult.provider === "opensky" && flightsTestResult.auth === "oauth2" && (
+                            <>Token válido{flightsTestResult.expires_in && `, expira en ${Math.floor(flightsTestResult.expires_in / 60)} min`}</>
+                          )}
+                          {flightsTestResult.provider === "opensky" && flightsTestResult.auth === "basic" && "Credenciales válidas"}
+                          {flightsTestResult.provider === "aviationstack" && "API Key válida"}
+                          {flightsTestResult.provider === "custom" && "Conexión OK"}
+                        </>
+                      ) : (
+                        <>
+                          ✗ Error: {flightsTestResult.reason || "Desconocido"}
+                          {flightsTestResult.tip && (
+                            <div style={{ marginTop: "4px", fontSize: "0.875rem" }}>
+                              {flightsTestResult.tip}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   )}
@@ -1776,7 +2549,8 @@ export const ConfigPage: React.FC = () => {
             </div>
 
             {/* Capa Barcos */}
-            <div className="config-field">
+            <div className="config-field" style={{ marginTop: "24px", borderTop: "1px solid rgba(104, 162, 255, 0.2)", paddingTop: "16px" }}>
+              <h3 style={{ marginBottom: "12px" }}>Barcos</h3>
               <label>
                 <input
                   type="checkbox"
@@ -1787,15 +2561,30 @@ export const ConfigPage: React.FC = () => {
                       layers: {
                         ...config.layers,
                         ships: {
+                          ...config.layers?.ships,
                           enabled: e.target.checked,
                           provider: config.layers?.ships?.provider || "aisstream",
                           refresh_seconds: config.layers?.ships?.refresh_seconds || 10,
                           max_age_seconds: config.layers?.ships?.max_age_seconds || 180,
                           max_items_global: config.layers?.ships?.max_items_global || 1500,
                           max_items_view: config.layers?.ships?.max_items_view || 420,
+                          rate_limit_per_min: config.layers?.ships?.rate_limit_per_min || 4,
                           decimate: config.layers?.ships?.decimate || "grid",
                           grid_px: config.layers?.ships?.grid_px || 24,
                           styleScale: config.layers?.ships?.styleScale || 1.4,
+                          aisstream: config.layers?.ships?.aisstream || {
+                            ws_url: "wss://stream.aisstream.io/v0/stream"
+                          },
+                          aishub: config.layers?.ships?.aishub || {
+                            base_url: "https://www.aishub.net/api"
+                          },
+                          ais_generic: config.layers?.ships?.ais_generic || {
+                            api_url: null
+                          },
+                          custom: config.layers?.ships?.custom || {
+                            api_url: null,
+                            api_key: null
+                          }
                         },
                       },
                     });
@@ -1803,6 +2592,301 @@ export const ConfigPage: React.FC = () => {
                 />
                 Habilitar Capa de Barcos
               </label>
+              
+              {config.layers?.ships?.enabled && (
+                <div style={{ marginLeft: "24px", marginTop: "12px" }}>
+                  <div className="config-field">
+                    <label>Proveedor</label>
+                    <select
+                      value={config.layers.ships.provider || "aisstream"}
+                      onChange={(e) => {
+                        setConfig({
+                          ...config,
+                          layers: {
+                            ...config.layers,
+                            ships: {
+                              ...config.layers?.ships,
+                              enabled: true,
+                              provider: e.target.value as any,
+                              refresh_seconds: config.layers?.ships?.refresh_seconds || 10,
+                              max_age_seconds: config.layers?.ships?.max_age_seconds || 180,
+                              max_items_global: config.layers?.ships?.max_items_global || 1500,
+                              max_items_view: config.layers?.ships?.max_items_view || 420,
+                              rate_limit_per_min: config.layers?.ships?.rate_limit_per_min || 4,
+                              decimate: config.layers?.ships?.decimate || "grid",
+                              grid_px: config.layers?.ships?.grid_px || 24,
+                              styleScale: config.layers?.ships?.styleScale || 1.4,
+                              aisstream: config.layers?.ships?.aisstream || {
+                                ws_url: "wss://stream.aisstream.io/v0/stream"
+                              },
+                              aishub: config.layers?.ships?.aishub || {
+                                base_url: "https://www.aishub.net/api"
+                              },
+                              ais_generic: config.layers?.ships?.ais_generic || {
+                                api_url: null
+                              },
+                              custom: config.layers?.ships?.custom || {
+                                api_url: null,
+                                api_key: null
+                              }
+                            },
+                          },
+                        });
+                      }}
+                    >
+                      <option value="aisstream">AIS Stream</option>
+                      <option value="aishub">AIS Hub</option>
+                      <option value="ais_generic">Genérico</option>
+                      <option value="custom">Personalizado</option>
+                    </select>
+                  </div>
+
+                  {/* AISStream Configuration */}
+                  {config.layers.ships.provider === "aisstream" && (
+                    <div style={{ marginTop: "12px", padding: "12px", backgroundColor: "rgba(104, 162, 255, 0.1)", borderRadius: "4px" }}>
+                      <div className="config-field">
+                        <label>API Key</label>
+                        <input
+                          type="text"
+                          value={aisstreamApiKey}
+                          onChange={(e) => setAisstreamApiKey(e.target.value)}
+                          placeholder="API Key de AISStream"
+                        />
+                      </div>
+                      <div className="config-field">
+                        <label>WebSocket URL</label>
+                        <input
+                          type="text"
+                          value={config.layers.ships.aisstream?.ws_url || "wss://stream.aisstream.io/v0/stream"}
+                          onChange={(e) => {
+                            setConfig({
+                              ...config,
+                              layers: {
+                                ...config.layers,
+                                ships: buildShipsConfig({
+                                  aisstream: {
+                                    ws_url: e.target.value || "wss://stream.aisstream.io/v0/stream"
+                                  }
+                                })
+                              }
+                            });
+                          }}
+                          placeholder="wss://stream.aisstream.io/v0/stream"
+                        />
+                        <div className="config-field__hint">Solo modificar en configuración avanzada</div>
+                      </div>
+                      <button
+                        className="config-button"
+                        onClick={handleSaveShipsSecrets}
+                        style={{ marginTop: "8px" }}
+                      >
+                        Guardar API Key
+                      </button>
+                    </div>
+                  )}
+
+                  {/* AIS Hub Configuration */}
+                  {config.layers.ships.provider === "aishub" && (
+                    <div style={{ marginTop: "12px", padding: "12px", backgroundColor: "rgba(104, 162, 255, 0.1)", borderRadius: "4px" }}>
+                      <div className="config-field">
+                        <label>API Key</label>
+                        <input
+                          type="text"
+                          value={aishubApiKey}
+                          onChange={(e) => setAishubApiKey(e.target.value)}
+                          placeholder="API Key de AIS Hub"
+                        />
+                      </div>
+                      <div className="config-field">
+                        <label>Base URL</label>
+                        <input
+                          type="text"
+                          value={config.layers.ships.aishub?.base_url || "https://www.aishub.net/api"}
+                          onChange={(e) => {
+                            setConfig({
+                              ...config,
+                              layers: {
+                                ...config.layers,
+                                ships: buildShipsConfig({
+                                  aishub: {
+                                    base_url: e.target.value || "https://www.aishub.net/api"
+                                  }
+                                })
+                              }
+                            });
+                          }}
+                        />
+                      </div>
+                      <button
+                        className="config-button"
+                        onClick={handleSaveShipsSecrets}
+                        style={{ marginTop: "8px" }}
+                      >
+                        Guardar API Key
+                      </button>
+                    </div>
+                  )}
+
+                  {/* AIS Generic Configuration */}
+                  {config.layers.ships.provider === "ais_generic" && (
+                    <div style={{ marginTop: "12px", padding: "12px", backgroundColor: "rgba(104, 162, 255, 0.1)", borderRadius: "4px" }}>
+                      <div className="config-field">
+                        <label>API URL</label>
+                        <input
+                          type="text"
+                          value={config.layers.ships.ais_generic?.api_url || ""}
+                          onChange={(e) => {
+                            setConfig({
+                              ...config,
+                              layers: {
+                                ...config.layers,
+                                ships: buildShipsConfig({
+                                  ais_generic: {
+                                    api_url: e.target.value || null
+                                  }
+                                })
+                              }
+                            });
+                          }}
+                          placeholder="https://api.example.com"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Custom Configuration */}
+                  {config.layers.ships.provider === "custom" && (
+                    <div style={{ marginTop: "12px", padding: "12px", backgroundColor: "rgba(104, 162, 255, 0.1)", borderRadius: "4px" }}>
+                      <div className="config-field">
+                        <label>API URL</label>
+                        <input
+                          type="text"
+                          value={config.layers.ships.custom?.api_url || ""}
+                          onChange={(e) => {
+                            setConfig({
+                              ...config,
+                              layers: {
+                                ...config.layers,
+                                ships: buildShipsConfig({
+                                  custom: {
+                                    api_url: e.target.value || null,
+                                    api_key: config.layers?.ships?.custom?.api_key ?? null
+                                  }
+                                })
+                              }
+                            });
+                          }}
+                          placeholder="https://api.example.com"
+                        />
+                      </div>
+                      <div className="config-field">
+                        <label>API Key (opcional)</label>
+                        <input
+                          type="text"
+                          value={config.layers.ships.custom?.api_key || ""}
+                          onChange={(e) => {
+                            setConfig({
+                              ...config,
+                              layers: {
+                                ...config.layers,
+                                ships: buildShipsConfig({
+                                  custom: {
+                                    api_url: config.layers?.ships?.custom?.api_url ?? null,
+                                    api_key: e.target.value || null
+                                  }
+                                })
+                              }
+                            });
+                          }}
+                          placeholder="API Key"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Parámetros comunes */}
+                  <div style={{ marginTop: "12px" }}>
+                    <div className="config-field">
+                      <label>Refresh (segundos)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="300"
+                        value={config.layers.ships.refresh_seconds || 10}
+                        onChange={(e) => {
+                          setConfig({
+                            ...config,
+                            layers: {
+                              ...config.layers,
+                              ships: buildShipsConfig({
+                                refresh_seconds: parseInt(e.target.value) || 10
+                              })
+                            }
+                          });
+                        }}
+                      />
+                    </div>
+                    <div className="config-field">
+                      <label>Rate Limit (por minuto)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="60"
+                        value={config.layers.ships.rate_limit_per_min || 4}
+                        onChange={(e) => {
+                          setConfig({
+                            ...config,
+                            layers: {
+                              ...config.layers,
+                              ships: buildShipsConfig({
+                                rate_limit_per_min: parseInt(e.target.value) || 4
+                              })
+                            }
+                          });
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Botón de Test */}
+                  <div className="config-field__actions" style={{ marginTop: "12px" }}>
+                    <button
+                      className="config-button primary"
+                      onClick={handleTestShips}
+                      disabled={shipsTesting}
+                    >
+                      {shipsTesting ? "Probando..." : "Test Barcos"}
+                    </button>
+                  </div>
+
+                  {shipsTestResult && (
+                    <div
+                      className={`config-field__hint ${
+                        shipsTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                      }`}
+                      style={{ marginTop: "8px" }}
+                    >
+                      {shipsTestResult.ok ? (
+                        <>
+                          ✓ {shipsTestResult.provider === "aisstream" && "API Key configurada"}
+                          {shipsTestResult.provider === "aishub" && "API Key válida"}
+                          {shipsTestResult.provider === "ais_generic" && "Conexión OK"}
+                          {shipsTestResult.provider === "custom" && "Conexión OK"}
+                        </>
+                      ) : (
+                        <>
+                          ✗ Error: {shipsTestResult.reason || "Desconocido"}
+                          {shipsTestResult.tip && (
+                            <div style={{ marginTop: "4px", fontSize: "0.875rem" }}>
+                              {shipsTestResult.tip}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

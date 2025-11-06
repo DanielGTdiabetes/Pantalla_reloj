@@ -1009,3 +1009,104 @@ export async function getLightningSample(limit: number = 50): Promise<LightningS
     return { count: 0, items: [] };
   }
 }
+
+// Flights and Ships test endpoints
+export type FlightsTestResponse = {
+  ok: boolean;
+  provider?: string;
+  auth?: string;
+  token_last4?: string;
+  expires_in?: number;
+  reason?: string;
+  tip?: string;
+  detail?: string;
+};
+
+export async function testFlights(): Promise<FlightsTestResponse> {
+  try {
+    return apiPost<FlightsTestResponse>("/api/flights/test", {});
+  } catch (error) {
+    return { ok: false, reason: "connection_error", tip: String(error) };
+  }
+}
+
+export type ShipsTestResponse = {
+  ok: boolean;
+  provider?: string;
+  reason?: string;
+  tip?: string;
+  detail?: string;
+};
+
+export async function testShips(): Promise<ShipsTestResponse> {
+  try {
+    return apiPost<ShipsTestResponse>("/api/ships/test", {});
+  } catch (error) {
+    return { ok: false, reason: "connection_error", tip: String(error) };
+  }
+}
+
+// Flights and Ships preview endpoints
+export type FlightsPreviewResponse = {
+  ok: boolean;
+  count: number;
+  total?: number;
+  items: unknown[];
+  reason?: string;
+};
+
+export async function getFlightsPreview(limit: number = 20): Promise<FlightsPreviewResponse> {
+  try {
+    return apiGet<FlightsPreviewResponse>(`/api/flights/preview?limit=${limit}`);
+  } catch (error) {
+    return { ok: false, count: 0, items: [], reason: "connection_error" };
+  }
+}
+
+export type ShipsPreviewResponse = {
+  ok: boolean;
+  count: number;
+  total?: number;
+  items: unknown[];
+  reason?: string;
+};
+
+export async function getShipsPreview(limit: number = 20): Promise<ShipsPreviewResponse> {
+  try {
+    return apiGet<ShipsPreviewResponse>(`/api/ships/preview?limit=${limit}`);
+  } catch (error) {
+    return { ok: false, count: 0, items: [], reason: "connection_error" };
+  }
+}
+
+// Config group save functions
+export async function saveConfigGroup(groupName: string, config: unknown): Promise<AppConfigV2> {
+  return apiPatch<AppConfigV2>(`/api/config/group/${groupName}`, config);
+}
+
+// Secrets update functions
+export async function updateSecrets(secrets: {
+  opensky?: {
+    oauth2?: {
+      client_id?: string | null;
+      client_secret?: string | null;
+      token_url?: string | null;
+      scope?: string | null;
+    };
+    basic?: {
+      username?: string | null;
+      password?: string | null;
+    };
+  };
+  aviationstack?: {
+    api_key?: string | null;
+  };
+  aisstream?: {
+    api_key?: string | null;
+  };
+  aishub?: {
+    api_key?: string | null;
+  };
+}): Promise<void> {
+  return apiPatch("/api/config/group/secrets", secrets);
+}

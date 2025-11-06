@@ -111,6 +111,30 @@ export type FlightsLayerCircleConfigV2 = {
   stroke_width: number;
 };
 
+export type OpenSkyBBoxConfig = {
+  lamin: number;
+  lamax: number;
+  lomin: number;
+  lomax: number;
+};
+
+export type OpenSkyProviderConfig = {
+  mode: "oauth2" | "basic";
+  bbox?: OpenSkyBBoxConfig;
+  extended: number;
+  token_url?: string | null;
+  scope?: string | null;
+};
+
+export type AviationStackProviderConfig = {
+  base_url: string;
+};
+
+export type CustomFlightProviderConfig = {
+  api_url?: string | null;
+  api_key?: string | null;
+};
+
 export type FlightsLayerConfigV2 = {
   enabled: boolean;
   provider: "opensky" | "aviationstack" | "custom";
@@ -124,6 +148,26 @@ export type FlightsLayerConfigV2 = {
   styleScale: number;
   render_mode: "circle" | "symbol" | "symbol_custom" | "auto";
   circle?: FlightsLayerCircleConfigV2;
+  opensky?: OpenSkyProviderConfig;
+  aviationstack?: AviationStackProviderConfig;
+  custom?: CustomFlightProviderConfig;
+};
+
+export type AISStreamProviderConfig = {
+  ws_url: string;
+};
+
+export type AISHubProviderConfig = {
+  base_url: string;
+};
+
+export type AISGenericProviderConfig = {
+  api_url?: string | null;
+};
+
+export type CustomShipProviderConfig = {
+  api_url?: string | null;
+  api_key?: string | null;
 };
 
 export type ShipsLayerConfigV2 = {
@@ -133,9 +177,14 @@ export type ShipsLayerConfigV2 = {
   max_age_seconds: number;
   max_items_global: number;
   max_items_view: number;
+  rate_limit_per_min: number;
   decimate: "grid" | "none";
   grid_px: number;
   styleScale: number;
+  aisstream?: AISStreamProviderConfig;
+  aishub?: AISHubProviderConfig;
+  ais_generic?: AISGenericProviderConfig;
+  custom?: CustomShipProviderConfig;
 };
 
 export type LayersConfigV2 = {
@@ -189,11 +238,43 @@ export type PanelsConfigV2 = {
   calendar?: PanelCalendarConfig;
 };
 
+export type OpenSkyOAuth2SecretsConfig = {
+  client_id?: string | null;
+  client_secret?: string | null;
+  token_url?: string | null;
+  scope?: string | null;
+};
+
+export type OpenSkyBasicSecretsConfig = {
+  username?: string | null;
+  password?: string | null;
+};
+
+export type OpenSkySecretsConfig = {
+  oauth2?: OpenSkyOAuth2SecretsConfig;
+  basic?: OpenSkyBasicSecretsConfig;
+};
+
+export type AviationStackSecretsConfig = {
+  api_key?: string | null;
+};
+
+export type AISStreamSecretsConfig = {
+  api_key?: string | null;
+};
+
+export type AISHubSecretsConfig = {
+  api_key?: string | null;
+};
+
 export type SecretsConfig = {
-  opensky?: Record<string, unknown>;
+  opensky?: OpenSkySecretsConfig;
   google?: Record<string, unknown>;
   aemet?: Record<string, unknown>;
   calendar_ics?: Record<string, unknown>;
+  aviationstack?: AviationStackSecretsConfig;
+  aisstream?: AISStreamSecretsConfig;
+  aishub?: AISHubSecretsConfig;
 };
 
 export type AppConfigV2 = {
