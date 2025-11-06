@@ -880,7 +880,7 @@ if [[ ${CHROME_FOUND:-0} -eq 0 ]]; then
   fi
 fi
 
-if [[ $CHROMIUM_FOUND -eq 0 ]] && command -v chromium >/dev/null 2>&1; then
+if [[ ${CHROMIUM_FOUND:-0} -eq 0 ]] && command -v chromium >/dev/null 2>&1; then
   if ! is_snap_binary "$(command -v chromium)"; then
     CHROMIUM_BIN="$(command -v chromium)"
     CHROMIUM_FOUND=1
@@ -889,7 +889,7 @@ if [[ $CHROMIUM_FOUND -eq 0 ]] && command -v chromium >/dev/null 2>&1; then
 fi
 
 # Si no hay Chromium real, intentar instalarlo
-if [[ $CHROMIUM_FOUND -eq 0 ]]; then
+if [[ ${CHROMIUM_FOUND:-0} -eq 0 ]]; then
   if install_chromium_real; then
     if command -v chromium >/dev/null 2>&1 && ! is_snap_binary "$(command -v chromium)"; then
       CHROMIUM_BIN="$(command -v chromium)"
@@ -900,7 +900,7 @@ if [[ $CHROMIUM_FOUND -eq 0 ]]; then
 fi
 
 # Fallback a snap solo si no hay alternativa (no recomendado)
-if [[ $CHROMIUM_FOUND -eq 0 ]]; then
+if [[ ${CHROMIUM_FOUND:-0} -eq 0 ]]; then
   if [[ -x /snap/bin/chromium ]]; then
     CHROMIUM_BIN="/snap/bin/chromium"
     CHROMIUM_FOUND=1
@@ -912,7 +912,7 @@ if [[ $CHROMIUM_FOUND -eq 0 ]]; then
   fi
 fi
 
-if [[ $CHROMIUM_FOUND -eq 0 ]]; then
+if [[ ${CHROMIUM_FOUND:-0} -eq 0 ]]; then
   log_warn "No se encontró Chromium instalado"
   log_warn "El servicio kiosk no funcionará hasta que se instale Chromium"
   SUMMARY+=('[install] WARN: Chromium no encontrado - servicio kiosk no funcionará')
@@ -1112,7 +1112,7 @@ else
   
   # Fallback: Solo habilitar kiosk-chromium si Chromium está disponible
   KIOSK_SERVICE_INSTANCE="pantalla-kiosk-chromium@${USER_NAME}.service"
-  if [[ $CHROMIUM_FOUND -eq 1 ]]; then
+  if [[ ${CHROMIUM_FOUND:-0} -eq 1 ]]; then
     if systemctl list-units --full --all "$KIOSK_SERVICE_INSTANCE" >/dev/null 2>&1; then
       log_info "Iniciando pantalla-kiosk-chromium@${USER_NAME}.service (fallback)"
       if systemctl enable --now "$KIOSK_SERVICE_INSTANCE" 2>&1; then
@@ -1208,7 +1208,7 @@ else
 fi
 
 # Restart kiosk solo si Chromium está disponible y el backend está listo
-if [[ $CHROMIUM_FOUND -eq 1 ]]; then
+if [[ ${CHROMIUM_FOUND:-0} -eq 1 ]]; then
   log_info "Reiniciando pantalla-kiosk-chromium@${USER_NAME}.service"
   if systemctl restart pantalla-kiosk-chromium@${USER_NAME}.service; then
     log_ok "pantalla-kiosk-chromium@${USER_NAME}.service reiniciado"
