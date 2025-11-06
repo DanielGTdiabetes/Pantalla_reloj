@@ -1018,10 +1018,31 @@ if systemctl enable --now "$XORG_SERVICE" 2>&1; then
     log_warn "Si hay problemas, espera unos segundos más y reinicia los servicios"
   fi
   
-  # Copiar .Xauthority a home del usuario (esperar un poco más si no existe)
+  # Copiar .Xauthority a home del usuario (esperar más tiempo si no existe)
   if [[ ! -f "$STATE_XAUTH" ]] || [[ ! -s "$STATE_XAUTH" ]]; then
     log_info "Esperando adicional para que Xorg genere .Xauthority..."
-    sleep 3
+    # Esperar hasta 10 segundos más
+    for i in {1..10}; do
+      sleep 1
+      if [[ -f "$STATE_XAUTH" ]] && [[ -s "$STATE_XAUTH" ]]; then
+        break
+      fi
+    done
+  fi
+  
+  # Si .Xauthority aún no existe, intentar generarlo manualmente
+  if [[ ! -f "$STATE_XAUTH" ]] || [[ ! -s "$STATE_XAUTH" ]]; then
+    log_info "Intentando generar .Xauthority manualmente..."
+    install -d -m 0700 /var/lib/pantalla-reloj || true
+    install -m 0600 /dev/null "$STATE_XAUTH" || true
+    COOKIE=$(mcookie 2>/dev/null || echo "")
+    if [[ -n "$COOKIE" ]]; then
+      if xauth -f "$STATE_XAUTH" add :0 . "$COOKIE" 2>/dev/null; then
+        chown "$USER_NAME:$USER_NAME" "$STATE_XAUTH" 2>/dev/null || true
+        chmod 600 "$STATE_XAUTH" 2>/dev/null || true
+        log_ok ".Xauthority generado manualmente"
+      fi
+    fi
   fi
   
   if [[ -f "$STATE_XAUTH" ]] && [[ -s "$STATE_XAUTH" ]]; then
@@ -1037,18 +1058,31 @@ if systemctl enable --now "$XORG_SERVICE" 2>&1; then
     fi
     
     # Verificar que DISPLAY funciona con el .Xauthority del usuario
-    if DISPLAY=:0 XAUTHORITY="$HOME_XAUTH" xset q >/dev/null 2>&1; then
+    # Esperar un poco más si no funciona inmediatamente
+    DISPLAY_WORKS=0
+    for i in {1..5}; do
+      if DISPLAY=:0 XAUTHORITY="$HOME_XAUTH" xset q >/dev/null 2>&1; then
+        DISPLAY_WORKS=1
+        break
+      fi
+      sleep 1
+    done
+    
+    if [[ $DISPLAY_WORKS -eq 1 ]]; then
       log_ok "DISPLAY :0 funciona correctamente con .Xauthority del usuario"
       SUMMARY+=("[install] .Xauthority configurado correctamente y DISPLAY verificado")
     else
       log_warn "DISPLAY :0 no funciona con .Xauthority del usuario (puede tardar unos segundos más)"
+      log_warn "Continuando de todas formas, Xorg puede tardar en estar completamente listo"
     fi
   else
-    log_error "ERROR: .Xauthority no se generó después de esperar"
-    log_error "Verificando estado de Xorg..."
-    systemctl status "$XORG_SERVICE" --no-pager -l | head -20
+    log_warn "WARN: .Xauthority no se generó después de esperar"
+    log_warn "Xorg puede tardar más en estar completamente listo"
+    log_warn "Verificando estado de Xorg..."
+    systemctl status "$XORG_SERVICE" --no-pager -l | head -20 || true
     journalctl -u "$XORG_SERVICE" -n 30 --no-pager | sed 's/^/  /' || true
-    exit 1
+    log_warn "Continuando de todas formas, .Xauthority se generará cuando Xorg esté completamente iniciado"
+    # No hacer exit 1 aquí, continuar y dejar que Xorg termine de iniciarse
   fi
 else
   log_error "ERROR: No se pudo iniciar pantalla-xorg.service"
