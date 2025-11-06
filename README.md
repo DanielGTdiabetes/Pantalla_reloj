@@ -596,6 +596,54 @@ variable.
 
 ## Kiosk Browser
 
+### Kiosk estable (Chrome .deb)
+
+**Motivo**: Evitar el wrapper Snap de Chromium y problemas con AppArmor/D-Bus que pueden causar pantalla negra o fallos de arranque.
+
+El sistema utiliza **Google Chrome instalado como paquete .deb** (no Snap) para garantizar un arranque fiable en Xorg+Openbox, con rotación correcta y sin pantalla negra.
+
+**Instalación automática**:
+
+El script `install.sh` instala automáticamente Google Chrome .deb desde la fuente oficial si no está disponible:
+
+1. Descarga el .deb desde `https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb`
+2. Instala el paquete con `dpkg -i` y resuelve dependencias con `apt -f install`
+3. Crea el unit user `~/.config/systemd/user/pantalla-kiosk-chrome@.service`
+4. Habilita y arranca el unit user después de Openbox
+
+**Verificación rápida**:
+
+```bash
+# Verificar estado de servicios
+systemctl --user status pantalla-openbox@dani.service
+systemctl --user status pantalla-kiosk-chrome@dani.service
+
+# Verificar ventana kiosk
+./scripts/verify_kiosk.sh dani
+
+# Verificar ventanas abiertas
+wmctrl -lx | grep -i chrome || echo "No se ve Chrome"
+```
+
+**Arranque manual** (si es necesario):
+
+```bash
+# Recargar units y arrancar
+systemctl --user daemon-reload
+systemctl --user enable --now pantalla-openbox@dani.service
+systemctl --user enable --now pantalla-kiosk-chrome@dani.service
+```
+
+**Ventajas sobre Chromium Snap**:
+
+- ✅ Sin problemas de AppArmor/D-Bus
+- ✅ Arranque más rápido y fiable
+- ✅ Sin dependencias de Snap
+- ✅ Mejor integración con X11
+- ✅ Verificador automático con fallback si la ventana no aparece
+
+**Nota**: El unit user de Chrome kiosk (`pantalla-kiosk-chrome@.service`) se ejecuta como servicio de usuario systemd, no como servicio del sistema. Esto permite mejor integración con la sesión X11 del usuario.
+
 ### Servicios esenciales
 
 ```bash
