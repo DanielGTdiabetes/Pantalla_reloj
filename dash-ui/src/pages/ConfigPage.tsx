@@ -4,9 +4,13 @@ import { withConfigDefaultsV2 } from "../config/defaults_v2";
 import {
   getConfigV2,
   getOpenSkyStatus,
+  getRainViewerFrames,
+  getRainViewerTileUrl,
   saveConfigV2,
   testAemetApiKey,
   testCalendarConnection,
+  testGIBS,
+  testRainViewer,
   type WiFiNetwork,
   wifiConnect,
   wifiDisconnect,
@@ -41,6 +45,18 @@ export const ConfigPage: React.FC = () => {
   const [aemetTesting, setAemetTesting] = useState(false);
   const [aemetApiKey, setAemetApiKey] = useState<string>("");
   const [openskyStatus, setOpenskyStatus] = useState<any>(null);
+  
+  // RainViewer
+  const [rainviewerTestResult, setRainviewerTestResult] = useState<{ ok: boolean; frames_count?: number; reason?: string } | null>(null);
+  const [rainviewerTesting, setRainviewerTesting] = useState(false);
+  const [rainviewerTilePreview, setRainviewerTilePreview] = useState<string | null>(null);
+  const [rainviewerLoadingTile, setRainviewerLoadingTile] = useState(false);
+  
+  // GIBS
+  const [gibsTestResult, setGibsTestResult] = useState<{ ok: boolean; reason?: string } | null>(null);
+  const [gibsTesting, setGibsTesting] = useState(false);
+  const [gibsTilePreview, setGibsTilePreview] = useState<string | null>(null);
+  const [gibsLoadingTile, setGibsLoadingTile] = useState(false);
 
   // Grupo 3: Panel Rotativo
   const [panelRotatorSaving, setPanelRotatorSaving] = useState(false);
@@ -154,6 +170,84 @@ export const ConfigPage: React.FC = () => {
   };
 
   // ===== GRUPO 2: Mapas y Capas =====
+  const handleTestRainViewer = async () => {
+    setRainviewerTesting(true);
+    setRainviewerTestResult(null);
+    try {
+      const result = await testRainViewer();
+      setRainviewerTestResult(result || { ok: false, frames_count: 0, reason: "Sin respuesta" });
+    } catch (error) {
+      setRainviewerTestResult({ ok: false, frames_count: 0, reason: "Error al probar RainViewer" });
+      console.error("Error testing RainViewer:", error);
+    } finally {
+      setRainviewerTesting(false);
+    }
+  };
+
+  const handleViewRainViewerTile = async () => {
+    setRainviewerLoadingTile(true);
+    setRainviewerTilePreview(null);
+    try {
+      // Obtener frames disponibles
+      const frames = await getRainViewerFrames(90, 5);
+      if (frames.length === 0) {
+        alert("No hay frames disponibles");
+        return;
+      }
+      
+      // Tomar el primer timestamp
+      const timestamp = frames[0];
+      
+      // Obtener URL del tile
+      const tileUrl = await getRainViewerTileUrl(timestamp, 2, 1, 1);
+      
+      // Verificar que el tile esté disponible
+      const response = await fetch(tileUrl);
+      if (response.ok && response.headers.get("content-type")?.includes("image")) {
+        // Crear blob URL para preview
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        setRainviewerTilePreview(blobUrl);
+      } else {
+        alert("No se pudo cargar el tile de ejemplo");
+      }
+    } catch (error) {
+      console.error("Error loading RainViewer tile:", error);
+      alert("Error al cargar el tile de ejemplo");
+    } finally {
+      setRainviewerLoadingTile(false);
+    }
+  };
+
+  const handleTestGIBS = async () => {
+    setGibsTesting(true);
+    setGibsTestResult(null);
+    try {
+      const result = await testGIBS();
+      setGibsTestResult(result || { ok: false, reason: "Sin respuesta" });
+      
+      // Si el test es exitoso, intentar cargar un tile de ejemplo
+      if (result?.ok) {
+        try {
+          const tileUrl = `${window.location.origin}/api/global/sat/tiles/2/1/1.png`;
+          const response = await fetch(tileUrl);
+          if (response.ok && response.headers.get("content-type")?.includes("image")) {
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            setGibsTilePreview(blobUrl);
+          }
+        } catch (error) {
+          console.debug("Could not load GIBS tile preview:", error);
+        }
+      }
+    } catch (error) {
+      setGibsTestResult({ ok: false, reason: "Error al probar GIBS" });
+      console.error("Error testing GIBS:", error);
+    } finally {
+      setGibsTesting(false);
+    }
+  };
+
   const handleTestAemet = async () => {
     setAemetTesting(true);
     setAemetTestResult(null);
@@ -357,6 +451,264 @@ export const ConfigPage: React.FC = () => {
         </div>
 
         {/* GRUPO 2: Mapas y Capas */}
+        
+        {/* Tarjeta: Radar global (RainViewer) */}
+        <div className="config-card">
+          <h2>Radar Global (RainViewer)</h2>
+          
+          <div className="config-form-fields">
+            <div className="config-field">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={config.ui_global?.radar?.enabled || false}
+                  onChange={(e) => {
+                    setConfig({
+                      ...config,
+                      ui_global: {
+                        ...config.ui_global,
+                        radar: {
+                          enabled: e.target.checked,
+                          provider: "rainviewer",
+                        },
+                      },
+                    });
+                  }}
+                />
+                Habilitar Radar
+              </label>
+            </div>
+            
+            {config.ui_global?.radar?.enabled && (
+              <>
+                <div className="config-field">
+                  <label>Proveedor</label>
+                  <select value="rainviewer" disabled>
+                    <option value="rainviewer">RainViewer v4</option>
+                  </select>
+                  <div className="config-field__hint">
+                    RainViewer proporciona datos globales de radar sin necesidad de API key
+                  </div>
+                </div>
+                
+                
+                <div className="config-field__actions">
+                  <button
+                    className="config-button primary"
+                    onClick={handleTestRainViewer}
+                    disabled={rainviewerTesting}
+                  >
+                    {rainviewerTesting ? "Probando..." : "Probar RainViewer"}
+                  </button>
+                  <button
+                    className="config-button"
+                    onClick={handleViewRainViewerTile}
+                    disabled={rainviewerLoadingTile}
+                  >
+                    {rainviewerLoadingTile ? "Cargando..." : "Ver Tile de Ejemplo"}
+                  </button>
+                </div>
+                
+                {rainviewerTestResult && (
+                  <div
+                    className={`config-field__hint ${
+                      rainviewerTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                    }`}
+                  >
+                    {rainviewerTestResult.ok ? (
+                      <>
+                        ✓ RainViewer funcionando correctamente
+                        {rainviewerTestResult.frames_count !== undefined && (
+                          <span className="config-badge" style={{ marginLeft: "8px" }}>
+                            {rainviewerTestResult.frames_count} frames
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      `✗ Error: ${rainviewerTestResult.reason || "Desconocido"}`
+                    )}
+                  </div>
+                )}
+                
+                {rainviewerTilePreview && (
+                  <div className="config-field" style={{ marginTop: "12px" }}>
+                    <label>Vista Previa del Tile:</label>
+                    <img
+                      src={rainviewerTilePreview}
+                      alt="RainViewer tile preview"
+                      style={{ width: "64px", height: "64px", border: "1px solid rgba(104, 162, 255, 0.3)", borderRadius: "4px" }}
+                    />
+                    <div className="config-field__hint config-field__hint--success">PNG OK</div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Tarjeta: Satélite global (GIBS) */}
+        <div className="config-card">
+          <h2>Satélite Global (GIBS)</h2>
+          
+          <div className="config-form-fields">
+            <div className="config-field">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={config.ui_global?.satellite?.enabled || false}
+                  onChange={(e) => {
+                    setConfig({
+                      ...config,
+                      ui_global: {
+                        ...config.ui_global,
+                        satellite: {
+                          enabled: e.target.checked,
+                          provider: "gibs",
+                          opacity: config.ui_global?.satellite?.opacity || 1.0,
+                        },
+                      },
+                    });
+                  }}
+                />
+                Habilitar Satélite
+              </label>
+            </div>
+            
+            {config.ui_global?.satellite?.enabled && (
+              <>
+                <div className="config-field">
+                  <label>Proveedor</label>
+                  <select value="gibs" disabled>
+                    <option value="gibs">GIBS (NASA)</option>
+                  </select>
+                  <div className="config-field__hint">
+                    GIBS proporciona imágenes de satélite globales de la NASA
+                  </div>
+                </div>
+                
+                <div className="config-field">
+                  <label>Opacidad</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value={config.ui_global?.satellite?.opacity || 1.0}
+                    onChange={(e) => {
+                      setConfig({
+                        ...config,
+                        ui_global: {
+                          ...config.ui_global,
+                          satellite: {
+                            enabled: config.ui_global?.satellite?.enabled || false,
+                            provider: "gibs",
+                            opacity: parseFloat(e.target.value) || 1.0,
+                          },
+                        },
+                      });
+                    }}
+                  />
+                </div>
+                
+                <div className="config-field__actions">
+                  <button
+                    className="config-button primary"
+                    onClick={handleTestGIBS}
+                    disabled={gibsTesting}
+                  >
+                    {gibsTesting ? "Probando..." : "Probar GIBS"}
+                  </button>
+                </div>
+                
+                {gibsTestResult && (
+                  <div
+                    className={`config-field__hint ${
+                      gibsTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                    }`}
+                  >
+                    {gibsTestResult.ok ? (
+                      <>
+                        ✓ GIBS funcionando correctamente
+                        {gibsTilePreview && (
+                          <span className="config-badge" style={{ marginLeft: "8px" }}>PNG OK</span>
+                        )}
+                      </>
+                    ) : (
+                      `✗ Error: ${gibsTestResult.reason || "Desconocido"}`
+                    )}
+                  </div>
+                )}
+                
+                {gibsTilePreview && (
+                  <div className="config-field" style={{ marginTop: "12px" }}>
+                    <label>Vista Previa del Tile:</label>
+                    <img
+                      src={gibsTilePreview}
+                      alt="GIBS tile preview"
+                      style={{ width: "64px", height: "64px", border: "1px solid rgba(104, 162, 255, 0.3)", borderRadius: "4px" }}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Tarjeta: Fuentes AEMET (Opcional/Avanzado) */}
+        <div className="config-card">
+          <h2>Fuentes AEMET (Avanzado)</h2>
+          <p className="config-field__hint" style={{ marginBottom: "16px" }}>
+            Nota: AEMET ya no alimenta el radar global. Se usará en futuras capas (avisos CAP, radar ES, sat ES) si se reactiva.
+          </p>
+          
+          <div className="config-form-fields">
+            <div className="config-field">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={false} // TODO: Leer desde config.aemet.enabled
+                  onChange={(e) => {
+                    // TODO: Actualizar config.aemet.enabled
+                    alert("Configuración de AEMET pendiente de implementar");
+                  }}
+                />
+                Habilitar AEMET
+              </label>
+            </div>
+            
+            <div className="config-field">
+              <label>AEMET API Key</label>
+              <div className="config-field__secret">
+                <input
+                  type="text"
+                  value={aemetApiKey}
+                  onChange={(e) => setAemetApiKey(e.target.value)}
+                  placeholder="API Key de AEMET"
+                />
+                <button
+                  className="config-button"
+                  onClick={handleTestAemet}
+                  disabled={aemetTesting}
+                >
+                  {aemetTesting ? "Probando..." : "Probar AEMET"}
+                </button>
+              </div>
+              {aemetTestResult && (
+                <div
+                  className={`config-field__hint ${
+                    aemetTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                  }`}
+                >
+                  {aemetTestResult.ok
+                    ? "✓ API Key válida"
+                    : `✗ Error: ${aemetTestResult.reason || "Desconocido"}`}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Tarjeta: Configuración del Mapa y Capas */}
         <div className="config-card">
           <h2>Mapas y Capas</h2>
 
@@ -407,7 +759,6 @@ export const ConfigPage: React.FC = () => {
                   <button
                     className="config-button"
                     onClick={() => {
-                      // Test para MapTiler (si existe función)
                       alert("Test de MapTiler aún no implementado");
                     }}
                   >
@@ -439,109 +790,6 @@ export const ConfigPage: React.FC = () => {
                 />
               </div>
             )}
-
-            {/* Capa Radar */}
-            <div className="config-field">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={config.ui_global?.radar?.enabled || false}
-                  onChange={(e) => {
-                    setConfig({
-                      ...config,
-                      ui_global: {
-                        ...config.ui_global,
-                        radar: {
-                          ...config.ui_global?.radar,
-                          enabled: e.target.checked,
-                          provider: config.ui_global?.radar?.provider || "rainviewer",
-                        },
-                      },
-                    });
-                  }}
-                />
-                Habilitar Radar
-              </label>
-              {config.ui_global?.radar?.enabled && (
-                <div className="config-field" style={{ marginLeft: "24px", marginTop: "8px" }}>
-                  <label>Proveedor</label>
-                  <select
-                    value={config.ui_global.radar.provider || "rainviewer"}
-                    onChange={(e) => {
-                      setConfig({
-                        ...config,
-                        ui_global: {
-                          ...config.ui_global,
-                          radar: {
-                            enabled: config.ui_global?.radar?.enabled || false,
-                            provider: e.target.value as any,
-                          },
-                        },
-                      });
-                    }}
-                  >
-                    <option value="rainviewer">RainViewer</option>
-                    <option value="aemet">AEMET</option>
-                  </select>
-                  {config.ui_global.radar.provider === "aemet" && (
-                    <div className="config-field" style={{ marginTop: "12px" }}>
-                      <label>AEMET API Key</label>
-                      <div className="config-field__secret">
-                        <input
-                          type="text"
-                          value={aemetApiKey}
-                          onChange={(e) => setAemetApiKey(e.target.value)}
-                          placeholder="API Key de AEMET"
-                        />
-                        <button
-                          className="config-button"
-                          onClick={handleTestAemet}
-                          disabled={aemetTesting}
-                        >
-                          {aemetTesting ? "Probando..." : "Test"}
-                        </button>
-                      </div>
-                      {aemetTestResult && (
-                        <div
-                          className={`config-field__hint ${
-                            aemetTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
-                          }`}
-                        >
-                          {aemetTestResult.ok
-                            ? "✓ API Key válida"
-                            : `✗ Error: ${aemetTestResult.reason || "Desconocido"}`}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Capa Satélite */}
-            <div className="config-field">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={config.ui_global?.satellite?.enabled || false}
-                  onChange={(e) => {
-                    setConfig({
-                      ...config,
-                      ui_global: {
-                        ...config.ui_global,
-                        satellite: {
-                          ...config.ui_global?.satellite,
-                          enabled: e.target.checked,
-                          provider: config.ui_global?.satellite?.provider || "gibs",
-                          opacity: config.ui_global?.satellite?.opacity || 1.0,
-                        },
-                      },
-                    });
-                  }}
-                />
-                Habilitar Satélite
-              </label>
-            </div>
 
             {/* Capa Vuelos */}
             <div className="config-field">

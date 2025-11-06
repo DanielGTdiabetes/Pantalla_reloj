@@ -94,6 +94,7 @@ from .routes.efemerides import (
     upload_efemerides_file,
     fetch_wikimedia_onthisday,
 )
+from .routes import rainviewer
 from .secret_store import SecretStore
 from .services.opensky_auth import DEFAULT_TOKEN_URL, OpenSkyAuthError
 from .services.opensky_client import OpenSkyClientError
@@ -322,6 +323,7 @@ app.add_middleware(
 
 # Registrar routers
 app.include_router(ephemerides.router)
+app.include_router(rainviewer.router)
 
 
 def _ensure_ics_storage_directory() -> None:
@@ -3279,19 +3281,28 @@ def test_aemet_key_saved() -> Dict[str, Any]:
     """Prueba la key de AEMET guardada en el SecretStore."""
     try:
         config_v2, _ = _read_config_v2()
-        # Verificar si AEMET está habilitado
+        # Verificar si AEMET está habilitado (v2 usa dict)
         aemet_enabled = False
         try:
-            if hasattr(config_v2, "aemet") and config_v2.aemet:
-                aemet_enabled = getattr(config_v2.aemet, "enabled", False)
-        except Exception:
-            pass
+            if isinstance(config_v2, dict):
+                aemet_config = config_v2.get("aemet")
+                if isinstance(aemet_config, dict):
+                    aemet_enabled = aemet_config.get("enabled", False)
+            elif hasattr(config_v2, "aemet"):
+                aemet_obj = getattr(config_v2, "aemet", None)
+                if aemet_obj is not None:
+                    if isinstance(aemet_obj, dict):
+                        aemet_enabled = aemet_obj.get("enabled", False)
+                    else:
+                        aemet_enabled = getattr(aemet_obj, "enabled", False)
+        except Exception as e:
+            logger.debug("Error checking AEMET enabled status: %s", e)
         
         if not aemet_enabled:
             return {"ok": False, "reason": "disabled"}
-    except Exception:
+    except Exception as e:
         # Si no se puede leer config, seguir con la verificación de API key
-        pass
+        logger.debug("Error reading config for AEMET test: %s", e)
     
     stored = secret_store.get_secret("aemet_api_key")
     if not stored:

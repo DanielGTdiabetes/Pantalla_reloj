@@ -135,65 +135,74 @@ class RainViewerProvider:
                     return []
         
         try:
-            
             data = response.json()
             
-            if "radar" not in data or "past" not in data["radar"]:
-                logger.warning("RainViewer API: no radar frames found")
+            # RainViewer v4: verificar estructura
+            if "radar" not in data:
+                logger.warning("RainViewer API: no 'radar' key found")
                 return []
             
-            # Obtener frames pasados
-            past_frames = data["radar"]["past"]
-            # Frame actual (si existe)
-            nowcast = data["radar"].get("nowcast", [])
+            radar_data = data["radar"]
             
-            all_frames = past_frames + nowcast
+            # Combinar past y nowcast (ambos pueden ser arrays de ints o arrays de dicts)
+            past_frames = radar_data.get("past", [])
+            nowcast_frames = radar_data.get("nowcast", [])
             
-            if not all_frames:
+            # Extraer timestamps de ambos arrays
+            all_timestamps = []
+            
+            # Procesar past
+            for item in past_frames:
+                if isinstance(item, (int, float)):
+                    all_timestamps.append(int(item))
+                elif isinstance(item, dict):
+                    timestamp = item.get("time")
+                    if timestamp is not None:
+                        all_timestamps.append(int(timestamp))
+            
+            # Procesar nowcast
+            for item in nowcast_frames:
+                if isinstance(item, (int, float)):
+                    all_timestamps.append(int(item))
+                elif isinstance(item, dict):
+                    timestamp = item.get("time")
+                    if timestamp is not None:
+                        all_timestamps.append(int(timestamp))
+            
+            if not all_timestamps:
+                logger.warning("RainViewer API: no valid timestamps found")
                 return []
+            
+            # Eliminar duplicados y ordenar
+            all_timestamps = sorted(set(all_timestamps))
             
             # Filtrar por history_minutes y frame_step
             now = datetime.now(timezone.utc)
             cutoff_time = now - timedelta(minutes=history_minutes)
             
             frames = []
-            for frame_item in all_frames:
-                # RainViewer v4: frame_item puede ser un dict con "time" y "path", o un timestamp int
-                if isinstance(frame_item, dict):
-                    frame_timestamp = frame_item.get("time")
-                    frame_path = frame_item.get("path", str(frame_timestamp))
-                elif isinstance(frame_item, (int, float)):
-                    # Formato legacy: timestamp directo
-                    frame_timestamp = int(frame_item)
-                    frame_path = str(frame_timestamp)
-                else:
-                    continue
-                
-                if frame_timestamp is None:
-                    continue
-                
-                # frame_timestamp es un timestamp Unix
-                frame_time = datetime.fromtimestamp(frame_timestamp, tz=timezone.utc)
+            for timestamp in all_timestamps:
+                # timestamp es un Unix timestamp (int)
+                frame_time = datetime.fromtimestamp(timestamp, tz=timezone.utc)
                 
                 # Filtrar por tiempo
                 if frame_time < cutoff_time:
                     continue
                 
-                # Filtrar por frame_step (redondear al intervalo)
-                minutes_diff = (now - frame_time).total_seconds() / 60
-                if minutes_diff % frame_step != 0:
+                # Filtrar por frame_step (submuestreo)
+                if frame_step > 1:
+                    minutes_diff = (now - frame_time).total_seconds() / 60
                     # Redondear al frame_step más cercano
                     rounded_minutes = round(minutes_diff / frame_step) * frame_step
                     if abs(minutes_diff - rounded_minutes) > frame_step / 2:
                         continue
                 
                 frames.append({
-                    "timestamp": frame_timestamp,
+                    "timestamp": timestamp,
                     "iso": frame_time.isoformat(),
-                    "path": frame_path
                 })
             
-            # Ordenar por timestamp
+            # Ordenar por timestamp (ascendente)
             frames.sort(key=lambda f: f["timestamp"])
             
             return frames
