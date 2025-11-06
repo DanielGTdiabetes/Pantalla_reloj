@@ -964,7 +964,7 @@ export const ConfigPage: React.FC = () => {
                         ...(config as any).blitzortung,
                         enabled: e.target.checked,
                       } as any,
-                    });
+                    } as AppConfigV2);
                   }}
                 />
                 Habilitar Rayos
@@ -986,7 +986,7 @@ export const ConfigPage: React.FC = () => {
                           ...(config as any).blitzortung,
                           mqtt_host: e.target.value || "127.0.0.1",
                         } as any,
-                      });
+                      } as AppConfigV2);
                     }}
                     placeholder="127.0.0.1"
                   />
@@ -1006,7 +1006,7 @@ export const ConfigPage: React.FC = () => {
                           ...(config as any).blitzortung,
                           mqtt_port: parseInt(e.target.value) || 1883,
                         } as any,
-                      });
+                      } as AppConfigV2);
                     }}
                   />
                 </div>
@@ -1023,7 +1023,7 @@ export const ConfigPage: React.FC = () => {
                           ...(config as any).blitzortung,
                           mqtt_topic: e.target.value || "blitzortung/1",
                         } as any,
-                      });
+                      } as AppConfigV2);
                     }}
                     placeholder="blitzortung/1"
                   />
@@ -1078,7 +1078,7 @@ export const ConfigPage: React.FC = () => {
                             ...(config as any).blitzortung,
                             ws_enabled: e.target.checked,
                           } as any,
-                        });
+                        } as AppConfigV2);
                       }}
                     />
                     Habilitar WebSocket
@@ -1099,7 +1099,7 @@ export const ConfigPage: React.FC = () => {
                               ...(config as any).blitzortung,
                               ws_url: e.target.value || null,
                             } as any,
-                          });
+                          } as AppConfigV2);
                         }}
                         placeholder="wss://example.com/ws"
                       />
@@ -1144,7 +1144,7 @@ export const ConfigPage: React.FC = () => {
                           ...(config as any).blitzortung,
                           buffer_max: parseInt(e.target.value) || 500,
                         } as any,
-                      });
+                      } as AppConfigV2);
                     }}
                   />
                   <div className="config-field__hint">Máximo número de eventos en memoria</div>
@@ -1164,7 +1164,7 @@ export const ConfigPage: React.FC = () => {
                           ...(config as any).blitzortung,
                           prune_seconds: parseInt(e.target.value) || 900,
                         } as any,
-                      });
+                      } as AppConfigV2);
                     }}
                   />
                   <div className="config-field__hint">Tiempo de vida de eventos en segundos (900 = 15 minutos)</div>
@@ -1186,7 +1186,7 @@ export const ConfigPage: React.FC = () => {
                               ...(config as any).storm,
                               enabled: e.target.checked,
                             } as any,
-                          });
+                          } as AppConfigV2);
                         }}
                       />
                       Habilitar Modo Tormenta
@@ -1208,7 +1208,7 @@ export const ConfigPage: React.FC = () => {
                                 ...(config as any).storm,
                                 center_lat: parseFloat(e.target.value) || 39.986,
                               } as any,
-                            });
+                            } as AppConfigV2);
                           }}
                         />
                       </div>
@@ -1226,7 +1226,7 @@ export const ConfigPage: React.FC = () => {
                                 ...(config as any).storm,
                                 center_lng: parseFloat(e.target.value) || -0.051,
                               } as any,
-                            });
+                            } as AppConfigV2);
                           }}
                         />
                       </div>
@@ -1246,7 +1246,7 @@ export const ConfigPage: React.FC = () => {
                                 ...(config as any).storm,
                                 zoom: parseFloat(e.target.value) || 9.0,
                               } as any,
-                            });
+                            } as AppConfigV2);
                           }}
                         />
                       </div>
@@ -1263,7 +1263,7 @@ export const ConfigPage: React.FC = () => {
                                   ...(config as any).storm,
                                   auto_enable: e.target.checked,
                                 } as any,
-                              });
+                              } as AppConfigV2);
                             }}
                           />
                           Auto-enable cuando hay rayos cerca
@@ -1287,7 +1287,7 @@ export const ConfigPage: React.FC = () => {
                                     ...(config as any).storm,
                                     radius_km: parseFloat(e.target.value) || 30,
                                   } as any,
-                                });
+                                } as AppConfigV2);
                               }}
                             />
                           </div>
@@ -1307,7 +1307,7 @@ export const ConfigPage: React.FC = () => {
                                     ...(config as any).storm,
                                     auto_disable_after_minutes: parseInt(e.target.value) || 60,
                                   } as any,
-                                });
+                                } as AppConfigV2);
                               }}
                             />
                           </div>
