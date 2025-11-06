@@ -16,8 +16,8 @@ from .config_manager import ConfigManager
 LOGGER = logging.getLogger("pantalla.backend.config_store")
 
 CONFIG_PATH = Path("/var/lib/pantalla-reloj/config.json")
-ICS_STORAGE_DIR = Path("/var/lib/pantalla-reloj/ics")
-ICS_STORAGE_PATH = ICS_STORAGE_DIR / "personal.ics"
+ICS_STORAGE_DIR = Path("/var/lib/pantalla-reloj/calendar")
+ICS_STORAGE_PATH = ICS_STORAGE_DIR / "calendar.ics"
 
 
 class CalendarValidationError(Exception):

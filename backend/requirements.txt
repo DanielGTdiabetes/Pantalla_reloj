@@ -3,7 +3,7 @@ uvicorn[standard]
 requests
 pydantic
 python-multipart
-icalendar
+icalendar==5.0.11
 aiofiles
 shapely>=2.0.0
 astral>=3.2

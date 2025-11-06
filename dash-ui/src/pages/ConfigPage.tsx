@@ -2,13 +2,16 @@ import React, { useEffect, useState } from "react";
 
 import { withConfigDefaultsV2 } from "../config/defaults_v2";
 import {
+  getCalendarPreview,
   getConfigV2,
   getLightningStatus,
   getLightningSample,
   getOpenSkyStatus,
   getRainViewerFrames,
   getRainViewerTileUrl,
+  saveCalendarConfig,
   saveConfigV2,
+  setCalendarICSUrl,
   testAemetApiKey,
   testCalendarConnection,
   testGIBS,
@@ -18,7 +21,9 @@ import {
   testNewsFeeds,
   testRainViewer,
   testXyz,
+  uploadCalendarICS,
   updateAemetApiKey,
+  type CalendarPreviewItem,
   type NewsFeedTestResult,
   type WiFiNetwork,
   wifiConnect,
@@ -82,8 +87,12 @@ export const ConfigPage: React.FC = () => {
 
   // Grupo 3: Panel Rotativo
   const [panelRotatorSaving, setPanelRotatorSaving] = useState(false);
-  const [calendarTestResult, setCalendarTestResult] = useState<{ ok: boolean; message?: string; reason?: string } | null>(null);
+  const [calendarTestResult, setCalendarTestResult] = useState<{ ok: boolean; message?: string; reason?: string; source?: string; upcoming_count?: number; events_total?: number } | null>(null);
   const [calendarTesting, setCalendarTesting] = useState(false);
+  const [calendarPreview, setCalendarPreview] = useState<CalendarPreviewItem[] | null>(null);
+  const [calendarPreviewLoading, setCalendarPreviewLoading] = useState(false);
+  const [calendarUploading, setCalendarUploading] = useState(false);
+  const [calendarUrlLoading, setCalendarUrlLoading] = useState(false);
   const [newsFeedsTestResult, setNewsFeedsTestResult] = useState<NewsFeedTestResult[] | null>(null);
   const [newsFeedsTesting, setNewsFeedsTesting] = useState(false);
 
@@ -505,14 +514,141 @@ export const ConfigPage: React.FC = () => {
   const handleTestCalendar = async () => {
     setCalendarTesting(true);
     setCalendarTestResult(null);
+    setCalendarPreview(null);
     try {
       const result = await testCalendarConnection();
       setCalendarTestResult(result || { ok: false, reason: "Sin respuesta" });
+      
+      // Si el test es exitoso, cargar preview
+      if (result?.ok) {
+        await handleLoadCalendarPreview();
+      }
     } catch (error) {
-      setCalendarTestResult({ ok: false, reason: "Error al probar la conexión del calendario" });
+      setCalendarTestResult({ ok: false, reason: "Error al probar el calendario" });
       console.error("Error testing calendar:", error);
     } finally {
       setCalendarTesting(false);
+    }
+  };
+
+  const handleLoadCalendarPreview = async () => {
+    setCalendarPreviewLoading(true);
+    try {
+      const preview = await getCalendarPreview(5);
+      if (preview.ok && preview.items) {
+        setCalendarPreview(preview.items);
+      } else {
+        setCalendarPreview([]);
+      }
+    } catch (error) {
+      console.error("Error loading calendar preview:", error);
+      setCalendarPreview([]);
+    } finally {
+      setCalendarPreviewLoading(false);
+    }
+  };
+
+  const handleUploadICS = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    setCalendarUploading(true);
+    try {
+      const result = await uploadCalendarICS(file);
+      if (result.ok) {
+        // Recargar config para reflejar cambios
+        const loadedConfig = await getConfigV2();
+        setConfig(withConfigDefaultsV2(loadedConfig));
+        
+        // Mostrar mensaje de éxito
+        setCalendarTestResult({ 
+          ok: true, 
+          message: `Archivo subido correctamente. ${result.events || 0} eventos encontrados.` 
+        });
+        
+        // Cargar preview
+        await handleLoadCalendarPreview();
+      } else {
+        setCalendarTestResult({ 
+          ok: false, 
+          reason: result.error || "upload_error",
+          message: result.detail || "Error al subir el archivo ICS"
+        });
+      }
+    } catch (error) {
+      setCalendarTestResult({ ok: false, reason: "upload_error", message: String(error) });
+      console.error("Error uploading ICS:", error);
+    } finally {
+      setCalendarUploading(false);
+      // Resetear input
+      event.target.value = "";
+    }
+  };
+
+  const handleSetICSUrl = async () => {
+    if (!config) return;
+    
+    const url = config.calendar?.ics?.url;
+    if (!url || !url.trim()) {
+      setCalendarTestResult({ ok: false, reason: "missing_url", message: "URL requerida" });
+      return;
+    }
+    
+    setCalendarUrlLoading(true);
+    try {
+      const result = await setCalendarICSUrl({ url: url.trim() });
+      if (result.ok) {
+        // Recargar config
+        const loadedConfig = await getConfigV2();
+        setConfig(withConfigDefaultsV2(loadedConfig));
+        
+        setCalendarTestResult({ 
+          ok: true, 
+          message: `URL configurada correctamente. ${result.events || 0} eventos encontrados.` 
+        });
+        
+        // Cargar preview
+        await handleLoadCalendarPreview();
+      } else {
+        setCalendarTestResult({ 
+          ok: false, 
+          reason: result.error || "url_error",
+          message: result.detail || "Error al configurar la URL ICS"
+        });
+      }
+    } catch (error) {
+      setCalendarTestResult({ ok: false, reason: "url_error", message: String(error) });
+      console.error("Error setting ICS URL:", error);
+    } finally {
+      setCalendarUrlLoading(false);
+    }
+  };
+
+  const handleSaveCalendar = async () => {
+    if (!config) return;
+    
+    setPanelRotatorSaving(true);
+    try {
+      // Guardar configuración del calendario
+      await saveCalendarConfig({
+        enabled: config.calendar?.enabled || false,
+        source: config.calendar?.source || "google",
+        days_ahead: config.calendar?.days_ahead || 14,
+        ics: config.calendar?.ics ? {
+          mode: config.calendar.ics.mode,
+          url: config.calendar.ics.url,
+          // No enviar file_path, se actualiza al subir archivo
+        } : undefined,
+      });
+      
+      // Recargar config
+      const loadedConfig = await getConfigV2();
+      setConfig(withConfigDefaultsV2(loadedConfig));
+    } catch (error) {
+      console.error("Error saving calendar config:", error);
+      alert("Error al guardar la configuración del calendario");
+    } finally {
+      setPanelRotatorSaving(false);
     }
   };
 
@@ -1858,68 +1994,283 @@ export const ConfigPage: React.FC = () => {
               <label>
                 <input
                   type="checkbox"
-                  checked={config.panels?.calendar?.enabled || false}
+                  checked={config.calendar?.enabled || false}
                   onChange={(e) => {
                     setConfig({
                       ...config,
-                      panels: {
-                        ...config.panels,
-                        calendar: {
-                          enabled: e.target.checked,
-                          provider: config.panels?.calendar?.provider || "ics",
-                        },
-                      },
+                      calendar: {
+                        ...config.calendar,
+                        enabled: e.target.checked,
+                        source: config.calendar?.source || "google",
+                        days_ahead: config.calendar?.days_ahead || 14,
+                      } as any,
                     });
                   }}
                 />
-                Habilitar Panel de Calendario
+                Habilitar Calendario
               </label>
-              {config.panels?.calendar?.enabled && (
+              {config.calendar?.enabled && (
                 <div className="config-field" style={{ marginLeft: "24px", marginTop: "8px" }}>
-                  <label>Proveedor</label>
-                  <select
-                    value={config.panels.calendar.provider || "ics"}
-                    onChange={(e) => {
-                      setConfig({
-                        ...config,
-                        panels: {
-                          ...config.panels,
-                        calendar: {
-                          enabled: config.panels?.calendar?.enabled || false,
-                          provider: e.target.value as any,
-                        },
-                        },
-                      });
-                    }}
-                  >
-                    <option value="ics">ICS</option>
-                    <option value="google">Google Calendar</option>
-                    <option value="disabled">Deshabilitado</option>
-                  </select>
+                  <label>Origen</label>
+                  <div style={{ display: "flex", gap: "16px", marginTop: "8px" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <input
+                        type="radio"
+                        name="calendar_source"
+                        checked={config.calendar?.source === "ics"}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setConfig({
+                              ...config,
+                              calendar: {
+                                ...config.calendar,
+                                source: "ics",
+                                enabled: config.calendar?.enabled || false,
+                                days_ahead: config.calendar?.days_ahead || 14,
+                                ics: config.calendar?.ics || {
+                                  mode: "upload",
+                                  file_path: null,
+                                  url: null,
+                                  last_ok: null,
+                                  last_error: null,
+                                },
+                              } as any,
+                            });
+                          }
+                        }}
+                      />
+                      ICS
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <input
+                        type="radio"
+                        name="calendar_source"
+                        checked={config.calendar?.source === "google"}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setConfig({
+                              ...config,
+                              calendar: {
+                                ...config.calendar,
+                                source: "google",
+                                enabled: config.calendar?.enabled || false,
+                                days_ahead: config.calendar?.days_ahead || 14,
+                              } as any,
+                            });
+                          }
+                        }}
+                      />
+                      Google Calendar
+                    </label>
+                  </div>
                   
-                  {config.panels.calendar.provider === "google" && (
-                    <div className="config-field__hint config-field__hint--warning" style={{ marginTop: "8px" }}>
-                      ⚠ Para usar Google Calendar, configura api_key y calendar_id en secrets.google
+                  {config.calendar?.source === "ics" && (
+                    <div style={{ marginTop: "12px" }}>
+                      <label style={{ display: "block", marginBottom: "8px" }}>Modo ICS</label>
+                      <div style={{ display: "flex", gap: "16px", marginBottom: "12px" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                          <input
+                            type="radio"
+                            name="ics_mode"
+                            checked={config.calendar?.ics?.mode === "upload"}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setConfig({
+                                  ...config,
+                                  calendar: {
+                                    ...config.calendar,
+                                    ics: {
+                                      ...config.calendar?.ics,
+                                      mode: "upload",
+                                      url: null,
+                                    } as any,
+                                  } as any,
+                                });
+                              }
+                            }}
+                          />
+                          Subir archivo
+                        </label>
+                        <label style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                          <input
+                            type="radio"
+                            name="ics_mode"
+                            checked={config.calendar?.ics?.mode === "url"}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setConfig({
+                                  ...config,
+                                  calendar: {
+                                    ...config.calendar,
+                                    ics: {
+                                      ...config.calendar?.ics,
+                                      mode: "url",
+                                      url: config.calendar?.ics?.url || "",
+                                    } as any,
+                                  } as any,
+                                });
+                              }
+                            }}
+                          />
+                          URL remota
+                        </label>
+                      </div>
+                      
+                      {config.calendar?.ics?.mode === "upload" && (
+                        <div>
+                          <label>Subir archivo ICS</label>
+                          <input
+                            type="file"
+                            accept=".ics,text/calendar"
+                            onChange={handleUploadICS}
+                            disabled={calendarUploading}
+                            style={{ marginTop: "8px" }}
+                          />
+                          {calendarUploading && <div style={{ marginTop: "4px", fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)" }}>Subiendo...</div>}
+                          {config.calendar?.ics?.file_path && (
+                            <div style={{ marginTop: "8px", fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)" }}>
+                              Archivo: {config.calendar.ics.file_path.split("/").pop()}
+                              {config.calendar.ics.last_ok && (
+                                <span style={{ marginLeft: "8px" }}>
+                                  (Última carga: {new Date(config.calendar.ics.last_ok).toLocaleString()})
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {config.calendar?.ics?.mode === "url" && (
+                        <div>
+                          <label>URL del calendario ICS</label>
+                          <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                            <input
+                              type="text"
+                              value={config.calendar?.ics?.url || ""}
+                              onChange={(e) => {
+                                setConfig({
+                                  ...config,
+                                  calendar: {
+                                    ...config.calendar,
+                                    ics: {
+                                      ...config.calendar?.ics,
+                                      url: e.target.value || null,
+                                    } as any,
+                                  } as any,
+                                });
+                              }}
+                              placeholder="https://example.com/calendar.ics"
+                              style={{ flex: 1 }}
+                            />
+                            <button
+                              className="config-button"
+                              onClick={handleSetICSUrl}
+                              disabled={calendarUrlLoading}
+                            >
+                              {calendarUrlLoading ? "Guardando..." : "Descargar y Guardar"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                   
-                  <button
-                    className="config-button"
-                    onClick={handleTestCalendar}
-                    disabled={calendarTesting}
-                    style={{ marginTop: "8px" }}
-                  >
-                    {calendarTesting ? "Probando..." : "Test Calendario"}
-                  </button>
+                  {config.calendar?.source === "google" && (
+                    <div style={{ marginTop: "12px" }}>
+                      <div className="config-field__hint config-field__hint--warning">
+                        ⚠ Para usar Google Calendar, configura api_key y calendar_id en secrets.google
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div style={{ marginTop: "12px" }}>
+                    <label>Días hacia adelante</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="60"
+                      value={config.calendar?.days_ahead || 14}
+                      onChange={(e) => {
+                        setConfig({
+                          ...config,
+                          calendar: {
+                            ...config.calendar,
+                            days_ahead: parseInt(e.target.value) || 14,
+                          } as any,
+                        });
+                      }}
+                      style={{ marginTop: "8px", width: "100px" }}
+                    />
+                  </div>
+                  
+                  <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
+                    <button
+                      className="config-button primary"
+                      onClick={handleTestCalendar}
+                      disabled={calendarTesting}
+                    >
+                      {calendarTesting ? "Probando..." : "Test Calendario"}
+                    </button>
+                    <button
+                      className="config-button"
+                      onClick={handleSaveCalendar}
+                      disabled={panelRotatorSaving}
+                    >
+                      {panelRotatorSaving ? "Guardando..." : "Guardar"}
+                    </button>
+                  </div>
                   {calendarTestResult && (
                     <div
                       className={`config-field__hint ${
                         calendarTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
                       }`}
+                      style={{ marginTop: "8px" }}
                     >
-                      {calendarTestResult.ok
-                        ? `✓ ${calendarTestResult.message || "Conexión exitosa"}`
-                        : `✗ Error: ${calendarTestResult.reason || "Desconocido"}`}
+                      {calendarTestResult.ok ? (
+                        <>
+                          ✓ {calendarTestResult.message || "Conexión exitosa"}
+                          {calendarTestResult.upcoming_count !== undefined && (
+                            <span className="config-badge" style={{ marginLeft: "8px" }}>
+                              {calendarTestResult.upcoming_count} próximos eventos
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        `✗ Error: ${calendarTestResult.reason || "Desconocido"}`
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* Preview de eventos */}
+                  {calendarPreview !== null && (
+                    <div style={{ marginTop: "12px" }}>
+                      <label>Vista previa de próximos eventos</label>
+                      {calendarPreviewLoading ? (
+                        <div style={{ marginTop: "8px", fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)" }}>
+                          Cargando...
+                        </div>
+                      ) : calendarPreview.length === 0 ? (
+                        <div style={{ marginTop: "8px", fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)" }}>
+                          No hay eventos próximos
+                        </div>
+                      ) : (
+                        <div className="config-table" style={{ marginTop: "8px" }}>
+                          <div className="config-table__header">
+                            <span>Próximos eventos</span>
+                          </div>
+                          {calendarPreview.map((event, idx) => (
+                            <div key={idx} className="config-table__row">
+                              <div style={{ flex: 1 }}>
+                                <strong>{event.title || "Sin título"}</strong>
+                                <div style={{ fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)", marginTop: "4px" }}>
+                                  {event.all_day ? "Todo el día" : new Date(event.start).toLocaleString()}
+                                  {event.location && ` • ${event.location}`}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

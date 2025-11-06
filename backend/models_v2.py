@@ -223,10 +223,25 @@ class PanelHistoricalEventsConfig(BaseModel):
     max_items: int = Field(default=5, ge=1, le=20)
 
 
+class CalendarICSConfig(BaseModel):
+    """Configuración de calendario ICS."""
+    mode: Literal["upload", "url"] = Field(default="upload")
+    file_path: Optional[str] = Field(default=None, max_length=1024)
+    url: Optional[str] = Field(default=None, max_length=2048)
+    last_ok: Optional[str] = Field(default=None, max_length=64)  # ISO datetime
+    last_error: Optional[str] = Field(default=None, max_length=512)
+
+
 class CalendarConfig(BaseModel):
     """Configuración de calendario top-level."""
     enabled: bool = True
-    provider: Literal["google", "ics", "disabled"] = Field(default="google")
+    source: Literal["google", "ics"] = Field(default="google")
+    google_api_key: Optional[str] = Field(default=None, max_length=512)
+    google_calendar_id: Optional[str] = Field(default=None, max_length=512)
+    ics: Optional[CalendarICSConfig] = Field(default=None)
+    days_ahead: int = Field(default=14, ge=1, le=60)
+    # Legacy: mantener provider e ics_path para retrocompatibilidad
+    provider: Optional[Literal["google", "ics", "disabled"]] = Field(default=None)
     ics_path: Optional[str] = Field(default=None, max_length=1024)
 
 

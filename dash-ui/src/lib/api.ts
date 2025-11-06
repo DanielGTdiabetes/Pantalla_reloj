@@ -1,5 +1,5 @@
 import type { AppConfig } from "../types/config";
-import type { AppConfigV2 } from "../types/config_v2";
+import type { AppConfigV2, CalendarConfig } from "../types/config_v2";
 
 export type SaveConfigResponse = {
   ok: boolean;
@@ -93,6 +93,16 @@ export async function apiGet<T = unknown>(path: string): Promise<T> {
 export async function apiPost<T = unknown>(path: string, body: unknown): Promise<T> {
   return apiRequest<T>(path, {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body ?? {}),
+  });
+}
+
+export async function apiPatch<T = unknown>(path: string, body: unknown): Promise<T> {
+  return apiRequest<T>(path, {
+    method: "PATCH",
     headers: {
       "Content-Type": "application/json",
     },
@@ -199,6 +209,15 @@ export type CalendarTestResponse = {
 };
 
 export async function testCalendarConnection(apiKey?: string, calendarId?: string) {
+  // Si no se proporcionan credenciales, llamar sin body para usar el origen activo
+  if (!apiKey && !calendarId) {
+    try {
+      return apiPost<CalendarTestResponse | undefined>("/api/calendar/test", {});
+    } catch (error) {
+      return { ok: false, reason: "connection_error", message: String(error) };
+    }
+  }
+  
   const body: Record<string, unknown> = {};
   if (apiKey && apiKey.trim().length > 0) {
     body.api_key = apiKey.trim();
@@ -272,6 +291,84 @@ export async function testNewsFeeds(request: NewsTestFeedsRequest): Promise<News
   } catch (error) {
     return { ok: false, results: [] };
   }
+}
+
+// Calendar ICS endpoints
+export type CalendarICSUploadResponse = {
+  ok: boolean;
+  stored?: string;
+  events?: number;
+  error?: string;
+  detail?: string;
+};
+
+export async function uploadCalendarICS(file: File): Promise<CalendarICSUploadResponse> {
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    
+    const response = await fetch(`${window.location.origin}/api/calendar/ics/upload`, {
+      method: "POST",
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: "unknown_error" }));
+      return { ok: false, error: error.error || "upload_error", detail: error.detail };
+    }
+    
+    return await response.json();
+  } catch (error) {
+    return { ok: false, error: "connection_error", detail: String(error) };
+  }
+}
+
+export type CalendarICSUrlRequest = {
+  url: string;
+};
+
+export type CalendarICSUrlResponse = {
+  ok: boolean;
+  events?: number;
+  error?: string;
+  detail?: string;
+};
+
+export async function setCalendarICSUrl(request: CalendarICSUrlRequest): Promise<CalendarICSUrlResponse> {
+  try {
+    return apiPost<CalendarICSUrlResponse>("/api/calendar/ics/url", request);
+  } catch (error) {
+    return { ok: false, error: "connection_error", detail: String(error) };
+  }
+}
+
+export type CalendarPreviewItem = {
+  title: string;
+  start: string;
+  end: string;
+  location: string;
+  all_day: boolean;
+};
+
+export type CalendarPreviewResponse = {
+  ok: boolean;
+  source?: string;
+  count?: number;
+  items?: CalendarPreviewItem[];
+  error?: string;
+  message?: string;
+};
+
+export async function getCalendarPreview(limit: number = 10): Promise<CalendarPreviewResponse> {
+  try {
+    return apiGet<CalendarPreviewResponse>(`/api/calendar/preview?limit=${limit}`);
+  } catch (error) {
+    return { ok: false, error: "connection_error", message: String(error) };
+  }
+}
+
+export async function saveCalendarConfig(config: Partial<CalendarConfig>): Promise<void> {
+  return apiPatch("/api/config/group/calendar", config);
 }
 
 

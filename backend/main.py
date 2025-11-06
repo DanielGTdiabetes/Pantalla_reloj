@@ -29,7 +29,7 @@ try:
 except ImportError:
     websocket = None
 
-from fastapi import FastAPI, HTTPException, Request, UploadFile, File
+from fastapi import Body, FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -523,6 +523,22 @@ class NewsTestFeedsRequest(BaseModel):
 class CalendarTestRequest(BaseModel):
     api_key: Optional[str] = Field(default=None, max_length=512)
     calendar_id: Optional[str] = Field(default=None, max_length=512)
+    
+    @classmethod
+    def empty(cls) -> "CalendarTestRequest":
+        """Crea un request vacío para usar el origen activo."""
+        return cls(api_key=None, calendar_id=None)
+
+
+class CalendarICSUrlRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=2048)
+
+
+class CalendarConfigUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    source: Optional[Literal["google", "ics"]] = None
+    days_ahead: Optional[int] = Field(default=None, ge=1, le=60)
+    ics: Optional[Dict[str, Any]] = None  # mode, url (no file_path)
 
 
 class AISStreamSecretRequest(BaseModel):
@@ -756,6 +772,44 @@ def _read_config_v2() -> Tuple[AppConfigV2, bool]:
                 if "aemet" not in secrets or not isinstance(secrets.get("aemet"), dict):
                     secrets["aemet"] = {}
                 config_data["secrets"] = secrets
+            
+            # Migrar calendar config si existe
+            calendar = config_data.get("calendar", {})
+            if isinstance(calendar, dict):
+                # Si no tiene source, determinar según credenciales
+                if "source" not in calendar:
+                    google_api_key = calendar.get("google_api_key") or secret_store.get_secret("google_calendar_api_key") or secret_store.get_secret("google_api_key")
+                    google_calendar_id = calendar.get("google_calendar_id") or secret_store.get_secret("google_calendar_id")
+                    
+                    if google_api_key and google_calendar_id:
+                        calendar["source"] = "google"
+                    else:
+                        calendar["source"] = "ics"
+                        if "ics" not in calendar:
+                            calendar["ics"] = {}
+                        calendar["ics"]["mode"] = "upload"
+                        calendar["ics"]["file_path"] = None
+                
+                # Asegurar que ics existe si source es ics
+                if calendar.get("source") == "ics":
+                    if "ics" not in calendar or not isinstance(calendar.get("ics"), dict):
+                        calendar["ics"] = {
+                            "mode": "upload",
+                            "file_path": None,
+                            "url": None,
+                            "last_ok": None,
+                            "last_error": None
+                        }
+                    # Migrar ics_path legacy si existe
+                    if "ics_path" in calendar and calendar["ics_path"] and not calendar["ics"].get("file_path"):
+                        calendar["ics"]["file_path"] = calendar["ics_path"]
+                        calendar["ics"]["mode"] = "upload"
+                
+                # Asegurar days_ahead
+                if "days_ahead" not in calendar:
+                    calendar["days_ahead"] = 14
+                
+                config_data["calendar"] = calendar
             
             try:
                 config_v2 = AppConfigV2.model_validate(config_data)
@@ -1726,6 +1780,13 @@ async def upload_ics_file(
     _update_calendar_runtime_state("ics", True, "stale", None, str(ICS_STORAGE_PATH))
     calendar_state = _get_calendar_runtime_state()
     
+    # Contar eventos en el archivo
+    try:
+        events = fetch_ics_calendar_events(path=str(ICS_STORAGE_PATH))
+        events_count = len(events)
+    except Exception:
+        events_count = 0
+    
     # Obtener metadatos del archivo guardado
     try:
         stat_info = ICS_STORAGE_PATH.stat()
@@ -1742,6 +1803,258 @@ async def upload_ics_file(
     }
 
     return JSONResponse(content=response_payload, status_code=200)
+
+
+@app.post("/api/calendar/ics/upload")
+async def upload_calendar_ics_file(
+    file: UploadFile = File(..., description="ICS calendar file"),
+) -> Dict[str, Any]:
+    """Sube un archivo ICS y lo guarda en disco.
+    
+    Valida el formato, guarda en /var/lib/pantalla-reloj/calendar/calendar.ics
+    y actualiza la configuración del calendario.
+    """
+    MAX_ICS_SIZE = 3 * 1024 * 1024  # 3 MB
+    
+    # Validar extensión
+    if file.filename and not file.filename.lower().endswith(".ics"):
+        return {
+            "ok": False,
+            "error": "invalid_extension",
+            "detail": "File must have .ics extension"
+        }
+    
+    # Leer contenido
+    try:
+        content = await file.read()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": "read_error",
+            "detail": f"Cannot read file: {str(exc)}"
+        }
+    
+    # Validar tamaño
+    if len(content) > MAX_ICS_SIZE:
+        return {
+            "ok": False,
+            "error": "file_too_large",
+            "detail": f"File size exceeds maximum ({MAX_ICS_SIZE} bytes)"
+        }
+    
+    # Validar formato ICS básico
+    try:
+        _validate_ics_basic(content)
+    except HTTPException as exc:
+        return {
+            "ok": False,
+            "error": "invalid_ics",
+            "detail": exc.detail.get("error", "Invalid ICS format") if isinstance(exc.detail, dict) else str(exc.detail)
+        }
+    
+    # Crear directorio si no existe
+    _ensure_ics_storage_directory()
+    
+    # Obtener UID/GID del propietario del config
+    uid = gid = None
+    try:
+        stat_info = config_manager.config_file.stat()
+        uid, gid = stat_info.st_uid, stat_info.st_gid
+    except (FileNotFoundError, OSError):
+        try:
+            parent_stat = config_manager.config_file.parent.stat()
+            uid, gid = parent_stat.st_uid, parent_stat.st_gid
+        except OSError:
+            pass
+    
+    # Guardar archivo
+    try:
+        with ICS_STORAGE_PATH.open("wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        
+        # Ajustar permisos
+        if uid is not None and gid is not None:
+            try:
+                os.chown(ICS_STORAGE_PATH, uid, gid)
+            except OSError:
+                pass
+        try:
+            os.chmod(ICS_STORAGE_PATH, 0o640)
+        except OSError:
+            pass
+    except (OSError, PermissionError) as exc:
+        return {
+            "ok": False,
+            "error": "write_error",
+            "detail": f"Cannot write ICS file: {str(exc)}"
+        }
+    
+    # Contar eventos
+    try:
+        events = fetch_ics_calendar_events(path=str(ICS_STORAGE_PATH))
+        events_count = len(events)
+    except Exception:
+        events_count = 0
+    
+    # Actualizar configuración v2
+    try:
+        config_v2, _ = _read_config_v2()
+        config_data = config_v2.model_dump(mode="json", exclude_none=True)
+        
+        # Actualizar calendar config
+        if "calendar" not in config_data:
+            config_data["calendar"] = {}
+        
+        config_data["calendar"]["enabled"] = True
+        config_data["calendar"]["source"] = "ics"
+        if "ics" not in config_data["calendar"]:
+            config_data["calendar"]["ics"] = {}
+        
+        config_data["calendar"]["ics"]["mode"] = "upload"
+        config_data["calendar"]["ics"]["file_path"] = str(ICS_STORAGE_PATH)
+        config_data["calendar"]["ics"]["url"] = None
+        config_data["calendar"]["ics"]["last_ok"] = datetime.now(timezone.utc).isoformat()
+        config_data["calendar"]["ics"]["last_error"] = None
+        
+        # Guardar configuración
+        config_manager._atomic_write_v2(config_data)
+    except Exception as exc:
+        logger.warning("[calendar] Failed to update config after ICS upload: %s", exc)
+        # No fallar, el archivo ya está guardado
+    
+    return {
+        "ok": True,
+        "stored": str(ICS_STORAGE_PATH),
+        "events": events_count
+    }
+
+
+@app.post("/api/calendar/ics/url")
+async def set_calendar_ics_url(request: CalendarICSUrlRequest) -> Dict[str, Any]:
+    """Configura una URL remota para cargar un calendario ICS.
+    
+    Descarga el archivo ICS desde la URL, lo valida y lo guarda en disco.
+    """
+    MAX_ICS_SIZE = 3 * 1024 * 1024  # 3 MB
+    
+    try:
+        # Descargar ICS desde URL
+        response = requests.get(request.url, timeout=5, allow_redirects=True)
+        if response.status_code != 200:
+            return {
+                "ok": False,
+                "error": "http_error",
+                "detail": f"HTTP {response.status_code}"
+            }
+        
+        content = response.content
+        if len(content) > MAX_ICS_SIZE:
+            return {
+                "ok": False,
+                "error": "file_too_large",
+                "detail": f"File size exceeds maximum ({MAX_ICS_SIZE} bytes)"
+            }
+        
+        # Validar formato ICS
+        try:
+            _validate_ics_basic(content)
+        except HTTPException as exc:
+            return {
+                "ok": False,
+                "error": "invalid_ics",
+                "detail": exc.detail.get("error", "Invalid ICS format") if isinstance(exc.detail, dict) else str(exc.detail)
+            }
+        
+        # Crear directorio si no existe
+        _ensure_ics_storage_directory()
+        
+        # Obtener UID/GID del propietario del config
+        uid = gid = None
+        try:
+            stat_info = config_manager.config_file.stat()
+            uid, gid = stat_info.st_uid, stat_info.st_gid
+        except (FileNotFoundError, OSError):
+            try:
+                parent_stat = config_manager.config_file.parent.stat()
+                uid, gid = parent_stat.st_uid, parent_stat.st_gid
+            except OSError:
+                pass
+        
+        # Guardar archivo
+        try:
+            with ICS_STORAGE_PATH.open("wb") as handle:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            
+            # Ajustar permisos
+            if uid is not None and gid is not None:
+                try:
+                    os.chown(ICS_STORAGE_PATH, uid, gid)
+                except OSError:
+                    pass
+            try:
+                os.chmod(ICS_STORAGE_PATH, 0o640)
+            except OSError:
+                pass
+        except (OSError, PermissionError) as exc:
+            return {
+                "ok": False,
+                "error": "write_error",
+                "detail": f"Cannot write ICS file: {str(exc)}"
+            }
+        
+        # Contar eventos
+        try:
+            events = fetch_ics_calendar_events(path=str(ICS_STORAGE_PATH))
+            events_count = len(events)
+        except Exception:
+            events_count = 0
+        
+        # Actualizar configuración v2
+        try:
+            config_v2, _ = _read_config_v2()
+            config_data = config_v2.model_dump(mode="json", exclude_none=True)
+            
+            # Actualizar calendar config
+            if "calendar" not in config_data:
+                config_data["calendar"] = {}
+            
+            config_data["calendar"]["enabled"] = True
+            config_data["calendar"]["source"] = "ics"
+            if "ics" not in config_data["calendar"]:
+                config_data["calendar"]["ics"] = {}
+            
+            config_data["calendar"]["ics"]["mode"] = "url"
+            config_data["calendar"]["ics"]["url"] = request.url
+            config_data["calendar"]["ics"]["file_path"] = str(ICS_STORAGE_PATH)
+            config_data["calendar"]["ics"]["last_ok"] = datetime.now(timezone.utc).isoformat()
+            config_data["calendar"]["ics"]["last_error"] = None
+            
+            # Guardar configuración
+            config_manager._atomic_write_v2(config_data)
+        except Exception as exc:
+            logger.warning("[calendar] Failed to update config after ICS URL set: %s", exc)
+        
+        return {
+            "ok": True,
+            "events": events_count
+        }
+    except requests.RequestException as exc:
+        return {
+            "ok": False,
+            "error": "network_error",
+            "detail": str(exc)
+        }
+    except Exception as exc:
+        logger.error("[calendar] Error setting ICS URL: %s", exc)
+        return {
+            "ok": False,
+            "error": "internal_error",
+            "detail": str(exc)
+        }
 
 
 @app.post("/api/logs/client")
@@ -4909,66 +5222,313 @@ def get_calendar_status() -> Dict[str, Any]:
 
 
 @app.post("/api/calendar/test")
-async def test_calendar(request: CalendarTestRequest) -> Dict[str, Any]:
-    """Prueba una conexión a Google Calendar con api_key y calendar_id.
+async def test_calendar(request: Optional[CalendarTestRequest] = Body(default=None)) -> Dict[str, Any]:
+    """Prueba el origen de calendario activo (ICS o Google).
     
-    Hace una query mínima de próximos eventos y devuelve el resultado.
+    Si source="ics": verifica archivo y cuenta eventos.
+    Si source="google": valida credenciales y hace query mínima.
+    
+    Si no se proporciona request body, usa el origen activo de la configuración.
     """
-    api_key = request.api_key
-    calendar_id = request.calendar_id
-    
-    # Si no se proporcionan, intentar obtener de secrets
-    if not api_key:
-        api_key = secret_store.get_secret("google_calendar_api_key") or secret_store.get_secret("google_api_key")
-    if not calendar_id:
-        calendar_id = secret_store.get_secret("google_calendar_id")
-    
-    if not api_key or not calendar_id:
-        return {
-            "ok": False,
-            "reason": "missing_credentials",
-            "message": "api_key or calendar_id missing"
-        }
-    
     try:
-        # Hacer una query mínima (próximos 7 días, máximo 5 eventos)
-        now = datetime.now(timezone.utc)
-        time_min = now
-        time_max = now + timedelta(days=7)
+        config_v2, _ = _read_config_v2()
+        config_data = config_v2.model_dump(mode="json", exclude_none=True) if hasattr(config_v2, 'model_dump') else config_v2
         
-        events = fetch_google_calendar_events(
-            api_key=api_key,
-            calendar_id=calendar_id,
-            days_ahead=7,
-            max_results=5,
-            time_min=time_min,
-            time_max=time_max
-        )
-        
-        return {
-            "ok": True,
-            "count": len(events),
-            "message": f"Successfully connected. Found {len(events)} events in next 7 days."
-        }
-    except requests.HTTPError as exc:
-        status_code = exc.response.status_code if hasattr(exc, 'response') else 0
-        if status_code == 401 or status_code == 403:
+        calendar_config = config_data.get("calendar", {})
+        if not calendar_config.get("enabled", False):
             return {
                 "ok": False,
-                "reason": "unauthorized",
-                "message": "Invalid API key or calendar ID"
+                "reason": "calendar_disabled",
+                "message": "Calendar is disabled"
             }
+        
+        source = calendar_config.get("source", "google")
+        days_ahead = calendar_config.get("days_ahead", 14)
+        
+        if source == "ics":
+            # Verificar ICS
+            ics_config = calendar_config.get("ics", {})
+            file_path = ics_config.get("file_path")
+            
+            if not file_path:
+                return {
+                    "ok": False,
+                    "source": "ics",
+                    "reason": "missing_file_path",
+                    "message": "ICS file path not configured"
+                }
+            
+            # Verificar que el archivo existe y es legible
+            path_obj = Path(file_path)
+            if not path_obj.exists() or not path_obj.is_file():
+                return {
+                    "ok": False,
+                    "source": "ics",
+                    "reason": "file_not_found",
+                    "message": f"ICS file not found: {file_path}"
+                }
+            
+            if not os.access(path_obj, os.R_OK):
+                return {
+                    "ok": False,
+                    "source": "ics",
+                    "reason": "file_not_readable",
+                    "message": f"ICS file not readable: {file_path}"
+                }
+            
+            # Parsear y contar eventos
+            try:
+                now = datetime.now(timezone.utc)
+                time_max = now + timedelta(days=days_ahead)
+                
+                events_all = fetch_ics_calendar_events(path=file_path)
+                events_upcoming = fetch_ics_calendar_events(path=file_path, time_min=now, time_max=time_max)
+                
+                # Actualizar last_ok en config
+                try:
+                    calendar_config["ics"]["last_ok"] = datetime.now(timezone.utc).isoformat()
+                    calendar_config["ics"]["last_error"] = None
+                    config_data["calendar"] = calendar_config
+                    config_manager._atomic_write_v2(config_data)
+                except Exception:
+                    pass  # No bloquear si no se puede actualizar
+                
+                return {
+                    "ok": True,
+                    "source": "ics",
+                    "events_total": len(events_all),
+                    "upcoming_count": len(events_upcoming),
+                    "range_days": days_ahead
+                }
+            except ICSCalendarError as exc:
+                # Actualizar last_error en config
+                try:
+                    calendar_config["ics"]["last_error"] = str(exc)
+                    config_data["calendar"] = calendar_config
+                    config_manager._atomic_write_v2(config_data)
+                except Exception:
+                    pass
+                
+                return {
+                    "ok": False,
+                    "source": "ics",
+                    "reason": "parse_error",
+                    "message": f"Invalid ICS file: {str(exc)}"
+                }
+        
+        elif source == "google":
+            # Verificar Google Calendar
+            api_key = request.api_key if request else None
+            calendar_id = request.calendar_id if request else None
+            
+            # Si no se proporcionan, intentar obtener de secrets o config
+            if not api_key:
+                api_key = secret_store.get_secret("google_calendar_api_key") or secret_store.get_secret("google_api_key")
+            if not api_key:
+                api_key = calendar_config.get("google_api_key")
+            
+            if not calendar_id:
+                calendar_id = secret_store.get_secret("google_calendar_id")
+            if not calendar_id:
+                calendar_id = calendar_config.get("google_calendar_id")
+            
+            if not api_key or not calendar_id:
+                return {
+                    "ok": False,
+                    "source": "google",
+                    "reason": "missing_credentials",
+                    "message": "Google Calendar requires api_key and calendar_id"
+                }
+            
+            try:
+                # Hacer una query mínima
+                now = datetime.now(timezone.utc)
+                time_min = now
+                time_max = now + timedelta(days=min(days_ahead, 7))
+                
+                events = fetch_google_calendar_events(
+                    api_key=api_key,
+                    calendar_id=calendar_id,
+                    days_ahead=min(days_ahead, 7),
+                    max_results=5,
+                    time_min=time_min,
+                    time_max=time_max
+                )
+                
+                return {
+                    "ok": True,
+                    "source": "google",
+                    "count": len(events),
+                    "message": f"Successfully connected. Found {len(events)} events in next {min(days_ahead, 7)} days."
+                }
+            except requests.HTTPError as exc:
+                status_code = exc.response.status_code if hasattr(exc, 'response') else 0
+                if status_code == 401 or status_code == 403:
+                    return {
+                        "ok": False,
+                        "source": "google",
+                        "reason": "unauthorized",
+                        "message": "Invalid API key or calendar ID"
+                    }
+                else:
+                    return {
+                        "ok": False,
+                        "source": "google",
+                        "reason": "http_error",
+                        "message": f"HTTP {status_code}: {str(exc)}"
+                    }
+        
         else:
             return {
                 "ok": False,
-                "reason": "http_error",
-                "message": f"HTTP {status_code}: {str(exc)}"
+                "reason": "unknown_source",
+                "message": f"Unknown calendar source: {source}"
             }
     except Exception as exc:
         logger.error("[calendar] Error testing calendar: %s", exc)
         return {
             "ok": False,
             "reason": "internal_error",
+            "message": str(exc)
+        }
+
+
+@app.get("/api/calendar/preview")
+def get_calendar_preview(limit: int = 10) -> Dict[str, Any]:
+    """Obtiene preview de próximos eventos del calendario activo.
+    
+    Args:
+        limit: Número máximo de eventos a devolver (default: 10)
+    
+    Returns:
+        Dict con source, count, items (eventos normalizados)
+    """
+    try:
+        config_v2, _ = _read_config_v2()
+        config_data = config_v2.model_dump(mode="json", exclude_none=True) if hasattr(config_v2, 'model_dump') else config_v2
+        
+        calendar_config = config_data.get("calendar", {})
+        if not calendar_config.get("enabled", False):
+            return {
+                "ok": False,
+                "error": "calendar_disabled",
+                "message": "Calendar is disabled"
+            }
+        
+        source = calendar_config.get("source", "google")
+        days_ahead = calendar_config.get("days_ahead", 14)
+        
+        now = datetime.now(timezone.utc)
+        time_max = now + timedelta(days=days_ahead)
+        
+        items: List[Dict[str, Any]] = []
+        
+        if source == "ics":
+            ics_config = calendar_config.get("ics", {})
+            file_path = ics_config.get("file_path")
+            
+            if not file_path:
+                return {
+                    "ok": False,
+                    "source": "ics",
+                    "error": "missing_file_path",
+                    "message": "ICS file path not configured"
+                }
+            
+            try:
+                events = fetch_ics_calendar_events(path=file_path, time_min=now, time_max=time_max)
+                
+                # Normalizar eventos
+                for event in events[:limit]:
+                    start_dt = event.get("start")
+                    end_dt = event.get("end")
+                    
+                    # Convertir datetime a ISO string si es necesario
+                    start_str = start_dt.isoformat() if isinstance(start_dt, datetime) else str(start_dt)
+                    end_str = end_dt.isoformat() if isinstance(end_dt, datetime) else str(end_dt)
+                    
+                    # Determinar si es all_day (si start es date sin hora)
+                    all_day = False
+                    if isinstance(start_dt, datetime):
+                        all_day = start_dt.hour == 0 and start_dt.minute == 0 and start_dt.second == 0
+                    
+                    items.append({
+                        "title": event.get("title", ""),
+                        "start": start_str,
+                        "end": end_str,
+                        "location": event.get("location", ""),
+                        "all_day": all_day
+                    })
+            except ICSCalendarError as exc:
+                return {
+                    "ok": False,
+                    "source": "ics",
+                    "error": "parse_error",
+                    "message": f"Invalid ICS file: {str(exc)}"
+                }
+        
+        elif source == "google":
+            api_key = secret_store.get_secret("google_calendar_api_key") or secret_store.get_secret("google_api_key")
+            calendar_id = secret_store.get_secret("google_calendar_id")
+            
+            if not api_key or not calendar_id:
+                return {
+                    "ok": False,
+                    "source": "google",
+                    "error": "missing_credentials",
+                    "message": "Google Calendar requires api_key and calendar_id"
+                }
+            
+            try:
+                events = fetch_google_calendar_events(
+                    api_key=api_key,
+                    calendar_id=calendar_id,
+                    days_ahead=days_ahead,
+                    max_results=limit,
+                    time_min=now,
+                    time_max=time_max
+                )
+                
+                # Normalizar eventos de Google
+                for event in events:
+                    start_str = event.get("start", "")
+                    end_str = event.get("end", "")
+                    
+                    # Determinar all_day (si start es solo fecha sin hora)
+                    all_day = "T" not in start_str if isinstance(start_str, str) else False
+                    
+                    items.append({
+                        "title": event.get("title", ""),
+                        "start": start_str,
+                        "end": end_str,
+                        "location": event.get("location", ""),
+                        "all_day": all_day
+                    })
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "source": "google",
+                    "error": "fetch_error",
+                    "message": str(exc)
+                }
+        else:
+            return {
+                "ok": False,
+                "error": "unknown_source",
+                "message": f"Unknown calendar source: {source}"
+            }
+        
+        return {
+            "ok": True,
+            "source": source,
+            "count": len(items),
+            "items": items
+        }
+    except Exception as exc:
+        logger.error("[calendar] Error getting preview: %s", exc)
+        return {
+            "ok": False,
+            "error": "internal_error",
             "message": str(exc)
         }
 
