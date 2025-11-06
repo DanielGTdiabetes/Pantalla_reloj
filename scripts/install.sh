@@ -907,6 +907,7 @@ fi
 # Buscar Google Chrome como alternativa si Chromium no está disponible
 if [[ ${CHROMIUM_FOUND:-0} -eq 0 ]] && [[ ${CHROME_FOUND:-0} -eq 0 ]]; then
   log_info "Buscando Google Chrome como alternativa a Chromium..."
+  # Primero buscar si ya está instalado
   for chrome_candidate in /opt/google/chrome/chrome /usr/bin/google-chrome /usr/bin/google-chrome-stable; do
     if [[ -x "$chrome_candidate" ]]; then
       # Verificar que es un binario real
@@ -919,6 +920,19 @@ if [[ ${CHROMIUM_FOUND:-0} -eq 0 ]] && [[ ${CHROME_FOUND:-0} -eq 0 ]]; then
       fi
     fi
   done
+  
+  # Si no se encontró Chrome instalado, intentar instalarlo como último recurso
+  if [[ ${CHROMIUM_FOUND:-0} -eq 0 ]]; then
+    log_info "Google Chrome no encontrado, intentando instalarlo como último recurso..."
+    if install_google_chrome; then
+      if command -v google-chrome >/dev/null 2>&1 && [[ -x /usr/bin/google-chrome ]]; then
+        CHROMIUM_BIN="/usr/bin/google-chrome"
+        CHROMIUM_FOUND=1
+        log_ok "Google Chrome instalado como alternativa a Chromium: $CHROMIUM_BIN"
+        SUMMARY+=("[install] Google Chrome instalado como alternativa a Chromium")
+      fi
+    fi
+  fi
 fi
 
 # Fallback a snap solo si no hay alternativa (no recomendado)
