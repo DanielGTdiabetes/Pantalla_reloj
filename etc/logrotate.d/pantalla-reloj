@@ -1,0 +1,25 @@
+/var/log/pantalla/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 root root
+    sharedscripts
+    postrotate
+        systemctl reload pantalla-dash-backend@*.service >/dev/null 2>&1 || true
+    endscript
+}
+
+/var/log/pantalla-reloj/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 root root
+    sharedscripts
+}
+

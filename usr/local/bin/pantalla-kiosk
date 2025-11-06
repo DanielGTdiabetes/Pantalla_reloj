@@ -55,15 +55,12 @@ find_chromium() {
     log "WARN: CHROME_BIN_OVERRIDE inválido (${override})"
   fi
 
-  local snap_candidate="/snap/chromium/current/usr/lib/chromium-browser/chrome"
-  if [[ -x "$snap_candidate" ]]; then
-    printf '%s\n' "$snap_candidate"
-    return 0
-  fi
-
+  # Priorizar binarios normales de Chromium (sin Snap)
   local -a candidates=(
-    /snap/bin/chromium
+    /usr/local/bin/chromium-kiosk-bin
+    chromium-browser
     chromium
+    chromium-browser-stable
     google-chrome-stable
     google-chrome
   )
@@ -74,10 +71,27 @@ find_chromium() {
         log "INFO: Ignorando shim de chromium-browser en ${resolved}"
         continue
       fi
-      printf '%s\n' "$resolved"
-      return 0
+      # Evitar Snap si es posible
+      if [[ "$resolved" != *"/snap/"* ]]; then
+        printf '%s\n' "$resolved"
+        return 0
+      fi
     fi
   done
+
+  # Fallback a Snap solo si no se encuentra ninguna alternativa
+  local snap_candidate="/snap/chromium/current/usr/lib/chromium-browser/chrome"
+  if [[ -x "$snap_candidate" ]]; then
+    log "WARN: Usando Chromium desde Snap (no recomendado, instala Chromium normal)" >&2
+    printf '%s\n' "$snap_candidate"
+    return 0
+  fi
+  
+  if [[ -x /snap/bin/chromium ]]; then
+    log "WARN: Usando Chromium desde Snap (no recomendado, instala Chromium normal)" >&2
+    printf '%s\n' "/snap/bin/chromium"
+    return 0
+  fi
 
   return 1
 }

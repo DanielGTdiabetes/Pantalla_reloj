@@ -73,8 +73,8 @@ NGINX_DEFAULT_LINK=/etc/nginx/sites-enabled/default
 NGINX_DEFAULT_STATE="${STATE_RUNTIME}/nginx-default-enabled"
 WEBROOT_MANIFEST="${STATE_RUNTIME}/webroot-manifest"
 UDEV_RULE=/etc/udev/rules.d/70-pantalla-render.rules
-CHROMIUM_HOME_DATA_DIR="/home/${USER_NAME}/snap/chromium/common/pantalla-reloj/chromium"
-CHROMIUM_HOME_CACHE_DIR="/home/${USER_NAME}/snap/chromium/common/pantalla-reloj/cache"
+CHROMIUM_HOME_DATA_DIR="/home/${USER_NAME}/.local/share/pantalla-reloj/chromium"
+CHROMIUM_HOME_CACHE_DIR="/home/${USER_NAME}/.cache/pantalla-reloj/chromium"
 
 SYSTEMD_UNITS=(
   "pantalla-kiosk@${USER_NAME}.service"
@@ -153,6 +153,10 @@ rm -f /usr/local/bin/pantalla-kiosk
 rm -f /usr/local/bin/pantalla-kiosk-verify
 rm -f /usr/local/bin/diag_kiosk.sh
 rm -f /usr/local/bin/kiosk-ui /usr/local/bin/kiosk-diag
+rm -f /usr/local/bin/pantalla-config-snapshot
+rm -f /etc/systemd/system/pantalla-config-snapshot.timer
+rm -f /etc/systemd/system/pantalla-config-snapshot.service
+rm -f /etc/logrotate.d/pantalla-reloj
 
 if [[ -f "$WEBROOT_MANIFEST" ]]; then
   log_info "Removing tracked web assets"

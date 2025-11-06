@@ -160,10 +160,9 @@ else
   SUMMARY+=("[install] kiosk.env preservado (sin cambios)")
 fi
 
-CHROMIUM_SNAP_BASE="$USER_HOME/snap/chromium/common/pantalla-reloj"
-CHROMIUM_HOME_DATA_DIR="${CHROMIUM_SNAP_BASE}/chromium"
-CHROMIUM_HOME_CACHE_DIR="${CHROMIUM_SNAP_BASE}/cache"
-install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$CHROMIUM_SNAP_BASE"
+# Directorios estándar XDG para Chromium (no Snap)
+CHROMIUM_HOME_DATA_DIR="${USER_HOME}/.local/share/pantalla-reloj/chromium"
+CHROMIUM_HOME_CACHE_DIR="${USER_HOME}/.cache/pantalla-reloj/chromium"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$CHROMIUM_HOME_DATA_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$CHROMIUM_HOME_CACHE_DIR"
 if [[ -f "${PROFILE_DIR_SRC}/app-id" ]]; then
@@ -614,7 +613,55 @@ fi
 
 log_info "Reloading systemd daemon"
 systemctl daemon-reload
-SUMMARY+=("[install] perfiles Chromium snap en ${CHROMIUM_SNAP_BASE}")
+# Configurar logrotate para logs de pantalla
+log_info "Installing logrotate configuration"
+if [[ -f "$REPO_ROOT/etc/logrotate.d/pantalla-reloj" ]]; then
+  install -D -m 0644 "$REPO_ROOT/etc/logrotate.d/pantalla-reloj" /etc/logrotate.d/pantalla-reloj
+  SUMMARY+=("[install] logrotate configurado para /var/log/pantalla/")
+else
+  log_warn "No se encontró configuración de logrotate en $REPO_ROOT/etc/logrotate.d/pantalla-reloj"
+fi
+
+# Configurar snapshots diarios de config.json
+log_info "Installing config snapshot script and timer"
+if [[ -f "$REPO_ROOT/scripts/config-snapshot.sh" ]]; then
+  install -D -m 0755 "$REPO_ROOT/scripts/config-snapshot.sh" /usr/local/bin/pantalla-config-snapshot
+  SUMMARY+=("[install] script de snapshots de config instalado")
+  
+  # Crear timer systemd para snapshots diarios
+  cat > /etc/systemd/system/pantalla-config-snapshot.timer <<'EOF'
+[Unit]
+Description=Daily snapshot of pantalla-reloj config.json
+After=network-online.target
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=3600
+
+[Install]
+WantedBy=timers.target
+EOF
+  
+  cat > /etc/systemd/system/pantalla-config-snapshot.service <<'EOF'
+[Unit]
+Description=Create snapshot of pantalla-reloj config.json
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pantalla-config-snapshot
+User=root
+StandardOutput=journal
+StandardError=journal
+EOF
+  
+  systemctl daemon-reload
+  systemctl enable --now pantalla-config-snapshot.timer
+  SUMMARY+=("[install] timer de snapshots diarios habilitado")
+else
+  log_warn "No se encontró script de snapshots en $REPO_ROOT/scripts/config-snapshot.sh"
+fi
 
 log_info "Disabling portal service"
 systemctl disable --now "pantalla-portal@${USER_NAME}.service" 2>/dev/null || true

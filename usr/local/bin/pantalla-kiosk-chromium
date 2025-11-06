@@ -89,20 +89,26 @@ find_chromium() {
   fi
 
   local candidate resolved
-  for candidate in /usr/local/bin/chromium-kiosk-bin chromium-browser chromium /snap/bin/chromium; do
+  # Priorizar binarios normales de Chromium (sin Snap)
+  for candidate in /usr/local/bin/chromium-kiosk-bin chromium-browser chromium chromium-browser-stable; do
     if [[ -x "$candidate" ]]; then
       printf '%s\n' "$candidate"
       return 0
     fi
     if command -v "$candidate" >/dev/null 2>&1; then
       resolved="$(command -v "$candidate")"
-      printf '%s\n' "$resolved"
-      return 0
+      # Evitar Snap si es posible
+      if [[ "$resolved" != *"/snap/"* ]]; then
+        printf '%s\n' "$resolved"
+        return 0
+      fi
     fi
   done
 
+  # Fallback a Snap solo si no se encuentra ninguna alternativa
   local snap_candidate="/snap/chromium/current/usr/lib/chromium-browser/chrome"
   if [[ -x "$snap_candidate" ]]; then
+    log "WARN: Usando Chromium desde Snap (no recomendado, instala Chromium normal)" >&2
     printf '%s\n' "$snap_candidate"
     return 0
   fi
@@ -260,9 +266,9 @@ main() {
     exit 1
   fi
 
-  local expected_snap="/snap/chromium/current/usr/lib/chromium-browser/chrome"
-  if [[ -x "$expected_snap" && "$chromium_bin" != "$expected_snap" ]]; then
-    log "WARN: usando binario Chromium alternativo (${chromium_bin})"
+  # Verificar que no estamos usando Snap si hay alternativas
+  if [[ "$chromium_bin" == *"/snap/"* ]]; then
+    log "WARN: usando Chromium desde Snap (no recomendado, instala Chromium normal)"
   fi
 
   local raw_url
@@ -271,9 +277,9 @@ main() {
   target_url="$(resolve_url "$raw_url")"
 
   local base_dir profile_dir cache_dir
-  base_dir="${CHROMIUM_BASE_DIR:-${HOME}/snap/chromium/common/pantalla-reloj}"
-  profile_dir="${CHROMIUM_USER_DATA_DIR:-${base_dir}/chromium}"
-  cache_dir="${CHROMIUM_CACHE_DIR:-${base_dir}/cache}"
+  # Usar directorios estándar XDG (no Snap)
+  profile_dir="${CHROMIUM_USER_DATA_DIR:-${HOME}/.local/share/pantalla-reloj/chromium}"
+  cache_dir="${CHROMIUM_CACHE_DIR:-${HOME}/.cache/pantalla-reloj/chromium}"
 
   prepare_dirs "$profile_dir" "$cache_dir"
   cleanup_profile_artifacts "$profile_dir" "$cache_dir"
