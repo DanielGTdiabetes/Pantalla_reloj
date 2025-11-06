@@ -15,6 +15,7 @@ Environment=CHROMIUM_USER_DATA_DIR=/home/%i/.local/share/pantalla-reloj/chromium
 Environment=CHROMIUM_CACHE_DIR=/home/%i/.cache/pantalla-reloj/chromium
 EnvironmentFile=-/var/lib/pantalla-reloj/state/kiosk.env
 
+ExecStartPre=/bin/sh -c 'if [ ! -r "$XAUTHORITY" ]; then if [ -f /var/lib/pantalla-reloj/.Xauthority ]; then cp -f /var/lib/pantalla-reloj/.Xauthority "$XAUTHORITY" && chown %i:%i "$XAUTHORITY" && chmod 600 "$XAUTHORITY"; fi; fi'
 ExecStartPre=/bin/sh -c 'i=0; while [ $i -lt 10 ]; do if test -r "$XAUTHORITY"; then exit 0; fi; sleep 1; i=$((i+1)); done; echo "XAUTHORITY no es legible tras 10 segundos: $XAUTHORITY" >&2; exit 1'
 ExecStartPre=/bin/sh -lc 'xset -dpms; xset s off; xset s noblank || true'
 ExecStartPre=/bin/sh -lc 'pat="pantalla-kiosk|chrome.chromium|chromium-browser.Chromium-browser|chromium.Chromium"; wmctrl -lx 2>/dev/null | awk -v pat="$pat" '\''$3 ~ pat {print $1}'\'' | xargs -r -n1 wmctrl -ic || true'

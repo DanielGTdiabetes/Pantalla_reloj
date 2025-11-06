@@ -1,7 +1,7 @@
 [Unit]
 Description=Pantalla_reloj Openbox session for %i (DISPLAY=:0)
-After=pantalla-xorg@%i.service
-Wants=pantalla-xorg@%i.service
+After=pantalla-xorg.service
+Wants=pantalla-xorg.service
 
 [Service]
 User=%i
@@ -12,6 +12,7 @@ Environment=XDG_RUNTIME_DIR=/run/user/%U
 EnvironmentFile=-/var/lib/pantalla-reloj/state/session.env
 ExecStartPre=/bin/sh -c 'install -d -m 0700 -o %i -g %i /run/user/$(id -u %i)'
 ExecStartPre=/usr/bin/install -d -m 0755 -o %i -g %i /var/log/pantalla
+ExecStartPre=/bin/sh -c 'if [ ! -r "$XAUTHORITY" ]; then if [ -f /var/lib/pantalla-reloj/.Xauthority ]; then cp -f /var/lib/pantalla-reloj/.Xauthority "$XAUTHORITY" && chown %i:%i "$XAUTHORITY" && chmod 600 "$XAUTHORITY"; fi; fi'
 ExecStartPre=/bin/sh -c 'i=0; while [ $i -lt 10 ]; do if test -r "$XAUTHORITY"; then exit 0; fi; sleep 1; i=$((i+1)); done; echo "XAUTHORITY no es legible tras 10 segundos: $XAUTHORITY" >&2; exit 1'
 ExecStart=/usr/bin/openbox --startup /opt/pantalla/openbox/autostart
 Restart=on-failure

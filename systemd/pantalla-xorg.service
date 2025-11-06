@@ -1,0 +1,18 @@
+[Unit]
+Description=Pantalla_reloj Xorg server (:0, vt1)
+After=graphical.target
+Wants=graphical.target
+
+[Service]
+Type=simple
+User=root
+ExecStartPre=/usr/bin/install -d -m 0755 -o root -g root /var/log/pantalla
+ExecStartPre=/bin/sh -c 'install -d -m 0700 /var/lib/pantalla-reloj || true'
+ExecStartPre=/bin/sh -c 'AUTH_FILE=/var/lib/pantalla-reloj/.Xauthority; if [ ! -f "$AUTH_FILE" ] || [ ! -s "$AUTH_FILE" ]; then install -m 0600 /dev/null "$AUTH_FILE" || true; COOKIE=$(mcookie 2>/dev/null || echo ""); if [ -n "$COOKIE" ]; then xauth -f "$AUTH_FILE" add :0 . "$COOKIE" 2>/dev/null || true; fi; fi'
+ExecStart=/usr/lib/xorg/Xorg :0 vt1 -s 0 -nocursor -nolisten tcp -background none -auth /var/lib/pantalla-reloj/.Xauthority
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+

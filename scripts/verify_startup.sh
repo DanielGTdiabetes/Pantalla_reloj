@@ -1,9 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-log_info() { printf '[verify-startup] %s\n' "$*"; }
-log_error() { printf '[verify-startup][ERROR] %s\n' "$*" >&2; }
-log_success() { printf '[verify-startup][OK] %s\n' "$*"; }
+LOG_FILE="${LOG_FILE:-/var/log/pantalla/verify_startup.log}"
+install -d -m 0755 "$(dirname "$LOG_FILE")" 2>/dev/null || true
+
+log_info() { 
+  local msg="[verify-startup] $*"
+  printf '%s\n' "$msg"
+  printf '%s %s\n' "$(date -Is)" "$msg" >>"$LOG_FILE" 2>/dev/null || true
+}
+log_error() { 
+  local msg="[verify-startup][ERROR] $*"
+  printf '%s\n' "$msg" >&2
+  printf '%s %s\n' "$(date -Is)" "$msg" >>"$LOG_FILE" 2>/dev/null || true
+}
+log_success() { 
+  local msg="[verify-startup][OK] $*"
+  printf '%s\n' "$msg"
+  printf '%s %s\n' "$(date -Is)" "$msg" >>"$LOG_FILE" 2>/dev/null || true
+}
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -34,6 +49,9 @@ KIOSK_CHROMIUM_UNIT="pantalla-kiosk-chromium@${RUN_USER}.service"
 BACKEND_UNIT="pantalla-dash-backend@${RUN_USER}.service"
 NGINX_UNIT="nginx.service"
 MOSQUITTO_UNIT="mosquitto.service"
+
+# Tiempo de espera para verificación (3 segundos según requisitos)
+VERIFY_TIMEOUT="${VERIFY_TIMEOUT:-3}"
 
 API_BASE="${API_BASE:-http://127.0.0.1:8081}"
 CONFIG_FILE="${CONFIG_FILE:-/var/lib/pantalla-reloj/config.json}"
@@ -278,15 +296,37 @@ check_xorg() {
     return 1
   fi
   
-  # Verificar que DISPLAY está disponible
-  if ! sudo -u "$RUN_USER" env DISPLAY=:0 xdpyinfo >/dev/null 2>&1; then
-    log_error "DISPLAY=:0 no está disponible o XAUTHORITY no está configurado"
+  # Verificar que el proceso Xorg está activo
+  if ! pgrep -f 'Xorg :0' >/dev/null 2>&1; then
+    log_error "Proceso Xorg no está ejecutándose"
     ((ERRORS++)) || true
     return 1
   fi
   
-  log_success "DISPLAY=:0 está disponible"
-  return 0
+  # Verificar que DISPLAY está disponible (con timeout de 3 segundos)
+  local xauth_file="/home/${RUN_USER}/.Xauthority"
+  if [[ ! -r "$xauth_file" ]]; then
+    # Intentar copiar desde /var/lib/pantalla-reloj/.Xauthority si existe
+    if [[ -f "/var/lib/pantalla-reloj/.Xauthority" ]]; then
+      cp -f "/var/lib/pantalla-reloj/.Xauthority" "$xauth_file"
+      chown "${RUN_USER}:${RUN_USER}" "$xauth_file" 2>/dev/null || true
+      chmod 600 "$xauth_file" 2>/dev/null || true
+    fi
+  fi
+  
+  local timeout_count=0
+  while [[ $timeout_count -lt $VERIFY_TIMEOUT ]]; do
+    if sudo -u "$RUN_USER" env DISPLAY=:0 XAUTHORITY="$xauth_file" xdpyinfo >/dev/null 2>&1; then
+      log_success "DISPLAY=:0 está disponible"
+      return 0
+    fi
+    sleep 1
+    ((timeout_count++)) || true
+  done
+  
+  log_error "DISPLAY=:0 no está disponible tras ${VERIFY_TIMEOUT}s o XAUTHORITY no está configurado"
+  ((ERRORS++)) || true
+  return 1
 }
 
 # Función para verificar Openbox
@@ -304,17 +344,45 @@ check_openbox() {
 check_kiosk() {
   log_info "Verificando Kiosk Browser..."
   
-  # Verificar uno de los servicios kiosk (prioridad: kiosk@, luego kiosk-chromium@)
+  # Verificar uno de los servicios kiosk (prioridad: kiosk-chromium@, luego kiosk@)
   local kiosk_active=0
+  local active_unit=""
   
-  if systemctl is-active --quiet "$KIOSK_UNIT" 2>/dev/null; then
-    log_success "Servicio ${KIOSK_UNIT} está activo"
-    kiosk_active=1
-  elif systemctl is-active --quiet "$KIOSK_CHROMIUM_UNIT" 2>/dev/null; then
+  if systemctl is-active --quiet "$KIOSK_CHROMIUM_UNIT" 2>/dev/null; then
     log_success "Servicio ${KIOSK_CHROMIUM_UNIT} está activo"
     kiosk_active=1
+    active_unit="$KIOSK_CHROMIUM_UNIT"
+  elif systemctl is-active --quiet "$KIOSK_UNIT" 2>/dev/null; then
+    log_success "Servicio ${KIOSK_UNIT} está activo"
+    kiosk_active=1
+    active_unit="$KIOSK_UNIT"
   else
     log_error "Ningún servicio kiosk está activo (${KIOSK_UNIT} o ${KIOSK_CHROMIUM_UNIT})"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Verificar que Chromium está visible con wmctrl (con timeout de 3 segundos)
+  local xauth_file="/home/${RUN_USER}/.Xauthority"
+  local timeout_count=0
+  local chromium_visible=0
+  
+  while [[ $timeout_count -lt $VERIFY_TIMEOUT ]]; do
+    if command -v wmctrl >/dev/null 2>&1; then
+      if sudo -u "$RUN_USER" env DISPLAY=:0 XAUTHORITY="$xauth_file" \
+         wmctrl -lx 2>/dev/null | grep -qE 'chromium|chrome|pantalla-kiosk'; then
+        chromium_visible=1
+        break
+      fi
+    fi
+    sleep 1
+    ((timeout_count++)) || true
+  done
+  
+  if [[ $chromium_visible -eq 1 ]]; then
+    log_success "Chromium visible en wmctrl"
+  else
+    log_error "Chromium no visible en wmctrl tras ${VERIFY_TIMEOUT}s"
     ((ERRORS++)) || true
     return 1
   fi
@@ -386,27 +454,66 @@ check_mqtt() {
   return 0
 }
 
+# Función para reiniciar servicios si fallan
+restart_failed_services() {
+  log_info "Reiniciando servicios que fallaron..."
+  
+  if ! systemctl is-active --quiet "$XORG_UNIT" 2>/dev/null; then
+    log_info "Reiniciando $XORG_UNIT"
+    systemctl restart "$XORG_UNIT" 2>/dev/null || true
+    sleep 2
+  fi
+  
+  if ! systemctl is-active --quiet "$OPENBOX_UNIT" 2>/dev/null; then
+    log_info "Reiniciando $OPENBOX_UNIT"
+    systemctl restart "$OPENBOX_UNIT" 2>/dev/null || true
+    sleep 2
+  fi
+  
+  if ! systemctl is-active --quiet "$KIOSK_CHROMIUM_UNIT" 2>/dev/null && \
+     ! systemctl is-active --quiet "$KIOSK_UNIT" 2>/dev/null; then
+    if systemctl list-units --full --all "$KIOSK_CHROMIUM_UNIT" >/dev/null 2>&1; then
+      log_info "Reiniciando $KIOSK_CHROMIUM_UNIT"
+      systemctl restart "$KIOSK_CHROMIUM_UNIT" 2>/dev/null || true
+    elif systemctl list-units --full --all "$KIOSK_UNIT" >/dev/null 2>&1; then
+      log_info "Reiniciando $KIOSK_UNIT"
+      systemctl restart "$KIOSK_UNIT" 2>/dev/null || true
+    fi
+    sleep 2
+  fi
+}
+
 # Función principal de verificación
 main() {
   log_info "=========================================="
   log_info "Iniciando verificación de arranque completa..."
   log_info "Usuario del servicio: ${RUN_USER}"
+  log_info "Timeout de verificación: ${VERIFY_TIMEOUT}s"
   log_info "=========================================="
   
   # 1. Verificar Xorg
   log_info ""
   log_info "=== 1/8: Verificar Xorg ==="
-  check_xorg || log_error "Fallo en verificación de Xorg"
+  if ! check_xorg; then
+    log_error "Fallo en verificación de Xorg"
+    restart_failed_services
+  fi
   
   # 2. Verificar Openbox
   log_info ""
   log_info "=== 2/8: Verificar Openbox ==="
-  check_openbox || log_error "Fallo en verificación de Openbox"
+  if ! check_openbox; then
+    log_error "Fallo en verificación de Openbox"
+    restart_failed_services
+  fi
   
   # 3. Verificar Kiosk Browser
   log_info ""
   log_info "=== 3/8: Verificar Kiosk Browser ==="
-  check_kiosk || log_error "Fallo en verificación de Kiosk"
+  if ! check_kiosk; then
+    log_error "Fallo en verificación de Kiosk"
+    restart_failed_services
+  fi
   
   # 4. Verificar Nginx
   log_info ""
@@ -442,6 +549,7 @@ main() {
     exit 0
   else
     log_error "Verificaciones de arranque fallaron: ${ERRORS} error(es)"
+    log_info "Servicios reiniciados si fue necesario"
     exit 1
   fi
 }

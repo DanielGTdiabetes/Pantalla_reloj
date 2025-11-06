@@ -569,7 +569,7 @@ fi
 
 # Instalar servicios systemd
 log_info "Instalando servicios systemd"
-deploy_unit "$REPO_ROOT/systemd/pantalla-xorg@.service" /etc/systemd/system/pantalla-xorg@.service
+deploy_unit "$REPO_ROOT/systemd/pantalla-xorg.service" /etc/systemd/system/pantalla-xorg.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-openbox@.service" /etc/systemd/system/pantalla-openbox@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk@.service" /etc/systemd/system/pantalla-kiosk@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk-chromium@.service" /etc/systemd/system/pantalla-kiosk-chromium@.service
@@ -590,9 +590,9 @@ log_ok "systemd recargado"
 
 # Verificar que los servicios se instalaron correctamente
 log_info "Verificando que los servicios se instalaron correctamente"
-XORG_SERVICE="/etc/systemd/system/pantalla-xorg@.service"
-if [[ ! -f "$XORG_SERVICE" ]]; then
-  log_error "ERROR: pantalla-xorg@.service no se instaló correctamente en $XORG_SERVICE"
+XORG_SERVICE_FILE="/etc/systemd/system/pantalla-xorg.service"
+if [[ ! -f "$XORG_SERVICE_FILE" ]]; then
+  log_error "ERROR: pantalla-xorg.service no se instaló correctamente en $XORG_SERVICE_FILE"
   exit 1
 fi
 log_ok "Servicios systemd instalados y verificados"
@@ -718,6 +718,14 @@ is_snap_binary() {
   return 1
 }
 
+# Desinstalar Snap Chromium si existe
+log_info "Desinstalando Snap Chromium si existe..."
+if snap list chromium >/dev/null 2>&1; then
+  log_info "Desinstalando chromium desde snap..."
+  snap remove chromium 2>/dev/null || true
+  SUMMARY+=("[install] Snap Chromium desinstalado")
+fi
+
 # Función para instalar Chromium real (no snap)
 install_chromium_real() {
   log_info "Instalando Chromium real (no snap)..."
@@ -730,24 +738,22 @@ install_chromium_real() {
     fi
   fi
   
-  # Intentar instalar chromium desde repositorios
-  if ! command -v chromium >/dev/null 2>&1 || is_snap_binary "$(command -v chromium 2>/dev/null || echo '')"; then
-    log_info "Instalando chromium desde repositorios..."
-    apt update
-    if apt install -y chromium 2>&1; then
-      if command -v chromium >/dev/null 2>&1 && ! is_snap_binary "$(command -v chromium)"; then
-        log_ok "Chromium instalado desde repositorios: $(command -v chromium)"
-        return 0
-      fi
+  # Intentar instalar chromium-browser desde repositorios (.deb estable)
+  log_info "Instalando chromium-browser desde repositorios (.deb)..."
+  apt update
+  if apt install -y chromium-browser 2>&1; then
+    if command -v chromium-browser >/dev/null 2>&1 && ! is_snap_binary "$(command -v chromium-browser)"; then
+      log_ok "chromium-browser instalado desde repositorios: $(command -v chromium-browser)"
+      return 0
     fi
-    
-    # Si falla, intentar desde PPA
-    log_info "Intentando instalar desde PPA de Chromium..."
-    add-apt-repository -y ppa:saiarcot895/chromium-beta 2>/dev/null || true
-    apt update
+  fi
+  
+  # Si chromium-browser no está disponible, intentar chromium
+  if ! command -v chromium-browser >/dev/null 2>&1; then
+    log_info "chromium-browser no disponible, intentando chromium..."
     if apt install -y chromium 2>&1; then
       if command -v chromium >/dev/null 2>&1 && ! is_snap_binary "$(command -v chromium)"; then
-        log_ok "Chromium instalado desde PPA: $(command -v chromium)"
+        log_ok "chromium instalado desde repositorios: $(command -v chromium)"
         return 0
       fi
     fi
@@ -864,12 +870,14 @@ fi
 log_info "Enabling services"
 
 # Verificar que los servicios existen antes de intentar iniciarlos
+XORG_SERVICE="pantalla-xorg.service"
 XORG_SERVICE_INSTANCE="pantalla-xorg@${USER_NAME}.service"
 BACKEND_SERVICE_INSTANCE="pantalla-dash-backend@${USER_NAME}.service"
 
-if ! systemctl list-units --full --all "$XORG_SERVICE_INSTANCE" >/dev/null 2>&1; then
-  log_error "ERROR: Servicio $XORG_SERVICE_INSTANCE no encontrado después de la instalación"
-  log_error "Verifica que pantalla-xorg@.service se instaló correctamente"
+# Verificar que pantalla-xorg.service existe (servicio simple, no template)
+if ! systemctl list-units --full --all "$XORG_SERVICE" >/dev/null 2>&1; then
+  log_error "ERROR: Servicio $XORG_SERVICE no encontrado después de la instalación"
+  log_error "Verifica que pantalla-xorg.service se instaló correctamente"
   exit 1
 fi
 
@@ -883,14 +891,50 @@ fi
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" /var/lib/pantalla-reloj || true
 install -d -m 0755 -o root -g root /var/log/pantalla || true
 
-# Iniciar servicios
-log_info "Iniciando pantalla-xorg@${USER_NAME}.service"
-if systemctl enable --now "$XORG_SERVICE_INSTANCE" 2>&1; then
-  log_ok "pantalla-xorg@${USER_NAME}.service habilitado e iniciado"
+# Crear .Xauthority correcto y permisos antes de iniciar Xorg
+log_info "Preparando .Xauthority..."
+STATE_XAUTH="/var/lib/pantalla-reloj/.Xauthority"
+HOME_XAUTH="/home/${USER_NAME}/.Xauthority"
+
+# Asegurar que el directorio existe
+install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "/var/lib/pantalla-reloj" || true
+install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "/home/${USER_NAME}" || true
+
+# Crear .Xauthority vacío si no existe (Xorg lo generará)
+if [[ ! -f "$STATE_XAUTH" ]]; then
+  install -m 0600 -o "$USER_NAME" -g "$USER_NAME" /dev/null "$STATE_XAUTH" || true
+  log_info ".Xauthority inicial creado en $STATE_XAUTH"
+fi
+
+# Iniciar servicios en orden: 1. Xorg, 2. Openbox, 3. Chromium
+log_info "Iniciando pantalla-xorg.service"
+if systemctl enable --now "$XORG_SERVICE" 2>&1; then
+  log_ok "pantalla-xorg.service habilitado e iniciado"
+  SUMMARY+=("[install] pantalla-xorg.service habilitado e iniciado")
+  
+  # Esperar a que Xorg genere .Xauthority
+  log_info "Esperando a que Xorg genere .Xauthority..."
+  for i in {1..10}; do
+    sleep 1
+    if [[ -f "$STATE_XAUTH" ]] && [[ -s "$STATE_XAUTH" ]]; then
+      break
+    fi
+  done
+  
+  # Copiar .Xauthority a home del usuario
+  if [[ -f "$STATE_XAUTH" ]] && [[ -s "$STATE_XAUTH" ]]; then
+    cp -f "$STATE_XAUTH" "$HOME_XAUTH"
+    chown "$USER_NAME:$USER_NAME" "$HOME_XAUTH"
+    chmod 600 "$HOME_XAUTH"
+    log_ok ".Xauthority copiado a $HOME_XAUTH"
+    SUMMARY+=("[install] .Xauthority configurado correctamente")
+  else
+    log_warn ".Xauthority aún no generado (se generará al arrancar Xorg)"
+  fi
 else
-  log_error "ERROR: No se pudo iniciar pantalla-xorg@${USER_NAME}.service"
+  log_error "ERROR: No se pudo iniciar pantalla-xorg.service"
   log_error "Logs del servicio:"
-  journalctl -u "$XORG_SERVICE_INSTANCE" -n 30 --no-pager | sed 's/^/  /' || true
+  journalctl -u "$XORG_SERVICE" -n 30 --no-pager | sed 's/^/  /' || true
   exit 1
 fi
 
@@ -939,9 +983,11 @@ if systemctl list-units --full --all "$OPENBOX_SERVICE_INSTANCE" >/dev/null 2>&1
   log_info "Iniciando pantalla-openbox@${USER_NAME}.service"
   if systemctl enable --now "$OPENBOX_SERVICE_INSTANCE" 2>&1; then
     log_ok "pantalla-openbox@${USER_NAME}.service habilitado e iniciado"
+    SUMMARY+=("[install] pantalla-openbox@${USER_NAME}.service habilitado e iniciado")
   else
     log_error "ERROR: No se pudo iniciar pantalla-openbox@${USER_NAME}.service"
     journalctl -u "$OPENBOX_SERVICE_INSTANCE" -n 30 --no-pager | sed 's/^/  /' || true
+    exit 1
   fi
 else
   log_error "ERROR: Servicio $OPENBOX_SERVICE_INSTANCE no encontrado"
@@ -958,7 +1004,7 @@ if [[ $CHROMIUM_FOUND -eq 1 ]]; then
     log_info "Iniciando pantalla-kiosk-chromium@${USER_NAME}.service"
     if systemctl enable --now "$KIOSK_SERVICE_INSTANCE" 2>&1; then
       log_ok "pantalla-kiosk-chromium@${USER_NAME}.service habilitado e iniciado"
-      SUMMARY+=('[install] servicio kiosk-chromium habilitado')
+      SUMMARY+=("[install] pantalla-kiosk-chromium@${USER_NAME}.service habilitado e iniciado")
     else
       log_error "ERROR: No se pudo iniciar pantalla-kiosk-chromium@${USER_NAME}.service"
       journalctl -u "$KIOSK_SERVICE_INSTANCE" -n 30 --no-pager | sed 's/^/  /' || true
@@ -980,33 +1026,33 @@ systemctl disable --now "pantalla-kiosk-watchdog@${USER_NAME}.timer" "pantalla-k
 log_info "Restarting Pantalla services"
 
 # Verificar que Xorg está funcionando antes de reiniciar
-log_info "Verificando estado de pantalla-xorg@${USER_NAME}.service"
-if systemctl is-active --quiet "$XORG_SERVICE_INSTANCE" 2>/dev/null; then
-  log_ok "pantalla-xorg@${USER_NAME}.service está activo"
+log_info "Verificando estado de pantalla-xorg.service"
+if systemctl is-active --quiet "$XORG_SERVICE" 2>/dev/null; then
+  log_ok "pantalla-xorg.service está activo"
   # Esperar a que Xorg genere .Xauthority si aún no existe
-  if [[ ! -f "$STATE_XAUTH" ]]; then
+  if [[ ! -f "$STATE_XAUTH" ]] || [[ ! -s "$STATE_XAUTH" ]]; then
     log_info "Esperando a que Xorg genere .Xauthority..."
     for i in {1..10}; do
       sleep 1
-      if [[ -f "$STATE_XAUTH" ]]; then
+      if [[ -f "$STATE_XAUTH" ]] && [[ -s "$STATE_XAUTH" ]]; then
         break
       fi
     done
   fi
   
   # Copiar .Xauthority si existe
-  if [[ -f "$STATE_XAUTH" ]]; then
+  if [[ -f "$STATE_XAUTH" ]] && [[ -s "$STATE_XAUTH" ]]; then
     cp -f "$STATE_XAUTH" "$HOME_XAUTH"
     chown "$USER_NAME:$USER_NAME" "$HOME_XAUTH"
     chmod 600 "$HOME_XAUTH"
     log_ok "XAUTHORITY copiado a ${HOME_XAUTH}"
   else
-    log_warn "XAUTHORITY aún no existe en ${STATE_XAUTH} (puede tardar unos segundos más)"
+    log_warn "XAUTHORITY aún no existe o está vacío en ${STATE_XAUTH} (puede tardar unos segundos más)"
   fi
 else
-  log_error "ERROR: pantalla-xorg@${USER_NAME}.service NO está activo"
+  log_error "ERROR: pantalla-xorg.service NO está activo"
   log_error "Logs del servicio:"
-  journalctl -u "$XORG_SERVICE_INSTANCE" -n 50 --no-pager | sed 's/^/  /' || true
+  journalctl -u "$XORG_SERVICE" -n 50 --no-pager | sed 's/^/  /' || true
   SUMMARY+=('[install] ERROR: pantalla-xorg no está activo')
 fi
 
