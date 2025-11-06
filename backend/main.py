@@ -2495,25 +2495,40 @@ def _health_payload_full_helper() -> Dict[str, Any]:
         "runtime": ships_service.get_status(),
     }
 
-    # Resumen de integraciones
+    # Resumen de integraciones y proveedores
     runtime = ships_service.get_status()
     payload.setdefault("integrations", {})
-    # AEMET integration
-    payload["integrations"]["aemet"] = {
-        "enabled": bool(config.aemet.enabled),
-        "has_key": secret_store.has_secret("aemet_api_key"),
-        "last_test_ok": _aemet_last_ok,
-        "last_error": _aemet_last_error,
-    }
+    payload.setdefault("providers", {})
+    
+    # AEMET integration (opcional, no bloqueante)
+    try:
+        payload["integrations"]["aemet"] = {
+            "enabled": bool(getattr(config, "aemet", None) and getattr(config.aemet, "enabled", False)),
+            "has_key": secret_store.has_secret("aemet_api_key"),
+            "last_test_ok": _aemet_last_ok,
+            "last_error": _aemet_last_error,
+        }
+    except Exception:
+        payload["integrations"]["aemet"] = {
+            "enabled": False,
+            "has_key": False,
+            "last_test_ok": None,
+            "last_error": None,
+        }
+    
     # OpenSky integration
     opensky_status = opensky_service.get_status(config)
     payload["integrations"]["opensky"] = {
         "enabled": bool(config.opensky.enabled),
-        "token_set": bool(opensky_status.get("token_set")),
-        "token_valid": opensky_status.get("token_valid"),
-        "expires_in": opensky_status.get("expires_in"),
+        "has_credentials": bool(opensky_status.get("has_credentials")),
+        "token_cached": bool(opensky_status.get("token_cached")),
+        "expires_in_sec": opensky_status.get("expires_in_sec"),
+        "status": opensky_status.get("status", "stale"),
         "last_error": opensky_status.get("last_error") or _opensky_last_error,
+        "last_fetch_ok": opensky_status.get("last_fetch_ok"),
     }
+    
+    # Ships integration
     payload["integrations"]["ships"] = {
         "enabled": bool(ships_config.enabled),
         "provider": ships_config.provider,
@@ -2523,6 +2538,180 @@ def _health_payload_full_helper() -> Dict[str, Any]:
         "last_error": runtime.get("last_error"),
         "items_count": int(ships_items_count),
     }
+    
+    # Blitzortung / Lightning
+    try:
+        blitz_config = getattr(config, "blitzortung", None)
+        blitz_enabled = blitz_config and getattr(blitz_config, "enabled", False) if blitz_config else False
+        blitz_status = "down"
+        blitz_error = None
+        blitz_items = 0
+        
+        if blitzortung_service and blitz_enabled:
+            with _blitzortung_lock:
+                strikes = blitzortung_service.get_all_strikes()
+                blitz_items = len(strikes)
+                if blitzortung_service.running:
+                    blitz_status = "ok"
+                else:
+                    blitz_status = "degraded"
+        
+        payload["providers"]["blitzortung"] = {
+            "enabled": blitz_enabled,
+            "status": blitz_status,
+            "items_count": blitz_items,
+            "last_error": blitz_error,
+        }
+    except Exception as exc:
+        logger.debug("[health] Error getting blitzortung status: %s", exc)
+        payload["providers"]["blitzortung"] = {
+            "enabled": False,
+            "status": "down",
+            "items_count": 0,
+            "last_error": None,
+        }
+    
+    # GIBS Satellite
+    try:
+        config_v2, _ = _read_config_v2()
+        if config_v2.layers and config_v2.layers.global_ and config_v2.layers.global_.satellite:
+            gibs_config = config_v2.layers.global_.satellite
+            gibs_enabled = gibs_config.enabled
+            gibs_status = "ok" if gibs_enabled else "down"
+        elif config_v2.ui_global and config_v2.ui_global.satellite:
+            gibs_config = config_v2.ui_global.satellite
+            gibs_enabled = gibs_config.enabled
+            gibs_status = "ok" if gibs_enabled else "down"
+        else:
+            gibs_enabled = False
+            gibs_status = "down"
+        
+        payload["providers"]["gibs"] = {
+            "enabled": gibs_enabled,
+            "status": gibs_status,
+            "provider": "gibs",
+        }
+    except Exception as exc:
+        logger.debug("[health] Error getting GIBS status: %s", exc)
+        payload["providers"]["gibs"] = {
+            "enabled": False,
+            "status": "down",
+            "provider": "gibs",
+        }
+    
+    # RainViewer Radar
+    try:
+        if config_v2.layers and config_v2.layers.global_ and config_v2.layers.global_.radar:
+            radar_config = config_v2.layers.global_.radar
+            radar_enabled = radar_config.enabled
+            radar_status = "ok" if radar_enabled else "down"
+        elif config_v2.ui_global and config_v2.ui_global.radar:
+            radar_config = config_v2.ui_global.radar
+            radar_enabled = radar_config.enabled
+            radar_status = "ok" if radar_enabled else "down"
+        else:
+            radar_enabled = False
+            radar_status = "down"
+        
+        payload["providers"]["rainviewer"] = {
+            "enabled": radar_enabled,
+            "status": radar_status,
+            "provider": "rainviewer",
+        }
+    except Exception as exc:
+        logger.debug("[health] Error getting RainViewer status: %s", exc)
+        payload["providers"]["rainviewer"] = {
+            "enabled": False,
+            "status": "down",
+            "provider": "rainviewer",
+        }
+    
+    # Calendar
+    try:
+        if config_v2.calendar:
+            calendar_config = config_v2.calendar
+            calendar_enabled = calendar_config.enabled
+            calendar_provider = calendar_config.source or "google"
+            calendar_status = "ok" if calendar_enabled else "down"
+        elif config_v2.panels and config_v2.panels.calendar:
+            calendar_config = config_v2.panels.calendar
+            calendar_enabled = calendar_config.enabled
+            calendar_provider = calendar_config.provider or "google"
+            calendar_status = "ok" if calendar_enabled else "down"
+        else:
+            calendar_enabled = False
+            calendar_provider = "google"
+            calendar_status = "down"
+        
+        payload["providers"]["calendar"] = {
+            "enabled": calendar_enabled,
+            "status": calendar_status,
+            "provider": calendar_provider,
+        }
+    except Exception as exc:
+        logger.debug("[health] Error getting calendar status: %s", exc)
+        payload["providers"]["calendar"] = {
+            "enabled": False,
+            "status": "down",
+            "provider": "unknown",
+        }
+    
+    # News
+    try:
+        if config_v2.panels and config_v2.panels.news:
+            news_config = config_v2.panels.news
+            news_enabled = news_config.enabled
+            news_feeds_count = len(news_config.feeds) if news_config.feeds else 0
+            news_status = "ok" if news_enabled and news_feeds_count > 0 else "down"
+        else:
+            news_enabled = False
+            news_feeds_count = 0
+            news_status = "down"
+        
+        payload["providers"]["news"] = {
+            "enabled": news_enabled,
+            "status": news_status,
+            "feeds_count": news_feeds_count,
+        }
+    except Exception as exc:
+        logger.debug("[health] Error getting news status: %s", exc)
+        payload["providers"]["news"] = {
+            "enabled": False,
+            "status": "down",
+            "feeds_count": 0,
+        }
+    
+    # Últimos errores globales
+    last_errors = []
+    try:
+        if _opensky_last_error:
+            last_errors.append({
+                "provider": "opensky",
+                "error": _opensky_last_error,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+        if _aemet_last_error:
+            last_errors.append({
+                "provider": "aemet",
+                "error": _aemet_last_error,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+        if opensky_status.get("last_error"):
+            last_errors.append({
+                "provider": "opensky",
+                "error": opensky_status.get("last_error"),
+                "timestamp": opensky_status.get("last_fetch_iso") or datetime.now(timezone.utc).isoformat()
+            })
+        if runtime.get("last_error"):
+            last_errors.append({
+                "provider": "ships",
+                "error": runtime.get("last_error"),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+    except Exception as exc:
+        logger.debug("[health] Error collecting last errors: %s", exc)
+    
+    payload["last_errors"] = last_errors[:10]  # Limitar a últimos 10 errores
     
     # Información de focus masks
     flights_config = config.layers.flights
@@ -4555,6 +4744,227 @@ def refresh_opensky_and_status() -> Dict[str, Any]:
     }
 
 
+class OpenSkyTestOAuthRequest(BaseModel):
+    """Request para probar OAuth2 de OpenSky."""
+    client_id: Optional[str] = Field(default=None, max_length=512)
+    client_secret: Optional[str] = Field(default=None, max_length=512)
+    token_url: Optional[str] = Field(default=None, max_length=512)
+    scope: Optional[str] = Field(default=None, max_length=256)
+
+
+@app.post("/api/opensky/test_oauth")
+async def test_opensky_oauth(request: OpenSkyTestOAuthRequest) -> Dict[str, Any]:
+    """Prueba autenticación OAuth2 de OpenSky con credenciales proporcionadas.
+    
+    Si no se proporcionan credenciales en el request, usa las guardadas en secrets.
+    """
+    try:
+        # Obtener credenciales: del request o de secrets
+        client_id = request.client_id or secret_store.get_secret("opensky_client_id")
+        client_secret = request.client_secret or secret_store.get_secret("opensky_client_secret")
+        token_url = request.token_url or DEFAULT_TOKEN_URL
+        
+        if not client_id or not client_secret:
+            return {
+                "ok": False,
+                "reason": "missing_credentials",
+                "message": "OpenSky OAuth2 requires client_id and client_secret",
+                "tip": "Configure client_id and client_secret in secrets or provide them in the request"
+            }
+        
+        # Si se proporcionaron credenciales en el request, guardarlas temporalmente
+        use_temp_creds = bool(request.client_id and request.client_secret)
+        if use_temp_creds:
+            # Guardar credenciales originales temporalmente
+            original_id = secret_store.get_secret("opensky_client_id")
+            original_secret = secret_store.get_secret("opensky_client_secret")
+            try:
+                # Usar credenciales del request temporalmente
+                secret_store.set_secret("opensky_client_id", client_id)
+                secret_store.set_secret("opensky_client_secret", client_secret)
+                # Invalidar token cache para forzar nueva autenticación
+                try:
+                    opensky_service.reset()
+                except AttributeError:
+                    # Si reset no existe, usar invalidate
+                    try:
+                        opensky_service._auth.invalidate()
+                    except AttributeError:
+                        pass
+            except Exception as exc:
+                logger.warning("[opensky] Failed to set temporary credentials: %s", exc)
+        
+        try:
+            # Intentar obtener token OAuth2
+            result = opensky_service.force_refresh_token(
+                token_url=token_url or DEFAULT_TOKEN_URL,
+                scope=request.scope
+            )
+            
+            if result.get("ok") and result.get("token_valid"):
+                expires_in = result.get("expires_in", 0)
+                return {
+                    "ok": True,
+                    "token_valid": True,
+                    "expires_in": expires_in,
+                    "expires_in_minutes": expires_in // 60 if expires_in else None,
+                    "message": f"OAuth2 authentication successful. Token valid for {expires_in // 60 if expires_in else 0} minutes.",
+                    "credentials_source": "request" if use_temp_creds else "secrets"
+                }
+            else:
+                error_msg = result.get("error", "Unknown error")
+                return {
+                    "ok": False,
+                    "reason": "auth_failed",
+                    "message": f"OAuth2 authentication failed: {error_msg}",
+                    "token_valid": False
+                }
+        except OpenSkyAuthError as exc:
+            return {
+                "ok": False,
+                "reason": "auth_error",
+                "message": f"OpenSky OAuth2 error: {str(exc)}",
+                "status": exc.status,
+                "retry_after": exc.retry_after
+            }
+        except Exception as exc:
+            logger.error("[opensky] OAuth2 test error: %s", exc)
+            return {
+                "ok": False,
+                "reason": "internal_error",
+                "message": f"Internal error during OAuth2 test: {str(exc)}"
+            }
+        finally:
+            # Restaurar credenciales originales si se usaron temporales
+            if use_temp_creds:
+                try:
+                    if original_id:
+                        secret_store.set_secret("opensky_client_id", original_id)
+                    else:
+                        secret_store.delete_secret("opensky_client_id")
+                    if original_secret:
+                        secret_store.set_secret("opensky_client_secret", original_secret)
+                    else:
+                        secret_store.delete_secret("opensky_client_secret")
+                    # Invalidar token cache
+                    try:
+                        opensky_service.reset()
+                    except AttributeError:
+                        # Si reset no existe, usar invalidate
+                        try:
+                            opensky_service._auth.invalidate()
+                        except AttributeError:
+                            pass
+                except Exception as exc:
+                    logger.warning("[opensky] Failed to restore original credentials: %s", exc)
+    except Exception as exc:
+        logger.error("[opensky] Error in test_oauth endpoint: %s", exc)
+        return {
+            "ok": False,
+            "reason": "internal_error",
+            "message": str(exc)
+        }
+
+
+@app.get("/api/opensky/sample")
+def get_opensky_sample(limit: int = 20) -> Dict[str, Any]:
+    """Obtiene una muestra de vuelos de OpenSky.
+    
+    Args:
+        limit: Número máximo de vuelos a retornar (default: 20, max: 100)
+        
+    Returns:
+        Diccionario con {"count": N, "items": [...]}
+    """
+    try:
+        limit = max(1, min(limit, 100))  # Limitar entre 1 y 100
+        
+        # Obtener configuración
+        config = config_manager.read()
+        opensky_cfg = getattr(config, "opensky", None)
+        
+        if not opensky_cfg or not opensky_cfg.enabled:
+            return {
+                "count": 0,
+                "items": [],
+                "enabled": False,
+                "message": "OpenSky is disabled"
+            }
+        
+        # Obtener snapshot más reciente
+        snapshot = opensky_service.get_last_snapshot()
+        if not snapshot or not snapshot.payload:
+            return {
+                "count": 0,
+                "items": [],
+                "enabled": True,
+                "message": "No data available yet"
+            }
+        
+        # Extraer vuelos del snapshot
+        states = snapshot.payload.get("states", [])
+        if not states:
+            return {
+                "count": 0,
+                "items": [],
+                "enabled": True,
+                "message": "No flights in snapshot"
+            }
+        
+        # Procesar vuelos (limitado a limit)
+        items = []
+        for state in states[:limit]:
+            if not isinstance(state, list) or len(state) < 17:
+                continue
+            
+            try:
+                # Formato OpenSky: [icao24, callsign, origin_country, time_position, last_contact, 
+                #                  longitude, latitude, baro_altitude, on_ground, velocity, heading,
+                #                  vertical_rate, sensors, geo_altitude, squawk, spi, position_source]
+                icao24 = state[0] if state[0] else None
+                callsign = state[1].strip() if state[1] else None
+                origin_country = state[2] if state[2] else None
+                longitude = float(state[5]) if state[5] is not None else None
+                latitude = float(state[6]) if state[6] is not None else None
+                baro_altitude = float(state[7]) if state[7] is not None else None
+                velocity = float(state[9]) if state[9] is not None else None
+                heading = float(state[10]) if state[10] is not None else None
+                vertical_rate = float(state[11]) if state[11] is not None else None
+                geo_altitude = float(state[13]) if state[13] is not None else None
+                
+                items.append({
+                    "icao24": icao24,
+                    "callsign": callsign,
+                    "origin_country": origin_country,
+                    "longitude": longitude,
+                    "latitude": latitude,
+                    "baro_altitude": baro_altitude,
+                    "geo_altitude": geo_altitude,
+                    "velocity": velocity,
+                    "heading": heading,
+                    "vertical_rate": vertical_rate,
+                    "on_ground": bool(state[8]) if state[8] is not None else None
+                })
+            except (ValueError, IndexError, TypeError) as exc:
+                logger.debug("[opensky] Error parsing state: %s", exc)
+                continue
+        
+        return {
+            "count": len(items),
+            "items": items,
+            "enabled": True,
+            "snapshot_age_sec": int(time.time() - snapshot.fetched_at) if snapshot.fetched_at else None,
+            "stale": snapshot.stale
+        }
+    except Exception as exc:
+        logger.error("[opensky] Error getting sample: %s", exc)
+        return {
+            "count": 0,
+            "items": [],
+            "error": str(exc)
+        }
+
+
 def _set_opensky_error(message: Optional[str]) -> None:
     global _opensky_last_error
     _opensky_last_error = message
@@ -6324,22 +6734,32 @@ def _ensure_blitzortung_service(config: AppConfig) -> None:
                 geojson = blitzortung_service.to_geojson()
                 cache_store.store("lightning", geojson)
                 
-                # Auto-enable storm mode si está configurado
+                # Auto-enable storm mode si está configurado en blitzortung.auto_storm_mode
                 try:
-                    config = config_manager.read()
-                    storm_config = getattr(config, "storm", None)
+                    config_v2, _ = _read_config_v2()
+                    blitz_config = config_v2.blitzortung if config_v2.blitzortung else None
+                    auto_storm_config = blitz_config.auto_storm_mode if blitz_config and blitz_config.auto_storm_mode else None
                     
-                    if storm_config and getattr(storm_config, "auto_enable", False):
-                        center_lat = getattr(storm_config, "center_lat", 39.986)
-                        center_lng = getattr(storm_config, "center_lng", -0.051)
-                        radius_km = getattr(storm_config, "radius_km", 30)
-                        auto_disable_minutes = getattr(storm_config, "auto_disable_after_minutes", 60)
-                        
-                        # Verificar si algún rayo nuevo está dentro del radio
-                        for strike in strikes:
-                            distance = _distance_km(center_lat, center_lng, strike.lat, strike.lon)
-                            if distance <= radius_km:
-                                # Activar storm mode en caché (solo en memoria, no persistir)
+                    # Fallback a config.storm si auto_storm_mode no está configurado
+                    if not auto_storm_config:
+                        config = config_manager.read()
+                        storm_config = getattr(config, "storm", None)
+                        if storm_config and getattr(storm_config, "auto_enable", False):
+                            center_lat = getattr(storm_config, "center_lat", 39.986)
+                            center_lng = getattr(storm_config, "center_lng", -0.051)
+                            radius_km = getattr(storm_config, "radius_km", 30)
+                            auto_disable_minutes = getattr(storm_config, "auto_disable_after_minutes", 60)
+                            threshold_count = getattr(storm_config, "threshold_count", 1)
+                            
+                            # Verificar si algún rayo nuevo está dentro del radio
+                            strikes_in_radius = []
+                            for strike in strikes:
+                                distance = _distance_km(center_lat, center_lng, strike.lat, strike.lon)
+                                if distance <= radius_km:
+                                    strikes_in_radius.append(strike)
+                            
+                            # Activar si se cumple el umbral
+                            if len(strikes_in_radius) >= threshold_count:
                                 cache_store.store("storm_mode", {
                                     "enabled": True,
                                     "last_triggered": datetime.now(timezone.utc).isoformat(),
@@ -6347,13 +6767,59 @@ def _ensure_blitzortung_service(config: AppConfig) -> None:
                                     "zoom": getattr(storm_config, "zoom", 9.0),
                                     "auto_enabled": True,
                                     "radius_km": radius_km,
+                                    "threshold_count": threshold_count,
+                                    "strikes_count": len(strikes_in_radius),
                                     "auto_disable_after_minutes": auto_disable_minutes
                                 })
                                 logger.info(
-                                    "[lightning] Auto-enabled storm mode: lightning at %.1f km from center",
-                                    distance
+                                    "[lightning] Auto-enabled storm mode: %d strikes within %.1f km from center",
+                                    len(strikes_in_radius), radius_km
                                 )
-                                break
+                    else:
+                        # Usar configuración de auto_storm_mode desde blitzortung
+                        if auto_storm_config.enabled:
+                            # Obtener configuración de storm para center y zoom
+                            config = config_manager.read()
+                            storm_config = getattr(config, "storm", None)
+                            center_lat = storm_config.center_lat if storm_config else 39.986
+                            center_lng = storm_config.center_lng if storm_config else -0.051
+                            zoom = storm_config.zoom if storm_config else 9.0
+                            
+                            radius_km = auto_storm_config.radius_km
+                            threshold_count = auto_storm_config.min_events_in_5min
+                            auto_disable_minutes = auto_storm_config.cooldown_minutes
+                            
+                            # Verificar si algún rayo nuevo está dentro del radio
+                            strikes_in_radius = []
+                            for strike in strikes:
+                                distance = _distance_km(center_lat, center_lng, strike.lat, strike.lon)
+                                if distance <= radius_km:
+                                    strikes_in_radius.append(strike)
+                            
+                            # Activar si se cumple el umbral
+                            if len(strikes_in_radius) >= threshold_count:
+                                cache_store.store("storm_mode", {
+                                    "enabled": True,
+                                    "last_triggered": datetime.now(timezone.utc).isoformat(),
+                                    "center": {"lat": center_lat, "lng": center_lng},
+                                    "zoom": zoom,
+                                    "auto_enabled": True,
+                                    "radius_km": radius_km,
+                                    "threshold_count": threshold_count,
+                                    "strikes_count": len(strikes_in_radius),
+                                    "auto_disable_after_minutes": auto_disable_minutes
+                                })
+                                logger.info(
+                                    "[lightning] Auto-enabled storm mode: %d strikes (threshold: %d) within %.1f km from center",
+                                    len(strikes_in_radius), threshold_count, radius_km
+                                )
+                                # Emitir evento interno para frontend (disponible vía GET /api/storm_mode)
+                                publish_config_changed_async("storm_mode_activated", {
+                                    "enabled": True,
+                                    "center": {"lat": center_lat, "lng": center_lng},
+                                    "zoom": zoom,
+                                    "strikes_count": len(strikes_in_radius)
+                                })
                 except Exception as exc:
                     logger.debug("[lightning] Error in auto-enable storm mode: %s", exc)
             
@@ -8277,6 +8743,12 @@ async def test_flights() -> Dict[str, Any]:
             "reason": "internal_error",
             "tip": f"Error interno: {str(exc)}"
         }
+
+
+@app.post("/api/ais/test")
+async def test_ais() -> Dict[str, Any]:
+    """Alias para POST /api/ships/test."""
+    return await test_ships()
 
 
 @app.post("/api/ships/test")

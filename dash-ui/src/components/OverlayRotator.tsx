@@ -419,7 +419,8 @@ export const OverlayRotator: React.FC = () => {
               const enabled = v2Config.panels?.historicalEvents?.enabled !== false;
               if (!enabled) return { count: 0, items: [] };
               
-              const data = await apiGet<{ date?: string; count?: number; items?: string[] }>("/api/efemerides");
+              // Usar /api/history para efemérides históricas (según plan)
+              const data = await apiGet<{ date?: string; count?: number; items?: string[] }>("/api/history");
               if (mounted) {
                 historicalEventsCacheRef.current = { data, timestamp: Date.now() };
               }

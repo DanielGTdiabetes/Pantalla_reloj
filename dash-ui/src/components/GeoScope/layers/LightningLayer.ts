@@ -43,10 +43,28 @@ export default class LightningLayer implements Layer {
         type: "circle",
         source: this.sourceId,
         paint: {
-          "circle-radius": 6,
+          "circle-radius": [
+            "interpolate",
+            ["linear"],
+            ["get", "age_seconds"],
+            0, 6,
+            600, 6,
+            1800, 4
+          ],
           "circle-color": "#fcd34d",
-          "circle-opacity": 0.65,
-          "circle-blur": 0.35
+          "circle-opacity": [
+            "coalesce",
+            ["get", "opacity"],
+            0.65
+          ],
+          "circle-blur": [
+            "interpolate",
+            ["linear"],
+            ["get", "age_seconds"],
+            0, 0.35,
+            600, 0.5,
+            1800, 0.8
+          ]
         }
       });
     }
@@ -71,10 +89,52 @@ export default class LightningLayer implements Layer {
 
   updateData(data: FeatureCollection): void {
     this.lastData = data ?? EMPTY;
+    
+    // Aplicar decay temporal: reducir opacidad según la edad del strike
+    const now = Date.now() / 1000; // timestamp en segundos
+    const maxAgeSeconds = 1800; // 30 minutos máximo
+    const decayStartSeconds = 600; // Empezar decay después de 10 minutos
+    
+    const processedFeatures = this.lastData.features.map((feature) => {
+      if (!feature.properties || typeof feature.properties.timestamp !== "number") {
+        return feature;
+      }
+      
+      const ageSeconds = now - feature.properties.timestamp;
+      
+      // Si es muy antiguo, excluirlo completamente
+      if (ageSeconds > maxAgeSeconds) {
+        return null;
+      }
+      
+      // Calcular opacidad basada en edad
+      let opacity = 0.65; // Opacidad base
+      if (ageSeconds > decayStartSeconds) {
+        // Decay lineal desde decayStartSeconds hasta maxAgeSeconds
+        const decayProgress = (ageSeconds - decayStartSeconds) / (maxAgeSeconds - decayStartSeconds);
+        opacity = 0.65 * (1 - decayProgress);
+        opacity = Math.max(0.1, opacity); // Mínimo 10% de opacidad
+      }
+      
+      return {
+        ...feature,
+        properties: {
+          ...feature.properties,
+          opacity,
+          age_seconds: ageSeconds
+        }
+      };
+    }).filter((f): f is typeof this.lastData.features[0] => f !== null);
+    
+    const processedData: FeatureCollection = {
+      type: "FeatureCollection",
+      features: processedFeatures
+    };
+    
     if (!this.map) return;
     const source = this.map.getSource(this.sourceId);
     if (isGeoJSONSource(source)) {
-      source.setData(this.lastData);
+      source.setData(processedData);
     }
   }
 

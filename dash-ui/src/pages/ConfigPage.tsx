@@ -915,117 +915,14 @@ export const ConfigPage: React.FC = () => {
           <p>Gestiona la configuración del sistema</p>
         </div>
 
-        {/* GRUPO 1: WiFi */}
-        <div className="config-card">
-          <h2>WiFi</h2>
+        {/* ============================================
+            BLOQUE 1: Maps and Layers
+            ============================================ */}
+        <div style={{ marginBottom: "32px" }}>
+          <h2 style={{ fontSize: "1.8rem", marginBottom: "20px", borderBottom: "2px solid rgba(104, 162, 255, 0.3)", paddingBottom: "8px" }}>
+            Mapas y Capas
+          </h2>
           
-          {wifiStatusData && (
-            <div className="config-status">
-              <p>
-                Estado: {wifiStatusData.connected ? "Conectado" : "Desconectado"}
-                {wifiStatusData.connected && wifiStatusData.ssid && (
-                  <span className="config-badge config-badge--success">
-                    {wifiStatusData.ssid}
-                  </span>
-                )}
-              </p>
-              {wifiStatusData.ip_address && (
-                <p>IP: {wifiStatusData.ip_address}</p>
-              )}
-              {wifiStatusData.connected && (
-                <button
-                  className="config-button"
-                  onClick={handleWifiDisconnect}
-                  style={{ marginTop: "12px" }}
-                >
-                  Desconectar
-                </button>
-              )}
-            </div>
-          )}
-
-          <div className="config-field">
-            <label>Escaneo de Redes</label>
-            <div className="config-field__actions">
-              <button
-                className="config-button primary"
-                onClick={handleWifiScan}
-                disabled={wifiScanning}
-              >
-                {wifiScanning ? "Escaneando..." : "Buscar redes"}
-              </button>
-              {wifiScanError && (
-                <button
-                  className="config-button"
-                  onClick={handleWifiScan}
-                  disabled={wifiScanning}
-                >
-                  Reintentar
-                </button>
-              )}
-            </div>
-            {wifiScanError && (
-              <div className="config-error-callout" style={{ marginTop: "12px" }}>
-                <p>{wifiScanError}</p>
-              </div>
-            )}
-          </div>
-
-          <div className="config-table" style={{ marginTop: "12px" }}>
-            <div className="config-table__header">
-              <span>Redes disponibles ({wifiNetworksCount})</span>
-            </div>
-            {wifiNetworksList.length > 0 ? (
-              wifiNetworksList.map((network) => (
-                <div key={network.ssid} className="config-table__row">
-                  <div>
-                    <strong>{network.ssid}</strong>
-                    <span className="config-badge" style={{ marginLeft: "8px" }}>
-                      {network.signal}%
-                    </span>
-                    {network.security && network.security !== "--" && (
-                      <span className="config-badge config-badge--warning" style={{ marginLeft: "4px" }}>
-                        {network.security}
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    className="config-button"
-                    onClick={() => {
-                      const password = prompt(
-                        network.security && network.security !== "--"
-                          ? `Ingresa la contraseña para ${network.ssid}:`
-                          : `¿Conectar a ${network.ssid}? (sin contraseña)`
-                      );
-                      if (password !== null) {
-                        handleWifiConnect(network.ssid, password || undefined);
-                      }
-                    }}
-                  >
-                    Conectar
-                  </button>
-                </div>
-              ))
-            ) : (
-              !wifiScanning && (
-                <p className="config-status">No hay redes disponibles</p>
-              )
-            )}
-          </div>
-
-          <div className="config-actions" style={{ marginTop: "24px" }}>
-            <button
-              className="config-button primary"
-              onClick={handleSaveWifi}
-              disabled={wifiSaving}
-            >
-              {wifiSaving ? "Guardando..." : "Guardar"}
-            </button>
-          </div>
-        </div>
-
-        {/* GRUPO 2: Mapas y Capas */}
-        
         {/* Tarjeta: Radar global (RainViewer) */}
         <div className="config-card">
           <h2>Radar Global (RainViewer)</h2>
@@ -2935,6 +2832,16 @@ export const ConfigPage: React.FC = () => {
             </button>
           </div>
         </div>
+        </div>
+        {/* End BLOQUE 1: Maps and Layers */}
+
+        {/* ============================================
+            BLOQUE 2: Rotating Panel
+            ============================================ */}
+        <div style={{ marginBottom: "32px" }}>
+          <h2 style={{ fontSize: "1.8rem", marginBottom: "20px", borderBottom: "2px solid rgba(104, 162, 255, 0.3)", paddingBottom: "8px" }}>
+            Panel Rotativo
+          </h2>
 
         {/* GRUPO 3: Panel Rotativo */}
         <div className="config-card">
@@ -3453,7 +3360,16 @@ export const ConfigPage: React.FC = () => {
             </button>
           </div>
         </div>
-      </div>
-    </div>
-  );
-};
+        </div>
+
+        {/* ============================================
+            BLOQUE 3: Connectivity/Wi-Fi
+            ============================================ */}
+        <div style={{ marginBottom: "32px" }}>
+          <h2 style={{ fontSize: "1.8rem", marginBottom: "20px", borderBottom: "2px solid rgba(104, 162, 255, 0.3)", paddingBottom: "8px" }}>
+            Conectividad / Wi-Fi
+          </h2>
+          
+        {/* GRUPO 1: WiFi */}
+        <div className="config-card">
+          <h2>WiFi</h2>
