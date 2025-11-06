@@ -756,8 +756,6 @@ export const ConfigPage: React.FC = () => {
       setCalendarPreviewLoading(false);
     }
   };
-
-  const [calendarUploadProgress, setCalendarUploadProgress] = useState<number>(0);
   
   const handleUploadICS = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -3472,6 +3470,137 @@ export const ConfigPage: React.FC = () => {
             Conectividad / Wi-Fi
           </h2>
           
-        {/* GRUPO 1: WiFi */}
-        <div className="config-card">
-          <h2>WiFi</h2>
+          {/* GRUPO 1: WiFi */}
+          <div className="config-card">
+            <h2>WiFi</h2>
+            
+            <div className="config-form-fields">
+              {/* Estado actual de WiFi */}
+              {wifiStatusData && (
+                <div className="config-field">
+                  <label>Estado actual</label>
+                  <div style={{ padding: "12px", backgroundColor: "rgba(104, 162, 255, 0.1)", borderRadius: "4px" }}>
+                    <div style={{ marginBottom: "8px" }}>
+                      <strong>Interfaz:</strong> {wifiStatusData.interface}
+                    </div>
+                    <div style={{ marginBottom: "8px" }}>
+                      <strong>Conectado:</strong> {wifiStatusData.connected ? "Sí" : "No"}
+                    </div>
+                    {wifiStatusData.connected && (
+                      <>
+                        {wifiStatusData.ssid && (
+                          <div style={{ marginBottom: "8px" }}>
+                            <strong>SSID:</strong> {wifiStatusData.ssid}
+                          </div>
+                        )}
+                        {wifiStatusData.ip_address && (
+                          <div style={{ marginBottom: "8px" }}>
+                            <strong>IP:</strong> {wifiStatusData.ip_address}
+                          </div>
+                        )}
+                        {wifiStatusData.signal !== null && (
+                          <div style={{ marginBottom: "8px" }}>
+                            <strong>Señal:</strong> {wifiStatusData.signal}%
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  {wifiStatusData.connected && (
+                    <div className="config-field__actions" style={{ marginTop: "12px" }}>
+                      <button
+                        className="config-button"
+                        onClick={handleWifiDisconnect}
+                      >
+                        Desconectar
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Botón de escaneo */}
+              <div className="config-field">
+                <div className="config-field__actions">
+                  <button
+                    className="config-button primary"
+                    onClick={handleWifiScan}
+                    disabled={wifiScanning}
+                  >
+                    {wifiScanning ? "Escaneando..." : "Buscar redes"}
+                  </button>
+                  {wifiScanError && (
+                    <button
+                      className="config-button"
+                      onClick={handleWifiScan}
+                      disabled={wifiScanning}
+                    >
+                      Reintentar
+                    </button>
+                  )}
+                </div>
+                {wifiScanError && (
+                  <div className="config-field__hint config-field__hint--error" style={{ marginTop: "8px" }}>
+                    {wifiScanError}
+                  </div>
+                )}
+              </div>
+
+              {/* Lista de redes disponibles */}
+              {wifiNetworksCount > 0 && (
+                <div className="config-field">
+                  <label>Redes disponibles ({wifiNetworksCount})</label>
+                  <div style={{ maxHeight: "400px", overflowY: "auto", border: "1px solid rgba(104, 162, 255, 0.3)", borderRadius: "4px", padding: "8px" }}>
+                    {wifiNetworksList.map((network, index) => (
+                      <div
+                        key={index}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "12px",
+                          marginBottom: "8px",
+                          backgroundColor: "rgba(104, 162, 255, 0.05)",
+                          borderRadius: "4px",
+                        }}
+                      >
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{network.ssid}</div>
+                          <div style={{ fontSize: "0.9rem", color: "rgba(255, 255, 255, 0.7)" }}>
+                            Señal: {network.signal}% | Seguridad: {network.security}
+                          </div>
+                        </div>
+                        <button
+                          className="config-button"
+                          onClick={() => {
+                            const password = network.security !== "--" ? prompt(`Ingresa la contraseña para "${network.ssid}":`) : undefined;
+                            if (password !== null) {
+                              handleWifiConnect(network.ssid, password);
+                            }
+                          }}
+                        >
+                          Conectar
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Botón de guardar/actualizar */}
+              <div className="config-actions" style={{ marginTop: "24px" }}>
+                <button
+                  className="config-button primary"
+                  onClick={handleSaveWifi}
+                  disabled={wifiSaving}
+                >
+                  {wifiSaving ? "Guardando..." : "Actualizar estado"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
