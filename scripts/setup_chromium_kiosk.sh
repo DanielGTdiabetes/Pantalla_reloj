@@ -104,7 +104,22 @@ find_chromium_bin() {
       local bin_path
       bin_path="$(command -v "$candidate")"
       if ! is_snap_binary "$bin_path"; then
-        echo "$bin_path"
+        # Verificar que no sea un script que requiera snap
+        if [[ -f "$bin_path" ]] && ! grep -q "snap install chromium" "$bin_path" 2>/dev/null; then
+          echo "$bin_path"
+          return 0
+        fi
+      fi
+    fi
+  done
+  
+  # Buscar Google Chrome como alternativa si Chromium no está disponible
+  for candidate in /opt/google/chrome/chrome /usr/bin/google-chrome /usr/bin/google-chrome-stable; do
+    if [[ -x "$candidate" ]]; then
+      # Verificar que es un binario real
+      if file "$candidate" 2>/dev/null | grep -qE '(ELF|executable|binary)'; then
+        log "INFO: Usando Google Chrome como alternativa a Chromium: $candidate"
+        echo "$candidate"
         return 0
       fi
     fi

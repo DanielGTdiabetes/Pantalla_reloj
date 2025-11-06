@@ -872,10 +872,15 @@ fi
 if [[ ${CHROME_FOUND:-0} -eq 0 ]]; then
   log_info "Google Chrome no disponible, verificando Chromium..."
   if command -v chromium-browser >/dev/null 2>&1; then
-    if ! is_snap_binary "$(command -v chromium-browser)"; then
-      CHROMIUM_BIN="$(command -v chromium-browser)"
-      CHROMIUM_FOUND=1
-      log_ok "chromium-browser encontrado (no snap): $CHROMIUM_BIN"
+    local chromium_browser_path
+    chromium_browser_path="$(command -v chromium-browser)"
+    if ! is_snap_binary "$chromium_browser_path"; then
+      # Verificar que no sea un script que requiera snap
+      if [[ -f "$chromium_browser_path" ]] && ! grep -q "snap install chromium" "$chromium_browser_path" 2>/dev/null; then
+        CHROMIUM_BIN="$chromium_browser_path"
+        CHROMIUM_FOUND=1
+        log_ok "chromium-browser encontrado (no snap): $CHROMIUM_BIN"
+      fi
     fi
   fi
 fi
@@ -899,6 +904,23 @@ if [[ ${CHROMIUM_FOUND:-0} -eq 0 ]]; then
   fi
 fi
 
+# Buscar Google Chrome como alternativa si Chromium no está disponible
+if [[ ${CHROMIUM_FOUND:-0} -eq 0 ]] && [[ ${CHROME_FOUND:-0} -eq 0 ]]; then
+  log_info "Buscando Google Chrome como alternativa a Chromium..."
+  for chrome_candidate in /opt/google/chrome/chrome /usr/bin/google-chrome /usr/bin/google-chrome-stable; do
+    if [[ -x "$chrome_candidate" ]]; then
+      # Verificar que es un binario real
+      if file "$chrome_candidate" 2>/dev/null | grep -qE '(ELF|executable|binary)'; then
+        CHROMIUM_BIN="$chrome_candidate"
+        CHROMIUM_FOUND=1
+        log_ok "Google Chrome encontrado como alternativa: $CHROMIUM_BIN"
+        SUMMARY+=("[install] Google Chrome encontrado como alternativa a Chromium")
+        break
+      fi
+    fi
+  done
+fi
+
 # Fallback a snap solo si no hay alternativa (no recomendado)
 if [[ ${CHROMIUM_FOUND:-0} -eq 0 ]]; then
   if [[ -x /snap/bin/chromium ]]; then
@@ -913,9 +935,10 @@ if [[ ${CHROMIUM_FOUND:-0} -eq 0 ]]; then
 fi
 
 if [[ ${CHROMIUM_FOUND:-0} -eq 0 ]]; then
-  log_warn "No se encontró Chromium instalado"
-  log_warn "El servicio kiosk no funcionará hasta que se instale Chromium"
-  SUMMARY+=('[install] WARN: Chromium no encontrado - servicio kiosk no funcionará')
+  log_warn "No se encontró Chromium ni Google Chrome instalado"
+  log_warn "El servicio kiosk no funcionará hasta que se instale Chromium o Google Chrome"
+  log_info "Nota: El script pantalla-kiosk-chromium buscará Google Chrome automáticamente al ejecutarse"
+  SUMMARY+=('[install] WARN: Chromium/Chrome no encontrado - servicio kiosk puede no funcionar')
 else
   log_ok "Chromium disponible para kiosk: $CHROMIUM_BIN"
   SUMMARY+=('[install] Chromium verificado y disponible')

@@ -83,8 +83,36 @@ if [[ $CHROMIUM_INSTALLED -eq 0 ]]; then
   fi
 fi
 
+# Opción 4: Buscar Google Chrome como alternativa si Chromium no está disponible
 if [[ $CHROMIUM_INSTALLED -eq 0 ]]; then
-  log "✗ ERROR: No se pudo instalar Chromium real"
+  log "Buscando Google Chrome como alternativa..."
+  for chrome_candidate in /opt/google/chrome/chrome /usr/bin/google-chrome /usr/bin/google-chrome-stable; do
+    if [[ -x "$chrome_candidate" ]]; then
+      # Verificar que es un binario real
+      if file "$chrome_candidate" 2>/dev/null | grep -qE '(ELF|executable|binary)'; then
+        CHROMIUM_BIN="$chrome_candidate"
+        # Crear wrapper chromium-kiosk-bin que apunte a Chrome
+        cat > /usr/local/bin/chromium-kiosk-bin <<EOF
+#!/usr/bin/env bash
+exec "$CHROMIUM_BIN" \\
+  --ignore-gpu-blocklist \\
+  --enable-webgl \\
+  --use-gl=egl-angle \\
+  --enable-features=VaapiVideoDecoder \\
+  "\$@"
+EOF
+        chmod +x /usr/local/bin/chromium-kiosk-bin
+        CHROMIUM_BIN="/usr/local/bin/chromium-kiosk-bin"
+        log "✓ Google Chrome encontrado y configurado como alternativa: $CHROMIUM_BIN"
+        CHROMIUM_INSTALLED=1
+        break
+      fi
+    fi
+  done
+fi
+
+if [[ $CHROMIUM_INSTALLED -eq 0 ]]; then
+  log "✗ ERROR: No se pudo instalar Chromium real ni encontrar Google Chrome"
   log "Intentando instalar Firefox como alternativa..."
   if apt install -y firefox-esr 2>&1; then
     log "✓ Firefox instalado como alternativa"

@@ -97,16 +97,45 @@ find_chromium() {
 
   local candidate resolved
   # Priorizar binarios normales de Chromium (sin Snap)
-  for candidate in /usr/local/bin/chromium-kiosk-bin chromium-browser chromium chromium-browser-stable; do
-    if [[ -x "$candidate" ]]; then
-      printf '%s\n' "$candidate"
+  # Verificar primero si chromium-kiosk-bin es un binario real o un wrapper
+  if [[ -x /usr/local/bin/chromium-kiosk-bin ]]; then
+    # Verificar si es un binario real (no un script que requiere snap)
+    if file /usr/local/bin/chromium-kiosk-bin 2>/dev/null | grep -qE '(ELF|executable|binary)'; then
+      printf '%s\n' "/usr/local/bin/chromium-kiosk-bin"
       return 0
     fi
+    # Si es un script, verificar si apunta a snap
+    if ! grep -q '/snap/' /usr/local/bin/chromium-kiosk-bin 2>/dev/null; then
+      # El wrapper no apunta a snap, intentar usarlo
+      resolved="$(head -1 /usr/local/bin/chromium-kiosk-bin 2>/dev/null | sed 's|^#!.*||' || echo "")"
+      if [[ -n "$resolved" ]] && [[ -x "$resolved" ]]; then
+        printf '%s\n' "/usr/local/bin/chromium-kiosk-bin"
+        return 0
+      fi
+    fi
+  fi
+
+  for candidate in chromium-browser chromium chromium-browser-stable; do
     if command -v "$candidate" >/dev/null 2>&1; then
       resolved="$(command -v "$candidate")"
       # Evitar Snap si es posible
       if [[ "$resolved" != *"/snap/"* ]]; then
-        printf '%s\n' "$resolved"
+        # Verificar que no sea un script que requiera snap
+        if [[ -f "$resolved" ]] && ! grep -q "snap install chromium" "$resolved" 2>/dev/null; then
+          printf '%s\n' "$resolved"
+          return 0
+        fi
+      fi
+    fi
+  done
+
+  # Buscar Google Chrome como alternativa si Chromium no está disponible
+  for candidate in /opt/google/chrome/chrome /usr/bin/google-chrome /usr/bin/google-chrome-stable; do
+    if [[ -x "$candidate" ]]; then
+      # Verificar que es un binario real
+      if file "$candidate" 2>/dev/null | grep -qE '(ELF|executable|binary)'; then
+        log "INFO: Usando Google Chrome como alternativa a Chromium: $candidate" >&2
+        printf '%s\n' "$candidate"
         return 0
       fi
     fi
