@@ -590,7 +590,7 @@ install -D -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk-watchdog@.service.d/10-rol
   /etc/systemd/system/pantalla-kiosk-watchdog@.service.d/10-rollback.conf
 
 # Instalar unit user para Chrome kiosk (si Chrome está disponible)
-if [[ $CHROME_FOUND -eq 1 ]]; then
+if [[ ${CHROME_FOUND:-0} -eq 1 ]]; then
   log_info "Instalando unit user para Chrome kiosk..."
   USER_SYSTEMD_DIR="${USER_HOME}/.config/systemd/user"
   install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$USER_SYSTEMD_DIR"
@@ -610,7 +610,7 @@ fi
 # Recargar systemd DESPUÉS de instalar todos los servicios
 log_info "Recargando systemd después de instalar servicios"
 systemctl daemon-reload
-if [[ $CHROME_FOUND -eq 1 ]]; then
+if [[ ${CHROME_FOUND:-0} -eq 1 ]]; then
   # Recargar systemd user también
   sudo -u "$USER_NAME" systemctl --user daemon-reload 2>/dev/null || true
 fi
@@ -869,7 +869,7 @@ if install_google_chrome; then
 fi
 
 # Prioridad 2: Verificar si ya hay un Chromium real instalado (fallback)
-if [[ $CHROME_FOUND -eq 0 ]]; then
+if [[ ${CHROME_FOUND:-0} -eq 0 ]]; then
   log_info "Google Chrome no disponible, verificando Chromium..."
   if command -v chromium-browser >/dev/null 2>&1; then
     if ! is_snap_binary "$(command -v chromium-browser)"; then
@@ -1080,7 +1080,7 @@ fi
 systemctl disable --now "pantalla-kiosk@${USER_NAME}.service" 2>/dev/null || true
 
 # Habilitar y arrancar unit user de Chrome kiosk (preferido)
-if [[ $CHROME_FOUND -eq 1 ]]; then
+if [[ ${CHROME_FOUND:-0} -eq 1 ]]; then
   log_info "Habilitando unit user Chrome kiosk..."
   CHROME_USER_UNIT="pantalla-kiosk-chrome@${USER_NAME}.service"
   
