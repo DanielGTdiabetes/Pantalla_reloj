@@ -86,6 +86,10 @@ SYSTEMD_UNITS=(
   "pantalla-session.target"
 )
 
+# Units user de Chrome kiosk
+USER_SYSTEMD_DIR="/home/${USER_NAME}/.config/systemd/user"
+CHROME_USER_UNIT="pantalla-kiosk-chrome@${USER_NAME}.service"
+
 log_info "Stopping systemd units"
 for unit in "${SYSTEMD_UNITS[@]}"; do
   systemctl disable --now "$unit" >/dev/null 2>&1 || true
@@ -98,6 +102,20 @@ done
 rm -f /etc/systemd/system/pantalla-kiosk@.service
 rm -f /etc/systemd/system/pantalla-kiosk-chromium@.service
 rm -f /etc/systemd/system/pantalla-openbox@.service
+
+# Parar y eliminar unit user de Chrome kiosk
+log_info "Stopping user systemd unit for Chrome kiosk"
+if [[ -d "$USER_SYSTEMD_DIR" ]]; then
+  if sudo -u "$USER_NAME" systemctl --user is-active --quiet "$CHROME_USER_UNIT" 2>/dev/null; then
+    sudo -u "$USER_NAME" systemctl --user stop "$CHROME_USER_UNIT" 2>/dev/null || true
+  fi
+  if sudo -u "$USER_NAME" systemctl --user is-enabled --quiet "$CHROME_USER_UNIT" 2>/dev/null; then
+    sudo -u "$USER_NAME" systemctl --user disable "$CHROME_USER_UNIT" 2>/dev/null || true
+  fi
+  rm -f "${USER_SYSTEMD_DIR}/${CHROME_USER_UNIT}" >/dev/null 2>&1 || true
+  rm -f "${USER_SYSTEMD_DIR}/default.target.wants/${CHROME_USER_UNIT}" >/dev/null 2>&1 || true
+  log_ok "Unit user Chrome kiosk eliminado"
+fi
 rm -f /etc/systemd/system/pantalla-xorg@.service
 rm -f /etc/systemd/system/pantalla-dash-backend@.service
 rm -f /etc/systemd/system/pantalla-portal@.service
