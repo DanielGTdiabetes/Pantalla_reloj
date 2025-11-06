@@ -748,3 +748,102 @@ export async function testGIBS(): Promise<GIBSTestResponse> {
     return { ok: false, reason: "connection_error" };
   }
 }
+
+// Lightning/Blitzortung API
+export type LightningMqttTestRequest = {
+  mqtt_host: string;
+  mqtt_port: number;
+  mqtt_topic: string;
+  timeout_sec: number;
+};
+
+export type LightningMqttTestResponse = {
+  ok: boolean;
+  connected: boolean;
+  received?: number;
+  topic?: string;
+  latency_ms?: number;
+  error?: string;
+};
+
+export async function testLightningMqtt(request: LightningMqttTestRequest): Promise<LightningMqttTestResponse> {
+  try {
+    return apiPost<LightningMqttTestResponse>("/api/lightning/test_mqtt", request);
+  } catch (error) {
+    return { ok: false, connected: false, error: "connection_error" };
+  }
+}
+
+export type LightningWsTestRequest = {
+  ws_url: string;
+  timeout_sec: number;
+};
+
+export type LightningWsTestResponse = {
+  ok: boolean;
+  connected: boolean;
+  error?: string;
+};
+
+export async function testLightningWs(request: LightningWsTestRequest): Promise<LightningWsTestResponse> {
+  try {
+    return apiPost<LightningWsTestResponse>("/api/lightning/test_ws", request);
+  } catch (error) {
+    return { ok: false, connected: false, error: "connection_error" };
+  }
+}
+
+export type LightningStatusResponse = {
+  enabled: boolean;
+  source: "mqtt" | "ws" | "none";
+  connected: boolean;
+  buffer_size: number;
+  last_event_age_sec: number | null;
+  rate_per_min: number;
+  center: {
+    lat: number;
+    lng: number;
+    zoom: number;
+  } | null;
+  auto_enable: {
+    active: boolean;
+    radius_km: number;
+    will_disable_in_min: number | null;
+  } | null;
+};
+
+export async function getLightningStatus(): Promise<LightningStatusResponse> {
+  try {
+    return apiGet<LightningStatusResponse>("/api/lightning/status");
+  } catch (error) {
+    return {
+      enabled: false,
+      source: "none",
+      connected: false,
+      buffer_size: 0,
+      last_event_age_sec: null,
+      rate_per_min: 0,
+      center: null,
+      auto_enable: null,
+    };
+  }
+}
+
+export type LightningSampleResponse = {
+  count: number;
+  items: Array<{
+    ts: number;
+    lat: number;
+    lng: number;
+    amplitude: number | null;
+    type: string;
+  }>;
+};
+
+export async function getLightningSample(limit: number = 50): Promise<LightningSampleResponse> {
+  try {
+    return apiGet<LightningSampleResponse>(`/api/lightning/sample?limit=${limit}`);
+  } catch (error) {
+    return { count: 0, items: [] };
+  }
+}

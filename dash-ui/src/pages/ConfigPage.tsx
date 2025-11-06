@@ -3,6 +3,8 @@ import React, { useEffect, useState } from "react";
 import { withConfigDefaultsV2 } from "../config/defaults_v2";
 import {
   getConfigV2,
+  getLightningStatus,
+  getLightningSample,
   getOpenSkyStatus,
   getRainViewerFrames,
   getRainViewerTileUrl,
@@ -10,6 +12,8 @@ import {
   testAemetApiKey,
   testCalendarConnection,
   testGIBS,
+  testLightningMqtt,
+  testLightningWs,
   testRainViewer,
   type WiFiNetwork,
   wifiConnect,
@@ -57,6 +61,15 @@ export const ConfigPage: React.FC = () => {
   const [gibsTesting, setGibsTesting] = useState(false);
   const [gibsTilePreview, setGibsTilePreview] = useState<string | null>(null);
   const [gibsLoadingTile, setGibsLoadingTile] = useState(false);
+
+  // Grupo 2.5: Rayos (Blitzortung)
+  const [lightningSaving, setLightningSaving] = useState(false);
+  const [lightningMqttTestResult, setLightningMqttTestResult] = useState<{ ok: boolean; connected: boolean; received?: number; latency_ms?: number; error?: string } | null>(null);
+  const [lightningMqttTesting, setLightningMqttTesting] = useState(false);
+  const [lightningWsTestResult, setLightningWsTestResult] = useState<{ ok: boolean; connected: boolean; error?: string } | null>(null);
+  const [lightningWsTesting, setLightningWsTesting] = useState(false);
+  const [lightningStatusData, setLightningStatusData] = useState<any>(null);
+  const [lightningStatusLoading, setLightningStatusLoading] = useState(false);
 
   // Grupo 3: Panel Rotativo
   const [panelRotatorSaving, setPanelRotatorSaving] = useState(false);
@@ -281,6 +294,86 @@ export const ConfigPage: React.FC = () => {
       alert("Error al guardar la configuración");
     } finally {
       setMapAndLayersSaving(false);
+    }
+  };
+
+  // ===== GRUPO 2.5: Rayos (Blitzortung) =====
+  const handleTestLightningMqtt = async () => {
+    if (!config) return;
+    
+    setLightningMqttTesting(true);
+    setLightningMqttTestResult(null);
+    
+    try {
+      // Leer configuración de blitzortung (v1 config, no v2)
+      const blitzConfig = (config as any).blitzortung || {};
+      const result = await testLightningMqtt({
+        mqtt_host: blitzConfig.mqtt_host || "127.0.0.1",
+        mqtt_port: blitzConfig.mqtt_port || 1883,
+        mqtt_topic: blitzConfig.mqtt_topic || "blitzortung/1",
+        timeout_sec: 3,
+      });
+      setLightningMqttTestResult(result);
+    } catch (error) {
+      setLightningMqttTestResult({ ok: false, connected: false, error: "Error al probar MQTT" });
+      console.error("Error testing Lightning MQTT:", error);
+    } finally {
+      setLightningMqttTesting(false);
+    }
+  };
+
+  const handleTestLightningWs = async () => {
+    if (!config) return;
+    
+    setLightningWsTesting(true);
+    setLightningWsTestResult(null);
+    
+    try {
+      const blitzConfig = (config as any).blitzortung || {};
+      const wsUrl = blitzConfig.ws_url;
+      if (!wsUrl) {
+        setLightningWsTestResult({ ok: false, connected: false, error: "WebSocket URL no configurada" });
+        return;
+      }
+      
+      const result = await testLightningWs({
+        ws_url: wsUrl,
+        timeout_sec: 3,
+      });
+      setLightningWsTestResult(result);
+    } catch (error) {
+      setLightningWsTestResult({ ok: false, connected: false, error: "Error al probar WebSocket" });
+      console.error("Error testing Lightning WebSocket:", error);
+    } finally {
+      setLightningWsTesting(false);
+    }
+  };
+
+  const handleGetLightningStatus = async () => {
+    setLightningStatusLoading(true);
+    try {
+      const status = await getLightningStatus();
+      setLightningStatusData(status);
+    } catch (error) {
+      console.error("Error getting lightning status:", error);
+      setLightningStatusData(null);
+    } finally {
+      setLightningStatusLoading(false);
+    }
+  };
+
+  const handleSaveLightning = async () => {
+    if (!config) return;
+    
+    setLightningSaving(true);
+    try {
+      await saveConfigV2(config);
+      alert("Configuración de Rayos guardada correctamente");
+    } catch (error) {
+      console.error("Error saving lightning config:", error);
+      alert("Error al guardar la configuración");
+    } finally {
+      setLightningSaving(false);
     }
   };
 
@@ -705,6 +798,431 @@ export const ConfigPage: React.FC = () => {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* Tarjeta: Rayos (Blitzortung) */}
+        <div className="config-card">
+          <h2>Rayos (Blitzortung)</h2>
+          
+          <div className="config-form-fields">
+            <div className="config-field">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={(config as any).blitzortung?.enabled || false}
+                  onChange={(e) => {
+                    setConfig({
+                      ...config,
+                      blitzortung: {
+                        ...(config as any).blitzortung,
+                        enabled: e.target.checked,
+                      } as any,
+                    });
+                  }}
+                />
+                Habilitar Rayos
+              </label>
+            </div>
+            
+            {(config as any).blitzortung?.enabled && (
+              <>
+                {/* Configuración MQTT */}
+                <div className="config-field">
+                  <label>MQTT Host</label>
+                  <input
+                    type="text"
+                    value={(config as any).blitzortung?.mqtt_host || "127.0.0.1"}
+                    onChange={(e) => {
+                      setConfig({
+                        ...config,
+                        blitzortung: {
+                          ...(config as any).blitzortung,
+                          mqtt_host: e.target.value || "127.0.0.1",
+                        } as any,
+                      });
+                    }}
+                    placeholder="127.0.0.1"
+                  />
+                </div>
+                
+                <div className="config-field">
+                  <label>MQTT Puerto</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="65535"
+                    value={(config as any).blitzortung?.mqtt_port || 1883}
+                    onChange={(e) => {
+                      setConfig({
+                        ...config,
+                        blitzortung: {
+                          ...(config as any).blitzortung,
+                          mqtt_port: parseInt(e.target.value) || 1883,
+                        } as any,
+                      });
+                    }}
+                  />
+                </div>
+                
+                <div className="config-field">
+                  <label>MQTT Topic</label>
+                  <input
+                    type="text"
+                    value={(config as any).blitzortung?.mqtt_topic || "blitzortung/1"}
+                    onChange={(e) => {
+                      setConfig({
+                        ...config,
+                        blitzortung: {
+                          ...(config as any).blitzortung,
+                          mqtt_topic: e.target.value || "blitzortung/1",
+                        } as any,
+                      });
+                    }}
+                    placeholder="blitzortung/1"
+                  />
+                </div>
+                
+                <div className="config-field__actions">
+                  <button
+                    className="config-button primary"
+                    onClick={handleTestLightningMqtt}
+                    disabled={lightningMqttTesting}
+                  >
+                    {lightningMqttTesting ? "Probando..." : "Probar MQTT"}
+                  </button>
+                </div>
+                
+                {lightningMqttTestResult && (
+                  <div
+                    className={`config-field__hint ${
+                      lightningMqttTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                    }`}
+                  >
+                    {lightningMqttTestResult.ok ? (
+                      <>
+                        ✓ MQTT conectado correctamente
+                        {lightningMqttTestResult.received !== undefined && (
+                          <span className="config-badge" style={{ marginLeft: "8px" }}>
+                            {lightningMqttTestResult.received} mensajes recibidos
+                          </span>
+                        )}
+                        {lightningMqttTestResult.latency_ms !== undefined && (
+                          <span className="config-badge" style={{ marginLeft: "8px" }}>
+                            {lightningMqttTestResult.latency_ms}ms latencia
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      `✗ Error: ${lightningMqttTestResult.error || "Desconocido"}`
+                    )}
+                  </div>
+                )}
+                
+                {/* Configuración WebSocket (opcional) */}
+                <div className="config-field">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={(config as any).blitzortung?.ws_enabled || false}
+                      onChange={(e) => {
+                        setConfig({
+                          ...config,
+                          blitzortung: {
+                            ...(config as any).blitzortung,
+                            ws_enabled: e.target.checked,
+                          } as any,
+                        });
+                      }}
+                    />
+                    Habilitar WebSocket
+                  </label>
+                </div>
+                
+                {(config as any).blitzortung?.ws_enabled && (
+                  <>
+                    <div className="config-field">
+                      <label>WebSocket URL</label>
+                      <input
+                        type="text"
+                        value={(config as any).blitzortung?.ws_url || ""}
+                        onChange={(e) => {
+                          setConfig({
+                            ...config,
+                            blitzortung: {
+                              ...(config as any).blitzortung,
+                              ws_url: e.target.value || null,
+                            } as any,
+                          });
+                        }}
+                        placeholder="wss://example.com/ws"
+                      />
+                    </div>
+                    
+                    <div className="config-field__actions">
+                      <button
+                        className="config-button primary"
+                        onClick={handleTestLightningWs}
+                        disabled={lightningWsTesting}
+                      >
+                        {lightningWsTesting ? "Probando..." : "Probar WebSocket"}
+                      </button>
+                    </div>
+                    
+                    {lightningWsTestResult && (
+                      <div
+                        className={`config-field__hint ${
+                          lightningWsTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"
+                        }`}
+                      >
+                        {lightningWsTestResult.ok
+                          ? "✓ WebSocket conectado correctamente"
+                          : `✗ Error: ${lightningWsTestResult.error || "Desconocido"}`}
+                      </div>
+                    )}
+                  </>
+                )}
+                
+                {/* Buffer y TTL */}
+                <div className="config-field">
+                  <label>Buffer Máximo (eventos)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10000"
+                    value={(config as any).blitzortung?.buffer_max || 500}
+                    onChange={(e) => {
+                      setConfig({
+                        ...config,
+                        blitzortung: {
+                          ...(config as any).blitzortung,
+                          buffer_max: parseInt(e.target.value) || 500,
+                        } as any,
+                      });
+                    }}
+                  />
+                  <div className="config-field__hint">Máximo número de eventos en memoria</div>
+                </div>
+                
+                <div className="config-field">
+                  <label>TTL de Eventos (segundos)</label>
+                  <input
+                    type="number"
+                    min="60"
+                    max="3600"
+                    value={(config as any).blitzortung?.prune_seconds || 900}
+                    onChange={(e) => {
+                      setConfig({
+                        ...config,
+                        blitzortung: {
+                          ...(config as any).blitzortung,
+                          prune_seconds: parseInt(e.target.value) || 900,
+                        } as any,
+                      });
+                    }}
+                  />
+                  <div className="config-field__hint">Tiempo de vida de eventos en segundos (900 = 15 minutos)</div>
+                </div>
+                
+                {/* Modo Tormenta */}
+                <div className="config-field" style={{ marginTop: "24px", borderTop: "1px solid rgba(104, 162, 255, 0.2)", paddingTop: "16px" }}>
+                  <h3 style={{ marginBottom: "12px" }}>Modo Tormenta</h3>
+                  
+                  <div className="config-field">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={(config as any).storm?.enabled || false}
+                        onChange={(e) => {
+                          setConfig({
+                            ...config,
+                            storm: {
+                              ...(config as any).storm,
+                              enabled: e.target.checked,
+                            } as any,
+                          });
+                        }}
+                      />
+                      Habilitar Modo Tormenta
+                    </label>
+                  </div>
+                  
+                  {(config as any).storm?.enabled && (
+                    <>
+                      <div className="config-field">
+                        <label>Centro Latitud</label>
+                        <input
+                          type="number"
+                          step="0.0001"
+                          value={(config as any).storm?.center_lat || 39.986}
+                          onChange={(e) => {
+                            setConfig({
+                              ...config,
+                              storm: {
+                                ...(config as any).storm,
+                                center_lat: parseFloat(e.target.value) || 39.986,
+                              } as any,
+                            });
+                          }}
+                        />
+                      </div>
+                      
+                      <div className="config-field">
+                        <label>Centro Longitud</label>
+                        <input
+                          type="number"
+                          step="0.0001"
+                          value={(config as any).storm?.center_lng || -0.051}
+                          onChange={(e) => {
+                            setConfig({
+                              ...config,
+                              storm: {
+                                ...(config as any).storm,
+                                center_lng: parseFloat(e.target.value) || -0.051,
+                              } as any,
+                            });
+                          }}
+                        />
+                      </div>
+                      
+                      <div className="config-field">
+                        <label>Zoom</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="1"
+                          max="20"
+                          value={(config as any).storm?.zoom || 9.0}
+                          onChange={(e) => {
+                            setConfig({
+                              ...config,
+                              storm: {
+                                ...(config as any).storm,
+                                zoom: parseFloat(e.target.value) || 9.0,
+                              } as any,
+                            });
+                          }}
+                        />
+                      </div>
+                      
+                      <div className="config-field">
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={(config as any).storm?.auto_enable || false}
+                            onChange={(e) => {
+                              setConfig({
+                                ...config,
+                                storm: {
+                                  ...(config as any).storm,
+                                  auto_enable: e.target.checked,
+                                } as any,
+                              });
+                            }}
+                          />
+                          Auto-enable cuando hay rayos cerca
+                        </label>
+                      </div>
+                      
+                      {(config as any).storm?.auto_enable && (
+                        <>
+                          <div className="config-field">
+                            <label>Radio para Auto-enable (km)</label>
+                            <input
+                              type="number"
+                              step="1"
+                              min="1"
+                              max="500"
+                              value={(config as any).storm?.radius_km || 30}
+                              onChange={(e) => {
+                                setConfig({
+                                  ...config,
+                                  storm: {
+                                    ...(config as any).storm,
+                                    radius_km: parseFloat(e.target.value) || 30,
+                                  } as any,
+                                });
+                              }}
+                            />
+                          </div>
+                          
+                          <div className="config-field">
+                            <label>Auto-desactivar después de (minutos)</label>
+                            <input
+                              type="number"
+                              step="1"
+                              min="5"
+                              max="1440"
+                              value={(config as any).storm?.auto_disable_after_minutes || 60}
+                              onChange={(e) => {
+                                setConfig({
+                                  ...config,
+                                  storm: {
+                                    ...(config as any).storm,
+                                    auto_disable_after_minutes: parseInt(e.target.value) || 60,
+                                  } as any,
+                                });
+                              }}
+                            />
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+                
+                {/* Botón Estado */}
+                <div className="config-field__actions" style={{ marginTop: "24px" }}>
+                  <button
+                    className="config-button"
+                    onClick={handleGetLightningStatus}
+                    disabled={lightningStatusLoading}
+                  >
+                    {lightningStatusLoading ? "Cargando..." : "Ver Estado"}
+                  </button>
+                </div>
+                
+                {lightningStatusData && (
+                  <div className="config-status" style={{ marginTop: "12px" }}>
+                    <p>
+                      Estado: {lightningStatusData.connected ? "Conectado" : "Desconectado"}
+                      <span className="config-badge" style={{ marginLeft: "8px" }}>
+                        {lightningStatusData.source || "none"}
+                      </span>
+                    </p>
+                    {lightningStatusData.buffer_size !== undefined && (
+                      <p>Buffer: {lightningStatusData.buffer_size} eventos</p>
+                    )}
+                    {lightningStatusData.last_event_age_sec !== null && (
+                      <p>Último evento: hace {lightningStatusData.last_event_age_sec} segundos</p>
+                    )}
+                    {lightningStatusData.rate_per_min !== undefined && (
+                      <p>Tasa: {lightningStatusData.rate_per_min} eventos/minuto</p>
+                    )}
+                    {lightningStatusData.auto_enable?.active && (
+                      <div className="config-badge config-badge--success" style={{ marginTop: "8px" }}>
+                        Auto-enable activo (radio: {lightningStatusData.auto_enable.radius_km} km)
+                        {lightningStatusData.auto_enable.will_disable_in_min !== null && (
+                          <span style={{ marginLeft: "8px" }}>
+                            (se desactivará en {lightningStatusData.auto_enable.will_disable_in_min} min)
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          
+          <div className="config-actions" style={{ marginTop: "24px" }}>
+            <button
+              className="config-button primary"
+              onClick={handleSaveLightning}
+              disabled={lightningSaving}
+            >
+              {lightningSaving ? "Guardando..." : "Guardar"}
+            </button>
           </div>
         </div>
 

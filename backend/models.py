@@ -125,6 +125,7 @@ class StormMode(BaseModel):
     center_lng: float = Field(default=-0.051, ge=-180, le=180)
     zoom: float = Field(default=9.0, ge=1, le=20)
     auto_enable: bool = False
+    radius_km: float = Field(default=30, ge=1, le=500)
     auto_disable_after_minutes: int = Field(default=60, ge=5, le=1440)
 
 
@@ -148,6 +149,8 @@ class Blitzortung(BaseModel):
     mqtt_topic: str = Field(default="blitzortung/1", min_length=1)
     ws_enabled: bool = False
     ws_url: Optional[str] = Field(default=None, max_length=512)
+    buffer_max: int = Field(default=500, ge=1, le=10000)
+    prune_seconds: int = Field(default=900, ge=60, le=3600)  # 15 minutos por defecto
 
 
 class Calendar(BaseModel):

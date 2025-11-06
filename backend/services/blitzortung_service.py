@@ -61,7 +61,8 @@ class BlitzortungService:
         ws_enabled: bool = False,
         ws_url: Optional[str] = None,
         callback: Optional[Callable[[List[LightningStrike]], None]] = None,
-        max_age_minutes: int = 15
+        buffer_max: int = 500,
+        prune_seconds: int = 900
     ):
         """Inicializa el servicio Blitzortung.
         
@@ -73,7 +74,8 @@ class BlitzortungService:
             ws_enabled: Si WebSocket está habilitado
             ws_url: URL de WebSocket
             callback: Función a llamar cuando se reciben nuevos rayos
-            max_age_minutes: Máxima edad de rayos a mantener en memoria (minutos)
+            buffer_max: Máximo número de eventos en memoria
+            prune_seconds: TTL de eventos en segundos (edad máxima)
         """
         self.enabled = enabled
         self.mqtt_host = mqtt_host
@@ -82,7 +84,8 @@ class BlitzortungService:
         self.ws_enabled = ws_enabled
         self.ws_url = ws_url
         self.callback = callback
-        self.max_age_minutes = max_age_minutes
+        self.buffer_max = buffer_max
+        self.prune_seconds = prune_seconds
         
         self.strikes: List[LightningStrike] = []
         self.strikes_lock = threading.Lock()
@@ -280,8 +283,13 @@ class BlitzortungService:
             with self.strikes_lock:
                 # Añadir nuevos rayos
                 self.strikes.extend(strikes_to_add)
-                # Limpiar rayos antiguos
+                # Limpiar rayos antiguos y mantener buffer_max
                 self._cleanup_old_strikes()
+                # Limitar tamaño del buffer
+                if len(self.strikes) > self.buffer_max:
+                    # Ordenar por timestamp (más recientes primero) y mantener solo los más recientes
+                    self.strikes.sort(key=lambda s: s.timestamp, reverse=True)
+                    self.strikes = self.strikes[:self.buffer_max]
             
             # Llamar callback si existe
             if self.callback:
@@ -323,16 +331,15 @@ class BlitzortungService:
             return None
     
     def _cleanup_old_strikes(self) -> None:
-        """Elimina rayos antiguos de la lista."""
+        """Elimina rayos antiguos de la lista según prune_seconds."""
         if not self.strikes:
             return
         
         now = time.time()
-        max_age_seconds = self.max_age_minutes * 60
         
         self.strikes = [
             strike for strike in self.strikes
-            if (now - strike.timestamp) < max_age_seconds
+            if (now - strike.timestamp) < self.prune_seconds
         ]
     
     def _start_cleanup_thread(self) -> None:

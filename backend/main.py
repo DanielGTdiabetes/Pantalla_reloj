@@ -14,14 +14,27 @@ from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Literal, TypeVar, Union
 
+import math
 import requests
+
+# Imports condicionales para MQTT y WebSocket
+try:
+    import paho.mqtt.client as mqtt
+except ImportError:
+    mqtt = None
+
+try:
+    import websocket
+except ImportError:
+    websocket = None
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from threading import Lock
+from threading import Lock, Thread
+import threading
 
 from .cache import CacheStore
 from .config_manager import ConfigManager
@@ -480,6 +493,18 @@ class AemetSecretRequest(BaseModel):
 
 class AemetTestRequest(BaseModel):
     api_key: Optional[str] = Field(default=None, max_length=2048)
+
+
+class LightningMqttTestRequest(BaseModel):
+    mqtt_host: str = Field(default="127.0.0.1", min_length=1)
+    mqtt_port: int = Field(default=1883, ge=1, le=65535)
+    mqtt_topic: str = Field(default="blitzortung/1", min_length=1)
+    timeout_sec: int = Field(default=3, ge=1, le=10)
+
+
+class LightningWsTestRequest(BaseModel):
+    ws_url: str = Field(min_length=1, max_length=512)
+    timeout_sec: int = Field(default=3, ge=1, le=10)
 
 
 class AISStreamSecretRequest(BaseModel):
@@ -4930,6 +4955,8 @@ def _ensure_blitzortung_service(config: AppConfig) -> None:
     mqtt_topic = getattr(blitz_config, "mqtt_topic", "blitzortung/1")
     ws_enabled = getattr(blitz_config, "ws_enabled", False)
     ws_url = getattr(blitz_config, "ws_url", None)
+    buffer_max = getattr(blitz_config, "buffer_max", 500)
+    prune_seconds = getattr(blitz_config, "prune_seconds", 900)
     
     with _blitzortung_lock:
         # Detener servicio existente si cambió la configuración
@@ -4939,7 +4966,9 @@ def _ensure_blitzortung_service(config: AppConfig) -> None:
                 blitzortung_service.mqtt_port != mqtt_port or
                 blitzortung_service.mqtt_topic != mqtt_topic or
                 blitzortung_service.ws_enabled != ws_enabled or
-                blitzortung_service.ws_url != ws_url):
+                blitzortung_service.ws_url != ws_url or
+                blitzortung_service.buffer_max != buffer_max or
+                blitzortung_service.prune_seconds != prune_seconds):
                 blitzortung_service.stop()
                 blitzortung_service = None
         
@@ -4952,7 +4981,8 @@ def _ensure_blitzortung_service(config: AppConfig) -> None:
                 mqtt_topic=mqtt_topic,
                 ws_enabled=ws_enabled,
                 ws_url=ws_url,
-                max_age_minutes=15
+                buffer_max=buffer_max,
+                prune_seconds=prune_seconds
             )
             
             def on_lightning_received(strikes: List[LightningStrike]) -> None:
@@ -4960,6 +4990,39 @@ def _ensure_blitzortung_service(config: AppConfig) -> None:
                 # Actualizar caché con todos los rayos
                 geojson = blitzortung_service.to_geojson()
                 cache_store.store("lightning", geojson)
+                
+                # Auto-enable storm mode si está configurado
+                try:
+                    config = config_manager.read()
+                    storm_config = getattr(config, "storm", None)
+                    
+                    if storm_config and getattr(storm_config, "auto_enable", False):
+                        center_lat = getattr(storm_config, "center_lat", 39.986)
+                        center_lng = getattr(storm_config, "center_lng", -0.051)
+                        radius_km = getattr(storm_config, "radius_km", 30)
+                        auto_disable_minutes = getattr(storm_config, "auto_disable_after_minutes", 60)
+                        
+                        # Verificar si algún rayo nuevo está dentro del radio
+                        for strike in strikes:
+                            distance = _distance_km(center_lat, center_lng, strike.lat, strike.lon)
+                            if distance <= radius_km:
+                                # Activar storm mode en caché (solo en memoria, no persistir)
+                                cache_store.store("storm_mode", {
+                                    "enabled": True,
+                                    "last_triggered": datetime.now(timezone.utc).isoformat(),
+                                    "center": {"lat": center_lat, "lng": center_lng},
+                                    "zoom": getattr(storm_config, "zoom", 9.0),
+                                    "auto_enabled": True,
+                                    "radius_km": radius_km,
+                                    "auto_disable_after_minutes": auto_disable_minutes
+                                })
+                                logger.info(
+                                    "[lightning] Auto-enabled storm mode: lightning at %.1f km from center",
+                                    distance
+                                )
+                                break
+                except Exception as exc:
+                    logger.debug("[lightning] Error in auto-enable storm mode: %s", exc)
             
             blitzortung_service.callback = on_lightning_received
             
@@ -5136,6 +5199,305 @@ def get_lightning(bbox: Optional[str] = None) -> Dict[str, Any]:
             "type": "FeatureCollection",
             "features": []
         }
+
+
+@app.post("/api/lightning/test_mqtt")
+async def test_lightning_mqtt(request: LightningMqttTestRequest) -> Dict[str, Any]:
+    """Prueba conexión MQTT para Blitzortung.
+    
+    Conecta, se suscribe al topic, espera hasta timeout_sec y cuenta mensajes recibidos.
+    """
+    try:
+        if not mqtt:
+            return {"ok": False, "error": "paho-mqtt not installed"}
+        
+        test_messages: List[Dict[str, Any]] = []
+        test_messages_lock = threading.Lock()
+        connected = False
+        start_time = time.time()
+        latency_ms = None
+        
+        def on_connect(client: Any, userdata: Any, flags: Any, rc: int) -> None:
+            nonlocal connected, latency_ms
+            if rc == 0:
+                connected = True
+                latency_ms = int((time.time() - start_time) * 1000)
+                client.subscribe(request.mqtt_topic)
+        
+        def on_message(client: Any, userdata: Any, msg: Any) -> None:
+            try:
+                payload = msg.payload.decode("utf-8")
+                data = json.loads(payload)
+                with test_messages_lock:
+                    test_messages.append(data)
+            except Exception:
+                pass
+        
+        def on_disconnect(client: Any, userdata: Any, rc: int) -> None:
+            pass
+        
+        try:
+            test_client = mqtt.Client()
+            test_client.on_connect = on_connect
+            test_client.on_message = on_message
+            test_client.on_disconnect = on_disconnect
+            
+            test_client.connect(request.mqtt_host, request.mqtt_port, keepalive=60)
+            test_client.loop_start()
+            
+            # Esperar conexión o timeout
+            timeout_time = time.time() + request.timeout_sec
+            while not connected and time.time() < timeout_time:
+                time.sleep(0.1)
+            
+            if not connected:
+                test_client.loop_stop()
+                test_client.disconnect()
+                return {"ok": False, "error": "connection_refused", "connected": False}
+            
+            # Esperar mensajes durante el timeout restante
+            remaining_time = timeout_time - time.time()
+            if remaining_time > 0:
+                time.sleep(min(remaining_time, 2.0))  # Esperar hasta 2 segundos más
+            
+            test_client.loop_stop()
+            test_client.disconnect()
+            
+            return {
+                "ok": True,
+                "connected": True,
+                "received": len(test_messages),
+                "topic": request.mqtt_topic,
+                "latency_ms": latency_ms
+            }
+        except Exception as exc:
+            return {"ok": False, "error": str(exc), "connected": False}
+    except Exception as exc:
+        logger.error("[lightning] Error testing MQTT: %s", exc)
+        return {"ok": False, "error": "internal_error", "connected": False}
+
+
+@app.post("/api/lightning/test_ws")
+async def test_lightning_ws(request: LightningWsTestRequest) -> Dict[str, Any]:
+    """Prueba conexión WebSocket para Blitzortung.
+    
+    Conecta, espera hasta timeout_sec y verifica que la conexión se establezca.
+    """
+    try:
+        if not websocket:
+            return {"ok": False, "error": "websocket-client not installed", "connected": False}
+        
+        connected = False
+        error_msg: Optional[str] = None
+        
+        def on_open(ws: Any) -> None:
+            nonlocal connected
+            connected = True
+        
+        def on_error(ws: Any, error: Exception) -> None:
+            nonlocal error_msg
+            error_msg = str(error)
+        
+        def on_close(ws: Any, close_status_code: int, close_msg: str) -> None:
+            pass
+        
+        try:
+            test_ws = websocket.WebSocketApp(
+                request.ws_url,
+                on_open=on_open,
+                on_error=on_error,
+                on_close=on_close
+            )
+            
+            # Iniciar conexión en thread separado
+            ws_thread = threading.Thread(target=test_ws.run_forever, daemon=True)
+            ws_thread.start()
+            
+            # Esperar conexión o timeout
+            timeout_time = time.time() + request.timeout_sec
+            while not connected and not error_msg and time.time() < timeout_time:
+                time.sleep(0.1)
+            
+            test_ws.close()
+            
+            if connected:
+                return {"ok": True, "connected": True}
+            elif error_msg:
+                return {"ok": False, "error": error_msg, "connected": False}
+            else:
+                return {"ok": False, "error": "timeout", "connected": False}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc), "connected": False}
+    except Exception as exc:
+        logger.error("[lightning] Error testing WebSocket: %s", exc)
+        return {"ok": False, "error": "internal_error", "connected": False}
+
+
+@app.get("/api/lightning/status")
+def get_lightning_status() -> Dict[str, Any]:
+    """Obtiene el estado actual del servicio de rayos."""
+    try:
+        config = config_manager.read()
+        blitz_config = getattr(config, "blitzortung", None)
+        storm_config = getattr(config, "storm", None)
+        
+        enabled = blitz_config and getattr(blitz_config, "enabled", False) if blitz_config else False
+        
+        source = "none"
+        connected = False
+        buffer_size = 0
+        last_event_age_sec = None
+        rate_per_min = 0
+        
+        if blitzortung_service:
+            with _blitzortung_lock:
+                if blitz_config:
+                    if getattr(blitz_config, "ws_enabled", False):
+                        source = "ws"
+                    else:
+                        source = "mqtt"
+                
+                connected = blitzortung_service.running
+                strikes = blitzortung_service.get_all_strikes()
+                buffer_size = len(strikes)
+                
+                if strikes:
+                    # Calcular edad del último evento
+                    now = time.time()
+                    latest_strike = max(strikes, key=lambda s: s.timestamp)
+                    last_event_age_sec = int(now - latest_strike.timestamp)
+                    
+                    # Calcular tasa por minuto (últimos 60 segundos)
+                    recent_strikes = [s for s in strikes if (now - s.timestamp) <= 60]
+                    rate_per_min = len(recent_strikes)
+        
+        center = None
+        auto_enable_info = None
+        
+        if storm_config:
+            center = {
+                "lat": getattr(storm_config, "center_lat", 39.986),
+                "lng": getattr(storm_config, "center_lng", -0.051),
+                "zoom": getattr(storm_config, "zoom", 9.0)
+            }
+            
+            auto_enable = getattr(storm_config, "auto_enable", False)
+            if auto_enable:
+                radius_km = getattr(storm_config, "radius_km", 30)
+                auto_disable_minutes = getattr(storm_config, "auto_disable_after_minutes", 60)
+                
+                # Verificar si hay rayos cerca (lógica de auto-enable)
+                active = False
+                will_disable_in_min = None
+                
+                if blitzortung_service and enabled:
+                    with _blitzortung_lock:
+                        strikes = blitzortung_service.get_all_strikes()
+                        if strikes:
+                            # Calcular distancia desde centro a cada rayo
+                            center_lat = center["lat"]
+                            center_lng = center["lng"]
+                            
+                            for strike in strikes:
+                                # Calcular distancia geodésica (Haversine)
+                                lat1, lon1 = math.radians(center_lat), math.radians(center_lng)
+                                lat2, lon2 = math.radians(strike.lat), math.radians(strike.lon)
+                                
+                                dlat = lat2 - lat1
+                                dlon = lon2 - lon1
+                                a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+                                c = 2 * math.asin(math.sqrt(a))
+                                distance_km = 6371 * c  # Radio de la Tierra en km
+                                
+                                if distance_km <= radius_km:
+                                    active = True
+                                    break
+                            
+                            if active:
+                                # Calcular tiempo hasta auto-disable
+                                now = time.time()
+                                latest_nearby = max(
+                                    [s for s in strikes if _distance_km(center_lat, center_lng, s.lat, s.lon) <= radius_km],
+                                    key=lambda s: s.timestamp,
+                                    default=None
+                                )
+                                if latest_nearby:
+                                    age_minutes = (now - latest_nearby.timestamp) / 60
+                                    will_disable_in_min = max(0, int(auto_disable_minutes - age_minutes))
+                
+                auto_enable_info = {
+                    "active": active,
+                    "radius_km": radius_km,
+                    "will_disable_in_min": will_disable_in_min
+                }
+        
+        return {
+            "enabled": enabled,
+            "source": source,
+            "connected": connected,
+            "buffer_size": buffer_size,
+            "last_event_age_sec": last_event_age_sec,
+            "rate_per_min": rate_per_min,
+            "center": center,
+            "auto_enable": auto_enable_info
+        }
+    except Exception as exc:
+        logger.error("[lightning] Error getting status: %s", exc)
+        return {
+            "enabled": False,
+            "source": "none",
+            "connected": False,
+            "buffer_size": 0,
+            "last_event_age_sec": None,
+            "rate_per_min": 0,
+            "center": None,
+            "auto_enable": None
+        }
+
+
+def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calcula distancia geodésica en km entre dos puntos."""
+    lat1_rad, lon1_rad = math.radians(lat1), math.radians(lon1)
+    lat2_rad, lon2_rad = math.radians(lat2), math.radians(lon2)
+    
+    dlat = lat2_rad - lat1_rad
+    dlon = lon2_rad - lon1_rad
+    
+    a = math.sin(dlat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon/2)**2
+    c = 2 * math.asin(math.sqrt(a))
+    
+    return 6371 * c  # Radio de la Tierra en km
+
+
+@app.get("/api/lightning/sample")
+def get_lightning_sample(limit: int = 50) -> Dict[str, Any]:
+    """Obtiene una muestra de los últimos eventos de rayos."""
+    try:
+        items: List[Dict[str, Any]] = []
+        
+        if blitzortung_service:
+            with _blitzortung_lock:
+                strikes = blitzortung_service.get_all_strikes()
+                # Ordenar por timestamp (más recientes primero)
+                strikes.sort(key=lambda s: s.timestamp, reverse=True)
+                strikes = strikes[:limit]
+                
+                for strike in strikes:
+                    items.append({
+                        "ts": int(strike.timestamp),
+                        "lat": strike.lat,
+                        "lng": strike.lon,
+                        "amplitude": None,  # Blitzortung no proporciona amplitud por defecto
+                        "type": "cloud-to-ground"  # Valor por defecto
+                    })
+        
+        return {
+            "count": len(items),
+            "items": items
+        }
+    except Exception as exc:
+        logger.error("[lightning] Error getting sample: %s", exc)
+        return {"count": 0, "items": []}
 
 
 # WiFi Configuration

@@ -49,6 +49,7 @@
     "center_lng": -0.051,
     "zoom": 9.0,
     "auto_enable": false,
+    "radius_km": 30,
     "auto_disable_after_minutes": 60
   },
   "aemet": {
@@ -65,7 +66,9 @@
     "mqtt_port": 1883,
     "mqtt_topic": "blitzortung/1",
     "ws_enabled": false,
-    "ws_url": null
+    "ws_url": null,
+    "buffer_max": 500,
+    "prune_seconds": 900
   },
   "calendar": {
     "enabled": true,
