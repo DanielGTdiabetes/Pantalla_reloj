@@ -210,7 +210,9 @@ async def test_news(config: Dict[str, Any]) -> Dict[str, Any]:
         Dict con ok, detail, items_count
     """
     try:
-        sources = config.get("sources", [])
+        sources = config.get("feeds")
+        if not isinstance(sources, list) or not sources:
+            sources = config.get("sources", [])
         if not sources:
             return {
                 "ok": False,

@@ -7,16 +7,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import logging
 import requests
 
+logger = logging.getLogger(__name__)
 logger_path = Path("/var/log/pantalla/backend.log")
-if logger_path.exists():
-    import logging
-    logger = logging.getLogger(__name__)
-else:
+if not logger_path.exists():
     import sys
-    logger = logging.getLogger(__name__)
-    logger.addHandler(logging.StreamHandler(sys.stdout))
+
+    if not any(isinstance(handler, logging.StreamHandler) and getattr(handler, "stream", None) is sys.stdout for handler in logger.handlers):
+        logger.addHandler(logging.StreamHandler(sys.stdout))
 
 
 class FlightProvider(ABC):
@@ -122,7 +122,12 @@ class OpenSkyFlightProvider(FlightProvider):
                 true_track = state[10]  # grados
                 last_contact = state[4]
                 
-                if not (latitude and longitude and abs(latitude) <= 90 and abs(longitude) <= 180):
+                if (
+                    latitude is None
+                    or longitude is None
+                    or not (-90 <= latitude <= 90)
+                    or not (-180 <= longitude <= 180)
+                ):
                     continue
                 
                 # Calcular timestamp
@@ -197,7 +202,12 @@ class AviationStackFlightProvider(FlightProvider):
                 latitude = flight.get("latitude")
                 longitude = flight.get("longitude")
                 
-                if not (latitude and longitude and abs(latitude) <= 90 and abs(longitude) <= 180):
+                if (
+                    latitude is None
+                    or longitude is None
+                    or not (-90 <= latitude <= 90)
+                    or not (-180 <= longitude <= 180)
+                ):
                     continue
                 
                 # Obtener información del vuelo
