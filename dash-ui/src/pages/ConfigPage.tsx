@@ -871,7 +871,8 @@ export const ConfigPage: React.FC = () => {
     if (!config) return;
     
     const calendarSource = config.calendar?.source || config.calendar?.provider;
-    const isIcsActive = Boolean(config.calendar?.enabled) && calendarSource === "ics";
+    const normalizedCalendarSource = calendarSource === "ics" ? "ics" : "google";
+    const isIcsActive = Boolean(config.calendar?.enabled) && normalizedCalendarSource === "ics";
     const hasIcsUrl = Boolean(config.calendar?.ics?.url?.trim());
     const hasIcsStoredPath = Boolean(
       config.calendar?.ics?.stored_path?.trim() || config.calendar?.ics_path?.trim()
@@ -891,7 +892,7 @@ export const ConfigPage: React.FC = () => {
       // Guardar solo los campos que han cambiado (merge seguro)
       const calendarToSave: Partial<CalendarConfig> = {
         enabled: config.calendar?.enabled ?? false,
-        source: calendarSource || "google",
+        source: normalizedCalendarSource,
       };
       
       if (calendarToSave.source === "ics" && config.calendar?.ics) {
@@ -957,7 +958,8 @@ export const ConfigPage: React.FC = () => {
   }
 
   const calendarSource = config.calendar?.source || config.calendar?.provider;
-  const calendarIsICS = Boolean(config.calendar?.enabled) && calendarSource === "ics";
+  const normalizedCalendarSource = calendarSource === "ics" ? "ics" : "google";
+  const calendarIsICS = Boolean(config.calendar?.enabled) && normalizedCalendarSource === "ics";
   const calendarHasIcsUrl = Boolean(config.calendar?.ics?.url?.trim());
   const calendarHasIcsStoredPath = Boolean(
     config.calendar?.ics?.stored_path?.trim() || config.calendar?.ics_path?.trim()
