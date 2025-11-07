@@ -483,8 +483,13 @@ class AISHubProvider(ShipProvider):
             for vessel in data["data"]:
                 lat = vessel.get("LAT")
                 lon = vessel.get("LON")
-                
-                if not (lat and lon and abs(lat) <= 90 and abs(lon) <= 180):
+
+                if (
+                    lat is None
+                    or lon is None
+                    or not (-90 <= lat <= 90)
+                    or not (-180 <= lon <= 180)
+                ):
                     continue
                 
                 mmsi = str(vessel.get("MMSI", ""))
