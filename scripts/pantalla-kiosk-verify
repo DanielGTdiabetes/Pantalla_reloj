@@ -131,6 +131,37 @@ check_kiosk_units() {
   return 1
 }
 
+check_kiosk_user() {
+  local unit="${ACTIVE_KIOSK_UNIT:-pantalla-kiosk-chrome@${TARGET_USER}.service}"
+  if [[ -z "$unit" ]]; then
+    record_result "kiosk_user" "skipped-no-unit"
+    return 0
+  fi
+  if ! systemctl list-units --full --all "$unit" >/dev/null 2>&1; then
+    record_result "kiosk_user" "unit-missing"
+    return 1
+  fi
+  local unit_user
+  unit_user="$(systemctl show "$unit" -p User --value 2>/dev/null | tr -d '\r')"
+  if [[ -z "$unit_user" ]]; then
+    log "Kiosk unit $unit no define User= (se detectó vacío)"
+    record_result "kiosk_user" "missing"
+    return 1
+  fi
+  if [[ "$unit_user" == "root" ]]; then
+    log "Kiosk unit $unit está corriendo como root"
+    record_result "kiosk_user" "root"
+    return 1
+  fi
+  if [[ "$unit_user" != "$TARGET_USER" ]]; then
+    log "Kiosk unit $unit se ejecuta como $unit_user (esperado $TARGET_USER)"
+    record_result "kiosk_user" "unexpected:${unit_user}"
+    return 1
+  fi
+  record_result "kiosk_user" "${unit_user}"
+  return 0
+}
+
 is_diag_mode() {
   local url="$1"
   if [[ "$url" == *"/diagnostics/auto-pan"* ]]; then
@@ -311,6 +342,7 @@ main() {
   check_ui_health || failures=$((failures + 1))
   check_backend_health || failures=$((failures + 1))
   check_kiosk_units || failures=$((failures + 1))
+  check_kiosk_user || failures=$((failures + 1))
   check_window_consistency || failures=$((failures + 1))
   check_gl_flag || failures=$((failures + 1))
 

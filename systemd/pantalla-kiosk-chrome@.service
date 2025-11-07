@@ -5,8 +5,11 @@ Wants=default.target
 
 [Service]
 Type=simple
+User=%i
+Group=%i
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/%i/.Xauthority
+Environment=XDG_RUNTIME_DIR=/run/user/%U
 ExecStartPre=/usr/bin/bash -lc 'pkill -9 -f "chrom(e|ium).*--kiosk" || true'
 ExecStart=/usr/bin/google-chrome \
   --kiosk --app=http://127.0.0.1/ \

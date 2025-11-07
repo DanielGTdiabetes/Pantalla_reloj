@@ -609,6 +609,17 @@ if [[ ! -f "$XORG_SERVICE_FILE" ]]; then
   log_error "ERROR: pantalla-xorg.service no se instaló correctamente en $XORG_SERVICE_FILE"
   exit 1
 fi
+
+CHROME_SYSTEM_UNIT="/etc/systemd/system/pantalla-kiosk-chrome@.service"
+if [[ -f "$CHROME_SYSTEM_UNIT" ]]; then
+  if ! grep -q '^User=%i' "$CHROME_SYSTEM_UNIT" 2>/dev/null; then
+    log_warn "La unidad pantalla-kiosk-chrome@.service no define User=%i; reinstalando..."
+    install -D -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk-chrome@.service" "$CHROME_SYSTEM_UNIT"
+    SUMMARY+=("[install] pantalla-kiosk-chrome@.service reinstalada con User=%i")
+  fi
+else
+  log_warn "pantalla-kiosk-chrome@.service no existe tras la instalación"
+fi
 log_ok "Servicios systemd instalados y verificados"
 
 DROPIN_DIR="/etc/systemd/system/pantalla-kiosk-chromium@${USER_NAME}.service.d"
