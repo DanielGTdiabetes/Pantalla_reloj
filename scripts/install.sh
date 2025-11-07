@@ -331,6 +331,35 @@ else
   chmod 0644 "$CONFIG_FILE" 2>/dev/null || true
   log_info "Config existente preservado en ${CONFIG_FILE} (permisos ajustados)"
 fi
+
+# Verificar que config.json tenga la estructura v2 necesaria
+NEEDS_CONFIG_REGEN=0
+if ! jq -e '.version == 2' "$CONFIG_FILE" >/dev/null 2>&1; then
+  log_warn "config.json no tiene version=2"
+  NEEDS_CONFIG_REGEN=1
+fi
+if ! jq -e '(.ui_map | type == "object")' "$CONFIG_FILE" >/dev/null 2>&1; then
+  log_warn "config.json carece de ui_map adecuado"
+  NEEDS_CONFIG_REGEN=1
+fi
+if ! jq -e '(.layers?.ships?.aisstream?.ws_url | type == "string")' "$CONFIG_FILE" >/dev/null 2>&1; then
+  log_warn "config.json tiene layers.ships.aisstream.ws_url inválido"
+  NEEDS_CONFIG_REGEN=1
+fi
+
+if [[ $NEEDS_CONFIG_REGEN -eq 1 ]]; then
+  if [[ -f "$CONFIG_FILE" ]]; then
+    cp -f "$CONFIG_FILE" "${CONFIG_FILE}.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
+  fi
+  if [[ -f "$REPO_ROOT/backend/default_config_v2.json" ]]; then
+    install -o "$USER_NAME" -g "$USER_NAME" -m 0644 "$REPO_ROOT/backend/default_config_v2.json" "$CONFIG_FILE"
+    log_warn "config.json regenerado desde default_config_v2.json"
+    SUMMARY+=('[install] config.json regenerado (faltaban claves críticas)')
+  else
+    log_error "No se puede regenerar config.json: falta default_config_v2.json"
+    exit 1
+  fi
+fi
 ICS_DIR="$STATE_DIR/ics"
 SAMPLE_ICS="$ICS_DIR/personal.ics"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$ICS_DIR"
