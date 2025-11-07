@@ -578,6 +578,7 @@ log_info "Instalando servicios systemd"
 deploy_unit "$REPO_ROOT/systemd/pantalla-xorg.service" /etc/systemd/system/pantalla-xorg.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-openbox@.service" /etc/systemd/system/pantalla-openbox@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk@.service" /etc/systemd/system/pantalla-kiosk@.service
+deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk-chrome@.service" /etc/systemd/system/pantalla-kiosk-chrome@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk-chromium@.service" /etc/systemd/system/pantalla-kiosk-chromium@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-dash-backend@.service" /etc/systemd/system/pantalla-dash-backend@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-portal@.service" /etc/systemd/system/pantalla-portal@.service
@@ -589,31 +590,16 @@ install -D -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk@.service.d/10-sanitize-rol
 install -D -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk-watchdog@.service.d/10-rollback.conf" \
   /etc/systemd/system/pantalla-kiosk-watchdog@.service.d/10-rollback.conf
 
-# Instalar unit user para Chrome kiosk (si Chrome está disponible)
+# Registrar disponibilidad del servicio Chrome kiosk
 if [[ ${CHROME_FOUND:-0} -eq 1 ]]; then
-  log_info "Instalando unit user para Chrome kiosk..."
-  USER_SYSTEMD_DIR="${USER_HOME}/.config/systemd/user"
-  install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$USER_SYSTEMD_DIR"
-  
-  CHROME_UNIT_SRC="${REPO_ROOT}/systemd/pantalla-kiosk-chrome@.service"
-  CHROME_UNIT_DST="${USER_SYSTEMD_DIR}/pantalla-kiosk-chrome@.service"
-  
-  if [[ -f "$CHROME_UNIT_SRC" ]]; then
-    install -m 0644 -o "$USER_NAME" -g "$USER_NAME" "$CHROME_UNIT_SRC" "$CHROME_UNIT_DST"
-    log_ok "Unit user Chrome kiosk instalado en ${CHROME_UNIT_DST}"
-    SUMMARY+=("[install] unit user Chrome kiosk instalado")
-  else
-    log_warn "No se encontró el unit user Chrome kiosk en ${CHROME_UNIT_SRC}"
-  fi
+  log_ok "pantalla-kiosk-chrome@.service desplegado en /etc/systemd/system"
+else
+  log_warn "Google Chrome no disponible: se mantendrá el fallback de Chromium"
 fi
 
 # Recargar systemd DESPUÉS de instalar todos los servicios
 log_info "Recargando systemd después de instalar servicios"
 systemctl daemon-reload
-if [[ ${CHROME_FOUND:-0} -eq 1 ]]; then
-  # Recargar systemd user también
-  sudo -u "$USER_NAME" systemctl --user daemon-reload 2>/dev/null || true
-fi
 log_ok "systemd recargado"
 
 # Verificar que los servicios se instalaron correctamente
@@ -1184,136 +1170,65 @@ fi
 # Asegurar que solo uno de los servicios kiosk esté habilitado
 systemctl disable --now "pantalla-kiosk@${USER_NAME}.service" 2>/dev/null || true
 
-# Habilitar y arrancar unit user de Chrome kiosk (preferido)
+# Preparar habilitación de servicios kiosk
+CHROME_SERVICE_INSTANCE="pantalla-kiosk-chrome@${USER_NAME}.service"
+CHROME_SERVICE_STARTED=0
+
+# Asegurar que Openbox está habilitado primero
+if systemctl is-enabled --quiet "pantalla-openbox@${USER_NAME}.service" 2>/dev/null; then
+  log_ok "pantalla-openbox@${USER_NAME}.service ya está habilitado"
+else
+  log_info "Habilitando pantalla-openbox@${USER_NAME}.service..."
+  if systemctl enable --now "pantalla-openbox@${USER_NAME}.service" 2>&1; then
+    log_ok "pantalla-openbox@${USER_NAME}.service habilitado e iniciado"
+    sleep 2
+  else
+    log_warn "No se pudo habilitar pantalla-openbox@${USER_NAME}.service"
+  fi
+fi
+
+# Intentar habilitar servicio Chrome kiosk (preferido)
 if [[ ${CHROME_FOUND:-0} -eq 1 ]]; then
-  log_info "Habilitando unit user Chrome kiosk..."
-  CHROME_USER_UNIT="pantalla-kiosk-chrome@${USER_NAME}.service"
-  
-  # Asegurar que Openbox está habilitado primero
-  if systemctl is-enabled --quiet "pantalla-openbox@${USER_NAME}.service" 2>/dev/null; then
-    log_ok "pantalla-openbox@${USER_NAME}.service ya está habilitado"
-  else
-    log_info "Habilitando pantalla-openbox@${USER_NAME}.service..."
-    if systemctl enable --now "pantalla-openbox@${USER_NAME}.service" 2>&1; then
-      log_ok "pantalla-openbox@${USER_NAME}.service habilitado e iniciado"
-      sleep 2
+  log_info "Habilitando servicio Chrome kiosk..."
+  if [[ -f /etc/systemd/system/pantalla-kiosk-chrome@.service ]]; then
+    if systemctl enable --now "$CHROME_SERVICE_INSTANCE" 2>&1; then
+      log_ok "${CHROME_SERVICE_INSTANCE} habilitado e iniciado"
+      SUMMARY+=("[install] ${CHROME_SERVICE_INSTANCE} habilitado e iniciado")
+      CHROME_SERVICE_STARTED=1
     else
-      log_warn "No se pudo habilitar pantalla-openbox@${USER_NAME}.service"
-    fi
-  fi
-  
-  # Asegurar que el usuario tenga una sesión persistente de systemd user
-  log_info "Asegurando sesión persistente de systemd user..."
-  if command -v loginctl >/dev/null 2>&1; then
-    if loginctl enable-linger "$USER_NAME" 2>&1; then
-      log_ok "Sesión persistente de systemd user habilitada para $USER_NAME"
-    else
-      log_warn "No se pudo habilitar sesión persistente de systemd user (puede no estar disponible)"
+      log_error "ERROR: No se pudo iniciar ${CHROME_SERVICE_INSTANCE}"
+      journalctl -u "$CHROME_SERVICE_INSTANCE" -n 30 --no-pager | sed 's/^/  /' || true
+      SUMMARY+=('[install] ERROR: fallo al iniciar pantalla-kiosk-chrome')
     fi
   else
-    log_warn "loginctl no disponible, no se puede habilitar sesión persistente"
-  fi
-  
-  # Asegurar que el bus D-Bus del usuario esté disponible
-  log_info "Asegurando que el bus D-Bus del usuario esté disponible..."
-  USER_RUNTIME_DIR="/run/user/${USER_UID}"
-  install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$USER_RUNTIME_DIR"
-  
-  # Iniciar el bus D-Bus del usuario si no está disponible
-  DBUS_BUS="${USER_RUNTIME_DIR}/bus"
-  if [[ ! -S "$DBUS_BUS" ]]; then
-    log_info "Iniciando bus D-Bus del usuario..."
-    sudo -u "$USER_NAME" dbus-daemon --session --fork --print-address --address="unix:path=${DBUS_BUS}" 2>/dev/null || true
-    sleep 2
-  fi
-  
-  # Verificar que el bus D-Bus funciona
-  if sudo -u "$USER_NAME" DBUS_SESSION_BUS_ADDRESS="unix:path=${DBUS_BUS}" dbus-send --session --dest=org.freedesktop.DBus --type=method_call --print-reply /org/freedesktop/DBus org.freedesktop.DBus.ListNames >/dev/null 2>&1; then
-    log_ok "Bus D-Bus del usuario está disponible"
-  else
-    log_warn "Bus D-Bus del usuario puede no estar completamente disponible"
-    log_warn "Intentando iniciar systemd user manager..."
-    # Iniciar systemd user manager si no está disponible
-    sudo -u "$USER_NAME" systemd-run --user --unit=systemd-user-manager -- systemd --user 2>/dev/null || true
-    sleep 2
-  fi
-  
-  # Habilitar y arrancar unit user de Chrome
-  log_info "Habilitando unit user Chrome kiosk..."
-  CHROME_USER_STARTED=0
-  
-  # Intentar con variables de entorno explícitas
-  if sudo -u "$USER_NAME" XDG_RUNTIME_DIR="$USER_RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="unix:path=${DBUS_BUS}" systemctl --user daemon-reload 2>/dev/null; then
-    log_ok "systemd user recargado"
-    
-    if sudo -u "$USER_NAME" XDG_RUNTIME_DIR="$USER_RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="unix:path=${DBUS_BUS}" systemctl --user enable --now "$CHROME_USER_UNIT" 2>&1; then
-      log_ok "Unit user Chrome kiosk habilitado e iniciado: ${CHROME_USER_UNIT}"
-      SUMMARY+=("[install] unit user Chrome kiosk habilitado e iniciado")
-      CHROME_USER_STARTED=1
-    fi
-  fi
-  
-  # Si falla, intentar iniciar el servicio directamente (sin systemctl --user)
-  if [[ $CHROME_USER_STARTED -eq 0 ]]; then
-    log_info "Intentando iniciar unit user Chrome kiosk directamente..."
-    # El unit user se habilitará y se iniciará automáticamente cuando el usuario tenga sesión
-    # Por ahora, solo habilitarlo
-    if sudo -u "$USER_NAME" XDG_RUNTIME_DIR="$USER_RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="unix:path=${DBUS_BUS}" systemctl --user enable "$CHROME_USER_UNIT" 2>/dev/null; then
-      log_ok "Unit user Chrome kiosk habilitado (se iniciará automáticamente con sesión)"
-      SUMMARY+=("[install] unit user Chrome kiosk habilitado (inicio automático)")
-      CHROME_USER_STARTED=1
-    fi
-  fi
-  
-  # Si aún falla, usar Chromium fallback o intentar iniciar Chrome manualmente
-  if [[ $CHROME_USER_STARTED -eq 0 ]]; then
-    log_warn "No se pudo iniciar unit user Chrome kiosk (puede requerir sesión activa)"
-    log_warn "El unit user está habilitado y se iniciará automáticamente cuando haya sesión"
-    log_warn "Por ahora, usando Chromium fallback para asegurar que el kiosk funcione..."
-    SUMMARY+=('[install] WARN: unit user Chrome kiosk habilitado pero no iniciado, usando Chromium fallback')
-    
-    # Fallback a Chromium
-    KIOSK_SERVICE_INSTANCE="pantalla-kiosk-chromium@${USER_NAME}.service"
-    if [[ ${CHROMIUM_FOUND:-0} -eq 1 ]]; then
-      if systemctl list-units --full --all "$KIOSK_SERVICE_INSTANCE" >/dev/null 2>&1; then
-        log_info "Iniciando pantalla-kiosk-chromium@${USER_NAME}.service (fallback temporal)"
-        if systemctl enable --now "$KIOSK_SERVICE_INSTANCE" 2>&1; then
-          log_ok "pantalla-kiosk-chromium@${USER_NAME}.service habilitado e iniciado (fallback temporal)"
-          SUMMARY+=("[install] pantalla-kiosk-chromium@${USER_NAME}.service habilitado e iniciado (fallback temporal)")
-          log_info "NOTA: El unit user Chrome kiosk está habilitado y tomará el control cuando haya sesión activa"
-        else
-          log_error "ERROR: No se pudo iniciar pantalla-kiosk-chromium@${USER_NAME}.service"
-          journalctl -u "$KIOSK_SERVICE_INSTANCE" -n 30 --no-pager | sed 's/^/  /' || true
-          SUMMARY+=('[install] ERROR: fallo al iniciar pantalla-kiosk-chromium')
-        fi
-      fi
-    else
-      log_warn "Chromium no disponible, el unit user Chrome kiosk se iniciará cuando haya sesión activa"
-    fi
+    log_error "ERROR: /etc/systemd/system/pantalla-kiosk-chrome@.service no existe"
+    SUMMARY+=('[install] ERROR: plantilla pantalla-kiosk-chrome ausente')
   fi
 else
-  log_warn "No se habilitó unit user Chrome kiosk - Chrome no disponible"
-  SUMMARY+=('[install] WARN: unit user Chrome kiosk NO habilitado - Chrome no disponible')
-  
-  # Fallback: Solo habilitar kiosk-chromium si Chromium está disponible
+  log_warn "Chrome no disponible: se omitirá ${CHROME_SERVICE_INSTANCE}"
+  SUMMARY+=('[install] WARN: pantalla-kiosk-chrome no habilitado - Chrome no disponible')
+fi
+
+# Fallback a Chromium si Chrome no está operativo
+if [[ $CHROME_SERVICE_STARTED -eq 0 ]]; then
   KIOSK_SERVICE_INSTANCE="pantalla-kiosk-chromium@${USER_NAME}.service"
   if [[ ${CHROMIUM_FOUND:-0} -eq 1 ]]; then
     if systemctl list-units --full --all "$KIOSK_SERVICE_INSTANCE" >/dev/null 2>&1; then
-      log_info "Iniciando pantalla-kiosk-chromium@${USER_NAME}.service (fallback)"
+      log_info "Iniciando ${KIOSK_SERVICE_INSTANCE} (fallback)"
       if systemctl enable --now "$KIOSK_SERVICE_INSTANCE" 2>&1; then
-        log_ok "pantalla-kiosk-chromium@${USER_NAME}.service habilitado e iniciado"
-        SUMMARY+=("[install] pantalla-kiosk-chromium@${USER_NAME}.service habilitado e iniciado (fallback)")
+        log_ok "${KIOSK_SERVICE_INSTANCE} habilitado e iniciado"
+        SUMMARY+=("[install] ${KIOSK_SERVICE_INSTANCE} habilitado e iniciado (fallback)")
       else
-        log_error "ERROR: No se pudo iniciar pantalla-kiosk-chromium@${USER_NAME}.service"
+        log_error "ERROR: No se pudo iniciar ${KIOSK_SERVICE_INSTANCE}"
         journalctl -u "$KIOSK_SERVICE_INSTANCE" -n 30 --no-pager | sed 's/^/  /' || true
         SUMMARY+=('[install] ERROR: fallo al iniciar pantalla-kiosk-chromium')
       fi
     else
-      log_error "ERROR: Servicio $KIOSK_SERVICE_INSTANCE no encontrado"
+      log_error "ERROR: Servicio ${KIOSK_SERVICE_INSTANCE} no encontrado"
       SUMMARY+=('[install] ERROR: servicio kiosk-chromium no encontrado')
     fi
   else
-    log_warn "No se habilitó pantalla-kiosk-chromium@${USER_NAME}.service - Chromium no disponible"
+    log_warn "Chromium no disponible: no se habilitó ${KIOSK_SERVICE_INSTANCE}"
     systemctl disable --now "$KIOSK_SERVICE_INSTANCE" 2>/dev/null || true
     SUMMARY+=('[install] WARN: servicio kiosk-chromium NO habilitado - Chromium no disponible')
   fi

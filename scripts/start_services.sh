@@ -124,24 +124,17 @@ log_section "FASE 5: INICIAR KIOSK"
 
 # Verificar si Chrome está disponible
 if command -v google-chrome >/dev/null 2>&1 && [[ -x /usr/bin/google-chrome ]]; then
-  log "Google Chrome disponible, iniciando unit user Chrome kiosk..."
-  
-  # Asegurar que el unit user existe
-  USER_SYSTEMD_DIR="/home/${TARGET_USER}/.config/systemd/user"
-  CHROME_UNIT="${USER_SYSTEMD_DIR}/pantalla-kiosk-chrome@${TARGET_USER}.service"
-  
-  if [[ -f "$CHROME_UNIT" ]]; then
-    log "Unit user Chrome kiosk encontrado"
-    sudo -u "$TARGET_USER" systemctl --user daemon-reload 2>/dev/null || true
-    
-    if sudo -u "$TARGET_USER" systemctl --user enable --now "pantalla-kiosk-chrome@${TARGET_USER}.service" 2>&1; then
-      log "✓ Unit user Chrome kiosk iniciado"
+  log "Google Chrome disponible, iniciando servicio Chrome kiosk..."
+
+  if [[ -f /etc/systemd/system/pantalla-kiosk-chrome@.service ]]; then
+    if systemctl enable --now "pantalla-kiosk-chrome@${TARGET_USER}.service" 2>&1; then
+      log "✓ pantalla-kiosk-chrome@${TARGET_USER}.service iniciado"
     else
-      log "✗ ERROR: No se pudo iniciar unit user Chrome kiosk"
-      sudo -u "$TARGET_USER" systemctl --user status "pantalla-kiosk-chrome@${TARGET_USER}.service" --no-pager -l | head -20
+      log "✗ ERROR: No se pudo iniciar pantalla-kiosk-chrome@${TARGET_USER}.service"
+      systemctl status "pantalla-kiosk-chrome@${TARGET_USER}.service" --no-pager -l | head -20
     fi
   else
-    log "⚠ Unit user Chrome kiosk no encontrado, usando Chromium fallback"
+    log "⚠ Servicio plantilla pantalla-kiosk-chrome@.service no encontrado, usando Chromium fallback"
     if systemctl enable --now "pantalla-kiosk-chromium@${TARGET_USER}.service" 2>&1; then
       log "✓ pantalla-kiosk-chromium@${TARGET_USER}.service iniciado"
     else
@@ -168,7 +161,7 @@ log "pantalla-xorg.service: $(systemctl is-active pantalla-xorg.service 2>/dev/n
 log "pantalla-openbox@${TARGET_USER}.service: $(systemctl is-active "pantalla-openbox@${TARGET_USER}.service" 2>/dev/null || echo 'INACTIVO')"
 
 if command -v google-chrome >/dev/null 2>&1; then
-  log "pantalla-kiosk-chrome@${TARGET_USER}.service (user): $(sudo -u "$TARGET_USER" systemctl --user is-active "pantalla-kiosk-chrome@${TARGET_USER}.service" 2>/dev/null || echo 'INACTIVO')"
+  log "pantalla-kiosk-chrome@${TARGET_USER}.service: $(systemctl is-active "pantalla-kiosk-chrome@${TARGET_USER}.service" 2>/dev/null || echo 'INACTIVO')"
 fi
 
 log "pantalla-kiosk-chromium@${TARGET_USER}.service: $(systemctl is-active "pantalla-kiosk-chromium@${TARGET_USER}.service" 2>/dev/null || echo 'INACTIVO')"

@@ -579,10 +579,10 @@ variable.
   Chromium (`chromium-browser`, `chromium`, snap o `CHROME_BIN_OVERRIDE`) y recurre a
   Firefox como fallback, reutilizando perfiles persistentes en
   `/var/lib/pantalla-reloj/state/chromium-kiosk` o `/var/lib/pantalla-reloj/state/firefox-kiosk`.
-- **Orden de arranque garantizado**: `pantalla-openbox@dani.service` depende de
-  `pantalla-xorg.service`, del backend y de Nginx (`After=`/`Wants=`) con reinicio
-  automático (`Restart=always`). `pantalla-xorg.service` se engancha a
-  `graphical.target`, levanta `Xorg :0` en `vt7` y también se reinicia ante fallos.
+- **Orden de arranque garantizado**: `pantalla-openbox@dani.service` requiere
+  `pantalla-xorg.service`, el backend y Nginx (`After=`/`Requires=`) con reinicio
+  automático (`Restart=always`). `pantalla-xorg.service` se activa desde
+  `multi-user.target`, levanta `Xorg :0` en `vt1` y también se reinicia ante fallos.
 - **Healthchecks previos al navegador**: el script de autostart espera a que Nginx y
   el backend respondan antes de lanzar la ventana kiosk, evitando popups de “la página
   no responde”.
@@ -608,15 +608,15 @@ El script `install.sh` instala automáticamente Google Chrome .deb desde la fuen
 
 1. Descarga el .deb desde `https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb`
 2. Instala el paquete con `dpkg -i` y resuelve dependencias con `apt -f install`
-3. Crea el unit user `~/.config/systemd/user/pantalla-kiosk-chrome@.service`
-4. Habilita y arranca el unit user después de Openbox
+3. Instala la unidad systemd `/etc/systemd/system/pantalla-kiosk-chrome@.service`
+4. Habilita e inicia `pantalla-kiosk-chrome@dani.service` tras Openbox
 
 **Verificación rápida**:
 
 ```bash
 # Verificar estado de servicios
-systemctl --user status pantalla-openbox@dani.service
-systemctl --user status pantalla-kiosk-chrome@dani.service
+sudo systemctl status pantalla-openbox@dani.service
+sudo systemctl status pantalla-kiosk-chrome@dani.service
 
 # Verificar ventana kiosk
 ./scripts/verify_kiosk.sh dani
@@ -629,9 +629,9 @@ wmctrl -lx | grep -i chrome || echo "No se ve Chrome"
 
 ```bash
 # Recargar units y arrancar
-systemctl --user daemon-reload
-systemctl --user enable --now pantalla-openbox@dani.service
-systemctl --user enable --now pantalla-kiosk-chrome@dani.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now pantalla-openbox@dani.service
+sudo systemctl enable --now pantalla-kiosk-chrome@dani.service
 ```
 
 **Ventajas sobre Chromium Snap**:
@@ -642,7 +642,7 @@ systemctl --user enable --now pantalla-kiosk-chrome@dani.service
 - ✅ Mejor integración con X11
 - ✅ Verificador automático con fallback si la ventana no aparece
 
-**Nota**: El unit user de Chrome kiosk (`pantalla-kiosk-chrome@.service`) se ejecuta como servicio de usuario systemd, no como servicio del sistema. Esto permite mejor integración con la sesión X11 del usuario.
+**Nota**: El servicio `pantalla-kiosk-chrome@.service` es un unit de sistema que lanza Chrome en modo kiosk para el usuario designado (`User=%i`). Esta aproximación evita depender de sesiones de systemd --user y simplifica el arranque automático tras el boot.
 
 ### Servicios esenciales
 

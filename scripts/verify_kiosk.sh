@@ -15,8 +15,8 @@ if wmctrl -lx 2>/dev/null | grep -qi 'google-chrome'; then
   exit 0
 fi
 
-echo "WARN: No se detecta ventana Chrome. Intento relanzar unit…"
-systemctl --user restart "pantalla-kiosk-chrome@${USER_NAME}.service" 2>/dev/null || true
+echo "WARN: No se detecta ventana Chrome. Intento relanzar servicio…"
+systemctl restart "pantalla-kiosk-chrome@${USER_NAME}.service" 2>/dev/null || true
 sleep 3
 
 if wmctrl -lx 2>/dev/null | grep -qi 'google-chrome'; then

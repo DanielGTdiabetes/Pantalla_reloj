@@ -7,6 +7,7 @@ BACKEND_HEALTH_URL="${BACKEND_HEALTH_URL:-http://127.0.0.1/api/health}"
 STATE_ROOT="/var/lib/pantalla-reloj"
 KIOSK_ENV_FILE="${STATE_ROOT}/state/kiosk.env"
 TARGET_USER="${VERIFY_USER:-${SUDO_USER:-$(id -un)}}"
+ACTIVE_KIOSK_UNIT=""
 
 log() {
   printf '[pantalla-kiosk-verify] %s\n' "$*"
@@ -24,6 +25,9 @@ record_result() {
 
 resolve_kiosk_url() {
   local unit="$1"
+  if [[ -z "$unit" ]]; then
+    unit="$ACTIVE_KIOSK_UNIT"
+  fi
   local url=""
   if [[ -r "$KIOSK_ENV_FILE" ]]; then
     url="$(grep -E '^KIOSK_URL=' "$KIOSK_ENV_FILE" | tail -n1 | cut -d= -f2-)"
@@ -95,7 +99,11 @@ check_backend_health() {
 }
 
 check_kiosk_units() {
-  local units=("pantalla-kiosk@${TARGET_USER}.service" "pantalla-kiosk-chromium@${TARGET_USER}.service")
+  local units=(
+    "pantalla-kiosk-chrome@${TARGET_USER}.service"
+    "pantalla-kiosk@${TARGET_USER}.service"
+    "pantalla-kiosk-chromium@${TARGET_USER}.service"
+  )
   local active_any=0
   local status
   for unit in "${units[@]}"; do
@@ -104,12 +112,16 @@ check_kiosk_units() {
         record_result "$unit" "$status"
         if [[ "$status" == "active" ]]; then
           active_any=1
+          if [[ -z "$ACTIVE_KIOSK_UNIT" ]]; then
+            ACTIVE_KIOSK_UNIT="$unit"
+          fi
         fi
       else
         record_result "$unit" "unknown"
       fi
     fi
   done
+  record_result "kiosk_primary" "${ACTIVE_KIOSK_UNIT:-<none>}"
   if (( active_any )); then
     record_result "kiosk" "active"
     return 0
@@ -129,7 +141,7 @@ is_diag_mode() {
 
 maybe_restart_for_swiftshader() {
   local diag_url="$1"
-  local unit="pantalla-kiosk-chromium@${TARGET_USER}.service"
+  local unit="${ACTIVE_KIOSK_UNIT:-pantalla-kiosk-chromium@${TARGET_USER}.service}"
   if ! systemctl list-units --full --all "$unit" >/dev/null 2>&1; then
     return 0
   fi
@@ -169,7 +181,7 @@ maybe_restart_for_swiftshader() {
 }
 
 check_autopan_rotation() {
-  local unit="pantalla-kiosk-chromium@${TARGET_USER}.service"
+  local unit="${ACTIVE_KIOSK_UNIT:-pantalla-kiosk-chromium@${TARGET_USER}.service}"
   local journal_output
   if ! journal_output="$(journalctl -u "$unit" --since "-10 minutes" --no-pager 2>/dev/null)"; then
     record_result "autopan" "journal-missing"
@@ -216,34 +228,34 @@ print(f"{delta:.2f}")
 }
 
 check_kiosk_logs() {
-  local unit="pantalla-kiosk-chromium@${TARGET_USER}.service"
+  local unit="${ACTIVE_KIOSK_UNIT:-pantalla-kiosk-chromium@${TARGET_USER}.service}"
   if ! systemctl list-units --full --all "$unit" >/dev/null 2>&1; then
-    record_result "chromium_logs" "unit-missing"
+    record_result "browser_logs" "unit-missing"
     return 1
   fi
 
   local journal_output
   if ! journal_output="$(journalctl -u "$unit" --since "-10 minutes" --no-pager 2>/dev/null)"; then
-    record_result "chromium_logs" "journal-missing"
+    record_result "browser_logs" "journal-missing"
     return 1
   fi
 
   if ! grep -q "url:" <<<"$journal_output"; then
-    record_result "chromium_logs" "missing-url"
+    record_result "browser_logs" "missing-url"
     return 1
   fi
 
   if grep -q "SingletonLock" <<<"$journal_output"; then
-    record_result "chromium_logs" "singletonlock"
+    record_result "browser_logs" "singletonlock"
     return 1
   fi
 
   if grep -Ei 'cache[^\n]*(denied|permission)' <<<"$journal_output"; then
-    record_result "chromium_logs" "cache-error"
+    record_result "browser_logs" "cache-error"
     return 1
   fi
 
-  record_result "chromium_logs" "clean"
+  record_result "browser_logs" "clean"
   return 0
 }
 
@@ -302,7 +314,7 @@ main() {
   check_window_consistency || failures=$((failures + 1))
   check_gl_flag || failures=$((failures + 1))
 
-  local kiosk_unit="pantalla-kiosk-chromium@${TARGET_USER}.service"
+  local kiosk_unit="${ACTIVE_KIOSK_UNIT:-pantalla-kiosk-chromium@${TARGET_USER}.service}"
   local kiosk_url
   kiosk_url="$(resolve_kiosk_url "$kiosk_unit")"
   record_result "kiosk_url" "${kiosk_url:-<unset>}"

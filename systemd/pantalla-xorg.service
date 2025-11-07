@@ -1,7 +1,7 @@
 [Unit]
 Description=Pantalla_reloj Xorg server (:0, vt1)
-After=graphical.target
-Wants=graphical.target
+After=systemd-user-sessions.service
+Wants=systemd-user-sessions.service
 
 [Service]
 Type=simple
