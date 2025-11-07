@@ -100,6 +100,8 @@ rm -f /etc/systemd/system/pantalla-kiosk@.service
 rm -f /etc/systemd/system/pantalla-kiosk-chrome@.service
 rm -f /etc/systemd/system/pantalla-kiosk-chromium@.service
 rm -f /etc/systemd/system/pantalla-openbox@.service
+rm -f /etc/systemd/system/default.target.wants/pantalla-kiosk-chrome@${USER_NAME}.service 2>/dev/null || true
+rm -f /etc/systemd/system/multi-user.target.wants/pantalla-kiosk-chrome@${USER_NAME}.service 2>/dev/null || true
 
 log_info "Eliminando plantillas y overrides de kiosk"
 rm -f /etc/systemd/system/pantalla-xorg@.service

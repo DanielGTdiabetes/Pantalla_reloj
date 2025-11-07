@@ -561,6 +561,12 @@ deploy_unit() {
   fi
 }
 
+deploy_unit_force() {
+  local src="$1" dest="$2"
+  install -D -m 0644 "$src" "$dest"
+  units_changed=1
+}
+
 # Instalar scripts necesarios ANTES de instalar servicios systemd
 log_info "Instalando scripts necesarios para servicios systemd"
 
@@ -578,7 +584,7 @@ log_info "Instalando servicios systemd"
 deploy_unit "$REPO_ROOT/systemd/pantalla-xorg.service" /etc/systemd/system/pantalla-xorg.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-openbox@.service" /etc/systemd/system/pantalla-openbox@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk@.service" /etc/systemd/system/pantalla-kiosk@.service
-deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk-chrome@.service" /etc/systemd/system/pantalla-kiosk-chrome@.service
+deploy_unit_force "$REPO_ROOT/systemd/pantalla-kiosk-chrome@.service" /etc/systemd/system/pantalla-kiosk-chrome@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk-chromium@.service" /etc/systemd/system/pantalla-kiosk-chromium@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-dash-backend@.service" /etc/systemd/system/pantalla-dash-backend@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-portal@.service" /etc/systemd/system/pantalla-portal@.service
@@ -621,6 +627,7 @@ else
   log_warn "pantalla-kiosk-chrome@.service no existe tras la instalación"
 fi
 log_ok "Servicios systemd instalados y verificados"
+SUMMARY+=("[install] recuerda ejecutar pantalla-kiosk-verify para validar kiosk")
 
 DROPIN_DIR="/etc/systemd/system/pantalla-kiosk-chromium@${USER_NAME}.service.d"
 DROPIN_OVERRIDE_SRC="${REPO_ROOT}/deploy/systemd/pantalla-kiosk-chromium@dani.service.d/override.conf"
