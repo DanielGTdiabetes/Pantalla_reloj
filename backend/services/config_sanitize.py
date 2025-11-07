@@ -20,6 +20,8 @@ except Exception as exc:  # noqa: BLE001
     log.warning("[config] Could not load default_config_v2.json: %s", exc)
     _DEFAULT_CONFIG_V2 = {}
 
+DEFAULT_AISSTREAM_WS_URL = "wss://stream.aisstream.io/v0/stream"
+
 
 def _merge_with_defaults(defaults: Dict[str, Any], current: Any) -> Dict[str, Any]:
     """Merge dict `current` over `defaults`, preserving nested defaults."""
@@ -136,5 +138,64 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
                         "[config-migrate] Migrated icon_url_legacy → custom_icon_url"
                     )
     
+        ships = layers.get("ships")
+        if isinstance(ships, dict):
+            provider_raw = ships.get("provider")
+            provider = str(provider_raw).strip().lower() if isinstance(provider_raw, str) else "aisstream"
+            if provider not in {"aisstream", "aishub", "ais_generic", "custom"}:
+                provider = "aisstream"
+            ships["provider"] = provider
+
+            ships.setdefault("enabled", False)
+
+            if provider == "aisstream":
+                aisstream_cfg = ships.get("aisstream")
+                if not isinstance(aisstream_cfg, dict):
+                    aisstream_cfg = {}
+                    ships["aisstream"] = aisstream_cfg
+                ws_url = aisstream_cfg.get("ws_url")
+                if not isinstance(ws_url, str) or not ws_url.strip():
+                    aisstream_cfg["ws_url"] = DEFAULT_AISSTREAM_WS_URL
+
+    panels = data.get("panels")
+    if not isinstance(panels, dict):
+        panels = {}
+        data["panels"] = panels
+
+    panel_calendar = panels.get("calendar")
+    if not isinstance(panel_calendar, dict):
+        panel_calendar = {}
+        panels["calendar"] = panel_calendar
+
+    panel_provider_raw = panel_calendar.get("provider")
+    panel_provider = str(panel_provider_raw).strip().lower() if isinstance(panel_provider_raw, str) else "google"
+    if panel_provider == "disabled":
+        panel_calendar["enabled"] = False
+        panel_provider = "google"
+    if panel_provider not in {"google", "ics"}:
+        panel_provider = "google"
+    panel_calendar["provider"] = panel_provider
+    panel_calendar.setdefault("enabled", False)
+    if "ics_path" in panel_calendar and isinstance(panel_calendar["ics_path"], str):
+        panel_calendar["ics_path"] = panel_calendar["ics_path"].strip() or None
+
+    calendar_top = data.get("calendar")
+    if not isinstance(calendar_top, dict):
+        calendar_top = {}
+        data["calendar"] = calendar_top
+
+    top_provider_raw = calendar_top.get("source") or calendar_top.get("provider")
+    top_provider = str(top_provider_raw).strip().lower() if isinstance(top_provider_raw, str) else "google"
+    if top_provider == "disabled":
+        calendar_top["enabled"] = False
+        top_provider = "google"
+    if top_provider not in {"google", "ics"}:
+        top_provider = "google"
+    calendar_top["source"] = top_provider
+    calendar_top["provider"] = top_provider
+    calendar_top.setdefault("enabled", False)
+    if "ics_path" in calendar_top and isinstance(calendar_top["ics_path"], str):
+        calendar_top["ics_path"] = calendar_top["ics_path"].strip() or None
+
     return data
 

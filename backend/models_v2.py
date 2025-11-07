@@ -3,7 +3,7 @@ Esquema v2 de configuración - limpio y mínimo para Fase 2.
 """
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing import Optional, Literal, List, Dict, Any
 
 
@@ -198,9 +198,24 @@ class FlightsLayerConfig(BaseModel):
     custom: Optional[CustomFlightProviderConfig] = None
 
 
+DEFAULT_AISSTREAM_WS_URL = "wss://stream.aisstream.io/v0/stream"
+
+
 class AISStreamProviderConfig(BaseModel):
     """Configuración específica del proveedor AISStream."""
-    ws_url: str = Field(default="wss://stream.aisstream.io/v0/stream", max_length=512)
+    model_config = ConfigDict(extra="ignore")
+
+    ws_url: str = Field(default=DEFAULT_AISSTREAM_WS_URL, max_length=512)
+
+    @field_validator("ws_url", mode="before")
+    @classmethod
+    def normalize_ws_url(cls, value: object) -> str:
+        if value is None:
+            return DEFAULT_AISSTREAM_WS_URL
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or DEFAULT_AISSTREAM_WS_URL
+        raise TypeError("ws_url must be a string or null")
 
 
 class AISHubProviderConfig(BaseModel):
@@ -221,6 +236,8 @@ class CustomShipProviderConfig(BaseModel):
 
 class ShipsLayerConfig(BaseModel):
     """Configuración de capa de barcos v2."""
+    model_config = ConfigDict(extra="ignore")
+
     enabled: bool = False
     provider: Literal["aisstream", "aishub", "ais_generic", "custom"] = "aisstream"
     refresh_seconds: int = Field(default=10, ge=1, le=300)
@@ -235,6 +252,28 @@ class ShipsLayerConfig(BaseModel):
     aishub: Optional[AISHubProviderConfig] = None
     ais_generic: Optional[AISGenericProviderConfig] = None
     custom: Optional[CustomShipProviderConfig] = None
+
+    @model_validator(mode="after")
+    def ensure_provider_defaults(cls, values: "ShipsLayerConfig") -> "ShipsLayerConfig":  # type: ignore[override]
+        if not values.enabled:
+            return values
+
+        if values.provider == "aisstream":
+            if values.aisstream is None:
+                values.aisstream = AISStreamProviderConfig()
+            else:
+                values.aisstream.ws_url = values.aisstream.ws_url or DEFAULT_AISSTREAM_WS_URL
+        elif values.provider == "aishub":
+            if values.aishub is None:
+                values.aishub = AISHubProviderConfig()
+        elif values.provider == "ais_generic":
+            if values.ais_generic is None:
+                values.ais_generic = AISGenericProviderConfig()
+        elif values.provider == "custom":
+            if values.custom is None:
+                values.custom = CustomShipProviderConfig()
+
+        return values
 
 
 class GlobalSatelliteLayerConfig(BaseModel):
@@ -288,10 +327,35 @@ class PanelNewsConfig(BaseModel):
 
 class PanelCalendarConfig(BaseModel):
     """Configuración de panel de calendario."""
+    model_config = ConfigDict(extra="ignore")
+
     enabled: bool = True
     provider: Literal["google", "ics", "disabled"] = Field(default="google")
     ics_path: Optional[str] = Field(default=None, max_length=1024)
     days_ahead: Optional[int] = Field(default=14, ge=1, le=90)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_panel_provider(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        provider_raw = data.get("provider")
+        provider = str(provider_raw).strip().lower() if isinstance(provider_raw, str) else "google"
+
+        if provider == "disabled":
+            data["enabled"] = False
+            provider = "google"
+
+        if provider not in {"google", "ics"}:
+            provider = "google"
+
+        data["provider"] = provider
+
+        if data.get("enabled") is None:
+            data["enabled"] = False
+
+        return data
 
 
 class PanelHistoricalEventsLocalConfig(BaseModel):
@@ -351,6 +415,8 @@ class CalendarGoogleConfig(BaseModel):
 
 class CalendarConfig(BaseModel):
     """Configuración de calendario top-level."""
+    model_config = ConfigDict(extra="ignore")
+
     enabled: bool = True
     source: Literal["google", "ics"] = Field(default="google")
     ics: Optional[CalendarICSConfig] = Field(default=None)
@@ -361,6 +427,40 @@ class CalendarConfig(BaseModel):
     days_ahead: Optional[int] = Field(default=None, ge=1, le=60)
     provider: Optional[Literal["google", "ics", "disabled"]] = Field(default=None)
     ics_path: Optional[str] = Field(default=None, max_length=1024)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_calendar(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        provider_raw = data.get("source") or data.get("provider")
+        provider = str(provider_raw).strip().lower() if isinstance(provider_raw, str) else "google"
+
+        if provider == "disabled":
+            data["enabled"] = False
+            provider = "google"
+
+        if provider not in {"google", "ics"}:
+            provider = "google"
+
+        data["source"] = provider
+        data["provider"] = provider
+
+        if data.get("enabled") is None:
+            data["enabled"] = False
+
+        return data
+
+    @field_validator("ics_path", mode="before")
+    @classmethod
+    def trim_ics_path(cls, value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        raise TypeError("ics_path must be a string or null")
 
 
 class PanelsConfig(BaseModel):

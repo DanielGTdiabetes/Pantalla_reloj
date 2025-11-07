@@ -130,15 +130,24 @@ def resolve_calendar_provider(payload: Dict[str, Any]) -> Tuple[str, bool, Optio
         dict(legacy_calendar_raw) if isinstance(legacy_calendar_raw, dict) else {}
     )
 
-    provider_value = panel_calendar.get("provider") or legacy_calendar.get("provider")
+    provider_value = (
+        panel_calendar.get("source")
+        or panel_calendar.get("provider")
+        or legacy_calendar.get("source")
+        or legacy_calendar.get("provider")
+    )
     provider = str(provider_value).strip().lower() if provider_value else "google"
-    if provider not in {"google", "ics", "disabled"}:
+    if provider == "disabled":
+        panel_calendar["enabled"] = False
+        legacy_calendar["enabled"] = False
+        provider = "google"
+    if provider not in {"google", "ics"}:
         provider = "google"
 
     enabled_value = panel_calendar.get("enabled")
     if enabled_value is None:
         enabled_value = legacy_calendar.get("enabled")
-    enabled = bool(enabled_value) if enabled_value is not None else True
+    enabled = bool(enabled_value) if enabled_value is not None else False
 
     ics_path_value = panel_calendar.get("ics_path") or legacy_calendar.get("ics_path")
     ics_path = None
@@ -147,8 +156,8 @@ def resolve_calendar_provider(payload: Dict[str, Any]) -> Tuple[str, bool, Optio
         if candidate:
             ics_path = candidate
 
-    normalized_panel = {"enabled": enabled, "provider": provider}
-    normalized_top = {"enabled": enabled, "provider": provider}
+    normalized_panel = {"enabled": enabled, "provider": provider, "source": provider}
+    normalized_top = {"enabled": enabled, "provider": provider, "source": provider}
     if provider == "ics" and ics_path:
         normalized_panel["ics_path"] = ics_path
         normalized_top["ics_path"] = ics_path
@@ -256,24 +265,25 @@ def validate_calendar_provider(
 ) -> None:
     """Validate provider-specific requirements for the calendar."""
 
-    if provider == "ics" and enabled:
-        missing = ["panels.calendar.ics_path", "calendar.ics_path"]
-        if not ics_path or not ics_path.strip():
-            raise CalendarValidationError(
-                "Calendar provider 'ics' requires readable file at calendar.ics_path",
-                missing,
-            )
-        path_obj = Path(ics_path.strip())
-        if not path_obj.exists() or not path_obj.is_file():
-            raise CalendarValidationError(
-                f"Calendar provider 'ics' requires readable file at calendar.ics_path (not found: {path_obj})",
-                missing,
-            )
-        if not os.access(path_obj, os.R_OK):
-            raise CalendarValidationError(
-                f"Calendar provider 'ics' requires readable file at calendar.ics_path (permission denied: {path_obj})",
-                missing,
-            )
+    if provider != "ics" or not enabled:
+        return
+
+    if not ics_path or not ics_path.strip():
+        return
+
+    path_obj = Path(ics_path.strip())
+    missing = ["panels.calendar.ics_path", "calendar.ics_path"]
+
+    if not path_obj.exists() or not path_obj.is_file():
+        raise CalendarValidationError(
+            f"Calendar provider 'ics' requires readable file at calendar.ics_path (not found: {path_obj})",
+            missing,
+        )
+    if not os.access(path_obj, os.R_OK):
+        raise CalendarValidationError(
+            f"Calendar provider 'ics' requires readable file at calendar.ics_path (permission denied: {path_obj})",
+            missing,
+        )
 
 
 def write_config_atomic(config: Dict[str, Any], path: Path | None = None) -> None:

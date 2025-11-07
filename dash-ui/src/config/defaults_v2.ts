@@ -9,6 +9,7 @@ import type {
   FlightsLayerConfigV2,
   ShipsLayerConfigV2,
   PanelsConfigV2,
+  CalendarConfig,
 } from "../types/config_v2";
 
 export const DEFAULT_MAP_CENTER = {
@@ -114,8 +115,16 @@ export const DEFAULT_PANELS_CONFIG: PanelsConfigV2 = {
     feeds: [],
   },
   calendar: {
-    enabled: true,
+    enabled: false,
+    provider: "google",
   },
+};
+
+export const DEFAULT_CALENDAR_CONFIG: CalendarConfig = {
+  enabled: false,
+  source: "google",
+  provider: "google",
+  days_ahead: 14,
 };
 
 export const DEFAULT_CONFIG_V2: AppConfigV2 = {
@@ -125,6 +134,7 @@ export const DEFAULT_CONFIG_V2: AppConfigV2 = {
   layers: DEFAULT_LAYERS_CONFIG,
   panels: DEFAULT_PANELS_CONFIG,
   secrets: {},
+  calendar: DEFAULT_CALENDAR_CONFIG,
 };
 
 /**
@@ -167,6 +177,7 @@ export function withConfigDefaultsV2(
       },
     },
     panels: config.panels ?? DEFAULT_PANELS_CONFIG,
+    calendar: config.calendar ?? DEFAULT_CALENDAR_CONFIG,
     secrets: config.secrets ?? {},
   };
 }

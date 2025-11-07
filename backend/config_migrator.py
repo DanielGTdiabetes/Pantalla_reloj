@@ -272,8 +272,16 @@ def migrate_v1_to_v2(
             "feeds": config_v1.get("news", {}).get("feeds", ui_v1.get("panel", {}).get("news", {}).get("feeds", [])) if isinstance(config_v1.get("news", {}).get("feeds", ui_v1.get("panel", {}).get("news", {}).get("feeds", [])), list) else []
         },
         "calendar": {
-            "enabled": True
+            "enabled": False,
+            "provider": "google"
         }
+    }
+
+    v2["calendar"] = {
+        "enabled": False,
+        "source": "google",
+        "provider": "google",
+        "days_ahead": 14
     }
     
     # Secrets (metadata only)

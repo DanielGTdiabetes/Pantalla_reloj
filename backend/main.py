@@ -3147,18 +3147,25 @@ def _normalize_calendar_sections(payload: Dict[str, Any]) -> Tuple[str, bool, Op
     calendar_raw = payload.get("calendar")
     top_calendar = dict(calendar_raw) if isinstance(calendar_raw, dict) else {}
 
-    provider_value = top_calendar.get("provider") or panel_calendar.get("provider") or "google"
-    if isinstance(provider_value, str):
-        provider = provider_value.strip().lower()
-    else:
+    provider_value = (
+        top_calendar.get("source")
+        or top_calendar.get("provider")
+        or panel_calendar.get("source")
+        or panel_calendar.get("provider")
+        or "google"
+    )
+    provider = provider_value.strip().lower() if isinstance(provider_value, str) else "google"
+    if provider == "disabled":
+        top_calendar["enabled"] = False
+        panel_calendar["enabled"] = False
         provider = "google"
-    if provider not in {"google", "ics", "disabled"}:
+    if provider not in {"google", "ics"}:
         provider = "google"
 
     enabled_value = top_calendar.get("enabled")
     if enabled_value is None:
         enabled_value = panel_calendar.get("enabled")
-    enabled = bool(enabled_value) if enabled_value is not None else True
+    enabled = bool(enabled_value) if enabled_value is not None else False
 
     ics_path_value = top_calendar.get("ics_path") or panel_calendar.get("ics_path")
     ics_path = None
@@ -3170,10 +3177,12 @@ def _normalize_calendar_sections(payload: Dict[str, Any]) -> Tuple[str, bool, Op
     normalized_panel = {
         "enabled": enabled,
         "provider": provider,
+        "source": provider,
     }
     normalized_top = {
         "enabled": enabled,
         "provider": provider,
+        "source": provider,
     }
 
     if provider == "ics" and ics_path:
@@ -3194,7 +3203,12 @@ def _resolve_calendar_settings(config_v2: AppConfigV2) -> Tuple[str, bool, Optio
     ics_path: Optional[str] = None
 
     if getattr(config_v2, "calendar", None):
-        provider = getattr(config_v2.calendar, "provider", provider)
+        provider_candidate = (
+            getattr(config_v2.calendar, "source", None)
+            or getattr(config_v2.calendar, "provider", None)
+        )
+        if isinstance(provider_candidate, str):
+            provider = provider_candidate.strip().lower() or provider
         enabled = getattr(config_v2.calendar, "enabled", enabled)
         ics_path = getattr(config_v2.calendar, "ics_path", None)
 
@@ -3202,11 +3216,23 @@ def _resolve_calendar_settings(config_v2: AppConfigV2) -> Tuple[str, bool, Optio
         config_v2.panels.calendar if config_v2.panels and config_v2.panels.calendar else None
     )
     if not getattr(config_v2, "calendar", None) and panels_calendar:
-        provider = getattr(panels_calendar, "provider", provider)
+        provider_candidate = (
+            getattr(panels_calendar, "source", None)
+            or getattr(panels_calendar, "provider", None)
+        )
+        if isinstance(provider_candidate, str):
+            provider = provider_candidate.strip().lower() or provider
         enabled = getattr(panels_calendar, "enabled", enabled)
         ics_path = getattr(panels_calendar, "ics_path", None)
     elif getattr(config_v2, "calendar", None) and provider == "ics" and not ics_path and panels_calendar:
         ics_path = getattr(panels_calendar, "ics_path", None)
+
+    if provider == "disabled":
+        enabled = False
+        provider = "google"
+
+    if provider not in {"google", "ics"}:
+        provider = "google"
 
     if isinstance(ics_path, str):
         ics_path = ics_path.strip() or None
@@ -3558,6 +3584,24 @@ async def save_config(request: Request) -> JSONResponse:
         )
         
         provider_final, enabled_final, final_ics_path = resolve_calendar_provider(merged)
+
+        stored_calendar_ics_url = secret_store.get_secret("calendar_ics_url")
+        stored_calendar_ics_path = secret_store.get_secret("calendar_ics_path")
+
+        def _clean_optional_str(value: object) -> Optional[str]:
+            if isinstance(value, str):
+                stripped = value.strip()
+                return stripped or None
+            return None
+
+        new_ics_url = _clean_optional_str(calendar_ics_url)
+        new_ics_path = _clean_optional_str(calendar_ics_path_secret)
+        existing_ics_url = _clean_optional_str(stored_calendar_ics_url)
+        existing_ics_path = _clean_optional_str(stored_calendar_ics_path)
+        config_ics_path = _clean_optional_str(final_ics_path)
+
+        effective_ics_url = new_ics_url or existing_ics_url
+        effective_ics_path = new_ics_path or config_ics_path or existing_ics_path
         
         # Validar Google Calendar
         if provider_final == "google" and enabled_final:
@@ -3577,9 +3621,25 @@ async def save_config(request: Request) -> JSONResponse:
                     },
                 )
         
+        if provider_final == "ics" and enabled_final:
+            if not effective_ics_url and not effective_ics_path:
+                logger.warning("[config] Provider ICS requires url or path (none provided)")
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "Calendar provider 'ics' requires url or path",
+                        "field": "calendar.source",
+                        "tip": "Configura secrets.calendar_ics.url o secrets.calendar_ics.path antes de activar ICS",
+                        "missing": [
+                            "secrets.calendar_ics.url",
+                            "secrets.calendar_ics.path",
+                        ],
+                    },
+                )
+
         # Validar ICS usando validate_calendar_provider (nunca 500, solo 400)
         try:
-            validate_calendar_provider(provider_final, enabled_final, final_ics_path)
+            validate_calendar_provider(provider_final, enabled_final, effective_ics_path)
         except CalendarValidationError as exc:
             logger.warning("[config] Calendar validation error: %s", exc)
             raise HTTPException(
@@ -3661,19 +3721,20 @@ async def save_config(request: Request) -> JSONResponse:
             secret_store.set_secret("google_calendar_id", None)
             logger.info("[config] Google Calendar ID removed")
 
-        if calendar_ics_url:
-            logger.info("[config] Saving ICS calendar URL (length=%d)", len(str(calendar_ics_url)))
-            secret_store.set_secret("calendar_ics_url", str(calendar_ics_url).strip())
+        if new_ics_url is not None:
+            logger.info("[config] Saving ICS calendar URL (length=%d)", len(new_ics_url))
+            secret_store.set_secret("calendar_ics_url", new_ics_url)
         else:
             secret_store.set_secret("calendar_ics_url", None)
 
         ics_path_to_store: Optional[str] = None
-        if isinstance(calendar_ics_path_secret, str) and calendar_ics_path_secret.strip():
-            ics_path_to_store = calendar_ics_path_secret.strip()
-        if provider_final == "ics" and final_ics_path:
-            ics_path_to_store = final_ics_path
+        if new_ics_path is not None:
+            ics_path_to_store = new_ics_path
+        elif provider_final == "ics" and effective_ics_path:
+            ics_path_to_store = effective_ics_path
+
         if ics_path_to_store and provider_final == "ics":
-            logger.info("[config] Saving ICS calendar path (length=%d)", len(str(ics_path_to_store)))
+            logger.info("[config] Saving ICS calendar path (length=%d)", len(ics_path_to_store))
             secret_store.set_secret("calendar_ics_path", ics_path_to_store)
         else:
             secret_store.set_secret("calendar_ics_path", None)
@@ -3920,6 +3981,78 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
                 "error": error_msg,
                 "field": field_path,
             },
+        ) from exc
+
+    provider_final, enabled_final, final_ics_path = _resolve_calendar_settings(config_v2)
+
+    stored_calendar_ics_url = secret_store.get_secret("calendar_ics_url")
+    stored_calendar_ics_path = secret_store.get_secret("calendar_ics_path")
+
+    def _clean_optional_str(value: object) -> Optional[str]:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return None
+
+    sanitized_calendar_block = sanitized_config.get("calendar")
+    sanitized_calendar_block = (
+        sanitized_calendar_block if isinstance(sanitized_calendar_block, dict) else {}
+    )
+    sanitized_panel_calendar = (
+        sanitized_config.get("panels", {}).get("calendar", {})
+        if isinstance(sanitized_config.get("panels"), dict)
+        else {}
+    )
+    sanitized_calendar_ics = sanitized_calendar_block.get("ics")
+    sanitized_calendar_ics = (
+        sanitized_calendar_ics if isinstance(sanitized_calendar_ics, dict) else {}
+    )
+    sanitized_panel_ics = sanitized_panel_calendar.get("ics")
+    sanitized_panel_ics = (
+        sanitized_panel_ics if isinstance(sanitized_panel_ics, dict) else {}
+    )
+
+    sanitized_ics_url = _clean_optional_str(sanitized_calendar_ics.get("url"))
+    sanitized_panel_ics_url = _clean_optional_str(sanitized_panel_ics.get("url"))
+    sanitized_ics_path = _clean_optional_str(sanitized_calendar_block.get("ics_path"))
+    sanitized_panel_ics_path = _clean_optional_str(sanitized_panel_calendar.get("ics_path"))
+
+    effective_ics_url = (
+        sanitized_ics_url
+        or sanitized_panel_ics_url
+        or _clean_optional_str(stored_calendar_ics_url)
+    )
+
+    effective_ics_path = (
+        sanitized_panel_ics_path
+        or sanitized_ics_path
+        or _clean_optional_str(final_ics_path)
+        or _clean_optional_str(stored_calendar_ics_path)
+    )
+
+    if provider_final == "ics" and enabled_final:
+        if not effective_ics_url and not effective_ics_path:
+            logger.warning("[config] Provider ICS requires url or path (none provided) [group=%s]", group_name)
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Calendar provider 'ics' requires url or path",
+                    "field": "calendar.source",
+                    "tip": "Configura secrets.calendar_ics.url o secrets.calendar_ics.path antes de activar ICS",
+                    "missing": [
+                        "secrets.calendar_ics.url",
+                        "secrets.calendar_ics.path",
+                    ],
+                },
+            )
+
+    try:
+        validate_calendar_provider(provider_final, enabled_final, effective_ics_path)
+    except CalendarValidationError as exc:
+        logger.warning("[config] Calendar validation error (group=%s): %s", group_name, exc)
+        raise HTTPException(
+            status_code=400,
+            detail={"error": str(exc), "missing": exc.missing if exc.missing else []},
         ) from exc
     
     # Guardar atómicamente (usar sanitized)

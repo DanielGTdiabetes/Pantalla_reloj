@@ -150,7 +150,7 @@
     "weatherWeekly": { "enabled": true },
     "ephemerides": { "enabled": true },
     "news": { "enabled": true, "feeds": [], "max_items_per_feed": 10, "refresh_minutes": 30 },
-    "calendar": { "enabled": true, "days_ahead": 14 },
+    "calendar": { "enabled": false, "provider": "google", "days_ahead": 14 },
     "historicalEvents": {
       "enabled": true,
       "provider": "wikimedia",
@@ -198,8 +198,9 @@
     "timezone": "Europe/Madrid"
   },
   "calendar": {
-    "enabled": true,
-    "provider": "ics",
+    "enabled": false,
+    "source": "google",
+    "provider": "google",
     "days_ahead": 14
   },
   "opensky": {

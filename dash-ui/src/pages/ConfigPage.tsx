@@ -870,27 +870,39 @@ export const ConfigPage: React.FC = () => {
   const handleSaveCalendar = async () => {
     if (!config) return;
     
+    const calendarSource = config.calendar?.source || config.calendar?.provider;
+    const isIcsActive = Boolean(config.calendar?.enabled) && calendarSource === "ics";
+    const hasIcsUrl = Boolean(config.calendar?.ics?.url?.trim());
+    const hasIcsStoredPath = Boolean(
+      config.calendar?.ics?.stored_path?.trim() || config.calendar?.ics_path?.trim()
+    );
+
+    if (isIcsActive && !hasIcsUrl && !hasIcsStoredPath) {
+      setCalendarTestResult({
+        ok: false,
+        reason: "missing_ics_source",
+        message: "Configura una URL ICS o sube un archivo antes de guardar.",
+      });
+      return;
+    }
+
     setPanelRotatorSaving(true);
     try {
       // Guardar solo los campos que han cambiado (merge seguro)
       const calendarToSave: Partial<CalendarConfig> = {
-        enabled: config.calendar?.enabled ?? true,
-        source: config.calendar?.source || "google",
+        enabled: config.calendar?.enabled ?? false,
+        source: calendarSource || "google",
       };
       
-      // Solo incluir ics si existe y tiene cambios
-      if (config.calendar?.ics) {
+      if (calendarToSave.source === "ics" && config.calendar?.ics) {
         calendarToSave.ics = {
           max_events: config.calendar.ics.max_events ?? 50,
           days_ahead: config.calendar.ics.days_ahead ?? 14,
-          // No enviar stored_path ni filename (solo lectura)
-          // No enviar url si no ha cambiado
-          url: config.calendar.ics.url || undefined,
         };
       }
       
       // Solo incluir google si existe y tiene cambios
-      if (config.calendar?.google) {
+      if (calendarToSave.source === "google" && config.calendar?.google) {
         calendarToSave.google = {
           api_key: config.calendar.google.api_key || undefined,
           calendar_id: config.calendar.google.calendar_id || undefined,
@@ -943,6 +955,17 @@ export const ConfigPage: React.FC = () => {
       </div>
     );
   }
+
+  const calendarSource = config.calendar?.source || config.calendar?.provider;
+  const calendarIsICS = Boolean(config.calendar?.enabled) && calendarSource === "ics";
+  const calendarHasIcsUrl = Boolean(config.calendar?.ics?.url?.trim());
+  const calendarHasIcsStoredPath = Boolean(
+    config.calendar?.ics?.stored_path?.trim() || config.calendar?.ics_path?.trim()
+  );
+  const calendarSaveBlocked = calendarIsICS && !calendarHasIcsUrl && !calendarHasIcsStoredPath;
+  const calendarSaveBlockedReason = calendarSaveBlocked
+    ? "Configura una URL o ruta ICS antes de guardar."
+    : undefined;
 
   return (
     <div className="config-page">
@@ -3323,7 +3346,8 @@ export const ConfigPage: React.FC = () => {
                     <button
                       className="config-button"
                       onClick={handleSaveCalendar}
-                      disabled={panelRotatorSaving}
+                      disabled={panelRotatorSaving || calendarSaveBlocked}
+                      title={calendarSaveBlockedReason}
                     >
                       {panelRotatorSaving ? "Guardando..." : "Guardar"}
                     </button>

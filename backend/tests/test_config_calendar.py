@@ -30,9 +30,9 @@ def test_google_provider_requires_credentials(app_module: Tuple[object, Path]) -
     response = client.post("/api/config", json=payload)
     assert response.status_code == 400
 
-    detail = response.json()
+    detail = response.json()["detail"]
     assert detail["error"].startswith("Calendar provider 'google'")
-    assert set(detail["missing"]) == {"google.api_key", "google.calendar_id"}
+    assert set(detail["missing"]) == {"secrets.google.api_key", "secrets.google.calendar_id"}
 
 
 def test_ics_provider_persists_and_syncs_panel(app_module: Tuple[object, Path], tmp_path: Path) -> None:
@@ -157,8 +157,58 @@ def test_ics_path_validation_error_messages(app_module: Tuple[object, Path], tmp
     response = client.post("/api/config", json=payload)
     assert response.status_code == 400
 
-    detail = response.json()
+    detail = response.json()["detail"]
     assert "ics_path" in detail["error"].lower() or "readable" in detail["error"].lower()
+
+
+def test_calendar_ics_requires_source_in_group_patch(app_module: Tuple[object, Path]) -> None:
+    module, _ = app_module
+    client = TestClient(module.app)
+
+    response = client.patch(
+        "/api/config/group/calendar",
+        json={"enabled": True, "source": "ics"},
+    )
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["error"].startswith("Calendar provider 'ics' requires url or path")
+
+    # Proporcionar URL vía secrets y reintentar
+    response = client.patch(
+        "/api/config/group/secrets",
+        json={"calendar_ics": {"url": "https://example.com/sample.ics"}},
+    )
+    assert response.status_code == 200
+
+    response = client.patch(
+        "/api/config/group/calendar",
+        json={"enabled": True, "source": "ics"},
+    )
+    assert response.status_code == 200
+    refreshed = response.json()
+    assert refreshed["calendar"]["enabled"] is True
+    assert refreshed["calendar"]["provider"] == "ics"
+
+
+def test_layers_ships_disabled_accepts_null_ws_url(app_module: Tuple[object, Path]) -> None:
+    module, _ = app_module
+    client = TestClient(module.app)
+
+    response = client.patch(
+        "/api/config/group/layers",
+        json={
+            "ships": {
+                "enabled": False,
+                "provider": "aisstream",
+                "aisstream": {"ws_url": None},
+            }
+        },
+    )
+    assert response.status_code == 200
+    config = response.json()
+    ships_cfg = config.get("layers", {}).get("ships", {})
+    assert ships_cfg.get("enabled") is False
+    assert ships_cfg.get("aisstream", {}).get("ws_url") == "wss://stream.aisstream.io/v0/stream"
 
 
 def test_ics_upload_validation_basic_format(app_module: Tuple[object, Path], tmp_path: Path) -> None:
