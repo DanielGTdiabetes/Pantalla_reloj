@@ -29,36 +29,7 @@ export default class GlobalSatelliteLayer implements Layer {
 
   add(map: maplibregl.Map): void {
     this.map = map;
-    
-    if (!this.enabled || !this.currentTimestamp) {
-      return;
-    }
-
-    // Crear fuente de tipo raster con tiles
-    if (!map.getSource(this.sourceId)) {
-      map.addSource(this.sourceId, {
-        type: "raster",
-        tiles: [
-          `${this.baseUrl}/${this.currentTimestamp}/{z}/{x}/{y}.png`
-        ],
-        tileSize: 256,
-        scheme: "xyz"
-      });
-    }
-
-    if (!map.getLayer(this.id)) {
-      map.addLayer({
-        id: this.id,
-        type: "raster",
-        source: this.sourceId,
-        paint: {
-          "raster-opacity": this.opacity
-        },
-        minzoom: 0,
-        maxzoom: 18
-      });
-    }
-
+    this.ensureLayer();
     this.applyVisibility();
     this.applyOpacity();
   }
@@ -75,6 +46,7 @@ export default class GlobalSatelliteLayer implements Layer {
   update(opts: Partial<GlobalSatelliteLayerOptions>): void {
     if (opts.enabled !== undefined) {
       this.enabled = opts.enabled;
+      this.ensureLayer();
       this.applyVisibility();
     }
     if (opts.opacity !== undefined) {
@@ -90,10 +62,20 @@ export default class GlobalSatelliteLayer implements Layer {
     if (!this.map) return;
     
     this.currentTimestamp = timestamp;
+    if (!this.enabled) {
+      return;
+    }
     
     // Actualizar la fuente con nuevo timestamp
     const source = this.map.getSource(this.sourceId);
-    if (source && source.type === "raster") {
+    if (!source) {
+      this.ensureLayer();
+      this.applyVisibility();
+      this.applyOpacity();
+      return;
+    }
+
+    if (source.type === "raster") {
       // Eliminar y recrear la fuente con el nuevo timestamp
       if (this.map.getLayer(this.id)) {
         this.map.removeLayer(this.id);
@@ -110,6 +92,34 @@ export default class GlobalSatelliteLayer implements Layer {
         scheme: "xyz"
       });
       
+      this.map.addLayer({
+        id: this.id,
+        type: "raster",
+        source: this.sourceId,
+        paint: {
+          "raster-opacity": this.opacity
+        },
+        minzoom: 0,
+        maxzoom: 18
+      });
+    }
+  }
+
+  private ensureLayer(): void {
+    if (!this.map || !this.enabled || !this.currentTimestamp) {
+      return;
+    }
+
+    if (!this.map.getSource(this.sourceId)) {
+      this.map.addSource(this.sourceId, {
+        type: "raster",
+        tiles: [`${this.baseUrl}/${this.currentTimestamp}/{z}/{x}/{y}.png`],
+        tileSize: 256,
+        scheme: "xyz"
+      });
+    }
+
+    if (!this.map.getLayer(this.id)) {
       this.map.addLayer({
         id: this.id,
         type: "raster",
