@@ -1269,6 +1269,24 @@ export const ConfigPage: React.FC = () => {
     }
   };
 
+  const rawRotationConfig = config?.ui?.rotation;
+  const rotationPanels = useMemo(
+    () => sanitizeRotationPanels(rawRotationConfig?.panels ?? DEFAULT_UI_ROTATION_CONFIG.panels),
+    [rawRotationConfig?.panels]
+  );
+  const rotationConfig: UIRotationConfigV2 = useMemo(
+    () => ({
+      ...DEFAULT_UI_ROTATION_CONFIG,
+      ...(rawRotationConfig ?? {}),
+      panels: rotationPanels,
+    }),
+    [rawRotationConfig, rotationPanels]
+  );
+  const availableRotationPanels = useMemo(
+    () => ROTATION_PANEL_OPTIONS.filter(({ id }) => !rotationPanels.includes(id)),
+    [rotationPanels]
+  );
+
   if (loading || !config) {
     return (
       <div className="config-page">
@@ -1278,21 +1296,6 @@ export const ConfigPage: React.FC = () => {
       </div>
     );
   }
-
-  const rawRotationConfig = config.ui?.rotation;
-  const rotationPanels = useMemo(
-    () => sanitizeRotationPanels(rawRotationConfig?.panels ?? DEFAULT_UI_ROTATION_CONFIG.panels),
-    [rawRotationConfig?.panels]
-  );
-  const rotationConfig: UIRotationConfigV2 = {
-    ...DEFAULT_UI_ROTATION_CONFIG,
-    ...rawRotationConfig,
-    panels: rotationPanels,
-  };
-  const availableRotationPanels = useMemo(
-    () => ROTATION_PANEL_OPTIONS.filter(({ id }) => !rotationPanels.includes(id)),
-    [rotationPanels]
-  );
 
   const calendarSource = config.calendar?.source || config.calendar?.provider;
   const normalizedCalendarSource = calendarSource === "ics" ? "ics" : "google";
