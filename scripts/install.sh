@@ -844,6 +844,27 @@ ensure_chrome_bin() {
   return 1
 }
 
+fix_browser_profile_permissions() {
+  local profile_dir="$1"
+  local cache_dir="$2"
+
+  if [[ -d "$profile_dir" ]]; then
+    log_info "Arreglando permisos del perfil del navegador: $profile_dir"
+    find "$profile_dir" -type f \( -name "SingletonLock" -o -name "SingletonCookie" -o -name "SingletonSocket" -o -name "LOCK" \) -delete 2>/dev/null || true
+    chown -R "${USER_NAME}:${USER_NAME}" "$profile_dir" 2>/dev/null || true
+    chmod -R u+rwX "$profile_dir" 2>/dev/null || true
+    log_ok "Permisos del perfil corregidos"
+  fi
+
+  if [[ -d "$cache_dir" ]]; then
+    log_info "Arreglando permisos de la caché del navegador: $cache_dir"
+    find "$cache_dir" -type f -name "LOCK" -delete 2>/dev/null || true
+    chown -R "${USER_NAME}:${USER_NAME}" "$cache_dir" 2>/dev/null || true
+    chmod -R u+rwX "$cache_dir" 2>/dev/null || true
+    log_ok "Permisos de caché corregidos"
+  fi
+}
+
 if install_google_chrome; then
   if ensure_chrome_bin; then
     CHROME_AVAILABLE=1
