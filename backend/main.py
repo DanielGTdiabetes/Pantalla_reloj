@@ -2934,7 +2934,12 @@ def get_config(request: Request) -> JSONResponse:
         config_etag = f'"{config_mtime}"'
     
     # Verificar si el cliente tiene una versión en caché
-    if_none_match = request.headers.get("if-none-match")
+    cache_control_req = request.headers.get("cache-control", "").lower()
+    if "no-cache" in cache_control_req or "no-store" in cache_control_req:
+        if_none_match = None
+    else:
+        if_none_match = request.headers.get("if-none-match")
+
     if if_none_match == config_etag:
         return Response(status_code=304)  # Not Modified
     
