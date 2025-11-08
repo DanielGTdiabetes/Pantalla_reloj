@@ -45,7 +45,7 @@ ERRORS=0
 XORG_UNIT="pantalla-xorg.service"
 OPENBOX_UNIT="pantalla-openbox@${RUN_USER}.service"
 KIOSK_UNIT="pantalla-kiosk@${RUN_USER}.service"
-KIOSK_CHROMIUM_UNIT="pantalla-kiosk-chromium@${RUN_USER}.service"
+KIOSK_CHROME_UNIT="pantalla-kiosk-chrome@${RUN_USER}.service"
 BACKEND_UNIT="pantalla-dash-backend@${RUN_USER}.service"
 NGINX_UNIT="nginx.service"
 MOSQUITTO_UNIT="mosquitto.service"
@@ -344,34 +344,32 @@ check_openbox() {
 check_kiosk() {
   log_info "Verificando Kiosk Browser..."
   
-  # Verificar uno de los servicios kiosk (prioridad: kiosk-chromium@, luego kiosk@)
   local kiosk_active=0
   local active_unit=""
   
-  if systemctl is-active --quiet "$KIOSK_CHROMIUM_UNIT" 2>/dev/null; then
-    log_success "Servicio ${KIOSK_CHROMIUM_UNIT} está activo"
+  if systemctl is-active --quiet "$KIOSK_CHROME_UNIT" 2>/dev/null; then
+    log_success "Servicio ${KIOSK_CHROME_UNIT} está activo"
     kiosk_active=1
-    active_unit="$KIOSK_CHROMIUM_UNIT"
+    active_unit="$KIOSK_CHROME_UNIT"
   elif systemctl is-active --quiet "$KIOSK_UNIT" 2>/dev/null; then
     log_success "Servicio ${KIOSK_UNIT} está activo"
     kiosk_active=1
     active_unit="$KIOSK_UNIT"
   else
-    log_error "Ningún servicio kiosk está activo (${KIOSK_UNIT} o ${KIOSK_CHROMIUM_UNIT})"
+    log_error "Ningún servicio kiosk está activo (${KIOSK_CHROME_UNIT} o ${KIOSK_UNIT})"
     ((ERRORS++)) || true
     return 1
   fi
   
-  # Verificar que Chromium está visible con wmctrl (con timeout de 3 segundos)
   local xauth_file="/home/${RUN_USER}/.Xauthority"
   local timeout_count=0
-  local chromium_visible=0
+  local chrome_visible=0
   
   while [[ $timeout_count -lt $VERIFY_TIMEOUT ]]; do
     if command -v wmctrl >/dev/null 2>&1; then
       if sudo -u "$RUN_USER" env DISPLAY=:0 XAUTHORITY="$xauth_file" \
-         wmctrl -lx 2>/dev/null | grep -qE 'chromium|chrome|pantalla-kiosk'; then
-        chromium_visible=1
+         wmctrl -lx 2>/dev/null | grep -qE 'google-chrome|chrome|pantalla-kiosk'; then
+        chrome_visible=1
         break
       fi
     fi
@@ -379,10 +377,10 @@ check_kiosk() {
     ((timeout_count++)) || true
   done
   
-  if [[ $chromium_visible -eq 1 ]]; then
-    log_success "Chromium visible en wmctrl"
+  if [[ $chrome_visible -eq 1 ]]; then
+    log_success "Chrome visible en wmctrl"
   else
-    log_error "Chromium no visible en wmctrl tras ${VERIFY_TIMEOUT}s"
+    log_error "Chrome no visible en wmctrl tras ${VERIFY_TIMEOUT}s"
     ((ERRORS++)) || true
     return 1
   fi
@@ -470,11 +468,11 @@ restart_failed_services() {
     sleep 2
   fi
   
-  if ! systemctl is-active --quiet "$KIOSK_CHROMIUM_UNIT" 2>/dev/null && \
+  if ! systemctl is-active --quiet "$KIOSK_CHROME_UNIT" 2>/dev/null && \
      ! systemctl is-active --quiet "$KIOSK_UNIT" 2>/dev/null; then
-    if systemctl list-units --full --all "$KIOSK_CHROMIUM_UNIT" >/dev/null 2>&1; then
-      log_info "Reiniciando $KIOSK_CHROMIUM_UNIT"
-      systemctl restart "$KIOSK_CHROMIUM_UNIT" 2>/dev/null || true
+    if systemctl list-units --full --all "$KIOSK_CHROME_UNIT" >/dev/null 2>&1; then
+      log_info "Reiniciando $KIOSK_CHROME_UNIT"
+      systemctl restart "$KIOSK_CHROME_UNIT" 2>/dev/null || true
     elif systemctl list-units --full --all "$KIOSK_UNIT" >/dev/null 2>&1; then
       log_info "Reiniciando $KIOSK_UNIT"
       systemctl restart "$KIOSK_UNIT" 2>/dev/null || true

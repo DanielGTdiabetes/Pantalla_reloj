@@ -72,14 +72,6 @@ Debe aparecer `--use-gl=egl-angle` en la línea de comandos. Si falta, reinicia 
 
 ### SwiftShader opcional
 
-Chromium se lanza con ANGLE (EGL) y bloquea el fallback software. Si el hardware no soporta WebGL, habilita temporalmente SwiftShader con:
+Chrome se lanza con ANGLE (EGL) y bloquea el fallback software. Si el hardware no soporta WebGL, habilita temporalmente SwiftShader con:
 
-```bash
-PANTALLA_ALLOW_SWIFTSHADER=1 sudo systemctl restart pantalla-kiosk@dani
 ```
-
-El script intentará de nuevo con `--enable-unsafe-swiftshader` sólo cuando el arranque estándar falle; el valor por defecto (sin variable) mantiene el modo seguro.
-
-## Servicios opcionales
-
-El wrapper legado `pantalla-kiosk-chromium@.service` permanece disponible para escenarios que aún dependan de la configuración anterior. También `pantalla-portal@.service` continúa deshabilitado por defecto para evitar ventanas auxiliares; habilítalo manualmente sólo si es necesario.

@@ -117,7 +117,7 @@ sudo bash scripts/verify_startup.sh dani
 **Verificaciones incluidas:**
 - ✅ Xorg (`pantalla-xorg.service`)
 - ✅ Openbox (`pantalla-openbox@dani.service`)
-- ✅ Kiosk Browser (`pantalla-kiosk@dani.service` o `pantalla-kiosk-chromium@dani.service`)
+- ✅ Kiosk Browser (`pantalla-kiosk-chrome@dani.service` como principal, `pantalla-kiosk@dani.service` legacy)
 - ✅ Nginx
 - ✅ Backend (`pantalla-dash-backend@dani.service`)
 - ✅ MQTT/Mosquitto (opcional)
@@ -186,7 +186,7 @@ Este test verifica:
 ```bash
 # Estado de servicios
 sudo systemctl status pantalla-dash-backend@dani.service
-sudo systemctl status pantalla-kiosk-chromium@dani.service
+sudo systemctl status pantalla-kiosk-chrome@dani.service
 sudo systemctl status nginx
 
 # Logs del backend

@@ -145,10 +145,8 @@ if (( DIAG_MODE == 1 )); then
 fi
 
 # Inicializar variables de navegador (se definirán más adelante)
-CHROME_FOUND=0
+CHROME_AVAILABLE=0
 CHROME_BIN=""
-CHROMIUM_FOUND=0
-CHROMIUM_BIN=""
 if [[ ! -f "$KIOSK_ENV_FILE" ]]; then
   cat >"$KIOSK_ENV_FILE" <<EOF
 # Pantalla_reloj kiosk configuration
@@ -166,7 +164,7 @@ else
   SUMMARY+=("[install] kiosk.env preservado (sin cambios)")
 fi
 
-# Directorios estándar XDG para Chromium (no Snap)
+# Directorios del perfil kiosk (nombre histórico "chromium")
 CHROMIUM_HOME_DATA_DIR="${USER_HOME}/.local/share/pantalla-reloj/chromium"
 CHROMIUM_HOME_CACHE_DIR="${USER_HOME}/.cache/pantalla-reloj/chromium"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$CHROMIUM_HOME_DATA_DIR"
@@ -216,8 +214,8 @@ apt-get update -y
 DEBIAN_FRONTEND=noninteractive apt-get install -y "${APT_PACKAGES[@]}"
 SUMMARY+=("[install] paquetes asegurados: ${APT_PACKAGES[*]}")
 
-log_info "Navegador kiosk predeterminado: Chromium (fallback a Firefox si está disponible)"
-SUMMARY+=("[install] navegador kiosk predeterminado=chromium (fallback firefox)")
+log_info "Navegador kiosk predeterminado: Google Chrome estable"
+SUMMARY+=("[install] navegador kiosk predeterminado=Google Chrome estable")
 
 ensure_node() {
   if command -v node >/dev/null 2>&1; then
@@ -434,9 +432,9 @@ fi
 install -D -m 0755 "$KIOSK_BIN_SRC" "$KIOSK_BIN_DST"
 install -D -m 0755 "$CHROMIUM_KIOSK_BIN_SRC" "$CHROMIUM_KIOSK_BIN_DST"
 SUMMARY+=("[install] launcher de kiosk instalado en ${KIOSK_BIN_DST}")
-SUMMARY+=("[install] launcher Chromium kiosk disponible en ${CHROMIUM_KIOSK_BIN_DST}")
+SUMMARY+=("[install] shim legacy pantalla-kiosk-chromium instalado en ${CHROMIUM_KIOSK_BIN_DST}")
 
-# Esta verificación se hace más adelante en el script durante la instalación de Chromium
+# Esta verificación se hace más adelante en el script durante la instalación del navegador
 
 install -D -m 0755 "$BACKEND_LAUNCHER_SRC" "$BACKEND_LAUNCHER_DST"
 SUMMARY+=("[install] launcher de backend instalado en ${BACKEND_LAUNCHER_DST}")
@@ -614,7 +612,6 @@ deploy_unit "$REPO_ROOT/systemd/pantalla-xorg.service" /etc/systemd/system/panta
 deploy_unit "$REPO_ROOT/systemd/pantalla-openbox@.service" /etc/systemd/system/pantalla-openbox@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk@.service" /etc/systemd/system/pantalla-kiosk@.service
 deploy_unit_force "$REPO_ROOT/systemd/pantalla-kiosk-chrome@.service" /etc/systemd/system/pantalla-kiosk-chrome@.service
-deploy_unit "$REPO_ROOT/scripts/systemd/pantalla-kiosk-chromium@.service" /etc/systemd/system/pantalla-kiosk-chromium@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-dash-backend@.service" /etc/systemd/system/pantalla-dash-backend@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-portal@.service" /etc/systemd/system/pantalla-portal@.service
 deploy_unit "$REPO_ROOT/systemd/pantalla-kiosk-watchdog@.service" /etc/systemd/system/pantalla-kiosk-watchdog@.service
@@ -625,11 +622,22 @@ install -D -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk@.service.d/10-sanitize-rol
 install -D -m 0644 "$REPO_ROOT/systemd/pantalla-kiosk-watchdog@.service.d/10-rollback.conf" \
   /etc/systemd/system/pantalla-kiosk-watchdog@.service.d/10-rollback.conf
 
+# Retirar unidad legacy de Chromium si persiste
+CHROMIUM_TEMPLATE="pantalla-kiosk-chromium@.service"
+CHROMIUM_UNIT_PATH="/etc/systemd/system/${CHROMIUM_TEMPLATE}"
+if systemctl list-unit-files "${CHROMIUM_TEMPLATE}" >/dev/null 2>&1; then
+  log_info "Deshabilitando y enmascarando unidad legacy ${CHROMIUM_TEMPLATE}"
+  systemctl disable --now "pantalla-kiosk-chromium@${USER_NAME}.service" 2>/dev/null || true
+  systemctl mask "${CHROMIUM_TEMPLATE}" 2>/dev/null || true
+fi
+rm -f "${CHROMIUM_UNIT_PATH}"
+rm -rf /etc/systemd/system/pantalla-kiosk-chromium@*.service.d
+
 # Registrar disponibilidad del servicio Chrome kiosk
-if [[ ${CHROME_FOUND:-0} -eq 1 ]]; then
-  log_ok "pantalla-kiosk-chrome@.service desplegado en /etc/systemd/system"
+if [[ ${CHROME_AVAILABLE:-0} -eq 1 ]]; then
+  log_ok "pantalla-kiosk-chrome@.service desplegado en /etc/systemd/system (Chrome verificado)"
 else
-  log_warn "Google Chrome no disponible: se mantendrá el fallback de Chromium"
+  log_warn "pantalla-kiosk-chrome@.service desplegado; Google Chrome estable aún no verificado"
 fi
 
 # Recargar systemd DESPUÉS de instalar todos los servicios
@@ -658,8 +666,8 @@ fi
 log_ok "Servicios systemd instalados y verificados"
 SUMMARY+=("[install] recuerda ejecutar pantalla-kiosk-verify para validar kiosk")
 
-DROPIN_DIR="/etc/systemd/system/pantalla-kiosk-chromium@${USER_NAME}.service.d"
-DROPIN_OVERRIDE_SRC="${REPO_ROOT}/deploy/systemd/pantalla-kiosk-chromium@dani.service.d/override.conf"
+DROPIN_DIR="/etc/systemd/system/pantalla-kiosk-chrome@${USER_NAME}.service.d"
+DROPIN_OVERRIDE_SRC="${REPO_ROOT}/deploy/systemd/pantalla-kiosk-chrome@dani.service.d/override.conf"
 DROPIN_OVERRIDE_DST="${DROPIN_DIR}/override.conf"
 install -d -m 0755 "$DROPIN_DIR"
 
@@ -681,7 +689,7 @@ else
 fi
 
 log_info "KIOSK_URL definido en ${DROPIN_OVERRIDE_DST}"
-SUMMARY+=("[install] override kiosk-chromium actualizado (${ACTIVE_KIOSK_URL})")
+SUMMARY+=("[install] override kiosk-chrome actualizado (${ACTIVE_KIOSK_URL})")
 
 if [[ $units_changed -eq 1 ]]; then
   log_info "Systemd units updated"
@@ -762,10 +770,9 @@ else
   log_ok "Nginx responde correctamente"
 fi
 
-# Instalar y validar Chromium (evitar paquetes transicionales a snap)
-log_info "Instalando y verificando Chromium (evitando paquetes transicionales a snap)"
+# Asegurar instalación de Google Chrome estable como navegador principal
+log_info "Instalando y verificando Google Chrome estable"
 
-# Función para verificar si un binario es desde snap
 is_snap_binary() {
   local bin_path="$1"
   if [[ -z "$bin_path" ]]; then
@@ -779,80 +786,30 @@ is_snap_binary() {
   return 1
 }
 
-# Desinstalar Snap Chromium si existe
-log_info "Desinstalando Snap Chromium si existe..."
-if snap list chromium >/dev/null 2>&1; then
-  log_info "Desinstalando chromium desde snap..."
-  snap remove chromium 2>/dev/null || true
-  SUMMARY+=("[install] Snap Chromium desinstalado")
-fi
-
-# Función para instalar Chromium real (no snap)
-install_chromium_real() {
-  log_info "Instalando Chromium real (no snap)..."
-  
-  # Desinstalar chromium-browser transicional si existe y apunta a snap
-  if command -v chromium-browser >/dev/null 2>&1; then
-    if is_snap_binary "$(command -v chromium-browser)"; then
-      log_info "Desinstalando chromium-browser transicional (snap)..."
-      apt remove -y chromium-browser 2>/dev/null || true
-    fi
-  fi
-  
-  # Intentar instalar chromium-browser desde repositorios (.deb estable)
-  log_info "Instalando chromium-browser desde repositorios (.deb)..."
-  apt update
-  if apt install -y chromium-browser 2>&1; then
-    if command -v chromium-browser >/dev/null 2>&1 && ! is_snap_binary "$(command -v chromium-browser)"; then
-      log_ok "chromium-browser instalado desde repositorios: $(command -v chromium-browser)"
-      return 0
-    fi
-  fi
-  
-  # Si chromium-browser no está disponible, intentar chromium
-  if ! command -v chromium-browser >/dev/null 2>&1; then
-    log_info "chromium-browser no disponible, intentando chromium..."
-    if apt install -y chromium 2>&1; then
-      if command -v chromium >/dev/null 2>&1 && ! is_snap_binary "$(command -v chromium)"; then
-        log_ok "chromium instalado desde repositorios: $(command -v chromium)"
-        return 0
-      fi
-    fi
-  fi
-  
-  return 1
-}
-
-# Función para instalar Google Chrome .deb (preferido sobre Chromium)
 install_google_chrome() {
   log_info "Instalando Google Chrome .deb..."
-  
-  # Verificar si ya está instalado
+
   if command -v google-chrome >/dev/null 2>&1; then
     if [[ -x /usr/bin/google-chrome ]]; then
       log_ok "Google Chrome ya está instalado: $(command -v google-chrome)"
       return 0
     fi
   fi
-  
-  # Descargar .deb oficial
+
   CHROME_DEB_URL="https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"
   CHROME_DEB_TMP="/tmp/google-chrome-stable_current_amd64.deb"
-  
+
   log_info "Descargando Google Chrome desde ${CHROME_DEB_URL}..."
   if curl -L -o "$CHROME_DEB_TMP" "$CHROME_DEB_URL" 2>&1; then
     log_ok "Google Chrome .deb descargado"
-    
-    # Instalar dependencias necesarias
+
     apt update
     apt install -y wget gnupg ca-certificates 2>/dev/null || true
-    
-    # Instalar el .deb
+
     log_info "Instalando Google Chrome .deb..."
     if dpkg -i "$CHROME_DEB_TMP" 2>&1; then
-      # Resolver dependencias faltantes
       apt -y -f install 2>&1 || true
-      
+
       if command -v google-chrome >/dev/null 2>&1 && [[ -x /usr/bin/google-chrome ]]; then
         log_ok "Google Chrome instalado correctamente: $(command -v google-chrome)"
         rm -f "$CHROME_DEB_TMP"
@@ -860,154 +817,69 @@ install_google_chrome() {
       fi
     fi
   fi
-  
+
   log_warn "No se pudo instalar Google Chrome .deb"
   rm -f "$CHROME_DEB_TMP"
   return 1
 }
 
-# Función para arreglar permisos del perfil de Chromium
-fix_chromium_profile_permissions() {
-  local profile_dir="$1"
-  local cache_dir="$2"
-  
-  if [[ -d "$profile_dir" ]]; then
-    log_info "Arreglando permisos del perfil de Chromium: $profile_dir"
-    # Eliminar archivos de bloqueo residuales
-    find "$profile_dir" -type f \( -name "SingletonLock" -o -name "SingletonCookie" -o -name "SingletonSocket" -o -name "LOCK" \) -delete 2>/dev/null || true
-    # Cambiar propietario y permisos
-    chown -R "${USER_NAME}:${USER_NAME}" "$profile_dir" 2>/dev/null || true
-    chmod -R u+rwX "$profile_dir" 2>/dev/null || true
-    log_ok "Permisos del perfil arreglados"
-  fi
-  
-  if [[ -d "$cache_dir" ]]; then
-    log_info "Arreglando permisos del cache de Chromium: $cache_dir"
-    find "$cache_dir" -type f -name "LOCK" -delete 2>/dev/null || true
-    chown -R "${USER_NAME}:${USER_NAME}" "$cache_dir" 2>/dev/null || true
-    chmod -R u+rwX "$cache_dir" 2>/dev/null || true
-    log_ok "Permisos del cache arreglados"
-  fi
-}
-
-# Prioridad 1: Intentar instalar Google Chrome .deb (preferido)
-log_info "Verificando/instalando Google Chrome .deb (preferido sobre Chromium)..."
-if install_google_chrome; then
-  if command -v google-chrome >/dev/null 2>&1 && [[ -x /usr/bin/google-chrome ]]; then
-    CHROME_BIN="/usr/bin/google-chrome"
-    CHROME_FOUND=1
-    log_ok "Google Chrome disponible para kiosk: $CHROME_BIN"
-    SUMMARY+=("[install] Google Chrome .deb instalado y disponible")
-  fi
-fi
-
-# Prioridad 2: Verificar si ya hay un Chromium real instalado (fallback)
-if [[ ${CHROME_FOUND:-0} -eq 0 ]]; then
-  log_info "Google Chrome no disponible, verificando Chromium..."
-  if command -v chromium-browser >/dev/null 2>&1; then
-    local chromium_browser_path
-    chromium_browser_path="$(command -v chromium-browser)"
-    if ! is_snap_binary "$chromium_browser_path"; then
-      # Verificar que no sea un script que requiera snap
-      if [[ -f "$chromium_browser_path" ]] && ! grep -q "snap install chromium" "$chromium_browser_path" 2>/dev/null; then
-        CHROMIUM_BIN="$chromium_browser_path"
-        CHROMIUM_FOUND=1
-        log_ok "chromium-browser encontrado (no snap): $CHROMIUM_BIN"
-      fi
-    fi
-  fi
-fi
-
-if [[ ${CHROMIUM_FOUND:-0} -eq 0 ]] && command -v chromium >/dev/null 2>&1; then
-  if ! is_snap_binary "$(command -v chromium)"; then
-    CHROMIUM_BIN="$(command -v chromium)"
-    CHROMIUM_FOUND=1
-    log_ok "chromium encontrado (no snap): $CHROMIUM_BIN"
-  fi
-fi
-
-# Si no hay Chromium real, intentar instalarlo
-if [[ ${CHROMIUM_FOUND:-0} -eq 0 ]]; then
-  if install_chromium_real; then
-    if command -v chromium >/dev/null 2>&1 && ! is_snap_binary "$(command -v chromium)"; then
-      CHROMIUM_BIN="$(command -v chromium)"
-      CHROMIUM_FOUND=1
-      log_ok "Chromium instalado y verificado: $CHROMIUM_BIN"
-    fi
-  fi
-fi
-
-# Buscar Google Chrome como alternativa si Chromium no está disponible
-if [[ ${CHROMIUM_FOUND:-0} -eq 0 ]] && [[ ${CHROME_FOUND:-0} -eq 0 ]]; then
-  log_info "Buscando Google Chrome como alternativa a Chromium..."
-  # Primero buscar si ya está instalado
-  for chrome_candidate in /opt/google/chrome/chrome /usr/bin/google-chrome /usr/bin/google-chrome-stable; do
-    if [[ -x "$chrome_candidate" ]]; then
-      # Verificar que es un binario real
-      if file "$chrome_candidate" 2>/dev/null | grep -qE '(ELF|executable|binary)'; then
-        CHROMIUM_BIN="$chrome_candidate"
-        CHROMIUM_FOUND=1
-        log_ok "Google Chrome encontrado como alternativa: $CHROMIUM_BIN"
-        SUMMARY+=("[install] Google Chrome encontrado como alternativa a Chromium")
-        break
+ensure_chrome_bin() {
+  local -a candidates=(
+    /opt/google/chrome/chrome
+    /usr/bin/google-chrome
+    /usr/bin/google-chrome-stable
+    google-chrome
+    google-chrome-stable
+  )
+  local candidate resolved
+  for candidate in "${candidates[@]}"; do
+    resolved="$(command -v "$candidate" 2>/dev/null || echo "$candidate")"
+    if [[ -x "$resolved" ]] && ! is_snap_binary "$resolved"; then
+      if file "$resolved" 2>/dev/null | grep -qE '(ELF|executable|binary)'; then
+        CHROME_BIN="$resolved"
+        return 0
       fi
     fi
   done
-  
-  # Si no se encontró Chrome instalado, intentar instalarlo como último recurso
-  if [[ ${CHROMIUM_FOUND:-0} -eq 0 ]]; then
-    log_info "Google Chrome no encontrado, intentando instalarlo como último recurso..."
-    if install_google_chrome; then
-      if command -v google-chrome >/dev/null 2>&1 && [[ -x /usr/bin/google-chrome ]]; then
-        CHROMIUM_BIN="/usr/bin/google-chrome"
-        CHROMIUM_FOUND=1
-        log_ok "Google Chrome instalado como alternativa a Chromium: $CHROMIUM_BIN"
-        SUMMARY+=("[install] Google Chrome instalado como alternativa a Chromium")
-      fi
-    fi
+  return 1
+}
+
+if install_google_chrome; then
+  if ensure_chrome_bin; then
+    CHROME_AVAILABLE=1
+    log_ok "Google Chrome estable disponible para kiosk: ${CHROME_BIN}"
+    SUMMARY+=("[install] Google Chrome estable verificado (${CHROME_BIN})")
   fi
 fi
 
-# Fallback a snap solo si no hay alternativa (no recomendado)
-if [[ ${CHROMIUM_FOUND:-0} -eq 0 ]]; then
-  if [[ -x /snap/bin/chromium ]]; then
-    CHROMIUM_BIN="/snap/bin/chromium"
-    CHROMIUM_FOUND=1
-    log_warn "Usando Chromium desde snap (no recomendado): $CHROMIUM_BIN"
-  elif [[ -x /snap/chromium/current/usr/lib/chromium-browser/chrome ]]; then
-    CHROMIUM_BIN="/snap/chromium/current/usr/lib/chromium-browser/chrome"
-    CHROMIUM_FOUND=1
-    log_warn "Usando Chromium desde snap (no recomendado): $CHROMIUM_BIN"
+if [[ ${CHROME_AVAILABLE:-0} -eq 0 ]]; then
+  if ensure_chrome_bin; then
+    CHROME_AVAILABLE=1
+    log_ok "Google Chrome estable detectado: ${CHROME_BIN}"
+    SUMMARY+=("[install] Google Chrome estable detectado (${CHROME_BIN})")
   fi
 fi
 
-if [[ ${CHROMIUM_FOUND:-0} -eq 0 ]]; then
-  log_warn "No se encontró Chromium ni Google Chrome instalado"
-  log_warn "El servicio kiosk no funcionará hasta que se instale Chromium o Google Chrome"
-  log_info "Nota: El script pantalla-kiosk-chromium buscará Google Chrome automáticamente al ejecutarse"
-  SUMMARY+=('[install] WARN: Chromium/Chrome no encontrado - servicio kiosk puede no funcionar')
+if [[ ${CHROME_AVAILABLE:-0} -eq 0 ]]; then
+  log_warn "Google Chrome estable no está disponible tras el intento de instalación"
+  log_warn "El servicio kiosk no se habilitará automáticamente hasta que Chrome esté presente"
+  SUMMARY+=('[install] WARN: Google Chrome estable no disponible - revisa la instalación')
 else
-  log_ok "Chromium disponible para kiosk: $CHROMIUM_BIN"
-  SUMMARY+=('[install] Chromium verificado y disponible')
-  
-  # Arreglar permisos del perfil de Chromium
-  fix_chromium_profile_permissions "$CHROMIUM_HOME_DATA_DIR" "$CHROMIUM_HOME_CACHE_DIR"
-  
-  # Configurar kiosk.env con CHROMIUM_BIN_OVERRIDE si no está configurado
+  fix_browser_profile_permissions "$CHROMIUM_HOME_DATA_DIR" "$CHROMIUM_HOME_CACHE_DIR"
   KIOSK_ENV="/var/lib/pantalla-reloj/state/kiosk.env"
-  if [[ -n "$CHROMIUM_BIN" ]] && ! is_snap_binary "$CHROMIUM_BIN"; then
+  if [[ -n "$CHROME_BIN" ]]; then
     mkdir -p "$(dirname "$KIOSK_ENV")"
     if [[ -f "$KIOSK_ENV" ]]; then
-      if ! grep -q "^CHROMIUM_BIN_OVERRIDE=" "$KIOSK_ENV"; then
-        echo "CHROMIUM_BIN_OVERRIDE=$CHROMIUM_BIN" >> "$KIOSK_ENV"
-        log_ok "CHROMIUM_BIN_OVERRIDE agregado a kiosk.env"
+      if ! grep -q "^CHROME_BIN_OVERRIDE=" "$KIOSK_ENV"; then
+        echo "CHROME_BIN_OVERRIDE=$CHROME_BIN" >> "$KIOSK_ENV"
+        log_ok "CHROME_BIN_OVERRIDE agregado a kiosk.env"
       else
-        sed -i "s|^CHROMIUM_BIN_OVERRIDE=.*|CHROMIUM_BIN_OVERRIDE=$CHROMIUM_BIN|" "$KIOSK_ENV"
-        log_ok "CHROMIUM_BIN_OVERRIDE actualizado en kiosk.env"
+        sed -i "s|^CHROME_BIN_OVERRIDE=.*|CHROME_BIN_OVERRIDE=$CHROME_BIN|" "$KIOSK_ENV"
+        log_ok "CHROME_BIN_OVERRIDE actualizado en kiosk.env"
       fi
     else
-      echo "CHROMIUM_BIN_OVERRIDE=$CHROMIUM_BIN" > "$KIOSK_ENV"
-      log_ok "kiosk.env creado con CHROMIUM_BIN_OVERRIDE"
+      echo "CHROME_BIN_OVERRIDE=$CHROME_BIN" > "$KIOSK_ENV"
+      log_ok "kiosk.env actualizado con CHROME_BIN_OVERRIDE"
     fi
   fi
 fi
@@ -1058,7 +930,7 @@ if [[ ! -f "$STATE_XAUTH" ]]; then
   log_info ".Xauthority inicial creado en $STATE_XAUTH"
 fi
 
-# Iniciar servicios en orden: 1. Xorg, 2. Openbox, 3. Chromium
+# Iniciar servicios en orden: 1. Xorg, 2. Openbox, 3. Chrome
 log_info "Iniciando pantalla-xorg.service"
 if systemctl enable --now "$XORG_SERVICE" 2>&1; then
   log_ok "pantalla-xorg.service habilitado e iniciado"
@@ -1219,7 +1091,6 @@ systemctl disable --now "pantalla-kiosk@${USER_NAME}.service" 2>/dev/null || tru
 
 # Preparar habilitación de servicios kiosk
 CHROME_SERVICE_INSTANCE="pantalla-kiosk-chrome@${USER_NAME}.service"
-CHROME_SERVICE_STARTED=0
 
 # Asegurar que Openbox está habilitado primero
 if systemctl is-enabled --quiet "pantalla-openbox@${USER_NAME}.service" 2>/dev/null; then
@@ -1234,14 +1105,12 @@ else
   fi
 fi
 
-# Intentar habilitar servicio Chrome kiosk (preferido)
-if [[ ${CHROME_FOUND:-0} -eq 1 ]]; then
+if [[ ${CHROME_AVAILABLE:-0} -eq 1 ]]; then
   log_info "Habilitando servicio Chrome kiosk..."
   if [[ -f /etc/systemd/system/pantalla-kiosk-chrome@.service ]]; then
     if systemctl enable --now "$CHROME_SERVICE_INSTANCE" 2>&1; then
       log_ok "${CHROME_SERVICE_INSTANCE} habilitado e iniciado"
       SUMMARY+=("[install] ${CHROME_SERVICE_INSTANCE} habilitado e iniciado")
-      CHROME_SERVICE_STARTED=1
     else
       log_error "ERROR: No se pudo iniciar ${CHROME_SERVICE_INSTANCE}"
       journalctl -u "$CHROME_SERVICE_INSTANCE" -n 30 --no-pager | sed 's/^/  /' || true
@@ -1252,33 +1121,8 @@ if [[ ${CHROME_FOUND:-0} -eq 1 ]]; then
     SUMMARY+=('[install] ERROR: plantilla pantalla-kiosk-chrome ausente')
   fi
 else
-  log_warn "Chrome no disponible: se omitirá ${CHROME_SERVICE_INSTANCE}"
-  SUMMARY+=('[install] WARN: pantalla-kiosk-chrome no habilitado - Chrome no disponible')
-fi
-
-# Fallback a Chromium si Chrome no está operativo
-if [[ $CHROME_SERVICE_STARTED -eq 0 ]]; then
-  KIOSK_SERVICE_INSTANCE="pantalla-kiosk-chromium@${USER_NAME}.service"
-  if [[ ${CHROMIUM_FOUND:-0} -eq 1 ]]; then
-    if systemctl list-units --full --all "$KIOSK_SERVICE_INSTANCE" >/dev/null 2>&1; then
-      log_info "Iniciando ${KIOSK_SERVICE_INSTANCE} (fallback)"
-      if systemctl enable --now "$KIOSK_SERVICE_INSTANCE" 2>&1; then
-        log_ok "${KIOSK_SERVICE_INSTANCE} habilitado e iniciado"
-        SUMMARY+=("[install] ${KIOSK_SERVICE_INSTANCE} habilitado e iniciado (fallback)")
-      else
-        log_error "ERROR: No se pudo iniciar ${KIOSK_SERVICE_INSTANCE}"
-        journalctl -u "$KIOSK_SERVICE_INSTANCE" -n 30 --no-pager | sed 's/^/  /' || true
-        SUMMARY+=('[install] ERROR: fallo al iniciar pantalla-kiosk-chromium')
-      fi
-    else
-      log_error "ERROR: Servicio ${KIOSK_SERVICE_INSTANCE} no encontrado"
-      SUMMARY+=('[install] ERROR: servicio kiosk-chromium no encontrado')
-    fi
-  else
-    log_warn "Chromium no disponible: no se habilitó ${KIOSK_SERVICE_INSTANCE}"
-    systemctl disable --now "$KIOSK_SERVICE_INSTANCE" 2>/dev/null || true
-    SUMMARY+=('[install] WARN: servicio kiosk-chromium NO habilitado - Chromium no disponible')
-  fi
+  log_warn "Google Chrome estable no se pudo verificar; servicio kiosk no se habilitará automáticamente"
+  SUMMARY+=('[install] WARN: pantalla-kiosk-chrome no habilitado - Google Chrome no disponible')
 fi
 
 log_info "Ensuring watchdog disabled"
@@ -1354,18 +1198,18 @@ else
   SUMMARY+=('[install] ERROR: fallo al reiniciar pantalla-openbox')
 fi
 
-# Restart kiosk solo si Chromium está disponible y el backend está listo
-if [[ ${CHROMIUM_FOUND:-0} -eq 1 ]]; then
-  log_info "Reiniciando pantalla-kiosk-chromium@${USER_NAME}.service"
-  if systemctl restart pantalla-kiosk-chromium@${USER_NAME}.service; then
-    log_ok "pantalla-kiosk-chromium@${USER_NAME}.service reiniciado"
+# Reiniciar servicio kiosk solo si Google Chrome está disponible y el backend está listo
+if [[ ${CHROME_AVAILABLE:-0} -eq 1 ]]; then
+  log_info "Reiniciando pantalla-kiosk-chrome@${USER_NAME}.service"
+  if systemctl restart pantalla-kiosk-chrome@${USER_NAME}.service; then
+    log_ok "pantalla-kiosk-chrome@${USER_NAME}.service reiniciado"
     sleep 2
   else
-    log_error "No se pudo reiniciar pantalla-kiosk-chromium@${USER_NAME}.service"
-    SUMMARY+=('[install] ERROR: fallo al reiniciar pantalla-kiosk-chromium')
+    log_error "No se pudo reiniciar pantalla-kiosk-chrome@${USER_NAME}.service"
+    SUMMARY+=("[install] ERROR: fallo al reiniciar pantalla-kiosk-chrome")
   fi
 else
-  log_warn "No se reinició pantalla-kiosk-chromium@${USER_NAME}.service - Chromium no disponible"
+  log_warn "No se reinició pantalla-kiosk-chrome@${USER_NAME}.service - Chrome no disponible"
 fi
 
 log_info "Running post-install checks"
@@ -1420,7 +1264,7 @@ if [[ $VERIFY_STATUS -ne 0 ]]; then
 fi
 SUMMARY+=('[install] pantalla-kiosk-verify completado')
 
-# Ejecutar verificador de kiosk (Chrome o Chromium)
+# Ejecutar verificador de kiosk (Chrome)
 log_info "Ejecutando verificador de kiosk..."
 if [[ -f "$REPO_ROOT/scripts/verify_kiosk.sh" ]]; then
   chmod +x "$REPO_ROOT/scripts/verify_kiosk.sh"

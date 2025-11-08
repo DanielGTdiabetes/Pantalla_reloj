@@ -119,37 +119,19 @@ else
   exit 1
 fi
 
-# Fase 5: Iniciar kiosk (Chrome user o Chromium fallback)
+# Fase 5: Iniciar kiosk (Chrome)
 log_section "FASE 5: INICIAR KIOSK"
 
-# Verificar si Chrome está disponible
-if command -v google-chrome >/dev/null 2>&1 && [[ -x /usr/bin/google-chrome ]]; then
-  log "Google Chrome disponible, iniciando servicio Chrome kiosk..."
-
-  if [[ -f /etc/systemd/system/pantalla-kiosk-chrome@.service ]]; then
-    if systemctl enable --now "pantalla-kiosk-chrome@${TARGET_USER}.service" 2>&1; then
-      log "✓ pantalla-kiosk-chrome@${TARGET_USER}.service iniciado"
-    else
-      log "✗ ERROR: No se pudo iniciar pantalla-kiosk-chrome@${TARGET_USER}.service"
-      systemctl status "pantalla-kiosk-chrome@${TARGET_USER}.service" --no-pager -l | head -20
-    fi
+log "Iniciando servicio Chrome kiosk..."
+if [[ -f /etc/systemd/system/pantalla-kiosk-chrome@.service ]]; then
+  if systemctl enable --now "pantalla-kiosk-chrome@${TARGET_USER}.service" 2>&1; then
+    log "✓ pantalla-kiosk-chrome@${TARGET_USER}.service iniciado"
   else
-    log "⚠ Servicio plantilla pantalla-kiosk-chrome@.service no encontrado, usando Chromium fallback"
-    if systemctl enable --now "pantalla-kiosk-chromium@${TARGET_USER}.service" 2>&1; then
-      log "✓ pantalla-kiosk-chromium@${TARGET_USER}.service iniciado"
-    else
-      log "✗ ERROR: No se pudo iniciar pantalla-kiosk-chromium@${TARGET_USER}.service"
-    fi
+    log "✗ ERROR: No se pudo iniciar pantalla-kiosk-chrome@${TARGET_USER}.service"
+    systemctl status "pantalla-kiosk-chrome@${TARGET_USER}.service" --no-pager -l | head -20
   fi
 else
-  log "Google Chrome no disponible, iniciando Chromium fallback..."
-  if systemctl enable --now "pantalla-kiosk-chromium@${TARGET_USER}.service" 2>&1; then
-    log "✓ pantalla-kiosk-chromium@${TARGET_USER}.service iniciado"
-  else
-    log "✗ ERROR: No se pudo iniciar pantalla-kiosk-chromium@${TARGET_USER}.service"
-    log "Logs del servicio:"
-    journalctl -u "pantalla-kiosk-chromium@${TARGET_USER}.service" -n 30 --no-pager
-  fi
+  log "✗ ERROR: plantilla pantalla-kiosk-chrome@.service no encontrada"
 fi
 
 # Fase 6: Resumen final
@@ -159,12 +141,7 @@ log ""
 log "=== ESTADO DE SERVICIOS ==="
 log "pantalla-xorg.service: $(systemctl is-active pantalla-xorg.service 2>/dev/null || echo 'INACTIVO')"
 log "pantalla-openbox@${TARGET_USER}.service: $(systemctl is-active "pantalla-openbox@${TARGET_USER}.service" 2>/dev/null || echo 'INACTIVO')"
-
-if command -v google-chrome >/dev/null 2>&1; then
-  log "pantalla-kiosk-chrome@${TARGET_USER}.service: $(systemctl is-active "pantalla-kiosk-chrome@${TARGET_USER}.service" 2>/dev/null || echo 'INACTIVO')"
-fi
-
-log "pantalla-kiosk-chromium@${TARGET_USER}.service: $(systemctl is-active "pantalla-kiosk-chromium@${TARGET_USER}.service" 2>/dev/null || echo 'INACTIVO')"
+log "pantalla-kiosk-chrome@${TARGET_USER}.service: $(systemctl is-active "pantalla-kiosk-chrome@${TARGET_USER}.service" 2>/dev/null || echo 'INACTIVO')"
 
 log ""
 log "=== VERIFICACIÓN DISPLAY ==="
@@ -181,5 +158,5 @@ log ""
 log "Si algún servicio sigue fallando, revisa:"
 log "  sudo journalctl -u pantalla-xorg.service -n 50 --no-pager"
 log "  sudo journalctl -u pantalla-openbox@${TARGET_USER}.service -n 50 --no-pager"
-log "  sudo journalctl -u pantalla-kiosk-chromium@${TARGET_USER}.service -n 50 --no-pager"
+log "  sudo journalctl -u pantalla-kiosk-chrome@${TARGET_USER}.service -n 50 --no-pager"
 

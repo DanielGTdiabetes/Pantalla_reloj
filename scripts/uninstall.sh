@@ -79,6 +79,7 @@ CHROMIUM_HOME_CACHE_DIR="/home/${USER_NAME}/.cache/pantalla-reloj/chromium"
 SYSTEMD_UNITS=(
   "pantalla-kiosk@${USER_NAME}.service"
   "pantalla-kiosk-chrome@${USER_NAME}.service"
+  # Legacy shim conservado solo para limpiezas de entornos antiguos
   "pantalla-kiosk-chromium@${USER_NAME}.service"
   "pantalla-portal@${USER_NAME}.service"
   "pantalla-openbox@${USER_NAME}.service"
@@ -108,6 +109,7 @@ rm -f /etc/systemd/system/pantalla-xorg@.service
 rm -f /etc/systemd/system/pantalla-dash-backend@.service
 rm -f /etc/systemd/system/pantalla-portal@.service
 rm -f /etc/systemd/system/pantalla-kiosk-chromium@${USER_NAME}.service.d/override.conf
+rm -f /etc/systemd/system/pantalla-kiosk-chrome@${USER_NAME}.service.d/override.conf
 rm -rf /etc/systemd/system/pantalla-kiosk@.service.d /etc/systemd/system/pantalla-openbox@.service.d /etc/systemd/system/pantalla-dash-backend@.service.d
 
 systemctl daemon-reload

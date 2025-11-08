@@ -84,12 +84,12 @@ Revisión exhaustiva de:
 **Descripción:** Si `importlib.import_module("backend.main")` falla, el servicio solo imprime error y sale con código 3, pero systemd puede reiniciarlo indefinidamente.  
 **Impacto:** IMPORTANTE - Loop de reinicios si hay un error de importación.
 
-### 2.3 pantalla-kiosk-chromium@.service
+### 2.3 pantalla-kiosk-chrome@.service
 
-#### ❌ PROBLEMA 8: No se valida que Chromium exista antes de arrancar
-**Ubicación:** `usr/local/bin/pantalla-kiosk-chromium` líneas 147-150  
-**Descripción:** Si no encuentra Chromium, sale con código 1, pero el servicio systemd puede seguir intentando reiniciar.  
-**Impacto:** IMPORTANTE - Loop de reinicios si Chromium no está instalado.
+#### ✅ PROBLEMA 8: Validación de navegador antes de arrancar
+**Ubicación:** `usr/local/bin/pantalla-kiosk` (see `find_chromium`)
+**Descripción:** El wrapper valida la disponibilidad de Google Chrome (o un override explícito) antes de iniciar el servicio systemd, evitando loops de reinicio cuando el navegador falta.
+**Impacto:** RESUELTO - La lógica actual registra advertencias y no intenta lanzar un binario inexistente.
 
 ---
 

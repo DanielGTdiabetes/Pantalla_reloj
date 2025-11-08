@@ -2,7 +2,7 @@
 
 Sistema reproducible para mini-PC Ubuntu 24.04 LTS con pantalla HDMI 8.8" orientada
 verticalmente. La solución combina **FastAPI** (backend), **React + Vite**
-(frontend) y un stack gráfico mínimo **Xorg + Openbox + Chromium en modo kiosk**
+(frontend) y un stack gráfico mínimo **Xorg + Openbox + Google Chrome estable en modo kiosk**
 (Epiphany queda como opción secundaria).
 
 ## Arquitectura
@@ -560,61 +560,39 @@ variable.
   venv en `/opt/pantalla-reloj/backend/.venv`, instala dependencias con retry x2, valida
   imports críticos (fastapi, uvicorn, python-multipart, icalendar, backend.main) y garantiza
   directorios de datos antes de lanzar uvicorn con uvloop/httptools si están disponibles.
-- `pantalla-kiosk@dani.service`: lanzador agnóstico que prioriza Chromium (deb o snap) y
-  recurre a Firefox si no hay binario Chromium disponible; consume `kiosk.env` para
-  URL y overrides.
-- `pantalla-kiosk-chromium@dani.service`: wrapper legado mantenido para entornos que
-  aún dependan del despliegue antiguo; no se habilita por defecto.
+- `pantalla-kiosk-chrome@dani.service`: plantilla principal que ejecuta `/usr/local/bin/pantalla-kiosk` con Google Chrome estable como navegador kiosk. Requiere que `pantalla-xorg` y `pantalla-openbox@%i` estén activos antes de iniciar.
+- `pantalla-kiosk@dani.service`: lanzador agnóstico (legacy) que mantiene compatibilidad con Firefox como fallback y consume `kiosk.env` para URL y overrides.
+- `pantalla-kiosk-chromium@dani.service`: shim deprecado conservado únicamente para desinstalaciones heredadas; no se habilita ni instala por defecto.
 
 ## Arranque estable (boot hardening)
 
-- **Openbox autostart robusto** (`openbox/autostart`): deja trazas en
-  `/var/log/pantalla-reloj/openbox-autostart.log`, deshabilita DPMS y entrega el
-  control al servicio Chromium para que aplique la geometría conocida.
-- **Sesión X autenticada**: `pantalla-xorg.service` delega en
-  `/usr/lib/pantalla-reloj/xorg-launch.sh`, que genera de forma determinista la
-  cookie `MIT-MAGIC-COOKIE-1` en `/home/dani/.Xauthority` y la reutiliza para
-  Openbox y el navegador.
-- **Lanzador de navegador resiliente**: `pantalla-kiosk@dani.service` selecciona
-  Chromium (`chromium-browser`, `chromium`, snap o `CHROME_BIN_OVERRIDE`) y recurre a
-  Firefox como fallback, reutilizando perfiles persistentes en
-  `/var/lib/pantalla-reloj/state/chromium-kiosk` o `/var/lib/pantalla-reloj/state/firefox-kiosk`.
-- **Orden de arranque garantizado**: `pantalla-openbox@dani.service` requiere
-  `pantalla-xorg.service`, el backend y Nginx (`After=`/`Requires=`) con reinicio
-  automático (`Restart=always`). `pantalla-xorg.service` se activa desde
-  `multi-user.target`, levanta `Xorg :0` en `vt1` y también se reinicia ante fallos.
-- **Healthchecks previos al navegador**: el script de autostart espera a que Nginx y
-  el backend respondan antes de lanzar la ventana kiosk, evitando popups de “la página
-  no responde”.
-- **Grupos del sistema**: durante la instalación `install.sh` añade a `dani` a los
-  grupos `render` y `video`, informando si se requiere reinicio (con opción
-  `--auto-reboot` para reiniciar automáticamente).
-- **Display manager controlado**: el instalador enmascara `display-manager.service`
-  (registrándolo en `/var/lib/pantalla-reloj/state`) y el desinstalador solo lo
-  deshace si lo enmascaramos nosotros, evitando interferencias con sesiones gráficas
-  ajenas.
+- **Openbox autostart robusto** (`openbox/autostart`): deja trazas en `/var/log/pantalla-reloj/openbox-autostart.log`, deshabilita DPMS y entrega el control al servicio Chrome para aplicar la geometría conocida.
+- **Sesión X autenticada**: `pantalla-xorg.service` delega en `/usr/lib/pantalla-reloj/xorg-launch.sh`, que genera de forma determinista la cookie `MIT-MAGIC-COOKIE-1` en `/home/dani/.Xauthority` y la reutiliza para Openbox y el navegador.
+- **Lanzador de navegador resiliente**: `pantalla-kiosk-chrome@%i.service` ejecuta `/usr/local/bin/pantalla-kiosk`, priorizando Google Chrome estable (`/usr/bin/google-chrome` o `CHROME_BIN_OVERRIDE`) y manteniendo compatibilidad con Firefox como última alternativa desde `pantalla-kiosk@%i.service`.
+- **Orden de arranque garantizado**: `pantalla-openbox@dani.service` requiere `pantalla-xorg.service`, el backend y Nginx (`After=`/`Requires=`) con reinicio automático (`Restart=always`). `pantalla-xorg.service` se activa desde `multi-user.target`, levanta `Xorg :0` en `vt1` y también se reinicia ante fallos.
+- **Healthchecks previos al navegador**: el script de autostart espera a que Nginx y el backend respondan antes de lanzar la ventana kiosk, evitando popups de "la página no responde".
+- **Grupos del sistema**: durante la instalación `install.sh` añade a `dani` a los grupos `render` y `video`, informando si se requiere reinicio (con opción `--auto-reboot` para reiniciar automáticamente).
+- **Display manager controlado**: el instalador enmascara `display-manager.service` (registrándolo en `/var/lib/pantalla-reloj/state`) y el desinstalador solo lo deshace si lo enmascaramos nosotros, evitando interferencias con sesiones gráficas ajenas.
 
 ## Kiosk Browser
 
-### Kiosk (Chromium)
+### Kiosk (Google Chrome estable)
 
-- El servicio `pantalla-kiosk-chromium@.service` del repositorio lanza nuestro binario `CHROMIUM_BIN=/usr/local/bin/chromium-kiosk-bin`, evitando cualquier wrapper del snap (`/usr/bin/chromium-browser`).
-- Se declara `After=Wants=graphical.target pantalla-openbox@%i.service` para garantizar que Openbox y Xorg estén listos antes de iniciar Chromium; el límite de reinicios (`StartLimitIntervalSec=30s`, `StartLimitBurst=5`) reside en `[Unit]` para que systemd lo acepte.
-- Variables de entorno críticas se fijan en la propia unit (`DISPLAY=:0`, `XAUTHORITY=/home/%i/.Xauthority`, directorios XDG por usuario) y se limpian locks residuales antes de ejecutar el navegador.
+- El servicio `pantalla-kiosk-chrome@.service` del repositorio lanza `/usr/local/bin/pantalla-kiosk`, evitando wrappers snap y reutilizando el perfil persistente definido en `kiosk.env` (`CHROME_BIN_OVERRIDE`, `CHROMIUM_PROFILE_DIR`, `FIREFOX_PROFILE_DIR`).
+- Se declara `After=`/`Requires=` con `pantalla-openbox@%i.service` y `pantalla-dash-backend@%i.service` para garantizar que Openbox y el backend estén listos antes de iniciar Chrome; el reinicio se gestiona con `Restart=on-failure` y `RestartSec=2`.
+- Variables críticas (`DISPLAY=:0`, `XAUTHORITY=/home/%i/.Xauthority`, `DBUS_SESSION_BUS_ADDRESS`, etc.) residen en la unidad y en `override.conf`, que también fija `KIOSK_URL`.
 - Verificación rápida tras instalar o actualizar:
 
 ```bash
-sudo systemd-analyze verify /etc/systemd/system/pantalla-kiosk-chromium@.service
+sudo systemd-analyze verify /etc/systemd/system/pantalla-kiosk-chrome@.service
 sudo systemctl daemon-reload
 sudo systemctl start pantalla-openbox@dani.service
-sudo systemctl start pantalla-kiosk-chromium@dani.service
-sudo journalctl -u pantalla-kiosk-chromium@dani.service -n 120 --no-pager
-sudo find /home/dani/.local/share/pantalla-reloj/chromium /home/dani/.cache/pantalla-reloj/chromium -name 'LOCK'
+sudo systemctl start pantalla-kiosk-chrome@dani.service
+sudo journalctl -u pantalla-kiosk-chrome@dani.service -n 120 --no-pager
+wmctrl -lx | grep -i 'google-chrome'
 ```
 
-- El journal no debe mostrar `Unknown key name 'StartLimitIntervalSec'`, ni `Command '/usr/bin/chromium-browser' requires the chromium snap to be installed`, ni `xset: unable to open display ":0"`. Tras reiniciar el servicio, no deben quedar archivos `LOCK` persistentes en los directorios del perfil/cache.
-
-### Kiosk estable (Chrome .deb)
+- El journal no debe mostrar errores de DISPLAY ni `Command '/usr/bin/google-chrome' returned non-zero exit status`; tras reiniciar el servicio, no deben quedar archivos `LOCK` persistentes en los directorios del perfil/cache.
 
 **Motivo**: Evitar el wrapper Snap de Chromium y problemas con AppArmor/D-Bus que pueden causar pantalla negra o fallos de arranque.
 
@@ -670,33 +648,25 @@ sudo systemctl enable --now pantalla-openbox@dani.service
 sudo systemctl enable --now pantalla-kiosk@dani.service
 ```
 
-`pantalla-kiosk@.service` carga `/var/lib/pantalla-reloj/state/kiosk.env` y fija
-`DISPLAY=:0`, `XAUTHORITY=/home/%i/.Xauthority`, `GDK_BACKEND=x11`,
-`GTK_USE_PORTAL=0`, `GIO_USE_PORTALS=0` y `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus`
-para que Chromium (paquete deb o snap) funcione sin portales ni errores de bus.
+- `pantalla-kiosk@.service` carga `/var/lib/pantalla-reloj/state/kiosk.env` y fija `DISPLAY=:0`, `XAUTHORITY=/home/%i/.Xauthority`, `GDK_BACKEND=x11`, `GTK_USE_PORTAL=0`, `GIO_USE_PORTALS=0` y `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus` para que Chrome (o derivados basados en Chromium) funcionen sin portales ni errores de bus.
 
 ### Archivo `kiosk.env` (overrides)
 
-`scripts/install.sh` crea `kiosk.env` solo si no existe. El archivo mantiene
-variables persistentes y puede editarse manualmente. Valores admitidos:
+`scripts/install.sh` crea `kiosk.env` solo si no existe. El archivo mantiene variables persistentes y puede editarse manualmente. Valores admitidos:
 
 - `KIOSK_URL` – URL inicial (por defecto `http://127.0.0.1/`).
 - `CHROME_BIN_OVERRIDE` – comando o ruta absoluta para Chromium/Chrome.
 - `FIREFOX_BIN_OVERRIDE` – comando o ruta absoluta para Firefox.
-- `CHROMIUM_PROFILE_DIR` – perfil persistente de Chromium
-  (default `/var/lib/pantalla-reloj/state/chromium-kiosk`).
-- `FIREFOX_PROFILE_DIR` – perfil persistente de Firefox
-  (default `/var/lib/pantalla-reloj/state/firefox-kiosk`).
+- `CHROMIUM_PROFILE_DIR` – perfil persistente de Chromium (default `/var/lib/pantalla-reloj/state/chromium-kiosk`).
+- `FIREFOX_PROFILE_DIR` – perfil persistente de Firefox (default `/var/lib/pantalla-reloj/state/firefox-kiosk`).
 - `PANTALLA_CHROMIUM_VERBOSE` – `1` para añadir `--v=1` y forzar trazas VERBOSE.
-- `PANTALLA_ALLOW_SWIFTSHADER` – `1` para permitir el fallback
-  `--enable-unsafe-swiftshader` si ANGLE falla.
+- `PANTALLA_ALLOW_SWIFTSHADER` – `1` para permitir el fallback `--enable-unsafe-swiftshader` si ANGLE falla.
 
 Después de editar `kiosk.env`, ejecuta `sudo systemctl restart pantalla-kiosk@dani`.
 
 ### Orden de preferencia del navegador
 
-1. `CHROME_BIN_OVERRIDE` (o `CHROMIUM_BIN_OVERRIDE` heredado) si apunta a un
-   ejecutable válido.
+1. `CHROME_BIN_OVERRIDE` (o `CHROMIUM_BIN_OVERRIDE` heredado) si apunta a un ejecutable válido.
 2. `chromium-browser`.
 3. `chromium`.
 4. `/snap/bin/chromium`.
@@ -706,41 +676,23 @@ Después de editar `kiosk.env`, ejecuta `sudo systemctl restart pantalla-kiosk@d
 8. `firefox`.
 9. `firefox-esr`.
 
-Si no se encuentra ningún binario compatible el servicio escribe un error y se
-reinicia tras `RestartSec=2`.
+Si no se encuentra ningún binario compatible el servicio escribe un error y se reinicia tras `RestartSec=2`.
 
 ### Flags y perfiles persistentes
 
-Chromium se lanza con los flags mínimos requeridos para kiosk estable:
-`--kiosk --no-first-run --no-default-browser-check --password-store=basic`,
-`--ozone-platform=x11`, `--ignore-gpu-blocklist`, `--enable-webgl` y
-`--use-gl=egl-angle`, siempre acompañados de `--user-data-dir=<perfil>`. Firefox
-recibe `--kiosk --new-instance --profile <dir> --no-remote`.
+Chrome/Chromium se lanza con los flags mínimos requeridos para kiosk estable: `--kiosk --no-first-run --no-default-browser-check --password-store=basic`, `--ozone-platform=x11`, `--ignore-gpu-blocklist`, `--enable-webgl` y `--use-gl=egl-angle`, siempre acompañados de `--user-data-dir=<perfil>`. Firefox recibe `--kiosk --new-instance --profile <dir> --no-remote`.
 
-El wrapper elimina previamente cualquier ventana `pantalla-kiosk` o
-`chrome.chromium` con `wmctrl -ic` y replica el stderr del navegador en
-`/tmp/pantalla-chromium.XXXXXX.log` y `/var/log/pantalla/browser-kiosk.log`. Usa
-`PANTALLA_CHROMIUM_VERBOSE=1` para habilitar `--v=1` o `PANTALLA_ALLOW_SWIFTSHADER=1`
-para permitir el fallback software.
+El wrapper elimina previamente cualquier ventana `pantalla-kiosk` o `chrome.chromium` con `wmctrl -ic` y replica el stderr del navegador en `/tmp/pantalla-chromium.XXXXXX.log` y `/var/log/pantalla/browser-kiosk.log`. Usa `PANTALLA_CHROMIUM_VERBOSE=1` para habilitar `--v=1` o `PANTALLA_ALLOW_SWIFTSHADER=1` para permitir el fallback software.
 
-Los perfiles viven en `/var/lib/pantalla-reloj/state/chromium-kiosk` y
-`/var/lib/pantalla-reloj/state/firefox-kiosk` (permisos `0700`). Puedes moverlos
-editando `kiosk.env`.
+Los perfiles viven en `/var/lib/pantalla-reloj/state/chromium-kiosk` y `/var/lib/pantalla-reloj/state/firefox-kiosk` (permisos `0700`). Puedes moverlos editando `kiosk.env`.
 
 ### Troubleshooting DBus y portals
 
-El entorno fija explícitamente `DBUS_SESSION_BUS_ADDRESS`, `GTK_USE_PORTAL=0` y
-`GIO_USE_PORTALS=0`. Si reaparece el error “Failed to connect to the bus: Could
-not parse server address”, confirma que `/run/user/<UID>/bus` existe y que
-`systemctl show pantalla-kiosk@dani -p Environment` refleja la variable. Eliminar
-portals evita cuadros de diálogo inesperados en modo kiosk.
+El entorno fija explícitamente `DBUS_SESSION_BUS_ADDRESS`, `GTK_USE_PORTAL=0` y `GIO_USE_PORTALS=0`. Si reaparece el error "Failed to connect to the bus: Could not parse server address", confirma que `/run/user/<UID>/bus` existe y que `systemctl show pantalla-kiosk@dani -p Environment` refleja la variable. Eliminar portals evita cuadros de diálogo inesperados en modo kiosk.
 
 ### Logs y diagnóstico
 
-El lanzador escribe en `/var/log/pantalla/browser-kiosk.log`. Para revisar la
-ejecución completa usa `journalctl -u pantalla-kiosk@dani.service -n 120 --no-pager -l`.
-`/usr/local/bin/diag_kiosk.sh` sigue siendo compatible y vuelca variables, PID y
-trazas `diagnostics:auto-pan` durante 20 segundos.
+El lanzador escribe en `/var/log/pantalla/browser-kiosk.log`. Para revisar la ejecución completa usa `journalctl -u pantalla-kiosk@dani.service -n 120 --no-pager -l`. `/usr/local/bin/diag_kiosk.sh` sigue siendo compatible y vuelca variables, PID y trazas `diagnostics:auto-pan` durante 20 segundos.
 
 ### Diagnóstico rápido
 
@@ -753,13 +705,7 @@ DISPLAY=:0 wmctrl -lx
 
 ### Modo diagnóstico del kiosk
 
-Para forzar temporalmente `/diagnostics/auto-pan` añade la entrada
-`KIOSK_URL=http://127.0.0.1/diagnostics/auto-pan?force=1&reducedMotion=0` a
-`kiosk.env` o aplica un drop-in con `systemctl edit pantalla-kiosk@dani.service`.
-Recarga con `sudo systemctl daemon-reload` (si creaste un drop-in) y reinicia el
-servicio. Comprueba el valor efectivo con
-`systemctl show pantalla-kiosk@dani -p Environment` y vuelve a
-`http://127.0.0.1/` al terminar.
+Para forzar temporalmente `/diagnostics/auto-pan` añade la entrada `KIOSK_URL=http://127.0.0.1/diagnostics/auto-pan?force=1&reducedMotion=0` a `kiosk.env` o aplica un drop-in con `systemctl edit pantalla-kiosk@dani.service`. Recarga con `sudo systemctl daemon-reload` (si creaste un drop-in) y reinicia el servicio. Comprueba el valor efectivo con `systemctl show pantalla-kiosk@dani -p Environment` y vuelve a `http://127.0.0.1/` al terminar.
 
 ## Instalación
 
@@ -767,10 +713,8 @@ servicio. Comprueba el valor efectivo con
 
 - Ubuntu 24.04 LTS con usuario **dani** creado y sudo disponible.
 - Paquetes base: `sudo apt-get install -y git curl ca-certificates`.
-- Node.js 20.x instalado desde NodeSource u otra fuente compatible (incluye
-  Corepack y npm; **no** instales `npm` con `apt`).
-- Acceso a Internet para descargar dependencias del backend/frontend y,
-  opcionalmente, el tarball oficial de Firefox.
+- Node.js 20.x instalado desde NodeSource u otra fuente compatible (incluye Corepack y npm; **no** instales `npm` con `apt`).
+- Acceso a Internet para descargar dependencias del backend/frontend y, opcionalmente, el tarball oficial de Firefox.
 
 ### Instalación automatizada
 
@@ -778,38 +722,22 @@ servicio. Comprueba el valor efectivo con
 sudo bash scripts/install.sh --non-interactive
 ```
 
-Si quieres conservar Firefox como navegador alternativo, añade la bandera
-`--with-firefox` al comando anterior.
+Si quieres conservar Firefox como navegador alternativo, añade la bandera `--with-firefox` al comando anterior.
 
-El instalador es idempotente: puedes ejecutarlo varias veces y dejará el sistema
-en un estado consistente. Durante la instalación:
+El instalador es idempotente: puedes ejecutarlo varias veces y dejará el sistema en un estado consistente. Durante la instalación:
 
 - Se validan e instalan las dependencias APT requeridas.
 - Se habilita Corepack con `npm` actualizado sin usar `apt install npm`.
-- Se instala el lanzador multi-navegador (`/usr/local/bin/pantalla-kiosk`) y la
-  unidad `pantalla-kiosk@.service`, creando `kiosk.env` solo si falta para evitar
-  sobrescrituras.
-- Se prepara el backend (venv + `requirements.txt`) sirviendo en
-  `http://127.0.0.1:8081` y se crea `/var/lib/pantalla-reloj/config.json` con el layout
-  `full`, panel derecho y overlay oculto.
-- Se construye el frontend (`dash-ui`) aplicando las variables Vite por defecto y
-  se publica en `/var/www/html`.
+- Se instala el lanzador multi-navegador (`/usr/local/bin/pantalla-kiosk`) y la unidad `pantalla-kiosk@.service`, creando `kiosk.env` solo si falta para evitar sobrescrituras.
+- Se prepara el backend (venv + `requirements.txt`) sirviendo en `http://127.0.0.1:8081` y se crea `/var/lib/pantalla-reloj/config.json` con el layout `full`, panel derecho y overlay oculto.
+- Se construye el frontend (`dash-ui`) aplicando las variables Vite por defecto y se publica en `/var/www/html`.
 - Se configura Nginx como reverse proxy (`/api/` → backend) y servidor estático.
-- Se instalan y activan las unidades systemd (`pantalla-xorg.service`,
-  `pantalla-openbox@dani.service`, `pantalla-dash-backend@dani.service`).
-- **Espera activa del backend**: El instalador espera hasta 60s (con mensajes cada 5s)
-  a que el backend responda en `/api/health` con `status=ok`. Si falla, muestra los logs
-  del servicio (`journalctl -u pantalla-dash-backend@dani.service -n 150 -o short-iso`)
-  y aborta la instalación para evitar servicios en estado inconsistente.
-- Se asegura la rotación de la pantalla a horizontal y se lanza el navegador kiosk
-  (Chromium por defecto, Firefox como fallback) apuntando a `http://127.0.0.1`.
-- Crea `/var/log/pantalla`, `/var/lib/pantalla` y `/var/lib/pantalla-reloj/state`,
-  asegurando que la cookie `~/.Xauthority` exista con permisos correctos para
-  `dani`. El servicio backend usa `StateDirectory=pantalla-reloj` para crear
-  `/var/lib/pantalla-reloj` automáticamente con permisos correctos.
+- Se instalan y activan las unidades systemd (`pantalla-xorg.service`, `pantalla-openbox@dani.service`, `pantalla-dash-backend@dani.service`).
+- **Espera activa del backend**: El instalador espera hasta 60s (con mensajes cada 5s) a que el backend responda en `/api/health` con `status=ok`. Si falla, muestra los logs del servicio (`journalctl -u pantalla-dash-backend@dani.service -n 150 -o short-iso`) y aborta la instalación para evitar servicios en estado inconsistente.
+- Se asegura la rotación de la pantalla a horizontal y se lanza el navegador kiosk (Chrome por defecto, Firefox como fallback) apuntando a `http://127.0.0.1`.
+- Crea `/var/log/pantalla`, `/var/lib/pantalla` y `/var/lib/pantalla-reloj/state`, asegurando que la cookie `~/.Xauthority` exista con permisos correctos para `dani`. El servicio backend usa `StateDirectory=pantalla-reloj` para crear `/var/lib/pantalla-reloj` automáticamente con permisos correctos.
 
-Al finalizar verás un resumen con el estado del backend, frontend, Nginx y los
-servicios systemd.
+Al finalizar verás un resumen con el estado del backend, frontend, Nginx y los servicios systemd.
 
 ## Desinstalación
 
@@ -817,18 +745,13 @@ servicios systemd.
 sudo bash scripts/uninstall.sh
 ```
 
-Detiene y elimina los servicios, borra `/opt/pantalla`, `/opt/firefox`,
-`/var/lib/pantalla`, `/var/log/pantalla`, restaura `/var/www/html` con el HTML
-por defecto y elimina el symlink de Firefox si apuntaba a `/opt/firefox`.
-También desinstala las unidades systemd sin reactivar ningún display manager.
+Detiene y elimina los servicios, borra `/opt/pantalla`, `/opt/firefox`, `/var/lib/pantalla`, `/var/log/pantalla`, restaura `/var/www/html` con el HTML por defecto y elimina el symlink de Firefox si apuntaba a `/opt/firefox`. También desinstala las unidades systemd sin reactivar ningún display manager.
 
 ## Health check y troubleshooting
 
-- Verificar backend: `curl -sf http://127.0.0.1:8081/api/health` (debe devolver
-  HTTP 200 con `{"status": "ok"}`).
+- Verificar backend: `curl -sf http://127.0.0.1:8081/api/health` (debe devolver HTTP 200 con `{"status": "ok"}`).
 - Verificar Nginx: `sudo systemctl is-active nginx`.
-- Verificar servicios gráficos: `sudo systemctl is-active pantalla-xorg.service`,
-  `sudo systemctl is-active pantalla-openbox@dani.service`.
+- Verificar servicios gráficos: `sudo systemctl is-active pantalla-xorg.service`, `sudo systemctl is-active pantalla-openbox@dani.service`.
 - Verificar backend por systemd: `sudo systemctl status pantalla-dash-backend@dani.service`.
 - Logs del backend: `/tmp/backend-launch.log`.
 - Errores de Nginx: `/var/log/nginx/pantalla-reloj.error.log`.
@@ -1022,235 +945,3 @@ Si no se especifica `[usuario]`, el script intenta detectarlo automáticamente d
 
 **Test falla con "Config no contiene bloque overlay":**
 - **Causa**: La configuración no tiene bloque `ui_overlay` o `ui_global.overlay`
-- **Solución**: Verificar la configuración:
-  ```bash
-  curl -s http://127.0.0.1:8081/api/config | python3 -m json.tool | grep -A 10 overlay
-  ```
-  Si falta, activar el overlay desde la UI en `/config` o añadirlo manualmente a la configuración.
-
-**Test falla con "Fallo al verificar calendar status" o "status" != "ok":**
-- **Causa**: El calendario ICS no se procesó correctamente o está corrupto
-- **Solución**: Verificar el estado del calendario:
-  ```bash
-  curl -s http://127.0.0.1:8081/api/calendar/status | python3 -m json.tool
-  ```
-  Revisar el campo `note` para el motivo del error específico. Verificar que el archivo ICS tenga formato válido (RFC 5545).
-
-Si algún test falla, el script mostrará el error específico con mensajes claros para facilitar el diagnóstico.
-
-Para pruebas mínimas de runtime post-arranque, usa:
-
-```bash
-bash scripts/smoke_runtime.sh
-```
-
-Este script verifica:
-1. Health 200 → status="ok"
-2. Calendar status endpoint (ok/empty/stale sin errores de proveedor)
-3. Config path correcto (`/var/lib/pantalla-reloj/config.json` y no "default/legacy")
-
-### Runbook: pantalla negra + puntero
-
-1. Revisar servicios clave:
-   ```bash
-   sudo systemctl status pantalla-xorg.service pantalla-openbox@dani.service \
-     pantalla-dash-backend@dani.service pantalla-kiosk@dani.service
-   ```
-2. Si el backend falló, inspeccionar `/tmp/backend-launch.log`; para reiniciar:
-   ```bash
-   sudo systemctl restart pantalla-dash-backend@dani.service
-   curl -sS http://127.0.0.1:8081/healthz
-   ```
-3. Validar que Chromium tenga acceso a DISPLAY=:0:
-   ```bash
-   sudo -u dani env DISPLAY=:0 XAUTHORITY=/home/dani/.Xauthority \
-     chromium-browser --version
-   ```
-   Si falla con "Authorization required", revisa permisos de `~/.Xauthority`.
-4. Diagnosticar geometría activa y ventanas:
-   ```bash
-   DISPLAY=:0 XAUTHORITY=/home/dani/.Xauthority xrandr --query
-   DISPLAY=:0 XAUTHORITY=/home/dani/.Xauthority wmctrl -lx
-   ```
-5. Reaplicar la secuencia mínima de `xrandr` si aparece `BadMatch`:
-   ```bash
-   DISPLAY=:0 XAUTHORITY=/home/dani/.Xauthority xrandr --fb 1920x1920
-   DISPLAY=:0 XAUTHORITY=/home/dani/.Xauthority \
-     xrandr --output HDMI-1 --mode 480x1920 --primary --pos 0x0 --rotate left
-   ```
-6. Si persiste la pantalla negra, revisa el journal del servicio kiosk:
-   ```bash
-   journalctl -u pantalla-kiosk@dani.service -n 120 --no-pager -l
-   ```
-
-### Troubleshooting: Restart Loop del Backend
-
-Si el servicio `pantalla-dash-backend@dani.service` entra en un ciclo de reinicios (`restart loop`), sigue estos pasos:
-
-#### 1. Diagnosticar el problema
-
-```bash
-# Ver estado del servicio y últimos reinicios
-sudo systemctl status pantalla-dash-backend@dani.service
-
-# Ver logs detallados (últimos 150 registros con timestamp)
-journalctl -u pantalla-dash-backend@dani.service -n 150 -o short-iso
-
-# Verificar que el servicio está en restart loop
-systemctl show pantalla-dash-backend@dani.service -p ActiveState,Result
-```
-
-#### 2. Verificar dependencias e imports
-
-El launcher valida imports críticos antes de lanzar. Si fallan, revisa:
-
-```bash
-# Verificar venv existe y es válido
-ls -la /opt/pantalla-reloj/backend/.venv/bin/python
-
-# Probar imports manualmente
-sudo -u dani /opt/pantalla-reloj/backend/.venv/bin/python -c "import fastapi; import uvicorn; import multipart; import icalendar; import backend.main"
-
-# Si algún import falla, reinstalar dependencias
-sudo -u dani /opt/pantalla-reloj/backend/.venv/bin/pip install -r /opt/pantalla-reloj/backend/requirements.txt
-```
-
-#### 3. Verificar permisos de directorios
-
-```bash
-# Verificar StateDirectory
-ls -ld /var/lib/pantalla-reloj/
-# Debe ser: drwxr-xr-x dani dani (o similar con owner correcto)
-
-# Verificar directorio ICS
-ls -ld /var/lib/pantalla-reloj/ics/
-# Debe ser: drwx------ dani dani (0700)
-
-# Verificar config.json
-ls -l /var/lib/pantalla-reloj/config.json
-# Debe ser: -rw-r--r-- dani dani (0644)
-
-# Si los permisos están incorrectos, corregir:
-sudo install -d -m 0755 -o dani -g dani /var/lib/pantalla-reloj
-sudo install -d -m 0700 -o dani -g dani /var/lib/pantalla-reloj/ics
-sudo chown dani:dani /var/lib/pantalla-reloj/config.json
-sudo chmod 0644 /var/lib/pantalla-reloj/config.json
-```
-
-#### 4. Verificar StateDirectory en systemd
-
-El unit debe tener `StateDirectory=pantalla-reloj` (no `pantalla`). Verificar:
-
-```bash
-systemctl cat pantalla-dash-backend@dani.service | grep StateDirectory
-```
-
-Si muestra `StateDirectory=pantalla`, corregir instalando el unit actualizado:
-
-```bash
-sudo systemctl stop pantalla-dash-backend@dani.service
-sudo install -D -m 0644 systemd/pantalla-dash-backend@.service /etc/systemd/system/pantalla-dash-backend@.service
-sudo systemctl daemon-reload
-sudo systemctl start pantalla-dash-backend@dani.service
-```
-
-#### 5. Verificar puerto y variables de entorno
-
-```bash
-# Verificar que PORT está definido
-systemctl show pantalla-dash-backend@dani.service -p Environment
-
-# Verificar que el puerto 8081 no está ocupado
-sudo lsof -i :8081 || echo "Puerto libre"
-```
-
-#### 6. Reinstalar backend desde cero
-
-Si nada funciona, reinstalar el backend:
-
-```bash
-# Detener servicio
-sudo systemctl stop pantalla-dash-backend@dani.service
-
-# Eliminar venv y recrear
-sudo rm -rf /opt/pantalla-reloj/backend/.venv
-sudo -u dani python3 -m venv /opt/pantalla-reloj/backend/.venv
-sudo -u dani /opt/pantalla-reloj/backend/.venv/bin/pip install --upgrade pip wheel
-sudo -u dani /opt/pantalla-reloj/backend/.venv/bin/pip install -r /opt/pantalla-reloj/backend/requirements.txt
-
-# Verificar imports
-sudo -u dani /opt/pantalla-reloj/backend/.venv/bin/python -c "import backend.main" || echo "ERROR: Imports fallan"
-
-# Reiniciar servicio
-sudo systemctl start pantalla-dash-backend@dani.service
-
-# Verificar que arranca correctamente (esperar hasta 30s por TimeoutStartSec)
-sleep 35
-curl -sfS http://127.0.0.1:8081/api/health | jq -r '.status' || echo "Backend no responde"
-```
-
-#### 7. Verificar health después del arranque
-
-Después de corregir el problema, verifica que el backend esté funcionando:
-
-```bash
-# Esperar hasta 15s para que arranque (según DoD)
-for i in {1..15}; do
-  if curl -sfS http://127.0.0.1:8081/api/health | jq -e '.status == "ok"' >/dev/null 2>&1; then
-    echo "Backend OK tras ${i}s"
-    exit 0
-  fi
-  sleep 1
-done
-echo "Backend no responde tras 15s"
-```
-
-#### 8. Ejecutar smoke test de runtime
-
-Una vez el servicio esté estable, verifica con el smoke test:
-
-```bash
-bash scripts/smoke_runtime.sh
-```
-
-Si el smoke test pasa pero el servicio sigue reiniciándose, revisa `journalctl -u pantalla-dash-backend@dani.service -f` en tiempo real para ver el error exacto antes del restart.
-
-#### Errores comunes y soluciones
-
-- **"ERROR: fastapi no importable"**: Reinstalar dependencias (`pip install -r requirements.txt`).
-- **"ERROR: backend.main no importable"**: Verificar `PYTHONPATH=/opt/pantalla-reloj` y que el código backend esté en `/opt/pantalla-reloj/backend/`.
-- **PermissionError al crear directorios**: Verificar permisos de `/var/lib/pantalla-reloj` y que el usuario del servicio tenga acceso.
-- **"Port already in use"**: Verificar que no hay otra instancia corriendo (`lsof -i :8081`) o cambiar `Environment=PORT=8082` temporalmente.
-
-## Corrección de permisos
-
-```bash
-sudo bash scripts/fix_permissions.sh [usuario] [grupo]
-```
-
-Por defecto ajusta permisos para `dani:dani` y vuelve a asignar `/var/www/html` a
-`www-data`.
-
-## Reparación del entorno kiosk
-
-Si Firefox, Xorg u Openbox quedaron en un estado inconsistente (por ejemplo, un
-symlink roto en `/usr/local/bin/firefox` o permisos erróneos en
-`/run/user/1000`), ejecuta:
-
-```bash
-sudo KIOSK_USER=dani scripts/fix_kiosk_env.sh --with-firefox
-```
-
-El script reinstala el navegador desde Mozilla (opcional con
-`--with-firefox`), restablece `~/.mozilla/pantalla-kiosk`, `.Xauthority`,
-copias actualizadas de los servicios `pantalla-*.service` y reactiva
-automáticamente `pantalla-xorg`, `pantalla-openbox@dani`,
-`pantalla-dash-backend@dani` y `pantalla-kiosk@dani`.
-
-## Desarrollo local
-
-- Backend: `cd backend && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && uvicorn main:app --reload`
-- Frontend: `cd dash-ui && npm install && npm run dev`
-
-Puedes sobreescribir rutas del backend exportando `PANTALLA_STATE_DIR`,
-`PANTALLA_CONFIG_FILE` o `PANTALLA_CACHE_DIR` durante el desarrollo.

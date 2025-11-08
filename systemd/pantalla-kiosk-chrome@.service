@@ -1,29 +1,24 @@
 [Unit]
-Description=Pantalla Reloj - Kiosk Chrome (%i)
-After=default.target
-Wants=default.target
+Description=Pantalla_reloj Chrome Kiosk for user %i
+After=pantalla-xorg.service pantalla-openbox@%i.service pantalla-dash-backend@%i.service
+Requires=pantalla-openbox@%i.service pantalla-dash-backend@%i.service
+Wants=pantalla-xorg.service
 
 [Service]
-Type=simple
 User=%i
-Group=%i
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/%i/.Xauthority
-Environment=XDG_RUNTIME_DIR=/run/user/%U
-ExecStartPre=/usr/bin/bash -lc 'pkill -9 -f "chrom(e|ium).*--kiosk" || true'
-ExecStart=/usr/bin/google-chrome \
-  --kiosk --app=http://127.0.0.1/ \
-  --no-first-run --no-default-browser-check \
-  --disable-translate --disable-infobars \
-  --disable-renderer-backgrounding \
-  --disable-background-timer-throttling \
-  --hide-scrollbars \
-  --ozone-platform=x11 \
-  --enable-logging=stderr --v=0
-Restart=always
+Environment=GDK_BACKEND=x11
+Environment=GTK_USE_PORTAL=0
+Environment=GIO_USE_PORTALS=0
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
+EnvironmentFile=-/var/lib/pantalla-reloj/state/kiosk.env
+ExecStartPre=/bin/sh -lc 'xset -dpms; xset s off; xset s noblank || true'
+ExecStart=/usr/local/bin/pantalla-kiosk
+Restart=on-failure
 RestartSec=2
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 
 

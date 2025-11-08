@@ -28,9 +28,9 @@ log() {
 
 STATE_DIR="/var/lib/pantalla-reloj/state"
 ENV_FILE="${STATE_DIR}/kiosk.env"
-DROPIN_DIR="/etc/systemd/system/pantalla-kiosk-chromium@${TARGET_USER}.service.d"
+DROPIN_DIR="/etc/systemd/system/pantalla-kiosk-chrome@${TARGET_USER}.service.d"
 DROPIN_FILE="${DROPIN_DIR}/10-kiosk-url.conf"
-SERVICE="pantalla-kiosk-chromium@${TARGET_USER}.service"
+SERVICE="pantalla-kiosk-chrome@${TARGET_USER}.service"
 
 log "configurando KIOSK_URL=${TARGET_URL} para ${TARGET_USER}"
 install -d -m 0755 "$STATE_DIR"

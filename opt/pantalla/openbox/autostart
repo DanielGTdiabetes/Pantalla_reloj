@@ -9,7 +9,7 @@ if command -v xsetroot >/dev/null 2>&1; then
   DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xsetroot -solid black >/dev/null 2>&1 || true
 fi
 
-# El navegador se lanza desde systemd (pantalla-kiosk-chromium@); no iniciar nada aquí.
+# El navegador se lanza desde systemd (pantalla-kiosk-chrome@); no iniciar nada aquí.
 
 STATE_DIR=/var/lib/pantalla-reloj/state
 SESSION_FILE="${STATE_DIR}/session.env"

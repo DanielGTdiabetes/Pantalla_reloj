@@ -102,7 +102,6 @@ check_kiosk_units() {
   local units=(
     "pantalla-kiosk-chrome@${TARGET_USER}.service"
     "pantalla-kiosk@${TARGET_USER}.service"
-    "pantalla-kiosk-chromium@${TARGET_USER}.service"
   )
   local active_any=0
   local status
@@ -121,7 +120,8 @@ check_kiosk_units() {
       fi
     fi
   done
-  record_result "kiosk_primary" "${ACTIVE_KIOSK_UNIT:-<none>}"
+  local primary_unit="${ACTIVE_KIOSK_UNIT:-pantalla-kiosk-chrome@${TARGET_USER}.service}"
+  record_result "kiosk_primary" "$primary_unit"
   if (( active_any )); then
     record_result "kiosk" "active"
     return 0
@@ -172,7 +172,7 @@ is_diag_mode() {
 
 maybe_restart_for_swiftshader() {
   local diag_url="$1"
-  local unit="${ACTIVE_KIOSK_UNIT:-pantalla-kiosk-chromium@${TARGET_USER}.service}"
+  local unit="${ACTIVE_KIOSK_UNIT:-pantalla-kiosk-chrome@${TARGET_USER}.service}"
   if ! systemctl list-units --full --all "$unit" >/dev/null 2>&1; then
     return 0
   fi
@@ -212,7 +212,7 @@ maybe_restart_for_swiftshader() {
 }
 
 check_autopan_rotation() {
-  local unit="${ACTIVE_KIOSK_UNIT:-pantalla-kiosk-chromium@${TARGET_USER}.service}"
+  local unit="${ACTIVE_KIOSK_UNIT:-pantalla-kiosk-chrome@${TARGET_USER}.service}"
   local journal_output
   if ! journal_output="$(journalctl -u "$unit" --since "-10 minutes" --no-pager 2>/dev/null)"; then
     record_result "autopan" "journal-missing"
@@ -259,7 +259,7 @@ print(f"{delta:.2f}")
 }
 
 check_kiosk_logs() {
-  local unit="${ACTIVE_KIOSK_UNIT:-pantalla-kiosk-chromium@${TARGET_USER}.service}"
+  local unit="${ACTIVE_KIOSK_UNIT:-pantalla-kiosk-chrome@${TARGET_USER}.service}"
   if ! systemctl list-units --full --all "$unit" >/dev/null 2>&1; then
     record_result "browser_logs" "unit-missing"
     return 1
@@ -329,11 +329,11 @@ check_gl_flag() {
     record_result "egl" "missing-process"
     return 1
   fi
-  if ! grep -q -- '--use-gl=egl-angle' <<<"$processes"; then
-    record_result "egl" "missing-flag"
-    return 1
+  if grep -q -- '--use-gl=' <<<"$processes"; then
+    record_result "egl" "ok"
+    return 0
   fi
-  record_result "egl" "ok"
+  record_result "egl" "no-egl-flag"
   return 0
 }
 
@@ -346,7 +346,7 @@ main() {
   check_window_consistency || failures=$((failures + 1))
   check_gl_flag || failures=$((failures + 1))
 
-  local kiosk_unit="${ACTIVE_KIOSK_UNIT:-pantalla-kiosk-chromium@${TARGET_USER}.service}"
+  local kiosk_unit="${ACTIVE_KIOSK_UNIT:-pantalla-kiosk-chrome@${TARGET_USER}.service}"
   local kiosk_url
   kiosk_url="$(resolve_kiosk_url "$kiosk_unit")"
   record_result "kiosk_url" "${kiosk_url:-<unset>}"

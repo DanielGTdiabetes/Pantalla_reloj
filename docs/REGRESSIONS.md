@@ -191,7 +191,7 @@ Rutas y detección de binario priorizando Snap.
 
 ```bash
 # Verificar que no se usa Snap
-grep -r "snap" /etc/systemd/system/pantalla-kiosk-chromium@*.service
+grep -r "snap" /etc/systemd/system/pantalla-kiosk-chrome@*.service
 # No debe haber rutas de snap
 
 # Verificar directorios

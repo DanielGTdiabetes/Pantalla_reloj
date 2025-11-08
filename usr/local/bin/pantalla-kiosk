@@ -58,11 +58,11 @@ find_chromium() {
   # Priorizar binarios normales de Chromium (sin Snap)
   local -a candidates=(
     /usr/local/bin/chromium-kiosk-bin
+    google-chrome-stable
+    google-chrome
     chromium-browser
     chromium
     chromium-browser-stable
-    google-chrome-stable
-    google-chrome
   )
   local candidate resolved
   for candidate in "${candidates[@]}"; do
