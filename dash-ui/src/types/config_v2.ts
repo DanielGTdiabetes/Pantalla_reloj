@@ -96,6 +96,16 @@ export type OverlayConfig = {
   rotator?: RotatorConfig;
 };
 
+export type UIRotationConfigV2 = {
+  enabled: boolean;
+  duration_sec: number;
+  panels: string[];
+};
+
+export type UIConfigV2 = {
+  rotation?: UIRotationConfigV2;
+};
+
 export type UIGlobalConfigV2 = {
   satellite?: SatelliteConfig;
   radar?: RadarConfig;
@@ -291,6 +301,7 @@ export type SecretsConfig = {
 export type AppConfigV2 = {
   version: 2;
   ui_map: MapConfigV2;
+  ui?: UIConfigV2;
   ui_global?: UIGlobalConfigV2;
   layers?: LayersConfigV2;
   panels?: PanelsConfigV2;

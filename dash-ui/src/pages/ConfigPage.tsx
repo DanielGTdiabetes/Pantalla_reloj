@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
-import { withConfigDefaultsV2 } from "../config/defaults_v2";
+import { DEFAULT_UI_ROTATION_CONFIG, ROTATION_PANEL_IDS, withConfigDefaultsV2 } from "../config/defaults_v2";
 import {
   getCalendarPreview,
   getConfigV2,
@@ -36,7 +36,73 @@ import {
   wifiScan,
   wifiStatus,
 } from "../lib/api";
-import type { AppConfigV2, CalendarConfig, FlightsLayerConfigV2, ShipsLayerConfigV2 } from "../types/config_v2";
+import type {
+  AppConfigV2,
+  CalendarConfig,
+  FlightsLayerConfigV2,
+  PanelsConfigV2,
+  ShipsLayerConfigV2,
+  UIRotationConfigV2,
+} from "../types/config_v2";
+
+const DEFAULT_AISSTREAM_WS_URL = "wss://stream.aisstream.io/v0/stream";
+
+const ROTATION_PANEL_LABELS: Record<string, string> = {
+  clock: "Reloj",
+  weather: "Tiempo",
+  astronomy: "Astronomía",
+  santoral: "Santoral",
+  calendar: "Calendario",
+  news: "Noticias",
+  historicalEvents: "Efemérides históricas",
+};
+
+const ROTATION_PANEL_NORMALIZE_MAP: Record<string, string> = {
+  time: "clock",
+  clock: "clock",
+  weather: "weather",
+  forecast: "weather",
+  astronomy: "astronomy",
+  ephemerides: "astronomy",
+  moon: "astronomy",
+  saints: "santoral",
+  santoral: "santoral",
+  calendar: "calendar",
+  news: "news",
+  historicalevents: "historicalEvents",
+  historicalEvents: "historicalEvents",
+};
+
+const ROTATION_DEFAULT_ORDER = [...ROTATION_PANEL_IDS];
+
+const ROTATION_PANEL_OPTIONS = ROTATION_PANEL_IDS.map((id) => ({
+  id,
+  label: ROTATION_PANEL_LABELS[id] ?? id,
+}));
+
+const normalizeRotationPanelId = (panelId: string): string | null => {
+  if (typeof panelId !== "string") {
+    return null;
+  }
+  const trimmed = panelId.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const lower = trimmed.toLowerCase();
+  const mapped = ROTATION_PANEL_NORMALIZE_MAP[lower as keyof typeof ROTATION_PANEL_NORMALIZE_MAP] ?? trimmed;
+  return ROTATION_PANEL_IDS.includes(mapped as (typeof ROTATION_PANEL_IDS)[number]) ? mapped : null;
+};
+
+const sanitizeRotationPanels = (panels: string[]): string[] => {
+  const normalized: string[] = [];
+  for (const panel of panels) {
+    const mapped = normalizeRotationPanelId(panel);
+    if (mapped && !normalized.includes(mapped)) {
+      normalized.push(mapped);
+    }
+  }
+  return normalized.length > 0 ? normalized : [...ROTATION_DEFAULT_ORDER];
+};
 
 export const ConfigPage: React.FC = () => {
   // Estado general
@@ -117,6 +183,257 @@ export const ConfigPage: React.FC = () => {
   const [calendarUrlLoading, setCalendarUrlLoading] = useState(false);
   const [newsFeedsTestResult, setNewsFeedsTestResult] = useState<NewsFeedTestResult[] | null>(null);
   const [newsFeedsTesting, setNewsFeedsTesting] = useState(false);
+
+  const dispatchConfigSaved = () => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("pantalla:config:saved"));
+    }
+  };
+
+  const dispatchRotationRestart = () => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("pantalla:rotation:restart"));
+    }
+  };
+
+  const sanitizeFlightsPayload = (): Partial<FlightsLayerConfigV2> | undefined => {
+    const flights = config?.layers?.flights;
+    if (!flights) {
+      return undefined;
+    }
+
+    if (!flights.enabled) {
+      return { enabled: false };
+    }
+
+    const provider = flights.provider ?? "opensky";
+
+    const payload: Partial<FlightsLayerConfigV2> = {
+      enabled: true,
+      provider,
+      refresh_seconds: flights.refresh_seconds ?? 12,
+      max_age_seconds: flights.max_age_seconds ?? 120,
+      max_items_global: flights.max_items_global ?? 2000,
+      max_items_view: flights.max_items_view ?? 1500,
+      rate_limit_per_min: flights.rate_limit_per_min ?? 6,
+      decimate: flights.decimate ?? "none",
+      grid_px: flights.grid_px ?? 24,
+      styleScale: flights.styleScale ?? 3.2,
+      render_mode: flights.render_mode ?? "circle",
+    };
+
+    if (flights.circle) {
+      payload.circle = flights.circle;
+    }
+
+    if (provider === "opensky" && flights.opensky) {
+      payload.opensky = flights.opensky;
+    } else if (provider === "aviationstack" && flights.aviationstack) {
+      payload.aviationstack = flights.aviationstack;
+    } else if (provider === "custom" && flights.custom) {
+      payload.custom = flights.custom;
+    }
+
+    return payload;
+  };
+
+  const sanitizeShipsPayload = (): Partial<ShipsLayerConfigV2> | undefined => {
+    const ships = config?.layers?.ships;
+    if (!ships) {
+      return undefined;
+    }
+
+    if (!ships.enabled) {
+      return { enabled: false };
+    }
+
+    const provider = ships.provider ?? "aisstream";
+    const payload: Partial<ShipsLayerConfigV2> = {
+      enabled: true,
+      provider,
+      refresh_seconds: ships.refresh_seconds ?? 10,
+      max_age_seconds: ships.max_age_seconds ?? 180,
+      max_items_global: ships.max_items_global ?? 1500,
+      max_items_view: ships.max_items_view ?? 420,
+      rate_limit_per_min: ships.rate_limit_per_min ?? 4,
+      decimate: ships.decimate ?? "grid",
+      grid_px: ships.grid_px ?? 24,
+      styleScale: ships.styleScale ?? 1.4,
+    };
+
+    if (provider === "aisstream") {
+      const wsUrl = typeof ships.aisstream?.ws_url === "string"
+        ? ships.aisstream.ws_url.trim() || DEFAULT_AISSTREAM_WS_URL
+        : DEFAULT_AISSTREAM_WS_URL;
+      payload.aisstream = { ws_url: wsUrl };
+    } else if (provider === "aishub") {
+      const baseUrl = typeof ships.aishub?.base_url === "string"
+        ? ships.aishub.base_url.trim() || "https://www.aishub.net/api"
+        : "https://www.aishub.net/api";
+      payload.aishub = { base_url: baseUrl };
+    } else if (provider === "ais_generic") {
+      payload.ais_generic = {
+        api_url: ships.ais_generic?.api_url?.trim() || null,
+      };
+    } else if (provider === "custom") {
+      payload.custom = {
+        api_url: ships.custom?.api_url?.trim() || null,
+        api_key: ships.custom?.api_key?.trim() || null,
+      };
+    }
+
+    return payload;
+  };
+
+  const sanitizePanelsPayload = (): PanelsConfigV2 | undefined => {
+    const panels = config?.panels;
+    if (!panels) {
+      return undefined;
+    }
+
+    const payload: Record<string, unknown> = {};
+
+    if (panels.news) {
+      if (panels.news.enabled) {
+        const feeds = Array.isArray(panels.news.feeds)
+          ? panels.news.feeds.map((feed) => feed.trim()).filter((feed) => feed.length > 0)
+          : [];
+        payload.news = {
+          enabled: true,
+          feeds,
+        };
+      } else {
+        payload.news = { enabled: false };
+      }
+    }
+
+    if (panels.calendar) {
+      if (panels.calendar.enabled) {
+        const provider = panels.calendar.provider === "ics" ? "ics" : "google";
+        const calendarPayload: Record<string, unknown> = {
+          enabled: true,
+          provider,
+        };
+        const pathValue = typeof panels.calendar.ics_path === "string" ? panels.calendar.ics_path.trim() : "";
+        if (provider === "ics" && pathValue) {
+          calendarPayload.ics_path = pathValue;
+        }
+        payload.calendar = calendarPayload;
+      } else {
+        payload.calendar = { enabled: false };
+      }
+    }
+
+    if (panels.ephemerides) {
+      payload.ephemerides = {
+        enabled: panels.ephemerides.enabled ?? false,
+      };
+    }
+
+    if (panels.weatherWeekly) {
+      payload.weatherWeekly = {
+        enabled: panels.weatherWeekly.enabled ?? false,
+      };
+    }
+
+    return Object.keys(payload).length > 0 ? (payload as PanelsConfigV2) : undefined;
+  };
+
+  const sanitizeRotationPayload = (): UIRotationConfigV2 => {
+    const rotation = config?.ui?.rotation ?? DEFAULT_UI_ROTATION_CONFIG;
+    const panels = sanitizeRotationPanels(rotation.panels ?? []);
+    const durationCandidate = Number(rotation.duration_sec);
+    const duration = Number.isFinite(durationCandidate)
+      ? Math.min(3600, Math.max(3, Math.round(durationCandidate)))
+      : DEFAULT_UI_ROTATION_CONFIG.duration_sec;
+
+    return {
+      enabled: Boolean(rotation.enabled),
+      duration_sec: duration,
+      panels,
+    };
+  };
+
+  const updateRotationState = (updater: (current: UIRotationConfigV2) => UIRotationConfigV2) => {
+    setConfig((prevConfig) => {
+      if (!prevConfig) {
+        return prevConfig;
+      }
+      const currentRotation: UIRotationConfigV2 = {
+        ...DEFAULT_UI_ROTATION_CONFIG,
+        ...prevConfig.ui?.rotation,
+        panels: sanitizeRotationPanels(prevConfig.ui?.rotation?.panels ?? DEFAULT_UI_ROTATION_CONFIG.panels),
+      };
+      const nextRotation = updater(currentRotation);
+      return {
+        ...prevConfig,
+        ui: {
+          ...prevConfig.ui,
+          rotation: nextRotation,
+        },
+      };
+    });
+  };
+
+  const handleRotationToggle = (enabled: boolean) => {
+    updateRotationState((current) => ({
+      ...current,
+      enabled,
+    }));
+  };
+
+  const handleRotationDurationChange = (value: number) => {
+    const normalized = Math.min(3600, Math.max(3, Math.round(value)));
+    updateRotationState((current) => ({
+      ...current,
+      duration_sec: normalized,
+    }));
+  };
+
+  const handleAddRotationPanel = (panelId: string) => {
+    const normalized = normalizeRotationPanelId(panelId);
+    if (!normalized) {
+      return;
+    }
+    updateRotationState((current) => {
+      if (current.panels.includes(normalized)) {
+        return current;
+      }
+      return {
+        ...current,
+        panels: sanitizeRotationPanels([...current.panels, normalized]),
+      };
+    });
+  };
+
+  const handleRemoveRotationPanel = (panelId: string) => {
+    updateRotationState((current) => {
+      const nextPanels = sanitizeRotationPanels(current.panels.filter((id) => id !== panelId));
+      return {
+        ...current,
+        panels: nextPanels,
+      };
+    });
+  };
+
+  const handleMoveRotationPanel = (panelId: string, direction: "up" | "down") => {
+    updateRotationState((current) => {
+      const index = current.panels.indexOf(panelId);
+      if (index === -1) {
+        return current;
+      }
+      const nextPanels = [...current.panels];
+      if (direction === "up" && index > 0) {
+        [nextPanels[index - 1], nextPanels[index]] = [nextPanels[index], nextPanels[index - 1]];
+      } else if (direction === "down" && index < nextPanels.length - 1) {
+        [nextPanels[index], nextPanels[index + 1]] = [nextPanels[index + 1], nextPanels[index]];
+      }
+      return {
+        ...current,
+        panels: nextPanels,
+      };
+    });
+  };
 
   useEffect(() => {
     const loadInitialData = async () => {
@@ -563,14 +880,14 @@ export const ConfigPage: React.FC = () => {
     
     setMapAndLayersSaving(true);
     try {
-      // Guardar configuración de vuelos usando saveConfigGroup (deep-merge)
-      if (config.layers?.flights) {
-        await saveConfigGroup("layers.flights", config.layers.flights);
+      const flightsPayload = sanitizeFlightsPayload();
+      if (flightsPayload) {
+        await saveConfigGroup("layers.flights", flightsPayload);
       }
       
-      // Guardar configuración de barcos usando saveConfigGroup (deep-merge)
-      if (config.layers?.ships) {
-        await saveConfigGroup("layers.ships", config.layers.ships);
+      const shipsPayload = sanitizeShipsPayload();
+      if (shipsPayload) {
+        await saveConfigGroup("layers.ships", shipsPayload);
       }
       
       // Guardar ui_map usando saveConfigGroup (deep-merge, no borra claves fuera del sub-árbol)
@@ -588,6 +905,7 @@ export const ConfigPage: React.FC = () => {
       // Recargar config
       const loadedConfig = await getConfigV2();
       setConfig(withConfigDefaultsV2(loadedConfig));
+      dispatchConfigSaved();
     } catch (error) {
       console.error("Error saving map and layers:", error);
       alert("Error al guardar la configuración");
@@ -915,6 +1233,7 @@ export const ConfigPage: React.FC = () => {
       // Recargar config
       const loadedConfig = await getConfigV2();
       setConfig(withConfigDefaultsV2(loadedConfig));
+      dispatchConfigSaved();
     } catch (error) {
       console.error("Error saving calendar config:", error);
       alert("Error al guardar la configuración del calendario");
@@ -928,17 +1247,20 @@ export const ConfigPage: React.FC = () => {
     
     setPanelRotatorSaving(true);
     try {
-      // Guardar panels usando saveConfigGroup (deep-merge, no borra claves fuera del sub-árbol)
-      if (config.panels) {
-        await saveConfigGroup("panels", config.panels);
+      const panelsPayload = sanitizePanelsPayload();
+      if (panelsPayload) {
+        await saveConfigGroup("panels", panelsPayload);
       }
-      
-      // Guardar ui_global usando saveConfigGroup (deep-merge, no borra claves fuera del sub-árbol)
-      if (config.ui_global) {
-        await saveConfigGroup("ui_global", config.ui_global);
-      }
+
+      const rotationPayload = sanitizeRotationPayload();
+      await saveConfigGroup("ui", { rotation: rotationPayload });
       
       alert("Configuración del Panel Rotativo guardada correctamente");
+
+      const loadedConfig = await getConfigV2();
+      setConfig(withConfigDefaultsV2(loadedConfig));
+      dispatchConfigSaved();
+      dispatchRotationRestart();
     } catch (error) {
       console.error("Error saving panel rotator:", error);
       alert("Error al guardar la configuración");
@@ -956,6 +1278,21 @@ export const ConfigPage: React.FC = () => {
       </div>
     );
   }
+
+  const rawRotationConfig = config.ui?.rotation;
+  const rotationPanels = useMemo(
+    () => sanitizeRotationPanels(rawRotationConfig?.panels ?? DEFAULT_UI_ROTATION_CONFIG.panels),
+    [rawRotationConfig?.panels]
+  );
+  const rotationConfig: UIRotationConfigV2 = {
+    ...DEFAULT_UI_ROTATION_CONFIG,
+    ...rawRotationConfig,
+    panels: rotationPanels,
+  };
+  const availableRotationPanels = useMemo(
+    () => ROTATION_PANEL_OPTIONS.filter(({ id }) => !rotationPanels.includes(id)),
+    [rotationPanels]
+  );
 
   const calendarSource = config.calendar?.source || config.calendar?.provider;
   const normalizedCalendarSource = calendarSource === "ics" ? "ics" : "google";
@@ -2579,7 +2916,7 @@ export const ConfigPage: React.FC = () => {
                           grid_px: config.layers?.ships?.grid_px || 24,
                           styleScale: config.layers?.ships?.styleScale || 1.4,
                           aisstream: config.layers?.ships?.aisstream || {
-                            ws_url: "wss://stream.aisstream.io/v0/stream"
+                            ws_url: DEFAULT_AISSTREAM_WS_URL
                           },
                           aishub: config.layers?.ships?.aishub || {
                             base_url: "https://www.aishub.net/api"
@@ -2623,7 +2960,7 @@ export const ConfigPage: React.FC = () => {
                               grid_px: config.layers?.ships?.grid_px || 24,
                               styleScale: config.layers?.ships?.styleScale || 1.4,
                               aisstream: config.layers?.ships?.aisstream || {
-                                ws_url: "wss://stream.aisstream.io/v0/stream"
+                                ws_url: DEFAULT_AISSTREAM_WS_URL
                               },
                               aishub: config.layers?.ships?.aishub || {
                                 base_url: "https://www.aishub.net/api"
@@ -2663,7 +3000,7 @@ export const ConfigPage: React.FC = () => {
                         <label>WebSocket URL</label>
                         <input
                           type="text"
-                          value={config.layers.ships.aisstream?.ws_url || "wss://stream.aisstream.io/v0/stream"}
+                          value={config.layers.ships.aisstream?.ws_url || DEFAULT_AISSTREAM_WS_URL}
                           onChange={(e) => {
                             setConfig({
                               ...config,
@@ -2671,13 +3008,13 @@ export const ConfigPage: React.FC = () => {
                                 ...config.layers,
                                 ships: buildShipsConfig({
                                   aisstream: {
-                                    ws_url: e.target.value || "wss://stream.aisstream.io/v0/stream"
+                                    ws_url: e.target.value || DEFAULT_AISSTREAM_WS_URL
                                   }
                                 })
                               }
                             });
                           }}
-                          placeholder="wss://stream.aisstream.io/v0/stream"
+                          placeholder={DEFAULT_AISSTREAM_WS_URL}
                         />
                         <div className="config-field__hint">Solo modificar en configuración avanzada</div>
                       </div>
@@ -2930,80 +3267,113 @@ export const ConfigPage: React.FC = () => {
               <label>
                 <input
                   type="checkbox"
-                  checked={config.ui_global?.overlay?.rotator?.enabled || false}
+                  checked={rotationConfig.enabled}
                   onChange={(e) => {
-                    setConfig({
-                      ...config,
-                      ui_global: {
-                        ...config.ui_global,
-                        overlay: {
-                          ...config.ui_global?.overlay,
-                          rotator: {
-                            ...config.ui_global?.overlay?.rotator,
-                            enabled: e.target.checked,
-                            order: config.ui_global?.overlay?.rotator?.order || [],
-                            transition_ms: config.ui_global?.overlay?.rotator?.transition_ms || 300,
-                            pause_on_alert: config.ui_global?.overlay?.rotator?.pause_on_alert || false,
-                          },
-                        },
-                      },
-                    });
+                    handleRotationToggle(e.target.checked);
                   }}
                 />
                 Habilitar Rotación
               </label>
             </div>
 
-            {config.ui_global?.overlay?.rotator?.enabled && (
+            {rotationConfig.enabled && (
               <>
                 <div className="config-field">
-                  <label>Tiempo de Transición (ms)</label>
+                  <label>Duración por panel (segundos)</label>
                   <input
                     type="number"
-                    value={config.ui_global.overlay.rotator.transition_ms || 300}
+                    min={3}
+                    max={3600}
+                    value={rotationConfig.duration_sec}
                     onChange={(e) => {
-                      setConfig({
-                        ...config,
-                        ui_global: {
-                          ...config.ui_global,
-                          overlay: {
-                            ...config.ui_global?.overlay,
-                            rotator: {
-                              ...config.ui_global?.overlay?.rotator!,
-                              transition_ms: parseInt(e.target.value) || 300,
-                            },
-                          },
-                        },
-                      });
+                      const nextValue = Number(e.target.value);
+                      handleRotationDurationChange(
+                        Number.isFinite(nextValue) ? nextValue : rotationConfig.duration_sec
+                      );
                     }}
-                    min="100"
-                    max="5000"
                   />
+                  <div className="config-field__hint">Entre 3 y 3600 segundos por panel.</div>
                 </div>
 
                 <div className="config-field">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={config.ui_global?.overlay?.rotator?.pause_on_alert || false}
-                      onChange={(e) => {
-                        setConfig({
-                          ...config,
-                          ui_global: {
-                            ...config.ui_global,
-                            overlay: {
-                              ...config.ui_global?.overlay,
-                              rotator: {
-                                ...config.ui_global?.overlay?.rotator!,
-                                pause_on_alert: e.target.checked,
-                              },
-                            },
-                          },
-                        });
-                      }}
-                    />
-                    Pausar en Alertas
-                  </label>
+                  <label>Orden de paneles</label>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                      marginTop: "8px",
+                    }}
+                  >
+                    {rotationPanels.map((panelId, index) => (
+                      <div
+                        key={panelId}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          backgroundColor: "rgba(104, 162, 255, 0.08)",
+                          borderRadius: "4px",
+                          padding: "8px 12px",
+                        }}
+                      >
+                        <span>{ROTATION_PANEL_LABELS[panelId] ?? panelId}</span>
+                        <div style={{ display: "flex", gap: "8px" }}>
+                          <button
+                            className="config-button"
+                            style={{ minWidth: "32px" }}
+                            onClick={() => handleMoveRotationPanel(panelId, "up")}
+                            disabled={index === 0}
+                            title="Subir"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            className="config-button"
+                            style={{ minWidth: "32px" }}
+                            onClick={() => handleMoveRotationPanel(panelId, "down")}
+                            disabled={index === rotationPanels.length - 1}
+                            title="Bajar"
+                          >
+                            ↓
+                          </button>
+                          <button
+                            className="config-button"
+                            style={{ minWidth: "64px" }}
+                            onClick={() => handleRemoveRotationPanel(panelId)}
+                            disabled={rotationPanels.length <= 1}
+                          >
+                            Quitar
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {availableRotationPanels.length > 0 && (
+                    <div style={{ marginTop: "12px" }}>
+                      <div
+                        style={{
+                          marginBottom: "8px",
+                          fontSize: "0.9rem",
+                          color: "rgba(255, 255, 255, 0.8)",
+                        }}
+                      >
+                        Añadir paneles disponibles:
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                        {availableRotationPanels.map(({ id, label }) => (
+                          <button
+                            key={id}
+                            className="config-button"
+                            onClick={() => handleAddRotationPanel(id)}
+                          >
+                            Añadir {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </>
             )}

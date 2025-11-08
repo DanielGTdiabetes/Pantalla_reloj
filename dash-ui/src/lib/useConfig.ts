@@ -4,11 +4,12 @@ import { withConfigDefaults } from "../config/defaults";
 import { withConfigDefaultsV2 } from "../config/defaults_v2";
 import type { AppConfig } from "../types/config";
 import type { AppConfigV2 } from "../types/config_v2";
-import { API_ORIGIN, getConfig, getConfigV2 } from "./api";
+import { API_ORIGIN, getConfig, getConfigMeta, getConfigV2 } from "./api";
 
 const API_UNREACHABLE = `No se pudo conectar con el backend en ${API_ORIGIN}`;
 
-const CONFIG_POLL_INTERVAL_MS = 1500; // Poll cada 1.5 segundos para detectar cambios más rápido
+const META_POLL_INTERVAL_MIN_MS = 15000;
+const META_POLL_INTERVAL_MAX_MS = 30000;
 
 type MapHotSwapDescriptor = {
   provider: string | null;
@@ -82,6 +83,7 @@ export function useConfig() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mapStyleVersion, setMapStyleVersion] = useState(0);
+  const metaTimestampRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -139,9 +141,11 @@ export function useConfig() {
         processedData = withConfigDefaults((cfg ?? {}) as AppConfig);
       }
       
+      let wasUpdated = false;
       setData((prev) => {
         const newData = processedData;
         if (!prev) {
+          wasUpdated = true;
           return newData;
         }
 
@@ -211,6 +215,7 @@ export function useConfig() {
         }
 
         if (mapConfigChanged || mapHotSwapChanged) {
+          wasUpdated = true;
           setPrevData(prev);
           if (mapHotSwapChanged) {
             setMapStyleVersion((value) => value + 1);
@@ -218,8 +223,18 @@ export function useConfig() {
           return newData;
         }
 
-        return prev;
+        wasUpdated = true;
+        return newData;
       });
+      
+      const meta = await getConfigMeta().catch(() => null);
+      if (meta && meta.config_loaded_at) {
+        metaTimestampRef.current = meta.config_loaded_at;
+      }
+
+      if (wasUpdated) {
+        window.dispatchEvent(new CustomEvent("config-changed"));
+      }
       
       setError(null);
       setLoading(false);
@@ -231,24 +246,58 @@ export function useConfig() {
   }, []);
 
   useEffect(() => {
-    // Carga inicial
     void load();
-    
-    // Polling periódico para detectar cambios guardados desde /config
-    const intervalId = setInterval(() => {
-      void load();
-    }, CONFIG_POLL_INTERVAL_MS);
 
-    // Escuchar eventos de actualización de config desde ConfigPage
+    let cancelled = false;
+    let timeoutId: number | null = null;
+
+    const pollMeta = async () => {
+      try {
+        const meta = await getConfigMeta();
+        if (cancelled) {
+          return;
+        }
+        const timestamp = meta.config_loaded_at ?? null;
+        if (timestamp) {
+          if (!metaTimestampRef.current) {
+            metaTimestampRef.current = timestamp;
+          } else if (metaTimestampRef.current !== timestamp) {
+            metaTimestampRef.current = timestamp;
+            await load();
+          }
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.debug("[useConfig] Failed to poll config meta", error);
+        }
+      } finally {
+        if (!cancelled) {
+          scheduleNextPoll();
+        }
+      }
+    };
+
+    function scheduleNextPoll() {
+      const delay =
+        META_POLL_INTERVAL_MIN_MS +
+        Math.random() * (META_POLL_INTERVAL_MAX_MS - META_POLL_INTERVAL_MIN_MS);
+      timeoutId = window.setTimeout(pollMeta, delay);
+    }
+
+    void pollMeta();
+
     const handleConfigSaved = () => {
       console.log("[useConfig] Config saved event received, forcing reload");
       void load();
     };
-    
+
     window.addEventListener("pantalla:config:saved", handleConfigSaved);
 
     return () => {
-      clearInterval(intervalId);
+      cancelled = true;
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
       window.removeEventListener("pantalla:config:saved", handleConfigSaved);
     };
   }, [load]);

@@ -87,6 +87,61 @@ const DEFAULT_DURATIONS_SEC = {
   historicalEvents: 6,
 };
 
+const ROTATION_DEFAULT_ORDER = [
+  "clock",
+  "weather",
+  "astronomy",
+  "santoral",
+  "calendar",
+  "news",
+  "historicalEvents",
+] as const;
+
+const LEGACY_ROTATION_PANEL_MAP: Record<string, string> = {
+  time: "clock",
+  clock: "clock",
+  weather: "weather",
+  forecast: "weather",
+  astronomy: "astronomy",
+  ephemerides: "astronomy",
+  moon: "astronomy",
+  saints: "santoral",
+  santoral: "santoral",
+  calendar: "calendar",
+  news: "news",
+  historicalevents: "historicalEvents",
+  historicalEvents: "historicalEvents",
+};
+
+const DEFAULT_ROTATION_DURATION_SEC = 10;
+
+const normalizeRotationPanelId = (panelId: unknown): string | null => {
+  if (typeof panelId !== "string") {
+    return null;
+  }
+  const trimmed = panelId.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const lower = trimmed.toLowerCase();
+  const mapped = LEGACY_ROTATION_PANEL_MAP[lower as keyof typeof LEGACY_ROTATION_PANEL_MAP] ?? trimmed;
+  return ROTATION_DEFAULT_ORDER.includes(mapped as (typeof ROTATION_DEFAULT_ORDER)[number]) ? mapped : null;
+};
+
+const sanitizeRotationPanelOrder = (panels: unknown): string[] => {
+  if (!Array.isArray(panels)) {
+    return [...ROTATION_DEFAULT_ORDER];
+  }
+  const normalized: string[] = [];
+  for (const panel of panels) {
+    const mapped = normalizeRotationPanelId(panel);
+    if (mapped && !normalized.includes(mapped)) {
+      normalized.push(mapped);
+    }
+  }
+  return normalized.length > 0 ? normalized : [...ROTATION_DEFAULT_ORDER];
+};
+
 const temperatureToUnit = (value: number, from: string, to: string): number => {
   const normalize = (unit: string) => unit.replace("°", "").trim().toUpperCase();
   const source = normalize(from || "C");
@@ -185,6 +240,7 @@ export const OverlayRotator: React.FC = () => {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [configVersion, setConfigVersion] = useState<number | null>(null);
   const configVersionRef = useRef<number | null>(null);
+  const [rotationRestartKey, setRotationRestartKey] = useState(0);
   
   const timezone = useMemo(() => {
     const tz = safeGetTimezone(config as Record<string, unknown>);
@@ -193,13 +249,42 @@ export const OverlayRotator: React.FC = () => {
 
   // Leer configuración de rotación desde ui_global.overlay.rotator (v2) o ui.rotation (v1 legacy)
   const rotationConfig = useMemo(() => {
-    // Intentar leer desde v2 primero
+    const configWithUi = config as unknown as {
+      ui?: {
+        rotation?: {
+          enabled?: boolean;
+          duration_sec?: number;
+          panels?: unknown;
+        };
+      };
+    };
+
+    const uiRotation = configWithUi.ui?.rotation;
+    if (uiRotation && typeof uiRotation === "object") {
+      const durationCandidate = Number((uiRotation as { duration_sec?: unknown }).duration_sec ?? DEFAULT_ROTATION_DURATION_SEC);
+      const duration = Number.isFinite(durationCandidate)
+        ? Math.min(3600, Math.max(3, Math.round(durationCandidate)))
+        : DEFAULT_ROTATION_DURATION_SEC;
+      const order = sanitizeRotationPanelOrder((uiRotation as { panels?: unknown }).panels);
+      const durations = { ...DEFAULT_DURATIONS_SEC };
+      for (const key of Object.keys(durations)) {
+        durations[key as keyof typeof durations] = duration;
+      }
+      return {
+        enabled: Boolean((uiRotation as { enabled?: unknown }).enabled),
+        order,
+        durations_sec: durations,
+        transition_ms: 400,
+        pause_on_alert: false,
+      };
+    }
+
     const v2Config = config as unknown as AppConfigV2;
     if (v2Config.version === 2 && v2Config.ui_global?.overlay?.rotator) {
       const rotator = v2Config.ui_global.overlay.rotator;
       const order = Array.isArray(rotator.order) && rotator.order.length > 0
-        ? rotator.order.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
-        : [];
+        ? sanitizeRotationPanelOrder(rotator.order)
+        : sanitizeRotationPanelOrder(undefined);
       const durations_sec = rotator.durations_sec || DEFAULT_DURATIONS_SEC;
       const transition_ms = Math.max(0, Math.min(2000, rotator.transition_ms ?? 400));
       
@@ -212,25 +297,23 @@ export const OverlayRotator: React.FC = () => {
       };
     }
     
-    // Fallback a v1 legacy (ui.rotation)
-    const uiConfig = config.ui || (config as unknown as { ui?: { rotation?: { enabled?: boolean; duration_sec?: number; panels?: string[] } } }).ui;
-    const rotation = uiConfig?.rotation || {};
-    const panels = Array.isArray(rotation.panels) && rotation.panels.length > 0
-      ? rotation.panels.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+    const uiConfigLegacy = config.ui || (config as unknown as { ui?: { rotation?: { enabled?: boolean; duration_sec?: number; panels?: string[] } } }).ui;
+    const rotationLegacy = uiConfigLegacy?.rotation || {};
+    const panelsLegacy = Array.isArray(rotationLegacy.panels) && rotationLegacy.panels.length > 0
+      ? rotationLegacy.panels.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
       : [];
     
-    // Mapear IDs v1 a v2
-    const order = panels.map(p => {
-      // Buscar mapeo inverso (v1 -> v2)
+    const order = panelsLegacy.map(p => {
       for (const [v2Id, v1Id] of Object.entries(PANEL_ID_MAP)) {
         if (v1Id === p) return v2Id;
       }
-      return p; // Si no hay mapeo, usar como está
+      const normalized = normalizeRotationPanelId(p);
+      return normalized ?? p;
     });
     
     return {
-      enabled: rotation.enabled ?? false,
-      order,
+      enabled: rotationLegacy.enabled ?? false,
+      order: sanitizeRotationPanelOrder(order),
       durations_sec: DEFAULT_DURATIONS_SEC,
       transition_ms: 400,
       pause_on_alert: false,
@@ -806,6 +889,26 @@ export const OverlayRotator: React.FC = () => {
     availablePanelsRef.current = availablePanels;
   }, [availablePanels]);
 
+  useEffect(() => {
+    const handleRotationRestart = () => {
+      if (rotationTimerRef.current !== null) {
+        window.clearTimeout(rotationTimerRef.current);
+        rotationTimerRef.current = null;
+      }
+      currentPanelIndexRef.current = 0;
+      setCurrentPanelIndex(0);
+      setRotationRestartKey((value) => value + 1);
+      if (IS_DEV) {
+        console.log("[OverlayRotator] Reinicio manual de rotación recibido");
+      }
+    };
+
+    window.addEventListener("pantalla:rotation:restart", handleRotationRestart);
+    return () => {
+      window.removeEventListener("pantalla:rotation:restart", handleRotationRestart);
+    };
+  }, []);
+
   // Memoizar IDs de paneles disponibles para usar como dependencia estable
   const availablePanelIds = useMemo(() => {
     return availablePanels.map(p => p.id).join(",");
@@ -815,7 +918,7 @@ export const OverlayRotator: React.FC = () => {
   useEffect(() => {
     setCurrentPanelIndex(0);
     currentPanelIndexRef.current = 0;
-  }, [availablePanelIds]);
+  }, [availablePanelIds, rotationRestartKey]);
 
   // Manejo del timer de rotación
   useEffect(() => {
@@ -892,7 +995,7 @@ export const OverlayRotator: React.FC = () => {
         }
       }
     };
-  }, [rotationConfig.enabled, rotationConfig.durations_sec, availablePanels.length, availablePanelIds]);
+  }, [rotationConfig.enabled, rotationConfig.durations_sec, availablePanels.length, availablePanelIds, rotationRestartKey]);
 
   // Sincronizar la ref con el estado cuando cambie
   useEffect(() => {

@@ -10,6 +10,7 @@ import type {
   ShipsLayerConfigV2,
   PanelsConfigV2,
   CalendarConfig,
+  UIRotationConfigV2,
 } from "../types/config_v2";
 
 export const DEFAULT_MAP_CENTER = {
@@ -103,6 +104,40 @@ export const DEFAULT_LAYERS_CONFIG: LayersConfigV2 = {
   ships: DEFAULT_SHIPS_LAYER_CONFIG,
 };
 
+export const ROTATION_PANEL_IDS = [
+  "clock",
+  "weather",
+  "astronomy",
+  "santoral",
+  "calendar",
+  "news",
+  "historicalEvents",
+] as const;
+
+const ROTATION_LEGACY_MAP: Record<string, string> = {
+  time: "clock",
+  clock: "clock",
+  weather: "weather",
+  forecast: "weather",
+  moon: "astronomy",
+  astronomy: "astronomy",
+  ephemerides: "astronomy",
+  saints: "santoral",
+  santoral: "santoral",
+  calendar: "calendar",
+  news: "news",
+  historicalevents: "historicalEvents",
+  historicalEvents: "historicalEvents",
+} as const;
+
+const ROTATION_DEFAULT_ORDER = [...ROTATION_PANEL_IDS];
+
+export const DEFAULT_UI_ROTATION_CONFIG: UIRotationConfigV2 = {
+  enabled: false,
+  duration_sec: 10,
+  panels: ROTATION_DEFAULT_ORDER,
+};
+
 export const DEFAULT_PANELS_CONFIG: PanelsConfigV2 = {
   weatherWeekly: {
     enabled: true,
@@ -130,6 +165,9 @@ export const DEFAULT_CALENDAR_CONFIG: CalendarConfig = {
 export const DEFAULT_CONFIG_V2: AppConfigV2 = {
   version: 2,
   ui_map: DEFAULT_MAP_CONFIG,
+  ui: {
+    rotation: DEFAULT_UI_ROTATION_CONFIG,
+  },
   ui_global: DEFAULT_UI_GLOBAL_CONFIG,
   layers: DEFAULT_LAYERS_CONFIG,
   panels: DEFAULT_PANELS_CONFIG,
@@ -147,6 +185,43 @@ export function withConfigDefaultsV2(
     return DEFAULT_CONFIG_V2;
   }
 
+  const mergeRotationConfig = (candidate?: Partial<UIRotationConfigV2>): UIRotationConfigV2 => {
+    const source = candidate ?? {};
+    const enabled = source.enabled ?? false;
+
+    const rawPanels = Array.isArray(source.panels) ? source.panels : [];
+    const normalizedPanels: string[] = [];
+    for (const panel of rawPanels) {
+      if (typeof panel !== "string") {
+        continue;
+      }
+      const trimmed = panel.trim();
+      if (!trimmed) {
+        continue;
+      }
+      const lower = trimmed.toLowerCase();
+      const mapped = ROTATION_LEGACY_MAP[lower as keyof typeof ROTATION_LEGACY_MAP] ?? trimmed;
+      if (
+        ROTATION_PANEL_IDS.includes(mapped as (typeof ROTATION_PANEL_IDS)[number]) &&
+        !normalizedPanels.includes(mapped)
+      ) {
+        normalizedPanels.push(mapped);
+      }
+    }
+
+    const panels = normalizedPanels.length > 0 ? normalizedPanels : ROTATION_DEFAULT_ORDER;
+    const durationCandidate = Number(source.duration_sec);
+    const duration = Number.isFinite(durationCandidate)
+      ? Math.min(3600, Math.max(3, Math.round(durationCandidate)))
+      : DEFAULT_UI_ROTATION_CONFIG.duration_sec;
+
+    return {
+      enabled,
+      duration_sec: duration,
+      panels,
+    };
+  };
+
   return {
     version: 2,
     ui_map: {
@@ -163,6 +238,9 @@ export function withConfigDefaultsV2(
       },
       fixed: config.ui_map?.fixed ?? DEFAULT_MAP_CONFIG.fixed,
       region: config.ui_map?.region ?? DEFAULT_MAP_CONFIG.region,
+    },
+    ui: {
+      rotation: mergeRotationConfig(config.ui?.rotation),
     },
     ui_global: config.ui_global ?? DEFAULT_UI_GLOBAL_CONFIG,
     layers: {
