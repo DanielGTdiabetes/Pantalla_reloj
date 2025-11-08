@@ -35,9 +35,9 @@
       }
     },
     "rotation": {
-      "enabled": false,
+      "enabled": true,
       "duration_sec": 10,
-      "panels": ["news", "ephemerides", "moon", "forecast", "calendar"]
+      "panels": ["clock", "weather", "astronomy", "santoral", "calendar", "news", "historicalEvents"]
     }
   },
   "ai": {

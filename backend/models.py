@@ -65,15 +65,17 @@ class MapConfig(BaseModel):
 class Rotation(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    enabled: bool = False
+    enabled: bool = True
     duration_sec: int = Field(default=10, ge=3, le=3600)
     panels: List[str] = Field(
         default_factory=lambda: [
-            "news",
-            "ephemerides",
-            "moon",
-            "forecast",
+            "clock",
+            "weather",
+            "astronomy",
+            "santoral",
             "calendar",
+            "news",
+            "historicalEvents",
         ]
     )
 

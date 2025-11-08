@@ -133,7 +133,7 @@ const ROTATION_LEGACY_MAP: Record<string, string> = {
 const ROTATION_DEFAULT_ORDER = [...ROTATION_PANEL_IDS];
 
 export const DEFAULT_UI_ROTATION_CONFIG: UIRotationConfigV2 = {
-  enabled: false,
+  enabled: true,
   duration_sec: 10,
   panels: ROTATION_DEFAULT_ORDER,
 };
@@ -187,7 +187,7 @@ export function withConfigDefaultsV2(
 
   const mergeRotationConfig = (candidate?: Partial<UIRotationConfigV2>): UIRotationConfigV2 => {
     const source = candidate ?? {};
-    const enabled = source.enabled ?? false;
+    const enabled = source.enabled ?? true;
 
     const rawPanels = Array.isArray(source.panels) ? source.panels : [];
     const normalizedPanels: string[] = [];

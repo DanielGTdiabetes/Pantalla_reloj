@@ -457,9 +457,9 @@ const mergeMapPreferences = (candidate: unknown): MapPreferences => {
 
 const mergeRotation = (candidate: unknown): RotationConfig => {
   const fallback: RotationConfig = {
-    enabled: false,
+    enabled: true,
     duration_sec: 10,
-    panels: ["news", "ephemerides", "moon", "forecast", "calendar"],
+    panels: ["clock", "weather", "astronomy", "santoral", "calendar", "news", "historicalEvents"],
   };
   const source = (candidate as Partial<RotationConfig>) ?? {};
   const panels = Array.isArray(source.panels)
