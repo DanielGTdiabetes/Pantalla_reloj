@@ -21,7 +21,7 @@ Environment=KIOSK_CACHE_DIR=/home/%i/.cache/pantalla-reloj/chromium
 ExecStartPre=/usr/bin/find ${KIOSK_USER_DATA} -type f -name 'LOCK' -delete || true
 ExecStartPre=/usr/bin/find ${KIOSK_CACHE_DIR} -type f -name 'LOCK' -delete || true
 ExecStartPre=/usr/bin/bash -lc "pkill -f 'pantalla-kiosk' || true"
-# Lanza chromium kiosk (sin snap, sin /usr/bin/chromium-browser)
+# Lanza Chromium kiosk con el wrapper dedicado
 ExecStart=
 ExecStart=${CHROMIUM_BIN} --class=pantalla-kiosk --kiosk --start-fullscreen \
   --app=${KIOSK_URL} \

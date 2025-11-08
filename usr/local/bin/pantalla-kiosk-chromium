@@ -101,75 +101,6 @@ resolve_url() {
   printf '%s\n' "$candidate"
 }
 
-find_chromium() {
-  local override="${CHROMIUM_BIN_OVERRIDE:-}"
-  if [[ -n "$override" ]]; then
-    if [[ -x "$override" ]]; then
-      printf '%s\n' "$override"
-      return 0
-    fi
-    if command -v "$override" >/dev/null 2>&1; then
-      printf '%s\n' "$(command -v "$override")"
-      return 0
-    fi
-    log "WARN: CHROMIUM_BIN_OVERRIDE inválido (${override})"
-  fi
-
-  local candidate resolved
-  # Priorizar binarios normales de Chromium (sin Snap)
-  # Verificar primero si chromium-kiosk-bin es un binario real o un wrapper
-  if [[ -x /usr/local/bin/chromium-kiosk-bin ]]; then
-    # Verificar si es un binario real (no un script que requiere snap)
-    if file /usr/local/bin/chromium-kiosk-bin 2>/dev/null | grep -qE '(ELF|executable|binary)'; then
-      printf '%s\n' "/usr/local/bin/chromium-kiosk-bin"
-      return 0
-    fi
-    # Si es un script, verificar si apunta a snap
-    if ! grep -q '/snap/' /usr/local/bin/chromium-kiosk-bin 2>/dev/null; then
-      # El wrapper no apunta a snap, intentar usarlo
-      resolved="$(head -1 /usr/local/bin/chromium-kiosk-bin 2>/dev/null | sed 's|^#!.*||' || echo "")"
-      if [[ -n "$resolved" ]] && [[ -x "$resolved" ]]; then
-        printf '%s\n' "/usr/local/bin/chromium-kiosk-bin"
-        return 0
-      fi
-    fi
-  fi
-
-  for candidate in chromium-browser chromium chromium-browser-stable; do
-    if command -v "$candidate" >/dev/null 2>&1; then
-      resolved="$(command -v "$candidate")"
-      # Evitar Snap si es posible
-      if [[ "$resolved" != *"/snap/"* ]]; then
-        # Verificar que no sea un script que requiera snap
-        if [[ -f "$resolved" ]]; then
-          if file "$resolved" 2>/dev/null | grep -qE '(ELF|executable|binary)'; then
-            printf '%s\n' "$resolved"
-            return 0
-          fi
-          log "descartando ${resolved}: no es un binario ELF (posible wrapper)"
-          if grep -q "snap install chromium" "$resolved" 2>/dev/null; then
-            log "descartando ${resolved}: wrapper que requiere snap"
-          fi
-        fi
-      fi
-    fi
-  done
-
-  # Buscar Google Chrome como alternativa si Chromium no está disponible
-  for candidate in /opt/google/chrome/chrome /usr/bin/google-chrome /usr/bin/google-chrome-stable; do
-    if [[ -x "$candidate" ]]; then
-      # Verificar que es un binario real
-      if file "$candidate" 2>/dev/null | grep -qE '(ELF|executable|binary)'; then
-        log "INFO: Usando Google Chrome como alternativa a Chromium: $candidate" >&2
-        printf '%s\n' "$candidate"
-        return 0
-      fi
-    fi
-  done
-
-  return 1
-}
-
 prepare_dirs() {
   local profile_dir="$1" cache_dir="$2"
   install -d -m 0700 "$profile_dir"
@@ -196,7 +127,11 @@ launch_chromium() {
     --disable-infobars
     --disable-session-crashed-bubble
     --noerrdialogs
-    --disable-features=InfiniteSessionRestore,Translate,HardwareMediaKeyHandling,CalculateNativeWinOcclusion
+    --disable-background-networking
+    --disable-sync
+    --metrics-recording-only
+    --disable-component-update
+    --disable-features=InfiniteSessionRestore,Translate,AutofillServerCommunication,CalculateNativeWinOcclusion,SendTabToSelf,ProductNotifications,InterestFeedContentSuggestions,OptimizationHints,UseChromeLocationServices,HardwareMediaKeyHandling
     --disable-renderer-backgrounding
     --disable-background-timer-throttling
     --disable-backgrounding-occluded-windows
@@ -297,28 +232,16 @@ main() {
 
   wait_for_backend || true
   
-  local chromium_bin
-  if ! chromium_bin="$(find_chromium)"; then
-    log "ERROR: no se encontró un binario de Chromium disponible"
-    log "ERROR: Instala Chromium o configura CHROMIUM_BIN_OVERRIDE"
-    exit 1
-  fi
-  
-  # Validar que el binario es realmente ejecutable
+  local chromium_bin="/usr/local/bin/chromium-kiosk-bin"
   if [[ ! -x "$chromium_bin" ]]; then
-    log "ERROR: Chromium binario encontrado pero no es ejecutable: $chromium_bin"
-    exit 1
-  fi
-  
-  # Verificar que realmente es un binario válido
-  if ! file "$chromium_bin" | grep -qE '(ELF|executable|binary)'; then
-    log "ERROR: $chromium_bin no parece ser un binario ejecutable válido"
+    log "ERROR: no se encontró el wrapper chromium-kiosk-bin en ${chromium_bin}"
+    log "ERROR: verifica la instalación de Google Chrome y del wrapper en /usr/local/bin"
     exit 1
   fi
 
-  # Verificar que no estamos usando Snap si hay alternativas
-  if [[ "$chromium_bin" == *"/snap/"* ]]; then
-    log "WARN: usando Chromium desde Snap (no recomendado, instala Chromium normal)"
+  if ! file "$chromium_bin" 2>/dev/null | grep -qE '(ELF|executable|binary)'; then
+    log "ERROR: ${chromium_bin} no es un binario ejecutable válido"
+    exit 1
   fi
 
   local raw_url
