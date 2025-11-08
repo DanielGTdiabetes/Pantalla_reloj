@@ -131,10 +131,10 @@ def resolve_calendar_provider(payload: Dict[str, Any]) -> Tuple[str, bool, Optio
     )
 
     provider_value = (
-        panel_calendar.get("source")
-        or panel_calendar.get("provider")
-        or legacy_calendar.get("source")
+        legacy_calendar.get("source")
         or legacy_calendar.get("provider")
+        or panel_calendar.get("source")
+        or panel_calendar.get("provider")
     )
     provider = str(provider_value).strip().lower() if provider_value else "google"
     if provider == "disabled":
@@ -144,9 +144,9 @@ def resolve_calendar_provider(payload: Dict[str, Any]) -> Tuple[str, bool, Optio
     if provider not in {"google", "ics"}:
         provider = "google"
 
-    enabled_value = panel_calendar.get("enabled")
+    enabled_value = legacy_calendar.get("enabled")
     if enabled_value is None:
-        enabled_value = legacy_calendar.get("enabled")
+        enabled_value = panel_calendar.get("enabled")
     enabled = bool(enabled_value) if enabled_value is not None else False
 
     ics_path_value = panel_calendar.get("ics_path") or legacy_calendar.get("ics_path")

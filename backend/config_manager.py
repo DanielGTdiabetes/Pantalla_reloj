@@ -509,6 +509,21 @@ class ConfigManager:
                     self.logger.info("[config] Removed ui.map.cinema")
                 # Eliminar ui.map.idlePan si depende de cinema (por ahora lo mantenemos)
         
+        # Migrar rotation raíz a ui.rotation
+        if "rotation" in purged and isinstance(purged["rotation"], dict):
+            ui_block = purged.get("ui")
+            if not isinstance(ui_block, dict):
+                ui_block = {}
+                purged["ui"] = ui_block
+
+            existing_rotation = ui_block.get("rotation")
+            if not isinstance(existing_rotation, dict) or not existing_rotation:
+                ui_block["rotation"] = purged["rotation"]
+                self.logger.info("[config] Migrated root.rotation to ui.rotation")
+            # Eliminar siempre la clave legacy raíz
+            del purged["rotation"]
+            changed = True
+
         # Eliminar cine_focus de layers si existe
         if "layers" in purged and isinstance(purged["layers"], dict):
             for layer_type in ["flights", "ships"]:

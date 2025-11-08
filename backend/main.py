@@ -10,6 +10,7 @@ import tempfile
 import time
 import traceback
 import uuid
+from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -3833,6 +3834,31 @@ async def save_config(request: Request) -> JSONResponse:
     return JSONResponse(content=persisted_config)
 
 
+def _validation_loc_matches_group(loc: Tuple[object, ...], group_name: str) -> bool:
+    """Determina si la ruta de error pertenece al grupo actualizado."""
+
+    if not loc:
+        return False
+
+    parts = tuple(part for part in group_name.split(".") if part)
+    if not parts:
+        return False
+
+    if parts == ("calendar",):
+        return loc[:1] == ("calendar",) or loc[:2] == ("panels", "calendar")
+
+    if parts == ("panels", "calendar"):
+        return loc[:2] == ("panels", "calendar") or loc[:1] == ("calendar",)
+
+    if parts[0] == "panels" and len(parts) > 1:
+        return loc[:len(parts)] == parts
+
+    if parts[0] == "layers" and len(parts) > 1:
+        return loc[:len(parts)] == parts
+
+    return loc[:1] == (parts[0],)
+
+
 @app.patch("/api/config/group/{group_name}")
 async def save_config_group(group_name: str, request: Request) -> JSONResponse:
     """
@@ -3971,19 +3997,43 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
     try:
         config_v2 = AppConfigV2.model_validate(sanitized_config)
     except ValidationError as exc:
-        logger.warning("[config] Validation error: %s", exc.errors())
-        first_error = exc.errors()[0] if exc.errors() else {}
-        field_path = ".".join(str(x) for x in first_error.get("loc", []))
-        error_msg = first_error.get("msg", "Validation failed")
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": error_msg,
-                "field": field_path,
-            },
-        ) from exc
+        relevant_errors = []
 
-    provider_final, enabled_final, final_ics_path = _resolve_calendar_settings(config_v2)
+        for error in exc.errors():
+            loc = tuple(error.get("loc", ()))
+            if _validation_loc_matches_group(loc, group_name):
+                relevant_errors.append(error)
+
+        if relevant_errors:
+            logger.warning(
+                "[config] Validation error en grupo %s: %s",
+                group_name,
+                relevant_errors,
+            )
+            first_error = relevant_errors[0]
+            field_path = ".".join(str(x) for x in first_error.get("loc", []))
+            error_msg = first_error.get("msg", "Validation failed")
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": error_msg,
+                    "field": field_path,
+                },
+            ) from exc
+
+        logger.info(
+            "[config] Ignorando %d errores de validación fuera del grupo %s",
+            len(exc.errors()),
+            group_name,
+        )
+        config_v2 = None
+
+    if config_v2 is not None:
+        provider_final, enabled_final, final_ics_path = _resolve_calendar_settings(config_v2)
+    else:
+        provider_final, enabled_final, final_ics_path = resolve_calendar_provider(
+            deepcopy(sanitized_config)
+        )
 
     stored_calendar_ics_url = secret_store.get_secret("calendar_ics_url")
     stored_calendar_ics_path = secret_store.get_secret("calendar_ics_path")

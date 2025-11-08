@@ -205,7 +205,7 @@ class AISStreamProviderConfig(BaseModel):
     """Configuración específica del proveedor AISStream."""
     model_config = ConfigDict(extra="ignore")
 
-    ws_url: str = Field(default=DEFAULT_AISSTREAM_WS_URL, max_length=512)
+    ws_url: Optional[str] = Field(default=DEFAULT_AISSTREAM_WS_URL, max_length=512)
 
     @field_validator("ws_url", mode="before")
     @classmethod
