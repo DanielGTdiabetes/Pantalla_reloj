@@ -1,0 +1,43 @@
+[Unit]
+Description=Pantalla_reloj Kiosk (Chromium) for user %i
+Documentation=https://github.com/DanielGTdiabetes/Pantalla_reloj
+After=graphical.target pantalla-openbox@%i.service
+Wants=graphical.target pantalla-openbox@%i.service
+StartLimitIntervalSec=30s
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=%i
+Group=%i
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/%i/.Xauthority
+Environment=CHROMIUM_BIN=/usr/local/bin/chromium-kiosk-bin
+Environment=KIOSK_URL=http://127.0.0.1/
+# Perfil y caché por usuario (evita permisos root y locks)
+Environment=KIOSK_USER_DATA=/home/%i/.local/share/pantalla-reloj/chromium
+Environment=KIOSK_CACHE_DIR=/home/%i/.cache/pantalla-reloj/chromium
+# Limpieza defensiva de locks y cierres residuales
+ExecStartPre=/usr/bin/find ${KIOSK_USER_DATA} -type f -name 'LOCK' -delete || true
+ExecStartPre=/usr/bin/find ${KIOSK_CACHE_DIR} -type f -name 'LOCK' -delete || true
+ExecStartPre=/usr/bin/bash -lc "pkill -f 'pantalla-kiosk' || true"
+# Lanza chromium kiosk (sin snap, sin /usr/bin/chromium-browser)
+ExecStart=
+ExecStart=${CHROMIUM_BIN} --class=pantalla-kiosk --kiosk --start-fullscreen \
+  --app=${KIOSK_URL} \
+  --no-first-run --no-default-browser-check \
+  --disable-translate --disable-infobars --disable-session-crashed-bubble --noerrdialogs \
+  --disable-features=InfiniteSessionRestore,Translate,HardwareMediaKeyHandling,CalculateNativeWinOcclusion \
+  --disable-renderer-backgrounding --disable-background-timer-throttling --disable-backgrounding-occluded-windows \
+  --hide-scrollbars --overscroll-history-navigation=0 \
+  --password-store=basic --test-type --ozone-platform=x11 --ignore-gpu-blocklist --enable-webgl \
+  --enable-unsafe-swiftshader --use-gl=angle --use-angle=swiftshader \
+  --disk-cache-dir=${KIOSK_CACHE_DIR} --user-data-dir=${KIOSK_USER_DATA} \
+  --force-device-scale-factor=0.84 \
+  --enable-logging=stderr --log-level=1
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target
+

@@ -596,6 +596,24 @@ variable.
 
 ## Kiosk Browser
 
+### Kiosk (Chromium)
+
+- El servicio `pantalla-kiosk-chromium@.service` del repositorio lanza nuestro binario `CHROMIUM_BIN=/usr/local/bin/chromium-kiosk-bin`, evitando cualquier wrapper del snap (`/usr/bin/chromium-browser`).
+- Se declara `After=Wants=graphical.target pantalla-openbox@%i.service` para garantizar que Openbox y Xorg estén listos antes de iniciar Chromium; el límite de reinicios (`StartLimitIntervalSec=30s`, `StartLimitBurst=5`) reside en `[Unit]` para que systemd lo acepte.
+- Variables de entorno críticas se fijan en la propia unit (`DISPLAY=:0`, `XAUTHORITY=/home/%i/.Xauthority`, directorios XDG por usuario) y se limpian locks residuales antes de ejecutar el navegador.
+- Verificación rápida tras instalar o actualizar:
+
+```bash
+sudo systemd-analyze verify /etc/systemd/system/pantalla-kiosk-chromium@.service
+sudo systemctl daemon-reload
+sudo systemctl start pantalla-openbox@dani.service
+sudo systemctl start pantalla-kiosk-chromium@dani.service
+sudo journalctl -u pantalla-kiosk-chromium@dani.service -n 120 --no-pager
+sudo find /home/dani/.local/share/pantalla-reloj/chromium /home/dani/.cache/pantalla-reloj/chromium -name 'LOCK'
+```
+
+- El journal no debe mostrar `Unknown key name 'StartLimitIntervalSec'`, ni `Command '/usr/bin/chromium-browser' requires the chromium snap to be installed`, ni `xset: unable to open display ":0"`. Tras reiniciar el servicio, no deben quedar archivos `LOCK` persistentes en los directorios del perfil/cache.
+
 ### Kiosk estable (Chrome .deb)
 
 **Motivo**: Evitar el wrapper Snap de Chromium y problemas con AppArmor/D-Bus que pueden causar pantalla negra o fallos de arranque.
