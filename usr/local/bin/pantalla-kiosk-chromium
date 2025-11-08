@@ -66,6 +66,26 @@ cleanup_profile_artifacts() {
   done
 }
 
+wait_for_backend() {
+  local attempts="${KIOSK_WAIT_ATTEMPTS:-5}"
+  local delay="${KIOSK_WAIT_DELAY_SEC:-2}"
+  local endpoint="${KIOSK_HEALTHCHECK_URL:-${DEFAULT_ORIGIN%/}/api/config}"
+  local attempt=1
+
+  while (( attempt <= attempts )); do
+    if curl -sf --max-time 4 "$endpoint" >/dev/null 2>&1; then
+      log "backend disponible (intento ${attempt}/${attempts}): ${endpoint}"
+      return 0
+    fi
+    log "backend aún no responde (intento ${attempt}/${attempts}) en ${endpoint}"
+    sleep "$delay"
+    attempt=$((attempt + 1))
+  done
+
+  log "WARN: backend sigue sin responder tras ${attempts} intentos: ${endpoint}"
+  return 1
+}
+
 resolve_url() {
   local candidate="$1"
   if [[ -z "$candidate" ]]; then
@@ -121,9 +141,15 @@ find_chromium() {
       # Evitar Snap si es posible
       if [[ "$resolved" != *"/snap/"* ]]; then
         # Verificar que no sea un script que requiera snap
-        if [[ -f "$resolved" ]] && ! grep -q "snap install chromium" "$resolved" 2>/dev/null; then
-          printf '%s\n' "$resolved"
-          return 0
+        if [[ -f "$resolved" ]]; then
+          if file "$resolved" 2>/dev/null | grep -qE '(ELF|executable|binary)'; then
+            printf '%s\n' "$resolved"
+            return 0
+          fi
+          log "descartando ${resolved}: no es un binario ELF (posible wrapper)"
+          if grep -q "snap install chromium" "$resolved" 2>/dev/null; then
+            log "descartando ${resolved}: wrapper que requiere snap"
+          fi
         fi
       fi
     fi
@@ -140,14 +166,6 @@ find_chromium() {
       fi
     fi
   done
-
-  # Fallback a Snap solo si no se encuentra ninguna alternativa
-  local snap_candidate="/snap/chromium/current/usr/lib/chromium-browser/chrome"
-  if [[ -x "$snap_candidate" ]]; then
-    log "WARN: Usando Chromium desde Snap (no recomendado, instala Chromium normal)" >&2
-    printf '%s\n' "$snap_candidate"
-    return 0
-  fi
 
   return 1
 }
@@ -276,12 +294,8 @@ main() {
     log "ERROR: Verifica que pantalla-xorg@ está ejecutándose"
     exit 1
   fi
-  
-  # Validar que el backend está respondiendo (con timeout)
-  if ! curl -sf --max-time 5 http://127.0.0.1:8081/api/health >/dev/null 2>&1; then
-    log "WARN: Backend no responde en http://127.0.0.1:8081/api/health"
-    log "WARN: Continuando de todas formas, pero el frontend puede no funcionar"
-  fi
+
+  wait_for_backend || true
   
   local chromium_bin
   if ! chromium_bin="$(find_chromium)"; then
