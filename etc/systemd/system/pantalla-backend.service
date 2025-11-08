@@ -1,0 +1,17 @@
+[Unit]
+Description=Pantalla_reloj Backend (FastAPI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dani
+WorkingDirectory=/home/dani/proyectos/Pantalla_reloj/backend
+Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONPATH=/home/dani/proyectos/Pantalla_reloj"
+ExecStart=/home/dani/proyectos/Pantalla_reloj/backend/.venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8081 --proxy-headers
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
