@@ -9980,3 +9980,35 @@ def on_startup() -> None:
     root = Path(os.getenv("PANTALLA_STATE_DIR", "/var/lib/pantalla-reloj"))
     for child in (root / "cache").glob("*.json"):
         child.touch(exist_ok=True)
+
+
+def run(host: str = "127.0.0.1", port: int = 8081) -> None:
+    """Ejecuta la aplicación FastAPI usando uvicorn.
+
+    Args:
+        host: Dirección IP en la que se expone el servicio.
+        port: Puerto TCP del servicio.
+    """
+
+    import uvicorn
+
+    uvicorn.run(
+        "backend.main:app",
+        host=host,
+        port=port,
+        proxy_headers=True,
+    )
+
+
+if __name__ == "__main__":
+    host = os.getenv("PANTALLA_BACKEND_HOST", "127.0.0.1")
+    port_raw = os.getenv("PANTALLA_BACKEND_PORT", "8081")
+
+    try:
+        port_value = int(port_raw)
+    except ValueError as exc:  # pragma: no cover - configuración inválida
+        raise RuntimeError(
+            f"Invalid port value in PANTALLA_BACKEND_PORT: {port_raw!r}"
+        ) from exc
+
+    run(host=host, port=port_value)

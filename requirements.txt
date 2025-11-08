@@ -1,0 +1,3 @@
+# Requisitos principales del proyecto Pantalla_reloj.
+# Incluye las dependencias del backend de FastAPI.
+-r backend/requirements.txt
