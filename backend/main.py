@@ -9993,7 +9993,7 @@ def run(host: str = "127.0.0.1", port: int = 8081) -> None:
     import uvicorn
 
     uvicorn.run(
-        "backend.main:app",
+        app,
         host=host,
         port=port,
         proxy_headers=True,
