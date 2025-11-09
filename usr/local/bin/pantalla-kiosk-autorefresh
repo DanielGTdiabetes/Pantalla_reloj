@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Reinicia el servicio kiosk cuando cambia la configuración
+# Reinicia el servicio kiosk bajo demanda
 
 TARGET_USER="${1:-}"
 
@@ -15,10 +15,20 @@ if [[ "$DELAY" =~ ^[0-9]+$ ]] && (( DELAY > 0 )); then
   sleep "$DELAY"
 fi
 
+FLAG_PATH="${PANTALLA_AUTORESTART_FLAG:-/var/lib/pantalla-reloj/state/kiosk-refresh.flag}"
+
+if [[ -n "$FLAG_PATH" ]]; then
+  rm -f "$FLAG_PATH" 2>/dev/null || true
+fi
+
 SERVICE_NAME="pantalla-kiosk@${TARGET_USER}.service"
 
 if ! systemctl restart "$SERVICE_NAME"; then
   echo "[kiosk-autorefresh] WARN: no se pudo reiniciar ${SERVICE_NAME}" >&2
   exit 0
+fi
+
+if [[ -n "$FLAG_PATH" ]]; then
+  rm -f "$FLAG_PATH" 2>/dev/null || true
 fi
 

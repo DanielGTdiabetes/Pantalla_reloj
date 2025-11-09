@@ -126,6 +126,45 @@ from .rate_limiter import check_rate_limit
 APP_START = datetime.now(timezone.utc)
 logger = configure_logging()
 
+# Auto-refresh helpers
+def _auto_refresh_disabled() -> bool:
+    value = os.getenv("PANTALLA_AUTOREFRESH_ENABLED", "1").strip().lower()
+    return value in {"0", "false", "no", "off"}
+
+
+def _schedule_kiosk_refresh(reason: str = "config_saved") -> None:
+    if _auto_refresh_disabled():
+        return
+
+    flag_path = Path(
+        os.getenv(
+            "PANTALLA_KIOSK_REFRESH_FLAG",
+            "/var/lib/pantalla-reloj/state/kiosk-refresh.flag",
+        )
+    )
+
+    payload = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "reason": reason,
+        "nonce": uuid.uuid4().hex,
+    }
+
+    try:
+        flag_path.parent.mkdir(parents=True, exist_ok=True)
+        flag_path.write_text(json.dumps(payload), encoding="utf-8")
+        logger.info("[kiosk] refresh solicitado (%s)", reason)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[kiosk] No se pudo programar el refresh automático (%s): %s",
+            reason,
+            exc,
+        )
+
+
+def _persist_config(config_data: Dict[str, Any], *, reason: str) -> None:
+    config_manager._atomic_write_v2(config_data)
+    _schedule_kiosk_refresh(reason)
+
 # Configuración de ruta
 CONFIG_PATH = os.getenv("PANTALLA_CONFIG", "/var/lib/pantalla-reloj/config.json")
 config_manager = ConfigManager()
@@ -1680,7 +1719,7 @@ def validate_map_config() -> Dict[str, Any]:
                 if "ui_map" in config_data and isinstance(config_data["ui_map"], dict):
                     if "maptiler" in config_data["ui_map"] and isinstance(config_data["ui_map"]["maptiler"], dict):
                         config_data["ui_map"]["maptiler"]["styleUrl"] = fallback_url
-                        config_manager._atomic_write_v2(config_data)
+                        _persist_config(config_data, reason="maptiler_autofix")
                         logger.info("Updated MapTiler styleUrl to streets-v2")
                 result = fallback_result
                 tried_fallback = True
@@ -1946,6 +1985,7 @@ async def upload_ics_file(
     try:
         write_config_atomic(sanitized_ics, config_manager.config_file)
         logger.info("[config] ICS file uploaded and configuration updated: %s", ICS_STORAGE_PATH)
+        _schedule_kiosk_refresh("calendar_ics_upload_manual")
     except (PermissionError, OSError) as exc:
         logger.error("[config] Failed to persist configuration after ICS upload: %s", exc)
         raise HTTPException(
@@ -2180,7 +2220,7 @@ async def upload_calendar_ics_file(
             calendar_data["google"] = {}
         
         # Guardar configuración de forma atómica
-        config_manager._atomic_write_v2(config_data)
+        _persist_config(config_data, reason="calendar_ics_upload")
     except Exception as exc:
         logger.warning("[calendar] Failed to update config after ICS upload: %s", exc)
         # No fallar, el archivo ya está guardado
@@ -2298,7 +2338,7 @@ async def set_calendar_ics_url(request: CalendarICSUrlRequest) -> Dict[str, Any]
             config_data["calendar"]["ics"]["last_error"] = None
             
             # Guardar configuración
-            config_manager._atomic_write_v2(config_data)
+            _persist_config(config_data, reason="calendar_ics_url")
         except Exception as exc:
             logger.warning("[calendar] Failed to update config after ICS URL set: %s", exc)
         
@@ -3666,6 +3706,12 @@ async def save_config(request: Request) -> JSONResponse:
                 config_manager.config_file,
             )
             
+            try:
+                method = request.method.lower()
+            except Exception:
+                method = "unknown"
+            _schedule_kiosk_refresh(f"config_save_{method}")
+
             # Publicar evento config_changed después de guardar exitosamente
             try:
                 publish_config_changed_sync(
@@ -4111,6 +4157,7 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
     try:
         write_json(CONFIG_PATH, sanitized_config)
         logger.info("[config] Group '%s' saved successfully", group_name)
+        _schedule_kiosk_refresh(f"config_group_{group_name}")
         
         # Publicar evento config_changed después de guardar exitosamente
         try:

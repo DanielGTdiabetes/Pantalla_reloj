@@ -1,8 +1,8 @@
 [Unit]
-Description=Vigila config.json para refrescar kiosk (%i)
+Description=Procesa solicitudes de refresco de kiosk (%i)
 
 [Path]
-PathChanged=/var/lib/pantalla-reloj/config.json
+PathChanged=/var/lib/pantalla-reloj/state/kiosk-refresh.flag
 Unit=pantalla-kiosk-autorefresh@%i.service
 
 [Install]
