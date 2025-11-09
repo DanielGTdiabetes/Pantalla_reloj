@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Reinicia el servicio kiosk cuando cambia la configuración
+
+TARGET_USER="${1:-}"
+
+if [[ -z "$TARGET_USER" ]]; then
+  echo "[kiosk-autorefresh] ERROR: falta el usuario objetivo" >&2
+  exit 1
+fi
+
+DELAY="${PANTALLA_AUTORESTART_DELAY:-2}"
+if [[ "$DELAY" =~ ^[0-9]+$ ]] && (( DELAY > 0 )); then
+  sleep "$DELAY"
+fi
+
+SERVICE_NAME="pantalla-kiosk@${TARGET_USER}.service"
+
+if ! systemctl restart "$SERVICE_NAME"; then
+  echo "[kiosk-autorefresh] WARN: no se pudo reiniciar ${SERVICE_NAME}" >&2
+  exit 0
+fi
+

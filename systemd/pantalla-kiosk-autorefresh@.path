@@ -1,0 +1,10 @@
+[Unit]
+Description=Vigila config.json para refrescar kiosk (%i)
+
+[Path]
+PathChanged=/var/lib/pantalla-reloj/config.json
+Unit=pantalla-kiosk-autorefresh@%i.service
+
+[Install]
+WantedBy=multi-user.target
+

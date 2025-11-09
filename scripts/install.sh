@@ -745,9 +745,36 @@ EOF
   systemctl daemon-reload
   systemctl enable --now pantalla-config-snapshot.timer
   SUMMARY+=("[install] timer de snapshots diarios habilitado")
+
 else
   log_warn "No se encontró script de snapshots en $REPO_ROOT/scripts/config-snapshot.sh"
 fi
+
+install -D -m 0755 "$REPO_ROOT/usr/local/bin/pantalla-kiosk-autorefresh" /usr/local/bin/pantalla-kiosk-autorefresh
+cat > /etc/systemd/system/pantalla-kiosk-autorefresh@.service <<'EOF'
+[Unit]
+Description=Reinicia el kiosk tras cambios de configuración (%i)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pantalla-kiosk-autorefresh %i
+EOF
+
+cat > /etc/systemd/system/pantalla-kiosk-autorefresh@.path <<'EOF'
+[Unit]
+Description=Vigila config.json para refrescar kiosk (%i)
+
+[Path]
+PathChanged=/var/lib/pantalla-reloj/config.json
+Unit=pantalla-kiosk-autorefresh@%i.service
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now "pantalla-kiosk-autorefresh@${USER_NAME}.path"
+SUMMARY+=("[install] auto-refresh kiosk habilitado (pantalla-kiosk-autorefresh@${USER_NAME}.path)")
 
 log_info "Disabling portal service"
 systemctl disable --now "pantalla-portal@${USER_NAME}.service" 2>/dev/null || true

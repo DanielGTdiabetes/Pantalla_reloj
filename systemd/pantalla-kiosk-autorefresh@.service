@@ -1,0 +1,7 @@
+[Unit]
+Description=Reinicia el kiosk tras cambios de configuración (%i)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pantalla-kiosk-autorefresh %i
+
