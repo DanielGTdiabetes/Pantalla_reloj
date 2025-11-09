@@ -3,6 +3,8 @@ Esquema v2 de configuración - limpio y mínimo para Fase 2.
 """
 from __future__ import annotations
 
+import json
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing import Optional, Literal, List, Dict, Any
 
@@ -102,6 +104,31 @@ class MapRegion(BaseModel):
     postalCode: Optional[str] = Field(default=None, max_length=10)
 
 
+class MapLabelsOverlayConfig(BaseModel):
+    """Configuración de capa de etiquetas vectoriales sobre el mapa satélite."""
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = Field(default=True, description="Habilita la superposición de etiquetas")
+    style_url: Optional[str] = Field(default=None, max_length=512, description="URL del estilo vectorial de etiquetas")
+    layer_filter: str = Field(
+        default='["==", ["get", "layer"], "poi_label"]',
+        description="Filtro JSON (cadena serializada) para seleccionar capas de tipo label",
+    )
+
+    @field_validator("layer_filter", mode="before")
+    @classmethod
+    def normalize_layer_filter(cls, value: Any) -> str:
+        """Permite recibir layer_filter como lista o cadena."""
+        if isinstance(value, list):
+            try:
+                return json.dumps(value)
+            except Exception:
+                return json.dumps([])
+        if isinstance(value, str):
+            return value
+        return json.dumps(value)
+
+
 class MapSatelliteConfig(BaseModel):
     """Configuración de modo satélite con etiquetas vectoriales."""
     model_config = ConfigDict(extra="ignore")
@@ -120,6 +147,7 @@ class MapSatelliteConfig(BaseModel):
         max_length=512,
         description="URL del estilo vectorial para etiquetas",
     )
+    labels_overlay: MapLabelsOverlayConfig = Field(default_factory=MapLabelsOverlayConfig)
 
 
 class MapConfig(BaseModel):

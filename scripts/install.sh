@@ -358,6 +358,29 @@ if [[ $NEEDS_CONFIG_REGEN -eq 1 ]]; then
     exit 1
   fi
 fi
+
+DEFAULT_CONFIG_PATH="${BACKEND_DEST}/default_config_v2.json"
+if [[ -f "$DEFAULT_CONFIG_PATH" ]]; then
+  log_info "Validando default_config_v2.json con AppConfigV2"
+  if python3 - <<'PY'; then
+from backend.models_v2 import AppConfigV2
+import json
+
+with open("/opt/pantalla-reloj/backend/default_config_v2.json", "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+AppConfigV2.model_validate(data)
+print("[OK] default_config_v2.json validado correctamente.")
+PY
+    SUMMARY+=("[install] default_config_v2.json validado con AppConfigV2")
+  else
+    log_error "Validación de default_config_v2.json falló; revisa el modelo AppConfigV2"
+    exit 1
+  fi
+else
+  log_warn "No se encontró ${DEFAULT_CONFIG_PATH}; omitiendo validación de AppConfigV2"
+fi
+
 ICS_DIR="$STATE_DIR/ics"
 SAMPLE_ICS="$ICS_DIR/personal.ics"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$ICS_DIR"

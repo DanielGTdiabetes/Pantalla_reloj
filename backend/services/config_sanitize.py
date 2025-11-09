@@ -167,13 +167,30 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
                 if raster_legacy and not satellite_cfg.get("style_raster"):
                     satellite_cfg["style_raster"] = raster_legacy
 
-                labels_overlay = satellite_cfg.pop("labels_overlay", None)
+                labels_overlay = satellite_cfg.get("labels_overlay")
                 if isinstance(labels_overlay, dict):
                     if "labels_enabled" not in satellite_cfg:
                         satellite_cfg["labels_enabled"] = bool(labels_overlay.get("enabled", True))
                     style_url = labels_overlay.get("style_url")
                     if style_url and not satellite_cfg.get("style_labels"):
                         satellite_cfg["style_labels"] = style_url
+                    layer_filter_value = labels_overlay.get("layer_filter")
+                    if isinstance(layer_filter_value, list):
+                        try:
+                            labels_overlay["layer_filter"] = json.dumps(layer_filter_value)
+                        except Exception:
+                            labels_overlay["layer_filter"] = '["==", ["get", "layer"], "poi_label"]'
+                    elif isinstance(layer_filter_value, str):
+                        labels_overlay["layer_filter"] = layer_filter_value
+                    else:
+                        labels_overlay["layer_filter"] = json.dumps(layer_filter_value or ["==", ["get", "layer"], "poi_label"])
+                else:
+                    labels_overlay = {
+                        "enabled": satellite_cfg.get("labels_enabled", True),
+                        "style_url": satellite_cfg.get("style_labels", "https://api.maptiler.com/maps/streets/style.json"),
+                        "layer_filter": '["==", ["get", "layer"], "poi_label"]',
+                    }
+                satellite_cfg["labels_overlay"] = labels_overlay
 
                 satellite_cfg.setdefault("enabled", False)
                 satellite_cfg.setdefault("labels_enabled", True)
