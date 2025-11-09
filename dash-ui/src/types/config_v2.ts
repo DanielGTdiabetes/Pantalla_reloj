@@ -16,6 +16,10 @@ export type LocalRasterConfig = {
 export type MapTilerConfig = {
   apiKey: string | null;
   styleUrl: string | null;
+  key?: string | null;
+  styleUrlDark?: string | null;
+  styleUrlLight?: string | null;
+  styleUrlBright?: string | null;
 };
 
 export type CustomXyzConfig = {
