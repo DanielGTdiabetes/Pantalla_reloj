@@ -151,6 +151,12 @@ class FlightsLayerCircleConfig(BaseModel):
     stroke_width: float = Field(default=2.0, ge=0, le=10)
 
 
+class FlightsLayerSymbolConfig(BaseModel):
+    """Configuración de iconos personalizados de vuelos."""
+    size_vh: float = Field(default=2.0, ge=0.1, le=10)
+    allow_overlap: bool = Field(default=True)
+
+
 class OpenSkyBBoxConfig(BaseModel):
     """Configuración de bounding box para OpenSky."""
     lamin: float = Field(default=39.5, ge=-90, le=90)
@@ -191,8 +197,9 @@ class FlightsLayerConfig(BaseModel):
     decimate: Literal["none", "grid"] = "none"
     grid_px: int = Field(default=24, ge=8, le=128)
     styleScale: float = Field(default=3.2, ge=0.1, le=10)
-    render_mode: Literal["circle", "symbol", "symbol_custom", "auto"] = "circle"
+    render_mode: Literal["circle", "symbol", "symbol_custom", "auto"] = "symbol_custom"
     circle: Optional[FlightsLayerCircleConfig] = None
+    symbol: Optional[FlightsLayerSymbolConfig] = None
     opensky: Optional[OpenSkyProviderConfig] = None
     aviationstack: Optional[AviationStackProviderConfig] = None
     custom: Optional[CustomFlightProviderConfig] = None

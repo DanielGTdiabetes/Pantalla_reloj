@@ -125,6 +125,11 @@ export type FlightsLayerCircleConfigV2 = {
   stroke_width: number;
 };
 
+export type FlightsLayerSymbolConfigV2 = {
+  size_vh: number;
+  allow_overlap: boolean;
+};
+
 export type OpenSkyBBoxConfig = {
   lamin: number;
   lamax: number;
@@ -162,6 +167,7 @@ export type FlightsLayerConfigV2 = {
   styleScale: number;
   render_mode: "circle" | "symbol" | "symbol_custom" | "auto";
   circle?: FlightsLayerCircleConfigV2;
+  symbol?: FlightsLayerSymbolConfigV2;
   opensky?: OpenSkyProviderConfig;
   aviationstack?: AviationStackProviderConfig;
   custom?: CustomFlightProviderConfig;

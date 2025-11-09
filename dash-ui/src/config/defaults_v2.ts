@@ -252,6 +252,7 @@ export function withConfigDefaultsV2(
         ...DEFAULT_FLIGHTS_LAYER_CONFIG,
         ...config.layers?.flights,
         circle: config.layers?.flights?.circle ?? DEFAULT_FLIGHTS_LAYER_CONFIG.circle,
+        symbol: config.layers?.flights?.symbol ?? DEFAULT_FLIGHTS_LAYER_CONFIG.symbol,
       },
       ships: {
         ...DEFAULT_SHIPS_LAYER_CONFIG,
