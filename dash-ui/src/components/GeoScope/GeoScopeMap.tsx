@@ -2,7 +2,7 @@ import maplibregl from "maplibre-gl";
 import type { MapLibreEvent, StyleSpecification } from "maplibre-gl";
 import type { Feature, FeatureCollection, GeoJsonProperties, Geometry, Point } from "geojson";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useEffect, useRef, useState, type MutableRefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 
 import { apiGet, apiPost, saveConfig } from "../../lib/api";
 import { useConfig } from "../../lib/useConfig";
@@ -15,6 +15,7 @@ import AEMETWarningsLayer from "./layers/AEMETWarningsLayer";
 import LightningLayer from "./layers/LightningLayer";
 import WeatherLayer from "./layers/WeatherLayer";
 import { LayerRegistry } from "./layers/LayerRegistry";
+import SatelliteHybridLayer, { type SatelliteLabelsStyle } from "./layers/SatelliteHybridLayer";
 import ShipsLayer from "./layers/ShipsLayer";
 import MapSpinner from "../MapSpinner";
 import { hasSprite } from "./utils/styleSprite";
@@ -40,6 +41,7 @@ import {
   type MapStyleDefinition,
   type MapStyleResult
 } from "./mapStyle";
+import { getMaptilerApiKey } from "../../lib/config";
 
 // Vista fija por defecto (Castellón)
 const DEFAULT_VIEW = {
@@ -52,6 +54,12 @@ const DEFAULT_VIEW = {
 const DEFAULT_MIN_ZOOM = 2.0;
 
 const FALLBACK_THEME = createDefaultMapSettings().theme ?? {};
+
+export type GeoScopeMapProps = {
+  satelliteEnabled?: boolean;
+  satelliteOpacity?: number;
+  satelliteLabelsStyle?: SatelliteLabelsStyle;
+};
 
 const cloneTheme = (theme?: MapThemeConfig | null): MapThemeConfig => ({
   ...FALLBACK_THEME,
@@ -629,8 +637,16 @@ function checkWebGLSupport(): { supported: boolean; reason?: string } {
   }
 }
 
-export default function GeoScopeMap() {
+export default function GeoScopeMap({
+  satelliteEnabled = false,
+  satelliteOpacity,
+  satelliteLabelsStyle = "maptiler-streets-v4-labels",
+}: GeoScopeMapProps = {}) {
   const { data: config, reload: reloadConfig, mapStyleVersion } = useConfig();
+  const maptilerKey = useMemo(() => getMaptilerApiKey(config), [config]);
+  const effectiveSatelliteOpacity = satelliteOpacity ?? 0.85;
+  const effectiveLabelsStyle: SatelliteLabelsStyle = satelliteLabelsStyle;
+  const effectiveSatelliteEnabled = Boolean(satelliteEnabled && maptilerKey);
   const mapFillRef = useRef<HTMLDivElement | null>(null);
   const [webglError, setWebglError] = useState<string | null>(null);
   const [styleChangeInProgress, setStyleChangeInProgress] = useState(false);
@@ -714,12 +730,45 @@ export default function GeoScopeMap() {
   const weatherLayerRef = useRef<WeatherLayer | null>(null);
   const layerRegistryRef = useRef<LayerRegistry | null>(null);
   const shipsLayerRef = useRef<ShipsLayer | null>(null);
+  const satelliteLayerRef = useRef<SatelliteHybridLayer | null>(null);
   const stormModeActiveRef = useRef(false);
   const respectDefaultRef = useRef(false);
   const [tintColor, setTintColor] = useState<string | null>(null);
   const mapStateMachineRef = useRef<MapStateMachine | null>(null);
   const runtimeRef = useRef<RuntimePreferences | null>(null);
   const styleLoadedHandlerRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    const layer = satelliteLayerRef.current;
+    if (!layer) {
+      return;
+    }
+    layer.setApiKey(maptilerKey);
+  }, [maptilerKey]);
+
+  useEffect(() => {
+    const layer = satelliteLayerRef.current;
+    if (!layer) {
+      return;
+    }
+    layer.setOpacity(effectiveSatelliteOpacity);
+  }, [effectiveSatelliteOpacity]);
+
+  useEffect(() => {
+    const layer = satelliteLayerRef.current;
+    if (!layer) {
+      return;
+    }
+    layer.setLabelsStyle(effectiveLabelsStyle);
+  }, [effectiveLabelsStyle]);
+
+  useEffect(() => {
+    const layer = satelliteLayerRef.current;
+    if (!layer) {
+      return;
+    }
+    layer.setEnabled(effectiveSatelliteEnabled);
+  }, [effectiveSatelliteEnabled]);
 
 
   const updateMapView = (map: maplibregl.Map) => {
@@ -1171,6 +1220,16 @@ export default function GeoScopeMap() {
         const layerRegistry = new LayerRegistry(map);
         layerRegistryRef.current = layerRegistry;
 
+        const satelliteLayer = new SatelliteHybridLayer({
+          apiKey: maptilerKey,
+          enabled: effectiveSatelliteEnabled,
+          opacity: effectiveSatelliteOpacity,
+          labelsStyle: effectiveLabelsStyle,
+          zIndex: 5,
+        });
+        layerRegistry.add(satelliteLayer);
+        satelliteLayerRef.current = satelliteLayer;
+
         // Inicializar LightningLayer (siempre habilitado si hay datos)
         const lightningLayer = new LightningLayer({ enabled: true });
         layerRegistry.add(lightningLayer);
@@ -1462,6 +1521,7 @@ export default function GeoScopeMap() {
         layerRegistry.destroy();
         layerRegistryRef.current = null;
       }
+      satelliteLayerRef.current = null;
       aircraftLayerRef.current = null;
       globalRadarLayerRef.current = null;
       globalSatelliteLayerRef.current = null;
@@ -1572,7 +1632,7 @@ export default function GeoScopeMap() {
             maxzoom: 19,
           },
           maptiler: mapSettings.maptiler ? {
-            apiKey: mapSettings.maptiler.apiKey ?? mapSettings.maptiler.key ?? null,
+            apiKey: mapSettings.maptiler.apiKey ?? mapSettings.maptiler.key ?? maptilerKey ?? null,
             styleUrl: styleUrlWithCacheBuster,
           } : undefined,
           customXyz: undefined,

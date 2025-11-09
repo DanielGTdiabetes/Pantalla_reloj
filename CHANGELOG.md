@@ -2,6 +2,11 @@
 
 Todos los cambios notables del proyecto se documentarán en este archivo.
 
+## Unreleased
+
+### Added
+- **Frontend**: Nueva capa `SatelliteHybridLayer` que superpone satélite raster de MapTiler con labels vectoriales. Disponible como props (`satelliteEnabled`, `satelliteOpacity`, `satelliteLabelsStyle`) en `GeoScopeMap` para futuras integraciones en la UI de Config.
+
 ## v24 - 2025-01
 
 ### Fixed

@@ -32,8 +32,19 @@ export const DEFAULT_MAP_CONFIG: MapConfigV2 = {
   controls: false,
   local: DEFAULT_LOCAL_RASTER_CONFIG,
   maptiler: {
-    apiKey: null,
-    styleUrl: "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A",
+    api_key: null,
+    style: "vector-bright",
+    styleUrl: "https://api.maptiler.com/maps/streets-v4/style.json",
+  },
+  satellite: {
+    enabled: false,
+    raster_style_url: "https://api.maptiler.com/maps/satellite/style.json",
+    labels_overlay: {
+      enabled: true,
+      style_url: "https://api.maptiler.com/maps/streets-v4/style.json",
+      layer_filter: ["==", ["get", "class"], "label"],
+    },
+    opacity: 0.85,
   },
   customXyz: {
     tileUrl: null,

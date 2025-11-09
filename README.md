@@ -64,6 +64,11 @@ Antes del primer arranque revisa `docs/CONFIG_SETUP.md`; resume cómo clonar la 
   muestra enmascarado (•••• 1234), el botón «Mostrar» habilita la edición en
   claro y el botón «Probar clave» ejecuta `/api/aemet/test_key` para validar la
   credencial sin exponerla al resto del formulario.
+- El mapa base incluye ahora la capa `SatelliteHybridLayer`: combina raster
+  satélite de MapTiler con labels vectoriales e inyecta su orden automáticamente.
+  Se expone vía props en `GeoScopeMap` (`satelliteEnabled`, `satelliteOpacity`,
+  `satelliteLabelsStyle`) para poder activarla desde la UI de Config en el paso
+  siguiente.
 - Compilado con `npm run build` y servido por Nginx desde `/var/www/html`.
 
 #### Autopan y diagnósticos
