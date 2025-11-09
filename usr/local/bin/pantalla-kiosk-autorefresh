@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Reinicia el servicio kiosk bajo demanda
-
 TARGET_USER="${1:-}"
 
 if [[ -z "$TARGET_USER" ]]; then
@@ -10,25 +8,56 @@ if [[ -z "$TARGET_USER" ]]; then
   exit 1
 fi
 
+SERVICE_NAME="pantalla-kiosk@${TARGET_USER}.service"
+CONFIG_FILE="${CONFIG_FILE:-/var/lib/pantalla-reloj/config.json}"
+STATE_DIR="${PANTALLA_AUTORESTART_STATE_DIR:-/var/lib/pantalla-reloj/state/autorefresh}"
+MIN_INTERVAL="${PANTALLA_AUTORESTART_MIN_INTERVAL:-5}"
 DELAY="${PANTALLA_AUTORESTART_DELAY:-2}"
-if [[ "$DELAY" =~ ^[0-9]+$ ]] && (( DELAY > 0 )); then
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+  echo "[kiosk-autorefresh] WARN: config no encontrada (${CONFIG_FILE}), omitiendo reinicio" >&2
+  exit 0
+fi
+
+install -d -m 0755 "$STATE_DIR" 2>/dev/null || true
+
+HASH_FILE="${STATE_DIR}/last_hash"
+TIMESTAMP_FILE="${STATE_DIR}/last_restart"
+
+if ! CURRENT_HASH=$(sha256sum "$CONFIG_FILE" 2>/dev/null | awk '{print $1}'); then
+  echo "[kiosk-autorefresh] WARN: no se pudo calcular hash de ${CONFIG_FILE}" >&2
+  exit 0
+fi
+
+LAST_HASH=""
+if [[ -r "$HASH_FILE" ]]; then
+  LAST_HASH="$(<"$HASH_FILE")"
+fi
+
+if [[ -n "$LAST_HASH" && "$CURRENT_HASH" == "$LAST_HASH" ]]; then
+  exit 0
+fi
+
+if [[ "$MIN_INTERVAL" =~ ^[0-9]+$ && -r "$TIMESTAMP_FILE" ]]; then
+  LAST_TS="$(<"$TIMESTAMP_FILE")"
+  NOW="$(date +%s)"
+  if [[ "$LAST_TS" =~ ^[0-9]+$ && "$NOW" =~ ^[0-9]+$ ]]; then
+    ELAPSED=$((NOW - LAST_TS))
+    if (( ELAPSED < MIN_INTERVAL )); then
+      echo "[kiosk-autorefresh] INFO: cambio detectado pero dentro del intervalo mínimo (${ELAPSED}s < ${MIN_INTERVAL}s), omitiendo reinicio" >&2
+      exit 0
+    fi
+  fi
+fi
+
+if [[ "$DELAY" =~ ^[0-9]+$ && (( DELAY > 0 )) ]]; then
   sleep "$DELAY"
 fi
-
-FLAG_PATH="${PANTALLA_AUTORESTART_FLAG:-/var/lib/pantalla-reloj/state/kiosk-refresh.flag}"
-
-if [[ -n "$FLAG_PATH" ]]; then
-  rm -f "$FLAG_PATH" 2>/dev/null || true
-fi
-
-SERVICE_NAME="pantalla-kiosk@${TARGET_USER}.service"
 
 if ! systemctl restart "$SERVICE_NAME"; then
   echo "[kiosk-autorefresh] WARN: no se pudo reiniciar ${SERVICE_NAME}" >&2
   exit 0
 fi
 
-if [[ -n "$FLAG_PATH" ]]; then
-  rm -f "$FLAG_PATH" 2>/dev/null || true
-fi
-
+date +%s >"$TIMESTAMP_FILE"
+echo "$CURRENT_HASH" >"$HASH_FILE"
