@@ -1537,7 +1537,12 @@ export default function GeoScopeMap() {
         const configChecksum = mapStyleVersion || Date.now();
         
         // Agregar cache-buster al styleUrl si existe
-        let styleUrlWithCacheBuster = mapSettings.maptiler?.styleUrlDark || null;
+        let styleUrlWithCacheBuster =
+          mapSettings.maptiler?.styleUrl ||
+          mapSettings.maptiler?.styleUrlDark ||
+          mapSettings.maptiler?.styleUrlLight ||
+          mapSettings.maptiler?.styleUrlBright ||
+          null;
         if (styleUrlWithCacheBuster) {
           const url = new URL(styleUrlWithCacheBuster);
           url.searchParams.set("v", String(configChecksum));

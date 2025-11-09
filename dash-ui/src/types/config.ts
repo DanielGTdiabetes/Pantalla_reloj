@@ -46,6 +46,8 @@ export type MapThemeConfig = {
 
 export type MaptilerConfig = {
   key: string | null;
+  apiKey?: string | null;
+  styleUrl?: string | null;
   styleUrlDark: string | null;
   styleUrlLight: string | null;
   styleUrlBright: string | null;
