@@ -281,9 +281,6 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _normalize_opensky_token_url(value: Any) -> str | None:
-
-
-def _normalize_opensky_token_url(value: Any) -> str | None:
     if value is None:
         return _NEW_OPENSKY_TOKEN_URL
     if isinstance(value, str):
