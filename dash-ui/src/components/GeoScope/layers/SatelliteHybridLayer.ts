@@ -280,7 +280,7 @@ export default class SatelliteHybridLayer implements Layer {
         visibility: "visible",
       },
       paint: layer.paint ? { ...layer.paint } : undefined,
-      filter: layer.filter ? [...layer.filter] : undefined,
+      filter: Array.isArray(layer.filter) ? [...layer.filter] : layer.filter,
       minzoom: layer.minzoom,
       maxzoom: layer.maxzoom,
       metadata: layer.metadata ? { ...layer.metadata } : undefined,
