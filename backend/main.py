@@ -9171,41 +9171,28 @@ async def test_ships() -> Dict[str, Any]:
         }
 
 
-@app.get("/api/flights/preview")
-async def get_flights_preview(limit: int = 20) -> Dict[str, Any]:
+@app.get("/api/flights/sample")
+async def get_flights_sample(limit: int = 20) -> Dict[str, Any]:
     """Obtiene una vista previa de vuelos desde la caché si está activa la capa."""
     try:
         config_v2, _ = _read_config_v2()
         flights_config = config_v2.layers.flights if config_v2.layers else None
         
         if not flights_config or not flights_config.enabled:
+            return {"ok": False, "reason": "layer_disabled", "count": 0, "items": []}
+
+        snapshot = opensky_service.get_last_snapshot()
+        if snapshot and snapshot.payload:
+            items = snapshot.payload.get("items", [])
+            limited_items = items[:limit] if items else []
             return {
-                "ok": False,
-                "reason": "layer_disabled",
-                "count": 0,
-                "items": []
+                "ok": True,
+                "count": len(limited_items),
+                "total": len(items),
+                "items": limited_items,
             }
-        
-        # Intentar obtener datos desde opensky_service si está disponible
-        try:
-            snapshot = opensky_service.get_last_snapshot()
-            if snapshot and snapshot.payload:
-                items = snapshot.payload.get("items", [])
-                limited_items = items[:limit] if items else []
-                return {
-                    "ok": True,
-                    "count": len(limited_items),
-                    "total": len(items),
-                    "items": limited_items
-                }
-        except Exception:
-            pass
-        
-        return {
-            "ok": True,
-            "count": 0,
-            "items": []
-        }
+
+        return {"ok": True, "count": 0, "items": []}
     except Exception as exc:
         logger.exception("[preview] Error in get_flights_preview")
         return {
