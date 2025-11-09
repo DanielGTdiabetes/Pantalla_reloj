@@ -112,6 +112,7 @@ export type MapConfig = {
     | "light"
     | "bright"
     | "streets"
+    | "streets-v4"
     | "satellite";
   provider: "maptiler" | "osm" | "openstreetmap" | "xyz";
   maptiler: MaptilerConfig;
