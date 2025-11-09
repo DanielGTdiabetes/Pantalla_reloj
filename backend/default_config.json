@@ -4,7 +4,7 @@
     "module_cycle_seconds": 20
   },
   "map": {
-    "provider": "osm",
+    "provider": "xyz",
     "maptiler_api_key": null
   },
   "ui": {
@@ -12,11 +12,18 @@
     "map": {
       "engine": "maplibre",
       "style": "vector-dark",
-      "provider": "osm",
+      "provider": "xyz",
       "maptiler": {
         "key": null,
         "apiKey": null,
         "styleUrl": null
+      },
+      "xyz": {
+        "urlTemplate": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "attribution": "OpenStreetMap contributors",
+        "minzoom": 0,
+        "maxzoom": 19,
+        "tileSize": 256
       },
       "renderWorldCopies": true,
       "interactive": false,

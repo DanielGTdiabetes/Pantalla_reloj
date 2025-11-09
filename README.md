@@ -17,6 +17,10 @@ Pantalla_reloj/
 └─ openbox/autostart         # Lanzamiento de Epiphany en modo kiosk (Firefox opcional)
 ```
 
+## Configuración inicial rápida
+
+Antes del primer arranque revisa `docs/CONFIG_SETUP.md`; resume cómo clonar la plantilla de `config.json`, qué claves/API keys son obligatorias y cómo verificar que mapa y panel funcionan sin errores.
+
 ### Backend (FastAPI)
 - Endpoints: `/api/health`, `/api/config` (GET/PATCH), `/api/weather`, `/api/news`,
   `/api/astronomy`, `/api/calendar`, `/api/storm_mode` (GET/POST), `/api/astronomy/events`,
