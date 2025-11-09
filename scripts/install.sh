@@ -362,7 +362,7 @@ fi
 DEFAULT_CONFIG_PATH="${BACKEND_DEST}/default_config_v2.json"
 if [[ -f "$DEFAULT_CONFIG_PATH" ]]; then
   log_info "Validando default_config_v2.json con AppConfigV2"
-  if python3 - <<'PY'; then
+  if "$PYTHON_BIN" - <<'PY'; then
 from backend.models_v2 import AppConfigV2
 import json
 
