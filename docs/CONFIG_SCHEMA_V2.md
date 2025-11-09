@@ -141,7 +141,20 @@ Configuración de capas de datos (vuelos, barcos, rayos).
       "max_items_global": 2000,
       "max_items_view": 1500,
       "rate_limit_per_min": 6,
-      "decimate": "none"
+      "decimate": "none",
+      "render_mode": "symbol_custom",
+      "circle": {
+        "radius_base": 7.5,
+        "radius_zoom_scale": 1.7,
+        "opacity": 1.0,
+        "color": "#FFD400",
+        "stroke_color": "#000000",
+        "stroke_width": 2.0
+      },
+      "symbol": {
+        "size_vh": 2.0,
+        "allow_overlap": true
+      }
     },
     "ships": {
       "enabled": false,

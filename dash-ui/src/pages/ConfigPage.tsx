@@ -203,7 +203,10 @@ export const ConfigPage: React.FC = () => {
     }
 
     if (!flights.enabled) {
-      return { enabled: false };
+      return {
+        enabled: false,
+        provider: "opensky",
+      };
     }
 
     const provider = flights.provider ?? "opensky";
