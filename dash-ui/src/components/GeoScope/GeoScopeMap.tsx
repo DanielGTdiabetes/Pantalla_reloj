@@ -452,30 +452,35 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
             maxzoom: 19,
           },
           maptiler: mapSettings.maptiler
-            ? {
-                api_key:
-                  mapSettings.maptiler.apiKey ??
-                  mapSettings.maptiler.key ??
-                  mapSettings.maptiler.api_key ??
-                  null,
-                style: mapSettings.style ?? null,
-                styleUrl:
-                  mapSettings.maptiler.styleUrl ??
-                  mapSettings.maptiler.styleUrlDark ??
-                  mapSettings.maptiler.styleUrlLight ??
-                  mapSettings.maptiler.styleUrlBright ??
-                  null,
-                apiKey:
-                  mapSettings.maptiler.apiKey ??
-                  mapSettings.maptiler.key ??
-                  mapSettings.maptiler.api_key ??
-                  null,
-                key: mapSettings.maptiler.key ?? null,
-                styleUrlDark: mapSettings.maptiler.styleUrlDark ?? null,
-                styleUrlLight: mapSettings.maptiler.styleUrlLight ?? null,
-                styleUrlBright: mapSettings.maptiler.styleUrlBright ?? null,
-                urls: mapSettings.maptiler.urls ?? undefined,
-              }
+            ? (() => {
+                const legacyMaptiler = mapSettings.maptiler as typeof mapSettings.maptiler & {
+                  api_key?: string | null;
+                  urls?: Record<string, string | null>;
+                };
+                const resolvedKey =
+                  legacyMaptiler.apiKey ??
+                  legacyMaptiler.key ??
+                  legacyMaptiler.api_key ??
+                  null;
+                const resolvedStyleUrl =
+                  legacyMaptiler.styleUrl ??
+                  legacyMaptiler.styleUrlDark ??
+                  legacyMaptiler.styleUrlLight ??
+                  legacyMaptiler.styleUrlBright ??
+                  null;
+
+                return {
+                  api_key: resolvedKey,
+                  apiKey: resolvedKey,
+                  key: legacyMaptiler.key ?? resolvedKey,
+                  style: mapSettings.style ?? null,
+                  styleUrl: resolvedStyleUrl,
+                  styleUrlDark: legacyMaptiler.styleUrlDark ?? null,
+                  styleUrlLight: legacyMaptiler.styleUrlLight ?? null,
+                  styleUrlBright: legacyMaptiler.styleUrlBright ?? null,
+                  ...(legacyMaptiler.urls ? { urls: legacyMaptiler.urls } : {}),
+                };
+              })()
             : undefined,
           customXyz: undefined,
           viewMode: mapSettings.viewMode || "fixed",
@@ -1655,27 +1660,30 @@ export default function GeoScopeMap({
             maxzoom: 19,
           },
           maptiler: mapSettings.maptiler
-            ? {
-                api_key:
-                  mapSettings.maptiler.apiKey ??
-                  mapSettings.maptiler.key ??
-                  mapSettings.maptiler.api_key ??
+            ? (() => {
+                const legacyMaptiler = mapSettings.maptiler as typeof mapSettings.maptiler & {
+                  api_key?: string | null;
+                  urls?: Record<string, string | null>;
+                };
+                const resolvedKey =
+                  legacyMaptiler.apiKey ??
+                  legacyMaptiler.key ??
+                  legacyMaptiler.api_key ??
                   maptilerKey ??
-                  null,
-                style: mapSettings.style ?? null,
-                styleUrl: styleUrlWithCacheBuster,
-                apiKey:
-                  mapSettings.maptiler.apiKey ??
-                  mapSettings.maptiler.key ??
-                  mapSettings.maptiler.api_key ??
-                  maptilerKey ??
-                  null,
-                key: mapSettings.maptiler.key ?? null,
-                styleUrlDark: mapSettings.maptiler.styleUrlDark ?? null,
-                styleUrlLight: mapSettings.maptiler.styleUrlLight ?? null,
-                styleUrlBright: mapSettings.maptiler.styleUrlBright ?? null,
-                urls: mapSettings.maptiler.urls ?? undefined,
-              }
+                  null;
+
+                return {
+                  api_key: resolvedKey,
+                  apiKey: resolvedKey,
+                  key: legacyMaptiler.key ?? resolvedKey,
+                  style: mapSettings.style ?? null,
+                  styleUrl: styleUrlWithCacheBuster,
+                  styleUrlDark: legacyMaptiler.styleUrlDark ?? null,
+                  styleUrlLight: legacyMaptiler.styleUrlLight ?? null,
+                  styleUrlBright: legacyMaptiler.styleUrlBright ?? null,
+                  ...(legacyMaptiler.urls ? { urls: legacyMaptiler.urls } : {}),
+                };
+              })()
             : undefined,
           customXyz: undefined,
           viewMode: mapSettings.viewMode || "fixed",

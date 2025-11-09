@@ -3,7 +3,7 @@ import type {
   LayerSpecification,
   SymbolLayerSpecification,
   StyleSpecification,
-} from "maplibre-gl";
+} from "@maplibre/maplibre-gl-style-spec";
 
 import type { Layer } from "./LayerRegistry";
 
