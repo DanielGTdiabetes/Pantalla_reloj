@@ -3408,12 +3408,13 @@ def _validate_and_normalize_maptiler(config: Dict[str, Any]) -> None:
     if not isinstance(maptiler, dict):
         return
     
-    api_key = maptiler.get("apiKey") or maptiler.get("api_key")
+    # Normalizar apiKey → api_key (aceptar ambos, persistir como api_key)
+    api_key = maptiler.get("api_key") or maptiler.get("apiKey")
     if not api_key or not isinstance(api_key, str):
         raise HTTPException(
             status_code=400,
             detail={
-                "error": "api_key is empty",
+                "error": "api_key is required for maptiler_vector provider",
                 "field": "ui_map.maptiler.api_key",
             },
         )
@@ -3447,60 +3448,42 @@ def _validate_and_normalize_maptiler(config: Dict[str, Any]) -> None:
             },
         )
     
-    # Normalizar URLs de estilo
-    # Buscar en urls.styleUrl o directamente en styleUrl
-    urls = maptiler.get("urls", {})
-    if not isinstance(urls, dict):
-        urls = {}
+    # Persistir como api_key (eliminar apiKey legacy)
+    maptiler["api_key"] = api_key
+    if "apiKey" in maptiler:
+        del maptiler["apiKey"]
     
-    # Normalizar styleUrl (si está presente en urls o directamente)
+    # Normalizar style
+    style = maptiler.get("style")
+    if not style or not isinstance(style, str) or not style.strip():
+        maptiler["style"] = "vector-bright"
+    
+    # Normalizar styleUrl
     style_url = maptiler.get("styleUrl")
-    if not style_url and isinstance(urls, dict):
-        style_url = urls.get("styleUrl")
-    
     if style_url and isinstance(style_url, str) and style_url.strip():
-        normalized_url = normalize_maptiler_url(api_key, style_url.strip())
-        maptiler["styleUrl"] = normalized_url
-        if isinstance(urls, dict) and "styleUrl" in urls:
-            urls["styleUrl"] = normalized_url
+        # Si styleUrl contiene streets-v4, NO añadir ?key= (UI lo hará)
+        if "streets-v4" not in style_url:
+            normalized_url = normalize_maptiler_url(api_key, style_url.strip())
+            maptiler["styleUrl"] = normalized_url
+        else:
+            # streets-v4: limpiar ?key= si existe y dejar URL limpia
+            style_url_clean = style_url.split("?")[0]
+            maptiler["styleUrl"] = style_url_clean
+    else:
+        # Si no hay styleUrl, usar default
+        maptiler["styleUrl"] = "https://api.maptiler.com/maps/streets-v4/style.json"
     
-    # Normalizar styleUrlDark (si está presente)
-    style_url_dark = maptiler.get("styleUrlDark")
-    if not style_url_dark and isinstance(urls, dict):
-        style_url_dark = urls.get("styleUrlDark")
-    
-    if style_url_dark and isinstance(style_url_dark, str) and style_url_dark.strip():
-        normalized_url = normalize_maptiler_url(api_key, style_url_dark.strip())
-        maptiler["styleUrlDark"] = normalized_url
-        if isinstance(urls, dict) and "styleUrlDark" in urls:
-            urls["styleUrlDark"] = normalized_url
-    
-    # Normalizar styleUrlLight (si está presente)
-    style_url_light = maptiler.get("styleUrlLight")
-    if not style_url_light and isinstance(urls, dict):
-        style_url_light = urls.get("styleUrlLight")
-    
-    if style_url_light and isinstance(style_url_light, str) and style_url_light.strip():
-        normalized_url = normalize_maptiler_url(api_key, style_url_light.strip())
-        maptiler["styleUrlLight"] = normalized_url
-        if isinstance(urls, dict) and "styleUrlLight" in urls:
-            urls["styleUrlLight"] = normalized_url
-    
-    # Normalizar styleUrlBright (si está presente)
-    style_url_bright = maptiler.get("styleUrlBright")
-    if not style_url_bright and isinstance(urls, dict):
-        style_url_bright = urls.get("styleUrlBright")
-    
-    if style_url_bright and isinstance(style_url_bright, str) and style_url_bright.strip():
-        normalized_url = normalize_maptiler_url(api_key, style_url_bright.strip())
-        maptiler["styleUrlBright"] = normalized_url
-        if isinstance(urls, dict) and "styleUrlBright" in urls:
-            urls["styleUrlBright"] = normalized_url
-    
-    # Asegurar que apiKey está en el formato correcto
-    maptiler["apiKey"] = api_key
-    if "api_key" in maptiler:
-        del maptiler["api_key"]
+    # Limpiar urls.styleUrl* legacy (eliminar todo el bloque urls si existe)
+    if "urls" in maptiler:
+        urls = maptiler["urls"]
+        if isinstance(urls, dict):
+            # Limpiar todas las URLs legacy
+            for url_key in ["styleUrl", "styleUrlDark", "styleUrlLight", "styleUrlBright"]:
+                if url_key in urls:
+                    del urls[url_key]
+            # Si urls quedó vacío, eliminarlo
+            if not urls or all(v is None for v in urls.values()):
+                del maptiler["urls"]
 
 
 @app.post("/api/config")

@@ -113,13 +113,52 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
         ui_map = data.get("ui_map")
         if isinstance(ui_map, dict):
             maptiler_cfg = ui_map.get("maptiler")
-            if isinstance(maptiler_cfg, dict) and not maptiler_cfg.get("styleUrl"):
-                maptiler_cfg["styleUrl"] = _DEFAULT_MAPTILER_STYLE_URL
+            if isinstance(maptiler_cfg, dict):
+                # Normalizar apiKey → api_key (eliminar apiKey legacy)
+                if "apiKey" in maptiler_cfg:
+                    api_key_value = maptiler_cfg.pop("apiKey")
+                    if "api_key" not in maptiler_cfg or maptiler_cfg["api_key"] is None:
+                        maptiler_cfg["api_key"] = api_key_value
+                
+                # Asegurar styleUrl por defecto si falta
+                if not maptiler_cfg.get("styleUrl"):
+                    maptiler_cfg["styleUrl"] = _DEFAULT_MAPTILER_STYLE_URL
+                
+                # Limpiar urls.styleUrl* legacy si existen
+                urls_cfg = maptiler_cfg.get("urls")
+                if isinstance(urls_cfg, dict):
+                    # Si styleUrl principal existe, limpiar urls.styleUrl*
+                    if maptiler_cfg.get("styleUrl"):
+                        if "styleUrl" in urls_cfg:
+                            del urls_cfg["styleUrl"]
+                        if "styleUrlDark" in urls_cfg:
+                            del urls_cfg["styleUrlDark"]
+                        if "styleUrlLight" in urls_cfg:
+                            del urls_cfg["styleUrlLight"]
+                        if "styleUrlBright" in urls_cfg:
+                            del urls_cfg["styleUrlBright"]
+                    # Si urls quedó vacío, eliminarlo
+                    if not urls_cfg or all(v is None for v in urls_cfg.values()):
+                        maptiler_cfg.pop("urls", None)
+            
             provider = ui_map.get("provider")
             if provider == "maptiler_vector" and isinstance(maptiler_cfg, dict):
                 maptiler_cfg.setdefault("styleUrl", _DEFAULT_MAPTILER_STYLE_URL)
+                maptiler_cfg.setdefault("style", "vector-bright")
+                maptiler_cfg.setdefault("api_key", None)
             if provider == "maptiler_vector" and not ui_map.get("maptiler"):
-                ui_map["maptiler"] = {"apiKey": None, "styleUrl": _DEFAULT_MAPTILER_STYLE_URL}
+                ui_map["maptiler"] = {
+                    "style": "vector-bright",
+                    "api_key": None,
+                    "styleUrl": _DEFAULT_MAPTILER_STYLE_URL
+                }
+            
+            # Eliminar claves legacy de ui_map si existen
+            legacy_ui_map_keys = ["labelsOverlay", "local", "customXyz"]
+            for legacy_key in legacy_ui_map_keys:
+                if legacy_key in ui_map and legacy_key.lower() != legacy_key:
+                    # Si es camelCase y existe una versión lowercase, eliminar la camelCase
+                    ui_map.pop(legacy_key, None)
 
         if "ui_global" not in data or not isinstance(data.get("ui_global"), dict):
             data["ui_global"] = _DEFAULT_CONFIG_V2.get("ui_global", {})
@@ -306,6 +345,10 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
 
     _ensure_overlay_defaults(data)
     _ensure_harvest_panel_defaults(data)
+    
+    # Eliminar claves v1 legacy si existen
+    _remove_v1_keys(data)
+    
     legacy_map = data.get("map")
     if isinstance(legacy_map, dict):
         provider = legacy_map.get("provider")
@@ -313,6 +356,26 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
             legacy_map.setdefault("styleUrl", _DEFAULT_MAPTILER_STYLE_URL)
 
     return data
+
+
+def _remove_v1_keys(data: Dict[str, Any]) -> None:
+    """Elimina claves v1 legacy que no deben persistirse en v2."""
+    # Eliminar ui.map (v1)
+    if "ui" in data and isinstance(data["ui"], dict):
+        ui_dict = data["ui"]
+        if "map" in ui_dict:
+            log.warning("[config-sanitize] Removing legacy v1 key: ui.map")
+            del ui_dict["map"]
+        # Si ui quedó vacío, eliminarlo
+        if not ui_dict:
+            del data["ui"]
+    
+    # Eliminar claves top-level v1
+    v1_top_level_keys = ["maptiler", "cinema", "global"]
+    for key in v1_top_level_keys:
+        if key in data:
+            log.warning("[config-sanitize] Removing legacy v1 key: %s", key)
+            del data[key]
 
 
 def _normalize_opensky_token_url(value: Any) -> str | None:

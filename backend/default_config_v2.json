@@ -20,14 +20,24 @@
       "maxzoom": 19
     },
     "maptiler": {
-      "style": "streets-v4",
+      "style": "vector-bright",
+      "api_key": null,
+      "styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json",
       "urls": {
         "styleUrlDark": null,
         "styleUrlLight": null,
         "styleUrlBright": null
+      }
+    },
+    "satellite": {
+      "enabled": false,
+      "raster_style_url": "https://api.maptiler.com/maps/satellite/style.json",
+      "labels_overlay": {
+        "enabled": true,
+        "style_url": "https://api.maptiler.com/maps/streets-v4/style.json",
+        "layer_filter": ["==", ["get", "layer"], "poi_label"]
       },
-      "apiKey": null,
-      "styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A"
+      "opacity": 1.0
     },
     "customXyz": {
       "tileUrl": null,

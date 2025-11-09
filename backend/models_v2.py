@@ -35,11 +35,36 @@ class MapTilerUrlsConfig(BaseModel):
 
 class MapTilerConfig(BaseModel):
     """Configuración del proveedor MapTiler vector."""
-    style: Optional[str] = Field(default=None, max_length=64)  # "vector-dark", "streets-v2", etc.
-    urls: Optional[MapTilerUrlsConfig] = None
-    # Legacy fields
-    apiKey: Optional[str] = Field(default=None, max_length=256)
+    style: Optional[str] = Field(default="vector-bright", max_length=64)  # "vector-dark", "vector-bright", "streets-v4", etc.
+    api_key: Optional[str] = Field(default=None, max_length=256)
     styleUrl: Optional[str] = Field(default=None, max_length=512)
+    urls: Optional[MapTilerUrlsConfig] = None
+    
+    @field_validator("style", mode="before")
+    @classmethod
+    def normalize_style(cls, value: object) -> str:
+        """Normalize style to default if empty."""
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return "vector-bright"
+        if isinstance(value, str):
+            return value.strip()
+        return "vector-bright"
+    
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def normalize_api_key(cls, value: object, info: Any) -> Optional[str]:
+        """Normalize apiKey → api_key (accept both, store as api_key)."""
+        # Si viene api_key, usarlo
+        if value is not None and isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        # Si no hay api_key pero hay apiKey en raw data, migrarlo
+        if hasattr(info, "data") and isinstance(info.data, dict):
+            legacy_key = info.data.get("apiKey")
+            if legacy_key is not None and isinstance(legacy_key, str):
+                stripped = legacy_key.strip()
+                return stripped or None
+        return None
 
 
 class CustomXyzConfig(BaseModel):
@@ -77,6 +102,21 @@ class MapRegion(BaseModel):
     postalCode: Optional[str] = Field(default=None, max_length=10)
 
 
+class MapLabelsOverlayConfig(BaseModel):
+    """Configuración de capa de etiquetas vectoriales sobre mapa satélite."""
+    enabled: bool = Field(default=True)
+    style_url: Optional[str] = Field(default=None, max_length=512)
+    layer_filter: List[str] = Field(default_factory=lambda: ["==", ["get", "layer"], "poi_label"])  # Filtro para capas de tipo símbolo/label
+
+
+class MapSatelliteConfig(BaseModel):
+    """Configuración de modo satélite con etiquetas vectoriales."""
+    enabled: bool = Field(default=False)
+    raster_style_url: Optional[str] = Field(default=None, max_length=512)
+    labels_overlay: Optional[MapLabelsOverlayConfig] = None
+    opacity: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
 class MapConfig(BaseModel):
     """Configuración del mapa v2."""
     engine: Literal["maplibre"] = "maplibre"
@@ -87,6 +127,7 @@ class MapConfig(BaseModel):
     local: Optional[LocalRasterConfig] = None
     maptiler: Optional[MapTilerConfig] = None
     customXyz: Optional[CustomXyzConfig] = None
+    satellite: Optional[MapSatelliteConfig] = None
     viewMode: Literal["fixed", "aoiCycle"] = "fixed"
     fixed: Optional[MapFixedView] = None
     aoiCycle: Optional[MapAoiCycle] = None
@@ -642,3 +683,32 @@ class AppConfigV2(BaseModel):
     opensky: Optional[OpenSkyTopLevelConfig] = None
     ais: Optional[AISConfig] = None
     secrets: Optional[SecretsConfig] = None
+    
+    @model_validator(mode="before")
+    @classmethod
+    def reject_v1_keys(cls, data: Any) -> Any:
+        """Rechazar claves v1 legacy antes de validar."""
+        if not isinstance(data, dict):
+            return data
+        
+        v1_keys = []
+        
+        # Detectar ui.map (v1)
+        if "ui" in data and isinstance(data["ui"], dict):
+            if "map" in data["ui"]:
+                v1_keys.append("ui.map")
+        
+        # Detectar claves legacy directas
+        legacy_direct = ["maptiler", "cinema", "global"]
+        for key in legacy_direct:
+            if key in data:
+                v1_keys.append(key)
+        
+        if v1_keys:
+            raise ValueError(f"v1 keys not allowed: {', '.join(v1_keys)}")
+        
+        # Forzar version=2
+        if "version" not in data or data["version"] != 2:
+            data["version"] = 2
+        
+        return data

@@ -14,12 +14,20 @@ export type LocalRasterConfig = {
 };
 
 export type MapTilerConfig = {
-  apiKey: string | null;
+  api_key: string | null;
+  style?: string | null;
   styleUrl: string | null;
+  // Legacy fields (read but not write)
+  apiKey?: string | null;
   key?: string | null;
   styleUrlDark?: string | null;
   styleUrlLight?: string | null;
   styleUrlBright?: string | null;
+  urls?: {
+    styleUrlDark?: string | null;
+    styleUrlLight?: string | null;
+    styleUrlBright?: string | null;
+  };
 };
 
 export type CustomXyzConfig = {
@@ -52,6 +60,19 @@ export type MapRegion = {
   postalCode?: string | null;
 };
 
+export type MapLabelsOverlayConfig = {
+  enabled: boolean;
+  style_url?: string | null;
+  layer_filter?: unknown[];
+};
+
+export type MapSatelliteConfig = {
+  enabled: boolean;
+  raster_style_url?: string | null;
+  labels_overlay?: MapLabelsOverlayConfig;
+  opacity: number;
+};
+
 export type MapConfigV2 = {
   engine: "maplibre";
   provider: "local_raster_xyz" | "maptiler_vector" | "custom_xyz";
@@ -61,6 +82,7 @@ export type MapConfigV2 = {
   local?: LocalRasterConfig;
   maptiler?: MapTilerConfig;
   customXyz?: CustomXyzConfig;
+  satellite?: MapSatelliteConfig;
   viewMode: "fixed" | "aoiCycle";
   fixed?: MapFixedView;
   aoiCycle?: MapAoiCycle;

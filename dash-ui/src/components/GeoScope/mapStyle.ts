@@ -134,8 +134,19 @@ export const loadMapStyle = async (
   else if (provider === "maptiler_vector") {
     const maptilerConfig = mapConfig.maptiler;
     let styleUrl = sanitizeOptionalString(maptilerConfig?.styleUrl);
+    
+    // Normalizar api_key (aceptar api_key o apiKey legacy)
+    const apiKey = sanitizeApiKey(
+      maptilerConfig?.api_key || maptilerConfig?.apiKey || maptilerConfig?.key
+    );
 
-    if (styleUrl) {
+    if (styleUrl && apiKey) {
+      // Si styleUrl no contiene ?key=, añadirlo
+      if (!styleUrl.includes("?key=")) {
+        const separator = styleUrl.includes("?") ? "&" : "?";
+        styleUrl = `${styleUrl}${separator}key=${apiKey}`;
+      }
+      
       try {
         // Preflight: verificar que el styleUrl es válido antes de usarlo
         // Intentar HEAD primero, luego GET si es necesario
@@ -213,7 +224,7 @@ export const loadMapStyle = async (
         }
       }
     } else {
-      console.warn("[map] MapTiler provider requires styleUrl, using fallback");
+      console.warn("[map] MapTiler provider requires styleUrl and api_key, using fallback");
       usedFallback = true;
     }
   }
