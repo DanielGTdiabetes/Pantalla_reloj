@@ -4821,7 +4821,7 @@ def migrate_config_endpoint(to: int = 2, backup: bool = True) -> Dict[str, Any]:
                             else:
                                 config_v2["ui"]["map"]["fixed"] = {
                                     "center": {"lat": lat, "lon": lon},
-                                    "zoom": 7.8,
+                                    "zoom": 9.8,
                                     "bearing": 0,
                                     "pitch": 0
                                 }
