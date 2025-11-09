@@ -111,6 +111,7 @@ from .routes.efemerides import (
     fetch_wikimedia_onthisday,
 )
 from .routes import rainviewer
+from .routers import layers
 from .secret_store import SecretStore
 from .services.opensky_auth import DEFAULT_TOKEN_URL, OpenSkyAuthError
 from .services.opensky_client import OpenSkyClientError
@@ -379,6 +380,7 @@ app.add_middleware(
 # Registrar routers
 app.include_router(ephemerides.router)
 app.include_router(rainviewer.router)
+app.include_router(layers.router)
 
 
 def _ensure_ics_storage_directory() -> None:
@@ -9231,7 +9233,6 @@ async def get_ships_preview(limit: int = 20) -> Dict[str, Any]:
         }
 
 
-@app.get("/api/layers/flights")
 def get_flights(request: Request, bbox: Optional[str] = None, extended: Optional[int] = None) -> JSONResponse:
     config = config_manager.read()
     opensky_cfg = config.opensky
@@ -9370,7 +9371,6 @@ def get_flights_geojson(request: Request, bbox: Optional[str] = None, extended: 
             response.headers[header] = base_response.headers[header]
     return response
 
-@app.get("/api/layers/ships")
 def get_ships(
     request: Request,
     bbox: Optional[str] = None,
