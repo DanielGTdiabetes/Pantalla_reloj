@@ -816,13 +816,23 @@ def _read_config_v2() -> Tuple[AppConfigV2, bool]:
                 # Normalizar secrets.opensky
                 if "opensky" not in secrets or not isinstance(secrets.get("opensky"), dict):
                     secrets["opensky"] = {
-                        "oauth2": {"client_id": None, "client_secret": None, "token_url": "https://auth.opensky-network.org/oauth/token", "scope": None},
+                        "oauth2": {
+                            "client_id": None,
+                            "client_secret": None,
+                            "token_url": "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
+                            "scope": None,
+                        },
                         "basic": {"username": None, "password": None}
                     }
                 else:
                     opensky_secrets = secrets["opensky"]
                     if "oauth2" not in opensky_secrets:
-                        opensky_secrets["oauth2"] = {"client_id": None, "client_secret": None, "token_url": "https://auth.opensky-network.org/oauth/token", "scope": None}
+                        opensky_secrets["oauth2"] = {
+                            "client_id": None,
+                            "client_secret": None,
+                            "token_url": "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
+                            "scope": None,
+                        }
                     if "basic" not in opensky_secrets:
                         opensky_secrets["basic"] = {"username": None, "password": None}
                 
@@ -1004,7 +1014,10 @@ def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
                 "oauth2": {
                     "client_id": None,
                     "client_secret": None,
-                    "token_url": opensky_secrets.get("oauth2", {}).get("token_url", "https://auth.opensky-network.org/oauth/token"),
+                    "token_url": opensky_secrets.get("oauth2", {}).get(
+                        "token_url",
+                        "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
+                    ),
                     "scope": None
                 } if opensky_secrets.get("oauth2") else {},
                 "basic": {
@@ -8760,7 +8773,11 @@ async def test_flights() -> Dict[str, Any]:
                 
                 # Intentar obtener token
                 try:
-                    token_url = opensky_cfg.token_url if opensky_cfg.token_url else "https://auth.opensky-network.org/oauth/token"
+                    token_url = (
+                        opensky_cfg.token_url
+                        if opensky_cfg.token_url
+                        else "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
+                    )
                     
                     import httpx
                     timeout = httpx.Timeout(5.0, connect=5.0, read=5.0)

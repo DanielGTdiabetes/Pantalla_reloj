@@ -221,7 +221,7 @@ class OpenSkyOAuthConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     token_url: str = Field(
-        default="https://auth.opensky-network.org/oauth/token",
+        default="https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
         max_length=512,
     )
     client_id: Optional[str] = Field(default=None, max_length=256)

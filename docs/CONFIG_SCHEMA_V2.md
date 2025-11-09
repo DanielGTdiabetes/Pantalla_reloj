@@ -240,7 +240,7 @@ Metadatos de secretos (sin valores reales en el JSON).
       "oauth2": {
         "has_client_id": false,
         "has_client_secret": false,
-        "token_url": "https://auth.opensky-network.org/oauth/token",
+        "token_url": "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
         "scope": null
       },
       "basic": {

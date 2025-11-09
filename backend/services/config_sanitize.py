@@ -21,6 +21,13 @@ except Exception as exc:  # noqa: BLE001
     _DEFAULT_CONFIG_V2 = {}
 
 DEFAULT_AISSTREAM_WS_URL = "wss://stream.aisstream.io/v0/stream"
+_OLD_OPENSKY_TOKEN_URLS = {
+    "https://auth.opensky-network.org/oauth/token",
+    "https://auth.opensky-network.org/oauth/token/",
+}
+_NEW_OPENSKY_TOKEN_URL = (
+    "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
+)
 
 
 def _merge_with_defaults(defaults: Dict[str, Any], current: Any) -> Dict[str, Any]:
@@ -137,6 +144,18 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
                     log.info(
                         "[config-migrate] Migrated icon_url_legacy → custom_icon_url"
                     )
+
+            opensky_cfg = flights.get("opensky")
+            if isinstance(opensky_cfg, dict):
+                token_url = opensky_cfg.get("token_url")
+                normalized_token_url = _normalize_opensky_token_url(token_url)
+                if normalized_token_url is not None:
+                    if token_url != normalized_token_url:
+                        log.info(
+                            "[config-migrate] Actualizado opensky.token_url → %s",
+                            normalized_token_url,
+                        )
+                    opensky_cfg["token_url"] = normalized_token_url
     
         ships = layers.get("ships")
         if isinstance(ships, dict):
@@ -179,6 +198,20 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
     if "ics_path" in panel_calendar and isinstance(panel_calendar["ics_path"], str):
         panel_calendar["ics_path"] = panel_calendar["ics_path"].strip() or None
 
+    top_opensky = data.get("opensky")
+    if isinstance(top_opensky, dict):
+        oauth2_cfg = top_opensky.get("oauth2")
+        if isinstance(oauth2_cfg, dict):
+            token_url = oauth2_cfg.get("token_url")
+            normalized_token_url = _normalize_opensky_token_url(token_url)
+            if normalized_token_url is not None:
+                if token_url != normalized_token_url:
+                    log.info(
+                        "[config-migrate] Actualizado opensky.oauth2.token_url → %s",
+                        normalized_token_url,
+                    )
+                oauth2_cfg["token_url"] = normalized_token_url
+
     calendar_top = data.get("calendar")
     if not isinstance(calendar_top, dict):
         calendar_top = {}
@@ -198,4 +231,15 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
         calendar_top["ics_path"] = calendar_top["ics_path"].strip() or None
 
     return data
+
+
+def _normalize_opensky_token_url(value: Any) -> str | None:
+    if value is None:
+        return _NEW_OPENSKY_TOKEN_URL
+    if isinstance(value, str):
+        cleaned = value.strip()
+        if not cleaned or cleaned in _OLD_OPENSKY_TOKEN_URLS:
+            return _NEW_OPENSKY_TOKEN_URL
+        return cleaned
+    return _NEW_OPENSKY_TOKEN_URL
 

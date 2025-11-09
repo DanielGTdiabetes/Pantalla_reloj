@@ -574,7 +574,10 @@ class OpenSkyOAuth2Config(BaseModel):
     """Configuración OAuth2 para OpenSky."""
     client_id: Optional[str] = Field(default=None, max_length=512)
     client_secret: Optional[str] = Field(default=None, max_length=512)
-    token_url: str = Field(default="https://auth.opensky-network.org/oauth/token", max_length=512)
+    token_url: str = Field(
+        default="https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
+        max_length=512,
+    )
     scope: Optional[str] = Field(default=None, max_length=256)
 
 

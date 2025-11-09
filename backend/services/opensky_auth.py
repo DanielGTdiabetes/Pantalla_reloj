@@ -10,7 +10,9 @@ import httpx
 
 from ..secret_store import SecretStore
 
-DEFAULT_TOKEN_URL = "https://auth.opensky-network.org/oauth/token"
+DEFAULT_TOKEN_URL = (
+    "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
+)
 
 
 @dataclass

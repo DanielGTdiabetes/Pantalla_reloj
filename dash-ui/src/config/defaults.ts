@@ -552,7 +552,8 @@ export const createDefaultOpenSky = (): OpenSkyConfig => ({
   max_aircraft: 400,
   cluster: true,
   oauth2: {
-    token_url: "https://auth.opensky-network.org/oauth/token",
+    token_url:
+      "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
     client_id: null,
     client_secret: null,
     scope: null,

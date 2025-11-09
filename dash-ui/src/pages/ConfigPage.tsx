@@ -2446,7 +2446,10 @@ export const ConfigPage: React.FC = () => {
                             <label>Token URL</label>
                             <input
                               type="text"
-                              value={config.layers.flights.opensky?.token_url || "https://auth.opensky-network.org/oauth/token"}
+                              value={
+                                config.layers.flights.opensky?.token_url ||
+                                "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
+                              }
                               onChange={(e) => {
                                 const currentFlights = config.layers?.flights;
                                 const currentOpensky = currentFlights?.opensky;
@@ -2470,7 +2473,9 @@ export const ConfigPage: React.FC = () => {
                                         mode: currentOpensky?.mode || "oauth2",
                                         bbox: currentOpensky?.bbox || { lamin: 39.5, lamax: 41.0, lomin: -1.0, lomax: 1.5 },
                                         extended: currentOpensky?.extended || 0,
-                                        token_url: e.target.value || "https://auth.opensky-network.org/oauth/token",
+                                        token_url:
+                                          e.target.value ||
+                                          "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
                                         scope: currentOpensky?.scope || null
                                       },
                                       aviationstack: currentFlights?.aviationstack,
@@ -2479,7 +2484,7 @@ export const ConfigPage: React.FC = () => {
                                   }
                                 });
                               }}
-                              placeholder="https://auth.opensky-network.org/oauth/token"
+                              placeholder="https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
                             />
                             <div className="config-field__hint">Opcional, solo para configuración avanzada</div>
                           </div>
