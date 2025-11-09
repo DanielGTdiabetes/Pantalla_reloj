@@ -13,6 +13,7 @@ Environment=GTK_USE_PORTAL=0
 Environment=GIO_USE_PORTALS=0
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
 EnvironmentFile=-/var/lib/pantalla-reloj/state/kiosk.env
+LogsDirectory=pantalla
 ExecStartPre=/bin/sh -lc 'xset -dpms; xset s off; xset s noblank || true'
 ExecStart=/usr/local/bin/pantalla-kiosk
 Restart=on-failure

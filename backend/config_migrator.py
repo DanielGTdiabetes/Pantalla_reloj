@@ -137,7 +137,7 @@ def migrate_v1_to_v2(
     
     # Vista fija: extraer de fixed (ya no usar cinema)
     fixed_center = None
-    fixed_zoom = 7.8
+    fixed_zoom = 9.8
     fixed_bearing = 0
     fixed_pitch = 0
     
@@ -147,7 +147,7 @@ def migrate_v1_to_v2(
             "lat": fixed_data.get("center", {}).get("lat", 39.98),
             "lon": fixed_data.get("center", {}).get("lon", 0.20)
         }
-        fixed_zoom = fixed_data.get("zoom", 7.8)
+        fixed_zoom = fixed_data.get("zoom", 9.8)
         fixed_bearing = fixed_data.get("bearing", 0)
         fixed_pitch = fixed_data.get("pitch", 0)
     
@@ -324,7 +324,7 @@ def apply_postal_geocoding(
                     else:
                         config_v2["ui_map"]["fixed"] = {
                             "center": {"lat": lat, "lon": lon},
-                            "zoom": 7.8,
+                            "zoom": 9.8,
                             "bearing": 0,
                             "pitch": 0
                         }

@@ -37,7 +37,7 @@
     "viewMode": "fixed",
     "fixed": {
       "center": { "lat": 39.98, "lon": 0.20 },
-      "zoom": 7.8,
+      "zoom": 9.8,
       "bearing": 0,
       "pitch": 0
     },
