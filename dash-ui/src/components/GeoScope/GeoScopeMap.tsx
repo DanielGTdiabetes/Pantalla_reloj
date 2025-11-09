@@ -23,6 +23,7 @@ import {
   createDefaultMapSettings,
   withConfigDefaults
 } from "../../config/defaults";
+import { DEFAULT_OPENSKY_CONFIG } from "../../config/defaults_v2";
 import type {
   AppConfig,
   MapConfig,
@@ -465,6 +466,7 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
           version: 2,
           ui_map: v2FromV1,
           ui_global: undefined,
+          opensky: DEFAULT_OPENSKY_CONFIG,
           layers: undefined,
           panels: undefined,
           secrets: undefined,
@@ -503,6 +505,7 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
         version: 2,
         ui_map: v2FromV1,
         ui_global: undefined,
+        opensky: DEFAULT_OPENSKY_CONFIG,
         layers: undefined,
         panels: undefined,
         secrets: undefined,
