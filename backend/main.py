@@ -931,10 +931,7 @@ def _read_config_v2() -> Tuple[AppConfigV2, bool]:
                 backup_path.write_text(json.dumps(config_data, indent=2), encoding="utf-8")
                 logger.info("Created v1 backup at %s", backup_path)
             
-            # Guardar v2
-            config_manager.config_file.write_text(json.dumps(config_v2_dict, indent=2), encoding="utf-8")
-            logger.info("Migrated and saved v2 config")
-            
+            logger.info("Migrated v1 config to v2 (in-memory only)")
             return config_v2, True
     except Exception as e:
         logger.error("Error reading config: %s", e, exc_info=True)
