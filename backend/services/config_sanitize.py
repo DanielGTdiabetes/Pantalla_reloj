@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict
 
@@ -31,6 +32,38 @@ _OLD_OPENSKY_TOKEN_URLS = {
 _NEW_OPENSKY_TOKEN_URL = (
     "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
 )
+
+_FALLBACK_ROTATOR_ORDER = [
+    "clock",
+    "weather",
+    "astronomy",
+    "santoral",
+    "calendar",
+    "harvest",
+    "news",
+    "historicalEvents",
+]
+_FALLBACK_ROTATOR_DURATIONS = {
+    "clock": 10,
+    "weather": 12,
+    "astronomy": 10,
+    "santoral": 8,
+    "calendar": 12,
+    "harvest": 10,
+    "news": 12,
+    "historicalEvents": 6,
+}
+_FALLBACK_OVERLAY = {
+    "rotator": {
+        "enabled": True,
+        "order": list(_FALLBACK_ROTATOR_ORDER),
+        "durations_sec": dict(_FALLBACK_ROTATOR_DURATIONS),
+        "transition_ms": 400,
+        "pause_on_alert": False,
+    }
+}
+_FALLBACK_PANEL_HARVEST = {"enabled": True}
+_FALLBACK_HARVEST_CONFIG = {"enabled": True, "custom_items": []}
 
 
 def _merge_with_defaults(defaults: Dict[str, Any], current: Any) -> Dict[str, Any]:
@@ -271,6 +304,8 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
     if "ics_path" in calendar_top and isinstance(calendar_top["ics_path"], str):
         calendar_top["ics_path"] = calendar_top["ics_path"].strip() or None
 
+    _ensure_overlay_defaults(data)
+    _ensure_harvest_panel_defaults(data)
     legacy_map = data.get("map")
     if isinstance(legacy_map, dict):
         provider = legacy_map.get("provider")
@@ -289,4 +324,87 @@ def _normalize_opensky_token_url(value: Any) -> str | None:
             return _NEW_OPENSKY_TOKEN_URL
         return cleaned
     return _NEW_OPENSKY_TOKEN_URL
+
+
+def _ensure_overlay_defaults(data: Dict[str, Any]) -> None:
+    """
+    Garantiza que ui_global.overlay.rotator exista y contenga los paneles esperados,
+    incluso si default_config_v2.json no pudo cargarse o la configuración recibida
+    no incluye el bloque.
+    """
+    ui_global = data.setdefault("ui_global", {})
+    overlay_current = ui_global.get("overlay")
+
+    overlay_defaults_source = _DEFAULT_CONFIG_V2.get("ui_global", {}).get("overlay")
+    overlay_defaults = (
+        deepcopy(overlay_defaults_source)
+        if isinstance(overlay_defaults_source, dict)
+        else deepcopy(_FALLBACK_OVERLAY)
+    )
+
+    if isinstance(overlay_current, dict):
+        ui_global["overlay"] = _merge_with_defaults(overlay_defaults, overlay_current)
+    else:
+        ui_global["overlay"] = overlay_defaults
+
+    overlay = ui_global["overlay"]
+    rotator_current = overlay.get("rotator")
+    if isinstance(rotator_current, dict):
+        rotator = _merge_with_defaults(_FALLBACK_OVERLAY["rotator"], rotator_current)
+    else:
+        rotator = deepcopy(_FALLBACK_OVERLAY["rotator"])
+
+    # Normalizar order y asegurarse de que todos los paneles requeridos estén presentes
+    order_raw = rotator.get("order")
+    normalized_order = []
+    if isinstance(order_raw, list):
+        for entry in order_raw:
+            if not isinstance(entry, str):
+                continue
+            cleaned = entry.strip()
+            if not cleaned:
+                continue
+            key = cleaned
+            if key not in normalized_order:
+                normalized_order.append(key)
+    for required in _FALLBACK_ROTATOR_ORDER:
+        if required not in normalized_order:
+            normalized_order.append(required)
+    rotator["order"] = normalized_order
+
+    durations = rotator.get("durations_sec")
+    if not isinstance(durations, dict):
+        rotator["durations_sec"] = dict(_FALLBACK_ROTATOR_DURATIONS)
+    else:
+        for key, value in _FALLBACK_ROTATOR_DURATIONS.items():
+            durations.setdefault(key, value)
+    rotator.setdefault("transition_ms", 400)
+    rotator.setdefault("pause_on_alert", False)
+    rotator["enabled"] = bool(rotator.get("enabled", True))
+
+    overlay["rotator"] = rotator
+
+
+def _ensure_harvest_panel_defaults(data: Dict[str, Any]) -> None:
+    """
+    Asegura que exista la configuración de cosechas tanto en `panels` como en la raíz.
+    """
+    panels = data.setdefault("panels", {})
+    panels_defaults_source = _DEFAULT_CONFIG_V2.get("panels")
+    if isinstance(panels_defaults_source, dict):
+        panels.update(_merge_with_defaults(panels_defaults_source, panels))
+
+    harvest_panel = panels.get("harvest")
+    if isinstance(harvest_panel, dict):
+        harvest_panel.setdefault("enabled", True)
+    else:
+        panels["harvest"] = deepcopy(_FALLBACK_PANEL_HARVEST)
+
+    harvest_cfg = data.get("harvest")
+    if isinstance(harvest_cfg, dict):
+        harvest_cfg.setdefault("enabled", True)
+        if not isinstance(harvest_cfg.get("custom_items"), list):
+            harvest_cfg["custom_items"] = []
+    else:
+        data["harvest"] = deepcopy(_FALLBACK_HARVEST_CONFIG)
 
