@@ -461,7 +461,7 @@ const mergeRotation = (candidate: unknown): RotationConfig => {
   const fallback: RotationConfig = {
     enabled: true,
     duration_sec: 10,
-    panels: ["clock", "weather", "astronomy", "santoral", "calendar", "news", "historicalEvents"],
+    panels: ["clock", "weather", "astronomy", "santoral", "calendar", "harvest", "news", "historicalEvents"],
   };
   const source = (candidate as Partial<RotationConfig>) ?? {};
   const panels = Array.isArray(source.panels)

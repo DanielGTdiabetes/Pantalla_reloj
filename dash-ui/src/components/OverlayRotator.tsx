@@ -73,6 +73,7 @@ const PANEL_ID_MAP: Record<string, string> = {
   "astronomy": "ephemerides",
   "santoral": "saints",
   "calendar": "calendar",
+  "harvest": "harvest",
   "news": "news",
   "historicalEvents": "historicalEvents",
 };
@@ -83,6 +84,7 @@ const DEFAULT_DURATIONS_SEC = {
   astronomy: 10,
   santoral: 8,
   calendar: 12,
+  harvest: 10,
   news: 12,
   historicalEvents: 6,
 };
@@ -93,6 +95,7 @@ const ROTATION_DEFAULT_ORDER = [
   "astronomy",
   "santoral",
   "calendar",
+  "harvest",
   "news",
   "historicalEvents",
 ] as const;
@@ -108,6 +111,19 @@ const LEGACY_ROTATION_PANEL_MAP: Record<string, string> = {
   saints: "santoral",
   santoral: "santoral",
   calendar: "calendar",
+  harvest: "harvest",
+  cosecha: "harvest",
+  cosechas: "harvest",
+  hortaliza: "harvest",
+  hortalizas: "harvest",
+  verdura: "harvest",
+  verduras: "harvest",
+  fruta: "harvest",
+  frutas: "harvest",
+  siembra: "harvest",
+  siembras: "harvest",
+  cultivo: "harvest",
+  cultivos: "harvest",
   news: "news",
   historicalevents: "historicalEvents",
   historicalEvents: "historicalEvents",
@@ -285,7 +301,7 @@ export const OverlayRotator: React.FC = () => {
       const order = Array.isArray(rotator.order) && rotator.order.length > 0
         ? sanitizeRotationPanelOrder(rotator.order)
         : sanitizeRotationPanelOrder(undefined);
-      const durations_sec = rotator.durations_sec || DEFAULT_DURATIONS_SEC;
+      const durations_sec = { ...DEFAULT_DURATIONS_SEC, ...(rotator.durations_sec ?? {}) };
       const transition_ms = Math.max(0, Math.min(2000, rotator.transition_ms ?? 400));
       
       return {
@@ -776,7 +792,7 @@ export const OverlayRotator: React.FC = () => {
     });
     map.set("harvest", {
       id: "harvest",
-      duration: 10 * 1000, // No está en durations_sec por defecto
+      duration: (durations.harvest ?? 10) * 1000,
       render: () => <HarvestCard items={harvestItems} />
     });
 

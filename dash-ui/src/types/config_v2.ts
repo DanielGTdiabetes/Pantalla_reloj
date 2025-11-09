@@ -84,6 +84,7 @@ export type RotatorDurationsConfig = {
   astronomy: number;
   santoral: number;
   calendar: number;
+  harvest: number;
   news: number;
   historicalEvents: number;
 };
@@ -280,11 +281,29 @@ export type PanelCalendarConfig = {
   ics_path?: string;
 };
 
+export type PanelHarvestConfig = {
+  enabled: boolean;
+};
+
+export type PanelHistoricalEventsConfig = {
+  enabled: boolean;
+  rotation_seconds?: number;
+  provider?: string;
+  [key: string]: unknown;
+};
+
 export type PanelsConfigV2 = {
   weatherWeekly?: PanelWeatherWeeklyConfig;
   ephemerides?: PanelEphemeridesConfig;
   news?: PanelNewsConfig;
   calendar?: PanelCalendarConfig;
+  harvest?: PanelHarvestConfig;
+  historicalEvents?: PanelHistoricalEventsConfig;
+};
+
+export type HarvestConfigV2 = {
+  enabled: boolean;
+  custom_items?: Array<Record<string, string>>;
 };
 
 export type OpenSkyOAuth2SecretsConfig = {
@@ -335,5 +354,6 @@ export type AppConfigV2 = {
   layers?: LayersConfigV2;
   panels?: PanelsConfigV2;
   secrets?: SecretsConfig;
+  harvest?: HarvestConfigV2;
   calendar?: CalendarConfig;
 };

@@ -49,14 +49,16 @@
     "overlay": {
       "rotator": {
         "enabled": true,
-        "order": ["clock", "weather", "astronomy", "santoral", "calendar", "news"],
+        "order": ["clock", "weather", "astronomy", "santoral", "calendar", "harvest", "news", "historicalEvents"],
         "durations_sec": {
           "clock": 10,
           "weather": 12,
           "astronomy": 10,
           "santoral": 8,
           "calendar": 12,
-          "news": 12
+          "harvest": 10,
+          "news": 12,
+          "historicalEvents": 6
         },
         "transition_ms": 400,
         "pause_on_alert": false
@@ -155,6 +157,9 @@
     "ephemerides": { "enabled": true },
     "news": { "enabled": true, "feeds": [], "max_items_per_feed": 10, "refresh_minutes": 30 },
     "calendar": { "enabled": false, "provider": "google", "days_ahead": 14 },
+    "harvest": {
+      "enabled": true
+    },
     "historicalEvents": {
       "enabled": true,
       "provider": "wikimedia",
@@ -206,6 +211,10 @@
     "source": "google",
     "provider": "google",
     "days_ahead": 14
+  },
+  "harvest": {
+    "enabled": true,
+    "custom_items": []
   },
   "opensky": {
     "enabled": false,
