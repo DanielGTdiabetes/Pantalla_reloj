@@ -4,19 +4,20 @@
     "module_cycle_seconds": 20
   },
   "map": {
-    "provider": "xyz",
-    "maptiler_api_key": null
+    "provider": "maptiler",
+    "maptiler_api_key": null,
+    "styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A"
   },
   "ui": {
     "layout": "grid-2-1",
     "map": {
       "engine": "maplibre",
-      "style": "vector-dark",
-      "provider": "xyz",
+      "style": "streets-v4",
+      "provider": "maptiler",
       "maptiler": {
         "key": null,
         "apiKey": null,
-        "styleUrl": null
+        "styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A"
       },
       "xyz": {
         "urlTemplate": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",

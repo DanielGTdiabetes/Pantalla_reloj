@@ -26,14 +26,14 @@ export const DEFAULT_LOCAL_RASTER_CONFIG = {
 
 export const DEFAULT_MAP_CONFIG: MapConfigV2 = {
   engine: "maplibre",
-  provider: "local_raster_xyz",
+  provider: "maptiler_vector",
   renderWorldCopies: true,
   interactive: false,
   controls: false,
   local: DEFAULT_LOCAL_RASTER_CONFIG,
   maptiler: {
     apiKey: null,
-    styleUrl: null,
+    styleUrl: "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A",
   },
   customXyz: {
     tileUrl: null,

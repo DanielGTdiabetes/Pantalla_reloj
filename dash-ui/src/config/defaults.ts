@@ -208,7 +208,7 @@ const DEFAULT_XYZ: XyzConfig = {
 const DEFAULT_MAPTILER: MaptilerConfig = {
   key: null,
   apiKey: null,
-  styleUrl: null,
+  styleUrl: "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A",
   styleUrlDark: "https://api.maptiler.com/maps/dark/style.json",
   styleUrlLight: "https://api.maptiler.com/maps/streets/style.json",
   styleUrlBright: "https://api.maptiler.com/maps/bright/style.json",
@@ -226,7 +226,7 @@ const sanitizeApiKey = (value: unknown): string | null => {
 };
 
 export const createDefaultMapPreferences = (): MapPreferences => ({
-  provider: "xyz",
+  provider: "maptiler",
   maptiler_api_key: null,
 });
 
@@ -247,8 +247,8 @@ export const createDefaultMapIdlePan = (): MapIdlePanConfig => ({
 
 export const createDefaultMapSettings = (): MapConfig => ({
   engine: "maplibre",
-  style: "vector-dark",
-  provider: "xyz",
+  style: "streets-v4",
+  provider: "maptiler",
   maptiler: { ...DEFAULT_MAPTILER },
   xyz: { ...DEFAULT_XYZ },
   viewMode: "fixed",

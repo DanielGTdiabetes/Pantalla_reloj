@@ -576,7 +576,7 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
     const fallbackPreferences = createDefaultMapPreferences();
     const fallbackMapConfigV2: MapConfigV2 = {
       engine: "maplibre",
-      provider: "local_raster_xyz",
+      provider: "maptiler_vector",
       renderWorldCopies: true,
       interactive: false,
       controls: false,
@@ -585,7 +585,10 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
         minzoom: 0,
         maxzoom: 19,
       },
-      maptiler: { apiKey: null, styleUrl: null },
+      maptiler: {
+        apiKey: null,
+        styleUrl: "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A",
+      },
       customXyz: { tileUrl: null, minzoom: 0, maxzoom: 19 },
       viewMode: "fixed",
       fixed: {

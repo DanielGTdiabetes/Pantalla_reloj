@@ -1,6 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-import { DEFAULT_OPENSKY_CONFIG, DEFAULT_UI_ROTATION_CONFIG, ROTATION_PANEL_IDS, withConfigDefaultsV2 } from "../config/defaults_v2";
+import {
+  DEFAULT_LOCAL_RASTER_CONFIG,
+  DEFAULT_MAP_CONFIG,
+  DEFAULT_OPENSKY_CONFIG,
+  DEFAULT_CONFIG_V2,
+  DEFAULT_UI_ROTATION_CONFIG,
+  ROTATION_PANEL_IDS,
+  withConfigDefaultsV2,
+} from "../config/defaults_v2";
 import {
   getCalendarPreview,
   getConfigV2,
@@ -27,6 +35,7 @@ import {
   updateAemetApiKey,
   updateSecrets,
   uploadCalendarICS,
+  reloadConfig,
   type CalendarPreviewItem,
   type NewsFeedTestResult,
   type WiFiNetwork,
@@ -47,6 +56,7 @@ import type {
 } from "../types/config_v2";
 
 const DEFAULT_AISSTREAM_WS_URL = "wss://stream.aisstream.io/v0/stream";
+const DEFAULT_STREETS_STYLE_URL = "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A";
 
 const ROTATION_PANEL_LABELS: Record<string, string> = {
   clock: "Reloj",
@@ -125,7 +135,7 @@ export const ConfigPage: React.FC = () => {
   const [wifiSaving, setWifiSaving] = useState(false);
 
   // Grupo 2: Mapas y Capas
-  const [mapAndLayersSaving, setMapAndLayersSaving] = useState(false);
+  const [mapSaving, setMapSaving] = useState(false);
   const [maptilerTestResult, setMaptilerTestResult] = useState<{ ok: boolean; bytes?: number; error?: string } | null>(null);
   const [maptilerTesting, setMaptilerTesting] = useState(false);
   const [xyzTestResult, setXyzTestResult] = useState<{ ok: boolean; bytes?: number; contentType?: string; error?: string } | null>(null);
@@ -143,6 +153,7 @@ export const ConfigPage: React.FC = () => {
   // Ships test
   const [shipsTestResult, setShipsTestResult] = useState<{ ok: boolean; provider?: string; reason?: string; tip?: string } | null>(null);
   const [shipsTesting, setShipsTesting] = useState(false);
+  const [shipsSaving, setShipsSaving] = useState(false);
   
   // Secrets (local state for editing)
   const [openskyOAuth2ClientId, setOpenskyOAuth2ClientId] = useState<string>("");
@@ -164,6 +175,7 @@ export const ConfigPage: React.FC = () => {
   const [gibsTesting, setGibsTesting] = useState(false);
   const [gibsTilePreview, setGibsTilePreview] = useState<string | null>(null);
   const [gibsLoadingTile, setGibsLoadingTile] = useState(false);
+  const [globalSaving, setGlobalSaving] = useState(false);
 
   // Grupo 2.5: Rayos (Blitzortung)
   const [lightningSaving, setLightningSaving] = useState(false);
@@ -225,7 +237,7 @@ export const ConfigPage: React.FC = () => {
       decimate: flights.decimate ?? "none",
       grid_px: flights.grid_px ?? 24,
       styleScale: flights.styleScale ?? 3.2,
-      render_mode: flights.render_mode ?? "circle",
+    render_mode: flights.render_mode ?? "symbol_custom",
     };
 
     if (flights.circle) {
@@ -834,7 +846,8 @@ export const ConfigPage: React.FC = () => {
     try {
       const flightsPayload = buildFlightsConfig();
       await saveConfigGroup("layers.flights", flightsPayload);
-      alert("Capa de vuelos guardada correctamente");
+      await reloadConfig();
+      alert("Capa de vuelos guardada. La pantalla se reiniciará en unos segundos.");
       const loadedConfig = await getConfigV2();
       setConfig(withConfigDefaultsV2(loadedConfig));
       dispatchConfigSaved();
@@ -855,7 +868,8 @@ export const ConfigPage: React.FC = () => {
     try {
       const payload = buildOpenSkyConfig();
       await saveConfigGroup("opensky", payload);
-      alert("Configuración de OpenSky guardada correctamente");
+      await reloadConfig();
+      alert("Configuración de OpenSky guardada. La pantalla se reiniciará en unos segundos.");
       const loadedConfig = await getConfigV2();
       setConfig(withConfigDefaultsV2(loadedConfig));
       dispatchConfigSaved();
@@ -954,31 +968,15 @@ export const ConfigPage: React.FC = () => {
     }
   };
 
-  const handleSaveMapAndLayers = async () => {
+  const handleSaveMap = async () => {
     if (!config) return;
-    
-    setMapAndLayersSaving(true);
+
+    setMapSaving(true);
     try {
-      const flightsPayload = sanitizeFlightsPayload();
-      if (flightsPayload) {
-        await saveConfigGroup("layers.flights", flightsPayload);
-      }
-      
-      const shipsPayload = sanitizeShipsPayload();
-      if (shipsPayload) {
-        await saveConfigGroup("layers.ships", shipsPayload);
-      }
-      
-      // Guardar ui_map usando saveConfigGroup (deep-merge, no borra claves fuera del sub-árbol)
       if (config.ui_map) {
         await saveConfigGroup("ui_map", config.ui_map);
       }
-      
-      // Guardar ui_global usando saveConfigGroup (deep-merge, no borra claves fuera del sub-árbol)
-      if (config.ui_global) {
-        await saveConfigGroup("ui_global", config.ui_global);
-      }
-      
+
       const legacyMapPayload: Record<string, any> = {};
       const uiMapProvider = config.ui_map?.provider;
       if (uiMapProvider === "maptiler_vector") {
@@ -987,6 +985,7 @@ export const ConfigPage: React.FC = () => {
           config.ui_map.maptiler?.apiKey ??
           config.ui_map.maptiler?.key ??
           null;
+        legacyMapPayload.styleUrl = config.ui_map.maptiler?.styleUrl ?? null;
       } else if (uiMapProvider === "custom_xyz" || uiMapProvider === "local_raster_xyz") {
         legacyMapPayload.provider = "xyz";
         legacyMapPayload.maptiler_api_key = null;
@@ -994,18 +993,67 @@ export const ConfigPage: React.FC = () => {
       if (Object.keys(legacyMapPayload).length > 0) {
         await saveConfigGroup("map", legacyMapPayload);
       }
-      
-      alert("Configuración de Mapas y Capas guardada correctamente");
-      
-      // Recargar config
+
+      await reloadConfig();
+      alert("Mapa base guardado. La pantalla se reiniciará en unos segundos.");
+
       const loadedConfig = await getConfigV2();
       setConfig(withConfigDefaultsV2(loadedConfig));
       dispatchConfigSaved();
     } catch (error) {
-      console.error("Error saving map and layers:", error);
-      alert("Error al guardar la configuración");
+      console.error("Error saving map settings:", error);
+      alert("Error al guardar el mapa base");
     } finally {
-      setMapAndLayersSaving(false);
+      setMapSaving(false);
+    }
+  };
+
+  const handleSaveShipsLayer = async () => {
+    if (!config) return;
+
+    const shipsPayload = sanitizeShipsPayload();
+    if (!shipsPayload) {
+      alert("No hay cambios en la capa de barcos");
+      return;
+    }
+
+    setShipsSaving(true);
+    try {
+      await saveConfigGroup("layers.ships", shipsPayload);
+      await reloadConfig();
+      alert("Capa de barcos guardada. La pantalla se reiniciará en unos segundos.");
+
+      const loadedConfig = await getConfigV2();
+      setConfig(withConfigDefaultsV2(loadedConfig));
+      dispatchConfigSaved();
+    } catch (error) {
+      console.error("Error saving ships layer:", error);
+      alert("Error al guardar la capa de barcos");
+    } finally {
+      setShipsSaving(false);
+    }
+  };
+
+  const handleSaveGlobalLayers = async () => {
+    if (!config) {
+      return;
+    }
+
+    setGlobalSaving(true);
+    try {
+      const payload = config.ui_global ?? DEFAULT_CONFIG_V2.ui_global ?? {};
+      await saveConfigGroup("ui_global", payload);
+      await reloadConfig();
+      alert("Capas globales guardadas. La pantalla se reiniciará en unos segundos.");
+
+      const loadedConfig = await getConfigV2();
+      setConfig(withConfigDefaultsV2(loadedConfig));
+      dispatchConfigSaved();
+    } catch (error) {
+      console.error("Error saving global layers:", error);
+      alert("Error al guardar las capas globales");
+    } finally {
+      setGlobalSaving(false);
     }
   };
 
@@ -1511,6 +1559,16 @@ export const ConfigPage: React.FC = () => {
                 )}
               </>
             )}
+          </div>
+
+          <div className="config-field__actions" style={{ marginTop: "16px" }}>
+            <button
+              className="config-button"
+              onClick={handleSaveGlobalLayers}
+              disabled={globalSaving}
+            >
+              {globalSaving ? "Guardando..." : "Guardar capas globales"}
+            </button>
           </div>
         </div>
 
@@ -2134,12 +2192,37 @@ export const ConfigPage: React.FC = () => {
               <select
                 value={config.ui_map.provider}
                 onChange={(e) => {
+                  const nextProvider = e.target.value as typeof config.ui_map.provider;
+                  const nextUiMap = {
+                    ...config.ui_map,
+                    provider: nextProvider,
+                  } as AppConfigV2["ui_map"];
+
+                  if (nextProvider === "maptiler_vector") {
+                    nextUiMap.maptiler = {
+                      apiKey: config.ui_map.maptiler?.apiKey ?? null,
+                      styleUrl:
+                        config.ui_map.maptiler?.styleUrl ??
+                        DEFAULT_MAP_CONFIG.maptiler?.styleUrl ??
+                        DEFAULT_STREETS_STYLE_URL,
+                    };
+                  } else if (nextProvider === "local_raster_xyz") {
+                    nextUiMap.local = {
+                      tileUrl: config.ui_map.local?.tileUrl || DEFAULT_LOCAL_RASTER_CONFIG.tileUrl,
+                      minzoom: config.ui_map.local?.minzoom ?? DEFAULT_LOCAL_RASTER_CONFIG.minzoom,
+                      maxzoom: config.ui_map.local?.maxzoom ?? DEFAULT_LOCAL_RASTER_CONFIG.maxzoom,
+                    };
+                  } else if (nextProvider === "custom_xyz") {
+                    nextUiMap.customXyz = {
+                      tileUrl: config.ui_map.customXyz?.tileUrl ?? null,
+                      minzoom: config.ui_map.customXyz?.minzoom ?? 0,
+                      maxzoom: config.ui_map.customXyz?.maxzoom ?? 19,
+                    };
+                  }
+
                   setConfig({
                     ...config,
-                    ui_map: {
-                      ...config.ui_map,
-                      provider: e.target.value as any,
-                    },
+                    ui_map: nextUiMap,
                   });
                 }}
               >
@@ -2191,7 +2274,7 @@ export const ConfigPage: React.FC = () => {
                         },
                       });
                     }}
-                    placeholder="https://api.maptiler.com/maps/vector-dark/style.json?key=..."
+                    placeholder={DEFAULT_STREETS_STYLE_URL}
                   />
                 </div>
                 
@@ -2315,6 +2398,16 @@ export const ConfigPage: React.FC = () => {
                 )}
               </>
             )}
+
+            <div className="config-field__actions" style={{ marginTop: "16px" }}>
+              <button
+                className="config-button primary"
+                onClick={handleSaveMap}
+                disabled={mapSaving}
+              >
+                {mapSaving ? "Guardando..." : "Guardar mapa"}
+              </button>
+            </div>
 
             {/* Capa Vuelos */}
             <div className="config-field" style={{ marginTop: "24px", borderTop: "1px solid rgba(104, 162, 255, 0.2)", paddingTop: "16px" }}>
@@ -3471,6 +3564,14 @@ export const ConfigPage: React.FC = () => {
                     >
                       {shipsTesting ? "Probando..." : "Test Barcos"}
                     </button>
+                    <button
+                      className="config-button"
+                      style={{ marginLeft: "8px" }}
+                      onClick={handleSaveShipsLayer}
+                      disabled={shipsSaving}
+                    >
+                      {shipsSaving ? "Guardando..." : "Guardar barcos"}
+                    </button>
                   </div>
 
                   {shipsTestResult && (
@@ -3508,15 +3609,6 @@ export const ConfigPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="config-actions" style={{ marginTop: "24px" }}>
-            <button
-              className="config-button primary"
-              onClick={handleSaveMapAndLayers}
-              disabled={mapAndLayersSaving}
-            >
-              {mapAndLayersSaving ? "Guardando..." : "Guardar"}
-            </button>
-          </div>
         </div>
         </div>
         {/* End BLOQUE 1: Maps and Layers */}

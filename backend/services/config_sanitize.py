@@ -21,6 +21,9 @@ except Exception as exc:  # noqa: BLE001
     _DEFAULT_CONFIG_V2 = {}
 
 DEFAULT_AISSTREAM_WS_URL = "wss://stream.aisstream.io/v0/stream"
+_DEFAULT_MAPTILER_STYLE_URL = (
+    "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A"
+)
 _OLD_OPENSKY_TOKEN_URLS = {
     "https://auth.opensky-network.org/oauth/token",
     "https://auth.opensky-network.org/oauth/token/",
@@ -73,6 +76,17 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
                 _DEFAULT_CONFIG_V2.get("ui_map", {}),
                 data["ui_map"],
             )
+
+        ui_map = data.get("ui_map")
+        if isinstance(ui_map, dict):
+            maptiler_cfg = ui_map.get("maptiler")
+            if isinstance(maptiler_cfg, dict) and not maptiler_cfg.get("styleUrl"):
+                maptiler_cfg["styleUrl"] = _DEFAULT_MAPTILER_STYLE_URL
+            provider = ui_map.get("provider")
+            if provider == "maptiler_vector" and isinstance(maptiler_cfg, dict):
+                maptiler_cfg.setdefault("styleUrl", _DEFAULT_MAPTILER_STYLE_URL)
+            if provider == "maptiler_vector" and not ui_map.get("maptiler"):
+                ui_map["maptiler"] = {"apiKey": None, "styleUrl": _DEFAULT_MAPTILER_STYLE_URL}
 
         if "ui_global" not in data or not isinstance(data.get("ui_global"), dict):
             data["ui_global"] = _DEFAULT_CONFIG_V2.get("ui_global", {})
@@ -257,7 +271,16 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
     if "ics_path" in calendar_top and isinstance(calendar_top["ics_path"], str):
         calendar_top["ics_path"] = calendar_top["ics_path"].strip() or None
 
+    legacy_map = data.get("map")
+    if isinstance(legacy_map, dict):
+        provider = legacy_map.get("provider")
+        if provider == "maptiler":
+            legacy_map.setdefault("styleUrl", _DEFAULT_MAPTILER_STYLE_URL)
+
     return data
+
+
+def _normalize_opensky_token_url(value: Any) -> str | None:
 
 
 def _normalize_opensky_token_url(value: Any) -> str | None:
