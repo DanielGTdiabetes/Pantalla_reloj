@@ -75,7 +75,7 @@ export const DEFAULT_FLIGHTS_LAYER_CONFIG: FlightsLayerConfigV2 = {
   decimate: "none",
   grid_px: 24,
   styleScale: 3.2,
-  render_mode: "circle",
+  render_mode: "symbol_custom",
   circle: {
     radius_base: 7.5,
     radius_zoom_scale: 1.7,
@@ -83,6 +83,10 @@ export const DEFAULT_FLIGHTS_LAYER_CONFIG: FlightsLayerConfigV2 = {
     color: "#FFD400",
     stroke_color: "#000000",
     stroke_width: 2.0,
+  },
+  symbol: {
+    size_vh: 2.0,
+    allow_overlap: true,
   },
 };
 

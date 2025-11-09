@@ -156,6 +156,33 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
                             normalized_token_url,
                         )
                     opensky_cfg["token_url"] = normalized_token_url
+
+            # Asegurar configuración symbol por defecto (icono avión) y migrar render_mode
+            default_symbol_cfg = {}
+            if isinstance(flights_defaults, dict):
+                candidate_symbol = flights_defaults.get("symbol")
+                if isinstance(candidate_symbol, dict):
+                    default_symbol_cfg = dict(candidate_symbol)
+            if not default_symbol_cfg:
+                default_symbol_cfg = {"size_vh": 2.0, "allow_overlap": True}
+
+            symbol_cfg = flights.get("symbol")
+            if isinstance(symbol_cfg, dict):
+                for key, value in default_symbol_cfg.items():
+                    symbol_cfg.setdefault(key, value)
+            else:
+                flights["symbol"] = dict(default_symbol_cfg)
+
+            render_mode_raw = flights.get("render_mode")
+            if isinstance(render_mode_raw, str):
+                normalized_mode = render_mode_raw.strip().lower()
+            else:
+                normalized_mode = ""
+            if normalized_mode not in {"auto", "symbol", "symbol_custom", "circle"}:
+                flights["render_mode"] = "symbol_custom"
+            elif normalized_mode == "circle":
+                log.info("[config-migrate] flights.render_mode circle → symbol_custom")
+                flights["render_mode"] = "symbol_custom"
     
         ships = layers.get("ships")
         if isinstance(ships, dict):
