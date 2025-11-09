@@ -190,7 +190,7 @@ export function computeStyleUrlFromConfig(mapConfig: any): string | null {
   }
 
   // Si hay apiKey, construir URL según el estilo
-  const apiKey = maptiler.key || maptiler.apiKey;
+  const apiKey = maptiler.api_key || maptiler.apiKey || maptiler.key;
   if (!apiKey) return null;
 
   const style = mapConfig.style || "vector-dark";

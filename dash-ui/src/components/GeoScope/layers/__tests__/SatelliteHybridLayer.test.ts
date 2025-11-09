@@ -1,34 +1,43 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type maplibregl from "maplibre-gl";
-
 import SatelliteHybridLayer from "../SatelliteHybridLayer";
 
-type AnyLayer = maplibregl.AnyLayer;
+type LayerSpec = {
+  id: string;
+  type: string;
+  source?: string;
+  layout?: Record<string, unknown>;
+  paint?: Record<string, unknown>;
+  filter?: unknown;
+  minzoom?: number;
+  maxzoom?: number;
+  metadata?: Record<string, unknown>;
+  "source-layer"?: string;
+};
 
 class FakeMap {
-  sources = new Map<string, maplibregl.AnySourceData>();
-  layers: AnyLayer[] = [];
-  baseStyleLayers: AnyLayer[];
-  addLayerCalls: AnyLayer[] = [];
+  sources = new Map<string, Record<string, unknown>>();
+  layers: LayerSpec[] = [];
+  baseStyleLayers: LayerSpec[];
+  addLayerCalls: LayerSpec[] = [];
 
   constructor() {
     this.baseStyleLayers = [
-      { id: "background", type: "background" } as AnyLayer,
+      { id: "background", type: "background" },
       {
         id: "road-label",
         type: "symbol",
         source: "openmaptiles",
         "source-layer": "transportation_name",
         layout: { "text-field": "{name}" },
-      } as AnyLayer,
+      },
     ];
   }
 
-  asMap(): maplibregl.Map {
-    return this as unknown as maplibregl.Map;
+  asMap(): any {
+    return this as unknown as any;
   }
 
-  addSource(id: string, source: maplibregl.AnySourceData) {
+  addSource(id: string, source: Record<string, unknown>) {
     this.sources.set(id, source);
   }
 
@@ -40,7 +49,7 @@ class FakeMap {
     this.sources.delete(id);
   }
 
-  addLayer(layer: AnyLayer, beforeId?: string) {
+  addLayer(layer: LayerSpec, beforeId?: string) {
     this.addLayerCalls.push(layer);
 
     if (beforeId) {

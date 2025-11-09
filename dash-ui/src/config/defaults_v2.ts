@@ -33,6 +33,8 @@ export const DEFAULT_MAP_CONFIG: MapConfigV2 = {
   local: DEFAULT_LOCAL_RASTER_CONFIG,
   maptiler: {
     api_key: null,
+    apiKey: null,
+    key: null,
     style: "vector-bright",
     styleUrl: "https://api.maptiler.com/maps/streets-v4/style.json",
   },

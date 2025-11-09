@@ -982,6 +982,7 @@ export const ConfigPage: React.FC = () => {
       if (uiMapProvider === "maptiler_vector") {
         legacyMapPayload.provider = "maptiler";
         legacyMapPayload.maptiler_api_key =
+          config.ui_map.maptiler?.api_key ??
           config.ui_map.maptiler?.apiKey ??
           config.ui_map.maptiler?.key ??
           null;
@@ -2199,12 +2200,25 @@ export const ConfigPage: React.FC = () => {
                   } as AppConfigV2["ui_map"];
 
                   if (nextProvider === "maptiler_vector") {
+                    const resolvedStyleUrl =
+                      config.ui_map.maptiler?.styleUrl ??
+                      DEFAULT_MAP_CONFIG.maptiler?.styleUrl ??
+                      DEFAULT_STREETS_STYLE_URL;
+                    const resolvedKey =
+                      config.ui_map.maptiler?.api_key ??
+                      config.ui_map.maptiler?.apiKey ??
+                      config.ui_map.maptiler?.key ??
+                      null;
                     nextUiMap.maptiler = {
-                      apiKey: config.ui_map.maptiler?.apiKey ?? null,
-                      styleUrl:
-                        config.ui_map.maptiler?.styleUrl ??
-                        DEFAULT_MAP_CONFIG.maptiler?.styleUrl ??
-                        DEFAULT_STREETS_STYLE_URL,
+                      api_key: resolvedKey,
+                      apiKey: resolvedKey,
+                      key: config.ui_map.maptiler?.key ?? resolvedKey,
+                      style: config.ui_map.maptiler?.style ?? DEFAULT_MAP_CONFIG.maptiler?.style ?? "vector-bright",
+                      styleUrl: resolvedStyleUrl,
+                      styleUrlDark: config.ui_map.maptiler?.styleUrlDark ?? null,
+                      styleUrlLight: config.ui_map.maptiler?.styleUrlLight ?? null,
+                      styleUrlBright: config.ui_map.maptiler?.styleUrlBright ?? null,
+                      urls: config.ui_map.maptiler?.urls ?? undefined,
                     };
                   } else if (nextProvider === "local_raster_xyz") {
                     nextUiMap.local = {
@@ -2238,7 +2252,7 @@ export const ConfigPage: React.FC = () => {
                   <label>MapTiler API Key</label>
                   <input
                     type="text"
-                    value={config.ui_map.maptiler?.apiKey || ""}
+                    value={config.ui_map.maptiler?.api_key || ""}
                     onChange={(e) => {
                       setConfig({
                         ...config,
@@ -2246,7 +2260,9 @@ export const ConfigPage: React.FC = () => {
                           ...config.ui_map,
                           maptiler: {
                             ...config.ui_map.maptiler,
+                            api_key: e.target.value || null,
                             apiKey: e.target.value || null,
+                            key: e.target.value || null,
                             styleUrl: config.ui_map.maptiler?.styleUrl || null,
                           },
                         },
@@ -2268,7 +2284,8 @@ export const ConfigPage: React.FC = () => {
                           ...config.ui_map,
                           maptiler: {
                             ...config.ui_map.maptiler,
-                            apiKey: config.ui_map.maptiler?.apiKey || null,
+                            api_key: config.ui_map.maptiler?.api_key ?? null,
+                            apiKey: config.ui_map.maptiler?.api_key ?? null,
                             styleUrl: e.target.value || null,
                           },
                         },

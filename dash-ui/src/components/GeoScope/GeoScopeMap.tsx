@@ -451,15 +451,32 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
             minzoom: 0,
             maxzoom: 19,
           },
-          maptiler: mapSettings.maptiler ? {
-            apiKey: mapSettings.maptiler.apiKey ?? mapSettings.maptiler.key ?? null,
-            styleUrl:
-              mapSettings.maptiler.styleUrl ??
-              mapSettings.maptiler.styleUrlDark ??
-              mapSettings.maptiler.styleUrlLight ??
-              mapSettings.maptiler.styleUrlBright ??
-              null,
-          } : undefined,
+          maptiler: mapSettings.maptiler
+            ? {
+                api_key:
+                  mapSettings.maptiler.apiKey ??
+                  mapSettings.maptiler.key ??
+                  mapSettings.maptiler.api_key ??
+                  null,
+                style: mapSettings.style ?? null,
+                styleUrl:
+                  mapSettings.maptiler.styleUrl ??
+                  mapSettings.maptiler.styleUrlDark ??
+                  mapSettings.maptiler.styleUrlLight ??
+                  mapSettings.maptiler.styleUrlBright ??
+                  null,
+                apiKey:
+                  mapSettings.maptiler.apiKey ??
+                  mapSettings.maptiler.key ??
+                  mapSettings.maptiler.api_key ??
+                  null,
+                key: mapSettings.maptiler.key ?? null,
+                styleUrlDark: mapSettings.maptiler.styleUrlDark ?? null,
+                styleUrlLight: mapSettings.maptiler.styleUrlLight ?? null,
+                styleUrlBright: mapSettings.maptiler.styleUrlBright ?? null,
+                urls: mapSettings.maptiler.urls ?? undefined,
+              }
+            : undefined,
           customXyz: undefined,
           viewMode: mapSettings.viewMode || "fixed",
           fixed: mapSettings.fixed ? {
@@ -566,10 +583,13 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
       style: "vector-dark" as const,
       theme: { sea: "#0b3756", land: "#20262c", label: "#d6e7ff", contrast: 0.15, tint: "rgba(0,170,255,0.06)" },
       respectReducedMotion: false,
-      maptiler: ui_map.provider === "maptiler_vector" ? {
-        key: ui_map.maptiler?.apiKey || null,
-        styleUrlDark: ui_map.maptiler?.styleUrl || null,
-      } : undefined,
+      maptiler: ui_map.provider === "maptiler_vector"
+        ? {
+            key: ui_map.maptiler?.api_key ?? ui_map.maptiler?.apiKey ?? ui_map.maptiler?.key ?? null,
+            apiKey: ui_map.maptiler?.api_key ?? ui_map.maptiler?.apiKey ?? null,
+            styleUrlDark: ui_map.maptiler?.styleUrl ?? null,
+          }
+        : undefined,
       cinema: undefined,
       idlePan: undefined,
     } as unknown as MapConfig;
@@ -594,8 +614,11 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
         maxzoom: 19,
       },
       maptiler: {
+        api_key: null,
+        style: "vector-bright",
+        styleUrl: "https://api.maptiler.com/maps/streets-v4/style.json",
         apiKey: null,
-        styleUrl: "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A",
+        key: null,
       },
       customXyz: { tileUrl: null, minzoom: 0, maxzoom: 19 },
       viewMode: "fixed",
@@ -1631,10 +1654,29 @@ export default function GeoScopeMap({
             minzoom: 0,
             maxzoom: 19,
           },
-          maptiler: mapSettings.maptiler ? {
-            apiKey: mapSettings.maptiler.apiKey ?? mapSettings.maptiler.key ?? maptilerKey ?? null,
-            styleUrl: styleUrlWithCacheBuster,
-          } : undefined,
+          maptiler: mapSettings.maptiler
+            ? {
+                api_key:
+                  mapSettings.maptiler.apiKey ??
+                  mapSettings.maptiler.key ??
+                  mapSettings.maptiler.api_key ??
+                  maptilerKey ??
+                  null,
+                style: mapSettings.style ?? null,
+                styleUrl: styleUrlWithCacheBuster,
+                apiKey:
+                  mapSettings.maptiler.apiKey ??
+                  mapSettings.maptiler.key ??
+                  mapSettings.maptiler.api_key ??
+                  maptilerKey ??
+                  null,
+                key: mapSettings.maptiler.key ?? null,
+                styleUrlDark: mapSettings.maptiler.styleUrlDark ?? null,
+                styleUrlLight: mapSettings.maptiler.styleUrlLight ?? null,
+                styleUrlBright: mapSettings.maptiler.styleUrlBright ?? null,
+                urls: mapSettings.maptiler.urls ?? undefined,
+              }
+            : undefined,
           customXyz: undefined,
           viewMode: mapSettings.viewMode || "fixed",
           fixed: mapSettings.fixed,

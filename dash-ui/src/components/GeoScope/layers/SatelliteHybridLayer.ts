@@ -1,7 +1,8 @@
-import maplibregl, {
-  type AnyLayer,
-  type LayerSpecification,
-  type SymbolLayerSpecification,
+import maplibregl from "maplibre-gl";
+import type {
+  LayerSpecification,
+  SymbolLayerSpecification,
+  StyleSpecification,
 } from "maplibre-gl";
 
 import type { Layer } from "./LayerRegistry";
@@ -155,9 +156,7 @@ export default class SatelliteHybridLayer implements Layer {
 
   private ensureRasterLayer(map: maplibregl.Map): void {
     const expectedTileUrl = `${SATELLITE_TILE_URL}${this.apiKey}`;
-    const existingSource = map.getSource(this.rasterSourceId) as
-      | maplibregl.RasterSource
-      | undefined;
+    const existingSource = map.getSource(this.rasterSourceId) as maplibregl.Source | undefined;
 
     if (existingSource) {
       const tiles = (existingSource as unknown as { tiles?: string[] }).tiles ?? [];
@@ -203,7 +202,7 @@ export default class SatelliteHybridLayer implements Layer {
       return;
     }
 
-    const style = map.getStyle();
+    const style = map.getStyle() as StyleSpecification | undefined;
     if (!style?.layers || !Array.isArray(style.layers)) {
       return;
     }
@@ -215,7 +214,7 @@ export default class SatelliteHybridLayer implements Layer {
         continue;
       }
 
-      const clone = this.cloneLabelLayer(layer, index++);
+      const clone = this.cloneLabelLayer(layer as LayerSpecification, index++);
       if (!clone) {
         continue;
       }
@@ -260,7 +259,7 @@ export default class SatelliteHybridLayer implements Layer {
     this.labelLayerIds = [];
   }
 
-  private cloneLabelLayer(layer: LayerSpecification, index: number): AnyLayer | null {
+  private cloneLabelLayer(layer: LayerSpecification, index: number): LayerSpecification | null {
     if (layer.type !== "symbol" || !("source" in layer)) {
       return null;
     }
