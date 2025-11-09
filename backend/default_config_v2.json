@@ -36,12 +36,12 @@
     },
     "viewMode": "fixed",
     "fixed": {
-      "center": { "lat": 39.98, "lon": 0.20 },
-      "zoom": 9.8,
+      "center": { "lat": 39.938, "lon": -0.101 },
+      "zoom": 10.8,
       "bearing": 0,
       "pitch": 0
     },
-    "region": { "postalCode": "12001" }
+    "region": { "postalCode": "12540" }
   },
   "ui_global": {
     "satellite": { "enabled": true, "provider": "gibs", "opacity": 1.0 },
