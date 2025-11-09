@@ -90,6 +90,28 @@ export const DEFAULT_FLIGHTS_LAYER_CONFIG: FlightsLayerConfigV2 = {
   },
 };
 
+export const DEFAULT_OPENSKY_CONFIG = {
+  enabled: false,
+  mode: "bbox" as const,
+  poll_seconds: 10,
+  max_aircraft: 400,
+  cluster: true,
+  extended: 0,
+  bbox: {
+    lamin: 39.5,
+    lamax: 41.0,
+    lomin: -1.0,
+    lomax: 1.5,
+  },
+  oauth2: {
+    client_id: null,
+    client_secret: null,
+    token_url:
+      "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
+    scope: null,
+  },
+};
+
 export const DEFAULT_SHIPS_LAYER_CONFIG: ShipsLayerConfigV2 = {
   enabled: false,
   provider: "aisstream",
@@ -173,6 +195,7 @@ export const DEFAULT_CONFIG_V2: AppConfigV2 = {
     rotation: DEFAULT_UI_ROTATION_CONFIG,
   },
   ui_global: DEFAULT_UI_GLOBAL_CONFIG,
+  opensky: DEFAULT_OPENSKY_CONFIG,
   layers: DEFAULT_LAYERS_CONFIG,
   panels: DEFAULT_PANELS_CONFIG,
   secrets: {},
@@ -247,6 +270,18 @@ export function withConfigDefaultsV2(
       rotation: mergeRotationConfig(config.ui?.rotation),
     },
     ui_global: config.ui_global ?? DEFAULT_UI_GLOBAL_CONFIG,
+    opensky: {
+      ...DEFAULT_OPENSKY_CONFIG,
+      ...config.opensky,
+      bbox: {
+        ...DEFAULT_OPENSKY_CONFIG.bbox,
+        ...(config.opensky?.bbox ?? {}),
+      },
+      oauth2: {
+        ...DEFAULT_OPENSKY_CONFIG.oauth2,
+        ...(config.opensky?.oauth2 ?? {}),
+      },
+    },
     layers: {
       flights: {
         ...DEFAULT_FLIGHTS_LAYER_CONFIG,

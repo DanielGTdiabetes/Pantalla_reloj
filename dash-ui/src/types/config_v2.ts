@@ -145,6 +145,24 @@ export type OpenSkyProviderConfig = {
   scope?: string | null;
 };
 
+export type OpenSkyOAuthConfigV2 = {
+  client_id?: string | null;
+  client_secret?: string | null;
+  token_url?: string | null;
+  scope?: string | null;
+};
+
+export type OpenSkyConfigV2 = {
+  enabled: boolean;
+  mode: "bbox" | "global";
+  poll_seconds: number;
+  max_aircraft: number;
+  cluster: boolean;
+  extended: number;
+  bbox?: OpenSkyBBoxConfig;
+  oauth2?: OpenSkyOAuthConfigV2;
+};
+
 export type AviationStackProviderConfig = {
   base_url: string;
 };
@@ -313,6 +331,7 @@ export type AppConfigV2 = {
   ui_map: MapConfigV2;
   ui?: UIConfigV2;
   ui_global?: UIGlobalConfigV2;
+  opensky: OpenSkyConfigV2;
   layers?: LayersConfigV2;
   panels?: PanelsConfigV2;
   secrets?: SecretsConfig;

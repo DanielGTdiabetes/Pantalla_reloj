@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-import { DEFAULT_UI_ROTATION_CONFIG, ROTATION_PANEL_IDS, withConfigDefaultsV2 } from "../config/defaults_v2";
+import { DEFAULT_OPENSKY_CONFIG, DEFAULT_UI_ROTATION_CONFIG, ROTATION_PANEL_IDS, withConfigDefaultsV2 } from "../config/defaults_v2";
 import {
   getCalendarPreview,
   getConfigV2,
@@ -40,6 +40,7 @@ import type {
   AppConfigV2,
   CalendarConfig,
   FlightsLayerConfigV2,
+  OpenSkyConfigV2,
   PanelsConfigV2,
   ShipsLayerConfigV2,
   UIRotationConfigV2,
@@ -137,6 +138,7 @@ export const ConfigPage: React.FC = () => {
   // Flights test
   const [flightsTestResult, setFlightsTestResult] = useState<{ ok: boolean; provider?: string; auth?: string; token_last4?: string; expires_in?: number; reason?: string; tip?: string } | null>(null);
   const [flightsTesting, setFlightsTesting] = useState(false);
+  const [flightsSaving, setFlightsSaving] = useState(false);
   
   // Ships test
   const [shipsTestResult, setShipsTestResult] = useState<{ ok: boolean; provider?: string; reason?: string; tip?: string } | null>(null);
@@ -171,6 +173,7 @@ export const ConfigPage: React.FC = () => {
   const [lightningWsTesting, setLightningWsTesting] = useState(false);
   const [lightningStatusData, setLightningStatusData] = useState<any>(null);
   const [lightningStatusLoading, setLightningStatusLoading] = useState(false);
+  const [openskySaving, setOpenskySaving] = useState(false);
 
   // Grupo 3: Panel Rotativo
   const [panelRotatorSaving, setPanelRotatorSaving] = useState(false);
@@ -571,6 +574,37 @@ export const ConfigPage: React.FC = () => {
     };
   };
 
+  const buildOpenSkyConfig = (updates?: Partial<OpenSkyConfigV2>): OpenSkyConfigV2 => {
+    const current = (config?.opensky ?? DEFAULT_OPENSKY_CONFIG) as OpenSkyConfigV2;
+    const next = updates ?? {};
+    const currentBbox = current.bbox ?? DEFAULT_OPENSKY_CONFIG.bbox;
+    const bbox = {
+      lamin: next.bbox?.lamin ?? currentBbox.lamin ?? DEFAULT_OPENSKY_CONFIG.bbox.lamin,
+      lamax: next.bbox?.lamax ?? currentBbox.lamax ?? DEFAULT_OPENSKY_CONFIG.bbox.lamax,
+      lomin: next.bbox?.lomin ?? currentBbox.lomin ?? DEFAULT_OPENSKY_CONFIG.bbox.lomin,
+      lomax: next.bbox?.lomax ?? currentBbox.lomax ?? DEFAULT_OPENSKY_CONFIG.bbox.lomax,
+    };
+    const currentOauth = current.oauth2 ?? DEFAULT_OPENSKY_CONFIG.oauth2;
+    return {
+      enabled: next.enabled ?? current.enabled ?? false,
+      mode: next.mode ?? current.mode ?? "bbox",
+      poll_seconds: next.poll_seconds ?? current.poll_seconds ?? DEFAULT_OPENSKY_CONFIG.poll_seconds,
+      max_aircraft: next.max_aircraft ?? current.max_aircraft ?? DEFAULT_OPENSKY_CONFIG.max_aircraft,
+      cluster: next.cluster ?? current.cluster ?? DEFAULT_OPENSKY_CONFIG.cluster,
+      extended: next.extended ?? current.extended ?? DEFAULT_OPENSKY_CONFIG.extended,
+      bbox,
+      oauth2: {
+        client_id: next.oauth2?.client_id ?? currentOauth?.client_id ?? null,
+        client_secret: next.oauth2?.client_secret ?? currentOauth?.client_secret ?? null,
+        token_url:
+          next.oauth2?.token_url ??
+          currentOauth?.token_url ??
+          DEFAULT_OPENSKY_CONFIG.oauth2.token_url,
+        scope: next.oauth2?.scope ?? currentOauth?.scope ?? null,
+      },
+    };
+  };
+
   const buildShipsConfig = (updates?: Partial<ShipsLayerConfigV2>): ShipsLayerConfigV2 => {
     const current = config?.layers?.ships;
     return {
@@ -788,6 +822,48 @@ export const ConfigPage: React.FC = () => {
       console.error("Error testing flights:", error);
     } finally {
       setFlightsTesting(false);
+    }
+  };
+
+  const handleSaveFlightsLayer = async () => {
+    if (!config) {
+      return;
+    }
+
+    setFlightsSaving(true);
+    try {
+      const flightsPayload = buildFlightsConfig();
+      await saveConfigGroup("layers.flights", flightsPayload);
+      alert("Capa de vuelos guardada correctamente");
+      const loadedConfig = await getConfigV2();
+      setConfig(withConfigDefaultsV2(loadedConfig));
+      dispatchConfigSaved();
+    } catch (error) {
+      console.error("Error saving flights layer:", error);
+      alert("Error al guardar la capa de vuelos");
+    } finally {
+      setFlightsSaving(false);
+    }
+  };
+
+  const handleSaveOpenSky = async () => {
+    if (!config) {
+      return;
+    }
+
+    setOpenskySaving(true);
+    try {
+      const payload = buildOpenSkyConfig();
+      await saveConfigGroup("opensky", payload);
+      alert("Configuración de OpenSky guardada correctamente");
+      const loadedConfig = await getConfigV2();
+      setConfig(withConfigDefaultsV2(loadedConfig));
+      dispatchConfigSaved();
+    } catch (error) {
+      console.error("Error saving OpenSky config:", error);
+      alert("Error al guardar la configuración de OpenSky");
+    } finally {
+      setOpenskySaving(false);
     }
   };
 
@@ -2287,6 +2363,166 @@ export const ConfigPage: React.FC = () => {
               
               {config.layers?.flights?.enabled && (
                 <div style={{ marginLeft: "24px", marginTop: "12px" }}>
+                  <div className="config-field" style={{ marginBottom: "16px" }}>
+                    <h4>Servicio OpenSky (backend)</h4>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={config.opensky?.enabled ?? false}
+                        onChange={(e) => {
+                          if (!config) return;
+                          setConfig({
+                            ...config,
+                            opensky: {
+                              ...config.opensky,
+                              enabled: e.target.checked,
+                            } as OpenSkyConfigV2,
+                          });
+                        }}
+                      />
+                      Habilitar descargas desde OpenSky
+                    </label>
+
+                    <div className="config-field" style={{ marginTop: "12px" }}>
+                      <label>Modo</label>
+                      <select
+                        value={config.opensky?.mode ?? DEFAULT_OPENSKY_CONFIG.mode}
+                        onChange={(e) => {
+                          if (!config) return;
+                          setConfig({
+                            ...config,
+                            opensky: {
+                              ...config.opensky,
+                              mode: e.target.value as OpenSkyConfigV2["mode"],
+                            } as OpenSkyConfigV2,
+                          });
+                        }}
+                      >
+                        <option value="bbox">BBox (área limitada)</option>
+                        <option value="global">Global</option>
+                      </select>
+                    </div>
+
+                    <div className="config-field">
+                      <label>Intervalo de sondeo (segundos)</label>
+                      <input
+                        type="number"
+                        min={5}
+                        max={300}
+                        value={config.opensky?.poll_seconds ?? DEFAULT_OPENSKY_CONFIG.poll_seconds}
+                        onChange={(e) => {
+                          if (!config) return;
+                          const value = Math.max(5, Math.min(300, Number(e.target.value) || DEFAULT_OPENSKY_CONFIG.poll_seconds));
+                          setConfig({
+                            ...config,
+                            opensky: {
+                              ...config.opensky,
+                              poll_seconds: value,
+                            } as OpenSkyConfigV2,
+                          });
+                        }}
+                      />
+                    </div>
+
+                    {config.opensky?.mode === "bbox" && (
+                      <div className="config-field">
+                        <label>BBox (lat/lon)</label>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px" }}>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={config.opensky?.bbox?.lamin ?? DEFAULT_OPENSKY_CONFIG.bbox.lamin}
+                            onChange={(e) => {
+                              if (!config) return;
+                              const next = {
+                                ...(config.opensky?.bbox ?? {}),
+                                lamin: Number(e.target.value),
+                              };
+                              setConfig({
+                                ...config,
+                                opensky: {
+                                  ...config.opensky,
+                                  bbox: next,
+                                } as OpenSkyConfigV2,
+                              });
+                            }}
+                            placeholder="Latitud mínima"
+                          />
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={config.opensky?.bbox?.lamax ?? DEFAULT_OPENSKY_CONFIG.bbox.lamax}
+                            onChange={(e) => {
+                              if (!config) return;
+                              const next = {
+                                ...(config.opensky?.bbox ?? {}),
+                                lamax: Number(e.target.value),
+                              };
+                              setConfig({
+                                ...config,
+                                opensky: {
+                                  ...config.opensky,
+                                  bbox: next,
+                                } as OpenSkyConfigV2,
+                              });
+                            }}
+                            placeholder="Latitud máxima"
+                          />
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={config.opensky?.bbox?.lomin ?? DEFAULT_OPENSKY_CONFIG.bbox.lomin}
+                            onChange={(e) => {
+                              if (!config) return;
+                              const next = {
+                                ...(config.opensky?.bbox ?? {}),
+                                lomin: Number(e.target.value),
+                              };
+                              setConfig({
+                                ...config,
+                                opensky: {
+                                  ...config.opensky,
+                                  bbox: next,
+                                } as OpenSkyConfigV2,
+                              });
+                            }}
+                            placeholder="Longitud mínima"
+                          />
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={config.opensky?.bbox?.lomax ?? DEFAULT_OPENSKY_CONFIG.bbox.lomax}
+                            onChange={(e) => {
+                              if (!config) return;
+                              const next = {
+                                ...(config.opensky?.bbox ?? {}),
+                                lomax: Number(e.target.value),
+                              };
+                              setConfig({
+                                ...config,
+                                opensky: {
+                                  ...config.opensky,
+                                  bbox: next,
+                                } as OpenSkyConfigV2,
+                              });
+                            }}
+                            placeholder="Longitud máxima"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="config-field__actions" style={{ marginTop: "12px" }}>
+                      <button
+                        className="config-button"
+                        onClick={handleSaveOpenSky}
+                        disabled={openskySaving}
+                      >
+                        {openskySaving ? "Guardando..." : "Guardar OpenSky"}
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="config-field">
                     <label>Proveedor</label>
                     <select
@@ -2871,6 +3107,14 @@ export const ConfigPage: React.FC = () => {
                       disabled={flightsTesting}
                     >
                       {flightsTesting ? "Probando..." : "Test Vuelos"}
+                    </button>
+                    <button
+                      className="config-button"
+                      style={{ marginLeft: "8px" }}
+                      onClick={handleSaveFlightsLayer}
+                      disabled={flightsSaving}
+                    >
+                      {flightsSaving ? "Guardando..." : "Guardar vuelos"}
                     </button>
                   </div>
 
