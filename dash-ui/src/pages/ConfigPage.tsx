@@ -2328,6 +2328,83 @@ export const ConfigPage: React.FC = () => {
               </>
             )}
 
+            <div className="config-field">
+              <h3>Mapa satélite híbrido</h3>
+              <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <input
+                  type="checkbox"
+                  checked={config.ui_map.satellite?.enabled ?? false}
+                  onChange={(e) => {
+                    const satelliteConfig = config.ui_map.satellite ?? DEFAULT_MAP_CONFIG.satellite!;
+                    setConfig({
+                      ...config,
+                      ui_map: {
+                        ...config.ui_map,
+                        satellite: {
+                          ...satelliteConfig,
+                          enabled: e.target.checked,
+                        },
+                      },
+                    });
+                  }}
+                />
+                Activar modo satélite híbrido
+              </label>
+            </div>
+
+            {config.ui_map.satellite?.enabled && (
+              <>
+                <div className="config-field">
+                  <label>
+                    Opacidad ({config.ui_map.satellite?.opacity ?? 0.85})
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={config.ui_map.satellite?.opacity ?? 0.85}
+                    onChange={(e) => {
+                      const satelliteConfig = config.ui_map.satellite ?? DEFAULT_MAP_CONFIG.satellite!;
+                      setConfig({
+                        ...config,
+                        ui_map: {
+                          ...config.ui_map,
+                          satellite: {
+                            ...satelliteConfig,
+                            opacity: parseFloat(e.target.value),
+                          },
+                        },
+                      });
+                    }}
+                  />
+                </div>
+
+                <div className="config-field">
+                  <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <input
+                      type="checkbox"
+                      checked={config.ui_map.satellite?.labels_enabled ?? true}
+                      onChange={(e) => {
+                        const satelliteConfig = config.ui_map.satellite ?? DEFAULT_MAP_CONFIG.satellite!;
+                        setConfig({
+                          ...config,
+                          ui_map: {
+                            ...config.ui_map,
+                            satellite: {
+                              ...satelliteConfig,
+                              labels_enabled: e.target.checked,
+                            },
+                          },
+                        });
+                      }}
+                    />
+                    Mostrar etiquetas (calles, nombres)
+                  </label>
+                </div>
+              </>
+            )}
+
             {(config.ui_map.provider === "local_raster_xyz" || config.ui_map.provider === "custom_xyz") && (
               <>
                 {config.ui_map.provider === "local_raster_xyz" && (

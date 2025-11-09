@@ -60,17 +60,13 @@ export type MapRegion = {
   postalCode?: string | null;
 };
 
-export type MapLabelsOverlayConfig = {
-  enabled: boolean;
-  style_url?: string | null;
-  layer_filter?: unknown[];
-};
-
 export type MapSatelliteConfig = {
   enabled: boolean;
-  raster_style_url?: string | null;
-  labels_overlay?: MapLabelsOverlayConfig;
   opacity: number;
+  labels_enabled: boolean;
+  provider: "maptiler";
+  style_raster: string;
+  style_labels: string;
 };
 
 export type MapConfigV2 = {

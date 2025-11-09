@@ -672,9 +672,21 @@ export default function GeoScopeMap({
 }: GeoScopeMapProps = {}) {
   const { data: config, reload: reloadConfig, mapStyleVersion } = useConfig();
   const maptilerKey = useMemo(() => getMaptilerApiKey(config), [config]);
-  const effectiveSatelliteOpacity = satelliteOpacity ?? 0.85;
-  const effectiveLabelsStyle: SatelliteLabelsStyle = satelliteLabelsStyle;
-  const effectiveSatelliteEnabled = Boolean(satelliteEnabled && maptilerKey);
+  const uiMapSatellite = useMemo(() => {
+    const v2Config = config as unknown as AppConfigV2 | null;
+    if (v2Config?.version === 2 && v2Config.ui_map?.satellite) {
+      return v2Config.ui_map.satellite;
+    }
+    return null;
+  }, [config]);
+  const effectiveSatelliteOpacity =
+    uiMapSatellite?.opacity ?? satelliteOpacity ?? 0.85;
+  const effectiveLabelsEnabled =
+    uiMapSatellite?.labels_enabled ??
+    (satelliteLabelsStyle !== "none");
+  const effectiveSatelliteEnabled = Boolean(
+    (uiMapSatellite?.enabled ?? satelliteEnabled) && maptilerKey,
+  );
   const mapFillRef = useRef<HTMLDivElement | null>(null);
   const [webglError, setWebglError] = useState<string | null>(null);
   const [styleChangeInProgress, setStyleChangeInProgress] = useState(false);
@@ -787,8 +799,8 @@ export default function GeoScopeMap({
     if (!layer) {
       return;
     }
-    layer.setLabelsStyle(effectiveLabelsStyle);
-  }, [effectiveLabelsStyle]);
+    layer.setLabelsEnabled(effectiveLabelsEnabled);
+  }, [effectiveLabelsEnabled]);
 
   useEffect(() => {
     const layer = satelliteLayerRef.current;
@@ -1252,7 +1264,7 @@ export default function GeoScopeMap({
           apiKey: maptilerKey,
           enabled: effectiveSatelliteEnabled,
           opacity: effectiveSatelliteOpacity,
-          labelsStyle: effectiveLabelsStyle,
+          labelsEnabled: effectiveLabelsEnabled,
           zIndex: 5,
         });
         layerRegistry.add(satelliteLayer);

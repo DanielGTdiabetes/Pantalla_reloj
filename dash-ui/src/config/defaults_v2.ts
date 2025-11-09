@@ -40,13 +40,11 @@ export const DEFAULT_MAP_CONFIG: MapConfigV2 = {
   },
   satellite: {
     enabled: false,
-    raster_style_url: "https://api.maptiler.com/maps/satellite/style.json",
-    labels_overlay: {
-      enabled: true,
-      style_url: "https://api.maptiler.com/maps/streets-v4/style.json",
-      layer_filter: ["==", ["get", "class"], "label"],
-    },
     opacity: 0.85,
+    labels_enabled: true,
+    provider: "maptiler",
+    style_raster: "https://api.maptiler.com/maps/satellite/style.json",
+    style_labels: "https://api.maptiler.com/maps/streets/style.json",
   },
   customXyz: {
     tileUrl: null,
@@ -272,6 +270,10 @@ export function withConfigDefaultsV2(
         ...config.ui_map?.local,
       },
       maptiler: config.ui_map?.maptiler ?? DEFAULT_MAP_CONFIG.maptiler,
+      satellite: {
+        ...DEFAULT_MAP_CONFIG.satellite!,
+        ...config.ui_map?.satellite,
+      },
       customXyz: {
         ...DEFAULT_MAP_CONFIG.customXyz!,
         ...config.ui_map?.customXyz,

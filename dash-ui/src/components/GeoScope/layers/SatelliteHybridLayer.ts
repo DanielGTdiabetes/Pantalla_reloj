@@ -13,6 +13,7 @@ export type SatelliteHybridLayerOptions = {
   apiKey?: string | null;
   enabled?: boolean;
   opacity?: number;
+  labelsEnabled?: boolean;
   labelsStyle?: SatelliteLabelsStyle;
   zIndex?: number;
 };
@@ -52,6 +53,7 @@ export default class SatelliteHybridLayer implements Layer {
   private opacity: number;
   private labelsStyle: SatelliteLabelsStyle;
   private apiKey: string | null;
+  private labelsEnabled: boolean;
   private map?: maplibregl.Map;
   private warnedMissingKey = false;
   private readonly rasterSourceId = `${this.id}-raster-source`;
@@ -62,7 +64,11 @@ export default class SatelliteHybridLayer implements Layer {
   constructor(options: SatelliteHybridLayerOptions = {}) {
     this.enabled = options.enabled ?? false;
     this.opacity = clampOpacity(options.opacity, 0.85);
-    this.labelsStyle = options.labelsStyle ?? "maptiler-streets-v4-labels";
+    const initialLabelsEnabled = options.labelsEnabled ?? true;
+    this.labelsStyle =
+      options.labelsStyle ??
+      (initialLabelsEnabled ? "maptiler-streets-v4-labels" : "none");
+    this.labelsEnabled = this.labelsStyle !== "none";
     this.apiKey = options.apiKey?.trim() ?? null;
     this.zIndex = options.zIndex ?? 5;
   }
@@ -113,7 +119,19 @@ export default class SatelliteHybridLayer implements Layer {
       return;
     }
     this.labelsStyle = style;
+    this.labelsEnabled = style !== "none";
     this.syncState();
+  }
+
+  setLabelsEnabled(enabled: boolean): void {
+    if (this.labelsEnabled === enabled) {
+      return;
+    }
+    this.labelsEnabled = enabled;
+    const targetStyle: SatelliteLabelsStyle = enabled
+      ? "maptiler-streets-v4-labels"
+      : "none";
+    this.setLabelsStyle(targetStyle);
   }
 
   setApiKey(key: string | null | undefined): void {
@@ -147,7 +165,7 @@ export default class SatelliteHybridLayer implements Layer {
 
     this.ensureRasterLayer(map);
 
-    if (this.labelsStyle === "maptiler-streets-v4-labels") {
+    if (this.labelsEnabled && this.labelsStyle === "maptiler-streets-v4-labels") {
       this.ensureLabelLayers(map);
     } else {
       this.removeLabelLayers(map);

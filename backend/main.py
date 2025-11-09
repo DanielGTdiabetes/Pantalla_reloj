@@ -121,6 +121,7 @@ from .services.aemet_service import fetch_aemet_warnings, AEMETServiceError
 from .services.blitzortung_service import BlitzortungService, LightningStrike
 from .services import ephemerides
 from .services.tests import TEST_FUNCTIONS
+from .services.kiosk import refresh_ui_if_possible
 from .config_migrator import migrate_config_to_v2, migrate_v1_to_v2, apply_postal_geocoding
 from .rate_limiter import check_rate_limit
 
@@ -381,6 +382,23 @@ app.add_middleware(
 app.include_router(ephemerides.router)
 app.include_router(rainviewer.router)
 app.include_router(layers.router)
+
+
+@app.post("/api/kiosk/refresh")
+def kiosk_refresh(payload: Optional[Dict[str, Any]] = Body(default=None)) -> Dict[str, Any]:
+    """
+    Programa un refresco inmediato del kiosk via flag local.
+    """
+
+    default_reason = "manual_api"
+    reason = default_reason
+    if isinstance(payload, dict):
+        reason_candidate = payload.get("reason")
+        if isinstance(reason_candidate, str) and reason_candidate.strip():
+            reason = reason_candidate.strip()
+
+    _schedule_kiosk_refresh(reason)
+    return {"ok": True, "scheduled": True, "reason": reason}
 
 
 def _ensure_ics_storage_directory() -> None:
@@ -3531,6 +3549,11 @@ async def save_config(request: Request) -> JSONResponse:
         )
 
     payload = _sanitize_incoming_config_payload(payload)
+
+    ui_map_satellite_updated = False
+    ui_map_payload = payload.get("ui_map")
+    if isinstance(ui_map_payload, dict) and "satellite" in ui_map_payload:
+        ui_map_satellite_updated = True
     
     # Log del método HTTP recibido
     logger.info("[config] Received %s /api/config", request.method)
@@ -3709,6 +3732,9 @@ async def save_config(request: Request) -> JSONResponse:
             except Exception:
                 method = "unknown"
             _schedule_kiosk_refresh(f"config_save_{method}")
+            if ui_map_satellite_updated:
+                if not refresh_ui_if_possible():
+                    logger.debug("[kiosk] refresh UI request skipped or failed after ui_map.satellite update")
 
             # Publicar evento config_changed después de guardar exitosamente
             try:
@@ -3944,6 +3970,13 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
         raise HTTPException(status_code=500, detail=f"Failed to read config: {str(e)}")
     
     # Manejar secrets de forma especial (no se guardan en config, solo en secret_store)
+    refresh_satellite = False
+    if group_name == "ui_map":
+        if "satellite" in payload:
+            refresh_satellite = True
+    elif group_name.startswith("ui_map.satellite"):
+        refresh_satellite = True
+
     if group_name == "secrets":
         # Guardar secrets en secret_store
         try:
@@ -4156,6 +4189,9 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
         write_json(CONFIG_PATH, sanitized_config)
         logger.info("[config] Group '%s' saved successfully", group_name)
         _schedule_kiosk_refresh(f"config_group_{group_name}")
+        if refresh_satellite:
+            if not refresh_ui_if_possible():
+                logger.debug("[kiosk] refresh UI request skipped or failed after %s update", group_name)
         
         # Publicar evento config_changed después de guardar exitosamente
         try:

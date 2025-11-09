@@ -160,6 +160,34 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
                     # Si es camelCase y existe una versión lowercase, eliminar la camelCase
                     ui_map.pop(legacy_key, None)
 
+            satellite_cfg = ui_map.get("satellite")
+            if isinstance(satellite_cfg, dict):
+                # Migrar claves legacy
+                raster_legacy = satellite_cfg.pop("raster_style_url", None)
+                if raster_legacy and not satellite_cfg.get("style_raster"):
+                    satellite_cfg["style_raster"] = raster_legacy
+
+                labels_overlay = satellite_cfg.pop("labels_overlay", None)
+                if isinstance(labels_overlay, dict):
+                    if "labels_enabled" not in satellite_cfg:
+                        satellite_cfg["labels_enabled"] = bool(labels_overlay.get("enabled", True))
+                    style_url = labels_overlay.get("style_url")
+                    if style_url and not satellite_cfg.get("style_labels"):
+                        satellite_cfg["style_labels"] = style_url
+
+                satellite_cfg.setdefault("enabled", False)
+                satellite_cfg.setdefault("labels_enabled", True)
+                satellite_cfg.setdefault("provider", "maptiler")
+                satellite_cfg.setdefault("opacity", 0.85)
+                satellite_cfg.setdefault(
+                    "style_raster",
+                    "https://api.maptiler.com/maps/satellite/style.json",
+                )
+                satellite_cfg.setdefault(
+                    "style_labels",
+                    "https://api.maptiler.com/maps/streets/style.json",
+                )
+
         if "ui_global" not in data or not isinstance(data.get("ui_global"), dict):
             data["ui_global"] = _DEFAULT_CONFIG_V2.get("ui_global", {})
         else:

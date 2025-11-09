@@ -102,19 +102,24 @@ class MapRegion(BaseModel):
     postalCode: Optional[str] = Field(default=None, max_length=10)
 
 
-class MapLabelsOverlayConfig(BaseModel):
-    """Configuración de capa de etiquetas vectoriales sobre mapa satélite."""
-    enabled: bool = Field(default=True)
-    style_url: Optional[str] = Field(default=None, max_length=512)
-    layer_filter: List[str] = Field(default_factory=lambda: ["==", ["get", "layer"], "poi_label"])  # Filtro para capas de tipo símbolo/label
-
-
 class MapSatelliteConfig(BaseModel):
     """Configuración de modo satélite con etiquetas vectoriales."""
-    enabled: bool = Field(default=False)
-    raster_style_url: Optional[str] = Field(default=None, max_length=512)
-    labels_overlay: Optional[MapLabelsOverlayConfig] = None
-    opacity: float = Field(default=1.0, ge=0.0, le=1.0)
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = Field(default=False, description="Activa el modo híbrido satélite")
+    opacity: float = Field(default=0.85, ge=0.0, le=1.0, description="Opacidad de la textura satélite")
+    labels_enabled: bool = Field(default=True, description="Habilita etiquetas vectoriales por encima de la capa satélite")
+    provider: Literal["maptiler"] = Field(default="maptiler", description="Proveedor de tiles satélite")
+    style_raster: str = Field(
+        default="https://api.maptiler.com/maps/satellite/style.json",
+        max_length=512,
+        description="URL del estilo raster de satélite",
+    )
+    style_labels: str = Field(
+        default="https://api.maptiler.com/maps/streets/style.json",
+        max_length=512,
+        description="URL del estilo vectorial para etiquetas",
+    )
 
 
 class MapConfig(BaseModel):
