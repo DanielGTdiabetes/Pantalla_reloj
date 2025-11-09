@@ -443,8 +443,13 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
             maxzoom: 19,
           },
           maptiler: mapSettings.maptiler ? {
-            apiKey: mapSettings.maptiler.key || null,
-            styleUrl: mapSettings.maptiler.styleUrlDark || null,
+            apiKey: mapSettings.maptiler.apiKey ?? mapSettings.maptiler.key ?? null,
+            styleUrl:
+              mapSettings.maptiler.styleUrl ??
+              mapSettings.maptiler.styleUrlDark ??
+              mapSettings.maptiler.styleUrlLight ??
+              mapSettings.maptiler.styleUrlBright ??
+              null,
           } : undefined,
           customXyz: undefined,
           viewMode: mapSettings.viewMode || "fixed",
@@ -1561,7 +1566,7 @@ export default function GeoScopeMap() {
             maxzoom: 19,
           },
           maptiler: mapSettings.maptiler ? {
-            apiKey: mapSettings.maptiler.key || null,
+            apiKey: mapSettings.maptiler.apiKey ?? mapSettings.maptiler.key ?? null,
             styleUrl: styleUrlWithCacheBuster,
           } : undefined,
           customXyz: undefined,

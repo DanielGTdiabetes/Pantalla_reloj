@@ -900,6 +900,22 @@ export const ConfigPage: React.FC = () => {
         await saveConfigGroup("ui_global", config.ui_global);
       }
       
+      const legacyMapPayload: Record<string, any> = {};
+      const uiMapProvider = config.ui_map?.provider;
+      if (uiMapProvider === "maptiler_vector") {
+        legacyMapPayload.provider = "maptiler";
+        legacyMapPayload.maptiler_api_key =
+          config.ui_map.maptiler?.apiKey ??
+          config.ui_map.maptiler?.key ??
+          null;
+      } else if (uiMapProvider === "custom_xyz" || uiMapProvider === "local_raster_xyz") {
+        legacyMapPayload.provider = "xyz";
+        legacyMapPayload.maptiler_api_key = null;
+      }
+      if (Object.keys(legacyMapPayload).length > 0) {
+        await saveConfigGroup("map", legacyMapPayload);
+      }
+      
       alert("Configuración de Mapas y Capas guardada correctamente");
       
       // Recargar config
