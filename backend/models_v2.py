@@ -704,7 +704,7 @@ class AppConfigV2(BaseModel):
 
     version: int = Field(default=2, ge=2, le=2)
     display: Optional[DisplayConfig] = None
-    ui_map: MapConfig
+    ui_map: MapConfig = Field(default_factory=MapConfig)
     ui_global: Optional[UIGlobalConfig] = None
     panels: Optional[PanelsConfig] = None
     layers: Optional[LayersConfig] = None

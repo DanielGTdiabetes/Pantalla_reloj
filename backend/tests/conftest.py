@@ -6,7 +6,7 @@ from typing import Generator, Tuple
 
 import pytest
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "default_config.json"
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "default_config_v2.json"
 
 _REAL_HTTPX = importlib.import_module("httpx")
 _DUMMY_HTTPX = types.ModuleType("httpx")

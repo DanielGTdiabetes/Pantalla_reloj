@@ -41,7 +41,7 @@ import threading
 
 from .cache import CacheStore
 from .config_manager import ConfigManager
-from .services.config_loader import read_json, write_json, merge_defaults
+from .services.config_loader import read_json, write_json
 from .services.config_sanitize import sanitize_config
 from .services.config_events import (
     subscribe,
@@ -101,7 +101,6 @@ from .layer_providers import (
     ShipProvider,
 )
 from .logging_utils import configure_logging
-from .models import AppConfig
 from .models_v2 import AppConfigV2
 from .routes.efemerides import (
     get_efemerides_for_date,
@@ -172,100 +171,9 @@ CONFIG_PATH = os.getenv("PANTALLA_CONFIG", "/var/lib/pantalla-reloj/config.json"
 config_manager = ConfigManager()
 
 
-def _defaults_json() -> Dict[str, Any]:
-    """
-    Genera defaults a partir del modelo, NO los persiste salvo que no exista archivo.
-    
-    Returns:
-        Diccionario con defaults desde AppConfig()
-    """
-    try:
-        return AppConfig().model_dump(by_alias=True)  # Pydantic v2
-    except AttributeError:
-        return AppConfig().dict(by_alias=True)  # Pydantic v1
-
-
-def load_effective_config() -> AppConfig:
-    """
-    Carga configuración efectiva con prioridad: disco > defaults.
-    
-    Flujo:
-    1. Genera defaults desde modelo (AppConfig())
-    2. Si existe CONFIG_PATH, lee JSON de disco y fusiona con prioridad de disco
-    3. Valida con Pydantic
-    4. Si no existe archivo, inicializa con defaults y opcionalmente crea archivo semilla
-    5. Si hay error de validación, NO falla silenciosamente - lanza excepción
-    
-    Returns:
-        AppConfig validado
-        
-    Raises:
-        FileNotFoundError: Si el archivo no existe (solo si no se puede crear)
-        ValidationError: Si la validación Pydantic falla
-        OSError: Si hay error de lectura/escritura
-    """
-    defaults = _defaults_json()
-    
-    try:
-        # Intentar leer desde disco
-        disk = read_json(CONFIG_PATH)
-        
-        # Fusionar con prioridad de disco
-        merged = merge_defaults(defaults, disk)
-        
-        # Sanitizar antes de validar (migra valores legacy/inválidos)
-        sanitized = sanitize_config(merged)
-        
-        # Validar con Pydantic
-        try:
-            cfg = AppConfig.model_validate(sanitized)
-        except AttributeError:
-            cfg = AppConfig.parse_obj(sanitized)
-        
-        # Si sanitized difiere de disk (migración), persiste cambio
-        if sanitized != disk:
-            try:
-                write_json(CONFIG_PATH, sanitized)
-                logger.info(
-                    "[config-migrate] Cambios persistidos en %s (migración de valores legacy)",
-                    CONFIG_PATH
-                )
-            except Exception as e:
-                logger.warning(
-                    "[config-migrate] No se pudo persistir migración: %s",
-                    e
-                )
-        
-        # Contar cuántas claves provinieron de disco
-        disk_keys = len(disk) if isinstance(disk, dict) else 0
-        logger.info(
-            "[config] Loaded from %s (merged with defaults, sanitized, %d top-level keys from disk)",
-            CONFIG_PATH,
-            disk_keys
-        )
-        return cfg
-        
-    except FileNotFoundError:
-        # Solo si NO hay archivo, inicializa con defaults y (opcional) crea archivo semilla
-        logger.warning("[config] %s not found. Using defaults.", CONFIG_PATH)
-        
-        try:
-            write_json(CONFIG_PATH, defaults)  # seed opcional
-            logger.info("[config] Seeded defaults to %s", CONFIG_PATH)
-        except Exception as e:
-            logger.warning("[config] Could not seed defaults: %s", e)
-        
-        try:
-            return AppConfig.model_validate(defaults)
-        except AttributeError:
-            return AppConfig.parse_obj(defaults)
-            
-    except Exception as e:
-        logger.exception(
-            "[config] Failed to read %s, NOT falling back silently to defaults",
-            CONFIG_PATH
-        )
-        raise
+def load_effective_config() -> AppConfigV2:
+    """Carga la configuración efectiva (siempre en esquema v2)."""
+    return config_manager.read()
 
 
 # Cargar configuración efectiva al inicio
@@ -709,64 +617,6 @@ def _validate_maptiler_style(style_url: str) -> Dict[str, Any]:
             "name": None
         }
 
-
-def _build_public_config(config: AppConfig) -> Dict[str, Any]:
-    payload = config.model_dump(mode="json", exclude_none=True, by_alias=True)
-    aemet_info = payload.get("aemet", {})
-
-    # Enmascarar AEMET usando SecretStore (fuente única)
-    masked = _mask_secret(secret_store.get_secret("aemet_api_key"))
-    aemet_info.pop("api_key", None)
-    aemet_info.update(masked)
-    payload["aemet"] = aemet_info
-
-    opensky_info = payload.get("opensky")
-    if isinstance(opensky_info, dict):
-        oauth_info = opensky_info.get("oauth2")
-        if isinstance(oauth_info, dict):
-            oauth_public = dict(oauth_info)
-        else:
-            oauth_public = {}
-        oauth_public.pop("client_secret", None)
-        oauth_public.pop("client_id", None)
-        stored_id = secret_store.get_secret("opensky_client_id")
-        stored_secret = secret_store.get_secret("opensky_client_secret")
-        has_credentials = bool(stored_id and stored_secret)
-        oauth_public["has_credentials"] = has_credentials
-        oauth_public["client_id_last4"] = (
-            stored_id[-4:] if stored_id and len(stored_id) >= 4 else stored_id
-        )
-        opensky_info["oauth2"] = oauth_public
-        payload["opensky"] = opensky_info
-
-    layers_info = payload.get("layers")
-    if isinstance(layers_info, dict):
-        ships_info = layers_info.get("ships")
-        if isinstance(ships_info, dict):
-            aisstream_info = ships_info.get("aisstream")
-            if isinstance(aisstream_info, dict):
-                aisstream_public = dict(aisstream_info)
-            else:
-                aisstream_public = {}
-            aisstream_public.pop("api_key", None)
-            secret_meta = _mask_secret(secret_store.get_secret("aisstream_api_key"))
-            aisstream_public.update(secret_meta)
-            ships_info["aisstream"] = aisstream_public
-            layers_info["ships"] = ships_info
-        global_layers_info = layers_info.get("global")
-        if isinstance(global_layers_info, dict):
-            radar_info = global_layers_info.get("radar")
-            if isinstance(radar_info, dict):
-                radar_public = dict(radar_info)
-            else:
-                radar_public = {}
-            radar_public.pop("api_key", None)
-            radar_secret_meta = _mask_secret(secret_store.get_secret("openweathermap_api_key"))
-            radar_public.update(radar_secret_meta)
-            global_layers_info["radar"] = radar_public
-            layers_info["global"] = global_layers_info
-    payload["layers"] = layers_info
-    return payload
 
 
 def _check_v1_keys(payload: Dict[str, Any]) -> List[str]:
@@ -2985,8 +2835,7 @@ def get_config(request: Request) -> JSONResponse:
         disk_config = read_json(CONFIG_PATH)
     except FileNotFoundError:
         logger.warning("[config] Config file not found, returning defaults")
-        # Si no existe, devolver defaults (pero no crear archivo desde GET)
-        disk_config = _defaults_json()
+        disk_config = config_manager._default_config_model().model_dump(mode="json", exclude_none=True)
     except Exception as e:
         logger.error("[config] Failed to read config from disk: %s", e)
         raise HTTPException(
@@ -3963,8 +3812,7 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
     try:
         current_config = read_json(CONFIG_PATH)
     except FileNotFoundError:
-        # Si no existe, usar defaults
-        current_config = _defaults_json()
+        current_config = config_manager._default_config_model().model_dump(mode="json", exclude_none=True)
     except Exception as e:
         logger.error("[config] Failed to read current config: %s", e)
         raise HTTPException(status_code=500, detail=f"Failed to read config: {str(e)}")
@@ -6945,7 +6793,7 @@ def update_storm_mode(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _ensure_blitzortung_service(config: AppConfig) -> None:
+def _ensure_blitzortung_service(config: AppConfigV2) -> None:
     """Inicia o actualiza el servicio Blitzortung según configuración."""
     global blitzortung_service
     
@@ -6962,10 +6810,20 @@ def _ensure_blitzortung_service(config: AppConfig) -> None:
     mqtt_host = getattr(blitz_config, "mqtt_host", "127.0.0.1")
     mqtt_port = getattr(blitz_config, "mqtt_port", 1883)
     mqtt_topic = getattr(blitz_config, "mqtt_topic", "blitzortung/1")
-    ws_enabled = getattr(blitz_config, "ws_enabled", False)
+    ws_enabled = getattr(blitz_config, "ws_enabled", False) or False
     ws_url = getattr(blitz_config, "ws_url", None)
-    buffer_max = getattr(blitz_config, "buffer_max", 500)
-    prune_seconds = getattr(blitz_config, "prune_seconds", 900)
+    buffer_max = getattr(blitz_config, "max_points", None)
+    if buffer_max is None:
+        buffer_max = getattr(blitz_config, "buffer_max", 1500)
+    retention_minutes = getattr(blitz_config, "retention_minutes", None)
+    prune_seconds = getattr(blitz_config, "prune_seconds", None)
+    if retention_minutes is not None:
+        try:
+            prune_seconds = int(retention_minutes) * 60
+        except (TypeError, ValueError):
+            prune_seconds = None
+    if prune_seconds is None:
+        prune_seconds = 900
     
     with _blitzortung_lock:
         # Detener servicio existente si cambió la configuración
@@ -8249,91 +8107,102 @@ _flights_provider_cache: Dict[str, Any] = {}
 _ships_provider_cache: Dict[str, Any] = {}
 
 
-def _get_flights_provider(config: AppConfig) -> FlightProvider:
+def _get_flights_provider(config: AppConfigV2) -> FlightProvider:
     """Obtiene o crea el proveedor de vuelos según la configuración."""
-    flights_config = config.layers.flights
-    provider_key = f"{flights_config.provider}"
-    
-    # Si ya existe y es del mismo tipo, reutilizar
-    if provider_key in _flights_provider_cache:
-        cached_provider = _flights_provider_cache[provider_key]
-        # Verificar que sea del tipo correcto (podría haber cambiado la config)
-        if flights_config.provider == "opensky" and isinstance(cached_provider, OpenSkyFlightProvider):
-            return cached_provider
-        elif flights_config.provider == "aviationstack" and isinstance(cached_provider, AviationStackFlightProvider):
-            return cached_provider
-        elif flights_config.provider == "custom" and isinstance(cached_provider, CustomFlightProvider):
-            return cached_provider
-    
+    layers_config = getattr(config, "layers", None)
+    flights_config = getattr(layers_config, "flights", None) if layers_config else None
+    if not flights_config:
+        return OpenSkyFlightProvider()
+
     # Crear nuevo proveedor según configuración
     if flights_config.provider == "opensky":
-        provider = OpenSkyFlightProvider(
-            username=flights_config.opensky.username,
-            password=flights_config.opensky.password
-        )
+        username = secret_store.get_secret("opensky_username")
+        password = secret_store.get_secret("opensky_password")
+        provider_key = f"opensky:{username or 'anonymous'}"
+        cached_provider = _flights_provider_cache.get(provider_key)
+        if cached_provider and isinstance(cached_provider, OpenSkyFlightProvider):
+            return cached_provider
+        provider = OpenSkyFlightProvider(username=username, password=password)
     elif flights_config.provider == "aviationstack":
-        provider = AviationStackFlightProvider(
-            base_url=flights_config.aviationstack.base_url,
-            api_key=flights_config.aviationstack.api_key
+        base_url = flights_config.aviationstack.base_url if flights_config.aviationstack else None
+        api_key = secret_store.get_secret("aviationstack_api_key") or (
+            flights_config.aviationstack.api_key if flights_config.aviationstack else None
         )
+        provider_key = f"aviationstack:{base_url or 'default'}:{'key' if api_key else 'anon'}"
+        cached_provider = _flights_provider_cache.get(provider_key)
+        if cached_provider and isinstance(cached_provider, AviationStackFlightProvider):
+            return cached_provider
+        provider = AviationStackFlightProvider(base_url=base_url, api_key=api_key)
     elif flights_config.provider == "custom":
-        provider = CustomFlightProvider(
-            api_url=flights_config.custom.api_url,
-            api_key=flights_config.custom.api_key
-        )
+        api_url = flights_config.custom.api_url if flights_config.custom else None
+        api_key = flights_config.custom.api_key if flights_config.custom else None
+        provider_key = f"custom:{api_url or 'none'}"
+        cached_provider = _flights_provider_cache.get(provider_key)
+        if cached_provider and isinstance(cached_provider, CustomFlightProvider):
+            return cached_provider
+        provider = CustomFlightProvider(api_url=api_url, api_key=api_key)
     else:
         # Fallback a OpenSky si no se reconoce
         logger.warning("Unknown flights provider: %s, using OpenSky", flights_config.provider)
         provider = OpenSkyFlightProvider()
+        provider_key = "opensky:anonymous"
     
     _flights_provider_cache[provider_key] = provider
     return provider
 
 
-def _get_ships_provider(config: AppConfig) -> ShipProvider:
+def _get_ships_provider(config: AppConfigV2) -> ShipProvider:
     """Obtiene o crea el proveedor de barcos según la configuración."""
-    ships_config = config.layers.ships
-    provider_key = f"{ships_config.provider}"
-    
-    # Si ya existe y es del mismo tipo, reutilizar
-    if provider_key in _ships_provider_cache:
-        cached_provider = _ships_provider_cache[provider_key]
-        # Verificar que sea del tipo correcto
-        if ships_config.provider == "ais_generic" and isinstance(cached_provider, GenericAISProvider):
-            return cached_provider
-        elif ships_config.provider == "aisstream" and isinstance(cached_provider, AISStreamProvider):
-            return cached_provider
-        elif ships_config.provider == "aishub" and isinstance(cached_provider, AISHubProvider):
-            return cached_provider
-        elif ships_config.provider == "custom" and isinstance(cached_provider, CustomShipProvider):
-            return cached_provider
-    
+    layers_config = getattr(config, "layers", None)
+    ships_config = getattr(layers_config, "ships", None) if layers_config else None
+    if not ships_config:
+        return AISStreamProvider()
+
     # Crear nuevo proveedor según configuración
     if ships_config.provider == "ais_generic":
         provider = GenericAISProvider(
-            api_url=ships_config.ais_generic.api_url,
-            api_key=ships_config.ais_generic.api_key,
-            demo_enabled=True  # Mantener demo como fallback
+            api_url=ships_config.ais_generic.api_url if ships_config.ais_generic else None,
+            api_key=ships_config.ais_generic.api_key if ships_config.ais_generic else None,
+            demo_enabled=True,
         )
+        provider_key = f"ais_generic:{provider.api_url or 'demo'}"
+        cached_provider = _ships_provider_cache.get(provider_key)
+        if cached_provider and isinstance(cached_provider, GenericAISProvider):
+            return cached_provider
     elif ships_config.provider == "aisstream":
-        provider = AISStreamProvider(
-            ws_url=ships_config.aisstream.ws_url,
-            api_key=ships_config.aisstream.api_key
+        ws_url = ships_config.aisstream.ws_url if ships_config.aisstream else None
+        api_key = secret_store.get_secret("aisstream_api_key") or (
+            ships_config.aisstream.api_key if ships_config.aisstream else None
         )
+        provider = AISStreamProvider(ws_url=ws_url, api_key=api_key)
+        provider_key = f"aisstream:{ws_url or 'default'}:{'key' if api_key else 'anon'}"
+        cached_provider = _ships_provider_cache.get(provider_key)
+        if cached_provider and isinstance(cached_provider, AISStreamProvider):
+            return cached_provider
     elif ships_config.provider == "aishub":
-        provider = AISHubProvider(
-            base_url=ships_config.aishub.base_url,
-            api_key=ships_config.aishub.api_key
+        base_url = ships_config.aishub.base_url if ships_config.aishub else None
+        api_key = secret_store.get_secret("aishub_api_key") or (
+            ships_config.aishub.api_key if ships_config.aishub else None
         )
+        provider = AISHubProvider(base_url=base_url, api_key=api_key)
+        provider_key = f"aishub:{base_url or 'default'}:{'key' if api_key else 'anon'}"
+        cached_provider = _ships_provider_cache.get(provider_key)
+        if cached_provider and isinstance(cached_provider, AISHubProvider):
+            return cached_provider
     elif ships_config.provider == "custom":
-        provider = CustomShipProvider(
-            api_url=ships_config.custom.api_url,
-            api_key=ships_config.custom.api_key
-        )
+        api_url = ships_config.custom.api_url if ships_config.custom else None
+        api_key = ships_config.custom.api_key if ships_config.custom else None
+        provider = CustomShipProvider(api_url=api_url, api_key=api_key)
+        provider_key = f"custom:{api_url or 'none'}"
+        cached_provider = _ships_provider_cache.get(provider_key)
+        if cached_provider and isinstance(cached_provider, CustomShipProvider):
+            return cached_provider
     else:
         # Fallback a GenericAIS si no se reconoce
-        logger.warning("Unknown ships provider: %s, using GenericAIS", ships_config.provider)
-        provider = GenericAISProvider(demo_enabled=True)
+        logger.warning("Unknown ships provider: %s, using AISStream", ships_config.provider)
+        api_key = secret_store.get_secret("aisstream_api_key")
+        provider = AISStreamProvider(api_key=api_key)
+        provider_key = f"aisstream:fallback:{'key' if api_key else 'anon'}"
     
     _ships_provider_cache[provider_key] = provider
     return provider
@@ -10033,21 +9902,25 @@ def on_startup() -> None:
     # Migrar secretos desde config pública si existieran
     _migrate_public_secrets_to_store()
     config = config_manager.read()
+    display_timezone = config.display.timezone if config.display else "unknown"
     logger.info(
-        "Pantalla backend started (timezone=%s, rotation_panels=%s)",
-        config.display.timezone,
-        ",".join(config.ui.rotation.panels),
+        "Pantalla backend started (timezone=%s)",
+        display_timezone,
     )
-    ships_service.apply_config(config.layers.ships)
+    if config.layers and config.layers.ships:
+        ships_service.apply_config(config.layers.ships)
     # Inicializar Blitzortung si está configurado
     _ensure_blitzortung_service(config)
     cache_store.store("health", {"started_at": APP_START.isoformat()})
+    map_provider = config.ui_map.provider
+    map_style = None
+    if config.ui_map.maptiler and config.ui_map.maptiler.styleUrl:
+        map_style = config.ui_map.maptiler.styleUrl
     logger.info(
-        "Configuration path %s (layout=%s, map_style=%s, map_provider=%s)",
+        "Configuration path %s (map_style=%s, map_provider=%s)",
         config_manager.config_file,
-        config.ui.layout,
-        config.ui.map.style,
-        config.map.provider,
+        map_style,
+        map_provider,
     )
     root = Path(os.getenv("PANTALLA_STATE_DIR", "/var/lib/pantalla-reloj"))
     for child in (root / "cache").glob("*.json"):

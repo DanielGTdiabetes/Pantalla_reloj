@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
-from ..models import AppConfig
+from ..models_v2 import AppConfigV2, OpenSkyProviderConfig
 from ..secret_store import SecretStore
 from .cache import TTLCache
 from .opensky_auth import DEFAULT_TOKEN_URL, OpenSkyAuthError, OpenSkyAuthenticator
@@ -53,11 +53,12 @@ class OpenSkyService:
         bbox_part = "global" if not bbox else ",".join(f"{value:.4f}" for value in bbox)
         return f"mode={bbox_part}|ext={extended}|max={max_aircraft}"
 
-    def _compute_poll_seconds(self, config: AppConfig) -> Tuple[int, bool]:
-        cfg = getattr(config, "opensky")
+    def _compute_poll_seconds(self, config: AppConfigV2) -> Tuple[int, bool]:
+        cfg = getattr(config, "opensky", None)
         has_token = self._auth.credentials_configured()
         minimum = 5 if has_token else 10
-        raw = max(int(cfg.poll_seconds), minimum)
+        poll_seconds = getattr(cfg, "poll_seconds", 10) if cfg else 10
+        raw = max(int(poll_seconds), minimum)
         if has_token and raw < 5:
             raw = 5
         if not has_token and raw < 10:
@@ -84,30 +85,37 @@ class OpenSkyService:
 
     def get_snapshot(
         self,
-        config: AppConfig,
+        config: AppConfigV2,
         bbox: Optional[Tuple[float, float, float, float]],
         extended_override: Optional[int] = None,
     ) -> Snapshot:
-        opensky_cfg = getattr(config, "opensky")
-        if not opensky_cfg.enabled:
+        layers = getattr(config, "layers", None)
+        flights_config = getattr(layers, "flights", None) if layers else None
+        if not flights_config or not flights_config.enabled or flights_config.provider != "opensky":
             return Snapshot(payload={"count": 0, "disabled": True}, fetched_at=time.time(), stale=False)
+        opensky_cfg = flights_config.opensky or OpenSkyProviderConfig()
+        max_aircraft = getattr(flights_config, "max_items_global", 2000)
         poll_seconds, has_token = self._compute_poll_seconds(config)
-        extended = int(extended_override if extended_override is not None else opensky_cfg.extended)
+        extended_default = getattr(opensky_cfg, "extended", 0)
+        extended = int(extended_override if extended_override is not None else extended_default)
         extended = 1 if extended else 0
         bbox_to_use = bbox
-        mode = opensky_cfg.mode
+        mode = getattr(opensky_cfg, "mode", "bbox")
         if mode == "bbox" and not bbox_to_use:
-            area = opensky_cfg.bbox
-            bbox_to_use = (
-                float(area.lamin),
-                float(area.lamax),
-                float(area.lomin),
-                float(area.lomax),
-            )
+            area = getattr(opensky_cfg, "bbox", None)
+            if area:
+                bbox_to_use = (
+                    float(area.lamin),
+                    float(area.lamax),
+                    float(area.lomin),
+                    float(area.lomax),
+                )
+            else:
+                bbox_to_use = (39.5, 41.0, -1.0, 1.5)
         elif mode == "global":
             bbox_to_use = None
         effective_mode = "global" if bbox_to_use is None else "bbox"
-        cache_key = self._build_key(bbox_to_use, extended, int(opensky_cfg.max_aircraft))
+        cache_key = self._build_key(bbox_to_use, extended, int(max_aircraft))
         cached = self._cache.get(cache_key)
         if cached:
             cached.stale = False
@@ -134,7 +142,7 @@ class OpenSkyService:
             snapshot = self._snapshots.get(cache_key)
             try:
                 token = None
-                oauth_cfg = getattr(opensky_cfg, "oauth2", None)
+                oauth_cfg = getattr(getattr(config, "opensky", None), "oauth2", None)
                 token_endpoint = getattr(oauth_cfg, "token_url", None) if oauth_cfg else None
                 scope_value = getattr(oauth_cfg, "scope", None) if oauth_cfg else None
                 if has_token:
@@ -190,7 +198,7 @@ class OpenSkyService:
                     snapshot.payload["stale"] = True
                     return snapshot
                 raise
-            ts, count, items = OpenSkyClient.sanitize_states(payload, int(opensky_cfg.max_aircraft))
+            ts, count, items = OpenSkyClient.sanitize_states(payload, int(max_aircraft))
             result_payload: Dict[str, object] = {
                 "count": count,
                 "items": items,
@@ -225,11 +233,17 @@ class OpenSkyService:
         )
         return snapshot
 
-    def get_status(self, config: AppConfig) -> Dict[str, object]:
+    def get_status(self, config: AppConfigV2) -> Dict[str, object]:
         now = time.time()
         auth_info = self._auth.describe()
         poll_seconds, has_token = self._compute_poll_seconds(config)
-        cfg = getattr(config, "opensky")
+        top_level = getattr(config, "opensky", None)
+        flights_layer = getattr(getattr(config, "layers", None), "flights", None)
+        flights_provider = getattr(flights_layer, "opensky", None) if flights_layer else None
+        enabled = bool(
+            (flights_layer.enabled if flights_layer else False)
+            and (getattr(top_level, "enabled", True) if top_level else True)
+        )
         snapshot = self.get_last_snapshot()
         items_count: Optional[int] = None
         if snapshot and isinstance(snapshot.payload.get("count"), int):
@@ -240,7 +254,7 @@ class OpenSkyService:
             else None
         )
         status_value = "stale"
-        if cfg.enabled:
+        if enabled:
             if self._last_fetch_ok is False:
                 # Si falta auth, usar "stale" en lugar de "error"
                 if not has_token and not bool(auth_info.get("has_credentials")):
@@ -257,10 +271,12 @@ class OpenSkyService:
             "token_cached": bool(auth_info.get("token_cached")),
             "expires_in_sec": auth_info.get("expires_in_sec"),
         }
+        configured_poll = getattr(top_level, "poll_seconds", poll_seconds) if top_level else poll_seconds
+        mode = getattr(flights_provider, "mode", None) or getattr(top_level, "mode", "bbox") if top_level else "bbox"
         return {
-            "enabled": cfg.enabled,
-            "mode": cfg.mode,
-            "configured_poll": int(cfg.poll_seconds),
+            "enabled": enabled,
+            "mode": mode,
+            "configured_poll": int(configured_poll),
             "effective_poll": poll_seconds,
             "auth": auth_block,
             "status": status_value,
@@ -274,7 +290,7 @@ class OpenSkyService:
             "items": items_count,
             "items_count": items_count,
             "rate_limit_hint": self._last_rate_limit_hint,
-            "cluster": bool(getattr(cfg, "cluster", False)),
+            "cluster": False,
             "has_credentials": has_credentials,
             "token_cached": bool(auth_info.get("token_cached")),
             "expires_in": auth_block.get("expires_in_sec"),
@@ -300,24 +316,43 @@ class OpenSkyService:
             return f"{base}:{exc.status}"
         return str(base)
 
-    def force_refresh(self, config: AppConfig) -> Dict[str, Any]:
-        opensky_cfg = getattr(config, "opensky")
+    def force_refresh(self, config: AppConfigV2) -> Dict[str, Any]:
+        layers = getattr(config, "layers", None)
+        flights_layer = getattr(layers, "flights", None) if layers else None
+        if not flights_layer or not flights_layer.enabled or flights_layer.provider != "opensky":
+            return {
+                "auth": {"token_cached": False, "expires_in_sec": None},
+                "fetch": {
+                    "status": "disabled",
+                    "items": 0,
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "mode": "bbox",
+                },
+            }
+
+        provider_cfg = flights_layer.opensky or OpenSkyProviderConfig()
         poll_seconds, has_token = self._compute_poll_seconds(config)
-        bbox_to_use: Optional[Tuple[float, float, float, float]]
-        if opensky_cfg.mode == "bbox":
-            area = opensky_cfg.bbox
-            bbox_to_use = (
-                float(area.lamin),
-                float(area.lamax),
-                float(area.lomin),
-                float(area.lomax),
-            )
+
+        if provider_cfg.mode == "bbox":
+            area = provider_cfg.bbox
+            if area:
+                bbox_to_use: Optional[Tuple[float, float, float, float]] = (
+                    float(area.lamin),
+                    float(area.lamax),
+                    float(area.lomin),
+                    float(area.lomax),
+                )
+            else:
+                bbox_to_use = (39.5, 41.0, -1.0, 1.5)
         else:
             bbox_to_use = None
+
         effective_mode = "global" if bbox_to_use is None else "bbox"
-        extended = 1 if int(opensky_cfg.extended) else 0
-        cache_key = self._build_key(bbox_to_use, extended, int(opensky_cfg.max_aircraft))
-        oauth_cfg = getattr(opensky_cfg, "oauth2", None)
+        extended = 1 if int(getattr(provider_cfg, "extended", 0)) else 0
+        max_aircraft = getattr(flights_layer, "max_items_global", 2000)
+        cache_key = self._build_key(bbox_to_use, extended, int(max_aircraft))
+
+        oauth_cfg = getattr(getattr(config, "opensky", None), "oauth2", None)
         raw_token_url = getattr(oauth_cfg, "token_url", None) if oauth_cfg else None
         scope_value = getattr(oauth_cfg, "scope", None) if oauth_cfg else None
         resolved_token_url = (raw_token_url or DEFAULT_TOKEN_URL).strip() or DEFAULT_TOKEN_URL
@@ -386,7 +421,7 @@ class OpenSkyService:
                 payload = None
         auth_error = auth_error or None
         if payload is not None:
-            ts, count, items = OpenSkyClient.sanitize_states(payload, int(opensky_cfg.max_aircraft))
+            ts, count, items = OpenSkyClient.sanitize_states(payload, int(max_aircraft))
             iso_ts = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
             remaining = headers.get("X-Rate-Limit-Remaining")
             snapshot = Snapshot(

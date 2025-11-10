@@ -9,7 +9,7 @@ from copy import deepcopy
 from typing import Any, Dict, Optional
 
 from ..cache import CacheStore
-from ..models import ShipsLayer
+from ..models_v2 import ShipsLayerConfig
 from ..secret_store import SecretStore
 
 try:  # pragma: no cover - optional dependency provided by uvicorn[standard]
@@ -58,7 +58,7 @@ class AISStreamService:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-    def apply_config(self, ships_config: ShipsLayer) -> None:
+    def apply_config(self, ships_config: ShipsLayerConfig) -> None:
         """Aplica la configuración actual y gestiona la vida del hilo."""
 
         with self._lock:
