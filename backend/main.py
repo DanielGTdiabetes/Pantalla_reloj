@@ -2761,6 +2761,19 @@ def _health_payload_full_helper() -> Dict[str, Any]:
         "last_error": global_radar_last_error,
     }
     
+    # Reportar proveedores de mapa (maptiler_provider, backend_provider, ui_provider_runtime)
+    try:
+        map_provider = config.ui_map.provider or "local_raster_xyz"
+        # Todos los campos deben devolver el proveedor actual, sin null
+        payload["maptiler_provider"] = map_provider
+        payload["backend_provider"] = map_provider
+        payload["ui_provider_runtime"] = map_provider
+    except Exception as exc:
+        logger.debug("[health] Error getting map provider: %s", exc)
+        payload["maptiler_provider"] = "unknown"
+        payload["backend_provider"] = "unknown"
+        payload["ui_provider_runtime"] = "unknown"
+    
     return payload
 
 
@@ -9600,10 +9613,86 @@ async def get_global_radar_tile(
         raise HTTPException(status_code=500, detail="Failed to fetch tile")
 
 
+def ensure_maptiler_key() -> None:
+    """Asegura que las URLs de MapTiler contengan ?key= con la API key.
+    
+    Lee config.json y verifica si ui_map.maptiler.styleUrl y 
+    ui_map.satellite.labels_style_url contienen ?key=.
+    Si falta, lee la API key de secrets.maptiler.api_key o MAPTILER_API_KEY,
+    reconstruye las URLs y reescribe config.json.
+    """
+    try:
+        # Leer config.json como dict
+        if not config_manager.config_file.exists():
+            logger.debug("[maptiler] Config file not found, skipping key injection")
+            return
+        
+        config_data = json.loads(config_manager.config_file.read_text(encoding="utf-8"))
+        
+        # Obtener API key de secrets o entorno
+        api_key = (
+            secret_store.get_secret("maptiler_api_key") or
+            os.getenv("MAPTILER_API_KEY") or
+            None
+        )
+        
+        if not api_key:
+            logger.debug("[maptiler] No API key found in secrets or environment, skipping")
+            return
+        
+        api_key = api_key.strip()
+        if not api_key:
+            return
+        
+        changed = False
+        ui_map = config_data.get("ui_map", {})
+        
+        # Verificar y actualizar ui_map.maptiler.styleUrl
+        maptiler = ui_map.get("maptiler", {})
+        if isinstance(maptiler, dict):
+            style_url = maptiler.get("styleUrl")
+            if isinstance(style_url, str) and style_url:
+                # Verificar si ya tiene ?key=
+                if "?key=" not in style_url and "&key=" not in style_url:
+                    # Reconstruir URL con ?key=
+                    separator = "&" if "?" in style_url else "?"
+                    new_url = f"{style_url}{separator}key={api_key}"
+                    maptiler["styleUrl"] = new_url
+                    ui_map["maptiler"] = maptiler
+                    config_data["ui_map"] = ui_map
+                    changed = True
+                    logger.info("[maptiler] Added ?key= to ui_map.maptiler.styleUrl")
+        
+        # Verificar y actualizar ui_map.satellite.labels_style_url
+        satellite = ui_map.get("satellite", {})
+        if isinstance(satellite, dict):
+            labels_style_url = satellite.get("labels_style_url")
+            if isinstance(labels_style_url, str) and labels_style_url:
+                # Verificar si ya tiene ?key=
+                if "?key=" not in labels_style_url and "&key=" not in labels_style_url:
+                    # Reconstruir URL con ?key=
+                    separator = "&" if "?" in labels_style_url else "?"
+                    new_url = f"{labels_style_url}{separator}key={api_key}"
+                    satellite["labels_style_url"] = new_url
+                    ui_map["satellite"] = satellite
+                    config_data["ui_map"] = ui_map
+                    changed = True
+                    logger.info("[maptiler] Added ?key= to ui_map.satellite.labels_style_url")
+        
+        # Guardar cambios si hubo alguno
+        if changed:
+            config_manager._atomic_write_v2(config_data)
+            logger.info("[maptiler] Updated config.json with MapTiler API keys in URLs")
+    except Exception as exc:
+        logger.warning("[maptiler] Failed to ensure MapTiler keys in URLs: %s", exc)
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     # Migrar secretos desde config pública si existieran
     _migrate_public_secrets_to_store()
+    # Asegurar que las URLs de MapTiler tengan ?key=
+    ensure_maptiler_key()
     config = config_manager.read()
     display_timezone = config.display.timezone if config.display else "unknown"
     logger.info(

@@ -229,6 +229,12 @@ if [[ $PURGE_CONFIG -eq 1 ]]; then
     log_info "Removing configuration under $STATE_DIR"
     find "$STATE_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
   fi
+  # Eliminar secrets.json si existe
+  SECRETS_FILE="$STATE_DIR/secrets.json"
+  if [[ -f "$SECRETS_FILE" ]]; then
+    log_info "Removing secrets.json"
+    rm -f "$SECRETS_FILE"
+  fi
 else
   # Keep state but remove runtime markers
   rm -rf "$STATE_RUNTIME"

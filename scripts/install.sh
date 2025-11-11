@@ -381,6 +381,34 @@ else
   log_warn "No se encontró ${DEFAULT_CONFIG_PATH}; omitiendo validación de AppConfigV2"
 fi
 
+# Crear secrets.json si no existe y manejar MAPTILER_API_KEY
+SECRETS_FILE="$STATE_DIR/secrets.json"
+if [[ ! -f "$SECRETS_FILE" ]]; then
+  log_info "Creando secrets.json inicial"
+  install -o "$USER_NAME" -g "$USER_NAME" -m 0600 /dev/null "$SECRETS_FILE"
+  echo "{}" > "$SECRETS_FILE"
+  SUMMARY+=("[install] secrets.json creado en ${SECRETS_FILE}")
+fi
+
+# Manejar MAPTILER_API_KEY si está disponible
+MAPTILER_API_KEY="${MAPTILER_API_KEY:-}"
+if [[ -n "$MAPTILER_API_KEY" ]]; then
+  log_info "Configurando MapTiler API key en secrets.json"
+  if command -v jq >/dev/null 2>&1; then
+    # Añadir maptiler_api_key a secrets.json usando jq
+    jq --arg key "$MAPTILER_API_KEY" '.maptiler_api_key = $key' "$SECRETS_FILE" > "${SECRETS_FILE}.tmp" && \
+      mv "${SECRETS_FILE}.tmp" "$SECRETS_FILE"
+    chown "$USER_NAME:$USER_NAME" "$SECRETS_FILE"
+    chmod 0600 "$SECRETS_FILE"
+    SUMMARY+=("[install] MapTiler API key configurada en secrets.json")
+  else
+    log_warn "jq no disponible, no se pudo configurar MapTiler API key automáticamente"
+  fi
+else
+  log_info "MAPTILER_API_KEY no proporcionada; configúrala después desde el panel de administración"
+  SUMMARY+=("[install] MAPTILER_API_KEY no configurada (configurar después si es necesario)")
+fi
+
 ICS_DIR="$STATE_DIR/ics"
 SAMPLE_ICS="$ICS_DIR/personal.ics"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$ICS_DIR"
