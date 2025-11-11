@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import type { Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
 import type { LayerSpecification } from "@maplibre/maplibre-gl-style-spec";
-import { signMapTilerUrl } from "../mapStyle";
+import { signMapTilerUrl } from "../../../lib/map/utils/maptilerHelpers";
 
 export interface MapHybridProps {
   map: MapLibreMap;

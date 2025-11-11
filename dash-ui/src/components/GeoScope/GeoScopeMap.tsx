@@ -1332,13 +1332,14 @@ export default function GeoScopeMap({
               }
               
               // Obtener primera fuente vectorial
-              const sourceKeys = Object.keys(style.sources);
+              const sourceKeys = Object.keys(style.sources || {});
               if (sourceKeys.length === 0) {
                 throw new Error("No sources in style");
               }
               
               const firstSourceKey = sourceKeys[0];
-              const firstSource = style.sources[firstSourceKey] as StyleSpecification["sources"][string];
+              const sources = style.sources as Record<string, StyleSpecification["sources"][string]>;
+              const firstSource = sources[firstSourceKey];
               if (!firstSource || firstSource.type !== "vector") {
                 throw new Error("Source is not vector type");
               }
@@ -1354,6 +1355,10 @@ export default function GeoScopeMap({
                 
                 // Firmar URL de fuente si es MapTiler
                 let signedSourceUrl = signMapTilerUrl(sourceUrl, maptilerKey);
+                if (!signedSourceUrl) {
+                  throw new Error("Failed to sign source URL");
+                }
+                
                 if (sourceUrl.includes("api.maptiler.com") && !signedSourceUrl.includes("?key=") && !signedSourceUrl.includes("&key=")) {
                   const sep = signedSourceUrl.includes("?") ? "&" : "?";
                   signedSourceUrl = `${signedSourceUrl}${sep}key=${maptilerKey || ''}`;
@@ -1376,7 +1381,8 @@ export default function GeoScopeMap({
               }
               
               // Filtrar y añadir capas de labels
-              const labelLayers = (style.layers || []).filter((layer: StyleSpecification["layers"][number]) => {
+              const layers = (style.layers || []) as StyleSpecification["layers"];
+              const labelLayers = layers.filter((layer) => {
                 if (layer.type !== "symbol") {
                   return false;
                 }
