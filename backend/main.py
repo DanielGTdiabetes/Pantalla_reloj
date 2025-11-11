@@ -518,6 +518,10 @@ class OpenWeatherMapSecretRequest(BaseModel):
     api_key: Optional[str] = Field(default=None, max_length=256)
 
 
+class MapTilerSecretRequest(BaseModel):
+    api_key: Optional[str] = Field(default=None, max_length=256)
+
+
 class MapResetResponse(BaseModel):
     status: Literal["ok"] = "ok"
     reset_counter: int
@@ -948,6 +952,7 @@ def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
             for key, value in obj.items():
                 new_path = f"{path}.{key}" if path else key
                 # Ocultar campos sensibles fuera de secrets
+                # Especialmente api_key en ui_map.maptiler (ya está en las URLs firmadas)
                 if key in ["api_key", "apiKey", "client_id", "client_secret", "clientId", "clientSecret", 
                           "username", "password", "token", "secret", "key"] and not new_path.startswith("secrets"):
                     result[key] = None
@@ -1276,47 +1281,82 @@ def _health_payload() -> Dict[str, Any]:
         config_v2, _ = _read_config_v2()
         ui_map = config_v2.ui_map
         
-        if ui_map.provider == "maptiler_vector" and ui_map.maptiler:
-            style_url = ui_map.maptiler.styleUrl
-            api_key = ui_map.maptiler.apiKey
+        provider_str = ui_map.provider or "unknown"
+        
+        if provider_str.startswith("maptiler_"):
+            # Obtener API key del secret store o del objeto config
+            api_key = secret_store.get_secret("maptiler_api_key")
+            if not api_key and ui_map.maptiler:
+                api_key = ui_map.maptiler.api_key
+            
+            style_url = ui_map.maptiler.styleUrl if ui_map.maptiler else None
+            labels_style_url = None
+            if ui_map.satellite:
+                labels_style_url = ui_map.satellite.labels_style_url
             
             # Validar el estilo (cacheado en caché global)
             maptiler_cache_key = "maptiler_validation"
             cached_validation = cache_store.load(maptiler_cache_key, max_age_minutes=60)
             
-            if cached_validation:
-                validation_result = cached_validation.payload
+            validation_result = None
+            if style_url:
+                if cached_validation:
+                    validation_result = cached_validation.payload
+                else:
+                    # Primera validación o caché expirado
+                    validation_result = _validate_maptiler_style(style_url)
+                    cache_store.store(maptiler_cache_key, validation_result)
+            
+            # Determinar provider específico
+            if provider_str == "maptiler_vector":
+                provider_reported = "maptiler_vector"
+            elif provider_str == "maptiler_raster":
+                provider_reported = "maptiler_raster"
             else:
-                # Primera validación o caché expirado
-                validation_result = _validate_maptiler_style(style_url) if style_url else {
-                    "ok": False,
-                    "status": 0,
-                    "error": "Missing styleUrl",
-                    "name": None
-                }
-                cache_store.store(maptiler_cache_key, validation_result)
+                provider_reported = provider_str
+            
+            # Verificar si las URLs están firmadas
+            style_signed = bool(style_url and ("?key=" in style_url or "&key=" in style_url))
+            labels_signed = bool(labels_style_url and ("?key=" in labels_style_url or "&key=" in labels_style_url))
+            
+            # Determinar status
+            if not api_key:
+                status_value = "error"
+            elif validation_result and validation_result.get("ok"):
+                status_value = "ok"
+            elif validation_result:
+                status_value = "error"
+            else:
+                status_value = "ok" if api_key else "error"
             
             payload["maptiler"] = {
-                "provider": "maptiler_vector",
-                "apiKey": "***" if api_key else None,
-                "hasApiKey": bool(api_key),
-                "status": "ok" if validation_result.get("ok") else "error",
+                "provider": provider_reported,
+                "status": status_value,
+                "has_api_key": bool(api_key),
+                "style_signed": style_signed,
+                "labels_signed": labels_signed,
                 "styleUrl": style_url,
-                "name": validation_result.get("name"),
+                "name": validation_result.get("name") if validation_result else None,
                 "last_check_iso": cached_validation.fetched_at.isoformat() if cached_validation else None,
-                "error": validation_result.get("error")
+                "error": validation_result.get("error") if validation_result else None
             }
         else:
             payload["maptiler"] = {
-                "provider": ui_map.provider,
-                "enabled": False,
-                "message": f"MapTiler not enabled (provider is {ui_map.provider})"
+                "provider": provider_str,
+                "status": "error",
+                "has_api_key": False,
+                "style_signed": False,
+                "labels_signed": False,
+                "message": f"MapTiler not enabled (provider is {provider_str})"
             }
     except Exception as exc:  # noqa: BLE001
         logger.debug("Unable to gather MapTiler status for health: %s", exc)
         payload["maptiler"] = {
             "provider": "unknown",
             "status": "error",
+            "has_api_key": False,
+            "style_signed": False,
+            "labels_signed": False,
             "error": str(exc)
         }
     
@@ -1552,7 +1592,10 @@ def validate_map_config() -> Dict[str, Any]:
             }
         
         style_url = maptiler_config.styleUrl
-        api_key = maptiler_config.apiKey
+        # Obtener API key del secret store o del objeto config
+        api_key = secret_store.get_secret("maptiler_api_key")
+        if not api_key and maptiler_config:
+            api_key = maptiler_config.api_key
         
         if not style_url:
             return {
@@ -1701,12 +1744,14 @@ async def test_satellite_layer() -> Dict[str, Any]:
         if not config_v2.ui_map.satellite.enabled:
             return {"ok": False, "reason": "satellite_disabled"}
         
-        # Obtener API key de MapTiler
-        maptiler_config = config_v2.ui_map.maptiler
-        if not maptiler_config or not maptiler_config.api_key:
+        # Obtener API key de MapTiler desde secret_store o del objeto config
+        api_key = secret_store.get_secret("maptiler_api_key")
+        if not api_key and config_v2.ui_map.maptiler:
+            api_key = config_v2.ui_map.maptiler.api_key
+        
+        if not api_key:
             return {"ok": False, "reason": "missing_api_key"}
         
-        api_key = maptiler_config.api_key
         url = f"https://api.maptiler.com/tiles/satellite/15/17000/12000.jpg?key={api_key}"
         
         if httpx is None:
@@ -2279,6 +2324,8 @@ def reload_config() -> Dict[str, Any]:
     logger.info("[config] Reload requested via /api/config/reload")
     try:
         config, was_reloaded = config_manager.reload()
+        # Firmar URLs de MapTiler después de recargar
+        sign_maptiler_urls(config)
         if was_reloaded:
             metadata = config_manager.get_config_metadata()
             logger.info("[config] Config reloaded successfully from %s", metadata["config_path"])
@@ -2762,12 +2809,14 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     }
     
     # Reportar proveedores de mapa (maptiler_provider, backend_provider, ui_provider_runtime)
+    # Estos campos siempre deben tener un valor, nunca null
     try:
-        map_provider = config.ui_map.provider or "local_raster_xyz"
-        # Todos los campos deben devolver el proveedor actual, sin null
-        payload["maptiler_provider"] = map_provider
-        payload["backend_provider"] = map_provider
-        payload["ui_provider_runtime"] = map_provider
+        map_provider = config.ui_map.provider
+        if not map_provider or map_provider == "":
+            map_provider = "local_raster_xyz"
+        payload["maptiler_provider"] = str(map_provider)
+        payload["backend_provider"] = str(map_provider)
+        payload["ui_provider_runtime"] = str(map_provider)
     except Exception as exc:
         logger.debug("[health] Error getting map provider: %s", exc)
         payload["maptiler_provider"] = "unknown"
@@ -2845,6 +2894,8 @@ def get_config(request: Request) -> JSONResponse:
     # Si es v2, usar _build_public_config_v2, si no, devolver tal cual
     try:
         config_v2, _ = _read_config_v2()
+        # Firmar URLs de MapTiler antes de serializar
+        sign_maptiler_urls(config_v2)
         public_config = _build_public_config_v2(config_v2)
     except Exception:
         # Si no es v2 o hay error, devolver tal cual desde disco
@@ -4277,6 +4328,27 @@ async def update_openweather_secret(request: OpenWeatherMapSecretRequest) -> Res
 def get_openweather_secret_raw() -> PlainTextResponse:
     value = secret_store.get_secret("openweathermap_api_key") or ""
     return PlainTextResponse(content=value)
+
+
+@app.get("/api/config/secret/maptiler_api_key")
+def get_maptiler_secret_meta() -> Dict[str, Any]:
+    return _mask_secret(secret_store.get_secret("maptiler_api_key"))
+
+
+@app.post("/api/config/secret/maptiler_api_key", status_code=204)
+async def update_maptiler_secret(request: MapTilerSecretRequest) -> Response:
+    api_key = _sanitize_secret(request.api_key)
+    secret_store.set_secret("maptiler_api_key", api_key)
+    masked = _mask_secret(api_key)
+    logger.info(
+        "Updating MapTiler API key (present=%s, last4=%s)",
+        masked.get("has_api_key", False),
+        masked.get("api_key_last4", "****"),
+    )
+    # Firmar URLs después de actualizar el secreto
+    config = config_manager.read()
+    sign_maptiler_urls(config)
+    return Response(status_code=204)
 
 
 async def _update_opensky_secret(name: str, request: Request) -> Response:
@@ -9613,6 +9685,60 @@ async def get_global_radar_tile(
         raise HTTPException(status_code=500, detail="Failed to fetch tile")
 
 
+def sign_maptiler_urls(cfg: AppConfigV2) -> AppConfigV2:
+    """Firma automáticamente las URLs de MapTiler añadiendo ?key= si falta.
+    
+    Esta función modifica el objeto cfg en memoria añadiendo ?key= a:
+    - ui_map.maptiler.styleUrl (si provider empieza por maptiler_)
+    - ui_map.satellite.labels_style_url (si existe y no tiene ?key=)
+    
+    La API key se obtiene de secret_store['maptiler_api_key'].
+    No persiste cambios en disco, solo modifica el objeto en memoria.
+    
+    Args:
+        cfg: Configuración AppConfigV2 a modificar
+        
+    Returns:
+        El mismo objeto cfg (modificado en memoria)
+    """
+    provider = cfg.ui_map.provider or ""
+    if not provider.startswith("maptiler_"):
+        return cfg
+    
+    # Obtener API key del secret store
+    maptiler_key = secret_store.get_secret("maptiler_api_key")
+    if not maptiler_key or not maptiler_key.strip():
+        return cfg
+    
+    maptiler_key = maptiler_key.strip()
+    
+    # Asegurar que cfg.ui_map.maptiler existe y tiene api_key en memoria
+    if not cfg.ui_map.maptiler:
+        from .models_v2 import MapTilerConfig
+        cfg.ui_map.maptiler = MapTilerConfig()
+    
+    # Establecer api_key en memoria (no se expone en GET /api/config)
+    cfg.ui_map.maptiler.api_key = maptiler_key
+    
+    # Firmar styleUrl si no tiene ?key=
+    if cfg.ui_map.maptiler.styleUrl:
+        style_url = cfg.ui_map.maptiler.styleUrl
+        if "?key=" not in style_url and "&key=" not in style_url:
+            separator = "&" if "?" in style_url else "?"
+            cfg.ui_map.maptiler.styleUrl = f"{style_url}{separator}key={maptiler_key}"
+            logger.debug("[maptiler] Signed styleUrl with ?key=")
+    
+    # Firmar labels_style_url si existe y no tiene ?key=
+    if cfg.ui_map.satellite and cfg.ui_map.satellite.labels_style_url:
+        labels_url = cfg.ui_map.satellite.labels_style_url
+        if "?key=" not in labels_url and "&key=" not in labels_url:
+            separator = "&" if "?" in labels_url else "?"
+            cfg.ui_map.satellite.labels_style_url = f"{labels_url}{separator}key={maptiler_key}"
+            logger.debug("[maptiler] Signed labels_style_url with ?key=")
+    
+    return cfg
+
+
 def ensure_maptiler_key() -> None:
     """Asegura que las URLs de MapTiler contengan ?key= con la API key.
     
@@ -9694,6 +9820,8 @@ def on_startup() -> None:
     # Asegurar que las URLs de MapTiler tengan ?key=
     ensure_maptiler_key()
     config = config_manager.read()
+    # Firmar URLs de MapTiler en memoria después de cargar config
+    sign_maptiler_urls(config)
     display_timezone = config.display.timezone if config.display else "unknown"
     logger.info(
         "Pantalla backend started (timezone=%s)",
