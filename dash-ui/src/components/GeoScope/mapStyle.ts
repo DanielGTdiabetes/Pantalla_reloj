@@ -1,6 +1,7 @@
 import type { StyleSpecification } from "maplibre-gl";
 
 import type { MapConfigV2 } from "../../types/config_v2";
+import { signMapTilerUrl } from "../../lib/map/utils/maptilerHelpers";
 
 const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
 const OSM_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
@@ -198,7 +199,46 @@ export const loadMapStyle = async (
       styleUrl = signMapTilerUrl(`https://api.maptiler.com/maps/${styleSlug}/style.json`, apiKey);
     }
 
-    if (styleUrl) {
+    // Detectar si es modo híbrido/satélite
+    const isHybrid = styleUrl && (
+      styleUrl.includes("/maps/satellite/") || 
+      styleUrl.includes("/maps/hybrid/")
+    );
+
+    if (isHybrid && styleUrl) {
+      // Modo híbrido: crear estilo raster desde la URL de tiles
+      // Extraer la API key del styleUrl si está presente
+      let effectiveApiKey = apiKey;
+      try {
+        const urlObj = new URL(styleUrl);
+        const keyFromUrl = urlObj.searchParams.get("key");
+        if (keyFromUrl) {
+          effectiveApiKey = keyFromUrl;
+        }
+      } catch {
+        // Ignorar errores de parsing de URL
+      }
+      
+      // Construir URL de tiles raster
+      const tileUrl = styleUrl.includes("/maps/satellite/")
+        ? `https://api.maptiler.com/tiles/satellite/{z}/{x}/{y}.jpg${effectiveApiKey ? `?key=${effectiveApiKey}` : ''}`
+        : `https://api.maptiler.com/tiles/hybrid/{z}/{x}/{y}.jpg${effectiveApiKey ? `?key=${effectiveApiKey}` : ''}`;
+      
+      resolvedStyle = {
+        type: "raster",
+        style: createRasterStyle(
+          tileUrl,
+          "© MapTiler © OpenStreetMap contributors",
+          "maptiler_satellite_hybrid",
+          0,
+          22
+        ),
+        variant,
+        name: "maptiler_satellite_hybrid",
+      };
+      usedFallback = false;
+      console.info("[MapLibre] Hybrid/raster mode enabled:", styleUrl);
+    } else if (styleUrl) {
       try {
         // Preflight: verificar que el styleUrl es válido antes de usarlo
         // Intentar HEAD primero, luego GET si es necesario
