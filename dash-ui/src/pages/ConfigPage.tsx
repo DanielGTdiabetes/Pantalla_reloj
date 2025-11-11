@@ -2384,13 +2384,18 @@ export const ConfigPage: React.FC = () => {
                   <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <input
                       type="checkbox"
-                      checked={typeof config.ui_map.satellite?.labels_overlay === "object" && config.ui_map.satellite?.labels_overlay !== null
-                        ? (config.ui_map.satellite.labels_overlay.enabled ?? true)
-                        : (config.ui_map.satellite?.labels_overlay ?? true)}
+                      checked={(() => {
+                        const overlay = config.ui_map.satellite?.labels_overlay;
+                        if (typeof overlay === "object" && overlay !== null && !Array.isArray(overlay) && "enabled" in overlay) {
+                          return overlay.enabled ?? true;
+                        }
+                        return typeof overlay === "boolean" ? overlay : true;
+                      })()}
                       onChange={(e) => {
                         const satelliteConfig = config.ui_map.satellite ?? DEFAULT_MAP_CONFIG.satellite!;
-                        const currentLabelsOverlay = typeof satelliteConfig.labels_overlay === "object" && satelliteConfig.labels_overlay !== null
-                          ? satelliteConfig.labels_overlay
+                        const currentOverlay = satelliteConfig.labels_overlay;
+                        const currentLabelsOverlay = typeof currentOverlay === "object" && currentOverlay !== null && !Array.isArray(currentOverlay) && "enabled" in currentOverlay
+                          ? currentOverlay
                           : { enabled: true, style_url: null, layer_filter: null };
                         setConfig({
                           ...config,
@@ -2401,7 +2406,7 @@ export const ConfigPage: React.FC = () => {
                               labels_overlay: {
                                 ...currentLabelsOverlay,
                                 enabled: e.target.checked,
-                              },
+                              } as typeof currentLabelsOverlay,
                             },
                           },
                         });
@@ -2415,13 +2420,18 @@ export const ConfigPage: React.FC = () => {
                   <label>URL de estilo etiquetas</label>
                   <input
                     type="text"
-                    value={typeof config.ui_map.satellite?.labels_overlay === "object" && config.ui_map.satellite?.labels_overlay !== null
-                      ? (config.ui_map.satellite.labels_overlay.style_url || "")
-                      : (config.ui_map.satellite?.labels_style_url || "")}
+                    value={(() => {
+                      const overlay = config.ui_map.satellite?.labels_overlay;
+                      if (typeof overlay === "object" && overlay !== null && !Array.isArray(overlay) && "style_url" in overlay) {
+                        return overlay.style_url || "";
+                      }
+                      return config.ui_map.satellite?.labels_style_url || "";
+                    })()}
                     onChange={(e) => {
                       const satelliteConfig = config.ui_map.satellite ?? DEFAULT_MAP_CONFIG.satellite!;
-                      const currentLabelsOverlay = typeof satelliteConfig.labels_overlay === "object" && satelliteConfig.labels_overlay !== null
-                        ? satelliteConfig.labels_overlay
+                      const currentOverlay = satelliteConfig.labels_overlay;
+                      const currentLabelsOverlay = typeof currentOverlay === "object" && currentOverlay !== null && !Array.isArray(currentOverlay) && "enabled" in currentOverlay
+                        ? currentOverlay
                         : { enabled: true, style_url: null, layer_filter: null };
                       setConfig({
                         ...config,
@@ -2432,9 +2442,9 @@ export const ConfigPage: React.FC = () => {
                             labels_overlay: {
                               ...currentLabelsOverlay,
                               style_url: e.target.value || null,
-                            },
+                            } as typeof currentLabelsOverlay,
                             // Mantener compatibilidad con legacy
-                            labels_style_url: e.target.value || null,
+                            labels_style_url: e.target.value || undefined,
                           },
                         },
                       });
@@ -2447,13 +2457,18 @@ export const ConfigPage: React.FC = () => {
                   <label>Filtro de capas (JSON opcional)</label>
                   <input
                     type="text"
-                    value={typeof config.ui_map.satellite?.labels_overlay === "object" && config.ui_map.satellite?.labels_overlay !== null
-                      ? (config.ui_map.satellite.labels_overlay.layer_filter || "")
-                      : ""}
+                    value={(() => {
+                      const overlay = config.ui_map.satellite?.labels_overlay;
+                      if (typeof overlay === "object" && overlay !== null && !Array.isArray(overlay) && "layer_filter" in overlay) {
+                        return overlay.layer_filter || "";
+                      }
+                      return "";
+                    })()}
                     onChange={(e) => {
                       const satelliteConfig = config.ui_map.satellite ?? DEFAULT_MAP_CONFIG.satellite!;
-                      const currentLabelsOverlay = typeof satelliteConfig.labels_overlay === "object" && satelliteConfig.labels_overlay !== null
-                        ? satelliteConfig.labels_overlay
+                      const currentOverlay = satelliteConfig.labels_overlay;
+                      const currentLabelsOverlay = typeof currentOverlay === "object" && currentOverlay !== null && !Array.isArray(currentOverlay) && "enabled" in currentOverlay
+                        ? currentOverlay
                         : { enabled: true, style_url: null, layer_filter: null };
                       setConfig({
                         ...config,
@@ -2464,7 +2479,7 @@ export const ConfigPage: React.FC = () => {
                             labels_overlay: {
                               ...currentLabelsOverlay,
                               layer_filter: e.target.value || null,
-                            },
+                            } as typeof currentLabelsOverlay,
                           },
                         },
                       });

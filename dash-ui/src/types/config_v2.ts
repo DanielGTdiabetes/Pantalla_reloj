@@ -60,15 +60,21 @@ export type MapRegion = {
   postalCode?: string | null;
 };
 
+export type SatelliteLabelsOverlay = {
+  enabled: boolean;
+  style_url?: string | null;
+  layer_filter?: string | null;
+};
+
 export type MapSatelliteConfig = {
   enabled: boolean;
   opacity: number;
-  labels_enabled: boolean;
-  labels_overlay?: boolean;
+  labels_enabled?: boolean; // Legacy
+  labels_overlay?: boolean | SatelliteLabelsOverlay; // Soporta ambos formatos para migración
   provider: "maptiler";
   style_raster: string;
   style_labels: string;
-  labels_style_url?: string;
+  labels_style_url?: string; // Legacy, deprecated
 };
 
 export type MapConfigV2 = {

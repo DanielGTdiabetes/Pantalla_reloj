@@ -685,14 +685,14 @@ export default function GeoScopeMap({
   
   // Usar nuevo formato labels_overlay (objeto) o fallback a legacy
   const labelsOverlayConfig = uiMapSatellite?.labels_overlay;
-  const effectiveLabelsOverlay = typeof labelsOverlayConfig === "object" && labelsOverlayConfig !== null
+  const effectiveLabelsOverlay = typeof labelsOverlayConfig === "object" && labelsOverlayConfig !== null && !Array.isArray(labelsOverlayConfig) && "enabled" in labelsOverlayConfig
     ? (labelsOverlayConfig.enabled ?? true)
     : typeof labelsOverlayConfig === "boolean"
     ? labelsOverlayConfig
     : (satelliteLabelsStyle !== "none");
   
   // Obtener style_url desde labels_overlay (nuevo formato) o fallback a legacy
-  const effectiveLabelsStyleUrl = typeof labelsOverlayConfig === "object" && labelsOverlayConfig !== null
+  const effectiveLabelsStyleUrl = typeof labelsOverlayConfig === "object" && labelsOverlayConfig !== null && !Array.isArray(labelsOverlayConfig) && "style_url" in labelsOverlayConfig
     ? (labelsOverlayConfig.style_url ?? null)
     : (uiMapSatellite?.labels_style_url ?? null);
   
@@ -827,7 +827,7 @@ export default function GeoScopeMap({
     if (!layer) {
       return;
     }
-    const layerFilter = typeof labelsOverlayConfig === "object" && labelsOverlayConfig !== null
+    const layerFilter = typeof labelsOverlayConfig === "object" && labelsOverlayConfig !== null && !Array.isArray(labelsOverlayConfig) && "layer_filter" in labelsOverlayConfig
       ? labelsOverlayConfig.layer_filter ?? null
       : null;
     layer.setLayerFilter(layerFilter);
@@ -1297,7 +1297,7 @@ export default function GeoScopeMap({
           opacity: effectiveSatelliteOpacity,
           labelsEnabled: effectiveLabelsOverlay,
           labelsStyleUrl: effectiveLabelsStyleUrl,
-          layerFilter: typeof labelsOverlayConfig === "object" && labelsOverlayConfig !== null
+          layerFilter: typeof labelsOverlayConfig === "object" && labelsOverlayConfig !== null && !Array.isArray(labelsOverlayConfig) && "layer_filter" in labelsOverlayConfig
             ? labelsOverlayConfig.layer_filter ?? null
             : null,
           zIndex: 5,

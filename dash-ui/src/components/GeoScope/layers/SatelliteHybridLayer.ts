@@ -361,6 +361,10 @@ export default class SatelliteHybridLayer implements Layer {
 
           try {
             const symbolLayer = layer as SymbolLayerSpecification;
+            const filterValue: unknown = parsedFilter || symbolLayer.filter;
+            // Asegurar que el filtro sea válido para MapLibre
+            const validFilter = Array.isArray(filterValue) ? filterValue : undefined;
+            
             map.addLayer(
               {
                 id: layerId,
@@ -369,7 +373,7 @@ export default class SatelliteHybridLayer implements Layer {
                 "source-layer": symbolLayer["source-layer"],
                 layout: symbolLayer.layout ?? {},
                 paint: symbolLayer.paint ?? {},
-                filter: parsedFilter || symbolLayer.filter,
+                filter: validFilter,
                 minzoom: symbolLayer.minzoom,
                 maxzoom: symbolLayer.maxzoom,
               },
