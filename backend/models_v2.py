@@ -104,29 +104,20 @@ class MapRegion(BaseModel):
     postalCode: Optional[str] = Field(default=None, max_length=10)
 
 
-class MapLabelsOverlayConfig(BaseModel):
-    """Configuración de capa de etiquetas vectoriales sobre el mapa satélite."""
+class SatelliteLabelsOverlay(BaseModel):
+    """Configuración de superposición de etiquetas vectoriales sobre satélite."""
     model_config = ConfigDict(extra="ignore")
-
+    
     enabled: bool = Field(default=True, description="Habilita la superposición de etiquetas")
-    style_url: Optional[str] = Field(default=None, max_length=512, description="URL del estilo vectorial de etiquetas")
+    style_url: Optional[str] = Field(
+        default=None,
+        max_length=512,
+        description="URL del estilo vectorial de etiquetas"
+    )
     layer_filter: str = Field(
         default='["==", ["get", "layer"], "poi_label"]',
         description="Filtro JSON (cadena serializada) para seleccionar capas de tipo label",
     )
-
-    @field_validator("layer_filter", mode="before")
-    @classmethod
-    def normalize_layer_filter(cls, value: Any) -> str:
-        """Permite recibir layer_filter como lista o cadena."""
-        if isinstance(value, list):
-            try:
-                return json.dumps(value)
-            except Exception:
-                return json.dumps([])
-        if isinstance(value, str):
-            return value
-        return json.dumps(value)
 
 
 class SatelliteSettings(BaseModel):
@@ -135,31 +126,61 @@ class SatelliteSettings(BaseModel):
 
     enabled: bool = Field(default=False, description="Activa el modo híbrido satélite")
     opacity: float = Field(default=1.0, ge=0.0, le=1.0, description="Opacidad de la textura satélite")
-    labels_overlay: Union[bool, MapLabelsOverlayConfig] = Field(
-        default=True,
-        description="Habilita o configura la superposición de etiquetas vectoriales sobre el mapa satélite"
+    labels_overlay: SatelliteLabelsOverlay = Field(
+        default_factory=SatelliteLabelsOverlay,
+        description="Configuración de superposición de etiquetas vectoriales"
     )
+    # DEPRECATED: Usar labels_overlay.style_url en su lugar
     labels_style_url: Optional[str] = Field(
-        default="https://api.maptiler.com/maps/streets-v4/style.json",
+        default=None,
         max_length=512,
-        description="Vector labels overlay for satellite mode"
+        description="[DEPRECATED] Vector labels overlay URL. Usar labels_overlay.style_url"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_labels_style_url(cls, data: Any) -> Any:
+        """Migra labels_style_url (deprecated) a labels_overlay.style_url."""
+        if not isinstance(data, dict):
+            return data
+        
+        # Si existe labels_style_url pero no labels_overlay o labels_overlay no tiene style_url
+        if "labels_style_url" in data and data["labels_style_url"]:
+            labels_style_url_value = data["labels_style_url"]
+            
+            # Inicializar labels_overlay si no existe
+            if "labels_overlay" not in data:
+                data["labels_overlay"] = {}
+            elif not isinstance(data["labels_overlay"], dict):
+                # Si es bool, convertir a objeto
+                if isinstance(data["labels_overlay"], bool):
+                    data["labels_overlay"] = {"enabled": data["labels_overlay"]}
+                else:
+                    data["labels_overlay"] = {}
+            
+            # Copiar labels_style_url a labels_overlay.style_url si no existe
+            if "style_url" not in data["labels_overlay"] or not data["labels_overlay"]["style_url"]:
+                data["labels_overlay"]["style_url"] = labels_style_url_value
+            
+            # No eliminar labels_style_url aquí (se hace en la serialización pública)
+        
+        return data
 
     @field_validator("labels_overlay", mode="before")
     @classmethod
-    def normalize_labels_overlay(cls, value: Any) -> Union[bool, MapLabelsOverlayConfig]:
-        """Permite usar bool o dict de configuración para labels_overlay."""
+    def normalize_labels_overlay(cls, value: Any) -> SatelliteLabelsOverlay:
+        """Normaliza labels_overlay a objeto SatelliteLabelsOverlay."""
         if isinstance(value, dict):
-            # Si el dict tiene 'enabled', devolvemos el objeto MapLabelsOverlayConfig
             try:
-                return MapLabelsOverlayConfig(**value)
+                return SatelliteLabelsOverlay(**value)
             except Exception:
-                # Si falla la validación, devolvemos True por defecto
-                return True
+                # Si falla la validación, crear objeto por defecto
+                return SatelliteLabelsOverlay()
         if isinstance(value, bool):
-            return value
-        # Si es None o cualquier otro tipo, devolvemos True por defecto
-        return True
+            # Si es bool, crear objeto con enabled
+            return SatelliteLabelsOverlay(enabled=value)
+        # Si es None o cualquier otro tipo, devolver objeto por defecto
+        return SatelliteLabelsOverlay()
 
 
 class MapSatelliteConfig(BaseModel):
@@ -180,7 +201,7 @@ class MapSatelliteConfig(BaseModel):
         max_length=512,
         description="URL del estilo vectorial para etiquetas",
     )
-    labels_overlay: MapLabelsOverlayConfig = Field(default_factory=MapLabelsOverlayConfig)
+    labels_overlay: SatelliteLabelsOverlay = Field(default_factory=SatelliteLabelsOverlay)
 
 
 class MapConfig(BaseModel):

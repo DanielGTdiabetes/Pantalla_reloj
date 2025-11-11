@@ -971,6 +971,34 @@ def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
     if secrets_backup:
         payload["secrets"] = secrets_backup
     
+    # Migrar labels_style_url (deprecated) a labels_overlay.style_url si existe
+    # y eliminar labels_style_url de la respuesta pública
+    if "ui_map" in payload and isinstance(payload["ui_map"], dict):
+        ui_map = payload["ui_map"]
+        if "satellite" in ui_map and isinstance(ui_map["satellite"], dict):
+            satellite = ui_map["satellite"]
+            
+            # Si existe labels_style_url, migrarlo a labels_overlay si no está ya presente
+            if "labels_style_url" in satellite and satellite["labels_style_url"]:
+                labels_style_url_value = satellite["labels_style_url"]
+                
+                # Asegurar que labels_overlay existe como objeto
+                if "labels_overlay" not in satellite:
+                    satellite["labels_overlay"] = {}
+                elif not isinstance(satellite["labels_overlay"], dict):
+                    # Si es bool, convertir a objeto
+                    if isinstance(satellite["labels_overlay"], bool):
+                        satellite["labels_overlay"] = {"enabled": satellite["labels_overlay"]}
+                    else:
+                        satellite["labels_overlay"] = {}
+                
+                # Copiar labels_style_url a labels_overlay.style_url si no existe
+                if "style_url" not in satellite["labels_overlay"] or not satellite["labels_overlay"]["style_url"]:
+                    satellite["labels_overlay"]["style_url"] = labels_style_url_value
+            
+            # Eliminar labels_style_url de la respuesta pública (deprecated)
+            satellite.pop("labels_style_url", None)
+    
     return payload
 
 
@@ -1291,8 +1319,22 @@ def _health_payload() -> Dict[str, Any]:
             
             style_url = ui_map.maptiler.styleUrl if ui_map.maptiler else None
             labels_style_url = None
+            labels_overlay_present = False
+            labels_overlay_signed = False
+            
             if ui_map.satellite:
-                labels_style_url = ui_map.satellite.labels_style_url
+                # Obtener style_url desde labels_overlay (nuevo formato unificado)
+                if ui_map.satellite.labels_overlay:
+                    labels_overlay_present = True
+                    if hasattr(ui_map.satellite.labels_overlay, "style_url"):
+                        labels_style_url = ui_map.satellite.labels_overlay.style_url
+                    elif isinstance(ui_map.satellite.labels_overlay, dict):
+                        labels_style_url = ui_map.satellite.labels_overlay.get("style_url")
+                # Fallback a labels_style_url legacy si existe
+                if not labels_style_url:
+                    labels_style_url = getattr(ui_map.satellite, "labels_style_url", None)
+                    if labels_style_url:
+                        labels_overlay_present = True
             
             # Validar el estilo (cacheado en caché global)
             maptiler_cache_key = "maptiler_validation"
@@ -1334,7 +1376,11 @@ def _health_payload() -> Dict[str, Any]:
                 "status": status_value,
                 "has_api_key": bool(api_key),
                 "style_signed": style_signed,
-                "labels_signed": labels_signed,
+                "labels_signed": labels_overlay_signed,
+                "labels_overlay": {
+                    "present": labels_overlay_present,
+                    "style_signed": labels_overlay_signed
+                },
                 "styleUrl": style_url,
                 "name": validation_result.get("name") if validation_result else None,
                 "last_check_iso": cached_validation.fetched_at.isoformat() if cached_validation else None,
@@ -1347,6 +1393,10 @@ def _health_payload() -> Dict[str, Any]:
                 "has_api_key": False,
                 "style_signed": False,
                 "labels_signed": False,
+                "labels_overlay": {
+                    "present": False,
+                    "style_signed": False
+                },
                 "message": f"MapTiler not enabled (provider is {provider_str})"
             }
     except Exception as exc:  # noqa: BLE001
@@ -1357,6 +1407,10 @@ def _health_payload() -> Dict[str, Any]:
             "has_api_key": False,
             "style_signed": False,
             "labels_signed": False,
+            "labels_overlay": {
+                "present": False,
+                "style_signed": False
+            },
             "error": str(exc)
         }
     
@@ -9729,12 +9783,14 @@ def sign_maptiler_urls(cfg: AppConfigV2) -> AppConfigV2:
             logger.debug("[maptiler] Signed styleUrl with ?key=")
     
     # Firmar labels_style_url si existe y no tiene ?key=
-    if cfg.ui_map.satellite and cfg.ui_map.satellite.labels_style_url:
-        labels_url = cfg.ui_map.satellite.labels_style_url
-        if "?key=" not in labels_url and "&key=" not in labels_url:
-            separator = "&" if "?" in labels_url else "?"
-            cfg.ui_map.satellite.labels_style_url = f"{labels_url}{separator}key={maptiler_key}"
-            logger.debug("[maptiler] Signed labels_style_url with ?key=")
+    if cfg.ui_map.satellite and cfg.ui_map.satellite.labels_overlay:
+        labels_overlay = cfg.ui_map.satellite.labels_overlay
+        if labels_overlay.style_url:
+            labels_url = labels_overlay.style_url
+            if "?key=" not in labels_url and "&key=" not in labels_url:
+                separator = "&" if "?" in labels_url else "?"
+                labels_overlay.style_url = f"{labels_url}{separator}key={maptiler_key}"
+                logger.debug("[maptiler] Signed labels_overlay.style_url with ?key=")
     
     return cfg
 
@@ -9789,21 +9845,40 @@ def ensure_maptiler_key() -> None:
                     changed = True
                     logger.info("[maptiler] Added ?key= to ui_map.maptiler.styleUrl")
         
-        # Verificar y actualizar ui_map.satellite.labels_style_url
+        # Verificar y actualizar ui_map.satellite.labels_overlay.style_url
         satellite = ui_map.get("satellite", {})
         if isinstance(satellite, dict):
-            labels_style_url = satellite.get("labels_style_url")
+            # Manejar nuevo formato: labels_overlay.style_url
+            labels_overlay = satellite.get("labels_overlay", {})
+            if isinstance(labels_overlay, dict):
+                labels_style_url = labels_overlay.get("style_url")
+            elif isinstance(labels_overlay, bool):
+                # Si es bool, crear objeto
+                labels_overlay = {"enabled": labels_overlay}
+                satellite["labels_overlay"] = labels_overlay
+                labels_style_url = None
+            else:
+                labels_style_url = None
+            
+            # Fallback a labels_style_url legacy si existe
+            if not labels_style_url:
+                labels_style_url = satellite.get("labels_style_url")
+            
             if isinstance(labels_style_url, str) and labels_style_url:
                 # Verificar si ya tiene ?key=
                 if "?key=" not in labels_style_url and "&key=" not in labels_style_url:
+                    # Asegurar que labels_overlay existe como objeto
+                    if "labels_overlay" not in satellite or not isinstance(satellite["labels_overlay"], dict):
+                        satellite["labels_overlay"] = {"enabled": True}
+                    
                     # Reconstruir URL con ?key=
                     separator = "&" if "?" in labels_style_url else "?"
                     new_url = f"{labels_style_url}{separator}key={api_key}"
-                    satellite["labels_style_url"] = new_url
+                    satellite["labels_overlay"]["style_url"] = new_url
                     ui_map["satellite"] = satellite
                     config_data["ui_map"] = ui_map
                     changed = True
-                    logger.info("[maptiler] Added ?key= to ui_map.satellite.labels_style_url")
+                    logger.info("[maptiler] Added ?key= to ui_map.satellite.labels_overlay.style_url")
         
         # Guardar cambios si hubo alguno
         if changed:
