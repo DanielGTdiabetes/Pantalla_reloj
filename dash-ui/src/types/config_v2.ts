@@ -64,9 +64,11 @@ export type MapSatelliteConfig = {
   enabled: boolean;
   opacity: number;
   labels_enabled: boolean;
+  labels_overlay?: boolean;
   provider: "maptiler";
   style_raster: string;
   style_labels: string;
+  labels_style_url?: string;
 };
 
 export type MapConfigV2 = {

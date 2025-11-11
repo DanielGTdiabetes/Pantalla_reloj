@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
-import type { Map as MapLibreMap } from "maplibre-gl";
+import type { Map as MapLibreMap, LayerSpecification } from "maplibre-gl";
 
 export interface MapHybridProps {
   map: MapLibreMap;
@@ -202,10 +202,11 @@ export default function MapHybrid({
 
     const visibility = visible ? "visible" : "none";
     const layers = map.getStyle().layers || [];
-    layers.forEach((layer) => {
-      if (layer.id.startsWith(labelsLayerId)) {
+    layers.forEach((layer: LayerSpecification) => {
+      const id = layer.id;
+      if (id && id.startsWith(labelsLayerId)) {
         try {
-          map.setLayoutProperty(layer.id, "visibility", visibility);
+          map.setLayoutProperty(id, "visibility", visibility);
         } catch (err) {
           // Ignorar errores si la capa no existe
         }
