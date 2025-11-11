@@ -1259,25 +1259,55 @@ else
   exit 1
 fi
 
-# Restart Openbox
-log_info "Reiniciando pantalla-openbox@${USER_NAME}.service"
-if systemctl restart pantalla-openbox@${USER_NAME}.service; then
-  log_ok "pantalla-openbox@${USER_NAME}.service reiniciado"
-  sleep 2
+# Restart Openbox - verificar dependencias primero
+OPENBOX_SERVICE="pantalla-openbox@${USER_NAME}.service"
+log_info "Reiniciando ${OPENBOX_SERVICE}"
+
+# Verificar que pantalla-xorg.service esté activo antes de reiniciar openbox
+if ! systemctl is-active --quiet pantalla-xorg.service 2>/dev/null; then
+  log_warn "pantalla-xorg.service no está activo; intentando iniciarlo primero..."
+  if systemctl start pantalla-xorg.service 2>&1; then
+    log_ok "pantalla-xorg.service iniciado"
+    sleep 3
+  else
+    log_error "No se pudo iniciar pantalla-xorg.service; openbox no se reiniciará"
+    log_warn "Ejecuta 'systemctl status pantalla-xorg.service' para más detalles"
+    SUMMARY+=('[install] WARN: pantalla-xorg.service no está activo; openbox no reiniciado')
+  fi
+fi
+
+# Intentar reiniciar openbox solo si xorg está activo
+if systemctl is-active --quiet pantalla-xorg.service 2>/dev/null; then
+  if systemctl restart "${OPENBOX_SERVICE}" 2>&1; then
+    log_ok "${OPENBOX_SERVICE} reiniciado"
+    sleep 2
+  else
+    log_warn "No se pudo reiniciar ${OPENBOX_SERVICE} (puede ser normal si no está habilitado)"
+    log_info "Ejecuta 'systemctl status ${OPENBOX_SERVICE}' y 'journalctl -u ${OPENBOX_SERVICE} -n 50' para diagnóstico"
+    SUMMARY+=("[install] WARN: fallo al reiniciar ${OPENBOX_SERVICE}")
+  fi
 else
-  log_error "No se pudo reiniciar pantalla-openbox@${USER_NAME}.service"
-  SUMMARY+=('[install] ERROR: fallo al reiniciar pantalla-openbox')
+  log_warn "Omitiendo reinicio de ${OPENBOX_SERVICE} - pantalla-xorg.service no está activo"
 fi
 
 # Reiniciar servicio kiosk solo si Google Chrome está disponible y el backend está listo
 if [[ ${CHROME_AVAILABLE:-0} -eq 1 ]]; then
-  log_info "Reiniciando pantalla-kiosk-chrome@${USER_NAME}.service"
-  if systemctl restart pantalla-kiosk-chrome@${USER_NAME}.service; then
-    log_ok "pantalla-kiosk-chrome@${USER_NAME}.service reiniciado"
-    sleep 2
+  CHROME_SERVICE="pantalla-kiosk-chrome@${USER_NAME}.service"
+  log_info "Reiniciando ${CHROME_SERVICE}"
+  
+  # Verificar que openbox esté activo antes de reiniciar chrome
+  if systemctl is-active --quiet "${OPENBOX_SERVICE}" 2>/dev/null; then
+    if systemctl restart "${CHROME_SERVICE}" 2>&1; then
+      log_ok "${CHROME_SERVICE} reiniciado"
+      sleep 2
+    else
+      log_warn "No se pudo reiniciar ${CHROME_SERVICE}"
+      log_info "Ejecuta 'systemctl status ${CHROME_SERVICE}' y 'journalctl -u ${CHROME_SERVICE} -n 50' para diagnóstico"
+      SUMMARY+=("[install] WARN: fallo al reiniciar ${CHROME_SERVICE}")
+    fi
   else
-    log_error "No se pudo reiniciar pantalla-kiosk-chrome@${USER_NAME}.service"
-    SUMMARY+=("[install] ERROR: fallo al reiniciar pantalla-kiosk-chrome")
+    log_warn "Omitiendo reinicio de ${CHROME_SERVICE} - ${OPENBOX_SERVICE} no está activo"
+    SUMMARY+=("[install] WARN: ${CHROME_SERVICE} no reiniciado - openbox no activo")
   fi
 else
   log_warn "No se reinició pantalla-kiosk-chrome@${USER_NAME}.service - Chrome no disponible"
