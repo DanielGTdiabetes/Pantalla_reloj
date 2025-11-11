@@ -4834,7 +4834,6 @@ def get_opensky_status() -> Dict[str, Any]:
         status["has_credentials"] = bool(status.get("has_credentials"))
         status["token_cached"] = bool(status.get("token_cached"))
     status["bbox"] = config.opensky.bbox.model_dump()
-    status["max_aircraft"] = int(config.opensky.max_aircraft)
     status["extended"] = int(config.opensky.extended)
     status["cluster"] = bool(config.opensky.cluster)
     if not status.get("has_credentials") and status.get("effective_poll", 0) < 10:
@@ -4881,7 +4880,6 @@ def refresh_opensky_and_status() -> Dict[str, Any]:
     last_fetch_ts = status.get("last_fetch_ts")
     status["last_fetch_age"] = int(now - last_fetch_ts) if last_fetch_ts else None
     status["bbox"] = config.opensky.bbox.model_dump()
-    status["max_aircraft"] = int(config.opensky.max_aircraft)
     status["extended"] = int(config.opensky.extended)
     status["cluster"] = bool(config.opensky.cluster)
     if not status.get("has_credentials") and status.get("effective_poll", 0) < 10:
