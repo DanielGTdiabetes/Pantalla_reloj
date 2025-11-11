@@ -9,7 +9,7 @@ export interface MapHybridProps {
   enabled: boolean;
   opacity: number;
   labelsOverlay: boolean;
-  labelsStyleUrl: string;
+  labelsStyleUrl: string | null;
   apiKey: string | null | undefined;
 }
 

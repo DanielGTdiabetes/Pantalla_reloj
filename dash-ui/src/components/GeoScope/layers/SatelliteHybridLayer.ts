@@ -3,6 +3,7 @@ import type {
   LayerSpecification,
   SymbolLayerSpecification,
   StyleSpecification,
+  FilterSpecification,
 } from "@maplibre/maplibre-gl-style-spec";
 
 import type { Layer } from "./LayerRegistry";
@@ -363,7 +364,17 @@ export default class SatelliteHybridLayer implements Layer {
             const symbolLayer = layer as SymbolLayerSpecification;
             const filterValue: unknown = parsedFilter || symbolLayer.filter;
             // Asegurar que el filtro sea válido para MapLibre
-            const validFilter = Array.isArray(filterValue) ? filterValue : undefined;
+            // Solo aceptar arrays que parezcan filtros válidos de MapLibre
+            let validFilter: FilterSpecification | undefined = undefined;
+            if (Array.isArray(filterValue) && filterValue.length > 0) {
+              // Validar que sea un filtro válido (debe empezar con un operador conocido)
+              const firstElement = filterValue[0];
+              if (typeof firstElement === "string" || Array.isArray(firstElement)) {
+                validFilter = filterValue as FilterSpecification;
+              }
+            } else if (filterValue === undefined || filterValue === null) {
+              validFilter = undefined;
+            }
             
             map.addLayer(
               {
