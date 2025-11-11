@@ -63,7 +63,7 @@ class AISStreamService:
 
         with self._lock:
             self._provider_enabled = ships_config.enabled and ships_config.provider == "aisstream"
-            self._update_interval = max(1, int(ships_config.update_interval))
+            self._update_interval = max(1, int(ships_config.refresh_seconds))
             ttl_from_config = max(ships_config.max_age_seconds, self._update_interval * 6)
             self._ttl_seconds = max(60, ttl_from_config)
 

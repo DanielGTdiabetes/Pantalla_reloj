@@ -24,7 +24,6 @@ async def get_status() -> Dict[str, Any]:
         "enabled": enabled,
         "provider": provider,
         "source": provider,
-        "update_interval": ships_cfg.update_interval,
         "refresh_seconds": ships_cfg.refresh_seconds,
         "max_items_view": ships_cfg.max_items_view,
     }
