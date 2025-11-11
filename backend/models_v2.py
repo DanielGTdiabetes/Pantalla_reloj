@@ -417,34 +417,34 @@ class ShipsLayerConfig(BaseModel):
 
 
 class GlobalSatelliteLayerConfig(BaseModel):
-    """Configuración de capa de satélite global."""
-    enabled: bool = True
+    """Configuración de capa global de satélite (NASA GIBS o similar)."""
+    enabled: bool = Field(default=True)
     provider: Literal["gibs"] = "gibs"
-    refresh_minutes: int = Field(default=10, ge=1, le=60)
-    history_minutes: int = Field(default=90, ge=1, le=1440)
+    refresh_minutes: int = Field(default=10, ge=1, le=240)
+    history_minutes: int = Field(default=90, ge=5, le=360)
     frame_step: int = Field(default=10, ge=1, le=60)
 
 
 class GlobalRadarLayerConfig(BaseModel):
-    """Configuración de capa de radar global."""
-    enabled: bool = True
+    """Configuración de radar meteorológico global (RainViewer, etc.)."""
+    enabled: bool = Field(default=True)
     provider: Literal["rainviewer"] = "rainviewer"
-    refresh_minutes: int = Field(default=5, ge=1, le=60)
-    history_minutes: int = Field(default=90, ge=1, le=1440)
+    refresh_minutes: int = Field(default=5, ge=1, le=120)
+    history_minutes: int = Field(default=90, ge=5, le=360)
     frame_step: int = Field(default=5, ge=1, le=60)
 
 
 class GlobalLayersConfig(BaseModel):
-    """Configuración de capas globales."""
-    satellite: Optional[GlobalSatelliteLayerConfig] = None
-    radar: Optional[GlobalRadarLayerConfig] = None
+    """Contenedor de capas globales (satellite, radar)."""
+    satellite: Optional[GlobalSatelliteLayerConfig] = Field(default_factory=GlobalSatelliteLayerConfig)
+    radar: Optional[GlobalRadarLayerConfig] = Field(default_factory=GlobalRadarLayerConfig)
 
 
 class LayersConfig(BaseModel):
     """Configuración de capas v2."""
     flights: Optional[FlightsLayerConfig] = None
     ships: Optional[ShipsLayerConfig] = None
-    global_: Optional[GlobalLayersConfig] = Field(default=None, alias="global")
+    global_: Optional[GlobalLayersConfig] = Field(default_factory=GlobalLayersConfig, alias="global")
 
 
 class PanelWeatherWeeklyConfig(BaseModel):
@@ -765,7 +765,7 @@ class AppConfigV2(BaseModel):
     ui_map: MapConfig = Field(default_factory=MapConfig)
     ui_global: Optional[UIGlobalConfig] = None
     panels: Optional[PanelsConfig] = None
-    layers: Optional[LayersConfig] = None
+    layers: Optional[LayersConfig] = Field(default_factory=LayersConfig)
     storm: Optional[StormModeConfig] = None
     blitzortung: Optional[BlitzortungConfig] = None
     news: Optional[NewsTopLevelConfig] = None
