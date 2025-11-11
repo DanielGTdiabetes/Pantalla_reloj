@@ -129,8 +129,22 @@ class MapLabelsOverlayConfig(BaseModel):
         return json.dumps(value)
 
 
+class SatelliteSettings(BaseModel):
+    """Configuración de modo satélite híbrido con etiquetas vectoriales."""
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = Field(default=False, description="Activa el modo híbrido satélite")
+    opacity: float = Field(default=1.0, ge=0.0, le=1.0, description="Opacidad de la textura satélite")
+    labels_overlay: bool = Field(default=True, description="Habilita etiquetas vectoriales por encima de la capa satélite")
+    labels_style_url: Optional[str] = Field(
+        default="https://api.maptiler.com/maps/streets-v4/style.json",
+        max_length=512,
+        description="Vector labels overlay for satellite mode"
+    )
+
+
 class MapSatelliteConfig(BaseModel):
-    """Configuración de modo satélite con etiquetas vectoriales."""
+    """Configuración de modo satélite con etiquetas vectoriales (legacy)."""
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = Field(default=False, description="Activa el modo híbrido satélite")
@@ -160,7 +174,12 @@ class MapConfig(BaseModel):
     local: Optional[LocalRasterConfig] = None
     maptiler: Optional[MapTilerConfig] = None
     customXyz: Optional[CustomXyzConfig] = None
-    satellite: Optional[MapSatelliteConfig] = None
+    satellite: SatelliteSettings = Field(
+        default_factory=SatelliteSettings,
+        description="Satellite/hybrid layer settings"
+    )
+    # Legacy satellite config (mantenido para compatibilidad)
+    satellite_legacy: Optional[MapSatelliteConfig] = None
     viewMode: Literal["fixed", "aoiCycle"] = "fixed"
     fixed: Optional[MapFixedView] = None
     aoiCycle: Optional[MapAoiCycle] = None

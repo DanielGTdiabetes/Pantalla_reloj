@@ -46,6 +46,7 @@ Antes del primer arranque revisa `docs/CONFIG_SETUP.md`; resume cómo clonar la 
 - ✅ **Datos enriquecidos**: Santoral con información adicional (type, patron_of, name_days), hortalizas con siembra y cosecha, eventos astronómicos
 - ✅ **Mejoras de fuentes**: `calculate_extended_astronomy()`, `get_astronomical_events()`, datos mejorados de harvest y saints
 - ✅ **Efemérides históricas**: Panel de efemérides históricas con datos locales JSON, uploader en `/config`, validación y guardado atómico
+- ✅ **Modo híbrido MapTiler**: Fondo satélite raster con overlay de etiquetas vectoriales, configurable desde `/config` con opacidad ajustable
 
 ### Frontend (React/Vite)
 - Dashboard por defecto en modo `full`: mapa principal con tarjetas de noticias y
@@ -69,6 +70,12 @@ Antes del primer arranque revisa `docs/CONFIG_SETUP.md`; resume cómo clonar la 
   Se expone vía props en `GeoScopeMap` (`satelliteEnabled`, `satelliteOpacity`,
   `satelliteLabelsStyle`) para poder activarla desde la UI de Config en el paso
   siguiente.
+- **Modo híbrido MapTiler**: El sistema soporta ahora un modo híbrido que combina
+  fondo satélite raster (`satellite/{z}/{x}/{y}.jpg`) con overlay de etiquetas
+  vectoriales. Se configura desde `/config` en la sección "Mapa satélite híbrido"
+  con controles para activar/desactivar, ajustar opacidad (0-1) y configurar la URL
+  del estilo de etiquetas vectoriales. El componente `MapHybrid` renderiza ambas
+  capas y se integra automáticamente cuando `ui_map.satellite.enabled` está activo.
 - Compilado con `npm run build` y servido por Nginx desde `/var/www/html`.
 
 #### Autopan y diagnósticos

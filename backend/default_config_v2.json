@@ -27,16 +27,9 @@
     },
     "satellite": {
       "enabled": false,
-      "opacity": 0.85,
-      "labels_enabled": true,
-      "provider": "maptiler",
-      "style_raster": "https://api.maptiler.com/maps/satellite/style.json",
-      "style_labels": "https://api.maptiler.com/maps/streets/style.json",
-      "labels_overlay": {
-        "enabled": true,
-        "style_url": "https://api.maptiler.com/maps/streets/style.json",
-        "layer_filter": "[\"==\", [\"get\", \"layer\"], \"poi_label\"]"
-      }
+      "opacity": 1.0,
+      "labels_overlay": true,
+      "labels_style_url": "https://api.maptiler.com/maps/streets-v4/style.json"
     },
     "customXyz": {
       "tileUrl": null,

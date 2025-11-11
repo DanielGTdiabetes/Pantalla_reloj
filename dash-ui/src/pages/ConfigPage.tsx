@@ -2384,7 +2384,7 @@ export const ConfigPage: React.FC = () => {
                   <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <input
                       type="checkbox"
-                      checked={config.ui_map.satellite?.labels_enabled ?? true}
+                      checked={config.ui_map.satellite?.labels_overlay ?? true}
                       onChange={(e) => {
                         const satelliteConfig = config.ui_map.satellite ?? DEFAULT_MAP_CONFIG.satellite!;
                         setConfig({
@@ -2393,14 +2393,36 @@ export const ConfigPage: React.FC = () => {
                             ...config.ui_map,
                             satellite: {
                               ...satelliteConfig,
-                              labels_enabled: e.target.checked,
+                              labels_overlay: e.target.checked,
                             },
                           },
                         });
                       }}
                     />
-                    Mostrar etiquetas (calles, nombres)
+                    Mostrar etiquetas vectoriales
                   </label>
+                </div>
+
+                <div className="config-field">
+                  <label>URL de estilo etiquetas</label>
+                  <input
+                    type="text"
+                    value={config.ui_map.satellite?.labels_style_url || "https://api.maptiler.com/maps/streets-v4/style.json"}
+                    onChange={(e) => {
+                      const satelliteConfig = config.ui_map.satellite ?? DEFAULT_MAP_CONFIG.satellite!;
+                      setConfig({
+                        ...config,
+                        ui_map: {
+                          ...config.ui_map,
+                          satellite: {
+                            ...satelliteConfig,
+                            labels_style_url: e.target.value || "https://api.maptiler.com/maps/streets-v4/style.json",
+                          },
+                        },
+                      });
+                    }}
+                    placeholder="https://api.maptiler.com/maps/streets-v4/style.json"
+                  />
                 </div>
               </>
             )}

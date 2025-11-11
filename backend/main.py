@@ -31,6 +31,11 @@ try:
 except ImportError:
     websocket = None
 
+try:
+    import httpx
+except ImportError:
+    httpx = None
+
 from fastapi import Body, FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
@@ -1716,6 +1721,36 @@ async def test_xyz(request: XyzTestRequest) -> Dict[str, Any]:
             "ok": False,
             "error": "internal_error"
         }
+
+
+@app.get("/api/map/satellite/test")
+async def test_satellite_layer() -> Dict[str, Any]:
+    """Verifica acceso al tile de satélite de MapTiler."""
+    try:
+        config_v2, _ = _read_config_v2()
+        
+        if not config_v2.ui_map.satellite.enabled:
+            return {"ok": False, "reason": "satellite_disabled"}
+        
+        # Obtener API key de MapTiler
+        maptiler_config = config_v2.ui_map.maptiler
+        if not maptiler_config or not maptiler_config.api_key:
+            return {"ok": False, "reason": "missing_api_key"}
+        
+        api_key = maptiler_config.api_key
+        url = f"https://api.maptiler.com/tiles/satellite/15/17000/12000.jpg?key={api_key}"
+        
+        if httpx is None:
+            # Fallback a requests si httpx no está disponible
+            response = requests.head(url, timeout=5)
+            return {"ok": response.status_code == 200, "status": response.status_code}
+        
+        async with httpx.AsyncClient() as client:
+            r = await client.head(url, timeout=5.0)
+        return {"ok": r.status_code == 200, "status": r.status_code}
+    except Exception as exc:
+        logger.error("[map] Error testing satellite layer: %s", exc)
+        return {"ok": False, "error": str(exc)}
 
 
 @app.post("/api/config/upload/ics")

@@ -5,6 +5,14 @@ Todos los cambios notables del proyecto se documentarán en este archivo.
 ## Unreleased
 
 ### Added
+- **Modo híbrido MapTiler**: Nuevo modo de mapa que combina fondo satélite raster con overlay de etiquetas vectoriales. Configurable desde `/config` con controles para:
+  - Activar/desactivar modo satélite híbrido
+  - Ajustar opacidad del fondo satélite (0.0 - 1.0)
+  - Mostrar/ocultar etiquetas vectoriales
+  - Configurar URL del estilo de etiquetas (por defecto: `streets-v4`)
+- **Backend**: Nuevo endpoint `/api/map/satellite/test` para verificar acceso a tiles de satélite de MapTiler
+- **Frontend**: Componente `MapHybrid.tsx` que renderiza capa raster de satélite y overlay de etiquetas vectoriales
+- **Configuración**: Nueva estructura `ui_map.satellite` con campos `enabled`, `opacity`, `labels_overlay`, `labels_style_url` en el esquema v2
 - **Frontend**: Nueva capa `SatelliteHybridLayer` que superpone satélite raster de MapTiler con labels vectoriales. Disponible como props (`satelliteEnabled`, `satelliteOpacity`, `satelliteLabelsStyle`) en `GeoScopeMap` para futuras integraciones en la UI de Config.
 
 ## v24 - 2025-01

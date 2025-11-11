@@ -16,6 +16,7 @@ import LightningLayer from "./layers/LightningLayer";
 import WeatherLayer from "./layers/WeatherLayer";
 import { LayerRegistry } from "./layers/LayerRegistry";
 import SatelliteHybridLayer, { type SatelliteLabelsStyle } from "./layers/SatelliteHybridLayer";
+import MapHybrid from "./layers/MapHybrid";
 import ShipsLayer from "./layers/ShipsLayer";
 import MapSpinner from "../MapSpinner";
 import { hasSprite } from "./utils/styleSprite";
@@ -680,10 +681,11 @@ export default function GeoScopeMap({
     return null;
   }, [config]);
   const effectiveSatelliteOpacity =
-    uiMapSatellite?.opacity ?? satelliteOpacity ?? 0.85;
-  const effectiveLabelsEnabled =
-    uiMapSatellite?.labels_enabled ??
-    (satelliteLabelsStyle !== "none");
+    uiMapSatellite?.opacity ?? satelliteOpacity ?? 1.0;
+  const effectiveLabelsOverlay =
+    uiMapSatellite?.labels_overlay ?? (satelliteLabelsStyle !== "none");
+  const effectiveLabelsStyleUrl =
+    uiMapSatellite?.labels_style_url ?? "https://api.maptiler.com/maps/streets-v4/style.json";
   const effectiveSatelliteEnabled = Boolean(
     (uiMapSatellite?.enabled ?? satelliteEnabled) && maptilerKey,
   );
@@ -799,8 +801,8 @@ export default function GeoScopeMap({
     if (!layer) {
       return;
     }
-    layer.setLabelsEnabled(effectiveLabelsEnabled);
-  }, [effectiveLabelsEnabled]);
+    layer.setLabelsEnabled(effectiveLabelsOverlay);
+  }, [effectiveLabelsOverlay]);
 
   useEffect(() => {
     const layer = satelliteLayerRef.current;
@@ -1264,7 +1266,7 @@ export default function GeoScopeMap({
           apiKey: maptilerKey,
           enabled: effectiveSatelliteEnabled,
           opacity: effectiveSatelliteOpacity,
-          labelsEnabled: effectiveLabelsEnabled,
+          labelsEnabled: effectiveLabelsOverlay,
           zIndex: 5,
         });
         layerRegistry.add(satelliteLayer);
@@ -2546,6 +2548,16 @@ export default function GeoScopeMap({
       {styleChangeInProgress ? <MapSpinner /> : null}
       {tintColor ? (
         <div className="map-tint" style={{ background: tintColor }} aria-hidden="true" />
+      ) : null}
+      {mapRef.current && effectiveSatelliteEnabled && uiMapSatellite ? (
+        <MapHybrid
+          map={mapRef.current}
+          enabled={effectiveSatelliteEnabled}
+          opacity={effectiveSatelliteOpacity}
+          labelsOverlay={effectiveLabelsOverlay}
+          labelsStyleUrl={effectiveLabelsStyleUrl}
+          apiKey={maptilerKey}
+        />
       ) : null}
     </div>
   );
