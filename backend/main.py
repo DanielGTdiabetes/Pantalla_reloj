@@ -115,7 +115,7 @@ from .routes.efemerides import (
     fetch_wikimedia_onthisday,
 )
 from .routes import rainviewer
-from .routers import layers
+from .routers import layers, weather
 from .secret_store import SecretStore
 from .services.opensky_auth import DEFAULT_TOKEN_URL, OpenSkyAuthError
 from .services.opensky_client import OpenSkyClientError
@@ -295,6 +295,7 @@ app.add_middleware(
 app.include_router(ephemerides.router)
 app.include_router(rainviewer.router)
 app.include_router(layers.router)
+app.include_router(weather.router)
 
 
 @app.post("/api/kiosk/refresh")

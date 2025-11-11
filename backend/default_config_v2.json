@@ -48,6 +48,11 @@
   "ui_global": {
     "satellite": { "enabled": true, "provider": "gibs", "opacity": 1.0 },
     "radar": { "enabled": true, "provider": "rainviewer", "opacity": 0.7, "layer_type": "precipitation_new" },
+    "weather_layers": {
+      "radar": { "enabled": true, "provider": "rainviewer", "opacity": 0.7 },
+      "satellite": { "enabled": true, "provider": "gibs", "opacity": 0.8 },
+      "alerts": { "enabled": true, "provider": "cap_aemet", "opacity": 0.6 }
+    },
     "overlay": {
       "rotator": {
         "enabled": true,

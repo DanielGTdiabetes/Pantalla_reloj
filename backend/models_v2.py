@@ -205,6 +205,26 @@ class MapConfig(BaseModel):
     region: Optional[MapRegion] = None
 
 
+class WeatherLayerConfig(BaseModel):
+    """Configuración de una capa meteorológica."""
+    enabled: bool = Field(default=True)
+    provider: str = Field(default="", max_length=64)
+    opacity: float = Field(default=0.7, ge=0.0, le=1.0)
+
+
+class WeatherLayersConfig(BaseModel):
+    """Configuración de capas meteorológicas unificadas."""
+    radar: Optional[WeatherLayerConfig] = Field(
+        default_factory=lambda: WeatherLayerConfig(enabled=True, provider="rainviewer", opacity=0.7)
+    )
+    satellite: Optional[WeatherLayerConfig] = Field(
+        default_factory=lambda: WeatherLayerConfig(enabled=True, provider="gibs", opacity=0.8)
+    )
+    alerts: Optional[WeatherLayerConfig] = Field(
+        default_factory=lambda: WeatherLayerConfig(enabled=True, provider="cap_aemet", opacity=0.6)
+    )
+
+
 class SatelliteConfig(BaseModel):
     """Configuración de satélite global."""
     enabled: bool = True
@@ -247,10 +267,11 @@ class OverlayConfig(BaseModel):
 
 
 class UIGlobalConfig(BaseModel):
-    """Configuración global de UI (satélite, radar, overlay)."""
+    """Configuración global de UI (satélite, radar, overlay, weather_layers)."""
     satellite: Optional[SatelliteConfig] = None
     radar: Optional[RadarConfig] = None
     overlay: Optional[OverlayConfig] = None
+    weather_layers: Optional[WeatherLayersConfig] = None
 
 
 class FlightsLayerCircleConfig(BaseModel):
