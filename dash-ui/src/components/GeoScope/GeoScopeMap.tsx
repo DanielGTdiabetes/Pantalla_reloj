@@ -1314,6 +1314,11 @@ export default function GeoScopeMap({
           if (overlay && typeof overlay === "object" && !Array.isArray(overlay) && overlay.enabled && overlay.style_url) {
             const labelsUrl = signMapTilerUrl(overlay.style_url, maptilerKey);
             
+            if (!labelsUrl) {
+              console.warn("[GeoScopeMap] No se pudo firmar URL de etiquetas");
+              return;
+            }
+            
             try {
               // Cargar estilo de etiquetas
               const response = await fetch(labelsUrl, { cache: "no-store" });
@@ -1333,8 +1338,8 @@ export default function GeoScopeMap({
               }
               
               const firstSourceKey = sourceKeys[0];
-              const firstSource = style.sources[firstSourceKey];
-              if (firstSource.type !== "vector") {
+              const firstSource = style.sources[firstSourceKey] as StyleSpecification["sources"][string];
+              if (!firstSource || firstSource.type !== "vector") {
                 throw new Error("Source is not vector type");
               }
               
@@ -1371,7 +1376,7 @@ export default function GeoScopeMap({
               }
               
               // Filtrar y añadir capas de labels
-              const labelLayers = style.layers.filter((layer) => {
+              const labelLayers = (style.layers || []).filter((layer: StyleSpecification["layers"][number]) => {
                 if (layer.type !== "symbol") {
                   return false;
                 }

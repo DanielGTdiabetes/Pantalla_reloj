@@ -88,49 +88,7 @@ const sanitizeApiKey = (value?: string | null): string | null => {
   return /^[A-Za-z0-9._-]+$/.test(trimmed) ? trimmed : null;
 };
 
-/**
- * Firma una URL de MapTiler añadiendo ?key=<apiKey> si falta.
- * Solo firma si la URL es de api.maptiler.com y no tiene ?key= en la query.
- * 
- * @param url URL a firmar
- * @param apiKey API key de MapTiler (opcional, puede venir en la URL ya)
- * @returns URL firmada o la URL original si no es MapTiler o ya está firmada
- */
-export const signMapTilerUrl = (url: string | null | undefined, apiKey: string | null | undefined): string | null => {
-  if (!url || typeof url !== "string") {
-    return null;
-  }
-  
-  const trimmedUrl = url.trim();
-  if (!trimmedUrl) {
-    return null;
-  }
-  
-  // Solo procesar URLs de MapTiler
-  try {
-    const urlObj = new URL(trimmedUrl);
-    if (urlObj.hostname !== "api.maptiler.com") {
-      return trimmedUrl; // No es MapTiler, devolver tal cual
-    }
-    
-    // Si ya tiene ?key=, devolver tal cual
-    if (urlObj.searchParams.has("key")) {
-      return trimmedUrl;
-    }
-    
-    // Si tenemos apiKey, añadirlo
-    if (apiKey && sanitizeApiKey(apiKey)) {
-      urlObj.searchParams.set("key", apiKey);
-      return urlObj.toString();
-    }
-    
-    // No tenemos apiKey pero es MapTiler sin key - devolver tal cual (puede fallar pero no forzamos)
-    return trimmedUrl;
-  } catch {
-    // Si no es una URL válida, devolver tal cual
-    return trimmedUrl;
-  }
-};
+// signMapTilerUrl ahora se importa desde maptilerHelpers.ts
 
 const injectKeyPlaceholders = (payload: string, key: string): string => {
   if (!key) {
@@ -188,7 +146,10 @@ export const loadMapStyle = async (
     // Si tenemos styleUrl, usarlo tal cual (ya viene firmado del backend)
     // Solo firmar si falta ?key= y tenemos apiKey
     if (styleUrl) {
-      styleUrl = signMapTilerUrl(styleUrl, apiKey);
+      const signedUrl = signMapTilerUrl(styleUrl, apiKey);
+      if (signedUrl) {
+        styleUrl = signedUrl;
+      }
     } else if (apiKey && maptilerConfig?.style) {
       // Fallback: construir desde style si no hay styleUrl
       const styleSlug = maptilerConfig.style === "hybrid" ? "hybrid" : 
@@ -196,7 +157,10 @@ export const loadMapStyle = async (
                        maptilerConfig.style === "vector-dark" ? "dark" :
                        maptilerConfig.style === "vector-light" ? "light" :
                        "streets-v4";
-      styleUrl = signMapTilerUrl(`https://api.maptiler.com/maps/${styleSlug}/style.json`, apiKey);
+      const signedUrl = signMapTilerUrl(`https://api.maptiler.com/maps/${styleSlug}/style.json`, apiKey);
+      if (signedUrl) {
+        styleUrl = signedUrl;
+      }
     }
 
     // Detectar si es modo híbrido/satélite
