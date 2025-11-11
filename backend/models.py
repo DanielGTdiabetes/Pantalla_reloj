@@ -188,18 +188,6 @@ class Ephemerides(BaseModel):
     timezone: str = Field(default="Europe/Madrid", min_length=1)
 
 
-class CineFocus(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    enabled: bool = True
-    mode: Literal["cap", "radar", "both"] = Field(default="both")
-    min_severity: Literal["yellow", "orange", "red"] = Field(default="orange")
-    radar_dbz_threshold: float = Field(default=30.0, ge=0.0, le=100.0)
-    buffer_km: float = Field(default=25.0, ge=0.0, le=500.0)
-    outside_dim_opacity: float = Field(default=0.25, ge=0.0, le=1.0)
-    hard_hide_outside: bool = False
-
-
 class OpenSkyBBox(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -320,7 +308,6 @@ class FlightsLayer(BaseModel):
     render_mode: Literal["auto", "symbol", "circle", "symbol_custom"] = Field(default="auto")
     custom_icon_url: Optional[str] = Field(default=None, description="URL de icono personalizado para symbol_custom")
     circle: FlightsCircleStyle = Field(default_factory=FlightsCircleStyle)
-    cine_focus: CineFocus = Field(default_factory=CineFocus)
     opensky: OpenSkyAuth = Field(default_factory=OpenSkyAuth)
     aviationstack: AviationStackConfig = Field(default_factory=AviationStackConfig)
     custom: CustomFlightConfig = Field(default_factory=CustomFlightConfig)
@@ -350,7 +337,6 @@ class ShipsLayer(BaseModel):
     decimate: Literal["grid", "none"] = Field(default="grid")
     grid_px: int = Field(default=24, ge=8, le=128)
     styleScale: float = Field(default=1.4, ge=0.1, le=4.0)
-    cine_focus: CineFocus = Field(default_factory=CineFocus)
     ais_generic: GenericAISConfig = Field(default_factory=GenericAISConfig)
     aisstream: AISStreamConfig = Field(default_factory=AISStreamConfig)
     aishub: AISHubConfig = Field(default_factory=AISHubConfig)

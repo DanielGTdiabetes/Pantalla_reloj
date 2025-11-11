@@ -87,7 +87,6 @@ from .data_sources_ics import (
     fetch_ics_calendar_events,
     get_last_error as get_last_ics_error,
 )
-from .focus_masks import check_point_in_focus, load_or_build_focus_mask
 from .global_providers import (
     GIBSProvider,
     OpenWeatherMapApiKeyError,
@@ -2641,50 +2640,12 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     payload["last_errors"] = last_errors[:10]  # Limitar a últimos 10 errores
     
     # Información de focus masks
-    flights_config = config.layers.flights
-    ships_config = config.layers.ships
-    
+    # Modo Cine eliminado en v2: no aplicar lógica de cine_focus
     focus_status = "down"
     focus_last_build = None
     focus_source = None
     focus_area_km2 = None
     focus_cache_age = None
-    
-    if flights_config.cine_focus.enabled or ships_config.cine_focus.enabled:
-        try:
-            # Usar el modo de flights como referencia (o ambos si está configurado)
-            focus_mode = flights_config.cine_focus.mode if flights_config.cine_focus.enabled else ships_config.cine_focus.mode
-            focus_config = flights_config.cine_focus if flights_config.cine_focus.enabled else ships_config.cine_focus
-            
-            mask, from_cache = load_or_build_focus_mask(
-                cache_store,
-                config,
-                focus_config,
-                focus_mode
-            )
-            
-            if mask:
-                focus_status = "ok"
-                focus_source = focus_mode
-                
-                # Intentar obtener timestamp de construcción
-                focus_cached = cache_store.load(f"focus_mask_{focus_mode}", max_age_minutes=None)
-                if focus_cached:
-                    focus_last_build = focus_cached.fetched_at.isoformat()
-                    age = datetime.now(timezone.utc) - focus_cached.fetched_at
-                    focus_cache_age = int(age.total_seconds())
-                
-                # Calcular área aproximada (simplificado)
-                coords = mask.get("coordinates", [])
-                if coords:
-                    # Estimación simplificada del área (por ahora, usar número de polígonos)
-                    num_polygons = len(coords) if mask.get("type") == "MultiPolygon" else 1
-                    focus_area_km2 = num_polygons * 1000  # Estimación aproximada
-            else:
-                focus_status = "degraded"
-        except Exception as exc:
-            logger.warning("Failed to check focus mask in health: %s", exc)
-            focus_status = "degraded"
     
     payload["focus"] = {
         "status": focus_status,
@@ -9136,44 +9097,17 @@ def get_ships(
 
         features_for_focus = viewport_features
         
-        # Aplicar máscara de foco y etiquetar in_focus
-        focus_mask = None
-        focus_unavailable = False
-        
-        if ships_config.cine_focus.enabled:
-            try:
-                mask, from_cache = load_or_build_focus_mask(
-                    cache_store,
-                    config,
-                    ships_config.cine_focus,
-                    ships_config.cine_focus.mode
-                )
-                focus_mask = mask
-                if from_cache:
-                    logger.debug("Focus mask loaded from cache for ships")
-            except Exception as exc:
-                logger.warning("Failed to load focus mask for ships: %s", exc)
-                focus_unavailable = True
-        
-        # Etiquetar features con in_focus
+        # Modo Cine eliminado en v2: no aplicar máscara de foco
+        # Etiquetar features con in_focus (siempre False)
         features_with_focus: List[Dict[str, Any]] = []
         for feature in features_for_focus:
             props = feature.get("properties", {})
-            geometry = feature.get("geometry", {})
-
-            in_focus = False
-            if focus_mask and geometry.get("type") == "Point":
-                coords = geometry.get("coordinates", [])
-                if len(coords) >= 2:
-                    lon, lat = coords[0], coords[1]
-                    if abs(lat) <= 90 and abs(lon) <= 180:
-                        in_focus = check_point_in_focus(lat, lon, focus_mask)
-
+            
             features_with_focus.append({
                 **feature,
                 "properties": {
                     **props,
-                    "in_focus": in_focus
+                    "in_focus": False
                 }
             })
 

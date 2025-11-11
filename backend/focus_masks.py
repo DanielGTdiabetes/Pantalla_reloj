@@ -1,4 +1,7 @@
-"""Construcción y caché de máscaras de foco (cine_focus) para destacar tráfico en fenómenos adversos."""
+"""Construcción y caché de máscaras de foco (cine_focus) para destacar tráfico en fenómenos adversos.
+
+NOTA: Modo Cine eliminado en v2. Estas funciones se mantienen por compatibilidad pero ya no se utilizan.
+"""
 from __future__ import annotations
 
 import json
@@ -12,7 +15,7 @@ import requests
 
 from .cache import CacheStore
 from .logging_utils import configure_logging
-from .models import AEMET, CineFocus
+from .models import AEMET
 
 logger = configure_logging()
 
@@ -637,7 +640,7 @@ def check_point_in_focus(
 def load_or_build_focus_mask(
     cache_store: CacheStore,
     config: Any,  # AppConfig
-    cine_focus: CineFocus,
+    cine_focus: Any,  # CineFocus eliminado en v2
     mode_key: str  # "cap", "radar" o "both"
 ) -> Tuple[Optional[Dict[str, Any]], bool]:
     """Carga o construye una máscara de foco con caché.
