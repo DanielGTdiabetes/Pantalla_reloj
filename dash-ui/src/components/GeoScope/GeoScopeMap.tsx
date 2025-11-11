@@ -1,6 +1,6 @@
 import maplibregl from "maplibre-gl";
 import type { MapLibreEvent, StyleSpecification } from "maplibre-gl";
-import type { SymbolLayerSpecification, FilterSpecification } from "@maplibre/maplibre-gl-style-spec";
+import type { SymbolLayerSpecification, FilterSpecification, SourceSpecification } from "@maplibre/maplibre-gl-style-spec";
 import type { Feature, FeatureCollection, GeoJsonProperties, Geometry, Point } from "geojson";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
@@ -1338,7 +1338,7 @@ export default function GeoScopeMap({
               }
               
               const firstSourceKey = sourceKeys[0];
-              const sources = style.sources as Record<string, StyleSpecification["sources"][string]>;
+              const sources = style.sources as Record<string, SourceSpecification>;
               const firstSource = sources[firstSourceKey];
               if (!firstSource || firstSource.type !== "vector") {
                 throw new Error("Source is not vector type");
@@ -1382,7 +1382,7 @@ export default function GeoScopeMap({
               
               // Filtrar y añadir capas de labels
               const layers = (style.layers || []) as StyleSpecification["layers"];
-              const labelLayers = layers.filter((layer) => {
+              const labelLayers = layers.filter((layer: StyleSpecification["layers"][number]) => {
                 if (layer.type !== "symbol") {
                   return false;
                 }
