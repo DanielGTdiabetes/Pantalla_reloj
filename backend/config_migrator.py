@@ -183,9 +183,7 @@ def migrate_v1_to_v2(
     
     # global.radar v1 → ui_global.radar v2
     radar_v1 = global_v1.get("radar", {})
-    radar_provider = "rainviewer"  # Por defecto RainViewer
-    if config_v1.get("aemet", {}).get("radar_enabled"):
-        radar_provider = "aemet"
+    radar_provider = "rainviewer"  # Siempre RainViewer (AEMET ya no se usa)
     
     v2["ui_global"]["radar"] = {
         "enabled": radar_v1.get("enabled", False),
@@ -287,8 +285,7 @@ def migrate_v1_to_v2(
     # Secrets (metadata only)
     v2["secrets"] = {
         "opensky": {},
-        "google": {},
-        "aemet": {}
+        "google": {}
     }
     
     return v2, needs_geocoding

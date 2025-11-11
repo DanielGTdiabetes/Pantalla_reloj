@@ -109,17 +109,11 @@ Antes del primer arranque revisa `docs/CONFIG_SETUP.md`; resume cómo clonar la 
 - **Validación**: El endpoint `/api/map/validate` valida la configuración de MapTiler y proporciona auto-fix si detecta problemas. La información de estado de MapTiler se incluye en `/api/health` en el campo `maptiler`.
 - **Variable de entorno**: Opcionalmente, puedes definir `MAPTILER_API_KEY` como variable de entorno al iniciar el backend. Si `ui_map.maptiler.apiKey` está vacío, se inyectará automáticamente (no sobrescribe valores existentes).
 
-### Configurar AEMET
+### 🌩️ Fuentes meteorológicas (Fase 2)
 
-- En la tarjeta **AEMET** de `/config` podrás activar/desactivar la integración y
-  definir qué capas (CAP, radar, satélite) se descargan.
-- La clave se almacena sólo en backend: el campo muestra `•••• 1234` si existe
-  un secreto guardado. Pulsa «Mostrar» para editar y «Guardar clave» para enviar
-  la actualización a `/api/config/secret/aemet_api_key`.
-- Usa «Probar clave» para llamar a `/api/aemet/test_key`; el backend contacta con
-  AEMET y responde `{ok:true}` o `{ok:false, reason:"unauthorized|network|…"}`.
-- `GET /api/config` nunca devuelve la clave completa; expone `has_api_key` y
-  `api_key_last4` para saber si se ha cargado correctamente.
+- **Avisos CAP**: Feed público AEMET (sin token, actualizado cada 10 minutos)
+- **Radar**: RainViewer (global, libre, sin clave)
+- **Satélite**: NASA GIBS TrueColor (sin autenticación)
 
 ### Calendario ICS
 
@@ -396,7 +390,7 @@ En `/config`, busca la sección **"Capas del Mapa"** (visible solo en configurac
 
 - **Aviones (OpenSky)**: Activa/desactiva la capa de vuelos en tiempo real desde OpenSky Network.
 - **Barcos**: Activa/desactiva la capa de barcos en tiempo real (AIS).
-- **Radar (AEMET)**: Activa/desactiva la capa de radar meteorológico de AEMET.
+- **Radar (RainViewer)**: Activa/desactiva la capa de radar meteorológico de RainViewer.
 - **Satélite (GIBS)**: Activa/desactiva las imágenes satelitales de GIBS/NASA.
 
 **Funcionamiento:**
@@ -416,25 +410,21 @@ En `/config`, busca la sección **"Capas del Mapa"** (visible solo en configurac
   Busca `"enabled": true` en las capas correspondientes.
 
 **El radar no se muestra:**
-- **Causa**: AEMET no está configurado o la API key es inválida.
+- **Causa**: RainViewer puede estar temporalmente no disponible o la capa está deshabilitada.
 - **Solución**:
-  1. Verifica que AEMET esté habilitado en la sección **AEMET** de `/config`:
+  1. Verifica que el radar esté habilitado en la configuración:
      ```bash
-     curl -s http://127.0.0.1:8081/api/config | python3 -m json.tool | grep -A 3 '"aemet"'
+     curl -s http://127.0.0.1:8081/api/config | python3 -m json.tool | grep -A 5 '"radar"'
      ```
-     Debe mostrar `"enabled": true`.
-  2. Verifica que la API key de AEMET esté configurada y sea válida:
+     Debe mostrar `"enabled": true` y `"provider": "rainviewer"`.
+  2. Verifica el estado de RainViewer:
      ```bash
-     curl -s http://127.0.0.1:8081/api/aemet/test_key
+     curl -s http://127.0.0.1:8081/api/rainviewer/test
      ```
      Debe devolver `{"ok": true}`.
-  3. Comprueba que `radar_enabled` esté activado en la configuración de AEMET:
+  3. Revisa los logs del backend para errores de RainViewer:
      ```bash
-     curl -s http://127.0.0.1:8081/api/config | python3 -m json.tool | grep -A 5 '"radar_enabled"'
-     ```
-  4. Revisa los logs del backend para errores de AEMET:
-     ```bash
-     journalctl -u pantalla-dash-backend@dani.service -n 50 | grep -i "aemet\|radar"
+     journalctl -u pantalla-dash-backend@dani.service -n 50 | grep -i "rainviewer\|radar"
      ```
 
 **Los aviones no aparecen:**
@@ -495,10 +485,10 @@ En `/config`, busca la sección **"Capas del Mapa"** (visible solo en configurac
 **API keys no válidas:**
 - **Causa**: Las credenciales expiraron o son incorrectas.
 - **Solución**:
-  1. Para AEMET: usa el botón **"Probar clave"** en `/config` → **AEMET** para validar.
-  2. Para OpenSky: usa el botón **"Probar conexión"** en `/config` → **OpenSky**.
-  3. Para AISStream: verifica la API key en el panel de control de AISStream.
-  4. Actualiza las credenciales si es necesario y guarda la configuración.
+  1. Para OpenSky: usa el botón **"Probar conexión"** en `/config` → **OpenSky**.
+  2. Para AISStream: verifica la API key en el panel de control de AISStream.
+  3. Actualiza las credenciales si es necesario y guarda la configuración.
+  4. **Nota**: RainViewer y GIBS no requieren API keys (son servicios públicos).
 
 ### Nginx (reverse proxy `/api`)
 

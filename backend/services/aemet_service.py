@@ -1,9 +1,11 @@
 """
-Servicio para obtener datos de AEMET OpenData.
-Proporciona avisos CAP (Meteoalerta) y convierte a GeoJSON.
+Servicio para obtener datos de AEMET.
+Proporciona avisos CAP públicos (Meteoalerta) y convierte a GeoJSON.
+No requiere token API - usa feed público.
 """
 from __future__ import annotations
 
+import gzip
 import json
 import logging
 import xml.etree.ElementTree as ET
@@ -14,8 +16,8 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-AEMET_BASE_URL = "https://opendata.aemet.es/opendata/api"
-AEMET_METEOALERTA_URL = f"{AEMET_BASE_URL}/prediccion/especifica/meteorologica-fenomenos-extremos"
+# URL pública de avisos CAP de AEMET (sin autenticación)
+CAP_URL = "https://alerts.aemet.es/descargas/avisos_cap.xml.gz"
 AEMET_TIMEOUT = 10
 
 
@@ -24,12 +26,12 @@ class AEMETServiceError(Exception):
     pass
 
 
-def fetch_aemet_warnings(api_key: Optional[str]) -> Dict[str, Any]:
+def fetch_aemet_warnings(api_key: Optional[str] = None) -> Dict[str, Any]:
     """
-    Obtiene avisos CAP de AEMET (Meteoalerta) y los convierte a GeoJSON.
+    Obtiene avisos CAP públicos de AEMET (Meteoalerta) y los convierte a GeoJSON.
     
     Args:
-        api_key: API key de AEMET (puede ser None si no está configurada)
+        api_key: Ignorado (mantenido para compatibilidad, no se usa)
         
     Returns:
         GeoJSON FeatureCollection con los avisos CAP
@@ -37,34 +39,20 @@ def fetch_aemet_warnings(api_key: Optional[str]) -> Dict[str, Any]:
     Raises:
         AEMETServiceError: Si hay error al obtener o procesar datos
     """
-    if not api_key:
-        raise AEMETServiceError("API key de AEMET no configurada")
-    
-    headers = {"api_key": api_key}
-    
     try:
-        # Paso 1: Obtener URL de datos
-        logger.debug("Fetching AEMET Meteoalerta URL")
-        response = requests.get(AEMET_METEOALERTA_URL, headers=headers, timeout=AEMET_TIMEOUT)
+        # Descargar XML CAP comprimido directamente desde URL pública
+        logger.debug("Fetching AEMET CAP from %s", CAP_URL)
+        response = requests.get(CAP_URL, timeout=AEMET_TIMEOUT)
         response.raise_for_status()
         
-        url_response = response.json()
-        if not url_response.get("datos"):
-            raise AEMETServiceError("AEMET no devolvió URL de datos")
-        
-        datos_url = url_response["datos"]
-        
-        # Paso 2: Obtener datos XML de Meteoalerta
-        logger.debug("Fetching AEMET Meteoalerta data from %s", datos_url)
-        data_response = requests.get(datos_url, timeout=AEMET_TIMEOUT)
-        data_response.raise_for_status()
+        # Descomprimir contenido gzip
+        xml_content = gzip.decompress(response.content).decode('utf-8')
         
         # Parsear XML CAP usando xml.etree.ElementTree
-        xml_content = data_response.text
         try:
             root = ET.fromstring(xml_content)
         except ET.ParseError as e:
-            logger.error("Error parsing AEMET XML: %s", e)
+            logger.error("Error parsing AEMET CAP XML: %s", e)
             # Fallback: retornar estructura vacía
             return {
                 "type": "FeatureCollection",

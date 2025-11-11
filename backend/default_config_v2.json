@@ -240,41 +240,38 @@
     "provider": "aisstream",
     "ws_url": "wss://stream.aisstream.io/v0/stream"
   },
-  "secrets": {
-    "maptiler": {
-      "api_key": null
-    },
-    "opensky": {
-      "oauth2": {
-        "client_id": null,
-        "client_secret": null,
-        "token_url": "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
-        "scope": null
+    "secrets": {
+      "maptiler": {
+        "api_key": null
       },
-      "basic": {
-        "username": null,
-        "password": null
+      "opensky": {
+        "oauth2": {
+          "client_id": null,
+          "client_secret": null,
+          "token_url": "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
+          "scope": null
+        },
+        "basic": {
+          "username": null,
+          "password": null
+        }
+      },
+      "google": {
+        "api_key": null,
+        "calendar_id": null
+      },
+      "aviationstack": {
+        "api_key": null
+      },
+      "aisstream": {
+        "api_key": null
+      },
+      "aishub": {
+        "api_key": null
+      },
+      "calendar_ics": {
+        "url": null,
+        "path": null
       }
-    },
-    "google": {
-      "api_key": null,
-      "calendar_id": null
-    },
-    "aemet": {
-      "api_key": null
-    },
-    "aviationstack": {
-      "api_key": null
-    },
-    "aisstream": {
-      "api_key": null
-    },
-    "aishub": {
-      "api_key": null
-    },
-    "calendar_ics": {
-      "url": null,
-      "path": null
     }
-  }
 }

@@ -215,7 +215,7 @@ class SatelliteConfig(BaseModel):
 class RadarConfig(BaseModel):
     """Configuración de radar global."""
     enabled: bool = False
-    provider: Literal["rainviewer", "aemet"] = "rainviewer"
+    provider: Literal["rainviewer"] = "rainviewer"
     opacity: float = Field(default=0.7, ge=0.0, le=1.0)
     layer_type: Optional[str] = Field(default="precipitation_new", max_length=64)
 
@@ -729,7 +729,6 @@ class SecretsConfig(BaseModel):
     maptiler: Optional[MapTilerSecretsConfig] = None
     opensky: Optional[OpenSkySecretsConfig] = None
     google: Optional[GoogleSecretsConfig] = None
-    aemet: Optional[Dict[str, Any]] = None
     calendar_ics: Optional[CalendarICSSecretsConfig] = None
     aviationstack: Optional[AviationStackSecretsConfig] = None
     aisstream: Optional[AISStreamSecretsConfig] = None

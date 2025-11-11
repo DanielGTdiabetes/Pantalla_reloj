@@ -4,7 +4,33 @@ Todos los cambios notables del proyecto se documentarán en este archivo.
 
 ## Unreleased
 
-### Added
+### Changed
+- **Eliminada dependencia del token AEMET**: El sistema ya no requiere token API de AEMET para funcionar. Los avisos CAP ahora se obtienen desde el feed público (`https://alerts.aemet.es/descargas/avisos_cap.xml.gz`) sin autenticación.
+- **Radar y satélite**: El radar ahora usa exclusivamente RainViewer y el satélite usa NASA GIBS. Se eliminaron las opciones de radar/satélite de AEMET.
+- **Endpoints AEMET simplificados**: Se eliminaron los endpoints `/api/aemet/radar/tiles/*` y `/api/aemet/sat/tiles/*`. Solo se mantienen `/api/aemet/warnings` (avisos CAP públicos) y `/api/aemet/test` (verificación del feed público).
+- **Configuración**: Se eliminó el bloque `config.aemet` y `secrets.aemet` del esquema v2. El proveedor de radar ya no acepta `"aemet"` como opción.
+
+### Removed
+- Endpoints `/api/config/secret/aemet_api_key` y `/api/config/secret/aemet_api_key/raw` (ya no se requiere token)
+- Endpoint `/api/aemet/test_key` (deprecated, ahora retorna mensaje de deprecación)
+- Referencias a `aemet_api_key` en SecretStore y configuración
+- Validaciones Pydantic de `aemet_api_key` en modelos
+
+### Technical Details
+- `aemet_service.py` ahora descarga directamente el feed CAP público sin token
+- El endpoint `/api/aemet/warnings` usa caché de 10 minutos (antes 5 minutos)
+- El endpoint `/api/aemet/test` verifica la accesibilidad del feed público CAP
+- `RadarConfig.provider` ahora solo acepta `"rainviewer"` (eliminado `"aemet"`)
+- `SecretsConfig` ya no incluye `aemet`
+- `config_migrator.py` migra siempre a `rainviewer` para radar (eliminada lógica de AEMET)
+
+## v2.3.0 (2025-11-11)
+
+### Changed
+- Eliminada dependencia del token AEMET (caducaba cada 3 meses)
+- Mantenido soporte de avisos CAP públicos (`/api/aemet/warnings`)
+- Radar ahora basado en RainViewer y satélite en NASA GIBS
+- Eliminado bloque `config.aemet` y `aemet_api_key`
 - **Modo híbrido MapTiler**: Nuevo modo de mapa que combina fondo satélite raster con overlay de etiquetas vectoriales. Configurable desde `/config` con controles para:
   - Activar/desactivar modo satélite híbrido
   - Ajustar opacidad del fondo satélite (0.0 - 1.0)

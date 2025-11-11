@@ -682,12 +682,9 @@ def _read_config_v2() -> Tuple[AppConfigV2, bool]:
                     panels["news"] = news
                 config_data["panels"] = panels
             
-            # Asegurar que secrets.aemet existe
+            # Asegurar que secrets.opensky existe
             secrets = config_data.get("secrets", {})
             if isinstance(secrets, dict):
-                if "aemet" not in secrets or not isinstance(secrets.get("aemet"), dict):
-                    secrets["aemet"] = {}
-                
                 # Normalizar secrets.opensky
                 if "opensky" not in secrets or not isinstance(secrets.get("opensky"), dict):
                     secrets["opensky"] = {
@@ -916,10 +913,6 @@ def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
         if "google" in payload.get("secrets", {}):
             secrets_public["google"] = {"api_key": None, "calendar_id": None}
         
-        # AEMET (opcional)
-        if "aemet" in payload.get("secrets", {}):
-            secrets_public["aemet"] = {"api_key": None}
-        
         # Calendar ICS
         if "calendar_ics" in payload.get("secrets", {}):
             secrets_public["calendar_ics"] = {"url": None, "path": None}
@@ -1013,12 +1006,8 @@ def _refresh_opensky_oauth_metadata() -> None:
         logger.debug("Skipping OpenSky OAuth metadata refresh: %s", exc)
 
 
-AEMET_TEST_ENDPOINT = (
-    "https://opendata.aemet.es/opendata/api/observacion/convencional/todas"
-)
 # ------------------------ Secret endpoints (generic) ------------------------
 _ALLOWED_SECRET_KEYS = {
-    "aemet_api_key",
     "opensky_client_id",
     "opensky_client_secret",
     "opensky_username",
@@ -1117,7 +1106,6 @@ def _load_or_default(endpoint: str) -> Dict[str, Any]:
 def _migrate_public_secrets_to_store() -> None:
     """Migra secretos que pudieran estar en config pública al SecretStore.
 
-    - aemet.api_key -> secret_store['aemet_api_key']
     - layers.ships.aisstream.api_key -> secret_store['aistream_api_key']
     """
     try:
@@ -1125,22 +1113,8 @@ def _migrate_public_secrets_to_store() -> None:
         mutated = False
         mutated_any = False
 
-        # AEMET
-        try:
-            aemet_key = getattr(config.aemet, "api_key", None)
-        except Exception:
-            aemet_key = None
-        if aemet_key:
-            secret_store.set_secret("aemet_api_key", _sanitize_secret(aemet_key))
-            # Limpiar de la config pública
-            payload = config.model_dump(mode="python", by_alias=True)
-            if isinstance(payload.get("aemet"), dict):
-                payload["aemet"].pop("api_key", None)
-                mutated = True
-            if mutated:
-                config = config_manager.write(payload)
-        # Acumular estado de migración tras AEMET
-        mutated_any = mutated_any or mutated
+        # AEMET - Ya no se usa token, solo feed público CAP
+        # No hay migración necesaria
 
         # Resetear bandera de mutación antes de procesar AISStream
         mutated = False
@@ -2455,17 +2429,17 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     payload.setdefault("integrations", {})
     payload.setdefault("providers", {})
     
-    # AEMET integration (opcional, no bloqueante)
+    # AEMET integration (avisos CAP públicos, sin token)
     try:
         payload["integrations"]["aemet"] = {
-            "enabled": bool(getattr(config, "aemet", None) and getattr(config.aemet, "enabled", False)),
-            "has_key": secret_store.has_secret("aemet_api_key"),
+            "enabled": True,  # Siempre disponible (feed público)
+            "has_key": False,  # Ya no se requiere token
             "last_test_ok": _aemet_last_ok,
             "last_error": _aemet_last_error,
         }
     except Exception:
         payload["integrations"]["aemet"] = {
-            "enabled": False,
+            "enabled": True,
             "has_key": False,
             "last_test_ok": None,
             "last_error": None,
@@ -2671,7 +2645,6 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     # Información de focus masks
     flights_config = config.layers.flights
     ships_config = config.layers.ships
-    aemet_config = config.aemet
     
     focus_status = "down"
     focus_last_build = None
@@ -2679,7 +2652,7 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     focus_area_km2 = None
     focus_cache_age = None
     
-    if (flights_config.cine_focus.enabled or ships_config.cine_focus.enabled) and aemet_config.enabled:
+    if flights_config.cine_focus.enabled or ships_config.cine_focus.enabled:
         try:
             # Usar el modo de flights como referencia (o ambos si está configurado)
             focus_mode = flights_config.cine_focus.mode if flights_config.cine_focus.enabled else ships_config.cine_focus.mode
@@ -3898,11 +3871,6 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
                 if "api_key" in payload["maptiler"]:
                     secret_store.set_secret("maptiler_api_key", _sanitize_secret(payload["maptiler"]["api_key"]))
             
-            # aemet (opcional)
-            if "aemet" in payload and isinstance(payload["aemet"], dict):
-                if "api_key" in payload["aemet"]:
-                    secret_store.set_secret("aemet_api_key", _sanitize_secret(payload["aemet"]["api_key"]))
-            
             logger.info("[secrets] Updated secrets via PATCH /api/config/group/secrets")
         except Exception as secret_exc:
             logger.warning("[secrets] Error updating secrets: %s", secret_exc)
@@ -4276,7 +4244,6 @@ def get_config_schema() -> Dict[str, Any]:
     )
 
     schema["x-maskedSecrets"] = [
-        {"key": "aemet_api_key", "masked": True},
         {"key": "opensky_client_id", "masked": True},
         {"key": "opensky_client_secret", "masked": True},
         {"key": "aisstream_api_key", "masked": True},
@@ -4292,26 +4259,6 @@ def get_config_schema() -> Dict[str, Any]:
     return schema
 
 
-@app.post("/api/config/secret/aemet_api_key", status_code=204)
-async def update_aemet_secret(request: AemetSecretRequest) -> Response:
-    """Guarda/elimina la API key de AEMET en el SecretStore (no en config pública)."""
-    api_key = _sanitize_secret(request.api_key)
-    masked = _mask_secret(api_key)
-    logger.info(
-        "Updating AEMET API key (present=%s, last4=%s)",
-        masked.get("has_api_key", False),
-        masked.get("api_key_last4", "****"),
-    )
-    secret_store.set_secret("aemet_api_key", api_key)
-    return Response(status_code=204)
-
-
-@app.post("/api/config/secret/aemet_api_key/raw", status_code=204)
-async def update_aemet_secret_raw(request: Request) -> Response:
-    """Alias alternativo que acepta text/plain, x-www-form-urlencoded o JSON {value}."""
-    value = await _read_secret_value(request)
-    secret_store.set_secret("aemet_api_key", _sanitize_secret(value))
-    return Response(status_code=204)
 
 
 @app.post("/api/config/secret/aisstream_api_key", status_code=204)
@@ -4404,44 +4351,8 @@ def get_opensky_client_secret_meta() -> Dict[str, bool]:
 
 @app.post("/api/aemet/test_key")
 def test_aemet_key(payload: AemetTestRequest) -> Dict[str, Any]:
-    """Compatibilidad: prueba una key candidata o la guardada si no se pasa ninguna."""
-    candidate = _sanitize_secret(payload.api_key)
-    stored = secret_store.get_secret("aemet_api_key")
-    api_key = candidate or stored
-
-    if not api_key:
-        return {"ok": False, "reason": "missing_api_key"}
-
-    headers = {
-        "Accept": "application/json",
-        "api_key": api_key,
-    }
-
-    try:
-        response = requests.get(AEMET_TEST_ENDPOINT, headers=headers, timeout=6)
-    except requests.RequestException as exc:  # noqa: PERF203
-        logger.warning("AEMET test request failed: %s", exc)
-        return {"ok": False, "reason": "network"}
-
-    if response.status_code in {401, 403}:
-        return {"ok": False, "reason": "unauthorized"}
-
-    if response.status_code >= 500:
-        return {"ok": False, "reason": "upstream"}
-
-    try:
-        payload_json = response.json()
-    except ValueError:
-        payload_json = None
-
-    estado = None
-    if isinstance(payload_json, dict):
-        estado = payload_json.get("estado")
-
-    if isinstance(estado, int) and estado in {401, 403}:
-        return {"ok": False, "reason": "unauthorized"}
-
-    return {"ok": True}
+    """DEPRECATED: Ya no se requiere token para avisos CAP públicos."""
+    return {"ok": False, "reason": "deprecated", "message": "Los avisos CAP son públicos y no requieren token"}
 
 
 _aemet_last_ok: Optional[bool] = None
@@ -4450,42 +4361,26 @@ _aemet_last_error: Optional[str] = None
 
 @app.get("/api/aemet/test")
 def test_aemet_key_saved() -> Dict[str, Any]:
-    """Prueba la key de AEMET guardada en el SecretStore."""
+    """Prueba el feed público CAP de AEMET (no requiere token)."""
     try:
-        config_v2, _ = _read_config_v2()
-        # Verificar si AEMET está habilitado (v2 usa dict)
-        aemet_enabled = False
-        try:
-            if isinstance(config_v2, dict):
-                aemet_config = config_v2.get("aemet")
-                if isinstance(aemet_config, dict):
-                    aemet_enabled = aemet_config.get("enabled", False)
-            elif hasattr(config_v2, "aemet"):
-                aemet_obj = getattr(config_v2, "aemet", None)
-                if aemet_obj is not None:
-                    if isinstance(aemet_obj, dict):
-                        aemet_enabled = aemet_obj.get("enabled", False)
-                    else:
-                        aemet_enabled = getattr(aemet_obj, "enabled", False)
-        except Exception as e:
-            logger.debug("Error checking AEMET enabled status: %s", e)
+        # Probar descarga del feed público CAP
+        from .services.aemet_service import CAP_URL, AEMET_TIMEOUT
+        response = requests.get(CAP_URL, timeout=AEMET_TIMEOUT)
         
-        if not aemet_enabled:
-            return {"ok": False, "reason": "disabled"}
+        if response.status_code == 200:
+            _update_aemet_health(True, None)
+            return {"ok": True, "message": "Feed público CAP accesible"}
+        else:
+            _update_aemet_health(False, f"http_{response.status_code}")
+            return {"ok": False, "reason": f"http_{response.status_code}"}
+    except requests.RequestException as e:
+        logger.warning("AEMET CAP test failed: %s", e)
+        _update_aemet_health(False, "network")
+        return {"ok": False, "reason": "network"}
     except Exception as e:
-        # Si no se puede leer config, seguir con la verificación de API key
-        logger.debug("Error reading config for AEMET test: %s", e)
-    
-    stored = secret_store.get_secret("aemet_api_key")
-    if not stored:
-        _update_aemet_health(False, "missing_api_key")
-        return {"ok": False, "reason": "missing_api_key"}
-    result = test_aemet_key(AemetTestRequest(api_key=stored))
-    if result.get("ok"):
-        _update_aemet_health(True, None)
-    else:
-        _update_aemet_health(False, str(result.get("reason") or result.get("error") or "unknown"))
-    return result
+        logger.error("Error testing AEMET CAP: %s", e)
+        _update_aemet_health(False, "error")
+        return {"ok": False, "reason": "error"}
 
 
 def _update_aemet_health(ok: bool, error: Optional[str]) -> None:
@@ -4496,45 +4391,16 @@ def _update_aemet_health(ok: bool, error: Optional[str]) -> None:
 
 @app.get("/api/aemet/warnings")
 def get_aemet_warnings() -> Dict[str, Any]:
-    """Obtiene avisos CAP de AEMET (Meteoalerta) en formato GeoJSON."""
-    try:
-        config_v2, _ = _read_config_v2()
-    except Exception:
-        # Fallback: retornar estructura vacía si no se puede leer config
-        return {
-            "type": "FeatureCollection",
-            "features": [],
-            "metadata": {
-                "source": "aemet",
-                "enabled": False,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-        }
-    
-    # Verificar si está habilitado en v2 (ui_global.aemet.warnings o panels)
-    # Por ahora, siempre intentar si hay API key
-    api_key = secret_store.get_secret("aemet_api_key")
-    if not api_key:
-        # Retornar estructura vacía sin romper el frontend
-        return {
-            "type": "FeatureCollection",
-            "features": [],
-            "metadata": {
-                "source": "aemet",
-                "enabled": False,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-        }
-    
-    # Intentar cargar desde caché (5 minutos por defecto)
-    cached = cache_store.load("aemet_warnings", max_age_minutes=5)
+    """Obtiene avisos CAP públicos de AEMET (Meteoalerta) en formato GeoJSON."""
+    # Intentar cargar desde caché (10 minutos por defecto)
+    cached = cache_store.load("aemet_warnings", max_age_minutes=10)
     if cached and cached.payload:
         logger.debug("Returning cached AEMET warnings")
         return cached.payload
     
-    # Obtener datos frescos
+    # Obtener datos frescos desde feed público (sin token)
     try:
-        warnings_data = fetch_aemet_warnings(api_key)
+        warnings_data = fetch_aemet_warnings(None)  # No requiere token
         
         # Guardar en caché
         cache_store.store("aemet_warnings", warnings_data)
@@ -4542,7 +4408,7 @@ def get_aemet_warnings() -> Dict[str, Any]:
         return warnings_data
     except AEMETServiceError as e:
         logger.error("Error fetching AEMET warnings: %s", e)
-        # Retornar estructura vacía sin romper el frontend
+        # Retornar estructura vacía en caso de error
         return {
             "type": "FeatureCollection",
             "features": [],
@@ -4554,7 +4420,6 @@ def get_aemet_warnings() -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error("Unexpected error fetching AEMET warnings: %s", e)
-        # Retornar estructura vacía sin romper el frontend
         return {
             "type": "FeatureCollection",
             "features": [],
@@ -4566,48 +4431,6 @@ def get_aemet_warnings() -> Dict[str, Any]:
         }
 
 
-@app.get("/api/aemet/radar/tiles/{z}/{x}/{y}.png")
-def get_aemet_radar_tile(z: int, x: int, y: int) -> Response:
-    """
-    Retorna tiles de radar de AEMET (si están disponibles).
-    
-    Nota: AEMET OpenData no proporciona tiles de radar en su API pública.
-    Este endpoint retorna 501 (Not Implemented) como indicación.
-    Para radar, se debe usar RainViewer (layers.global_.radar).
-    """
-    config = config_manager.read()
-    aemet_config = config.aemet
-    
-    if not aemet_config.enabled or not aemet_config.radar_enabled:
-        raise HTTPException(status_code=404, detail="Radar de AEMET no habilitado")
-    
-    # AEMET OpenData no proporciona tiles de radar
-    raise HTTPException(
-        status_code=501,
-        detail="AEMET OpenData no proporciona tiles de radar. Use RainViewer para datos de radar."
-    )
-
-
-@app.get("/api/aemet/sat/tiles/{z}/{x}/{y}.png")
-def get_aemet_sat_tile(z: int, x: int, y: int) -> Response:
-    """
-    Retorna tiles de satélite de AEMET (si están disponibles).
-    
-    Nota: AEMET OpenData no proporciona tiles de satélite en su API pública.
-    Este endpoint retorna 501 (Not Implemented) como indicación.
-    Para satélite, se debe usar GIBS (layers.global_.satellite).
-    """
-    config = config_manager.read()
-    aemet_config = config.aemet
-    
-    if not aemet_config.enabled or not aemet_config.satellite_enabled:
-        raise HTTPException(status_code=404, detail="Satélite de AEMET no habilitado")
-    
-    # AEMET OpenData no proporciona tiles de satélite
-    raise HTTPException(
-        status_code=501,
-        detail="AEMET OpenData no proporciona tiles de satélite. Use GIBS para datos de satélite."
-    )
 
 
 # ============================================================================
@@ -9403,7 +9226,7 @@ def get_ships(
         focus_mask = None
         focus_unavailable = False
         
-        if ships_config.cine_focus.enabled and config.aemet.enabled:
+        if ships_config.cine_focus.enabled:
             try:
                 mask, from_cache = load_or_build_focus_mask(
                     cache_store,
