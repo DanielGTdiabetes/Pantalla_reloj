@@ -3414,17 +3414,17 @@ def _validate_and_normalize_maptiler(config: Dict[str, Any]) -> None:
     # Normalizar styleUrl
     style_url = maptiler.get("styleUrl")
     if style_url and isinstance(style_url, str) and style_url.strip():
-        # Si styleUrl contiene streets-v4, NO añadir ?key= (UI lo hará)
-        if "streets-v4" not in style_url:
-            normalized_url = normalize_maptiler_url(api_key, style_url.strip())
-            maptiler["styleUrl"] = normalized_url
-        else:
-            # streets-v4: limpiar ?key= si existe y dejar URL limpia
-            style_url_clean = style_url.split("?")[0]
-            maptiler["styleUrl"] = style_url_clean
+        # Si styleUrl ya contiene api.maptiler.com, solo normalizar (añadir ?key= si falta)
+        # No sustituir nunca el estilo, respetar hybrid, satellite, etc.
+        normalized_url = normalize_maptiler_url(api_key, style_url.strip())
+        maptiler["styleUrl"] = normalized_url
     else:
-        # Si no hay styleUrl, usar default
-        maptiler["styleUrl"] = "https://api.maptiler.com/maps/streets-v4/style.json"
+        # Solo si no hay styleUrl, usar default con firma
+        if api_key:
+            default_url = f"https://api.maptiler.com/maps/streets-v4/style.json?key={api_key}"
+        else:
+            default_url = "https://api.maptiler.com/maps/streets-v4/style.json"
+        maptiler["styleUrl"] = default_url
     
     # Limpiar urls.styleUrl* legacy (eliminar todo el bloque urls si existe)
     if "urls" in maptiler:

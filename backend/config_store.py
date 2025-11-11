@@ -77,24 +77,45 @@ def deep_merge(base: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]
     return result
 
 
-def normalize_maptiler_url(api_key: str, url: str) -> str:
+def normalize_maptiler_url(api_key: str | None, url: str) -> str:
     """Normalize MapTiler URL by ensuring ?key= parameter is present.
     
+    Solo procesa URLs de api.maptiler.com. Si la URL ya tiene ?key=, la mantiene.
+    Si falta ?key= y tenemos api_key, lo añade.
+    
     Args:
-        api_key: The MapTiler API key to use
+        api_key: The MapTiler API key to use (puede ser None)
         url: The style URL (may or may not already have ?key=)
         
     Returns:
-        Normalized URL with ?key= parameter (existing key= is replaced)
+        Normalized URL with ?key= parameter si es MapTiler y falta, o URL original
     """
     if not url or not url.strip():
         return url
     
-    parsed = urlparse(url.strip())
-    query_params = parse_qs(parsed.query, keep_blank_values=True)
+    url_trimmed = url.strip()
     
-    # Reemplazar o añadir key=
-    query_params["key"] = [api_key]
+    # Solo procesar URLs de MapTiler
+    try:
+        parsed = urlparse(url_trimmed)
+        if parsed.hostname != "api.maptiler.com":
+            # No es MapTiler, devolver tal cual
+            return url_trimmed
+    except Exception:
+        # Si no se puede parsear, devolver tal cual
+        return url_trimmed
+    
+    # Si ya tiene ?key=, devolver tal cual (no reemplazar)
+    if "?key=" in url_trimmed or "&key=" in url_trimmed:
+        return url_trimmed
+    
+    # Si no tenemos api_key, devolver tal cual (puede fallar pero no forzamos)
+    if not api_key or not api_key.strip():
+        return url_trimmed
+    
+    # Añadir ?key= si falta
+    query_params = parse_qs(parsed.query, keep_blank_values=True)
+    query_params["key"] = [api_key.strip()]
     
     # Reconstruir query string
     new_query = urlencode(query_params, doseq=True)
