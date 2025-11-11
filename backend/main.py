@@ -121,7 +121,6 @@ from .services.opensky_auth import DEFAULT_TOKEN_URL, OpenSkyAuthError
 from .services.opensky_client import OpenSkyClientError
 from .services.opensky_service import OpenSkyService
 from .services.ships_service import AISStreamService
-from .services.aemet_service import fetch_aemet_warnings, AEMETServiceError
 from .services.blitzortung_service import BlitzortungService, LightningStrike
 from .services import ephemerides
 from .services.tests import TEST_FUNCTIONS
@@ -180,6 +179,9 @@ def load_effective_config() -> AppConfigV2:
     """Carga la configuración efectiva (siempre en esquema v2)."""
     return config_manager.read()
 
+
+# Limpiar configuración obsoleta de AEMET al inicio
+clean_aemet_keys(CONFIG_PATH)
 
 # Cargar configuración efectiva al inicio
 global_config = load_effective_config()
@@ -461,14 +463,6 @@ if not STYLE_PATH.exists():
     STYLE_PATH.write_text(json.dumps(style))
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
-
-class AemetSecretRequest(BaseModel):
-    api_key: Optional[str] = Field(default=None, max_length=2048)
-
-
-class AemetTestRequest(BaseModel):
-    api_key: Optional[str] = Field(default=None, max_length=2048)
 
 
 class LightningMqttTestRequest(BaseModel):
@@ -1114,8 +1108,8 @@ def _migrate_public_secrets_to_store() -> None:
         mutated = False
         mutated_any = False
 
-        # AEMET - Ya no se usa token, solo feed público CAP
-        # No hay migración necesaria
+        # AEMET - Ya no se usa, eliminado completamente
+        # Usar /api/weather/alerts para avisos CAP públicos
 
         # Resetear bandera de mutación antes de procesar AISStream
         mutated = False
@@ -2430,20 +2424,28 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     payload.setdefault("integrations", {})
     payload.setdefault("providers", {})
     
-    # AEMET integration (avisos CAP públicos, sin token)
+    # Weather layers integration (RainViewer, GIBS, CAP)
     try:
-        payload["integrations"]["aemet"] = {
-            "enabled": True,  # Siempre disponible (feed público)
-            "has_key": False,  # Ya no se requiere token
-            "last_test_ok": _aemet_last_ok,
-            "last_error": _aemet_last_error,
+        weather_layers = getattr(config.ui_global, "weather_layers", None)
+        payload["integrations"]["weather_layers"] = {
+            "radar": {
+                "enabled": bool(weather_layers and weather_layers.radar and weather_layers.radar.enabled),
+                "provider": "rainviewer"
+            },
+            "satellite": {
+                "enabled": bool(weather_layers and weather_layers.satellite and weather_layers.satellite.enabled),
+                "provider": "gibs"
+            },
+            "alerts": {
+                "enabled": bool(weather_layers and weather_layers.alerts and weather_layers.alerts.enabled),
+                "provider": "cap_aemet"
+            }
         }
     except Exception:
-        payload["integrations"]["aemet"] = {
-            "enabled": True,
-            "has_key": False,
-            "last_test_ok": None,
-            "last_error": None,
+        payload["integrations"]["weather_layers"] = {
+            "radar": {"enabled": False, "provider": "rainviewer"},
+            "satellite": {"enabled": False, "provider": "gibs"},
+            "alerts": {"enabled": False, "provider": "cap_aemet"}
         }
     
     # OpenSky integration
@@ -2618,12 +2620,6 @@ def _health_payload_full_helper() -> Dict[str, Any]:
             last_errors.append({
                 "provider": "opensky",
                 "error": _opensky_last_error,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
-        if _aemet_last_error:
-            last_errors.append({
-                "provider": "aemet",
-                "error": _aemet_last_error,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             })
         if opensky_status.get("last_error"):
@@ -4117,8 +4113,6 @@ async def test_config_group(test_name: str, request: Request) -> JSONResponse:
             # Mapear nombres de grupos a claves en config
             group_key_map = {
                 "map": "ui_map",
-                "radar": "aemet",
-                "aemet": "aemet",
                 "weather": "weather",
                 "news": "news",
                 "astronomy": "astronomy",
@@ -4350,93 +4344,10 @@ def get_opensky_client_secret_meta() -> Dict[str, bool]:
     return {"set": secret_store.has_secret("opensky_client_secret")}
 
 
-@app.post("/api/aemet/test_key")
-def test_aemet_key(payload: AemetTestRequest) -> Dict[str, Any]:
-    """DEPRECATED: Ya no se requiere token para avisos CAP públicos."""
-    return {"ok": False, "reason": "deprecated", "message": "Los avisos CAP son públicos y no requieren token"}
-
-
-_aemet_last_ok: Optional[bool] = None
-_aemet_last_error: Optional[str] = None
-
-
-@app.get("/api/aemet/test")
-def test_aemet_key_saved() -> Dict[str, Any]:
-    """Prueba el feed público CAP de AEMET (no requiere token)."""
-    try:
-        # Probar descarga del feed público CAP
-        from .services.aemet_service import CAP_URL, AEMET_TIMEOUT
-        response = requests.get(CAP_URL, timeout=AEMET_TIMEOUT)
-        
-        if response.status_code == 200:
-            _update_aemet_health(True, None)
-            return {"ok": True, "message": "Feed público CAP accesible"}
-        else:
-            _update_aemet_health(False, f"http_{response.status_code}")
-            return {"ok": False, "reason": f"http_{response.status_code}"}
-    except requests.RequestException as e:
-        logger.warning("AEMET CAP test failed: %s", e)
-        _update_aemet_health(False, "network")
-        return {"ok": False, "reason": "network"}
-    except Exception as e:
-        logger.error("Error testing AEMET CAP: %s", e)
-        _update_aemet_health(False, "error")
-        return {"ok": False, "reason": "error"}
-
-
-def _update_aemet_health(ok: bool, error: Optional[str]) -> None:
-    global _aemet_last_ok, _aemet_last_error
-    _aemet_last_ok = ok
-    _aemet_last_error = error
-
-
-@app.get("/api/aemet/warnings")
-def get_aemet_warnings() -> Dict[str, Any]:
-    """Obtiene avisos CAP públicos de AEMET (Meteoalerta) en formato GeoJSON."""
-    # Intentar cargar desde caché (10 minutos por defecto)
-    cached = cache_store.load("aemet_warnings", max_age_minutes=10)
-    if cached and cached.payload:
-        logger.debug("Returning cached AEMET warnings")
-        return cached.payload
-    
-    # Obtener datos frescos desde feed público (sin token)
-    try:
-        warnings_data = fetch_aemet_warnings(None)  # No requiere token
-        
-        # Guardar en caché
-        cache_store.store("aemet_warnings", warnings_data)
-        
-        return warnings_data
-    except AEMETServiceError as e:
-        logger.error("Error fetching AEMET warnings: %s", e)
-        # Retornar estructura vacía en caso de error
-        return {
-            "type": "FeatureCollection",
-            "features": [],
-            "metadata": {
-                "source": "aemet",
-                "error": str(e),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-        }
-    except Exception as e:
-        logger.error("Unexpected error fetching AEMET warnings: %s", e)
-        return {
-            "type": "FeatureCollection",
-            "features": [],
-            "metadata": {
-                "source": "aemet",
-                "error": "unexpected_error",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-        }
 
 
 
 
-# ============================================================================
-# RainViewer endpoints
-# ============================================================================
 
 @app.get("/api/rainviewer/frames")
 def get_rainviewer_frames(
@@ -6845,11 +6756,12 @@ def get_storm_local(
         lightning_data = get_lightning(bbox=lightning_bbox)
         lightning_features = lightning_data.get("features", []) if isinstance(lightning_data, dict) else []
         
-        # Obtener avisos CAP de AEMET
-        aemet_warnings_data = get_aemet_warnings()
-        aemet_features = []
-        if isinstance(aemet_warnings_data, dict):
-            all_features = aemet_warnings_data.get("features", [])
+        # Obtener avisos CAP públicos
+        from .services import cap_warnings as cap_warnings_service
+        cap_warnings_data = cap_warnings_service.get_alerts_geojson()
+        cap_features = []
+        if isinstance(cap_warnings_data, dict):
+            all_features = cap_warnings_data.get("features", [])
             # Filtrar avisos que intersectan con el bbox
             for feature in all_features:
                 if isinstance(feature, dict) and "geometry" in feature:
@@ -6868,13 +6780,13 @@ def get_storm_local(
                                         intersects = True
                                         break
                             if intersects:
-                                aemet_features.append(feature)
+                                cap_features.append(feature)
                     elif geom.get("type") == "Point":
                         coords = geom.get("coordinates", [])
                         if len(coords) >= 2:
                             lon, lat = coords[0], coords[1]
                             if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
-                                aemet_features.append(feature)
+                                cap_features.append(feature)
         
         # Obtener estado de radar (último frame disponible)
         radar_data = None
@@ -6905,9 +6817,9 @@ def get_storm_local(
                 "count": len(lightning_features),
                 "features": lightning_features[:50]  # Limitar a 50 rayos más recientes
             },
-            "aemet_warnings": {
-                "count": len(aemet_features),
-                "features": aemet_features
+            "cap_warnings": {
+                "count": len(cap_features),
+                "features": cap_features
             },
             "radar": radar_data,
             "timestamp": datetime.now(timezone.utc).isoformat()
@@ -6922,7 +6834,7 @@ def get_storm_local(
                 "max_lon": max_lon or 0.5
             },
             "lightning": {"count": 0, "features": []},
-            "aemet_warnings": {"count": 0, "features": []},
+            "cap_warnings": {"count": 0, "features": []},
             "radar": None,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "error": str(exc)

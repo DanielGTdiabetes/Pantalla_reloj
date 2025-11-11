@@ -38,6 +38,19 @@ def migrate_v1_to_v2(
         "secrets": {}
     }
     
+    # Limpiar referencias obsoletas de AEMET
+    if "aemet" in config_v1:
+        logger.info("Removing obsolete AEMET configuration from v1 config")
+        config_v1.pop("aemet", None)
+    
+    if "secrets" in config_v1 and isinstance(config_v1["secrets"], dict):
+        if "aemet" in config_v1["secrets"]:
+            config_v1["secrets"].pop("aemet", None)
+    
+    if "ui_global" in v2 and isinstance(v2["ui_global"], dict):
+        if "aemet" in v2["ui_global"]:
+            v2["ui_global"].pop("aemet", None)
+    
     # === UI Map ===
     ui_v1 = config_v1.get("ui", {})
     map_v1 = ui_v1.get("map", {})
