@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import type { Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
+import type { LayerSpecification } from "@maplibre/maplibre-gl-style-spec";
 
 export interface MapHybridProps {
   map: MapLibreMap;
@@ -202,7 +203,7 @@ export default function MapHybrid({
 
     const visibility = visible ? "visible" : "none";
     const layers = map.getStyle().layers || [];
-    layers.forEach((layer) => {
+    layers.forEach((layer: LayerSpecification) => {
       const id = layer.id;
       if (id && id.startsWith(labelsLayerId)) {
         try {
