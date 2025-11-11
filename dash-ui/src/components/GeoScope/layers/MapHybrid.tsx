@@ -202,7 +202,7 @@ export default function MapHybrid({
 
     const visibility = visible ? "visible" : "none";
     const layers = map.getStyle().layers || [];
-    layers.forEach((layer: StyleSpecification["layers"][number]) => {
+    layers.forEach((layer) => {
       const id = layer.id;
       if (id && id.startsWith(labelsLayerId)) {
         try {
