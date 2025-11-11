@@ -2404,7 +2404,6 @@ def _health_payload_full_helper() -> Dict[str, Any]:
         "rate_limit_hint": opensky_status.get("rate_limit_hint"),
         "items_count": items_count,
         "bbox": opensky_cfg.bbox.model_dump(),
-        "max_aircraft": opensky_cfg.max_aircraft,
     }
     payload["opensky"] = opensky_block
 
