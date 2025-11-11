@@ -127,6 +127,7 @@ from .services.tests import TEST_FUNCTIONS
 from .services.kiosk import refresh_ui_if_possible
 from .config_migrator import migrate_config_to_v2, migrate_v1_to_v2, apply_postal_geocoding
 from .rate_limiter import check_rate_limit
+from .utils.config_upgrade import clean_aemet_keys
 
 APP_START = datetime.now(timezone.utc)
 logger = configure_logging()
@@ -174,14 +175,14 @@ def _persist_config(config_data: Dict[str, Any], *, reason: str) -> None:
 CONFIG_PATH = os.getenv("PANTALLA_CONFIG", "/var/lib/pantalla-reloj/config.json")
 config_manager = ConfigManager()
 
+# Limpiar configuración obsoleta de AEMET al inicio
+clean_aemet_keys(CONFIG_PATH)
+
 
 def load_effective_config() -> AppConfigV2:
     """Carga la configuración efectiva (siempre en esquema v2)."""
     return config_manager.read()
 
-
-# Limpiar configuración obsoleta de AEMET al inicio
-clean_aemet_keys(CONFIG_PATH)
 
 # Cargar configuración efectiva al inicio
 global_config = load_effective_config()
