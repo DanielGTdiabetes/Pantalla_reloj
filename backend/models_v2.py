@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from typing import Optional, Literal, List, Dict, Any
+from typing import Optional, Literal, List, Dict, Any, Union
 
 
 class DisplayConfig(BaseModel):
@@ -135,12 +135,31 @@ class SatelliteSettings(BaseModel):
 
     enabled: bool = Field(default=False, description="Activa el modo híbrido satélite")
     opacity: float = Field(default=1.0, ge=0.0, le=1.0, description="Opacidad de la textura satélite")
-    labels_overlay: bool = Field(default=True, description="Habilita etiquetas vectoriales por encima de la capa satélite")
+    labels_overlay: Union[bool, MapLabelsOverlayConfig] = Field(
+        default=True,
+        description="Habilita o configura la superposición de etiquetas vectoriales sobre el mapa satélite"
+    )
     labels_style_url: Optional[str] = Field(
         default="https://api.maptiler.com/maps/streets-v4/style.json",
         max_length=512,
         description="Vector labels overlay for satellite mode"
     )
+
+    @field_validator("labels_overlay", mode="before")
+    @classmethod
+    def normalize_labels_overlay(cls, value: Any) -> Union[bool, MapLabelsOverlayConfig]:
+        """Permite usar bool o dict de configuración para labels_overlay."""
+        if isinstance(value, dict):
+            # Si el dict tiene 'enabled', devolvemos el objeto MapLabelsOverlayConfig
+            try:
+                return MapLabelsOverlayConfig(**value)
+            except Exception:
+                # Si falla la validación, devolvemos True por defecto
+                return True
+        if isinstance(value, bool):
+            return value
+        # Si es None o cualquier otro tipo, devolvemos True por defecto
+        return True
 
 
 class MapSatelliteConfig(BaseModel):
