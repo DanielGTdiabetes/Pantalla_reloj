@@ -1,6 +1,6 @@
 import maplibregl from "maplibre-gl";
 import type { MapLibreEvent, StyleSpecification } from "maplibre-gl";
-import type { SymbolLayerSpecification, FilterSpecification, SourceSpecification } from "@maplibre/maplibre-gl-style-spec";
+import type { SymbolLayerSpecification, FilterSpecification, SourceSpecification, LayerSpecification } from "@maplibre/maplibre-gl-style-spec";
 import type { Feature, FeatureCollection, GeoJsonProperties, Geometry, Point } from "geojson";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
@@ -1381,8 +1381,8 @@ export default function GeoScopeMap({
               }
               
               // Filtrar y añadir capas de labels
-              const layers = (style.layers || []) as StyleSpecification["layers"];
-              const labelLayers = layers.filter((layer: StyleSpecification["layers"][number]) => {
+              const layersArray = (style.layers || []) as LayerSpecification[];
+              const labelLayers = layersArray.filter((layer) => {
                 if (layer.type !== "symbol") {
                   return false;
                 }
