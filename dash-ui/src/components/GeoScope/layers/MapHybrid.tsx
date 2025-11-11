@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import type { Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
 import type { LayerSpecification } from "@maplibre/maplibre-gl-style-spec";
+import { signMapTilerUrl } from "../mapStyle";
 
 export interface MapHybridProps {
   map: MapLibreMap;
@@ -126,14 +127,13 @@ export default function MapHybrid({
 
   const loadLabelsStyle = async (styleUrl: string, key: string) => {
     try {
-      // Añadir API key a la URL si no está presente
-      let url = styleUrl;
-      if (key && !url.includes("?key=") && !url.includes("&key=")) {
-        const separator = url.includes("?") ? "&" : "?";
-        url = `${url}${separator}key=${key}`;
+      // Firmar URL usando helper
+      const signedUrl = signMapTilerUrl(styleUrl, key);
+      if (!signedUrl) {
+        throw new Error("Invalid style URL");
       }
 
-      const response = await fetch(url);
+      const response = await fetch(signedUrl);
       if (!response.ok) {
         throw new Error(`Failed to load labels style: ${response.status}`);
       }

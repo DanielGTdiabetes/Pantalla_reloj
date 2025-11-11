@@ -2384,16 +2384,24 @@ export const ConfigPage: React.FC = () => {
                   <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <input
                       type="checkbox"
-                      checked={config.ui_map.satellite?.labels_overlay ?? true}
+                      checked={typeof config.ui_map.satellite?.labels_overlay === "object" && config.ui_map.satellite?.labels_overlay !== null
+                        ? (config.ui_map.satellite.labels_overlay.enabled ?? true)
+                        : (config.ui_map.satellite?.labels_overlay ?? true)}
                       onChange={(e) => {
                         const satelliteConfig = config.ui_map.satellite ?? DEFAULT_MAP_CONFIG.satellite!;
+                        const currentLabelsOverlay = typeof satelliteConfig.labels_overlay === "object" && satelliteConfig.labels_overlay !== null
+                          ? satelliteConfig.labels_overlay
+                          : { enabled: true, style_url: null, layer_filter: null };
                         setConfig({
                           ...config,
                           ui_map: {
                             ...config.ui_map,
                             satellite: {
                               ...satelliteConfig,
-                              labels_overlay: e.target.checked,
+                              labels_overlay: {
+                                ...currentLabelsOverlay,
+                                enabled: e.target.checked,
+                              },
                             },
                           },
                         });
@@ -2407,21 +2415,61 @@ export const ConfigPage: React.FC = () => {
                   <label>URL de estilo etiquetas</label>
                   <input
                     type="text"
-                    value={config.ui_map.satellite?.labels_style_url || "https://api.maptiler.com/maps/streets-v4/style.json"}
+                    value={typeof config.ui_map.satellite?.labels_overlay === "object" && config.ui_map.satellite?.labels_overlay !== null
+                      ? (config.ui_map.satellite.labels_overlay.style_url || "")
+                      : (config.ui_map.satellite?.labels_style_url || "")}
                     onChange={(e) => {
                       const satelliteConfig = config.ui_map.satellite ?? DEFAULT_MAP_CONFIG.satellite!;
+                      const currentLabelsOverlay = typeof satelliteConfig.labels_overlay === "object" && satelliteConfig.labels_overlay !== null
+                        ? satelliteConfig.labels_overlay
+                        : { enabled: true, style_url: null, layer_filter: null };
                       setConfig({
                         ...config,
                         ui_map: {
                           ...config.ui_map,
                           satellite: {
                             ...satelliteConfig,
-                            labels_style_url: e.target.value || "https://api.maptiler.com/maps/streets-v4/style.json",
+                            labels_overlay: {
+                              ...currentLabelsOverlay,
+                              style_url: e.target.value || null,
+                            },
+                            // Mantener compatibilidad con legacy
+                            labels_style_url: e.target.value || null,
                           },
                         },
                       });
                     }}
                     placeholder="https://api.maptiler.com/maps/streets-v4/style.json"
+                  />
+                </div>
+
+                <div className="config-field">
+                  <label>Filtro de capas (JSON opcional)</label>
+                  <input
+                    type="text"
+                    value={typeof config.ui_map.satellite?.labels_overlay === "object" && config.ui_map.satellite?.labels_overlay !== null
+                      ? (config.ui_map.satellite.labels_overlay.layer_filter || "")
+                      : ""}
+                    onChange={(e) => {
+                      const satelliteConfig = config.ui_map.satellite ?? DEFAULT_MAP_CONFIG.satellite!;
+                      const currentLabelsOverlay = typeof satelliteConfig.labels_overlay === "object" && satelliteConfig.labels_overlay !== null
+                        ? satelliteConfig.labels_overlay
+                        : { enabled: true, style_url: null, layer_filter: null };
+                      setConfig({
+                        ...config,
+                        ui_map: {
+                          ...config.ui_map,
+                          satellite: {
+                            ...satelliteConfig,
+                            labels_overlay: {
+                              ...currentLabelsOverlay,
+                              layer_filter: e.target.value || null,
+                            },
+                          },
+                        },
+                      });
+                    }}
+                    placeholder='["==", ["get", "layer"], "poi_label"]'
                   />
                 </div>
               </>

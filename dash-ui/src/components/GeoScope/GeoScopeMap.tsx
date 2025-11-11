@@ -682,10 +682,20 @@ export default function GeoScopeMap({
   }, [config]);
   const effectiveSatelliteOpacity =
     uiMapSatellite?.opacity ?? satelliteOpacity ?? 1.0;
-  const effectiveLabelsOverlay =
-    uiMapSatellite?.labels_overlay ?? (satelliteLabelsStyle !== "none");
-  const effectiveLabelsStyleUrl =
-    uiMapSatellite?.labels_style_url ?? "https://api.maptiler.com/maps/streets-v4/style.json";
+  
+  // Usar nuevo formato labels_overlay (objeto) o fallback a legacy
+  const labelsOverlayConfig = uiMapSatellite?.labels_overlay;
+  const effectiveLabelsOverlay = typeof labelsOverlayConfig === "object" && labelsOverlayConfig !== null
+    ? (labelsOverlayConfig.enabled ?? true)
+    : typeof labelsOverlayConfig === "boolean"
+    ? labelsOverlayConfig
+    : (satelliteLabelsStyle !== "none");
+  
+  // Obtener style_url desde labels_overlay (nuevo formato) o fallback a legacy
+  const effectiveLabelsStyleUrl = typeof labelsOverlayConfig === "object" && labelsOverlayConfig !== null
+    ? (labelsOverlayConfig.style_url ?? null)
+    : (uiMapSatellite?.labels_style_url ?? null);
+  
   const effectiveSatelliteEnabled = Boolean(
     (uiMapSatellite?.enabled ?? satelliteEnabled) && maptilerKey,
   );
@@ -803,6 +813,25 @@ export default function GeoScopeMap({
     }
     layer.setLabelsEnabled(effectiveLabelsOverlay);
   }, [effectiveLabelsOverlay]);
+
+  useEffect(() => {
+    const layer = satelliteLayerRef.current;
+    if (!layer) {
+      return;
+    }
+    layer.setLabelsStyleUrl(effectiveLabelsStyleUrl);
+  }, [effectiveLabelsStyleUrl]);
+
+  useEffect(() => {
+    const layer = satelliteLayerRef.current;
+    if (!layer) {
+      return;
+    }
+    const layerFilter = typeof labelsOverlayConfig === "object" && labelsOverlayConfig !== null
+      ? labelsOverlayConfig.layer_filter ?? null
+      : null;
+    layer.setLayerFilter(layerFilter);
+  }, [labelsOverlayConfig]);
 
   useEffect(() => {
     const layer = satelliteLayerRef.current;
@@ -1267,6 +1296,10 @@ export default function GeoScopeMap({
           enabled: effectiveSatelliteEnabled,
           opacity: effectiveSatelliteOpacity,
           labelsEnabled: effectiveLabelsOverlay,
+          labelsStyleUrl: effectiveLabelsStyleUrl,
+          layerFilter: typeof labelsOverlayConfig === "object" && labelsOverlayConfig !== null
+            ? labelsOverlayConfig.layer_filter ?? null
+            : null,
           zIndex: 5,
         });
         layerRegistry.add(satelliteLayer);

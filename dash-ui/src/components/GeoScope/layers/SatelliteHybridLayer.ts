@@ -7,7 +7,7 @@ import type {
 
 import type { Layer } from "./LayerRegistry";
 
-export type SatelliteLabelsStyle = "maptiler-streets-v4-labels" | "none";
+export type SatelliteLabelsStyle = "maptiler-streets-v4-labels" | "none" | "custom-url";
 
 export type SatelliteHybridLayerOptions = {
   apiKey?: string | null;
@@ -15,6 +15,8 @@ export type SatelliteHybridLayerOptions = {
   opacity?: number;
   labelsEnabled?: boolean;
   labelsStyle?: SatelliteLabelsStyle;
+  labelsStyleUrl?: string | null; // URL del estilo para overlay de etiquetas
+  layerFilter?: string | null; // Filtro JSON para seleccionar capas
   zIndex?: number;
 };
 
@@ -54,20 +56,27 @@ export default class SatelliteHybridLayer implements Layer {
   private labelsStyle: SatelliteLabelsStyle;
   private apiKey: string | null;
   private labelsEnabled: boolean;
+  private labelsStyleUrl: string | null;
+  private layerFilter: string | null;
   private map?: maplibregl.Map;
   private warnedMissingKey = false;
   private readonly rasterSourceId = `${this.id}-raster-source`;
   private readonly rasterLayerId = `${this.id}-raster-layer`;
   private readonly labelLayerPrefix = `${this.id}-label-`;
   private labelLayerIds: string[] = [];
+  private labelsSourceId = `${this.id}-labels-source`;
+  private labelsLoaded = false;
 
   constructor(options: SatelliteHybridLayerOptions = {}) {
     this.enabled = options.enabled ?? false;
     this.opacity = clampOpacity(options.opacity, 0.85);
     const initialLabelsEnabled = options.labelsEnabled ?? true;
+    this.labelsStyleUrl = options.labelsStyleUrl?.trim() ?? null;
+    this.layerFilter = options.layerFilter ?? null;
     this.labelsStyle =
       options.labelsStyle ??
-      (initialLabelsEnabled ? "maptiler-streets-v4-labels" : "none");
+      (this.labelsStyleUrl ? "custom-url" :
+      (initialLabelsEnabled ? "maptiler-streets-v4-labels" : "none"));
     this.labelsEnabled = this.labelsStyle !== "none";
     this.apiKey = options.apiKey?.trim() ?? null;
     this.zIndex = options.zIndex ?? 5;
@@ -112,6 +121,25 @@ export default class SatelliteHybridLayer implements Layer {
         console.warn("[SatelliteHybrid] No se pudo actualizar la opacidad del raster", error);
       }
     }
+  }
+
+  setLabelsStyleUrl(url: string | null | undefined): void {
+    const normalized = url?.trim() ?? null;
+    if (this.labelsStyleUrl === normalized) {
+      return;
+    }
+    this.labelsStyleUrl = normalized;
+    this.labelsLoaded = false;
+    this.syncState();
+  }
+
+  setLayerFilter(filter: string | null | undefined): void {
+    const normalized = filter?.trim() ?? null;
+    if (this.layerFilter === normalized) {
+      return;
+    }
+    this.layerFilter = normalized;
+    this.syncState();
   }
 
   setLabelsStyle(style: SatelliteLabelsStyle): void {
@@ -165,8 +193,16 @@ export default class SatelliteHybridLayer implements Layer {
 
     this.ensureRasterLayer(map);
 
-    if (this.labelsEnabled && this.labelsStyle === "maptiler-streets-v4-labels") {
-      this.ensureLabelLayers(map);
+    if (this.labelsEnabled) {
+      if (this.labelsStyle === "custom-url" && this.labelsStyleUrl) {
+        // Usar estilo desde URL personalizada
+        this.ensureLabelLayersFromUrl(map);
+      } else if (this.labelsStyle === "maptiler-streets-v4-labels") {
+        // Usar estilo hardcodeado (legacy)
+        this.ensureLabelLayers(map);
+      } else {
+        this.removeLabelLayers(map);
+      }
     } else {
       this.removeLabelLayers(map);
     }
@@ -208,6 +244,157 @@ export default class SatelliteHybridLayer implements Layer {
       );
     } else {
       map.setPaintProperty(this.rasterLayerId, "raster-opacity", this.opacity);
+    }
+  }
+
+  private ensureLabelLayersFromUrl(map: maplibregl.Map): void {
+    if (this.labelsLoaded && this.labelLayerIds.length > 0) {
+      // Ya están cargadas
+      return;
+    }
+
+    if (!this.labelsStyleUrl || !this.apiKey) {
+      return;
+    }
+
+    // Cargar estilo desde URL
+    const loadStyle = async () => {
+      try {
+        // Firmar URL si falta ?key=
+        let url = this.labelsStyleUrl!;
+        if (!url.includes("?key=") && !url.includes("&key=")) {
+          const separator = url.includes("?") ? "&" : "?";
+          url = `${url}${separator}key=${this.apiKey}`;
+        }
+
+        const response = await fetch(url, { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error(`Failed to load labels style: HTTP ${response.status}`);
+        }
+
+        const style = await response.json() as StyleSpecification;
+        if (!style.sources || !style.layers) {
+          throw new Error("Invalid style format");
+        }
+
+        // Obtener primera fuente vectorial
+        const sourceKeys = Object.keys(style.sources);
+        if (sourceKeys.length === 0) {
+          throw new Error("No sources in style");
+        }
+
+        const firstSourceKey = sourceKeys[0];
+        const firstSource = style.sources[firstSourceKey];
+        if (firstSource.type !== "vector") {
+          throw new Error("Source is not vector type");
+        }
+
+        // Añadir fuente si no existe
+        if (!map.getSource(this.labelsSourceId)) {
+          const sourceUrl = (firstSource as { url?: string; tiles?: string[] }).url || 
+                           (firstSource as { tiles?: string[] }).tiles?.[0];
+          if (!sourceUrl) {
+            throw new Error("No valid source URL found");
+          }
+          
+          // Firmar URL de fuente si es MapTiler
+          let signedSourceUrl = sourceUrl;
+          if (sourceUrl.includes("api.maptiler.com") && !sourceUrl.includes("?key=")) {
+            const sep = sourceUrl.includes("?") ? "&" : "?";
+            signedSourceUrl = `${sourceUrl}${sep}key=${this.apiKey}`;
+          }
+
+          map.addSource(this.labelsSourceId, {
+            type: "vector",
+            url: signedSourceUrl,
+            ...((firstSource as { tiles?: string[] }).tiles ? { tiles: (firstSource as { tiles?: string[] }).tiles } : {}),
+          });
+        }
+
+        // Parsear layer_filter si existe
+        let parsedFilter: unknown[] | null = null;
+        if (this.layerFilter) {
+          try {
+            parsedFilter = JSON.parse(this.layerFilter);
+          } catch {
+            console.warn("[SatelliteHybrid] Invalid layer_filter JSON, ignoring");
+          }
+        }
+
+        // Filtrar y añadir capas de labels
+        const labelLayers = style.layers.filter((layer) => {
+          if (layer.type !== "symbol") {
+            return false;
+          }
+          
+          // Aplicar layer_filter si existe
+          if (parsedFilter && Array.isArray(parsedFilter)) {
+            // El filtro debe aplicarse a source-layer
+            const sourceLayer = (layer as SymbolLayerSpecification)["source-layer"];
+            if (sourceLayer && Array.isArray(parsedFilter) && parsedFilter.length >= 3) {
+              // Ejemplo: ["==", ["get", "layer"], "poi_label"]
+              const [op, getExpr, value] = parsedFilter;
+              if (op === "==" && Array.isArray(getExpr) && getExpr[0] === "get" && getExpr[1] === "layer") {
+                if (sourceLayer !== value) {
+                  return false;
+                }
+              }
+            }
+          }
+
+          const id = (layer.id ?? "").toLowerCase();
+          const layout = layer.layout ?? {};
+          const hasTextField = typeof (layout as Record<string, unknown>)["text-field"] !== "undefined";
+          const looksLikeLabel =
+            id.includes("label") || id.includes("name") || id.includes("text") || id.includes("poi");
+
+          return hasTextField || looksLikeLabel;
+        });
+
+        const beforeId = this.findOverlayBeforeId(map);
+        let index = 0;
+        for (const layer of labelLayers) {
+          const layerId = `${this.labelLayerPrefix}${index++}`;
+          if (map.getLayer(layerId)) {
+            continue;
+          }
+
+          try {
+            const symbolLayer = layer as SymbolLayerSpecification;
+            map.addLayer(
+              {
+                id: layerId,
+                type: "symbol",
+                source: this.labelsSourceId,
+                "source-layer": symbolLayer["source-layer"],
+                layout: symbolLayer.layout ?? {},
+                paint: symbolLayer.paint ?? {},
+                filter: parsedFilter || symbolLayer.filter,
+                minzoom: symbolLayer.minzoom,
+                maxzoom: symbolLayer.maxzoom,
+              },
+              beforeId
+            );
+            this.labelLayerIds.push(layerId);
+          } catch (error) {
+            console.warn(`[SatelliteHybrid] No se pudo añadir capa de label ${layerId}`, error);
+          }
+        }
+
+        this.labelsLoaded = true;
+      } catch (error) {
+        console.error("[SatelliteHybrid] Error cargando estilo de labels desde URL:", error);
+        this.labelsLoaded = false;
+      }
+    };
+
+    // Esperar a que el estilo del mapa esté cargado
+    if (map.isStyleLoaded()) {
+      void loadStyle();
+    } else {
+      map.once("style.load", () => {
+        void loadStyle();
+      });
     }
   }
 
