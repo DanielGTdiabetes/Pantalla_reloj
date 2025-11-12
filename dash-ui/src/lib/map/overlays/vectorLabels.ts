@@ -1,6 +1,7 @@
 import maplibregl from "maplibre-gl";
 import type { Map } from "maplibre-gl";
 import type {
+  FilterSpecification,
   LayerSpecification,
   SourceSpecification,
   StyleSpecification,
@@ -107,13 +108,17 @@ const clampOpacity = (value: number): number => {
   return Math.min(1, Math.max(0, value));
 };
 
-const parseLayerFilter = (rawFilter: string | null | undefined): any[] | undefined => {
+const isFilterSpecification = (candidate: unknown): candidate is FilterSpecification => {
+  return Array.isArray(candidate) && candidate.length > 0;
+};
+
+const parseLayerFilter = (rawFilter: string | null | undefined): FilterSpecification | undefined => {
   if (!rawFilter) {
     return undefined;
   }
   try {
     const parsed = JSON.parse(rawFilter);
-    return Array.isArray(parsed) ? parsed : undefined;
+    return isFilterSpecification(parsed) ? parsed : undefined;
   } catch (error) {
     console.warn("[vectorLabels] Invalid layer_filter JSON. Ignoring filter.", error);
     return undefined;
@@ -191,8 +196,9 @@ const addVectorLabelLayers = (
 
     const symbolLayer = layer as SymbolLayerSpecification;
     const filterValue: any = parsedFilter ?? symbolLayer.filter;
-    const layerFilter =
-      Array.isArray(filterValue) && filterValue.length > 0 ? filterValue : symbolLayer.filter;
+    const layerFilter: FilterSpecification | undefined = isFilterSpecification(filterValue)
+      ? filterValue
+      : (symbolLayer.filter as FilterSpecification | undefined);
 
     const newLayer: SymbolLayerSpecification = {
       id: layerId,

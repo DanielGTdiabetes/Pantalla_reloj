@@ -230,16 +230,16 @@ export function withConfigDefaultsV2(
     return DEFAULT_CONFIG_V2;
   }
 
-  const uiMapInput = config.ui_map ?? {};
+  const uiMapInput: Partial<MapConfigV2> = config.ui_map ?? {};
 
   const mergedLocal = {
     ...DEFAULT_LOCAL_RASTER_CONFIG,
-    ...uiMapInput.local,
+    ...(uiMapInput.local ?? {}),
   };
 
   const mergedSatellite = {
     ...DEFAULT_MAP_CONFIG.satellite!,
-    ...uiMapInput.satellite,
+    ...(uiMapInput.satellite ?? {}),
   };
 
   const overlayRaw =
@@ -263,7 +263,7 @@ export function withConfigDefaultsV2(
 
   const mergedCustomXyz = {
     ...DEFAULT_MAP_CONFIG.customXyz!,
-    ...uiMapInput.customXyz,
+    ...(uiMapInput.customXyz ?? {}),
   };
 
   const mergeRotationConfig = (candidate?: Partial<UIRotationConfigV2>): UIRotationConfigV2 => {
