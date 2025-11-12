@@ -180,7 +180,11 @@ const addSymbolLayers = (
       continue;
     }
 
-    const layout = layer.layout ? { ...layer.layout, visibility: "visible" } : { visibility: "visible" };
+    const baseLayout = (layer.layout ?? {}) as SymbolLayerSpecification["layout"];
+    const layout: SymbolLayerSpecification["layout"] = {
+      ...baseLayout,
+      visibility: "visible",
+    };
     const paint = layer.paint ? { ...layer.paint } : {};
     const filter = buildLayerFilter(layer, parsedFilter);
 
