@@ -1,6 +1,5 @@
 import maplibregl from "maplibre-gl";
 import type { MapLibreEvent, StyleSpecification } from "maplibre-gl";
-import type { SymbolLayerSpecification, FilterSpecification, SourceSpecification, LayerSpecification } from "@maplibre/maplibre-gl-style-spec";
 import type { Feature, FeatureCollection, GeoJsonProperties, Geometry, Point } from "geojson";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
@@ -9,7 +8,12 @@ import { apiGet, apiPost, saveConfig } from "../../lib/api";
 import { useConfig } from "../../lib/useConfig";
 import { applyMapStyle, computeStyleUrlFromConfig } from "../../kiosk/mapStyle";
 import { kioskRuntime } from "../../lib/runtimeFlags";
-import { signMapTilerUrl } from "../../lib/map/utils/maptilerHelpers";
+import {
+  ensureLabelsOverlay,
+  removeLabelsOverlay,
+  updateLabelsOpacity,
+} from "../../lib/map/overlays/vectorLabels";
+import { normalizeLabelsOverlay } from "../../lib/map/labelsOverlay";
 import AircraftLayer from "./layers/AircraftLayer";
 import GlobalRadarLayer from "./layers/GlobalRadarLayer";
 import GlobalSatelliteLayer from "./layers/GlobalSatelliteLayer";
@@ -688,18 +692,24 @@ export default function GeoScopeMap({
   const effectiveSatelliteOpacity =
     uiMapSatellite?.opacity ?? satelliteOpacity ?? 1.0;
   
-  // Usar nuevo formato labels_overlay (objeto) o fallback a legacy
   const labelsOverlayConfig = uiMapSatellite?.labels_overlay;
-  const effectiveLabelsOverlay = typeof labelsOverlayConfig === "object" && labelsOverlayConfig !== null && !Array.isArray(labelsOverlayConfig) && "enabled" in labelsOverlayConfig
-    ? (labelsOverlayConfig.enabled ?? true)
-    : typeof labelsOverlayConfig === "boolean"
-    ? labelsOverlayConfig
-    : (satelliteLabelsStyle !== "none");
-  
-  // Obtener style_url desde labels_overlay (nuevo formato) o fallback a legacy
-  const effectiveLabelsStyleUrl = typeof labelsOverlayConfig === "object" && labelsOverlayConfig !== null && !Array.isArray(labelsOverlayConfig) && "style_url" in labelsOverlayConfig
-    ? (labelsOverlayConfig.style_url ?? null)
-    : (uiMapSatellite?.labels_style_url ?? null);
+  const normalizedLabelsOverlay = useMemo(
+    () =>
+      normalizeLabelsOverlay(
+        labelsOverlayConfig ??
+          (typeof uiMapSatellite?.labels_enabled === "boolean"
+            ? uiMapSatellite.labels_enabled
+            : undefined),
+        uiMapSatellite?.labels_style_url ?? null,
+      ),
+    [
+      labelsOverlayConfig,
+      uiMapSatellite?.labels_enabled,
+      uiMapSatellite?.labels_style_url,
+    ],
+  );
+  const effectiveLabelsOverlayEnabled = normalizedLabelsOverlay.enabled;
+  const effectiveLabelsStyleUrl = normalizedLabelsOverlay.style_url ?? null;
   
   const effectiveSatelliteEnabled = Boolean(
     (uiMapSatellite?.enabled ?? satelliteEnabled) && maptilerKey,
@@ -816,35 +826,55 @@ export default function GeoScopeMap({
     if (!layer) {
       return;
     }
-    layer.setLabelsEnabled(effectiveLabelsOverlay);
-  }, [effectiveLabelsOverlay]);
-
-  useEffect(() => {
-    const layer = satelliteLayerRef.current;
-    if (!layer) {
-      return;
-    }
-    layer.setLabelsStyleUrl(effectiveLabelsStyleUrl);
-  }, [effectiveLabelsStyleUrl]);
-
-  useEffect(() => {
-    const layer = satelliteLayerRef.current;
-    if (!layer) {
-      return;
-    }
-    const layerFilter = typeof labelsOverlayConfig === "object" && labelsOverlayConfig !== null && !Array.isArray(labelsOverlayConfig) && "layer_filter" in labelsOverlayConfig
-      ? labelsOverlayConfig.layer_filter ?? null
-      : null;
-    layer.setLayerFilter(layerFilter);
-  }, [labelsOverlayConfig]);
-
-  useEffect(() => {
-    const layer = satelliteLayerRef.current;
-    if (!layer) {
-      return;
-    }
     layer.setEnabled(effectiveSatelliteEnabled);
   }, [effectiveSatelliteEnabled]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+
+    const overlay = normalizedLabelsOverlay;
+
+    const applyOverlay = () => {
+      const currentMap = mapRef.current;
+      if (!currentMap) {
+        return;
+      }
+      if (!overlay.enabled) {
+        removeLabelsOverlay(currentMap);
+        return;
+      }
+      void ensureLabelsOverlay(currentMap, overlay, maptilerKey);
+    };
+
+    applyOverlay();
+
+    const handleStyleLoad = () => {
+      applyOverlay();
+    };
+
+    map.on("style.load", handleStyleLoad);
+
+    return () => {
+      map.off("style.load", handleStyleLoad);
+    };
+  }, [
+    normalizedLabelsOverlay.enabled,
+    normalizedLabelsOverlay.style_url,
+    normalizedLabelsOverlay.layer_filter,
+    maptilerKey,
+    mapStyleVersion,
+  ]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+    updateLabelsOpacity(map, normalizedLabelsOverlay.opacity);
+  }, [normalizedLabelsOverlay.opacity]);
 
 
   const updateMapView = (map: maplibregl.Map) => {
@@ -1139,19 +1169,6 @@ export default function GeoScopeMap({
       fallbackAppliedRef.current =
         runtime.styleWasFallback || runtime.style.type !== "vector";
 
-      // Detectar si el mapa base es híbrido (raster satélite/híbrido)
-      // Obtener ui_map desde runtime que ya tiene mapConfigV2
-      const ui_map = runtime.mapConfigV2?.ui_map;
-      const styleUrl = ui_map?.maptiler?.styleUrl;
-      const provider = ui_map?.provider || "maptiler_vector";
-      const isHybridBase = provider === "maptiler_vector" && 
-        styleUrl && 
-        (styleUrl.includes("/maps/satellite/") || styleUrl.includes("/maps/hybrid/")) &&
-        runtime.style.type === "raster";
-      
-      // Guardar referencia para uso posterior
-      const hybridBaseRef = { isHybridBase, ui_map, styleUrl };
-
       if (!destroyed) {
         const tintCandidate = runtime.theme?.tint ?? null;
         if (typeof tintCandidate === "string" && tintCandidate.trim().length > 0) {
@@ -1306,155 +1323,6 @@ export default function GeoScopeMap({
       map.once("load", async () => {
         if (destroyed || !mapRef.current) return;
         
-        // Añadir overlay de etiquetas si el mapa base es híbrido
-        if (hybridBaseRef.isHybridBase) {
-          const satelliteConfig = hybridBaseRef.ui_map?.satellite;
-          const overlay = satelliteConfig?.labels_overlay;
-          
-          if (overlay && typeof overlay === "object" && !Array.isArray(overlay) && overlay.enabled && overlay.style_url) {
-            const labelsUrl = signMapTilerUrl(overlay.style_url, maptilerKey);
-            
-            if (!labelsUrl) {
-              console.warn("[GeoScopeMap] No se pudo firmar URL de etiquetas");
-              return;
-            }
-            
-            try {
-              // Cargar estilo de etiquetas
-              const response = await fetch(labelsUrl, { cache: "no-store" });
-              if (!response.ok) {
-                throw new Error(`Failed to load labels style: HTTP ${response.status}`);
-              }
-              
-              const style = await response.json() as StyleSpecification;
-              if (!style.sources || !style.layers) {
-                throw new Error("Invalid style format");
-              }
-              
-              // Obtener primera fuente vectorial
-              const sourceKeys = Object.keys(style.sources || {});
-              if (sourceKeys.length === 0) {
-                throw new Error("No sources in style");
-              }
-              
-              const firstSourceKey = sourceKeys[0];
-              const sources = style.sources as Record<string, SourceSpecification>;
-              const firstSource = sources[firstSourceKey];
-              if (!firstSource || firstSource.type !== "vector") {
-                throw new Error("Source is not vector type");
-              }
-              
-              // Añadir fuente de etiquetas
-              const labelsSourceId = "hybrid-labels-source";
-              if (!map.getSource(labelsSourceId)) {
-                const sourceUrl = (firstSource as { url?: string; tiles?: string[] }).url || 
-                                 (firstSource as { tiles?: string[] }).tiles?.[0];
-                if (!sourceUrl) {
-                  throw new Error("No valid source URL found");
-                }
-                
-                // Firmar URL de fuente si es MapTiler
-                let signedSourceUrl = signMapTilerUrl(sourceUrl, maptilerKey);
-                if (!signedSourceUrl) {
-                  throw new Error("Failed to sign source URL");
-                }
-                
-                if (sourceUrl.includes("api.maptiler.com") && !signedSourceUrl.includes("?key=") && !signedSourceUrl.includes("&key=")) {
-                  const sep = signedSourceUrl.includes("?") ? "&" : "?";
-                  signedSourceUrl = `${signedSourceUrl}${sep}key=${maptilerKey || ''}`;
-                }
-                
-                map.addSource(labelsSourceId, {
-                  type: "vector",
-                  url: signedSourceUrl,
-                });
-              }
-              
-              // Parsear layer_filter si existe
-              let parsedFilter: unknown[] | null = null;
-              if (overlay.layer_filter) {
-                try {
-                  parsedFilter = JSON.parse(overlay.layer_filter);
-                } catch {
-                  console.warn("[GeoScopeMap] Invalid layer_filter JSON, ignoring");
-                }
-              }
-              
-              // Filtrar y añadir capas de labels
-              const layersArray = (style.layers || []) as LayerSpecification[];
-              const labelLayers = layersArray.filter((layer) => {
-                if (layer.type !== "symbol") {
-                  return false;
-                }
-                
-                // Aplicar layer_filter si existe
-                if (parsedFilter && Array.isArray(parsedFilter)) {
-                  const symbolLayer = layer as SymbolLayerSpecification;
-                  const sourceLayer = symbolLayer["source-layer"];
-                  if (sourceLayer && Array.isArray(parsedFilter) && parsedFilter.length >= 3) {
-                    const [op, getExpr, value] = parsedFilter;
-                    if (op === "==" && Array.isArray(getExpr) && getExpr[0] === "get" && getExpr[1] === "layer") {
-                      if (sourceLayer !== value) {
-                        return false;
-                      }
-                    }
-                  }
-                }
-                
-                const id = (layer.id ?? "").toLowerCase();
-                const layout = layer.layout ?? {};
-                const hasTextField = typeof (layout as Record<string, unknown>)["text-field"] !== "undefined";
-                const looksLikeLabel =
-                  id.includes("label") || id.includes("name") || id.includes("text") || id.includes("poi");
-                
-                return hasTextField || looksLikeLabel;
-              });
-              
-              // Añadir capas de etiquetas
-              for (let index = 0; index < labelLayers.length; index++) {
-                const layer = labelLayers[index];
-                const layerId = `hybrid-labels-layer-${index}`;
-                
-                if (map.getLayer(layerId)) {
-                  continue;
-                }
-                
-                try {
-                  const symbolLayer = layer as SymbolLayerSpecification;
-                  const filterValue: unknown = parsedFilter || symbolLayer.filter;
-                  let validFilter: FilterSpecification | undefined = undefined;
-                  if (Array.isArray(filterValue) && filterValue.length > 0) {
-                    const firstElement = filterValue[0];
-                    if (typeof firstElement === "string" || Array.isArray(firstElement)) {
-                      validFilter = filterValue as FilterSpecification;
-                    }
-                  } else if (filterValue === undefined || filterValue === null) {
-                    validFilter = undefined;
-                  }
-                  
-                  map.addLayer({
-                    id: layerId,
-                    type: "symbol",
-                    source: labelsSourceId,
-                    "source-layer": symbolLayer["source-layer"],
-                    layout: symbolLayer.layout ?? {},
-                    paint: symbolLayer.paint ?? {},
-                    filter: validFilter,
-                    minzoom: symbolLayer.minzoom,
-                    maxzoom: symbolLayer.maxzoom,
-                  });
-                } catch (error) {
-                  console.warn(`[GeoScopeMap] No se pudo añadir capa de label ${layerId}`, error);
-                }
-              }
-              
-              console.info("[GeoScopeMap] Labels overlay añadido para mapa híbrido");
-            } catch (error) {
-              console.error("[GeoScopeMap] Error añadiendo overlay de etiquetas:", error);
-            }
-          }
-        }
-        
         const layerRegistry = new LayerRegistry(map);
         layerRegistryRef.current = layerRegistry;
 
@@ -1462,11 +1330,7 @@ export default function GeoScopeMap({
           apiKey: maptilerKey,
           enabled: effectiveSatelliteEnabled,
           opacity: effectiveSatelliteOpacity,
-          labelsEnabled: effectiveLabelsOverlay,
-          labelsStyleUrl: effectiveLabelsStyleUrl,
-          layerFilter: typeof labelsOverlayConfig === "object" && labelsOverlayConfig !== null && !Array.isArray(labelsOverlayConfig) && "layer_filter" in labelsOverlayConfig
-            ? labelsOverlayConfig.layer_filter ?? null
-            : null,
+          labelsEnabled: false,
           zIndex: 5,
         });
         layerRegistry.add(satelliteLayer);
@@ -2754,7 +2618,7 @@ export default function GeoScopeMap({
           map={mapRef.current}
           enabled={effectiveSatelliteEnabled}
           opacity={effectiveSatelliteOpacity}
-          labelsOverlay={effectiveLabelsOverlay}
+          labelsOverlay={effectiveLabelsOverlayEnabled}
           labelsStyleUrl={effectiveLabelsStyleUrl}
           apiKey={maptilerKey}
         />

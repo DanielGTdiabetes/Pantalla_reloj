@@ -12,6 +12,11 @@ import type {
   CalendarConfig,
   UIRotationConfigV2,
 } from "../types/config_v2";
+import {
+  DEFAULT_LABELS_STYLE_URL,
+  DEFAULT_NORMALIZED_LABELS_OVERLAY,
+  normalizeLabelsOverlay,
+} from "../lib/map/labelsOverlay";
 
 export const DEFAULT_MAP_CENTER = {
   lat: 39.98,
@@ -42,9 +47,11 @@ export const DEFAULT_MAP_CONFIG: MapConfigV2 = {
     enabled: false,
     opacity: 0.85,
     labels_enabled: true,
+    labels_overlay: DEFAULT_NORMALIZED_LABELS_OVERLAY,
     provider: "maptiler",
     style_raster: "https://api.maptiler.com/maps/satellite/style.json",
     style_labels: "https://api.maptiler.com/maps/streets/style.json",
+    labels_style_url: DEFAULT_LABELS_STYLE_URL,
   },
   customXyz: {
     tileUrl: null,
@@ -223,6 +230,42 @@ export function withConfigDefaultsV2(
     return DEFAULT_CONFIG_V2;
   }
 
+  const uiMapInput = config.ui_map ?? {};
+
+  const mergedLocal = {
+    ...DEFAULT_LOCAL_RASTER_CONFIG,
+    ...uiMapInput.local,
+  };
+
+  const mergedSatellite = {
+    ...DEFAULT_MAP_CONFIG.satellite!,
+    ...uiMapInput.satellite,
+  };
+
+  const overlayRaw =
+    uiMapInput.satellite?.labels_overlay ??
+    (typeof uiMapInput.satellite?.labels_enabled === "boolean"
+      ? uiMapInput.satellite.labels_enabled
+      : undefined);
+
+  const normalizedOverlay = normalizeLabelsOverlay(
+    overlayRaw,
+    uiMapInput.satellite?.labels_style_url ?? mergedSatellite.labels_style_url ?? DEFAULT_LABELS_STYLE_URL,
+  );
+
+  mergedSatellite.labels_overlay = normalizedOverlay;
+  mergedSatellite.labels_enabled = normalizedOverlay.enabled;
+  mergedSatellite.labels_style_url = normalizedOverlay.style_url;
+  mergedSatellite.opacity =
+    typeof mergedSatellite.opacity === "number" && Number.isFinite(mergedSatellite.opacity)
+      ? Math.min(1, Math.max(0, mergedSatellite.opacity))
+      : DEFAULT_MAP_CONFIG.satellite!.opacity;
+
+  const mergedCustomXyz = {
+    ...DEFAULT_MAP_CONFIG.customXyz!,
+    ...uiMapInput.customXyz,
+  };
+
   const mergeRotationConfig = (candidate?: Partial<UIRotationConfigV2>): UIRotationConfigV2 => {
     const source = candidate ?? {};
     const enabled = source.enabled ?? true;
@@ -264,22 +307,13 @@ export function withConfigDefaultsV2(
     version: 2,
     ui_map: {
       ...DEFAULT_MAP_CONFIG,
-      ...config.ui_map,
-      local: {
-        ...DEFAULT_LOCAL_RASTER_CONFIG,
-        ...config.ui_map?.local,
-      },
-      maptiler: config.ui_map?.maptiler ?? DEFAULT_MAP_CONFIG.maptiler,
-      satellite: {
-        ...DEFAULT_MAP_CONFIG.satellite!,
-        ...config.ui_map?.satellite,
-      },
-      customXyz: {
-        ...DEFAULT_MAP_CONFIG.customXyz!,
-        ...config.ui_map?.customXyz,
-      },
-      fixed: config.ui_map?.fixed ?? DEFAULT_MAP_CONFIG.fixed,
-      region: config.ui_map?.region ?? DEFAULT_MAP_CONFIG.region,
+      ...uiMapInput,
+      local: mergedLocal,
+      maptiler: uiMapInput.maptiler ?? DEFAULT_MAP_CONFIG.maptiler,
+      satellite: mergedSatellite,
+      customXyz: mergedCustomXyz,
+      fixed: uiMapInput.fixed ?? DEFAULT_MAP_CONFIG.fixed,
+      region: uiMapInput.region ?? DEFAULT_MAP_CONFIG.region,
     },
     ui: {
       rotation: mergeRotationConfig(config.ui?.rotation),

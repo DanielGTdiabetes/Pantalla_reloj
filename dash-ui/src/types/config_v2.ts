@@ -64,6 +64,7 @@ export type SatelliteLabelsOverlay = {
   enabled: boolean;
   style_url?: string | null;
   layer_filter?: string | null;
+  opacity?: number | null;
 };
 
 export type MapSatelliteConfig = {
