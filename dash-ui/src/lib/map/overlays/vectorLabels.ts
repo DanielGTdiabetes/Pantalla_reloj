@@ -1,5 +1,4 @@
-import maplibregl from "maplibre-gl";
-import type { Map } from "maplibre-gl";
+import maplibregl, { type Map } from "maplibre-gl";
 import type {
   FilterSpecification,
   LayerSpecification,
@@ -8,361 +7,302 @@ import type {
   SymbolLayerSpecification,
 } from "@maplibre/maplibre-gl-style-spec";
 
-import { signMapTilerUrl } from "../../map/utils/maptilerHelpers";
-import {
-  DEFAULT_LABELS_STYLE_URL,
-  clampLabelsOpacity,
-  normalizeLabelsOverlay,
-  type NormalizedLabelsOverlay,
-} from "../labelsOverlay";
+import { DEFAULT_LABELS_STYLE_URL, clampLabelsOpacity } from "../labelsOverlay";
+import { signMapTilerUrl } from "../utils/maptilerHelpers";
 
-type VectorLabelsState = {
-  styleUrl: string;
-  layerIds: Array<{ id: string; type: LayerSpecification["type"] }>;
-  sourceId: string;
-  layerFilter: string | null;
-  opacity: number;
+export type LabelsOverlayCfg = {
+  enabled: boolean;
+  style_url: string;
+  layer_filter?: string | null;
+  opacity?: number;
 };
 
-const VECTOR_LABELS_SOURCE_ID = "pantalla-vector-labels-source";
-const VECTOR_LABELS_LAYER_PREFIX = "pantalla-vector-labels-layer-";
-const VECTOR_LABELS_STATE_KEY = "__pantallaVectorLabelsState";
-const OVERLAY_LAYER_PREFERENCE = [
-  "geoscope-global-radar",
-  "geoscope-global-satellite",
-  "geoscope-weather",
-  "geoscope-aemet-warnings",
-  "geoscope-lightning",
-  "geoscope-aircraft",
-  "geoscope-ships",
-];
+const LABELS_SRC_ID = "labels-src";
+const LABELS_LAYER_PREFIX = "labels-ov-";
 
-type MapWithVectorLabelsState = Map & {
-  [VECTOR_LABELS_STATE_KEY]?: VectorLabelsState;
-};
+type ParsedLayerFilter =
+  | { kind: "expression"; value: FilterSpecification }
+  | { kind: "includes"; tokens: string[] };
 
-const getOverlayState = (map: Map): VectorLabelsState | undefined => {
-  return (map as MapWithVectorLabelsState)[VECTOR_LABELS_STATE_KEY];
-};
-
-const setOverlayState = (map: Map, state: VectorLabelsState | undefined) => {
-  if (state) {
-    (map as MapWithVectorLabelsState)[VECTOR_LABELS_STATE_KEY] = state;
-  } else {
-    delete (map as MapWithVectorLabelsState)[VECTOR_LABELS_STATE_KEY];
+const clampOpacity = (value?: number | null): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
   }
+  return Math.min(1, Math.max(0, value));
 };
 
-const waitForStyleLoad = async (map: Map): Promise<void> => {
-  if (map.isStyleLoaded()) {
-    return;
+const ensureStyleUrl = (value?: string | null): string => {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed || DEFAULT_LABELS_STYLE_URL;
+};
+
+const tokenize = (raw: string): string[] => {
+  return raw
+    .split(/[,\s]+/)
+    .map((token) => token.trim().toLowerCase())
+    .filter((token) => token.length > 0);
+};
+
+const parseLayerFilter = (raw: string | null | undefined): ParsedLayerFilter | null => {
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return { kind: "expression", value: parsed as FilterSpecification };
+    }
+    if (typeof parsed === "string") {
+      const tokens = tokenize(parsed);
+      return tokens.length > 0 ? { kind: "includes", tokens } : null;
+    }
+    if (parsed && typeof parsed === "object" && Array.isArray((parsed as { includes?: unknown }).includes)) {
+      const tokens = (parsed as { includes: unknown[] }).includes
+        .map((token) => (typeof token === "string" ? token : String(token)))
+        .map((token) => token.trim().toLowerCase())
+        .filter((token) => token.length > 0);
+      return tokens.length > 0 ? { kind: "includes", tokens } : null;
+    }
+  } catch (error) {
+    console.warn("[vectorLabels] layer_filter inválido. Ignorando filtro.", error);
+  }
+  return null;
+};
+
+const isSymbolLayer = (layer: LayerSpecification): layer is SymbolLayerSpecification => {
+  return layer.type === "symbol";
+};
+
+const looksLikeLabel = (layer: SymbolLayerSpecification): boolean => {
+  const id = typeof layer.id === "string" ? layer.id.toLowerCase() : "";
+  const sourceLayer =
+    typeof (layer as { "source-layer"?: unknown })["source-layer"] === "string"
+      ? ((layer as { "source-layer": string })["source-layer"] ?? "").toLowerCase()
+      : "";
+  const layout = layer.layout ?? {};
+  const hasTextField = typeof (layout as Record<string, unknown>)["text-field"] !== "undefined";
+
+  if (hasTextField) {
+    return true;
   }
 
-  await new Promise<void>((resolve) => {
-    map.once("style.load", () => resolve());
-  });
+  const tokens = ["label", "name", "text", "poi", "place", "city", "town"];
+  return tokens.some((token) => id.includes(token) || sourceLayer.includes(token));
 };
 
-const findVectorSource = (
-  sources: StyleSpecification["sources"],
-): { key: string; source: SourceSpecification } | null => {
-  for (const [key, source] of Object.entries(sources ?? {})) {
-    if (source && (source as SourceSpecification).type === "vector") {
-      return { key, source };
+const shouldIncludeLayerByName = (
+  layer: SymbolLayerSpecification,
+  parsedFilter: ParsedLayerFilter | null,
+): boolean => {
+  if (!parsedFilter || parsedFilter.kind !== "includes") {
+    return true;
+  }
+  const id = typeof layer.id === "string" ? layer.id.toLowerCase() : "";
+  const sourceLayer =
+    typeof (layer as { "source-layer"?: unknown })["source-layer"] === "string"
+      ? ((layer as { "source-layer": string })["source-layer"] ?? "").toLowerCase()
+      : "";
+  return parsedFilter.tokens.some((token) => id.includes(token) || sourceLayer.includes(token));
+};
+
+const buildLayerFilter = (
+  layer: SymbolLayerSpecification,
+  parsedFilter: ParsedLayerFilter | null,
+): FilterSpecification | undefined => {
+  if (!parsedFilter || parsedFilter.kind !== "expression") {
+    return layer.filter as FilterSpecification | undefined;
+  }
+
+  const existing = layer.filter as FilterSpecification | undefined;
+  if (!existing) {
+    return parsedFilter.value;
+  }
+
+  return ["all", parsedFilter.value, existing] as FilterSpecification;
+};
+
+const cloneVectorSource = (
+  source: SourceSpecification,
+  apiKey?: string | null,
+): maplibregl.VectorSourceSpecification | null => {
+  if (!source || (source as { type?: unknown }).type !== "vector") {
+    return null;
+  }
+
+  const vectorSource = { ...(source as maplibregl.VectorSourceSpecification) };
+
+  if (typeof vectorSource.url === "string") {
+    vectorSource.url = signMapTilerUrl(vectorSource.url, apiKey) ?? vectorSource.url;
+  }
+
+  if (Array.isArray(vectorSource.tiles)) {
+    vectorSource.tiles = vectorSource.tiles.map((tileUrl) => signMapTilerUrl(tileUrl, apiKey) ?? tileUrl);
+  }
+
+  return vectorSource;
+};
+
+const findVectorSource = (sources: StyleSpecification["sources"]): SourceSpecification | null => {
+  for (const source of Object.values(sources ?? {})) {
+    if (source && (source as { type?: unknown }).type === "vector") {
+      return source as SourceSpecification;
     }
   }
   return null;
 };
 
-const isSymbolLikeLayer = (layer: LayerSpecification): layer is SymbolLayerSpecification => {
-  if (layer.type !== "symbol") {
-    return false;
-  }
-  return true;
-};
-
-const isLabelCandidate = (layer: LayerSpecification): boolean => {
-  if (!isSymbolLikeLayer(layer)) {
-    return false;
-  }
-
-  const layout = layer.layout ?? {};
-  const id = (layer.id ?? "").toLowerCase();
-  const hasTextField = typeof (layout as Record<string, unknown>)["text-field"] !== "undefined";
-  const looksLikeLabel =
-    id.includes("label") || id.includes("name") || id.includes("text") || id.includes("poi");
-
-  return hasTextField || looksLikeLabel;
-};
-
-const findOverlayBeforeId = (map: Map): string | undefined => {
-  for (const layerId of OVERLAY_LAYER_PREFERENCE) {
-    if (map.getLayer(layerId)) {
-      return layerId;
-    }
-  }
-  return undefined;
-};
-
-const clampOpacity = (value: number): number => {
-  return Math.min(1, Math.max(0, value));
-};
-
-const isFilterSpecification = (candidate: unknown): candidate is FilterSpecification => {
-  return Array.isArray(candidate) && candidate.length > 0;
-};
-
-const parseLayerFilter = (rawFilter: string | null | undefined): FilterSpecification | undefined => {
-  if (!rawFilter) {
-    return undefined;
-  }
-  try {
-    const parsed = JSON.parse(rawFilter);
-    return isFilterSpecification(parsed) ? parsed : undefined;
-  } catch (error) {
-    console.warn("[vectorLabels] Invalid layer_filter JSON. Ignoring filter.", error);
-    return undefined;
-  }
-};
-
-const addVectorSource = (
+const addSymbolLayers = (
   map: Map,
-  sourceId: string,
-  vectorSource: SourceSpecification,
-  apiKey?: string | null,
-) => {
-  const existing = map.getSource(sourceId);
-  if (existing) {
-    return;
-  }
+  layers: StyleSpecification["layers"],
+  parsedFilter: ParsedLayerFilter | null,
+): void => {
+  const entries = Array.isArray(layers) ? layers : [];
+  let incrementalId = 0;
 
-  const sourceConfig: maplibregl.VectorSourceSpecification = {
-    type: "vector",
-  };
-
-  const rawUrl = (vectorSource as maplibregl.VectorSourceSpecification).url;
-  const rawTiles = (vectorSource as maplibregl.VectorSourceSpecification).tiles;
-
-  if (rawUrl) {
-    const signed = signMapTilerUrl(rawUrl, apiKey) ?? rawUrl;
-    sourceConfig.url = signed;
-  } else if (Array.isArray(rawTiles) && rawTiles.length > 0) {
-    sourceConfig.tiles = rawTiles.map((tileUrl) => signMapTilerUrl(tileUrl, apiKey) ?? tileUrl);
-  } else {
-    console.warn("[vectorLabels] Vector source missing url/tiles. Using default MapTiler tiles.");
-    sourceConfig.url = signMapTilerUrl(DEFAULT_LABELS_STYLE_URL, apiKey) ?? DEFAULT_LABELS_STYLE_URL;
-  }
-
-  const minzoom = (vectorSource as { minzoom?: number }).minzoom;
-  const maxzoom = (vectorSource as { maxzoom?: number }).maxzoom;
-  const attribution = (vectorSource as { attribution?: string }).attribution;
-
-  if (typeof minzoom === "number") {
-    sourceConfig.minzoom = minzoom;
-  }
-  if (typeof maxzoom === "number") {
-    sourceConfig.maxzoom = maxzoom;
-  }
-  if (typeof attribution === "string") {
-    sourceConfig.attribution = attribution;
-  }
-
-  map.addSource(sourceId, sourceConfig);
-};
-
-const addVectorLabelLayers = (
-  map: Map,
-  sourceId: string,
-  style: StyleSpecification,
-  overlay: NormalizedLabelsOverlay,
-): Array<{ id: string; type: LayerSpecification["type"] }> => {
-  const layerEntries: Array<{ id: string; type: LayerSpecification["type"] }> = [];
-
-  const layers = Array.isArray(style.layers) ? style.layers : [];
-  const parsedFilter = parseLayerFilter(overlay.layer_filter);
-  const beforeId = findOverlayBeforeId(map);
-  const targetOpacity = clampOpacity(clampLabelsOpacity(overlay.opacity));
-
-  let index = 0;
-  for (const layer of layers) {
-    if (!isLabelCandidate(layer)) {
+  for (const layer of entries) {
+    if (!isSymbolLayer(layer)) {
       continue;
     }
 
-    const layerId = `${VECTOR_LABELS_LAYER_PREFIX}${index++}`;
-    if (map.getLayer(layerId)) {
+    if (!looksLikeLabel(layer)) {
       continue;
     }
 
-    const symbolLayer = layer as SymbolLayerSpecification;
-    const filterValue: any = parsedFilter ?? symbolLayer.filter;
-    const layerFilter: FilterSpecification | undefined = isFilterSpecification(filterValue)
-      ? filterValue
-      : (symbolLayer.filter as FilterSpecification | undefined);
+    if (!shouldIncludeLayerByName(layer, parsedFilter)) {
+      continue;
+    }
+
+    const baseId =
+      typeof layer.id === "string" && layer.id.trim().length > 0 ? layer.id.trim() : `auto-${incrementalId++}`;
+    const newId = `${LABELS_LAYER_PREFIX}${baseId}`;
+
+    if (map.getLayer(newId)) {
+      continue;
+    }
+
+    const layout = layer.layout ? { ...layer.layout, visibility: "visible" } : { visibility: "visible" };
+    const paint = layer.paint ? { ...layer.paint } : {};
+    const filter = buildLayerFilter(layer, parsedFilter);
 
     const newLayer: SymbolLayerSpecification = {
-      id: layerId,
-      type: "symbol",
-      source: sourceId,
-      "source-layer": symbolLayer["source-layer"],
-      layout: {
-        ...(symbolLayer.layout ?? {}),
-        visibility: "visible",
-      },
-      paint: {
-        ...(symbolLayer.paint ?? {}),
-      },
-      filter: layerFilter,
-      minzoom: symbolLayer.minzoom,
-      maxzoom: symbolLayer.maxzoom,
+      ...layer,
+      id: newId,
+      source: LABELS_SRC_ID,
+      layout,
+      paint,
+      filter,
     };
 
-    if (!newLayer.paint) {
-      newLayer.paint = {};
-    }
-
     try {
-      map.addLayer(newLayer, beforeId);
-      layerEntries.push({ id: layerId, type: newLayer.type });
+      map.addLayer(newLayer);
     } catch (error) {
-      console.warn(`[vectorLabels] Failed to add label layer ${layerId}`, error);
-      continue;
-    }
-
-    try {
-      map.setPaintProperty(layerId, "text-opacity", targetOpacity);
-    } catch {
-      // ignore
-    }
-
-    try {
-      map.setPaintProperty(layerId, "icon-opacity", targetOpacity);
-    } catch {
-      // ignore
+      console.warn(`[vectorLabels] No se pudo añadir la capa ${newId}`, error);
     }
   }
-
-  return layerEntries;
 };
 
 export const removeLabelsOverlay = (map: Map): void => {
-  const state = getOverlayState(map);
-  if (!state) {
-    return;
-  }
+  const style = map.getStyle();
+  const layers = style?.layers ?? [];
 
-  for (const entry of state.layerIds) {
-    if (!map.getLayer(entry.id)) {
+  for (const layer of layers) {
+    if (!layer.id || !layer.id.startsWith(LABELS_LAYER_PREFIX)) {
+      continue;
+    }
+    if (!map.getLayer(layer.id)) {
       continue;
     }
     try {
-      map.removeLayer(entry.id);
+      map.removeLayer(layer.id);
     } catch (error) {
-      console.warn(`[vectorLabels] Failed to remove layer ${entry.id}`, error);
+      console.warn(`[vectorLabels] No se pudo eliminar la capa ${layer.id}`, error);
     }
   }
 
-  if (map.getSource(state.sourceId)) {
+  if (map.getSource(LABELS_SRC_ID)) {
     try {
-      map.removeSource(state.sourceId);
+      map.removeSource(LABELS_SRC_ID);
     } catch (error) {
-      console.warn("[vectorLabels] Failed to remove vector labels source", error);
+      console.warn("[vectorLabels] No se pudo eliminar la source de labels", error);
     }
   }
-
-  setOverlayState(map, undefined);
 };
 
 export const ensureLabelsOverlay = async (
   map: Map,
-  overlayInput: NormalizedLabelsOverlay | boolean | null | undefined,
+  cfgInput: LabelsOverlayCfg | null | undefined,
   apiKey?: string | null,
 ): Promise<void> => {
-  const normalizedOverlay = normalizeLabelsOverlay(overlayInput, DEFAULT_LABELS_STYLE_URL);
-
-  if (!normalizedOverlay.enabled) {
-    removeLabelsOverlay(map);
-    return;
-  }
-
-  await waitForStyleLoad(map);
-
-  const state = getOverlayState(map);
-  const signedStyleUrl = signMapTilerUrl(normalizedOverlay.style_url, apiKey) ?? normalizedOverlay.style_url;
-
-  if (
-    state &&
-    state.styleUrl === signedStyleUrl &&
-    state.layerFilter === (normalizedOverlay.layer_filter ?? null) &&
-    map.getSource(state.sourceId)
-  ) {
-    updateLabelsOpacity(map, normalizedOverlay.opacity);
-    return;
-  }
-
   removeLabelsOverlay(map);
 
+  const enabled = Boolean(cfgInput?.enabled);
+  if (!enabled) {
+    return;
+  }
+
+  const styleUrl = ensureStyleUrl(cfgInput?.style_url);
+  const signedStyleUrl = signMapTilerUrl(styleUrl, apiKey) ?? styleUrl;
+
   try {
-    const response = await fetch(signedStyleUrl, { cache: "no-store" });
+    const response = await fetch(signedStyleUrl, { cache: "no-cache" });
     if (!response.ok) {
-      throw new Error(`Failed to load labels style: HTTP ${response.status}`);
+      console.error(`[vectorLabels] labels style fetch ${response.status}`);
+      return;
     }
 
     const style = (await response.json()) as StyleSpecification;
-    if (!style.sources || !style.layers) {
-      throw new Error("Invalid labels style format");
+    if (!style?.sources || !style?.layers) {
+      console.warn("[vectorLabels] Formato de estilo inválido, no se añadieron labels.");
+      return;
     }
 
-    const vectorSourceEntry = findVectorSource(style.sources);
-    if (!vectorSourceEntry) {
-      throw new Error("Vector source not found in labels style");
+    const vectorSource = findVectorSource(style.sources);
+    if (!vectorSource) {
+      console.warn("[vectorLabels] Estilo sin fuente vectorial, no se añadieron labels.");
+      return;
     }
 
-    addVectorSource(map, VECTOR_LABELS_SOURCE_ID, vectorSourceEntry.source, apiKey);
-    const layerEntries = addVectorLabelLayers(map, VECTOR_LABELS_SOURCE_ID, style, normalizedOverlay);
+    const sourceConfig = cloneVectorSource(vectorSource, apiKey);
+    if (!sourceConfig) {
+      console.warn("[vectorLabels] No se pudo clonar la fuente vectorial, abortando overlay.");
+      return;
+    }
 
-    setOverlayState(map, {
-      styleUrl: signedStyleUrl,
-      layerIds: layerEntries,
-      sourceId: VECTOR_LABELS_SOURCE_ID,
-      layerFilter: normalizedOverlay.layer_filter ?? null,
-      opacity: clampLabelsOpacity(normalizedOverlay.opacity),
-    });
+    map.addSource(LABELS_SRC_ID, sourceConfig);
+
+    const parsedFilter = parseLayerFilter(cfgInput?.layer_filter ?? null);
+    addSymbolLayers(map, style.layers, parsedFilter);
+
+    const targetOpacity = clampOpacity(cfgInput?.opacity);
+    if (typeof targetOpacity === "number") {
+      updateLabelsOpacity(map, targetOpacity);
+    }
   } catch (error) {
-    console.error("[vectorLabels] Failed to ensure labels overlay:", error);
+    console.error("[vectorLabels] Error al asegurar el overlay de labels:", error);
   }
 };
 
 export const updateLabelsOpacity = (map: Map, opacity: number | null | undefined): void => {
-  const state = getOverlayState(map);
-  if (!state) {
-    return;
-  }
+  const target = clampLabelsOpacity(typeof opacity === "number" ? opacity : 1);
+  const layers = map.getStyle()?.layers ?? [];
 
-  const clamped = clampLabelsOpacity(opacity ?? state.opacity ?? 1);
-  for (const entry of state.layerIds) {
-    if (entry.type === "symbol") {
-      try {
-        map.setPaintProperty(entry.id, "text-opacity", clamped);
-      } catch {
-        // ignore
-      }
-      try {
-        map.setPaintProperty(entry.id, "icon-opacity", clamped);
-      } catch {
-        // ignore
-      }
-    } else if (entry.type === "raster") {
-      try {
-        map.setPaintProperty(entry.id, "raster-opacity", clamped);
-      } catch {
-        // ignore
-      }
+  for (const layer of layers) {
+    if (!layer.id || !layer.id.startsWith(LABELS_LAYER_PREFIX)) {
+      continue;
+    }
+    if (!map.getLayer(layer.id)) {
+      continue;
+    }
+    try {
+      map.setPaintProperty(layer.id, "text-opacity", target);
+    } catch {
+      // ignorado
+    }
+    try {
+      map.setPaintProperty(layer.id, "icon-opacity", target);
+    } catch {
+      // ignorado
     }
   }
-
-  state.opacity = clamped;
-  setOverlayState(map, state);
 };
-
 

@@ -846,7 +846,16 @@ export default function GeoScopeMap({
         removeLabelsOverlay(currentMap);
         return;
       }
-      void ensureLabelsOverlay(currentMap, overlay, maptilerKey);
+      void ensureLabelsOverlay(
+        currentMap,
+        {
+          enabled: overlay.enabled,
+          style_url: overlay.style_url,
+          layer_filter: overlay.layer_filter ?? null,
+          opacity: overlay.opacity,
+        },
+        maptilerKey,
+      );
     };
 
     applyOverlay();
