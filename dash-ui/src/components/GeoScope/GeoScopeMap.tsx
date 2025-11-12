@@ -710,6 +710,7 @@ export default function GeoScopeMap({
   );
   const effectiveLabelsOverlayEnabled = normalizedLabelsOverlay.enabled;
   const effectiveLabelsStyleUrl = normalizedLabelsOverlay.style_url ?? null;
+  const effectiveLabelsOpacity = normalizedLabelsOverlay.opacity ?? 1.0;
   
   const effectiveSatelliteEnabled = Boolean(
     (uiMapSatellite?.enabled ?? satelliteEnabled) && maptilerKey,
@@ -2629,6 +2630,7 @@ export default function GeoScopeMap({
           opacity={effectiveSatelliteOpacity}
           labelsOverlay={effectiveLabelsOverlayEnabled}
           labelsStyleUrl={effectiveLabelsStyleUrl}
+          labelsOpacity={effectiveLabelsOpacity}
           apiKey={maptilerKey}
         />
       ) : null}

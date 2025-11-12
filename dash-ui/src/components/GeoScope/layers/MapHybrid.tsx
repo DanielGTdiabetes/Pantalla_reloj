@@ -1,8 +1,8 @@
 import React, { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import type { Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
-import type { LayerSpecification } from "@maplibre/maplibre-gl-style-spec";
-import { signMapTilerUrl } from "../../../lib/map/utils/maptilerHelpers";
+import { signMapTilerUrl, getSatelliteTileUrl } from "../../../lib/map/utils/maptilerHelpers";
+import { ensureLabelsOverlay, removeLabelsOverlay } from "../../../lib/map/overlays/vectorLabels";
 
 export interface MapHybridProps {
   map: MapLibreMap;
@@ -10,6 +10,7 @@ export interface MapHybridProps {
   opacity: number;
   labelsOverlay: boolean;
   labelsStyleUrl: string | null;
+  labelsOpacity?: number;
   apiKey: string | null | undefined;
 }
 
@@ -24,12 +25,11 @@ export default function MapHybrid({
   opacity,
   labelsOverlay,
   labelsStyleUrl,
+  labelsOpacity = 1.0,
   apiKey,
 }: MapHybridProps) {
   const rasterSourceId = "maptiler-satellite-raster";
   const rasterLayerId = "maptiler-satellite-raster-layer";
-  const labelsSourceId = "maptiler-satellite-labels";
-  const labelsLayerId = "maptiler-satellite-labels-layer";
   const initializedRef = useRef(false);
 
   useEffect(() => {
@@ -37,17 +37,20 @@ export default function MapHybrid({
       // Limpiar si está deshabilitado o falta API key
       if (map) {
         if (map.getLayer(rasterLayerId)) {
-          map.removeLayer(rasterLayerId);
+          try {
+            map.removeLayer(rasterLayerId);
+          } catch (e) {
+            console.warn("[MapHybrid] Error removiendo capa raster:", e);
+          }
         }
         if (map.getSource(rasterSourceId)) {
-          map.removeSource(rasterSourceId);
+          try {
+            map.removeSource(rasterSourceId);
+          } catch (e) {
+            console.warn("[MapHybrid] Error removiendo source raster:", e);
+          }
         }
-        if (map.getLayer(labelsLayerId)) {
-          map.removeLayer(labelsLayerId);
-        }
-        if (map.getSource(labelsSourceId)) {
-          map.removeSource(labelsSourceId);
-        }
+        removeLabelsOverlay(map);
       }
       initializedRef.current = false;
       return;
@@ -65,25 +68,38 @@ export default function MapHybrid({
     }
 
     initializeLayers();
-  }, [map, enabled, opacity, labelsOverlay, labelsStyleUrl, apiKey]);
+  }, [map, enabled, opacity, labelsOverlay, labelsStyleUrl, apiKey, labelsOpacity]);
 
-  const initializeLayers = () => {
+  const initializeLayers = async () => {
     if (!map || !enabled || !apiKey || initializedRef.current) {
       return;
     }
 
     try {
-      // 1. Añadir fuente raster de satélite
+      // 1. Obtener URL de tiles raster de satélite
+      // Asumimos que la configuración tiene styleUrl que apunta a /maps/satellite/style.json
+      // Necesitamos convertirlo a la URL de tiles
+      const satelliteTileUrl = getSatelliteTileUrl(
+        "https://api.maptiler.com/maps/satellite/style.json",
+        apiKey
+      );
+
+      if (!satelliteTileUrl) {
+        console.error("[MapHybrid] No se pudo obtener URL de tiles de satélite");
+        return;
+      }
+
+      // 2. Añadir fuente raster de satélite
       if (!map.getSource(rasterSourceId)) {
         map.addSource(rasterSourceId, {
           type: "raster",
-          tiles: [`https://api.maptiler.com/tiles/satellite/{z}/{x}/{y}.jpg?key=${apiKey}`],
+          tiles: [satelliteTileUrl],
           tileSize: 256,
           attribution: "© MapTiler © OpenStreetMap contributors",
         });
       }
 
-      // 2. Añadir capa raster de satélite
+      // 3. Añadir capa raster de satélite (antes de cualquier overlay)
       if (!map.getLayer(rasterLayerId)) {
         // Buscar antes de qué capa insertar (antes de overlays como radar, vuelos, etc.)
         const beforeId = findOverlayBeforeId();
@@ -105,114 +121,26 @@ export default function MapHybrid({
         map.setPaintProperty(rasterLayerId, "raster-opacity", opacity);
       }
 
-      // 3. Añadir overlay de etiquetas vectoriales si está habilitado
+      // 4. Añadir overlay de etiquetas vectoriales si está habilitado
       if (labelsOverlay && labelsStyleUrl) {
-        if (!map.getSource(labelsSourceId)) {
-          // Cargar el estilo de etiquetas y extraer las capas de labels
-          loadLabelsStyle(labelsStyleUrl, apiKey);
-        } else {
-          // Actualizar visibilidad de las capas de labels
-          updateLabelsVisibility(true);
-        }
+        await ensureLabelsOverlay(
+          map,
+          {
+            enabled: true,
+            style_url: labelsStyleUrl,
+            opacity: labelsOpacity,
+            layer_filter: null,
+          },
+          apiKey
+        );
       } else {
-        // Remover capas de labels si están deshabilitadas
-        updateLabelsVisibility(false);
+        removeLabelsOverlay(map);
       }
 
       initializedRef.current = true;
     } catch (error) {
       console.error("[MapHybrid] Error inicializando capas:", error);
     }
-  };
-
-  const loadLabelsStyle = async (styleUrl: string, key: string) => {
-    try {
-      // Firmar URL usando helper
-      const signedUrl = signMapTilerUrl(styleUrl, key);
-      if (!signedUrl) {
-        throw new Error("Invalid style URL");
-      }
-
-      const response = await fetch(signedUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to load labels style: ${response.status}`);
-      }
-
-      const style = await response.json();
-
-      // Añadir fuente vectorial para las etiquetas
-      if (style.sources && Object.keys(style.sources).length > 0) {
-        const firstSourceKey = Object.keys(style.sources)[0];
-        const firstSource = style.sources[firstSourceKey];
-
-        if (!map.getSource(labelsSourceId)) {
-          map.addSource(labelsSourceId, {
-            type: "vector",
-            url: firstSource.url || firstSource.tiles?.[0] || "",
-            ...(firstSource.tiles ? { tiles: firstSource.tiles } : {}),
-          });
-        }
-
-        // Añadir capas de labels del estilo
-        if (style.layers && Array.isArray(style.layers)) {
-          const labelLayers = style.layers.filter((layer: any) => {
-            const id = (layer.id || "").toLowerCase();
-            const hasTextField = layer.layout?.["text-field"] !== undefined;
-            return (
-              hasTextField ||
-              id.includes("label") ||
-              id.includes("name") ||
-              id.includes("text") ||
-              id.includes("poi")
-            );
-          });
-
-          const beforeId = findOverlayBeforeId();
-          labelLayers.forEach((layer: any, index: number) => {
-            const layerId = `${labelsLayerId}-${index}`;
-            if (!map.getLayer(layerId)) {
-              try {
-                map.addLayer(
-                  {
-                    id: layerId,
-                    type: "symbol",
-                    source: labelsSourceId,
-                    "source-layer": layer["source-layer"] || layer.source,
-                    layout: layer.layout || {},
-                    paint: layer.paint || {},
-                    filter: layer.filter,
-                    minzoom: layer.minzoom,
-                    maxzoom: layer.maxzoom,
-                  },
-                  beforeId
-                );
-              } catch (err) {
-                console.warn(`[MapHybrid] No se pudo añadir capa de label ${layerId}:`, err);
-              }
-            }
-          });
-        }
-      }
-    } catch (error) {
-      console.error("[MapHybrid] Error cargando estilo de labels:", error);
-    }
-  };
-
-  const updateLabelsVisibility = (visible: boolean) => {
-    if (!map) return;
-
-    const visibility = visible ? "visible" : "none";
-    const layers = map.getStyle().layers || [];
-    layers.forEach((layer: LayerSpecification) => {
-      const id = layer.id;
-      if (id && id.startsWith(labelsLayerId)) {
-        try {
-          map.setLayoutProperty(id, "visibility", visibility);
-        } catch (err) {
-          // Ignorar errores si la capa no existe
-        }
-      }
-    });
   };
 
   const findOverlayBeforeId = (): string | undefined => {
@@ -247,6 +175,29 @@ export default function MapHybrid({
       console.warn("[MapHybrid] Error actualizando opacidad:", error);
     }
   }, [opacity, map, enabled]);
+
+  // Actualizar opacidad de etiquetas cuando cambie
+  useEffect(() => {
+    if (!map || !enabled) {
+      return;
+    }
+
+    try {
+      const layers = map.getStyle()?.layers ?? [];
+      for (const layer of layers) {
+        if (layer.id && layer.id.startsWith("labels-ov-")) {
+          try {
+            map.setPaintProperty(layer.id, "text-opacity", labelsOpacity);
+            map.setPaintProperty(layer.id, "icon-opacity", labelsOpacity);
+          } catch (e) {
+            // Ignorar si la propiedad no existe
+          }
+        }
+      }
+    } catch (error) {
+      console.warn("[MapHybrid] Error actualizando opacidad de etiquetas:", error);
+    }
+  }, [labelsOpacity, map, enabled]);
 
   return null; // Componente sin UI visual
 }

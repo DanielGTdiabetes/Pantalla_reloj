@@ -30,3 +30,56 @@ export function signMapTilerUrl(url: string | null | undefined, apiKey?: string 
   return trimmedUrl;
 }
 
+/**
+ * Detecta si una URL es un estilo de satélite de MapTiler.
+ * @param url URL del estilo
+ * @returns true si es un estilo de satélite
+ */
+export function isSatelliteStyle(url: string | null | undefined): boolean {
+  if (!url || typeof url !== "string") {
+    return false;
+  }
+  return url.includes("/maps/satellite/");
+}
+
+/**
+ * Detecta si una URL es un estilo híbrido de MapTiler.
+ * @param url URL del estilo
+ * @returns true si es un estilo híbrido
+ */
+export function isHybridStyle(url: string | null | undefined): boolean {
+  if (!url || typeof url !== "string") {
+    return false;
+  }
+  return url.includes("/maps/hybrid/");
+}
+
+/**
+ * Obtiene la URL de tiles raster de satélite desde una URL de estilo.
+ * @param styleUrl URL del estilo (ej: https://api.maptiler.com/maps/satellite/style.json?key=...)
+ * @returns URL de tiles raster (ej: https://api.maptiler.com/tiles/satellite/{z}/{x}/{y}.jpg?key=...)
+ */
+export function getSatelliteTileUrl(styleUrl: string | null | undefined, apiKey?: string | null): string | null {
+  if (!styleUrl || typeof styleUrl !== "string") {
+    return null;
+  }
+
+  // Extraer la clave de estilo (ej: "satellite" de "/maps/satellite/style.json")
+  const match = styleUrl.match(/\/maps\/([^\/]+)\/style\.json/);
+  if (!match || !match[1]) {
+    return null;
+  }
+
+  const styleKey = match[1];
+  const baseUrl = `https://api.maptiler.com/tiles/${styleKey}/{z}/{x}/{y}.jpg`;
+  
+  // Extraer la API key de la URL si existe
+  const keyMatch = styleUrl.match(/[?&]key=([^&]+)/);
+  const effectiveKey = keyMatch ? keyMatch[1] : apiKey;
+  
+  if (effectiveKey) {
+    return `${baseUrl}?key=${effectiveKey}`;
+  }
+  
+  return baseUrl;
+}

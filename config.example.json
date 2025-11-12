@@ -1,0 +1,146 @@
+{
+  "version": 2,
+  "display": {
+    "timezone": "Europe/Madrid",
+    "module_cycle_seconds": 20
+  },
+  "ui_map": {
+    "engine": "maplibre",
+    "provider": "maptiler_vector",
+    "renderWorldCopies": true,
+    "interactive": false,
+    "controls": false,
+    "maptiler": {
+      "api_key": "fBZDqPrUD4EwoZLV4L6A",
+      "style": "vector-bright",
+      "styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json"
+    },
+    "satellite": {
+      "enabled": true,
+      "opacity": 0.85,
+      "provider": "maptiler",
+      "style_raster": "https://api.maptiler.com/maps/satellite/style.json",
+      "style_labels": "https://api.maptiler.com/maps/streets-v4/style.json",
+      "labels_overlay": {
+        "enabled": true,
+        "style_url": "https://api.maptiler.com/maps/streets-v4/style.json",
+        "layer_filter": null,
+        "opacity": 1.0
+      }
+    },
+    "customXyz": {
+      "tileUrl": null,
+      "minzoom": 0,
+      "maxzoom": 19
+    },
+    "viewMode": "fixed",
+    "fixed": {
+      "center": {
+        "lat": 39.98,
+        "lon": 0.20
+      },
+      "zoom": 9.0,
+      "bearing": 0,
+      "pitch": 0
+    },
+    "region": {
+      "postalCode": "12001"
+    }
+  },
+  "ui_global": {
+    "satellite": {
+      "enabled": false,
+      "provider": "gibs",
+      "opacity": 1.0
+    },
+    "radar": {
+      "enabled": false,
+      "provider": "rainviewer"
+    }
+  },
+  "opensky": {
+    "enabled": false,
+    "mode": "bbox",
+    "poll_seconds": 10,
+    "max_aircraft": 400,
+    "cluster": true,
+    "extended": 0,
+    "bbox": {
+      "lamin": 39.5,
+      "lamax": 41.0,
+      "lomin": -1.0,
+      "lomax": 1.5
+    }
+  },
+  "layers": {
+    "flights": {
+      "enabled": false,
+      "provider": "opensky",
+      "refresh_seconds": 12,
+      "max_age_seconds": 120,
+      "max_items_global": 2000,
+      "max_items_view": 1500,
+      "rate_limit_per_min": 6,
+      "decimate": "none",
+      "grid_px": 24,
+      "styleScale": 3.2,
+      "render_mode": "symbol_custom",
+      "circle": {
+        "radius_base": 7.5,
+        "radius_zoom_scale": 1.7,
+        "opacity": 1.0,
+        "color": "#FFD400",
+        "stroke_color": "#000000",
+        "stroke_width": 2.0
+      },
+      "symbol": {
+        "size_vh": 2.0,
+        "allow_overlap": true
+      }
+    },
+    "ships": {
+      "enabled": false,
+      "provider": "aisstream",
+      "refresh_seconds": 10,
+      "max_age_seconds": 180,
+      "max_items_global": 1500,
+      "max_items_view": 420,
+      "rate_limit_per_min": 4,
+      "decimate": "grid",
+      "grid_px": 24,
+      "styleScale": 1.4
+    }
+  },
+  "panels": {
+    "weatherWeekly": {
+      "enabled": true
+    },
+    "ephemerides": {
+      "enabled": true
+    },
+    "news": {
+      "enabled": false,
+      "feeds": []
+    },
+    "calendar": {
+      "enabled": false,
+      "provider": "disabled"
+    },
+    "harvest": {
+      "enabled": false
+    },
+    "historicalEvents": {
+      "enabled": false
+    }
+  },
+  "secrets": {
+    "opensky": {
+      "oauth2": {
+        "client_id": null,
+        "client_secret": null,
+        "token_url": "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
+        "scope": null
+      }
+    }
+  }
+}
