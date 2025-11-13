@@ -37,7 +37,8 @@ import type {
 } from "../../types/config";
 import type {
   AppConfigV2,
-  MapConfigV2
+  MapConfigV2,
+  SatelliteLabelsOverlay
 } from "../../types/config_v2";
 import {
   loadMapStyle,
@@ -573,6 +574,38 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
     }
     
     const ui_map = mapConfigV2.ui_map;
+
+    const satelliteConfig = ui_map?.satellite;
+    const labelsOverlayRaw = satelliteConfig?.labels_overlay;
+    const labelsOverlayObject =
+      labelsOverlayRaw && typeof labelsOverlayRaw === "object" && !Array.isArray(labelsOverlayRaw)
+        ? (labelsOverlayRaw as SatelliteLabelsOverlay)
+        : undefined;
+    const legacyLabelsEnabled =
+      typeof satelliteConfig?.labels_enabled === "boolean" ? satelliteConfig.labels_enabled : null;
+    const labelsOverlayStyleUrl =
+      labelsOverlayObject?.style_url ??
+      (typeof satelliteConfig?.labels_style_url === "string"
+        ? satelliteConfig.labels_style_url
+        : null);
+
+    console.info("[MapAudit] ui_map.satellite from config", {
+      provider: ui_map?.provider ?? null,
+      maptiler_style_url: maskMaptilerUrl(ui_map?.maptiler?.styleUrl),
+      satellite: satelliteConfig
+        ? {
+            enabled: satelliteConfig.enabled ?? null,
+            style_url: maskMaptilerUrl(satelliteConfig.style_url),
+            opacity: satelliteConfig.opacity ?? null,
+            labels_overlay_enabled:
+              typeof labelsOverlayObject?.enabled === "boolean"
+                ? labelsOverlayObject.enabled
+                : legacyLabelsEnabled,
+            labels_overlay_style_url: maskMaptilerUrl(labelsOverlayStyleUrl),
+            labels_overlay_layer_filter: labelsOverlayObject?.layer_filter ?? null,
+          }
+        : null,
+    });
     
     // Si hay viewMode "fixed" y región con postalCode, geocodificar primero
     if (ui_map.viewMode === "fixed" && ui_map.region?.postalCode) {
@@ -697,7 +730,9 @@ export default function GeoScopeMap({
   satelliteLabelsStyle = "maptiler-streets-v4-labels",
 }: GeoScopeMapProps = {}) {
   const { data: config, reload: reloadConfig, mapStyleVersion } = useConfig();
+  // ui_map.maptiler.* define el estilo vectorial base que se usa como fallback cuando no forzamos el modo satélite.
   const maptilerKey = useMemo(() => getMaptilerApiKey(config), [config]);
+  // ui_map.satellite.* llega directamente desde /api/config (v2) y controla la activación del modo híbrido.
   const uiMapSatellite = useMemo(() => {
     const v2Config = config as unknown as AppConfigV2 | null;
     if (v2Config?.version === 2 && v2Config.ui_map?.satellite) {
@@ -712,7 +747,7 @@ export default function GeoScopeMap({
       if (uiMapSatellite?.enabled && uiMapSatellite.style_url) {
         return uiMapSatellite.style_url;
       }
-      // Si no, usar el styleUrl del maptiler config
+      // Si no, usar el styleUrl de ui_map.maptiler.* como estilo de mapa vectorial principal.
       const styleUrl = v2Config.ui_map?.maptiler?.styleUrl;
       return typeof styleUrl === "string" ? styleUrl : null;
     }
@@ -1209,6 +1244,19 @@ export default function GeoScopeMap({
         configV2?.ui_map?.provider ??
         (runtime.mapSettings?.provider ? String(runtime.mapSettings.provider) : null);
 
+      console.info("[MapAudit] runtime map options before maplibregl.Map", {
+        provider: providerForLog,
+        base_style_url: maskMaptilerUrl(effectiveBaseStyleUrl),
+        maptiler_key_present: Boolean(maptilerKey),
+        satellite_enabled: effectiveSatelliteEnabled,
+        satellite_opacity: effectiveSatelliteOpacity,
+        labels_overlay: {
+          enabled: normalizedLabelsOverlay.enabled,
+          style_url: maskMaptilerUrl(normalizedLabelsOverlay.style_url),
+          layer_filter: normalizedLabelsOverlay.layer_filter,
+          opacity: normalizedLabelsOverlay.opacity,
+        },
+      });
       console.info("[GeoScopeMap] Map init", {
         provider: providerForLog,
         base_style_url: maskMaptilerUrl(effectiveBaseStyleUrl),
@@ -2652,6 +2700,7 @@ export default function GeoScopeMap({
       {tintColor ? (
         <div className="map-tint" style={{ background: tintColor }} aria-hidden="true" />
       ) : null}
+      {/* MapHybrid consume ui_map.satellite.* y añade la capa raster + etiquetas vectoriales sobre el estilo base. */}
       {mapRef.current && effectiveSatelliteEnabled && uiMapSatellite ? (
         <MapHybrid
           map={mapRef.current}
