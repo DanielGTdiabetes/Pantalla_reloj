@@ -1,18 +1,37 @@
 import React, { useEffect, useRef } from "react";
-import maplibregl from "maplibre-gl";
-import type { Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
-import { signMapTilerUrl, getSatelliteTileUrl } from "../../../lib/map/utils/maptilerHelpers";
+import type { Map as MapLibreMap } from "maplibre-gl";
+import { getSatelliteTileUrl } from "../../../lib/map/utils/maptilerHelpers";
 import { ensureLabelsOverlay, removeLabelsOverlay } from "../../../lib/map/overlays/vectorLabels";
+import type { NormalizedLabelsOverlay } from "../../../lib/map/labelsOverlay";
 
 export interface MapHybridProps {
   map: MapLibreMap;
   enabled: boolean;
   opacity: number;
-  labelsOverlay: boolean;
-  labelsStyleUrl: string | null;
-  labelsOpacity?: number;
+  baseStyleUrl: string | null;
+  labelsOverlay: NormalizedLabelsOverlay;
   apiKey: string | null | undefined;
 }
+
+const maskUrl = (value?: string | null): string | null => {
+  if (typeof value !== "string") {
+    return value ?? null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    const url = new URL(trimmed);
+    if (url.searchParams.has("key")) {
+      url.searchParams.set("key", "***");
+      return url.toString();
+    }
+  } catch {
+    // Ignorar errores de parseo
+  }
+  return trimmed;
+};
 
 /**
  * Componente MapHybrid: Renderiza modo híbrido MapTiler
@@ -23,9 +42,8 @@ export default function MapHybrid({
   map,
   enabled,
   opacity,
+  baseStyleUrl,
   labelsOverlay,
-  labelsStyleUrl,
-  labelsOpacity = 1.0,
   apiKey,
 }: MapHybridProps) {
   const rasterSourceId = "maptiler-satellite-raster";
@@ -68,28 +86,36 @@ export default function MapHybrid({
     }
 
     initializeLayers();
-  }, [map, enabled, opacity, labelsOverlay, labelsStyleUrl, apiKey, labelsOpacity]);
+  }, [
+    map,
+    enabled,
+    opacity,
+    baseStyleUrl,
+    labelsOverlay.enabled,
+    labelsOverlay.style_url,
+    labelsOverlay.layer_filter,
+    labelsOverlay.opacity,
+    apiKey,
+  ]);
 
   const initializeLayers = async () => {
-    if (!map || !enabled || !apiKey || initializedRef.current) {
+    if (!map || !enabled || !apiKey) {
       return;
     }
 
     try {
-      // 1. Obtener URL de tiles raster de satélite
-      // Asumimos que la configuración tiene styleUrl que apunta a /maps/satellite/style.json
-      // Necesitamos convertirlo a la URL de tiles
-      const satelliteTileUrl = getSatelliteTileUrl(
-        "https://api.maptiler.com/maps/satellite/style.json",
-        apiKey
-      );
+      const styleUrlCandidate =
+        baseStyleUrl && baseStyleUrl.trim().length > 0
+          ? baseStyleUrl
+          : "https://api.maptiler.com/maps/satellite/style.json";
+
+      const satelliteTileUrl = getSatelliteTileUrl(styleUrlCandidate, apiKey);
 
       if (!satelliteTileUrl) {
         console.error("[MapHybrid] No se pudo obtener URL de tiles de satélite");
         return;
       }
 
-      // 2. Añadir fuente raster de satélite
       if (!map.getSource(rasterSourceId)) {
         map.addSource(rasterSourceId, {
           type: "raster",
@@ -99,9 +125,7 @@ export default function MapHybrid({
         });
       }
 
-      // 3. Añadir capa raster de satélite (antes de cualquier overlay)
       if (!map.getLayer(rasterLayerId)) {
-        // Buscar antes de qué capa insertar (antes de overlays como radar, vuelos, etc.)
         const beforeId = findOverlayBeforeId();
         map.addLayer(
           {
@@ -117,24 +141,34 @@ export default function MapHybrid({
           beforeId
         );
       } else {
-        // Actualizar opacidad si la capa ya existe
         map.setPaintProperty(rasterLayerId, "raster-opacity", opacity);
       }
 
-      // 4. Añadir overlay de etiquetas vectoriales si está habilitado
-      if (labelsOverlay && labelsStyleUrl) {
+      if (labelsOverlay.enabled && labelsOverlay.style_url) {
         await ensureLabelsOverlay(
           map,
           {
             enabled: true,
-            style_url: labelsStyleUrl,
-            opacity: labelsOpacity,
-            layer_filter: null,
+            style_url: labelsOverlay.style_url,
+            opacity: labelsOverlay.opacity,
+            layer_filter: labelsOverlay.layer_filter ?? null,
           },
           apiKey
         );
       } else {
         removeLabelsOverlay(map);
+      }
+
+      if (!initializedRef.current) {
+        const maskedBase = maskUrl(styleUrlCandidate);
+        const maskedLabels = labelsOverlay.enabled ? maskUrl(labelsOverlay.style_url) : null;
+        console.info(
+          `[MapHybrid] Hybrid mode enabled: base=${maskedBase ?? "n/a"} labels=${maskedLabels ?? "none"} opacity=${opacity.toFixed(2)}`,
+          {
+            labels_opacity: labelsOverlay.opacity,
+            layer_filter: labelsOverlay.layer_filter ?? null,
+          }
+        );
       }
 
       initializedRef.current = true;
@@ -187,8 +221,8 @@ export default function MapHybrid({
       for (const layer of layers) {
         if (layer.id && layer.id.startsWith("labels-ov-")) {
           try {
-            map.setPaintProperty(layer.id, "text-opacity", labelsOpacity);
-            map.setPaintProperty(layer.id, "icon-opacity", labelsOpacity);
+            map.setPaintProperty(layer.id, "text-opacity", labelsOverlay.opacity);
+            map.setPaintProperty(layer.id, "icon-opacity", labelsOverlay.opacity);
           } catch (e) {
             // Ignorar si la propiedad no existe
           }
@@ -197,7 +231,7 @@ export default function MapHybrid({
     } catch (error) {
       console.warn("[MapHybrid] Error actualizando opacidad de etiquetas:", error);
     }
-  }, [labelsOpacity, map, enabled]);
+  }, [labelsOverlay.opacity, map, enabled]);
 
   return null; // Componente sin UI visual
 }

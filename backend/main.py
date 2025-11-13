@@ -74,7 +74,6 @@ from .config_store import (
     default_layers_if_missing,
     default_panels_if_missing,
     load_raw_config,
-    normalize_maptiler_url,
     reload_runtime_config,
     resolve_calendar_provider,
     validate_calendar_provider,
@@ -127,6 +126,7 @@ from .services.kiosk import refresh_ui_if_possible
 from .config_migrator import migrate_config_to_v2, migrate_v1_to_v2, apply_postal_geocoding
 from .rate_limiter import check_rate_limit
 from .utils.config_upgrade import clean_aemet_keys
+from .services.maptiler import normalize_maptiler_style_url
 
 APP_START = datetime.now(timezone.utc)
 logger = configure_logging()
@@ -180,7 +180,19 @@ clean_aemet_keys(CONFIG_PATH)
 
 def load_effective_config() -> AppConfigV2:
     """Carga la configuración efectiva (siempre en esquema v2)."""
-    return config_manager.read()
+    config = config_manager.read()
+    ui_map = config.ui_map
+    maptiler_cfg = ui_map.maptiler
+    satellite_cfg = ui_map.satellite
+    logger.debug(
+        "[config] ui_map provider=%s style=%s styleUrl=%s satellite.enabled=%s labels_overlay.enabled=%s",
+        ui_map.provider,
+        maptiler_cfg.style if maptiler_cfg else None,
+        maptiler_cfg.styleUrl if maptiler_cfg else None,
+        satellite_cfg.enabled if satellite_cfg else None,
+        satellite_cfg.labels_overlay.enabled if satellite_cfg and satellite_cfg.labels_overlay else None,
+    )
+    return config
 
 
 # Cargar configuración efectiva al inicio
@@ -1661,28 +1673,11 @@ def validate_map_config() -> Dict[str, Any]:
         # Validar el estilo
         result = _validate_maptiler_style(style_url)
         
-        # Si falla y hay apiKey, intentar auto-fix a streets-v2
-        tried_fallback = False
-        if not result["ok"] and api_key:
-            fallback_url = f"https://api.maptiler.com/maps/streets-v2/style.json?key={api_key}"
-            fallback_result = _validate_maptiler_style(fallback_url)
-            if fallback_result["ok"]:
-                # Auto-fix exitoso: actualizar config
-                logger.info("Auto-fixing MapTiler style to streets-v2")
-                config_data = json.loads(config_manager.config_file.read_text(encoding="utf-8"))
-                if "ui_map" in config_data and isinstance(config_data["ui_map"], dict):
-                    if "maptiler" in config_data["ui_map"] and isinstance(config_data["ui_map"]["maptiler"], dict):
-                        config_data["ui_map"]["maptiler"]["styleUrl"] = fallback_url
-                        _persist_config(config_data, reason="maptiler_autofix")
-                        logger.info("Updated MapTiler styleUrl to streets-v2")
-                result = fallback_result
-                tried_fallback = True
-        
         return {
             "ok": result["ok"],
             "provider": "maptiler_vector",
-            "styleUrl": style_url if result["ok"] else (fallback_url if tried_fallback else style_url),
-            "triedFallback": tried_fallback,
+            "styleUrl": style_url,
+            "triedFallback": False,
             "status": result["status"],
             "error": result.get("error"),
             "name": result.get("name")
@@ -3414,9 +3409,7 @@ def _validate_and_normalize_maptiler(config: Dict[str, Any]) -> None:
     # Normalizar styleUrl
     style_url = maptiler.get("styleUrl")
     if style_url and isinstance(style_url, str) and style_url.strip():
-        # Si styleUrl ya contiene api.maptiler.com, solo normalizar (añadir ?key= si falta)
-        # No sustituir nunca el estilo, respetar hybrid, satellite, etc.
-        normalized_url = normalize_maptiler_url(api_key, style_url.strip())
+        normalized_url = normalize_maptiler_style_url(api_key, style_url.strip()) or style_url.strip()
         maptiler["styleUrl"] = normalized_url
     else:
         # Solo si no hay styleUrl, usar default con firma
@@ -9774,23 +9767,21 @@ def sign_maptiler_urls(cfg: AppConfigV2) -> AppConfigV2:
     # Establecer api_key en memoria (no se expone en GET /api/config)
     cfg.ui_map.maptiler.api_key = maptiler_key
     
-    # Firmar styleUrl si no tiene ?key=
+    # Firmar styleUrl usando helper centralizado
     if cfg.ui_map.maptiler.styleUrl:
-        style_url = cfg.ui_map.maptiler.styleUrl
-        if "?key=" not in style_url and "&key=" not in style_url:
-            separator = "&" if "?" in style_url else "?"
-            cfg.ui_map.maptiler.styleUrl = f"{style_url}{separator}key={maptiler_key}"
-            logger.debug("[maptiler] Signed styleUrl with ?key=")
+        cfg.ui_map.maptiler.styleUrl = (
+            normalize_maptiler_style_url(maptiler_key, cfg.ui_map.maptiler.styleUrl)
+            or cfg.ui_map.maptiler.styleUrl
+        )
     
-    # Firmar labels_style_url si existe y no tiene ?key=
+    # Firmar labels_style_url si existe
     if cfg.ui_map.satellite and cfg.ui_map.satellite.labels_overlay:
         labels_overlay = cfg.ui_map.satellite.labels_overlay
         if labels_overlay.style_url:
-            labels_url = labels_overlay.style_url
-            if "?key=" not in labels_url and "&key=" not in labels_url:
-                separator = "&" if "?" in labels_url else "?"
-                labels_overlay.style_url = f"{labels_url}{separator}key={maptiler_key}"
-                logger.debug("[maptiler] Signed labels_overlay.style_url with ?key=")
+            labels_overlay.style_url = (
+                normalize_maptiler_style_url(maptiler_key, labels_overlay.style_url)
+                or labels_overlay.style_url
+            )
     
     return cfg
 
@@ -9834,11 +9825,8 @@ def ensure_maptiler_key() -> None:
         if isinstance(maptiler, dict):
             style_url = maptiler.get("styleUrl")
             if isinstance(style_url, str) and style_url:
-                # Verificar si ya tiene ?key=
-                if "?key=" not in style_url and "&key=" not in style_url:
-                    # Reconstruir URL con ?key=
-                    separator = "&" if "?" in style_url else "?"
-                    new_url = f"{style_url}{separator}key={api_key}"
+                new_url = normalize_maptiler_style_url(api_key, style_url)
+                if isinstance(new_url, str) and new_url != style_url:
                     maptiler["styleUrl"] = new_url
                     ui_map["maptiler"] = maptiler
                     config_data["ui_map"] = ui_map
@@ -9865,15 +9853,10 @@ def ensure_maptiler_key() -> None:
                 labels_style_url = satellite.get("labels_style_url")
             
             if isinstance(labels_style_url, str) and labels_style_url:
-                # Verificar si ya tiene ?key=
-                if "?key=" not in labels_style_url and "&key=" not in labels_style_url:
-                    # Asegurar que labels_overlay existe como objeto
+                new_url = normalize_maptiler_style_url(api_key, labels_style_url)
+                if isinstance(new_url, str) and new_url != labels_style_url:
                     if "labels_overlay" not in satellite or not isinstance(satellite["labels_overlay"], dict):
                         satellite["labels_overlay"] = {"enabled": True}
-                    
-                    # Reconstruir URL con ?key=
-                    separator = "&" if "?" in labels_style_url else "?"
-                    new_url = f"{labels_style_url}{separator}key={api_key}"
                     satellite["labels_overlay"]["style_url"] = new_url
                     ui_map["satellite"] = satellite
                     config_data["ui_map"] = ui_map

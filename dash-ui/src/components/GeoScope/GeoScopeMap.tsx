@@ -8,11 +8,7 @@ import { apiGet, apiPost, saveConfig } from "../../lib/api";
 import { useConfig } from "../../lib/useConfig";
 import { applyMapStyle, computeStyleUrlFromConfig } from "../../kiosk/mapStyle";
 import { kioskRuntime } from "../../lib/runtimeFlags";
-import {
-  ensureLabelsOverlay,
-  removeLabelsOverlay,
-  updateLabelsOpacity,
-} from "../../lib/map/overlays/vectorLabels";
+import { removeLabelsOverlay, updateLabelsOpacity } from "../../lib/map/overlays/vectorLabels";
 import { normalizeLabelsOverlay } from "../../lib/map/labelsOverlay";
 import AircraftLayer from "./layers/AircraftLayer";
 import GlobalRadarLayer from "./layers/GlobalRadarLayer";
@@ -310,6 +306,26 @@ const normalizeBearing = (bearing: number) => {
     normalized += 360;
   }
   return normalized;
+};
+
+const maskMaptilerUrl = (value?: string | null): string | null => {
+  if (typeof value !== "string") {
+    return value ?? null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    const url = new URL(trimmed);
+    if (url.searchParams.has("key")) {
+      url.searchParams.set("key", "***");
+      return url.toString();
+    }
+  } catch {
+    // Ignorar errores de parseo – devolver URL tal cual
+  }
+  return trimmed;
 };
 
 
@@ -689,6 +705,14 @@ export default function GeoScopeMap({
     }
     return null;
   }, [config]);
+  const effectiveBaseStyleUrl = useMemo(() => {
+    const v2Config = config as unknown as AppConfigV2 | null;
+    if (v2Config?.version === 2) {
+      const styleUrl = v2Config.ui_map?.maptiler?.styleUrl;
+      return typeof styleUrl === "string" ? styleUrl : null;
+    }
+    return null;
+  }, [config]);
   const effectiveSatelliteOpacity =
     uiMapSatellite?.opacity ?? satelliteOpacity ?? 1.0;
   
@@ -708,9 +732,6 @@ export default function GeoScopeMap({
       uiMapSatellite?.labels_style_url,
     ],
   );
-  const effectiveLabelsOverlayEnabled = normalizedLabelsOverlay.enabled;
-  const effectiveLabelsStyleUrl = normalizedLabelsOverlay.style_url ?? null;
-  const effectiveLabelsOpacity = normalizedLabelsOverlay.opacity ?? 1.0;
   
   const effectiveSatelliteEnabled = Boolean(
     (uiMapSatellite?.enabled ?? satelliteEnabled) && maptilerKey,
@@ -843,20 +864,10 @@ export default function GeoScopeMap({
       if (!currentMap) {
         return;
       }
-      if (!overlay.enabled) {
+      if (!overlay.enabled || !effectiveSatelliteEnabled) {
         removeLabelsOverlay(currentMap);
         return;
       }
-      void ensureLabelsOverlay(
-        currentMap,
-        {
-          enabled: overlay.enabled,
-          style_url: overlay.style_url,
-          layer_filter: overlay.layer_filter ?? null,
-          opacity: overlay.opacity,
-        },
-        maptilerKey,
-      );
     };
 
     applyOverlay();
@@ -874,8 +885,8 @@ export default function GeoScopeMap({
     normalizedLabelsOverlay.enabled,
     normalizedLabelsOverlay.style_url,
     normalizedLabelsOverlay.layer_filter,
-    maptilerKey,
     mapStyleVersion,
+    effectiveSatelliteEnabled,
   ]);
 
   useEffect(() => {
@@ -1187,6 +1198,19 @@ export default function GeoScopeMap({
           setTintColor(null);
         }
       }
+
+      const configV2 = config as unknown as AppConfigV2 | null;
+      const providerForLog =
+        configV2?.ui_map?.provider ??
+        (runtime.mapSettings?.provider ? String(runtime.mapSettings.provider) : null);
+
+      console.info("[GeoScopeMap] Map init", {
+        provider: providerForLog,
+        base_style_url: maskMaptilerUrl(effectiveBaseStyleUrl),
+        hybrid_enabled: effectiveSatelliteEnabled,
+        satellite_overlay_enabled: effectiveSatelliteEnabled && normalizedLabelsOverlay.enabled,
+        labels_overlay_style_url: maskMaptilerUrl(normalizedLabelsOverlay.style_url),
+      });
 
       let map: maplibregl.Map;
       try {
@@ -2628,9 +2652,8 @@ export default function GeoScopeMap({
           map={mapRef.current}
           enabled={effectiveSatelliteEnabled}
           opacity={effectiveSatelliteOpacity}
-          labelsOverlay={effectiveLabelsOverlayEnabled}
-          labelsStyleUrl={effectiveLabelsStyleUrl}
-          labelsOpacity={effectiveLabelsOpacity}
+          baseStyleUrl={effectiveBaseStyleUrl}
+          labelsOverlay={normalizedLabelsOverlay}
           apiKey={maptilerKey}
         />
       ) : null}

@@ -10,6 +10,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict
 
+from .maptiler import normalize_maptiler_style_url
+
 log = logging.getLogger("config_sanitize")
 
 _ALLOWED_RENDER = {"auto", "symbol", "circle", "symbol_custom"}
@@ -22,9 +24,7 @@ except Exception as exc:  # noqa: BLE001
     _DEFAULT_CONFIG_V2 = {}
 
 DEFAULT_AISSTREAM_WS_URL = "wss://stream.aisstream.io/v0/stream"
-_DEFAULT_MAPTILER_STYLE_URL = (
-    "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A"
-)
+_DEFAULT_MAPTILER_STYLE_URL = "https://api.maptiler.com/maps/streets-v4/style.json"
 _OLD_OPENSKY_TOKEN_URLS = {
     "https://auth.opensky-network.org/oauth/token",
     "https://auth.opensky-network.org/oauth/token/",
@@ -120,25 +120,20 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
                     if "api_key" not in maptiler_cfg or maptiler_cfg["api_key"] is None:
                         maptiler_cfg["api_key"] = api_key_value
                 
-                # Asegurar styleUrl por defecto si falta
-                if not maptiler_cfg.get("styleUrl"):
+                style_url_raw = maptiler_cfg.get("styleUrl")
+                api_key_in_cfg = maptiler_cfg.get("api_key")
+                if isinstance(style_url_raw, str) and style_url_raw.strip():
+                    normalized = normalize_maptiler_style_url(api_key_in_cfg, style_url_raw.strip())
+                    maptiler_cfg["styleUrl"] = normalized or style_url_raw.strip()
+                else:
                     maptiler_cfg["styleUrl"] = _DEFAULT_MAPTILER_STYLE_URL
-                
-                # Limpiar urls.styleUrl* legacy si existen
+
+                # Limpiar urls.styleUrl* legacy si existen, conservando objeto si hay data útil
                 urls_cfg = maptiler_cfg.get("urls")
                 if isinstance(urls_cfg, dict):
-                    # Si styleUrl principal existe, limpiar urls.styleUrl*
-                    if maptiler_cfg.get("styleUrl"):
-                        if "styleUrl" in urls_cfg:
-                            del urls_cfg["styleUrl"]
-                        if "styleUrlDark" in urls_cfg:
-                            del urls_cfg["styleUrlDark"]
-                        if "styleUrlLight" in urls_cfg:
-                            del urls_cfg["styleUrlLight"]
-                        if "styleUrlBright" in urls_cfg:
-                            del urls_cfg["styleUrlBright"]
-                    # Si urls quedó vacío, eliminarlo
-                    if not urls_cfg or all(v is None for v in urls_cfg.values()):
+                    for legacy_key in ("styleUrl", "styleUrlDark", "styleUrlLight", "styleUrlBright"):
+                        urls_cfg.pop(legacy_key, None)
+                    if not urls_cfg or all(value in (None, "") for value in urls_cfg.values()):
                         maptiler_cfg.pop("urls", None)
             
             provider = ui_map.get("provider")
@@ -162,48 +157,66 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
 
             satellite_cfg = ui_map.get("satellite")
             if isinstance(satellite_cfg, dict):
-                # Migrar claves legacy
                 raster_legacy = satellite_cfg.pop("raster_style_url", None)
                 if raster_legacy and not satellite_cfg.get("style_raster"):
                     satellite_cfg["style_raster"] = raster_legacy
 
-                labels_overlay = satellite_cfg.get("labels_overlay")
-                if isinstance(labels_overlay, dict):
-                    if "labels_enabled" not in satellite_cfg:
-                        satellite_cfg["labels_enabled"] = bool(labels_overlay.get("enabled", True))
-                    style_url = labels_overlay.get("style_url")
-                    if style_url and not satellite_cfg.get("style_labels"):
-                        satellite_cfg["style_labels"] = style_url
-                    layer_filter_value = labels_overlay.get("layer_filter")
-                    if isinstance(layer_filter_value, list):
-                        try:
-                            labels_overlay["layer_filter"] = json.dumps(layer_filter_value)
-                        except Exception:
-                            labels_overlay["layer_filter"] = '["==", ["get", "layer"], "poi_label"]'
-                    elif isinstance(layer_filter_value, str):
-                        labels_overlay["layer_filter"] = layer_filter_value
-                    else:
-                        labels_overlay["layer_filter"] = json.dumps(layer_filter_value or ["==", ["get", "layer"], "poi_label"])
+                labels_overlay_raw = satellite_cfg.get("labels_overlay")
+                overlay_obj: Dict[str, Any]
+                if isinstance(labels_overlay_raw, dict):
+                    overlay_obj = dict(labels_overlay_raw)
+                elif isinstance(labels_overlay_raw, bool):
+                    overlay_obj = {"enabled": labels_overlay_raw}
                 else:
-                    labels_overlay = {
-                        "enabled": satellite_cfg.get("labels_enabled", True),
-                        "style_url": satellite_cfg.get("style_labels", "https://api.maptiler.com/maps/streets/style.json"),
-                        "layer_filter": '["==", ["get", "layer"], "poi_label"]',
-                    }
-                satellite_cfg["labels_overlay"] = labels_overlay
+                    overlay_obj = {}
+
+                overlay_obj.setdefault("enabled", satellite_cfg.get("labels_enabled", True))
+                legacy_style = satellite_cfg.get("style_labels") or satellite_cfg.get("labels_style_url")
+                overlay_style = overlay_obj.get("style_url") or legacy_style or "https://api.maptiler.com/maps/streets-v4/style.json"
+                if isinstance(overlay_style, str):
+                    overlay_obj["style_url"] = overlay_style.strip() or "https://api.maptiler.com/maps/streets-v4/style.json"
+                else:
+                    overlay_obj["style_url"] = "https://api.maptiler.com/maps/streets-v4/style.json"
+
+                layer_filter_value = overlay_obj.get("layer_filter")
+                if isinstance(layer_filter_value, list):
+                    try:
+                        overlay_obj["layer_filter"] = json.dumps(layer_filter_value)
+                    except Exception:
+                        overlay_obj["layer_filter"] = None
+                elif isinstance(layer_filter_value, str):
+                    overlay_obj["layer_filter"] = layer_filter_value.strip() or None
+                elif layer_filter_value is None:
+                    overlay_obj["layer_filter"] = None
+                else:
+                    try:
+                        overlay_obj["layer_filter"] = json.dumps(layer_filter_value)
+                    except Exception:
+                        overlay_obj["layer_filter"] = None
+
+                if overlay_obj.get("layer_filter") is None:
+                    overlay_obj["layer_filter"] = '["==", ["get", "layer"], "poi_label"]'
+
+                opacity_value = overlay_obj.get("opacity")
+                if isinstance(opacity_value, (int, float)):
+                    overlay_obj["opacity"] = max(0.0, min(1.0, float(opacity_value)))
+                else:
+                    overlay_obj["opacity"] = 1.0
+
+                api_key_overlay = maptiler_cfg.get("api_key") if isinstance(maptiler_cfg, dict) else None
+                overlay_obj["style_url"] = normalize_maptiler_style_url(api_key_overlay, overlay_obj["style_url"]) or overlay_obj["style_url"]
+
+                satellite_cfg["labels_overlay"] = overlay_obj
+                satellite_cfg["labels_enabled"] = overlay_obj.get("enabled", True)
+                satellite_cfg["labels_style_url"] = overlay_obj.get("style_url")
 
                 satellite_cfg.setdefault("enabled", False)
-                satellite_cfg.setdefault("labels_enabled", True)
                 satellite_cfg.setdefault("provider", "maptiler")
-                satellite_cfg.setdefault("opacity", 0.85)
-                satellite_cfg.setdefault(
-                    "style_raster",
-                    "https://api.maptiler.com/maps/satellite/style.json",
-                )
-                satellite_cfg.setdefault(
-                    "style_labels",
-                    "https://api.maptiler.com/maps/streets/style.json",
-                )
+                if isinstance(satellite_cfg.get("opacity"), (int, float)):
+                    satellite_cfg["opacity"] = max(0.0, min(1.0, float(satellite_cfg["opacity"])))
+                else:
+                    satellite_cfg["opacity"] = 1.0
+                satellite_cfg.setdefault("style_raster", "https://api.maptiler.com/maps/satellite/style.json")
 
         if "ui_global" not in data or not isinstance(data.get("ui_global"), dict):
             data["ui_global"] = _DEFAULT_CONFIG_V2.get("ui_global", {})

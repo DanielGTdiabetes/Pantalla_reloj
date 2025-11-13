@@ -118,6 +118,12 @@ class SatelliteLabelsOverlay(BaseModel):
         default='["==", ["get", "layer"], "poi_label"]',
         description="Filtro JSON (cadena serializada) para seleccionar capas de tipo label",
     )
+    opacity: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Opacidad aplicada a las etiquetas del overlay",
+    )
 
 
 class SatelliteSettings(BaseModel):

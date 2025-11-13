@@ -231,14 +231,56 @@ class ConfigManager:
         was_reloaded = self.config_loaded_at != previous_loaded_at and self.config_source == "file"
         return config, was_reloaded
     
+    def _mask_maptiler_url(self, url: Optional[str]) -> Optional[str]:
+        if not isinstance(url, str) or not url:
+            return None
+        try:
+            parsed = urlparse(url)
+        except Exception:
+            return url
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        if "key" in query:
+            query["key"] = ["***"]
+            masked_query = urlencode(query, doseq=True)
+            return urlunparse(
+                (
+                    parsed.scheme,
+                    parsed.netloc,
+                    parsed.path,
+                    parsed.params,
+                    masked_query,
+                    parsed.fragment,
+                )
+            )
+        return url
+
     def get_config_metadata(self) -> Dict[str, Any]:
         """Retorna metadatos sobre la configuración cargada."""
         has_timezone = False
+        map_provider = None
+        map_style = None
+        map_style_url = None
+        satellite_enabled = None
+        satellite_opacity = None
+        satellite_overlay_enabled = None
+        satellite_overlay_style_url = None
         try:
             config = self.read()
             if config.display and getattr(config.display, "timezone", None):
                 tz = config.display.timezone
                 has_timezone = bool(tz and str(tz).strip())
+            ui_map = config.ui_map
+            map_provider = ui_map.provider
+            if ui_map.maptiler:
+                map_style = ui_map.maptiler.style
+                map_style_url = self._mask_maptiler_url(ui_map.maptiler.styleUrl)
+            if ui_map.satellite:
+                satellite_enabled = ui_map.satellite.enabled
+                satellite_opacity = ui_map.satellite.opacity
+                if ui_map.satellite.labels_overlay:
+                    overlay = ui_map.satellite.labels_overlay
+                    satellite_overlay_enabled = overlay.enabled
+                    satellite_overlay_style_url = self._mask_maptiler_url(overlay.style_url)
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("Could not determine timezone from config: %s", exc)
         
@@ -247,6 +289,13 @@ class ConfigManager:
             "config_source": self.config_source_env,
             "has_timezone": has_timezone,
             "config_loaded_at": self.config_loaded_at,
+            "map_provider": map_provider,
+            "map_style": map_style,
+            "map_style_url": map_style_url,
+            "satellite_enabled": satellite_enabled,
+            "satellite_opacity": satellite_opacity,
+            "satellite_overlay_enabled": satellite_overlay_enabled,
+            "satellite_overlay_style_url": satellite_overlay_style_url,
         }
 
     def write(self, payload: Dict[str, Any]) -> AppConfigV2:
