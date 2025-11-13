@@ -371,6 +371,18 @@ const stringOrNull = (value: unknown): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const coerceLabelsOverlay = (
+  value: boolean | SatelliteLabelsOverlay | null | undefined,
+): SatelliteLabelsOverlay | null => {
+  if (value && typeof value === "object") {
+    return value;
+  }
+  if (typeof value === "boolean") {
+    return { enabled: value };
+  }
+  return null;
+};
+
 const clamp01 = (value: unknown, fallback: number): number => {
   const numeric = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(numeric)) {
@@ -670,15 +682,17 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
     
     const ui_map = mapConfigV2.ui_map;
 
+    const rawLabelsOverlay = coerceLabelsOverlay(ui_map?.satellite?.labels_overlay);
+
     console.info("[HybridFix] ui_map raw config", {
       provider: ui_map?.provider ?? null,
       base_style_url: maskMaptilerUrl(stringOrNull(ui_map?.maptiler?.styleUrl ?? null)),
       satellite_enabled: Boolean(ui_map?.satellite?.enabled),
       satellite_style_url: maskMaptilerUrl(stringOrNull(ui_map?.satellite?.style_url ?? null)),
       satellite_opacity: typeof ui_map?.satellite?.opacity === "number" ? ui_map.satellite.opacity : ui_map?.satellite?.opacity ?? null,
-      labels_overlay_enabled: Boolean(ui_map?.satellite?.labels_overlay?.enabled),
-      labels_overlay_style_url: maskMaptilerUrl(stringOrNull(ui_map?.satellite?.labels_overlay?.style_url ?? null)),
-      labels_overlay_filter: stringOrNull(ui_map?.satellite?.labels_overlay?.layer_filter ?? null),
+      labels_overlay_enabled: Boolean(rawLabelsOverlay?.enabled),
+      labels_overlay_style_url: maskMaptilerUrl(stringOrNull(rawLabelsOverlay?.style_url ?? null)),
+      labels_overlay_filter: stringOrNull(rawLabelsOverlay?.layer_filter ?? null),
       maptiler_key_present: Boolean(stringOrNull(ui_map?.maptiler?.api_key ?? null)),
     });
 
