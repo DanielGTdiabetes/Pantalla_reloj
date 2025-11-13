@@ -708,11 +708,16 @@ export default function GeoScopeMap({
   const effectiveBaseStyleUrl = useMemo(() => {
     const v2Config = config as unknown as AppConfigV2 | null;
     if (v2Config?.version === 2) {
+      // Si satellite está habilitado, usar satellite.style_url
+      if (uiMapSatellite?.enabled && uiMapSatellite.style_url) {
+        return uiMapSatellite.style_url;
+      }
+      // Si no, usar el styleUrl del maptiler config
       const styleUrl = v2Config.ui_map?.maptiler?.styleUrl;
       return typeof styleUrl === "string" ? styleUrl : null;
     }
     return null;
-  }, [config]);
+  }, [config, uiMapSatellite]);
   const effectiveSatelliteOpacity =
     uiMapSatellite?.opacity ?? satelliteOpacity ?? 1.0;
   

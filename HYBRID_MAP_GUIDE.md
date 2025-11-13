@@ -41,9 +41,7 @@ El modo híbrido permite mostrar un **mapa de fotografía satélite** con un **o
     "satellite": {
       "enabled": true,
       "opacity": 0.85,
-      "provider": "maptiler",
-      "style_raster": "https://api.maptiler.com/maps/satellite/style.json",
-      "style_labels": "https://api.maptiler.com/maps/streets-v4/style.json",
+      "style_url": "https://api.maptiler.com/maps/satellite/style.json",
       "labels_overlay": {
         "enabled": true,
         "style_url": "https://api.maptiler.com/maps/streets-v4/style.json",
@@ -73,9 +71,7 @@ El modo híbrido permite mostrar un **mapa de fotografía satélite** con un **o
 |-------|------|-------------|---------|
 | `enabled` | boolean | Habilitar modo híbrido satélite | `false` |
 | `opacity` | number | Opacidad del satélite (0.0-1.0) | `0.85` |
-| `provider` | string | Proveedor (siempre `"maptiler"`) | `"maptiler"` |
-| `style_raster` | string | URL del estilo satélite | `https://api.maptiler.com/maps/satellite/style.json` |
-| `style_labels` | string | URL del estilo de etiquetas | `https://api.maptiler.com/maps/streets-v4/style.json` |
+| `style_url` | string | URL del estilo satélite (para obtener tiles raster) | `https://api.maptiler.com/maps/satellite/style.json` |
 | `labels_overlay` | object | Configuración de overlay de etiquetas | Ver abajo |
 
 #### `ui_map.satellite.labels_overlay` (objeto)
@@ -99,6 +95,7 @@ El modo híbrido permite mostrar un **mapa de fotografía satélite** con un **o
     "satellite": {
       "enabled": true,
       "opacity": 0.85,
+      "style_url": "https://api.maptiler.com/maps/satellite/style.json",
       "labels_overlay": {
         "enabled": true,
         "style_url": "https://api.maptiler.com/maps/streets-v4/style.json",
@@ -117,6 +114,7 @@ El modo híbrido permite mostrar un **mapa de fotografía satélite** con un **o
     "satellite": {
       "enabled": true,
       "opacity": 0.85,
+      "style_url": "https://api.maptiler.com/maps/satellite/style.json",
       "labels_overlay": {
         "enabled": false
       }
@@ -133,6 +131,7 @@ El modo híbrido permite mostrar un **mapa de fotografía satélite** con un **o
     "satellite": {
       "enabled": true,
       "opacity": 0.9,
+      "style_url": "https://api.maptiler.com/maps/satellite/style.json",
       "labels_overlay": {
         "enabled": true,
         "style_url": "https://api.maptiler.com/maps/streets-v4/style.json",

@@ -28,6 +28,7 @@
     "satellite": {
       "enabled": false,
       "opacity": 1.0,
+      "style_url": "https://api.maptiler.com/maps/satellite/style.json",
       "labels_overlay": {
         "enabled": true,
         "style_url": "https://api.maptiler.com/maps/streets-v4/style.json",

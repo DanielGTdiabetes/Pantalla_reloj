@@ -70,11 +70,12 @@ export type SatelliteLabelsOverlay = {
 export type MapSatelliteConfig = {
   enabled: boolean;
   opacity: number;
+  style_url?: string; // URL del estilo satélite (para obtener tiles raster)
   labels_enabled?: boolean; // Legacy
   labels_overlay?: boolean | SatelliteLabelsOverlay; // Soporta ambos formatos para migración
   provider: "maptiler";
-  style_raster: string;
-  style_labels: string;
+  style_raster?: string; // Legacy
+  style_labels?: string; // Legacy
   labels_style_url?: string; // Legacy, deprecated
 };
 

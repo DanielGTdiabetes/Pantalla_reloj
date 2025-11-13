@@ -132,6 +132,11 @@ class SatelliteSettings(BaseModel):
 
     enabled: bool = Field(default=False, description="Activa el modo híbrido satélite")
     opacity: float = Field(default=1.0, ge=0.0, le=1.0, description="Opacidad de la textura satélite")
+    style_url: Optional[str] = Field(
+        default="https://api.maptiler.com/maps/satellite/style.json",
+        max_length=512,
+        description="URL del estilo satélite (para obtener tiles raster)"
+    )
     labels_overlay: SatelliteLabelsOverlay = Field(
         default_factory=SatelliteLabelsOverlay,
         description="Configuración de superposición de etiquetas vectoriales"

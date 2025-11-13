@@ -1,0 +1,95 @@
+{
+  "version": 2,
+  "display": {
+    "timezone": "Europe/Madrid",
+    "module_cycle_seconds": 20
+  },
+  "ui_map": {
+    "engine": "maplibre",
+    "provider": "maptiler_vector",
+    "renderWorldCopies": true,
+    "interactive": false,
+    "controls": false,
+    "local": {
+      "tileUrl": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      "minzoom": 0,
+      "maxzoom": 19
+    },
+    "maptiler": {
+      "style": "vector-bright",
+      "api_key": "fBZDqPrUD4EwoZLV4L6A",
+      "styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A"
+    },
+    "satellite": {
+      "enabled": true,
+      "opacity": 1.0,
+      "style_url": "https://api.maptiler.com/maps/satellite/style.json?key=fBZDqPrUD4EwoZLV4L6A",
+      "labels_overlay": {
+        "enabled": true,
+        "style_url": "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A",
+        "layer_filter": null,
+        "opacity": 1.0
+      }
+    },
+    "customXyz": {
+      "tileUrl": null,
+      "minzoom": 0,
+      "maxzoom": 19
+    },
+    "viewMode": "fixed",
+    "fixed": {
+      "center": { "lat": 39.986, "lon": -0.051 },
+      "zoom": 10.0,
+      "bearing": 0,
+      "pitch": 0
+    },
+    "region": { "postalCode": "12540" }
+  },
+  "ui_global": {
+    "satellite": { "enabled": true, "provider": "gibs", "opacity": 1.0 },
+    "radar": { "enabled": true, "provider": "rainviewer", "opacity": 0.7, "layer_type": "precipitation_new" }
+  },
+  "layers": {
+    "global": {
+      "satellite": {
+        "enabled": true,
+        "provider": "gibs",
+        "refresh_minutes": 10,
+        "history_minutes": 90,
+        "frame_step": 10
+      },
+      "radar": {
+        "enabled": true,
+        "provider": "rainviewer",
+        "refresh_minutes": 5,
+        "history_minutes": 90,
+        "frame_step": 5
+      }
+    },
+    "flights": {
+      "enabled": true,
+      "provider": "opensky",
+      "refresh_seconds": 12,
+      "max_age_seconds": 120,
+      "max_items_global": 2000,
+      "max_items_view": 1500
+    },
+    "ships": {
+      "enabled": false,
+      "provider": "aisstream"
+    }
+  },
+  "storm": {
+    "enabled": false,
+    "center_lat": 39.986,
+    "center_lng": -0.051,
+    "zoom": 9.0,
+    "auto_enable": false
+  },
+  "secrets": {
+    "maptiler": {
+      "api_key": "fBZDqPrUD4EwoZLV4L6A"
+    }
+  }
+}
+
