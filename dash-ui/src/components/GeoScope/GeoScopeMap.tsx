@@ -371,16 +371,6 @@ const stringOrNull = (value: unknown): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
-const pickFirstNonEmptyString = (...values: Array<unknown>): string | null => {
-  for (const candidate of values) {
-    const normalized = stringOrNull(candidate);
-    if (normalized) {
-      return normalized;
-    }
-  }
-  return null;
-};
-
 const clamp01 = (value: unknown, fallback: number): number => {
   const numeric = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(numeric)) {
@@ -389,53 +379,39 @@ const clamp01 = (value: unknown, fallback: number): number => {
   return clamp(numeric, 0, 1);
 };
 
+/**
+ * Traduce literalmente `config.ui_map` a la estructura consumida por el runtime
+ * del mapa híbrido. Evitar transformaciones legacy garantiza que los campos
+ * modernos (`ui_map.maptiler.*`, `ui_map.satellite.*`) lleguen intactos al
+ * runtime.
+ */
 const extractHybridMappingConfig = (config: AppConfigV2 | null | undefined): HybridMappingConfig => {
   if (!config || config.version !== 2 || !config.ui_map) {
     return createDefaultHybridMapping();
   }
 
-  const maptiler = config.ui_map.maptiler;
-  const satellite = config.ui_map.satellite ?? null;
-  const labelsOverlayRaw = satellite?.labels_overlay;
+  const mappingConfig = config.ui_map;
+  const maptiler = mappingConfig.maptiler ?? null;
+  const satellite = mappingConfig.satellite ?? null;
+  const labelsOverlay = satellite?.labels_overlay ?? null;
 
-  const baseStyleUrl = stringOrNull(maptiler?.styleUrl);
-  const maptilerKey = pickFirstNonEmptyString(maptiler?.api_key, maptiler?.apiKey, maptiler?.key);
+  const baseStyleUrl = stringOrNull(maptiler?.styleUrl ?? null);
+  const maptilerKey = stringOrNull(maptiler?.api_key ?? null);
 
-  const satelliteStyleUrl = stringOrNull(
-    (satellite?.style_url ?? null) ??
-      (typeof satellite?.style_raster === "string" ? satellite?.style_raster : null)
-  );
+  const satelliteEnabled = Boolean(satellite?.enabled);
+  const satelliteStyleUrl = stringOrNull(satellite?.style_url ?? null);
   const satelliteOpacity = clamp01(satellite?.opacity, 1);
 
-  let labelsEnabled =
-    typeof (labelsOverlayRaw as { enabled?: unknown })?.enabled === "boolean"
-      ? Boolean((labelsOverlayRaw as { enabled?: boolean }).enabled)
-      : false;
-  if (!labelsEnabled && typeof satellite?.labels_overlay === "boolean") {
-    labelsEnabled = satellite.labels_overlay;
-  }
-  if (!labelsEnabled && typeof satellite?.labels_enabled === "boolean") {
-    labelsEnabled = satellite.labels_enabled;
-  }
-
-  const labelsStyleUrl =
-    stringOrNull(
-      (labelsOverlayRaw as { style_url?: unknown })?.style_url ??
-        (typeof satellite?.labels_style_url === "string" ? satellite.labels_style_url : null)
-    ) ?? null;
-  const labelsLayerFilter = stringOrNull(
-    (labelsOverlayRaw as { layer_filter?: unknown })?.layer_filter ?? null
-  );
-  const labelsOpacity = clamp01(
-    (labelsOverlayRaw as { opacity?: unknown })?.opacity ?? undefined,
-    1
-  );
+  const labelsEnabled = Boolean((labelsOverlay as { enabled?: unknown })?.enabled);
+  const labelsStyleUrl = stringOrNull((labelsOverlay as { style_url?: unknown })?.style_url ?? null);
+  const labelsLayerFilter = stringOrNull((labelsOverlay as { layer_filter?: unknown })?.layer_filter ?? null);
+  const labelsOpacity = clamp01((labelsOverlay as { opacity?: unknown })?.opacity ?? undefined, 1);
 
   return {
     baseStyleUrl,
     maptilerKey,
     satellite: {
-      enabled: Boolean(satellite?.enabled),
+      enabled: satelliteEnabled,
       styleUrl: satelliteStyleUrl,
       opacity: satelliteOpacity,
       labels: {
@@ -692,8 +668,21 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
       throw new Error("No config loaded");
     }
     
-    const hybridSnapshot = extractHybridMappingConfig(mapConfigV2);
     const ui_map = mapConfigV2.ui_map;
+
+    console.info("[HybridFix] ui_map raw config", {
+      provider: ui_map?.provider ?? null,
+      base_style_url: maskMaptilerUrl(stringOrNull(ui_map?.maptiler?.styleUrl ?? null)),
+      satellite_enabled: Boolean(ui_map?.satellite?.enabled),
+      satellite_style_url: maskMaptilerUrl(stringOrNull(ui_map?.satellite?.style_url ?? null)),
+      satellite_opacity: typeof ui_map?.satellite?.opacity === "number" ? ui_map.satellite.opacity : ui_map?.satellite?.opacity ?? null,
+      labels_overlay_enabled: Boolean(ui_map?.satellite?.labels_overlay?.enabled),
+      labels_overlay_style_url: maskMaptilerUrl(stringOrNull(ui_map?.satellite?.labels_overlay?.style_url ?? null)),
+      labels_overlay_filter: stringOrNull(ui_map?.satellite?.labels_overlay?.layer_filter ?? null),
+      maptiler_key_present: Boolean(stringOrNull(ui_map?.maptiler?.api_key ?? null)),
+    });
+
+    const hybridSnapshot = extractHybridMappingConfig(mapConfigV2);
 
     console.info("[HybridFix] ui_map snapshot", {
       provider: ui_map?.provider ?? null,
