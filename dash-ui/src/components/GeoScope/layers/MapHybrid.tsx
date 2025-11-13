@@ -8,7 +8,7 @@ export interface MapHybridProps {
   map: MapLibreMap;
   enabled: boolean;
   opacity: number;
-  baseStyleUrl: string | null;
+  satelliteStyleUrl: string | null;
   labelsOverlay: NormalizedLabelsOverlay;
   apiKey: string | null | undefined;
 }
@@ -42,7 +42,7 @@ export default function MapHybrid({
   map,
   enabled,
   opacity,
-  baseStyleUrl,
+  satelliteStyleUrl,
   labelsOverlay,
   apiKey,
 }: MapHybridProps) {
@@ -90,7 +90,7 @@ export default function MapHybrid({
     map,
     enabled,
     opacity,
-    baseStyleUrl,
+    satelliteStyleUrl,
     labelsOverlay.enabled,
     labelsOverlay.style_url,
     labelsOverlay.layer_filter,
@@ -105,8 +105,8 @@ export default function MapHybrid({
 
     try {
       const styleUrlCandidate =
-        baseStyleUrl && baseStyleUrl.trim().length > 0
-          ? baseStyleUrl
+        satelliteStyleUrl && satelliteStyleUrl.trim().length > 0
+          ? satelliteStyleUrl
           : "https://api.maptiler.com/maps/satellite/style.json";
 
       const satelliteTileUrl = getSatelliteTileUrl(styleUrlCandidate, apiKey);
@@ -163,7 +163,7 @@ export default function MapHybrid({
         const maskedBase = maskUrl(styleUrlCandidate);
         const maskedLabels = labelsOverlay.enabled ? maskUrl(labelsOverlay.style_url) : null;
         console.info(
-          `[MapHybrid] Hybrid mode enabled: base=${maskedBase ?? "n/a"} labels=${maskedLabels ?? "none"} opacity=${opacity.toFixed(2)}`,
+          `[HybridFix] MapHybrid enabled base=${maskedBase ?? "n/a"} labels=${maskedLabels ?? "none"} opacity=${opacity.toFixed(2)}`,
           {
             labels_opacity: labelsOverlay.opacity,
             layer_filter: labelsOverlay.layer_filter ?? null,

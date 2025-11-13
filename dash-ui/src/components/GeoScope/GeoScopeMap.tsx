@@ -45,8 +45,6 @@ import {
   type MapStyleDefinition,
   type MapStyleResult
 } from "./mapStyle";
-import { getMaptilerApiKey } from "../../lib/config";
-
 // Vista fija por defecto (Castellón)
 const DEFAULT_VIEW = {
   lng: 0.20,
@@ -329,6 +327,127 @@ const maskMaptilerUrl = (value?: string | null): string | null => {
   return trimmed;
 };
 
+type HybridLabelsConfig = {
+  enabled: boolean;
+  styleUrl: string | null;
+  layerFilter: string | null;
+  opacity: number;
+};
+
+type HybridSatelliteConfig = {
+  enabled: boolean;
+  styleUrl: string | null;
+  opacity: number;
+  labels: HybridLabelsConfig;
+};
+
+type HybridMappingConfig = {
+  baseStyleUrl: string | null;
+  maptilerKey: string | null;
+  satellite: HybridSatelliteConfig;
+};
+
+const createDefaultHybridMapping = (): HybridMappingConfig => ({
+  baseStyleUrl: null,
+  maptilerKey: null,
+  satellite: {
+    enabled: false,
+    styleUrl: null,
+    opacity: 1,
+    labels: {
+      enabled: false,
+      styleUrl: null,
+      layerFilter: null,
+      opacity: 1,
+    },
+  },
+});
+
+const stringOrNull = (value: unknown): string | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const pickFirstNonEmptyString = (...values: Array<unknown>): string | null => {
+  for (const candidate of values) {
+    const normalized = stringOrNull(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return null;
+};
+
+const clamp01 = (value: unknown, fallback: number): number => {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+  return clamp(numeric, 0, 1);
+};
+
+const extractHybridMappingConfig = (config: AppConfigV2 | null | undefined): HybridMappingConfig => {
+  if (!config || config.version !== 2 || !config.ui_map) {
+    return createDefaultHybridMapping();
+  }
+
+  const maptiler = config.ui_map.maptiler ?? {};
+  const satellite = config.ui_map.satellite ?? null;
+  const labelsOverlayRaw = satellite?.labels_overlay;
+
+  const baseStyleUrl = stringOrNull(maptiler.styleUrl);
+  const maptilerKey = pickFirstNonEmptyString(maptiler.api_key, maptiler.apiKey, maptiler.key);
+
+  const satelliteStyleUrl = stringOrNull(
+    (satellite?.style_url ?? null) ??
+      (typeof satellite?.style_raster === "string" ? satellite?.style_raster : null)
+  );
+  const satelliteOpacity = clamp01(satellite?.opacity, 1);
+
+  let labelsEnabled =
+    typeof (labelsOverlayRaw as { enabled?: unknown })?.enabled === "boolean"
+      ? Boolean((labelsOverlayRaw as { enabled?: boolean }).enabled)
+      : false;
+  if (!labelsEnabled && typeof satellite?.labels_overlay === "boolean") {
+    labelsEnabled = satellite.labels_overlay;
+  }
+  if (!labelsEnabled && typeof satellite?.labels_enabled === "boolean") {
+    labelsEnabled = satellite.labels_enabled;
+  }
+
+  const labelsStyleUrl =
+    stringOrNull(
+      (labelsOverlayRaw as { style_url?: unknown })?.style_url ??
+        (typeof satellite?.labels_style_url === "string" ? satellite.labels_style_url : null)
+    ) ?? null;
+  const labelsLayerFilter = stringOrNull(
+    (labelsOverlayRaw as { layer_filter?: unknown })?.layer_filter ?? null
+  );
+  const labelsOpacity = clamp01(
+    (labelsOverlayRaw as { opacity?: unknown })?.opacity ?? undefined,
+    1
+  );
+
+  return {
+    baseStyleUrl,
+    maptilerKey,
+    satellite: {
+      enabled: Boolean(satellite?.enabled),
+      styleUrl: satelliteStyleUrl,
+      opacity: satelliteOpacity,
+      labels: {
+        enabled: labelsEnabled,
+        styleUrl: labelsStyleUrl,
+        layerFilter: labelsLayerFilter,
+        opacity: labelsOpacity,
+      },
+    },
+  };
+};
+
 
 const parseBooleanParam = (value: string | null | undefined): boolean | undefined => {
   if (value == null) {
@@ -573,38 +692,18 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
       throw new Error("No config loaded");
     }
     
-    const ui_map = mapConfigV2.ui_map;
+    const hybridSnapshot = extractHybridMappingConfig(mapConfigV2);
 
-    const satelliteConfig = ui_map?.satellite;
-    const labelsOverlayRaw = satelliteConfig?.labels_overlay;
-    const labelsOverlayObject =
-      labelsOverlayRaw && typeof labelsOverlayRaw === "object" && !Array.isArray(labelsOverlayRaw)
-        ? (labelsOverlayRaw as SatelliteLabelsOverlay)
-        : undefined;
-    const legacyLabelsEnabled =
-      typeof satelliteConfig?.labels_enabled === "boolean" ? satelliteConfig.labels_enabled : null;
-    const labelsOverlayStyleUrl =
-      labelsOverlayObject?.style_url ??
-      (typeof satelliteConfig?.labels_style_url === "string"
-        ? satelliteConfig.labels_style_url
-        : null);
-
-    console.info("[MapAudit] ui_map.satellite from config", {
-      provider: ui_map?.provider ?? null,
-      maptiler_style_url: maskMaptilerUrl(ui_map?.maptiler?.styleUrl),
-      satellite: satelliteConfig
-        ? {
-            enabled: satelliteConfig.enabled ?? null,
-            style_url: maskMaptilerUrl(satelliteConfig.style_url),
-            opacity: satelliteConfig.opacity ?? null,
-            labels_overlay_enabled:
-              typeof labelsOverlayObject?.enabled === "boolean"
-                ? labelsOverlayObject.enabled
-                : legacyLabelsEnabled,
-            labels_overlay_style_url: maskMaptilerUrl(labelsOverlayStyleUrl),
-            labels_overlay_layer_filter: labelsOverlayObject?.layer_filter ?? null,
-          }
-        : null,
+    console.info("[HybridFix] ui_map snapshot", {
+      provider: mapConfigV2.ui_map?.provider ?? null,
+      base_style_url: maskMaptilerUrl(hybridSnapshot.baseStyleUrl),
+      satellite_enabled: hybridSnapshot.satellite.enabled,
+      satellite_style_url: maskMaptilerUrl(hybridSnapshot.satellite.styleUrl),
+      satellite_opacity: hybridSnapshot.satellite.opacity,
+      labels_overlay_enabled: hybridSnapshot.satellite.labels.enabled,
+      labels_overlay_style_url: maskMaptilerUrl(hybridSnapshot.satellite.labels.styleUrl),
+      labels_overlay_filter: hybridSnapshot.satellite.labels.layerFilter,
+      maptiler_key_present: Boolean(hybridSnapshot.maptilerKey),
     });
     
     // Si hay viewMode "fixed" y región con postalCode, geocodificar primero
@@ -730,52 +829,49 @@ export default function GeoScopeMap({
   satelliteLabelsStyle = "maptiler-streets-v4-labels",
 }: GeoScopeMapProps = {}) {
   const { data: config, reload: reloadConfig, mapStyleVersion } = useConfig();
-  // ui_map.maptiler.* define el estilo vectorial base que se usa como fallback cuando no forzamos el modo satélite.
-  const maptilerKey = useMemo(() => getMaptilerApiKey(config), [config]);
-  // ui_map.satellite.* llega directamente desde /api/config (v2) y controla la activación del modo híbrido.
-  const uiMapSatellite = useMemo(() => {
-    const v2Config = config as unknown as AppConfigV2 | null;
-    if (v2Config?.version === 2 && v2Config.ui_map?.satellite) {
-      return v2Config.ui_map.satellite;
+  const configV2 = useMemo(() => {
+    const candidate = config as unknown as AppConfigV2 | null;
+    if (candidate?.version === 2) {
+      return candidate;
     }
     return null;
   }, [config]);
-  const effectiveBaseStyleUrl = useMemo(() => {
-    const v2Config = config as unknown as AppConfigV2 | null;
-    if (v2Config?.version === 2) {
-      // Si satellite está habilitado, usar satellite.style_url
-      if (uiMapSatellite?.enabled && uiMapSatellite.style_url) {
-        return uiMapSatellite.style_url;
-      }
-      // Si no, usar el styleUrl de ui_map.maptiler.* como estilo de mapa vectorial principal.
-      const styleUrl = v2Config.ui_map?.maptiler?.styleUrl;
-      return typeof styleUrl === "string" ? styleUrl : null;
-    }
-    return null;
-  }, [config, uiMapSatellite]);
-  const effectiveSatelliteOpacity =
-    uiMapSatellite?.opacity ?? satelliteOpacity ?? 1.0;
-  
-  const labelsOverlayConfig = uiMapSatellite?.labels_overlay;
-  const normalizedLabelsOverlay = useMemo(
-    () =>
-      normalizeLabelsOverlay(
-        labelsOverlayConfig ??
-          (typeof uiMapSatellite?.labels_enabled === "boolean"
-            ? uiMapSatellite.labels_enabled
-            : undefined),
-        uiMapSatellite?.labels_style_url ?? null,
-      ),
-    [
-      labelsOverlayConfig,
-      uiMapSatellite?.labels_enabled,
-      uiMapSatellite?.labels_style_url,
-    ],
+
+  const hybridConfig = useMemo(
+    () => extractHybridMappingConfig(configV2),
+    [configV2],
   );
-  
+
+  const maptilerKey = hybridConfig.maptilerKey;
+  const baseStyleUrl = hybridConfig.baseStyleUrl;
+
+  const effectiveSatelliteStyleUrl = hybridConfig.satellite.styleUrl;
   const effectiveSatelliteEnabled = Boolean(
-    (uiMapSatellite?.enabled ?? satelliteEnabled) && maptilerKey,
+    (hybridConfig.satellite.enabled || satelliteEnabled) &&
+      hybridConfig.satellite.styleUrl &&
+      hybridConfig.maptilerKey,
   );
+
+  const effectiveSatelliteOpacity =
+    typeof satelliteOpacity === "number"
+      ? clamp01(satelliteOpacity, hybridConfig.satellite.opacity)
+      : hybridConfig.satellite.opacity;
+
+  const normalizedLabelsOverlay = useMemo(() => {
+    const overlaySource: SatelliteLabelsOverlay = {
+      enabled: hybridConfig.satellite.labels.enabled,
+      style_url: hybridConfig.satellite.labels.styleUrl ?? undefined,
+      layer_filter: hybridConfig.satellite.labels.layerFilter ?? undefined,
+      opacity: hybridConfig.satellite.labels.opacity,
+    };
+    return normalizeLabelsOverlay(overlaySource, null);
+  }, [
+    hybridConfig.satellite.labels.enabled,
+    hybridConfig.satellite.labels.layerFilter,
+    hybridConfig.satellite.labels.opacity,
+    hybridConfig.satellite.labels.styleUrl,
+  ]);
+  
   const mapFillRef = useRef<HTMLDivElement | null>(null);
   const [webglError, setWebglError] = useState<string | null>(null);
   const [styleChangeInProgress, setStyleChangeInProgress] = useState(false);
@@ -1244,25 +1340,25 @@ export default function GeoScopeMap({
         configV2?.ui_map?.provider ??
         (runtime.mapSettings?.provider ? String(runtime.mapSettings.provider) : null);
 
-      console.info("[MapAudit] runtime map options before maplibregl.Map", {
+      console.info("[HybridFix] runtime options before maplibregl.Map", {
         provider: providerForLog,
-        base_style_url: maskMaptilerUrl(effectiveBaseStyleUrl),
+        base_style_url: maskMaptilerUrl(baseStyleUrl),
+        satellite_style_url: maskMaptilerUrl(effectiveSatelliteStyleUrl),
         maptiler_key_present: Boolean(maptilerKey),
         satellite_enabled: effectiveSatelliteEnabled,
         satellite_opacity: effectiveSatelliteOpacity,
-        labels_overlay: {
-          enabled: normalizedLabelsOverlay.enabled,
-          style_url: maskMaptilerUrl(normalizedLabelsOverlay.style_url),
-          layer_filter: normalizedLabelsOverlay.layer_filter,
-          opacity: normalizedLabelsOverlay.opacity,
-        },
+        labels_overlay_enabled: normalizedLabelsOverlay.enabled,
+        labels_overlay_style_url: maskMaptilerUrl(normalizedLabelsOverlay.style_url),
+        labels_overlay_filter: normalizedLabelsOverlay.layer_filter,
       });
       console.info("[GeoScopeMap] Map init", {
         provider: providerForLog,
-        base_style_url: maskMaptilerUrl(effectiveBaseStyleUrl),
+        base_style_url: maskMaptilerUrl(baseStyleUrl),
         hybrid_enabled: effectiveSatelliteEnabled,
         satellite_overlay_enabled: effectiveSatelliteEnabled && normalizedLabelsOverlay.enabled,
         labels_overlay_style_url: maskMaptilerUrl(normalizedLabelsOverlay.style_url),
+        satellite_style_url: maskMaptilerUrl(effectiveSatelliteStyleUrl),
+        maptiler_key_present: Boolean(maptilerKey),
       });
 
       let map: maplibregl.Map;
@@ -2701,12 +2797,12 @@ export default function GeoScopeMap({
         <div className="map-tint" style={{ background: tintColor }} aria-hidden="true" />
       ) : null}
       {/* MapHybrid consume ui_map.satellite.* y añade la capa raster + etiquetas vectoriales sobre el estilo base. */}
-      {mapRef.current && effectiveSatelliteEnabled && uiMapSatellite ? (
+      {mapRef.current && effectiveSatelliteEnabled ? (
         <MapHybrid
           map={mapRef.current}
           enabled={effectiveSatelliteEnabled}
           opacity={effectiveSatelliteOpacity}
-          baseStyleUrl={effectiveBaseStyleUrl}
+          satelliteStyleUrl={effectiveSatelliteStyleUrl}
           labelsOverlay={normalizedLabelsOverlay}
           apiKey={maptilerKey}
         />
