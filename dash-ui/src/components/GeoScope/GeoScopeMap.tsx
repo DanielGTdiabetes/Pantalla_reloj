@@ -394,12 +394,12 @@ const extractHybridMappingConfig = (config: AppConfigV2 | null | undefined): Hyb
     return createDefaultHybridMapping();
   }
 
-  const maptiler = config.ui_map.maptiler ?? {};
+  const maptiler = config.ui_map.maptiler;
   const satellite = config.ui_map.satellite ?? null;
   const labelsOverlayRaw = satellite?.labels_overlay;
 
-  const baseStyleUrl = stringOrNull(maptiler.styleUrl);
-  const maptilerKey = pickFirstNonEmptyString(maptiler.api_key, maptiler.apiKey, maptiler.key);
+  const baseStyleUrl = stringOrNull(maptiler?.styleUrl);
+  const maptilerKey = pickFirstNonEmptyString(maptiler?.api_key, maptiler?.apiKey, maptiler?.key);
 
   const satelliteStyleUrl = stringOrNull(
     (satellite?.style_url ?? null) ??
@@ -693,9 +693,10 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
     }
     
     const hybridSnapshot = extractHybridMappingConfig(mapConfigV2);
+    const ui_map = mapConfigV2.ui_map;
 
     console.info("[HybridFix] ui_map snapshot", {
-      provider: mapConfigV2.ui_map?.provider ?? null,
+      provider: ui_map?.provider ?? null,
       base_style_url: maskMaptilerUrl(hybridSnapshot.baseStyleUrl),
       satellite_enabled: hybridSnapshot.satellite.enabled,
       satellite_style_url: maskMaptilerUrl(hybridSnapshot.satellite.styleUrl),
