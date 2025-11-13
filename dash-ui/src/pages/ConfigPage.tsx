@@ -2381,6 +2381,31 @@ export const ConfigPage: React.FC = () => {
                 </div>
 
                 <div className="config-field">
+                  <label>URL del estilo satélite</label>
+                  <input
+                    type="text"
+                    value={config.ui_map.satellite?.style_url || ""}
+                    onChange={(e) => {
+                      const satelliteConfig = config.ui_map.satellite ?? DEFAULT_MAP_CONFIG.satellite!;
+                      setConfig({
+                        ...config,
+                        ui_map: {
+                          ...config.ui_map,
+                          satellite: {
+                            ...satelliteConfig,
+                            style_url: e.target.value || undefined,
+                          },
+                        },
+                      });
+                    }}
+                    placeholder="https://api.maptiler.com/maps/satellite/style.json"
+                  />
+                  <div className="config-field__hint">
+                    URL del estilo MapTiler para obtener los tiles satélite. Ejemplo: https://api.maptiler.com/maps/satellite/style.json?key=TU_API_KEY
+                  </div>
+                </div>
+
+                <div className="config-field">
                   <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <input
                       type="checkbox"
