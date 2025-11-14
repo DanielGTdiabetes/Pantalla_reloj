@@ -197,6 +197,41 @@ Después de aplicar la configuración, deberías ver:
 
 ---
 
+## Validación rápida tras un despliegue
+
+Para confirmar que el backend y el frontend están alineados con el modo híbrido puedes ejecutar estos pasos:
+
+1. **Health del backend**
+
+   ```bash
+   curl -sS http://127.0.0.1/api/health/full | jq '.maptiler'
+   ```
+
+   - `status` debe ser `"ok"`.
+   - `error` debe ser `null` o no aparecer.
+   - `styleUrl` tiene que apuntar al estilo con `?key=` incluido.
+
+2. **Config publicada**
+
+   ```bash
+   curl -sS http://127.0.0.1/api/config | jq '.ui_map'
+   ```
+
+   - `satellite.enabled` debe ser `true`.
+   - `satellite.style_url` y `satellite.labels_overlay.style_url` deben incluir la API key.
+
+3. **Frontend (kiosk y PC de la LAN)**
+
+   - Verifica que ambos muestran el satélite de Castellón con etiquetas vectoriales.
+   - En la consola (F12) comprueba los logs `[HybridFix]`:
+     - `base_style_url` y `satellite_style_url` deben aparecer con la URL firmada (la clave se verá como `***`).
+     - `satellite_enabled` debe ser `true` y `maptiler_key_present` debe ser `true`.
+     - No deberían aparecer errores `Cannot read properties of null (reading 'version')`.
+
+Si cualquiera de los pasos anteriores falla, revisa los logs del backend (`journalctl -u pantalla-dash-backend@dani.service`) y los mensajes `[HybridFix]` en el navegador.
+
+---
+
 ## Troubleshooting
 
 ### El mapa sigue mostrando el estilo vectorial (no el satélite)

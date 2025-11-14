@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import grp
+import hashlib
 import json
 import os
 import pwd
@@ -19,6 +20,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Literal
 import html
 import math
 import requests
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 # Imports condicionales para MQTT y WebSocket
 try:
@@ -575,6 +577,79 @@ async def _read_secret_value(request: Request) -> Optional[str]:
             return parsed.strip() or None
         return None
     return text or None
+
+
+def _mask_maptiler_url(value: Optional[str]) -> Optional[str]:
+    """Oculta el parámetro key= de una URL de MapTiler para logs."""
+
+    if not value:
+        return None
+
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+
+    try:
+        parsed = urlparse(trimmed)
+    except ValueError:
+        return trimmed
+
+    query_items = parse_qsl(parsed.query, keep_blank_values=True)
+    masked = False
+    sanitized_items: List[Tuple[str, str]] = []
+    for key, current_value in query_items:
+        if key.lower() == "key":
+            sanitized_items.append((key, "***"))
+            masked = True
+        else:
+            sanitized_items.append((key, current_value))
+
+    if masked:
+        sanitized_query = urlencode(sanitized_items, doseq=True)
+        return urlunparse(
+            (
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path,
+                parsed.params,
+                sanitized_query,
+                parsed.fragment,
+            )
+        )
+
+    return trimmed
+
+
+def _extract_maptiler_key_from_url(value: Optional[str]) -> Optional[str]:
+    """Extrae el parámetro key= de una URL, si está presente."""
+
+    if not value:
+        return None
+
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+
+    try:
+        parsed = urlparse(trimmed)
+    except ValueError:
+        parsed = None
+
+    if parsed:
+        for key, current_value in parse_qsl(parsed.query, keep_blank_values=True):
+            if key.lower() == "key":
+                candidate = current_value.strip()
+                if candidate and candidate != "***":
+                    return candidate
+
+    # Fallback: expresión regular si la URL no es parseable
+    match = re.search(r"[?&]key=([^&#]+)", trimmed)
+    if match:
+        candidate = match.group(1).strip()
+        if candidate and candidate != "***":
+            return candidate
+
+    return None
 
 
 def _validate_maptiler_style(style_url: str) -> Dict[str, Any]:
@@ -1328,13 +1403,16 @@ def _health_payload() -> Dict[str, Any]:
             api_key = secret_store.get_secret("maptiler_api_key")
             if not api_key and ui_map.maptiler:
                 api_key = ui_map.maptiler.api_key
-            
+
             style_url = ui_map.maptiler.styleUrl if ui_map.maptiler else None
             labels_style_url = None
             labels_overlay_present = False
-            labels_overlay_signed = False
-            
+
+            satellite_style_url = None
             if ui_map.satellite:
+                satellite_style_url = getattr(ui_map.satellite, "style_url", None) or getattr(
+                    ui_map.satellite, "style_raster", None
+                )
                 # Obtener style_url desde labels_overlay (nuevo formato unificado)
                 if ui_map.satellite.labels_overlay:
                     labels_overlay_present = True
@@ -1344,23 +1422,39 @@ def _health_payload() -> Dict[str, Any]:
                         labels_style_url = ui_map.satellite.labels_overlay.get("style_url")
                 # Fallback a labels_style_url legacy si existe
                 if not labels_style_url:
-                    labels_style_url = getattr(ui_map.satellite, "labels_style_url", None)
-                    if labels_style_url:
+                    legacy_labels = getattr(ui_map.satellite, "labels_style_url", None)
+                    if legacy_labels:
+                        labels_style_url = legacy_labels
                         labels_overlay_present = True
-            
+
+            # Determinar si tenemos API key (ya sea explícita o embebida en la URL)
+            maptiler_key_candidate = api_key.strip() if isinstance(api_key, str) else None
+            if not maptiler_key_candidate:
+                maptiler_key_candidate = (
+                    _extract_maptiler_key_from_url(style_url)
+                    or _extract_maptiler_key_from_url(labels_style_url)
+                    or _extract_maptiler_key_from_url(satellite_style_url)
+                )
+
+            has_api_key = bool(maptiler_key_candidate)
+
             # Validar el estilo (cacheado en caché global)
-            maptiler_cache_key = "maptiler_validation"
-            cached_validation = cache_store.load(maptiler_cache_key, max_age_minutes=60)
-            
             validation_result = None
+            cached_validation_entry = None
             if style_url:
-                if cached_validation:
+                style_hash = hashlib.sha256(style_url.encode("utf-8")).hexdigest()
+                cache_key = f"maptiler_validation::{style_hash[:12]}"
+                cached_validation = cache_store.load(cache_key, max_age_minutes=60)
+                if cached_validation and cached_validation.payload.get("style_hash") == style_hash:
                     validation_result = cached_validation.payload
+                    cached_validation_entry = cached_validation
                 else:
-                    # Primera validación o caché expirado
-                    validation_result = _validate_maptiler_style(style_url)
-                    cache_store.store(maptiler_cache_key, validation_result)
-            
+                    if cached_validation:
+                        cache_store.invalidate(cache_key)
+                    validation_payload = _validate_maptiler_style(style_url)
+                    validation_result = {**validation_payload, "style_hash": style_hash}
+                    cached_validation_entry = cache_store.store(cache_key, validation_result)
+
             # Determinar provider específico
             if provider_str == "maptiler_vector":
                 provider_reported = "maptiler_vector"
@@ -1368,21 +1462,21 @@ def _health_payload() -> Dict[str, Any]:
                 provider_reported = "maptiler_raster"
             else:
                 provider_reported = provider_str
-            
-            # Verificar si las URLs están firmadas
-            style_signed = bool(style_url and ("?key=" in style_url or "&key=" in style_url))
-            labels_signed = bool(labels_style_url and ("?key=" in labels_style_url or "&key=" in labels_style_url))
-            
+
+            # Verificar si las URLs están firmadas (presencia de key)
+            style_signed = bool(_extract_maptiler_key_from_url(style_url))
+            labels_signed = bool(_extract_maptiler_key_from_url(labels_style_url))
+
             # Determinar status
-            if not api_key:
+            if not has_api_key:
                 status_value = "error"
             elif validation_result and validation_result.get("ok"):
                 status_value = "ok"
             elif validation_result:
                 status_value = "error"
             else:
-                status_value = "ok" if api_key else "error"
-            
+                status_value = "ok"
+
             # Determinar nombre del estilo desde style (fuente de verdad) o inferir desde styleUrl
             style_name = None
             if ui_map.maptiler:
@@ -1412,11 +1506,19 @@ def _health_payload() -> Dict[str, Any]:
                         style_name = "Basic Dark"
                     elif "basic" in style_url:
                         style_name = "Basic"
-            
+
+            if validation_result and not validation_result.get("ok"):
+                logger.debug(
+                    "[health] MapTiler validation failed url=%s status=%s error=%s",
+                    _mask_maptiler_url(style_url),
+                    validation_result.get("status"),
+                    validation_result.get("error"),
+                )
+
             payload["maptiler"] = {
                 "provider": provider_reported,
                 "status": status_value,
-                "has_api_key": bool(api_key),
+                "has_api_key": has_api_key,
                 "style_signed": style_signed,
                 "labels_signed": labels_signed,
                 "labels_overlay": {
@@ -1425,8 +1527,8 @@ def _health_payload() -> Dict[str, Any]:
                 },
                 "styleUrl": style_url,
                 "name": validation_result.get("name") if validation_result else style_name,
-                "last_check_iso": cached_validation.fetched_at.isoformat() if cached_validation else None,
-                "error": validation_result.get("error") if validation_result else None
+                "last_check_iso": cached_validation_entry.fetched_at.isoformat() if cached_validation_entry else None,
+                "error": validation_result.get("error") if validation_result else (None if style_url else "Missing styleUrl"),
             }
         else:
             payload["maptiler"] = {

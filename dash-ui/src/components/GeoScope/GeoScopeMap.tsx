@@ -371,6 +371,67 @@ const stringOrNull = (value: unknown): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const pickFirstString = (...values: Array<unknown>): string | null => {
+  for (const value of values) {
+    if (typeof value !== "string") {
+      continue;
+    }
+    const trimmed = value.trim();
+    if (trimmed && trimmed !== "***") {
+      return trimmed;
+    }
+  }
+  return null;
+};
+
+const pickFirstUrl = (...values: Array<unknown>): string | null => {
+  for (const value of values) {
+    const normalized = stringOrNull(typeof value === "string" ? value : null);
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return null;
+};
+
+const extractApiKeyFromUrl = (value: unknown): string | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    const key = url.searchParams.get("key");
+    const sanitized = key?.trim();
+    if (sanitized && sanitized !== "***") {
+      return sanitized;
+    }
+  } catch {
+    const match = trimmed.match(/[?&]key=([^&]+)/);
+    if (match && match[1]) {
+      try {
+        const decoded = decodeURIComponent(match[1]);
+        const sanitized = decoded.trim();
+        if (sanitized && sanitized !== "***") {
+          return sanitized;
+        }
+      } catch {
+        const sanitized = match[1].trim();
+        if (sanitized && sanitized !== "***") {
+          return sanitized;
+        }
+      }
+    }
+  }
+
+  return null;
+};
+
 const coerceLabelsOverlay = (
   value: boolean | SatelliteLabelsOverlay | null | undefined,
 ): SatelliteLabelsOverlay | null => {
@@ -407,17 +468,53 @@ const extractHybridMappingConfig = (config: AppConfigV2 | null | undefined): Hyb
   const satellite = mappingConfig.satellite ?? null;
   const labelsOverlay = satellite?.labels_overlay ?? null;
 
-  const baseStyleUrl = stringOrNull(maptiler?.styleUrl ?? null);
-  const maptilerKey = stringOrNull(maptiler?.api_key ?? null);
+  const baseStyleUrl = pickFirstUrl(
+    maptiler?.styleUrl,
+    (maptiler as { style_url?: unknown })?.style_url,
+    (maptiler?.urls as { styleUrlBright?: unknown })?.styleUrlBright,
+    (maptiler?.urls as { styleUrlDark?: unknown })?.styleUrlDark,
+    (maptiler?.urls as { styleUrlLight?: unknown })?.styleUrlLight,
+  );
+
+  const directKey = pickFirstString(
+    maptiler?.api_key,
+    (maptiler as { apiKey?: unknown })?.apiKey,
+    (maptiler as { key?: unknown })?.key,
+  );
 
   const satelliteEnabled = Boolean(satellite?.enabled);
-  const satelliteStyleUrl = stringOrNull(satellite?.style_url ?? null);
+  const satelliteStyleUrl = pickFirstUrl(
+    satellite?.style_url,
+    (satellite as { style_raster?: unknown })?.style_raster,
+  );
   const satelliteOpacity = clamp01(satellite?.opacity, 1);
 
   const labelsEnabled = Boolean((labelsOverlay as { enabled?: unknown })?.enabled);
-  const labelsStyleUrl = stringOrNull((labelsOverlay as { style_url?: unknown })?.style_url ?? null);
+  const labelsStyleUrl = pickFirstUrl(
+    (labelsOverlay as { style_url?: unknown })?.style_url,
+    (satellite as { labels_style_url?: unknown })?.labels_style_url,
+  );
   const labelsLayerFilter = stringOrNull((labelsOverlay as { layer_filter?: unknown })?.layer_filter ?? null);
   const labelsOpacity = clamp01((labelsOverlay as { opacity?: unknown })?.opacity ?? undefined, 1);
+
+  let maptilerKey = directKey;
+  if (!maptilerKey) {
+    const urlCandidates = [
+      baseStyleUrl,
+      labelsStyleUrl,
+      satelliteStyleUrl,
+      (maptiler?.urls as { styleUrlBright?: unknown })?.styleUrlBright,
+      (maptiler?.urls as { styleUrlDark?: unknown })?.styleUrlDark,
+      (maptiler?.urls as { styleUrlLight?: unknown })?.styleUrlLight,
+    ];
+    for (const candidate of urlCandidates) {
+      const extracted = extractApiKeyFromUrl(candidate);
+      if (extracted) {
+        maptilerKey = extracted;
+        break;
+      }
+    }
+  }
 
   return {
     baseStyleUrl,
@@ -684,16 +781,58 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
 
     const rawLabelsOverlay = coerceLabelsOverlay(ui_map?.satellite?.labels_overlay);
 
+    const rawBaseStyleUrl = pickFirstUrl(
+      ui_map?.maptiler?.styleUrl,
+      (ui_map?.maptiler as { style_url?: unknown })?.style_url,
+      (ui_map?.maptiler?.urls as { styleUrlBright?: unknown })?.styleUrlBright,
+      (ui_map?.maptiler?.urls as { styleUrlDark?: unknown })?.styleUrlDark,
+      (ui_map?.maptiler?.urls as { styleUrlLight?: unknown })?.styleUrlLight,
+    );
+
+    const rawSatelliteStyleUrl = pickFirstUrl(
+      ui_map?.satellite?.style_url,
+      (ui_map?.satellite as { style_raster?: unknown })?.style_raster,
+    );
+
+    const rawLabelsStyleUrl = pickFirstUrl(
+      rawLabelsOverlay?.style_url,
+      (ui_map?.satellite as { labels_style_url?: unknown })?.labels_style_url,
+    );
+
+    const rawDirectKey = pickFirstString(
+      ui_map?.maptiler?.api_key,
+      (ui_map?.maptiler as { apiKey?: unknown })?.apiKey,
+      (ui_map?.maptiler as { key?: unknown })?.key,
+    );
+
+    let rawKeyPresent = Boolean(rawDirectKey);
+    if (!rawKeyPresent) {
+      const rawUrlCandidates = [
+        rawBaseStyleUrl,
+        rawSatelliteStyleUrl,
+        rawLabelsStyleUrl,
+        (ui_map?.maptiler?.urls as { styleUrlBright?: unknown })?.styleUrlBright,
+        (ui_map?.maptiler?.urls as { styleUrlDark?: unknown })?.styleUrlDark,
+        (ui_map?.maptiler?.urls as { styleUrlLight?: unknown })?.styleUrlLight,
+      ];
+      for (const candidate of rawUrlCandidates) {
+        if (extractApiKeyFromUrl(candidate)) {
+          rawKeyPresent = true;
+          break;
+        }
+      }
+    }
+
     console.info("[HybridFix] ui_map raw config", {
       provider: ui_map?.provider ?? null,
-      base_style_url: maskMaptilerUrl(stringOrNull(ui_map?.maptiler?.styleUrl ?? null)),
+      base_style_url: maskMaptilerUrl(rawBaseStyleUrl),
       satellite_enabled: Boolean(ui_map?.satellite?.enabled),
-      satellite_style_url: maskMaptilerUrl(stringOrNull(ui_map?.satellite?.style_url ?? null)),
+      satellite_style_url: maskMaptilerUrl(rawSatelliteStyleUrl),
       satellite_opacity: typeof ui_map?.satellite?.opacity === "number" ? ui_map.satellite.opacity : ui_map?.satellite?.opacity ?? null,
       labels_overlay_enabled: Boolean(rawLabelsOverlay?.enabled),
-      labels_overlay_style_url: maskMaptilerUrl(stringOrNull(rawLabelsOverlay?.style_url ?? null)),
+      labels_overlay_style_url: maskMaptilerUrl(rawLabelsStyleUrl),
       labels_overlay_filter: stringOrNull(rawLabelsOverlay?.layer_filter ?? null),
-      maptiler_key_present: Boolean(stringOrNull(ui_map?.maptiler?.api_key ?? null)),
+      maptiler_key_present: rawKeyPresent,
     });
 
     const hybridSnapshot = extractHybridMappingConfig(mapConfigV2);
