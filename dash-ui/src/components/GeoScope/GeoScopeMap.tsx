@@ -10,6 +10,7 @@ import { applyMapStyle, computeStyleUrlFromConfig } from "../../kiosk/mapStyle";
 import { kioskRuntime } from "../../lib/runtimeFlags";
 import { removeLabelsOverlay, updateLabelsOpacity } from "../../lib/map/overlays/vectorLabels";
 import { normalizeLabelsOverlay } from "../../lib/map/labelsOverlay";
+import { signMapTilerUrl } from "../../lib/map/utils/maptilerHelpers";
 import AircraftLayer from "./layers/AircraftLayer";
 import GlobalRadarLayer from "./layers/GlobalRadarLayer";
 import GlobalSatelliteLayer from "./layers/GlobalSatelliteLayer";
@@ -997,14 +998,45 @@ export default function GeoScopeMap({
     [configV2],
   );
 
-  const maptilerKey = hybridConfig.maptilerKey;
-  const baseStyleUrl = hybridConfig.baseStyleUrl;
+  const maptilerKey = useMemo(() => {
+    if (hybridConfig.maptilerKey) {
+      return hybridConfig.maptilerKey;
+    }
+    return (
+      extractApiKeyFromUrl(hybridConfig.satellite.styleUrl) ??
+      extractApiKeyFromUrl(hybridConfig.satellite.labels.styleUrl) ??
+      extractApiKeyFromUrl(hybridConfig.baseStyleUrl)
+    );
+  }, [
+    hybridConfig.baseStyleUrl,
+    hybridConfig.maptilerKey,
+    hybridConfig.satellite.labels.styleUrl,
+    hybridConfig.satellite.styleUrl,
+  ]);
 
-  const effectiveSatelliteStyleUrl = hybridConfig.satellite.styleUrl;
-  const effectiveSatelliteEnabled = Boolean(
-    (hybridConfig.satellite.enabled || satelliteEnabled) &&
-      hybridConfig.satellite.styleUrl &&
-      hybridConfig.maptilerKey,
+  const baseStyleUrl = useMemo(
+    () => signMapTilerUrl(hybridConfig.baseStyleUrl, maptilerKey) ?? hybridConfig.baseStyleUrl,
+    [hybridConfig.baseStyleUrl, maptilerKey],
+  );
+
+  const effectiveSatelliteStyleUrl = useMemo(
+    () => signMapTilerUrl(hybridConfig.satellite.styleUrl, maptilerKey) ?? hybridConfig.satellite.styleUrl,
+    [hybridConfig.satellite.styleUrl, maptilerKey],
+  );
+
+  const effectiveSatelliteEnabled = useMemo(
+    () =>
+      Boolean(
+        (hybridConfig.satellite.enabled || satelliteEnabled) &&
+          effectiveSatelliteStyleUrl &&
+          maptilerKey,
+      ),
+    [
+      hybridConfig.satellite.enabled,
+      satelliteEnabled,
+      effectiveSatelliteStyleUrl,
+      maptilerKey,
+    ],
   );
 
   const effectiveSatelliteOpacity =
@@ -1019,13 +1051,24 @@ export default function GeoScopeMap({
       layer_filter: hybridConfig.satellite.labels.layerFilter ?? undefined,
       opacity: hybridConfig.satellite.labels.opacity,
     };
-    return normalizeLabelsOverlay(overlaySource, null);
+    const normalized = normalizeLabelsOverlay(overlaySource, null);
+    const signedStyleUrl =
+      signMapTilerUrl(normalized.style_url, maptilerKey) ?? normalized.style_url;
+    return {
+      ...normalized,
+      style_url: signedStyleUrl,
+    };
   }, [
     hybridConfig.satellite.labels.enabled,
     hybridConfig.satellite.labels.layerFilter,
     hybridConfig.satellite.labels.opacity,
     hybridConfig.satellite.labels.styleUrl,
+    maptilerKey,
   ]);
+
+  const runtimeBaseStyleUrl = effectiveSatelliteEnabled
+    ? effectiveSatelliteStyleUrl
+    : baseStyleUrl;
   
   const mapFillRef = useRef<HTMLDivElement | null>(null);
   const [webglError, setWebglError] = useState<string | null>(null);
@@ -1497,7 +1540,7 @@ export default function GeoScopeMap({
 
       console.info("[HybridFix] runtime options before maplibregl.Map", {
         provider: providerForLog,
-        base_style_url: maskMaptilerUrl(baseStyleUrl),
+        base_style_url: maskMaptilerUrl(runtimeBaseStyleUrl),
         satellite_style_url: maskMaptilerUrl(effectiveSatelliteStyleUrl),
         maptiler_key_present: Boolean(maptilerKey),
         satellite_enabled: effectiveSatelliteEnabled,
@@ -1508,7 +1551,7 @@ export default function GeoScopeMap({
       });
       console.info("[GeoScopeMap] Map init", {
         provider: providerForLog,
-        base_style_url: maskMaptilerUrl(baseStyleUrl),
+        base_style_url: maskMaptilerUrl(runtimeBaseStyleUrl),
         hybrid_enabled: effectiveSatelliteEnabled,
         satellite_overlay_enabled: effectiveSatelliteEnabled && normalizedLabelsOverlay.enabled,
         labels_overlay_style_url: maskMaptilerUrl(normalizedLabelsOverlay.style_url),
