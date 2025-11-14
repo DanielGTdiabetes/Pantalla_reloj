@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import grp
 import hashlib
 import json
@@ -41,7 +42,7 @@ except ImportError:
 
 from fastapi import Body, FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from threading import Lock, Thread
@@ -9616,6 +9617,16 @@ _gibs_provider = GIBSProvider()
 _rainviewer_provider = RainViewerProvider()
 
 
+@dataclass
+class _PathsConfig:
+    gibs_cache_dir: Path = Path(
+        os.getenv("PANTALLA_GIBS_CACHE_DIR", "/var/cache/pantalla-reloj/gibs")
+    )
+
+
+paths = _PathsConfig()
+
+
 def _get_openweather_provider(layer_type: Optional[str] = None) -> OpenWeatherMapRadarProvider:
     """Obtiene una instancia del proveedor OpenWeatherMap con la capa especificada."""
     return OpenWeatherMapRadarProvider(
@@ -9804,27 +9815,57 @@ def _build_gibs_tile_url(
     )
 
 
-@app.get(
-    "/api/global/satellite/frames",
-    response_model=GlobalSatelliteFramesResponse,
-)
-def get_global_satellite_frames() -> GlobalSatelliteFramesResponse:
-    """Return temporal frames for the global satellite animation."""
+def build_gibs_tile_url_for_frame(
+    frame: GlobalSatelliteFrame,
+    *,
+    z: int,
+    x: int,
+    y: int,
+) -> str:
+    """Return the WMTS URL for a specific GIBS frame."""
 
-    now_dt = datetime.now(timezone.utc).replace(microsecond=0)
+    template = (frame.tile_url or "").strip()
+    if template:
+        try:
+            return template.format(z=z, x=x, y=y)
+        except KeyError:
+            logger.warning("Frame tile_url missing placeholders, falling back to defaults")
+    layer_name = frame.layer or GIBS_DEFAULT_LAYER
+    tile_matrix_set = frame.tile_matrix_set or GIBS_DEFAULT_TILE_MATRIX_SET
+    time_key = frame.time_key or GIBS_DEFAULT_TIME_VALUE
+    extension = GIBS_DEFAULT_FORMAT_EXT.lstrip(".") or "jpg"
+    return (
+        f"{_gibs_provider.base_url}/wmts/{GIBS_DEFAULT_EPSG}/best/{layer_name}/default/"
+        f"{time_key}/{tile_matrix_set}/{z}/{y}/{x}.{extension}"
+    )
+
+
+def _build_global_satellite_frames_response(
+    *, now_dt: Optional[datetime] = None
+) -> Tuple[GlobalSatelliteFramesResponse, _EffectiveGIBSConfig]:
+    """Return frames metadata and the effective configuration."""
+
+    now_dt = (now_dt or datetime.now(timezone.utc)).replace(microsecond=0)
     now_iso = now_dt.isoformat().replace("+00:00", "Z")
 
     config, config_error = _resolve_gibs_config()
 
+    base_kwargs = dict(
+        provider=config.provider,
+        history_minutes=config.history_minutes,
+        frame_step=config.frame_step,
+        now_iso=now_iso,
+    )
+
     if not config.enabled:
-        return GlobalSatelliteFramesResponse(
-            provider=config.provider,
-            enabled=False,
-            history_minutes=config.history_minutes,
-            frame_step=config.frame_step,
-            now_iso=now_iso,
-            frames=[],
-            error=config_error,
+        return (
+            GlobalSatelliteFramesResponse(
+                enabled=False,
+                frames=[],
+                error=config_error,
+                **base_kwargs,
+            ),
+            config,
         )
 
     try:
@@ -9844,41 +9885,51 @@ def get_global_satellite_frames() -> GlobalSatelliteFramesResponse:
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed to get global satellite frames: %s", exc)
-        return GlobalSatelliteFramesResponse(
-            provider=config.provider,
-            enabled=False,
-            history_minutes=config.history_minutes,
-            frame_step=config.frame_step,
-            now_iso=now_iso,
-            frames=[],
-            error=str(exc),
+        return (
+            GlobalSatelliteFramesResponse(
+                enabled=False,
+                frames=[],
+                error=str(exc),
+                **base_kwargs,
+            ),
+            config,
         )
 
     if not frames_raw:
         logger.warning("GIBS returned no frames for the configured window")
-        return GlobalSatelliteFramesResponse(
-            provider=config.provider,
-            enabled=False,
-            history_minutes=config.history_minutes,
-            frame_step=config.frame_step,
-            now_iso=now_iso,
-            frames=[],
-            error=config_error,
+        return (
+            GlobalSatelliteFramesResponse(
+                enabled=False,
+                frames=[],
+                error=config_error,
+                **base_kwargs,
+            ),
+            config,
         )
 
     frames_raw.sort(key=lambda frame: frame.get("timestamp", 0))
-
     frames = [GlobalSatelliteFrame(**frame_dict) for frame_dict in frames_raw]
 
-    return GlobalSatelliteFramesResponse(
-        provider=config.provider,
-        enabled=True,
-        history_minutes=config.history_minutes,
-        frame_step=config.frame_step,
-        now_iso=now_iso,
-        frames=frames,
-        error=config_error,
+    return (
+        GlobalSatelliteFramesResponse(
+            enabled=True,
+            frames=frames,
+            error=config_error,
+            **base_kwargs,
+        ),
+        config,
     )
+
+
+@app.get(
+    "/api/global/satellite/frames",
+    response_model=GlobalSatelliteFramesResponse,
+)
+def get_global_satellite_frames() -> GlobalSatelliteFramesResponse:
+    """Return temporal frames for the global satellite animation."""
+
+    frames_response, _ = _build_global_satellite_frames_response()
+    return frames_response
 
 
 @app.get("/api/global/sat/tiles/{z:int}/{x:int}/{y:int}.png")
@@ -10026,78 +10077,85 @@ async def get_global_satellite_tile(
     y: int,
     request: Request
 ) -> Response:
-    """Proxy de tiles de satélite global con caché."""
-    config, _ = _resolve_gibs_config()
-    enabled = config.enabled and config.provider == "gibs"
-    refresh_minutes = config.refresh_minutes
+    """Return cached or proxied GIBS tiles for the requested frame."""
 
-    if not enabled:
-        raise HTTPException(status_code=404, detail="Global satellite layer disabled")
+    frames_response, config = _build_global_satellite_frames_response()
 
-    # Caché de tiles en disco
-    cache_dir = Path("/var/cache/pantalla/global/satellite")
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    tile_path = cache_dir / f"{timestamp}_{z}_{x}_{y}.png"
-    
-    # Verificar caché en disco
-    if tile_path.exists():
-        tile_age = datetime.now(timezone.utc).timestamp() - tile_path.stat().st_mtime
-        if tile_age < refresh_minutes * 60:
-            tile_data = tile_path.read_bytes()
-            return Response(
-                content=tile_data,
-                media_type="image/png",
-                headers={
-                    "Cache-Control": "public, max-age=300",
-                    "ETag": f'"{timestamp}_{z}_{x}_{y}"'
-                }
-            )
-    
-    # Descargar tile
+    if not (config.enabled and config.provider == "gibs"):
+        raise HTTPException(status_code=404, detail="Global satellite (GIBS) disabled")
+
+    frames = frames_response.frames
+    if not frames:
+        raise HTTPException(status_code=503, detail="No GIBS frames available")
+
+    frame = next((item for item in frames if item.timestamp == timestamp), None)
+    if frame is None:
+        frame = min(frames, key=lambda item: abs(item.timestamp - timestamp))
+
+    upstream_url = build_gibs_tile_url_for_frame(frame, z=z, x=x, y=y)
+
+    cache_path = (
+        paths.gibs_cache_dir
+        / str(timestamp)
+        / str(z)
+        / str(x)
+        / f"{y}.jpg"
+    )
+
+    if cache_path.exists():
+        return FileResponse(cache_path, media_type="image/jpeg")
+
+    cache_dir = cache_path.parent
+    cache_dir_ready = True
     try:
-        tile_url = _gibs_provider.get_tile_url(
-            timestamp,
-            z,
-            x,
-            y,
-            layer=config.layer,
-            tile_matrix_set=config.tile_matrix_set,
-            epsg=config.epsg,
-            format_ext=config.format_ext,
-            time_mode=config.time_mode,
-            time_value=config.time_value,
-        )
-        response = requests.get(tile_url, timeout=10, stream=True)
-        response.raise_for_status()
-        
-        tile_data = response.content
-        
-        # Guardar en caché en disco
-        tile_path.write_bytes(tile_data)
-        
-        return Response(
-            content=tile_data,
-            media_type=response.headers.get("Content-Type", "image/png"),
-            headers={
-                "Cache-Control": "public, max-age=300",
-                "ETag": f'"{timestamp}_{z}_{x}_{y}"'
-            }
-        )
-    except Exception as exc:
-        logger.error("Failed to fetch global satellite tile: %s", exc)
-        # Intentar servir desde caché aunque sea stale
-        if tile_path.exists():
-            tile_data = tile_path.read_bytes()
-            return Response(
-                content=tile_data,
-                media_type="image/png",
-                headers={
-                    "Cache-Control": "public, max-age=300",
-                    "ETag": f'"{timestamp}_{z}_{x}_{y}"',
-                    "X-Stale": "true"
-                }
-            )
-        raise HTTPException(status_code=500, detail="Failed to fetch tile")
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        cache_dir_ready = cache_dir.exists()
+        if not cache_dir_ready:
+            logger.warning("Could not ensure GIBS cache directory %s: %s", cache_dir, exc)
+
+    headers = {"User-Agent": request.headers.get("user-agent", "pantalla-reloj/1.0")}
+    timeout = 12.0
+
+    try:
+        if httpx is not None:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                upstream = await client.get(upstream_url, headers=headers)
+        else:
+            loop = asyncio.get_running_loop()
+
+            def _fetch() -> requests.Response:
+                return requests.get(upstream_url, headers=headers, timeout=timeout)
+
+            upstream = await loop.run_in_executor(None, _fetch)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to fetch GIBS tile %s: %s", upstream_url, exc)
+        raise HTTPException(status_code=502, detail="GIBS upstream error") from exc
+
+    status_code = upstream.status_code
+
+    if 200 <= status_code < 300:
+        content = upstream.content
+        file_written = False
+        if cache_dir_ready:
+            try:
+                tmp_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
+                tmp_path.write_bytes(content)
+                tmp_path.replace(cache_path)
+                file_written = True
+            except OSError as exc:
+                logger.warning("Could not write GIBS cache %s: %s", cache_path, exc)
+        if file_written:
+            return FileResponse(cache_path, media_type="image/jpeg")
+        return Response(content=content, media_type="image/jpeg")
+
+    if status_code in {400, 404}:
+        raise HTTPException(status_code=404, detail="GIBS tile_not_available")
+
+    logger.error(
+        "Unexpected status code %s fetching GIBS tile %s", status_code, upstream_url
+    )
+    raise HTTPException(status_code=502, detail="GIBS upstream error")
 
 
 @app.get("/api/global/radar/tiles/{timestamp:int}/{z:int}/{x:int}/{y:int}.png")
