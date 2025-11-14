@@ -152,10 +152,14 @@ export const loadMapStyle = async (
       }
     } else if (apiKey && maptilerConfig?.style) {
       // Fallback: construir desde style si no hay styleUrl
-      const styleSlug = maptilerConfig.style === "hybrid" ? "hybrid" : 
+      // IMPORTANTE: Si el estilo es "hybrid" o "satellite", usar streets-v4 como base
+      // porque MapHybrid añadirá la capa satelital encima
+      const styleSlug = maptilerConfig.style === "hybrid" ? "streets-v4" : 
+                       maptilerConfig.style === "satellite" ? "streets-v4" :
                        maptilerConfig.style === "vector-bright" ? "streets-v4" :
-                       maptilerConfig.style === "vector-dark" ? "dark" :
-                       maptilerConfig.style === "vector-light" ? "light" :
+                       maptilerConfig.style === "vector-dark" ? "basic-dark" :
+                       maptilerConfig.style === "vector-light" ? "basic-light" :
+                       maptilerConfig.style === "streets-v4" ? "streets-v4" :
                        "streets-v4";
       const signedUrl = signMapTilerUrl(`https://api.maptiler.com/maps/${styleSlug}/style.json`, apiKey);
       if (signedUrl) {
@@ -163,11 +167,18 @@ export const loadMapStyle = async (
       }
     }
 
-    // Detectar si es modo híbrido/satélite
-    const isHybrid = styleUrl && (
-      styleUrl.includes("/maps/satellite/") || 
-      styleUrl.includes("/maps/hybrid/")
-    );
+    // NO usar modo híbrido desde styleUrl base
+    // El modo híbrido se maneja mediante satellite.enabled y MapHybrid component
+    // que añade la capa satelital encima del estilo vectorial base
+    // Solo usar estilo raster si el styleUrl explícitamente apunta a satellite/hybrid
+    // y NO hay configuración de satellite.enabled (modo legacy - no recomendado)
+    const styleUrlLower = styleUrl?.toLowerCase() || "";
+    const isExplicitHybridStyle = styleUrlLower.includes("/maps/satellite/") || 
+                                  styleUrlLower.includes("/maps/hybrid/");
+    const hasSatelliteConfig = mapConfig.satellite?.enabled === true;
+    
+    // Solo usar estilo raster si es explícito Y no hay configuración de satellite
+    const isHybrid = isExplicitHybridStyle && !hasSatelliteConfig;
 
     if (isHybrid && styleUrl) {
       // Modo híbrido: crear estilo raster desde la URL de tiles

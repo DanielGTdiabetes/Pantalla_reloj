@@ -738,6 +738,15 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
     
     // Convertir a formato compatible con buildRuntimePreferences
     // Construir un MapConfig compatible usando unknown para evitar errores de tipo
+    // Determinar el estilo desde la configuración real
+    const maptilerStyle = ui_map.maptiler?.style || "streets-v4";
+    const styleFromConfig = maptilerStyle === "hybrid" ? "streets-v4" : 
+                           maptilerStyle === "satellite" ? "streets-v4" :
+                           maptilerStyle === "vector-dark" ? "vector-dark" :
+                           maptilerStyle === "vector-bright" ? "vector-bright" :
+                           maptilerStyle === "streets-v4" ? "streets-v4" :
+                           "streets-v4";
+    
     const mapSettings = {
       engine: "maplibre" as const,
       provider: ui_map.provider === "maptiler_vector" ? "maptiler" : (ui_map.provider === "local_raster_xyz" ? "osm" : "xyz") as MapConfig["provider"],
@@ -747,14 +756,17 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
       viewMode: ui_map.viewMode,
       fixed: ui_map.fixed,
       region: ui_map.region,
-      style: "vector-dark" as const,
+      style: styleFromConfig as MapConfig["style"],
       theme: { sea: "#0b3756", land: "#20262c", label: "#d6e7ff", contrast: 0.15, tint: "rgba(0,170,255,0.06)" },
       respectReducedMotion: false,
       maptiler: ui_map.provider === "maptiler_vector"
         ? {
             key: ui_map.maptiler?.api_key ?? ui_map.maptiler?.apiKey ?? ui_map.maptiler?.key ?? null,
             apiKey: ui_map.maptiler?.api_key ?? ui_map.maptiler?.apiKey ?? null,
+            styleUrl: ui_map.maptiler?.styleUrl ?? null,
             styleUrlDark: ui_map.maptiler?.styleUrl ?? null,
+            styleUrlLight: null,
+            styleUrlBright: null,
           }
         : undefined,
       cinema: undefined,
@@ -1896,22 +1908,34 @@ export default function GeoScopeMap({
         const mapSettings = merged.ui.map;
         const mapPreferences = merged.map ?? createDefaultMapPreferences();
 
+        // Obtener configuración V2 directamente si está disponible
+        const configV2ForStyle = config as unknown as AppConfigV2 | null;
+        const maptilerConfigV2 = configV2ForStyle?.ui_map?.maptiler;
+
         // Convertir a MapConfigV2 para loadMapStyle
         // Calcular checksum para cache-buster (usar mapStyleVersion o timestamp)
         const configChecksum = mapStyleVersion || Date.now();
         
-        // Agregar cache-buster al styleUrl si existe
+        // Obtener styleUrl desde configuración V2 o desde mapSettings
         let styleUrlWithCacheBuster =
+          maptilerConfigV2?.styleUrl ||
           mapSettings.maptiler?.styleUrl ||
           mapSettings.maptiler?.styleUrlDark ||
           mapSettings.maptiler?.styleUrlLight ||
           mapSettings.maptiler?.styleUrlBright ||
           null;
         if (styleUrlWithCacheBuster) {
-          const url = new URL(styleUrlWithCacheBuster);
-          url.searchParams.set("v", String(configChecksum));
-          styleUrlWithCacheBuster = url.toString();
+          try {
+            const url = new URL(styleUrlWithCacheBuster);
+            url.searchParams.set("v", String(configChecksum));
+            styleUrlWithCacheBuster = url.toString();
+          } catch {
+            // Si falla el parsing, usar tal cual
+          }
         }
+        
+        // Determinar el estilo desde la configuración V2 o desde mapSettings
+        const styleFromConfig = maptilerConfigV2?.style || mapSettings.style || "streets-v4";
         
         const ui_map: MapConfigV2 = {
           engine: "maplibre",
@@ -1931,6 +1955,7 @@ export default function GeoScopeMap({
                   urls?: Record<string, string | null>;
                 };
                 const resolvedKey =
+                  maptilerConfigV2?.api_key ??
                   legacyMaptiler.apiKey ??
                   legacyMaptiler.key ??
                   legacyMaptiler.api_key ??
@@ -1941,7 +1966,7 @@ export default function GeoScopeMap({
                   api_key: resolvedKey,
                   apiKey: resolvedKey,
                   key: legacyMaptiler.key ?? resolvedKey,
-                  style: mapSettings.style ?? null,
+                  style: styleFromConfig,
                   styleUrl: styleUrlWithCacheBuster,
                   styleUrlDark: legacyMaptiler.styleUrlDark ?? null,
                   styleUrlLight: legacyMaptiler.styleUrlLight ?? null,
@@ -1954,6 +1979,7 @@ export default function GeoScopeMap({
           viewMode: mapSettings.viewMode || "fixed",
           fixed: mapSettings.fixed,
           region: mapSettings.region,
+          satellite: configV2ForStyle?.ui_map?.satellite,
         };
         const styleResult = await loadMapStyle(ui_map);
         if (cancelled || !mapRef.current) {
