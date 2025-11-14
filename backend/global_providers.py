@@ -83,7 +83,7 @@ class GIBSProvider:
         while current <= end_time:
             timestamp = int(current.timestamp())
             iso = current.replace(microsecond=0).isoformat().replace("+00:00", "Z")
-            time_key = current.strftime("%Y-%m-%d")
+            time_key = iso
             frames.append(
                 {
                     "timestamp": timestamp,
@@ -127,7 +127,7 @@ class GIBSProvider:
             URL del tile
         """
         dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
-        date_str = dt.strftime("%Y-%m-%d")
+        date_str = dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
         return (
             f"{self.base_url}/wmts/epsg3857/best/{layer}/default/"
             f"{date_str}/{tile_matrix_set}/{z}/{y}/{x}.jpg"
