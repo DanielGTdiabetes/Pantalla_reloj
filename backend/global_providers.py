@@ -10,6 +10,16 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import logging
 import requests
 
+from .constants import (
+    GIBS_DEFAULT_DEFAULT_ZOOM,
+    GIBS_DEFAULT_FRAME_STEP,
+    GIBS_DEFAULT_HISTORY_MINUTES,
+    GIBS_DEFAULT_LAYER,
+    GIBS_DEFAULT_MAX_ZOOM,
+    GIBS_DEFAULT_MIN_ZOOM,
+    GIBS_DEFAULT_TILE_MATRIX_SET,
+)
+
 logger = logging.getLogger(__name__)
 logger_path = Path("/var/log/pantalla/backend.log")
 if not logger_path.exists():
@@ -29,69 +39,113 @@ class GIBSProvider:
     
     def get_available_frames(
         self,
-        history_minutes: int = 90,
-        frame_step: int = 10
+        history_minutes: int = GIBS_DEFAULT_HISTORY_MINUTES,
+        frame_step: int = GIBS_DEFAULT_FRAME_STEP,
+        *,
+        now: Optional[datetime] = None,
+        layer: str = GIBS_DEFAULT_LAYER,
+        tile_matrix_set: str = GIBS_DEFAULT_TILE_MATRIX_SET,
+        min_zoom: int = GIBS_DEFAULT_MIN_ZOOM,
+        max_zoom: int = GIBS_DEFAULT_MAX_ZOOM,
+        default_zoom: int = GIBS_DEFAULT_DEFAULT_ZOOM,
     ) -> List[Dict[str, Any]]:
-        """Obtiene lista de frames disponibles de satélite.
-        
-        Args:
-            history_minutes: Minutos de historia a buscar
-            frame_step: Intervalo entre frames en minutos
-            
-        Returns:
-            Lista de dicts con timestamp y URL base para tiles
-        """
-        frames = []
-        now = datetime.now(timezone.utc)
-        
-        # GIBS tiene frames cada 10 minutos aproximadamente
-        # Generar lista de timestamps disponibles
-        start_time = now - timedelta(minutes=history_minutes)
+        """Build the list of available GIBS frames for a time window."""
+
+        if frame_step <= 0:
+            raise ValueError("frame_step must be positive")
+        if history_minutes < 0:
+            raise ValueError("history_minutes must be non-negative")
+
+        now_dt = now or datetime.now(timezone.utc)
+        if now_dt.tzinfo is None:
+            now_dt = now_dt.replace(tzinfo=timezone.utc)
+        else:
+            now_dt = now_dt.astimezone(timezone.utc)
+
+        step_delta = timedelta(minutes=frame_step)
+        history_delta = timedelta(minutes=history_minutes)
+
+        def _floor(dt: datetime) -> datetime:
+            seconds = int(step_delta.total_seconds())
+            if seconds <= 0:
+                return dt.replace(second=0, microsecond=0)
+            timestamp = int(dt.timestamp())
+            floored = timestamp - (timestamp % seconds)
+            return datetime.fromtimestamp(floored, tz=timezone.utc)
+
+        end_time = _floor(now_dt)
+        start_time = _floor(end_time - history_delta)
+
+        frames: List[Dict[str, Any]] = []
+        clamped_default_zoom = max(min(default_zoom, max_zoom), min_zoom)
+
         current = start_time
-        
-        # Redondear al frame más cercano (GIBS frames en horas:10, :20, :30, etc.)
-        current_minute = current.minute
-        rounded_minute = (current_minute // 10) * 10
-        current = current.replace(minute=rounded_minute, second=0, microsecond=0)
-        
-        while current <= now:
+        while current <= end_time:
             timestamp = int(current.timestamp())
-            frames.append({
-                "timestamp": timestamp,
-                "iso": current.isoformat(),
-                "url_base": f"{self.base_url}/wmts/epsg3857/best/Modis_Terra_TrueColor/default"
-            })
-            current += timedelta(minutes=frame_step)
-        
+            iso = current.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            time_key = current.strftime("%Y-%m-%d")
+            frames.append(
+                {
+                    "timestamp": timestamp,
+                    "t_iso": iso,
+                    "layer": layer,
+                    "time_key": time_key,
+                    "tile_matrix_set": tile_matrix_set,
+                    "z": clamped_default_zoom,
+                    "min_zoom": min_zoom,
+                    "max_zoom": max_zoom,
+                    "tile_url": self.build_tile_url_template(
+                        layer=layer,
+                        tile_matrix_set=tile_matrix_set,
+                        time_key=time_key,
+                    ),
+                }
+            )
+            current += step_delta
+
         return frames
-    
+
     def get_tile_url(
         self,
         timestamp: int,
         z: int,
         x: int,
         y: int,
-        layer: str = "Modis_Terra_TrueColor"
+        layer: str = GIBS_DEFAULT_LAYER,
+        tile_matrix_set: str = GIBS_DEFAULT_TILE_MATRIX_SET,
     ) -> str:
         """Genera URL de tile para GIBS.
-        
+
         Args:
             timestamp: Unix timestamp
             z: Zoom level
             x: Tile X
             y: Tile Y
             layer: Nombre de capa GIBS
-            
+
         Returns:
             URL del tile
         """
-        # GIBS usa WMTS con formato:
-        # /wmts/epsg3857/best/{layer}/default/{timestamp}/{z}/{y}/{x}.jpg
         dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
         date_str = dt.strftime("%Y-%m-%d")
-        
-        # Para simplicidad, usar el formato más común de GIBS
-        return f"{self.base_url}/wmts/epsg3857/best/{layer}/default/{date_str}/{z}/{y}/{x}.jpg"
+        return (
+            f"{self.base_url}/wmts/epsg3857/best/{layer}/default/"
+            f"{date_str}/{tile_matrix_set}/{z}/{y}/{x}.jpg"
+        )
+
+    def build_tile_url_template(
+        self,
+        *,
+        layer: str = GIBS_DEFAULT_LAYER,
+        tile_matrix_set: str = GIBS_DEFAULT_TILE_MATRIX_SET,
+        time_key: str,
+    ) -> str:
+        """Return a WMTS tile URL template with placeholders."""
+
+        return (
+            f"{self.base_url}/wmts/epsg3857/best/{layer}/default/"
+            f"{time_key}/{tile_matrix_set}/{{z}}/{{y}}/{{x}}.jpg"
+        )
 
 
 class RainViewerProvider:

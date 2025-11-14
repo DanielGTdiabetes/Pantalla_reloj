@@ -8,6 +8,16 @@ import json
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing import Optional, Literal, List, Dict, Any, Union
 
+from .constants import (
+    GIBS_DEFAULT_DEFAULT_ZOOM,
+    GIBS_DEFAULT_FRAME_STEP,
+    GIBS_DEFAULT_HISTORY_MINUTES,
+    GIBS_DEFAULT_LAYER,
+    GIBS_DEFAULT_MAX_ZOOM,
+    GIBS_DEFAULT_MIN_ZOOM,
+    GIBS_DEFAULT_TILE_MATRIX_SET,
+)
+
 
 class DisplayConfig(BaseModel):
     """Configuración de display."""
@@ -272,6 +282,27 @@ class SatelliteConfig(BaseModel):
     enabled: bool = True
     provider: Literal["gibs"] = "gibs"
     opacity: float = Field(default=1.0, ge=0, le=1)
+    layer: str = Field(default=GIBS_DEFAULT_LAYER, min_length=1, max_length=128)
+    tile_matrix_set: str = Field(
+        default=GIBS_DEFAULT_TILE_MATRIX_SET,
+        min_length=1,
+        max_length=128,
+    )
+    min_zoom: int = Field(default=GIBS_DEFAULT_MIN_ZOOM, ge=0, le=24)
+    max_zoom: int = Field(default=GIBS_DEFAULT_MAX_ZOOM, ge=0, le=24)
+    default_zoom: int = Field(default=GIBS_DEFAULT_DEFAULT_ZOOM, ge=0, le=24)
+    history_minutes: int = Field(default=GIBS_DEFAULT_HISTORY_MINUTES, ge=1, le=360)
+    frame_step: int = Field(default=GIBS_DEFAULT_FRAME_STEP, ge=1, le=120)
+
+    @model_validator(mode="after")
+    def ensure_zoom_bounds(cls, values: "SatelliteConfig") -> "SatelliteConfig":  # type: ignore[override]
+        if values.max_zoom < values.min_zoom:
+            values.max_zoom = values.min_zoom
+        if values.default_zoom < values.min_zoom:
+            values.default_zoom = values.min_zoom
+        elif values.default_zoom > values.max_zoom:
+            values.default_zoom = values.max_zoom
+        return values
 
 
 class RadarConfig(BaseModel):
@@ -463,8 +494,29 @@ class GlobalSatelliteLayerConfig(BaseModel):
     enabled: bool = Field(default=True)
     provider: Literal["gibs"] = "gibs"
     refresh_minutes: int = Field(default=10, ge=1, le=240)
-    history_minutes: int = Field(default=90, ge=5, le=360)
-    frame_step: int = Field(default=10, ge=1, le=60)
+    history_minutes: int = Field(default=GIBS_DEFAULT_HISTORY_MINUTES, ge=5, le=360)
+    frame_step: int = Field(default=GIBS_DEFAULT_FRAME_STEP, ge=1, le=60)
+    layer: str = Field(default=GIBS_DEFAULT_LAYER, min_length=1, max_length=128)
+    tile_matrix_set: str = Field(
+        default=GIBS_DEFAULT_TILE_MATRIX_SET,
+        min_length=1,
+        max_length=128,
+    )
+    min_zoom: int = Field(default=GIBS_DEFAULT_MIN_ZOOM, ge=0, le=24)
+    max_zoom: int = Field(default=GIBS_DEFAULT_MAX_ZOOM, ge=0, le=24)
+    default_zoom: int = Field(default=GIBS_DEFAULT_DEFAULT_ZOOM, ge=0, le=24)
+
+    @model_validator(mode="after")
+    def ensure_zoom_bounds(
+        cls, values: "GlobalSatelliteLayerConfig"
+    ) -> "GlobalSatelliteLayerConfig":  # type: ignore[override]
+        if values.max_zoom < values.min_zoom:
+            values.max_zoom = values.min_zoom
+        if values.default_zoom < values.min_zoom:
+            values.default_zoom = values.min_zoom
+        elif values.default_zoom > values.max_zoom:
+            values.default_zoom = values.max_zoom
+        return values
 
 
 class GlobalRadarLayerConfig(BaseModel):
