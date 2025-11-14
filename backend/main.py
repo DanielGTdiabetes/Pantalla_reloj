@@ -9607,14 +9607,6 @@ def get_ships(
         return {"type": "FeatureCollection", "features": [], "stale": True}
 
 
-@app.get("/{full_path:path}", include_in_schema=False)
-async def serve_frontend(full_path: str, request: Request):
-    if full_path.startswith("api/") or full_path.startswith("static/"):
-        raise HTTPException(status_code=404, detail="Not Found")
-    path = full_path or "index.html"
-    return await spa_static_files.get_response(path, request.scope)
-
-
 # Proveedores globales
 _gibs_provider = GIBSProvider()
 _rainviewer_provider = RainViewerProvider()
@@ -10274,6 +10266,14 @@ def on_startup() -> None:
     root = Path(os.getenv("PANTALLA_STATE_DIR", "/var/lib/pantalla-reloj"))
     for child in (root / "cache").glob("*.json"):
         child.touch(exist_ok=True)
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_frontend(full_path: str, request: Request):
+    if full_path.startswith("api/") or full_path.startswith("static/"):
+        raise HTTPException(status_code=404, detail="Not Found")
+    path = full_path or "index.html"
+    return await spa_static_files.get_response(path, request.scope)
 
 
 def run(host: str = "127.0.0.1", port: int = 8081) -> None:
