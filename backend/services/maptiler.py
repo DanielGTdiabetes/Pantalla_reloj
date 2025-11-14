@@ -7,6 +7,36 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 logger = logging.getLogger("pantalla.backend.maptiler")
 
 
+def resolve_maptiler_style_url(style: Optional[str], api_key: Optional[str] = None) -> str:
+    """Resuelve la URL de estilo de MapTiler desde el nombre del estilo.
+    
+    Args:
+        style: Nombre del estilo ("streets-v4", "hybrid", "satellite", "vector-dark", etc.)
+        api_key: API key opcional para firmar la URL
+        
+    Returns:
+        URL completa del estilo con ?key= si se proporciona api_key
+    """
+    style_map = {
+        "streets-v4": "https://api.maptiler.com/maps/streets-v4/style.json",
+        "hybrid": "https://api.maptiler.com/maps/hybrid/style.json",
+        "satellite": "https://api.maptiler.com/maps/satellite/style.json",
+        "vector-dark": "https://api.maptiler.com/maps/basic-dark/style.json",
+        "vector-bright": "https://api.maptiler.com/maps/basic/style.json",
+        "basic": "https://api.maptiler.com/maps/basic/style.json",
+        "basic-dark": "https://api.maptiler.com/maps/basic-dark/style.json",
+    }
+    
+    # Valor por defecto si style no está en el mapa
+    base_url = style_map.get(style or "", style_map.get("streets-v4"))
+    
+    # Si hay api_key, firmar la URL
+    if api_key and api_key.strip():
+        return normalize_maptiler_style_url(api_key.strip(), base_url) or base_url
+    
+    return base_url
+
+
 def normalize_maptiler_style_url(api_key: Optional[str], raw_url: Optional[str]) -> Optional[str]:
     """Normaliza una URL de estilo de MapTiler sin romper firmas existentes.
 

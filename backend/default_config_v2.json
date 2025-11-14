@@ -16,7 +16,7 @@
       "maxzoom": 19
     },
     "maptiler": {
-      "style": "vector-bright",
+      "style": "streets-v4",
       "api_key": null,
       "styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json",
       "urls": {

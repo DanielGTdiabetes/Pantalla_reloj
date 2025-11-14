@@ -120,13 +120,25 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
                     if "api_key" not in maptiler_cfg or maptiler_cfg["api_key"] is None:
                         maptiler_cfg["api_key"] = api_key_value
                 
-                style_url_raw = maptiler_cfg.get("styleUrl")
                 api_key_in_cfg = maptiler_cfg.get("api_key")
+                style_raw = maptiler_cfg.get("style")
+                style_url_raw = maptiler_cfg.get("styleUrl")
+                
+                # Si hay styleUrl, respetarlo pero asegurar que esté firmado
                 if isinstance(style_url_raw, str) and style_url_raw.strip():
                     normalized = normalize_maptiler_style_url(api_key_in_cfg, style_url_raw.strip())
                     maptiler_cfg["styleUrl"] = normalized or style_url_raw.strip()
+                # Si no hay styleUrl pero hay style, resolver desde style
+                elif isinstance(style_raw, str) and style_raw.strip():
+                    from .maptiler import resolve_maptiler_style_url
+                    resolved_url = resolve_maptiler_style_url(style_raw.strip(), api_key_in_cfg)
+                    maptiler_cfg["styleUrl"] = resolved_url
+                # Si no hay ni styleUrl ni style, usar default
                 else:
-                    maptiler_cfg["styleUrl"] = _DEFAULT_MAPTILER_STYLE_URL
+                    from .maptiler import resolve_maptiler_style_url
+                    default_url = resolve_maptiler_style_url("streets-v4", api_key_in_cfg)
+                    maptiler_cfg["styleUrl"] = default_url
+                    maptiler_cfg.setdefault("style", "streets-v4")
 
                 # Limpiar urls.styleUrl* legacy si existen, conservando objeto si hay data útil
                 urls_cfg = maptiler_cfg.get("urls")
@@ -139,11 +151,11 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
             provider = ui_map.get("provider")
             if provider == "maptiler_vector" and isinstance(maptiler_cfg, dict):
                 maptiler_cfg.setdefault("styleUrl", _DEFAULT_MAPTILER_STYLE_URL)
-                maptiler_cfg.setdefault("style", "vector-bright")
+                maptiler_cfg.setdefault("style", "streets-v4")
                 maptiler_cfg.setdefault("api_key", None)
             if provider == "maptiler_vector" and not ui_map.get("maptiler"):
                 ui_map["maptiler"] = {
-                    "style": "vector-bright",
+                    "style": "streets-v4",
                     "api_key": None,
                     "styleUrl": _DEFAULT_MAPTILER_STYLE_URL
                 }
@@ -204,7 +216,12 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
                     overlay_obj["opacity"] = 1.0
 
                 api_key_overlay = maptiler_cfg.get("api_key") if isinstance(maptiler_cfg, dict) else None
-                overlay_obj["style_url"] = normalize_maptiler_style_url(api_key_overlay, overlay_obj["style_url"]) or overlay_obj["style_url"]
+                if overlay_obj.get("style_url"):
+                    overlay_obj["style_url"] = normalize_maptiler_style_url(api_key_overlay, overlay_obj["style_url"]) or overlay_obj["style_url"]
+                elif api_key_overlay:
+                    # Si no hay style_url pero hay api_key, usar streets-v4 por defecto
+                    from .maptiler import resolve_maptiler_style_url
+                    overlay_obj["style_url"] = resolve_maptiler_style_url("streets-v4", api_key_overlay)
 
                 satellite_cfg["labels_overlay"] = overlay_obj
                 satellite_cfg["labels_enabled"] = overlay_obj.get("enabled", True)
@@ -216,6 +233,14 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
                     satellite_cfg["opacity"] = max(0.0, min(1.0, float(satellite_cfg["opacity"])))
                 else:
                     satellite_cfg["opacity"] = 1.0
+                # Asegurar que style_url esté firmado si hay api_key
+                satellite_style_url = satellite_cfg.get("style_url")
+                if satellite_style_url and api_key_overlay:
+                    satellite_cfg["style_url"] = normalize_maptiler_style_url(api_key_overlay, satellite_style_url) or satellite_style_url
+                elif not satellite_style_url:
+                    satellite_cfg.setdefault("style_url", "https://api.maptiler.com/maps/satellite/style.json")
+                    if api_key_overlay:
+                        satellite_cfg["style_url"] = normalize_maptiler_style_url(api_key_overlay, satellite_cfg["style_url"]) or satellite_cfg["style_url"]
                 satellite_cfg.setdefault("style_raster", "https://api.maptiler.com/maps/satellite/style.json")
 
         if "ui_global" not in data or not isinstance(data.get("ui_global"), dict):

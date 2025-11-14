@@ -737,6 +737,7 @@ class NewsTopLevelConfig(BaseModel):
 
 class EphemeridesTopLevelConfig(BaseModel):
     """Configuración top-level de efemérides astronómicas."""
+    enabled: bool = Field(default=True, description="Habilita las efemérides astronómicas")
     latitude: float = Field(default=39.986, ge=-90, le=90)
     longitude: float = Field(default=-0.051, ge=-180, le=180)
     timezone: str = Field(default="Europe/Madrid", min_length=1)

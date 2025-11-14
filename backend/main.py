@@ -1383,18 +1383,35 @@ def _health_payload() -> Dict[str, Any]:
             else:
                 status_value = "ok" if api_key else "error"
             
+            # Determinar nombre del estilo desde styleUrl o style
+            style_name = None
+            if ui_map.maptiler:
+                style_name = ui_map.maptiler.style
+                if not style_name and style_url:
+                    # Intentar inferir desde URL
+                    if "hybrid" in style_url:
+                        style_name = "Hybrid"
+                    elif "satellite" in style_url:
+                        style_name = "Satellite"
+                    elif "streets-v4" in style_url:
+                        style_name = "Streets v4"
+                    elif "basic-dark" in style_url:
+                        style_name = "Basic Dark"
+                    elif "basic" in style_url:
+                        style_name = "Basic"
+            
             payload["maptiler"] = {
                 "provider": provider_reported,
                 "status": status_value,
                 "has_api_key": bool(api_key),
                 "style_signed": style_signed,
-                "labels_signed": labels_overlay_signed,
+                "labels_signed": labels_signed,
                 "labels_overlay": {
                     "present": labels_overlay_present,
-                    "style_signed": labels_overlay_signed
+                    "style_signed": labels_signed
                 },
                 "styleUrl": style_url,
-                "name": validation_result.get("name") if validation_result else None,
+                "name": validation_result.get("name") if validation_result else style_name,
                 "last_check_iso": cached_validation.fetched_at.isoformat() if cached_validation else None,
                 "error": validation_result.get("error") if validation_result else None
             }
@@ -3404,20 +3421,27 @@ def _validate_and_normalize_maptiler(config: Dict[str, Any]) -> None:
     # Normalizar style
     style = maptiler.get("style")
     if not style or not isinstance(style, str) or not style.strip():
-        maptiler["style"] = "vector-bright"
+        maptiler["style"] = "streets-v4"
     
-    # Normalizar styleUrl
+    # Normalizar styleUrl: respetar si existe, resolver desde style si no
     style_url = maptiler.get("styleUrl")
+    style = maptiler.get("style")
+    
     if style_url and isinstance(style_url, str) and style_url.strip():
+        # Si hay styleUrl, respetarlo pero asegurar que esté firmado
         normalized_url = normalize_maptiler_style_url(api_key, style_url.strip()) or style_url.strip()
         maptiler["styleUrl"] = normalized_url
+    elif style and isinstance(style, str) and style.strip():
+        # Si no hay styleUrl pero hay style, resolver desde style
+        from .services.maptiler import resolve_maptiler_style_url
+        resolved_url = resolve_maptiler_style_url(style.strip(), api_key)
+        maptiler["styleUrl"] = resolved_url
     else:
-        # Solo si no hay styleUrl, usar default con firma
-        if api_key:
-            default_url = f"https://api.maptiler.com/maps/streets-v4/style.json?key={api_key}"
-        else:
-            default_url = "https://api.maptiler.com/maps/streets-v4/style.json"
+        # Si no hay ni styleUrl ni style, usar default
+        from .services.maptiler import resolve_maptiler_style_url
+        default_url = resolve_maptiler_style_url("streets-v4", api_key)
         maptiler["styleUrl"] = default_url
+        maptiler.setdefault("style", "streets-v4")
     
     # Limpiar urls.styleUrl* legacy (eliminar todo el bloque urls si existe)
     if "urls" in maptiler:
@@ -5494,7 +5518,20 @@ def get_astronomy() -> Dict[str, Any]:
     config = config_manager.read()
     ephemerides_config = config.ephemerides
     
-    if not ephemerides_config.enabled:
+    # Verificar si las efemérides están habilitadas
+    # Primero desde ephemerides.enabled (top-level), luego desde panels.ephemerides.enabled
+    ephemerides_enabled = getattr(ephemerides_config, "enabled", None)
+    if ephemerides_enabled is None:
+        # Si no existe en top-level, verificar en panels
+        panels_config = getattr(config, "panels", None)
+        if panels_config:
+            ephemerides_panel = getattr(panels_config, "ephemerides", None)
+            if ephemerides_panel:
+                ephemerides_enabled = getattr(ephemerides_panel, "enabled", True)
+        else:
+            ephemerides_enabled = True  # Por defecto habilitado
+    
+    if ephemerides_enabled is False:
         return _load_or_default("astronomy")
     
     # Verificar caché (actualizar cada hora)
