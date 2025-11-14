@@ -12,12 +12,16 @@ import requests
 
 from .constants import (
     GIBS_DEFAULT_DEFAULT_ZOOM,
+    GIBS_DEFAULT_EPSG,
+    GIBS_DEFAULT_FORMAT_EXT,
     GIBS_DEFAULT_FRAME_STEP,
     GIBS_DEFAULT_HISTORY_MINUTES,
     GIBS_DEFAULT_LAYER,
     GIBS_DEFAULT_MAX_ZOOM,
     GIBS_DEFAULT_MIN_ZOOM,
     GIBS_DEFAULT_TILE_MATRIX_SET,
+    GIBS_DEFAULT_TIME_MODE,
+    GIBS_DEFAULT_TIME_VALUE,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,6 +52,10 @@ class GIBSProvider:
         min_zoom: int = GIBS_DEFAULT_MIN_ZOOM,
         max_zoom: int = GIBS_DEFAULT_MAX_ZOOM,
         default_zoom: int = GIBS_DEFAULT_DEFAULT_ZOOM,
+        epsg: str = GIBS_DEFAULT_EPSG,
+        format_ext: str = GIBS_DEFAULT_FORMAT_EXT,
+        time_mode: str = GIBS_DEFAULT_TIME_MODE,
+        time_value: str = GIBS_DEFAULT_TIME_VALUE,
     ) -> List[Dict[str, Any]]:
         """Build the list of available GIBS frames for a time window."""
 
@@ -83,7 +91,11 @@ class GIBSProvider:
         while current <= end_time:
             timestamp = int(current.timestamp())
             iso = current.replace(microsecond=0).isoformat().replace("+00:00", "Z")
-            time_key = current.strftime("%Y-%m-%d")
+            time_key = self._resolve_time_key(
+                current=current,
+                time_mode=time_mode,
+                explicit_time=time_value,
+            )
             frames.append(
                 {
                     "timestamp": timestamp,
@@ -98,6 +110,8 @@ class GIBSProvider:
                         layer=layer,
                         tile_matrix_set=tile_matrix_set,
                         time_key=time_key,
+                        epsg=epsg,
+                        format_ext=format_ext,
                     ),
                 }
             )
@@ -113,6 +127,10 @@ class GIBSProvider:
         y: int,
         layer: str = GIBS_DEFAULT_LAYER,
         tile_matrix_set: str = GIBS_DEFAULT_TILE_MATRIX_SET,
+        epsg: str = GIBS_DEFAULT_EPSG,
+        format_ext: str = GIBS_DEFAULT_FORMAT_EXT,
+        time_mode: str = GIBS_DEFAULT_TIME_MODE,
+        time_value: str = GIBS_DEFAULT_TIME_VALUE,
     ) -> str:
         """Genera URL de tile para GIBS.
 
@@ -127,10 +145,16 @@ class GIBSProvider:
             URL del tile
         """
         dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
-        date_str = dt.strftime("%Y-%m-%d")
+        time_key = self._resolve_time_key(
+            current=dt,
+            time_mode=time_mode,
+            explicit_time=time_value,
+        )
+        epsg_code = epsg or GIBS_DEFAULT_EPSG
+        extension = (format_ext or GIBS_DEFAULT_FORMAT_EXT).lstrip(".")
         return (
-            f"{self.base_url}/wmts/epsg3857/best/{layer}/default/"
-            f"{date_str}/{tile_matrix_set}/{z}/{y}/{x}.jpg"
+            f"{self.base_url}/wmts/{epsg_code}/best/{layer}/default/"
+            f"{time_key}/{tile_matrix_set}/{z}/{y}/{x}.{extension}"
         )
 
     def build_tile_url_template(
@@ -139,13 +163,33 @@ class GIBSProvider:
         layer: str = GIBS_DEFAULT_LAYER,
         tile_matrix_set: str = GIBS_DEFAULT_TILE_MATRIX_SET,
         time_key: str,
+        epsg: str = GIBS_DEFAULT_EPSG,
+        format_ext: str = GIBS_DEFAULT_FORMAT_EXT,
     ) -> str:
         """Return a WMTS tile URL template with placeholders."""
 
+        epsg_code = epsg or GIBS_DEFAULT_EPSG
+        extension = (format_ext or GIBS_DEFAULT_FORMAT_EXT).lstrip(".")
         return (
-            f"{self.base_url}/wmts/epsg3857/best/{layer}/default/"
-            f"{time_key}/{tile_matrix_set}/{{z}}/{{y}}/{{x}}.jpg"
+            f"{self.base_url}/wmts/{epsg_code}/best/{layer}/default/"
+            f"{time_key}/{tile_matrix_set}/{{z}}/{{y}}/{{x}}.{extension}"
         )
+
+    @staticmethod
+    def _resolve_time_key(
+        *,
+        current: datetime,
+        time_mode: str = GIBS_DEFAULT_TIME_MODE,
+        explicit_time: str = GIBS_DEFAULT_TIME_VALUE,
+    ) -> str:
+        """Return the WMTS time component for the requested mode."""
+
+        normalized_mode = (time_mode or GIBS_DEFAULT_TIME_MODE).lower()
+        if normalized_mode == "date":
+            return current.strftime("%Y-%m-%d")
+
+        value = explicit_time or GIBS_DEFAULT_TIME_VALUE
+        return value
 
 
 class RainViewerProvider:

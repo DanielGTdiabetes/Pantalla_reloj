@@ -10,12 +10,16 @@ from typing import Optional, Literal, List, Dict, Any, Union
 
 from .constants import (
     GIBS_DEFAULT_DEFAULT_ZOOM,
+    GIBS_DEFAULT_EPSG,
+    GIBS_DEFAULT_FORMAT_EXT,
     GIBS_DEFAULT_FRAME_STEP,
     GIBS_DEFAULT_HISTORY_MINUTES,
     GIBS_DEFAULT_LAYER,
     GIBS_DEFAULT_MAX_ZOOM,
     GIBS_DEFAULT_MIN_ZOOM,
     GIBS_DEFAULT_TILE_MATRIX_SET,
+    GIBS_DEFAULT_TIME_MODE,
+    GIBS_DEFAULT_TIME_VALUE,
 )
 
 
@@ -277,6 +281,21 @@ class WeatherLayersConfig(BaseModel):
     )
 
 
+class GlobalSatelliteGibsConfig(BaseModel):
+    """Configuración de parámetros WMTS específicos de NASA GIBS."""
+
+    epsg: str = Field(default=GIBS_DEFAULT_EPSG, min_length=1, max_length=32)
+    tile_matrix_set: str = Field(
+        default=GIBS_DEFAULT_TILE_MATRIX_SET,
+        min_length=1,
+        max_length=128,
+    )
+    layer: str = Field(default=GIBS_DEFAULT_LAYER, min_length=1, max_length=128)
+    format_ext: str = Field(default=GIBS_DEFAULT_FORMAT_EXT, min_length=1, max_length=16)
+    time_mode: Literal["default", "date"] = Field(default=GIBS_DEFAULT_TIME_MODE)
+    time_value: str = Field(default=GIBS_DEFAULT_TIME_VALUE, min_length=1, max_length=64)
+
+
 class SatelliteConfig(BaseModel):
     """Configuración de satélite global."""
     enabled: bool = True
@@ -293,6 +312,7 @@ class SatelliteConfig(BaseModel):
     default_zoom: int = Field(default=GIBS_DEFAULT_DEFAULT_ZOOM, ge=0, le=24)
     history_minutes: int = Field(default=GIBS_DEFAULT_HISTORY_MINUTES, ge=1, le=360)
     frame_step: int = Field(default=GIBS_DEFAULT_FRAME_STEP, ge=1, le=120)
+    gibs: GlobalSatelliteGibsConfig = Field(default_factory=GlobalSatelliteGibsConfig)
 
     @model_validator(mode="after")
     def ensure_zoom_bounds(cls, values: "SatelliteConfig") -> "SatelliteConfig":  # type: ignore[override]
@@ -505,6 +525,7 @@ class GlobalSatelliteLayerConfig(BaseModel):
     min_zoom: int = Field(default=GIBS_DEFAULT_MIN_ZOOM, ge=0, le=24)
     max_zoom: int = Field(default=GIBS_DEFAULT_MAX_ZOOM, ge=0, le=24)
     default_zoom: int = Field(default=GIBS_DEFAULT_DEFAULT_ZOOM, ge=0, le=24)
+    gibs: GlobalSatelliteGibsConfig = Field(default_factory=GlobalSatelliteGibsConfig)
 
     @model_validator(mode="after")
     def ensure_zoom_bounds(

@@ -91,12 +91,16 @@ from .data_sources_ics import (
 )
 from .constants import (
     GIBS_DEFAULT_DEFAULT_ZOOM,
+    GIBS_DEFAULT_EPSG,
+    GIBS_DEFAULT_FORMAT_EXT,
     GIBS_DEFAULT_FRAME_STEP,
     GIBS_DEFAULT_HISTORY_MINUTES,
     GIBS_DEFAULT_LAYER,
     GIBS_DEFAULT_MAX_ZOOM,
     GIBS_DEFAULT_MIN_ZOOM,
     GIBS_DEFAULT_TILE_MATRIX_SET,
+    GIBS_DEFAULT_TIME_MODE,
+    GIBS_DEFAULT_TIME_VALUE,
 )
 from .global_providers import (
     GIBSProvider,
@@ -9632,6 +9636,10 @@ class _EffectiveGIBSConfig:
     min_zoom: int
     max_zoom: int
     default_zoom: int
+    epsg: str
+    format_ext: str
+    time_mode: str
+    time_value: str
 
 
 def _resolve_gibs_config() -> Tuple[_EffectiveGIBSConfig, Optional[str]]:
@@ -9649,6 +9657,10 @@ def _resolve_gibs_config() -> Tuple[_EffectiveGIBSConfig, Optional[str]]:
     min_zoom = GIBS_DEFAULT_MIN_ZOOM
     max_zoom = GIBS_DEFAULT_MAX_ZOOM
     default_zoom = GIBS_DEFAULT_DEFAULT_ZOOM
+    epsg = GIBS_DEFAULT_EPSG
+    format_ext = GIBS_DEFAULT_FORMAT_EXT
+    time_mode = GIBS_DEFAULT_TIME_MODE
+    time_value = GIBS_DEFAULT_TIME_VALUE
 
     global_satellite = None
     ui_satellite = None
@@ -9688,6 +9700,18 @@ def _resolve_gibs_config() -> Tuple[_EffectiveGIBSConfig, Optional[str]]:
         default_zoom = getattr(global_satellite, "default_zoom", default_zoom)
         enabled_flags.append(bool(getattr(global_satellite, "enabled", True)))
 
+        gibs_config = getattr(global_satellite, "gibs", None)
+        if gibs_config is not None:
+            epsg = getattr(gibs_config, "epsg", epsg)
+            format_ext = getattr(gibs_config, "format_ext", format_ext)
+            time_mode = getattr(gibs_config, "time_mode", time_mode)
+            time_value = getattr(gibs_config, "time_value", time_value)
+            fields_set = getattr(gibs_config, "model_fields_set", set())
+            if "layer" in fields_set:
+                layer_name = getattr(gibs_config, "layer", layer_name)
+            if "tile_matrix_set" in fields_set:
+                tile_matrix_set = getattr(gibs_config, "tile_matrix_set", tile_matrix_set)
+
     if ui_satellite is not None:
         provider = getattr(ui_satellite, "provider", None)
         if provider:
@@ -9701,6 +9725,18 @@ def _resolve_gibs_config() -> Tuple[_EffectiveGIBSConfig, Optional[str]]:
         frame_step = getattr(ui_satellite, "frame_step", frame_step)
         enabled_flags.append(bool(getattr(ui_satellite, "enabled", True)))
 
+        gibs_config = getattr(ui_satellite, "gibs", None)
+        if gibs_config is not None:
+            epsg = getattr(gibs_config, "epsg", epsg)
+            format_ext = getattr(gibs_config, "format_ext", format_ext)
+            time_mode = getattr(gibs_config, "time_mode", time_mode)
+            time_value = getattr(gibs_config, "time_value", time_value)
+            fields_set = getattr(gibs_config, "model_fields_set", set())
+            if "layer" in fields_set:
+                layer_name = getattr(gibs_config, "layer", layer_name)
+            if "tile_matrix_set" in fields_set:
+                tile_matrix_set = getattr(gibs_config, "tile_matrix_set", tile_matrix_set)
+
     provider_name = provider_candidates[0] if provider_candidates else "gibs"
     enabled = all(enabled_flags) if enabled_flags else True
 
@@ -9711,6 +9747,15 @@ def _resolve_gibs_config() -> Tuple[_EffectiveGIBSConfig, Optional[str]]:
         max_zoom = min_zoom
 
     default_zoom = max(min(int(default_zoom), int(max_zoom)), int(min_zoom))
+
+    if not epsg:
+        epsg = GIBS_DEFAULT_EPSG
+    if not format_ext:
+        format_ext = GIBS_DEFAULT_FORMAT_EXT
+    if not time_mode:
+        time_mode = GIBS_DEFAULT_TIME_MODE
+    if not time_value:
+        time_value = GIBS_DEFAULT_TIME_VALUE
 
     effective_config = _EffectiveGIBSConfig(
         enabled=bool(enabled),
@@ -9723,6 +9768,10 @@ def _resolve_gibs_config() -> Tuple[_EffectiveGIBSConfig, Optional[str]]:
         min_zoom=int(min_zoom),
         max_zoom=int(max_zoom),
         default_zoom=int(default_zoom),
+        epsg=str(epsg),
+        format_ext=str(format_ext),
+        time_mode=str(time_mode),
+        time_value=str(time_value),
     )
 
     return effective_config, error
@@ -9761,6 +9810,10 @@ def get_global_satellite_frames() -> GlobalSatelliteFramesResponse:
             min_zoom=config.min_zoom,
             max_zoom=config.max_zoom,
             default_zoom=config.default_zoom,
+            epsg=config.epsg,
+            format_ext=config.format_ext,
+            time_mode=config.time_mode,
+            time_value=config.time_value,
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed to get global satellite frames: %s", exc)
@@ -9942,6 +9995,10 @@ async def get_global_satellite_tile(
             y,
             layer=config.layer,
             tile_matrix_set=config.tile_matrix_set,
+            epsg=config.epsg,
+            format_ext=config.format_ext,
+            time_mode=config.time_mode,
+            time_value=config.time_value,
         )
         response = requests.get(tile_url, timeout=10, stream=True)
         response.raise_for_status()
