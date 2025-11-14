@@ -11,6 +11,7 @@ import tempfile
 import time
 import traceback
 import uuid
+from dataclasses import dataclass
 from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -88,6 +89,15 @@ from .data_sources_ics import (
     fetch_ics_calendar_events,
     get_last_error as get_last_ics_error,
 )
+from .constants import (
+    GIBS_DEFAULT_DEFAULT_ZOOM,
+    GIBS_DEFAULT_FRAME_STEP,
+    GIBS_DEFAULT_HISTORY_MINUTES,
+    GIBS_DEFAULT_LAYER,
+    GIBS_DEFAULT_MAX_ZOOM,
+    GIBS_DEFAULT_MIN_ZOOM,
+    GIBS_DEFAULT_TILE_MATRIX_SET,
+)
 from .global_providers import (
     GIBSProvider,
     OpenWeatherMapApiKeyError,
@@ -106,6 +116,10 @@ from .layer_providers import (
     ShipProvider,
 )
 from .logging_utils import configure_logging
+from .models_global_satellite import (
+    GlobalSatelliteFrame,
+    GlobalSatelliteFramesResponse,
+)
 from .models_v2 import AppConfigV2
 from .routes.efemerides import (
     get_efemerides_for_date,
@@ -9614,63 +9628,185 @@ def _get_openweather_provider(layer_type: Optional[str] = None) -> OpenWeatherMa
     )
 
 
-@app.get("/api/global/satellite/frames")
-def get_global_satellite_frames() -> Dict[str, Any]:
-    """Obtiene lista de frames disponibles de satélite global."""
-    # Leer configuración V2 si está disponible
+@dataclass
+class _EffectiveGIBSConfig:
+    enabled: bool
+    provider: str
+    refresh_minutes: int
+    history_minutes: int
+    frame_step: int
+    layer: str
+    tile_matrix_set: str
+    min_zoom: int
+    max_zoom: int
+    default_zoom: int
+
+
+def _resolve_gibs_config() -> Tuple[_EffectiveGIBSConfig, Optional[str]]:
+    """Return the effective satellite configuration combining layers and UI."""
+
+    provider_candidates: List[str] = []
+    enabled_flags: List[bool] = []
+    error: Optional[str] = None
+
+    history_minutes = GIBS_DEFAULT_HISTORY_MINUTES
+    frame_step = GIBS_DEFAULT_FRAME_STEP
+    refresh_minutes = 10
+    layer_name = GIBS_DEFAULT_LAYER
+    tile_matrix_set = GIBS_DEFAULT_TILE_MATRIX_SET
+    min_zoom = GIBS_DEFAULT_MIN_ZOOM
+    max_zoom = GIBS_DEFAULT_MAX_ZOOM
+    default_zoom = GIBS_DEFAULT_DEFAULT_ZOOM
+
+    global_satellite = None
+    ui_satellite = None
+
     try:
         config_v2, _ = _read_config_v2()
         if config_v2.layers and config_v2.layers.global_ and config_v2.layers.global_.satellite:
-            # V2: leer de layers.global.satellite
-            satellite_config = config_v2.layers.global_.satellite
-            enabled = satellite_config.enabled
-            provider_name = satellite_config.provider
-            history_minutes = satellite_config.history_minutes
-            frame_step = satellite_config.frame_step
-        elif config_v2.ui_global and config_v2.ui_global.satellite:
-            # V2: fallback a ui_global.satellite (configuración legacy)
-            satellite_config = config_v2.ui_global.satellite
-            enabled = satellite_config.enabled
-            provider_name = satellite_config.provider
-            history_minutes = 90  # defaults
-            frame_step = 10
-        else:
-            enabled = False
-            provider_name = "gibs"
-            history_minutes = 90
-            frame_step = 10
-    except Exception:
-        # Fallback a V1
+            global_satellite = config_v2.layers.global_.satellite
+        if config_v2.ui_global and config_v2.ui_global.satellite:
+            ui_satellite = config_v2.ui_global.satellite
+    except Exception as exc:  # noqa: BLE001
+        error = "config_read_error"
+        logger.warning("Failed to read v2 config for global satellite: %s", exc)
+
+    if global_satellite is None and ui_satellite is None:
         try:
-            config = config_manager.read()
-            gl = getattr(config.layers, "global_", None)
-            if not gl:
-                return {"frames": []}
-            global_config = gl.satellite
-            enabled = global_config.enabled
-            provider_name = global_config.provider
-            history_minutes = global_config.history_minutes
-            frame_step = global_config.frame_step
-        except Exception:
-            return {"frames": [], "count": 0, "provider": "gibs", "status": "down"}
-    
-    if not enabled:
-        return {"frames": [], "count": 0, "provider": provider_name, "status": "down"}
-    
-    try:
-        frames = _gibs_provider.get_available_frames(
-            history_minutes=history_minutes,
-            frame_step=frame_step
+            legacy_config = config_manager.read()
+            legacy_layers = getattr(legacy_config.layers, "global_", None)
+            if legacy_layers and getattr(legacy_layers, "satellite", None):
+                global_satellite = legacy_layers.satellite
+        except Exception as exc:  # noqa: BLE001
+            if error is None:
+                error = "config_read_error"
+            logger.warning("Failed to read legacy satellite config: %s", exc)
+
+    if global_satellite is not None:
+        provider = getattr(global_satellite, "provider", None)
+        if provider:
+            provider_candidates.append(provider)
+        history_minutes = getattr(global_satellite, "history_minutes", history_minutes)
+        frame_step = getattr(global_satellite, "frame_step", frame_step)
+        refresh_minutes = getattr(global_satellite, "refresh_minutes", refresh_minutes)
+        layer_name = getattr(global_satellite, "layer", layer_name)
+        tile_matrix_set = getattr(global_satellite, "tile_matrix_set", tile_matrix_set)
+        min_zoom = getattr(global_satellite, "min_zoom", min_zoom)
+        max_zoom = getattr(global_satellite, "max_zoom", max_zoom)
+        default_zoom = getattr(global_satellite, "default_zoom", default_zoom)
+        enabled_flags.append(bool(getattr(global_satellite, "enabled", True)))
+
+    if ui_satellite is not None:
+        provider = getattr(ui_satellite, "provider", None)
+        if provider:
+            provider_candidates.append(provider)
+        layer_name = getattr(ui_satellite, "layer", layer_name)
+        tile_matrix_set = getattr(ui_satellite, "tile_matrix_set", tile_matrix_set)
+        min_zoom = getattr(ui_satellite, "min_zoom", min_zoom)
+        max_zoom = getattr(ui_satellite, "max_zoom", max_zoom)
+        default_zoom = getattr(ui_satellite, "default_zoom", default_zoom)
+        history_minutes = getattr(ui_satellite, "history_minutes", history_minutes)
+        frame_step = getattr(ui_satellite, "frame_step", frame_step)
+        enabled_flags.append(bool(getattr(ui_satellite, "enabled", True)))
+
+    provider_name = provider_candidates[0] if provider_candidates else "gibs"
+    enabled = all(enabled_flags) if enabled_flags else True
+
+    if any(candidate and candidate != "gibs" for candidate in provider_candidates):
+        enabled = False
+
+    if max_zoom < min_zoom:
+        max_zoom = min_zoom
+
+    default_zoom = max(min(int(default_zoom), int(max_zoom)), int(min_zoom))
+
+    effective_config = _EffectiveGIBSConfig(
+        enabled=bool(enabled),
+        provider=provider_name or "gibs",
+        refresh_minutes=int(refresh_minutes),
+        history_minutes=int(history_minutes),
+        frame_step=int(frame_step),
+        layer=str(layer_name),
+        tile_matrix_set=str(tile_matrix_set),
+        min_zoom=int(min_zoom),
+        max_zoom=int(max_zoom),
+        default_zoom=int(default_zoom),
+    )
+
+    return effective_config, error
+
+
+@app.get(
+    "/api/global/satellite/frames",
+    response_model=GlobalSatelliteFramesResponse,
+)
+def get_global_satellite_frames() -> GlobalSatelliteFramesResponse:
+    """Return temporal frames for the global satellite animation."""
+
+    now_dt = datetime.now(timezone.utc).replace(microsecond=0)
+    now_iso = now_dt.isoformat().replace("+00:00", "Z")
+
+    config, config_error = _resolve_gibs_config()
+
+    if not config.enabled:
+        return GlobalSatelliteFramesResponse(
+            provider=config.provider,
+            enabled=False,
+            history_minutes=config.history_minutes,
+            frame_step=config.frame_step,
+            now_iso=now_iso,
+            frames=[],
+            error=config_error,
         )
-        return {
-            "frames": frames,
-            "count": len(frames),
-            "provider": provider_name,
-            "status": "ok" if frames else "degraded"
-        }
-    except Exception as exc:
+
+    try:
+        frames_raw = _gibs_provider.get_available_frames(
+            history_minutes=config.history_minutes,
+            frame_step=config.frame_step,
+            now=now_dt,
+            layer=config.layer,
+            tile_matrix_set=config.tile_matrix_set,
+            min_zoom=config.min_zoom,
+            max_zoom=config.max_zoom,
+            default_zoom=config.default_zoom,
+        )
+    except Exception as exc:  # noqa: BLE001
         logger.error("Failed to get global satellite frames: %s", exc)
-        return {"frames": [], "count": 0, "provider": provider_name, "status": "down", "error": str(exc)}
+        return GlobalSatelliteFramesResponse(
+            provider=config.provider,
+            enabled=False,
+            history_minutes=config.history_minutes,
+            frame_step=config.frame_step,
+            now_iso=now_iso,
+            frames=[],
+            error=str(exc),
+        )
+
+    if not frames_raw:
+        logger.warning("GIBS returned no frames for the configured window")
+        return GlobalSatelliteFramesResponse(
+            provider=config.provider,
+            enabled=False,
+            history_minutes=config.history_minutes,
+            frame_step=config.frame_step,
+            now_iso=now_iso,
+            frames=[],
+            error=config_error,
+        )
+
+    frames_raw.sort(key=lambda frame: frame.get("timestamp", 0))
+
+    frames = [GlobalSatelliteFrame(**frame_dict) for frame_dict in frames_raw]
+
+    return GlobalSatelliteFramesResponse(
+        provider=config.provider,
+        enabled=True,
+        history_minutes=config.history_minutes,
+        frame_step=config.frame_step,
+        now_iso=now_iso,
+        frames=frames,
+        error=config_error,
+    )
 
 
 @app.get("/api/global/radar/frames")
@@ -9779,35 +9915,13 @@ async def get_global_satellite_tile(
     request: Request
 ) -> Response:
     """Proxy de tiles de satélite global con caché."""
-    # Leer configuración V2 si está disponible
-    enabled = False
-    refresh_minutes = 10
-    try:
-        config_v2, _ = _read_config_v2()
-        if config_v2.layers and config_v2.layers.global_ and config_v2.layers.global_.satellite:
-            # V2: leer de layers.global.satellite
-            satellite_config = config_v2.layers.global_.satellite
-            enabled = satellite_config.enabled
-            refresh_minutes = satellite_config.refresh_minutes
-        elif config_v2.ui_global and config_v2.ui_global.satellite:
-            # V2: fallback a ui_global.satellite
-            enabled = config_v2.ui_global.satellite.enabled
-            refresh_minutes = 10  # default
-    except Exception:
-        # Fallback a V1
-        try:
-            config = config_manager.read()
-            gl = getattr(config.layers, "global_", None)
-            if gl:
-                global_config = gl.satellite
-                enabled = global_config.enabled
-                refresh_minutes = global_config.refresh_minutes
-        except Exception:
-            enabled = False
-    
+    config, _ = _resolve_gibs_config()
+    enabled = config.enabled and config.provider == "gibs"
+    refresh_minutes = config.refresh_minutes
+
     if not enabled:
         raise HTTPException(status_code=404, detail="Global satellite layer disabled")
-    
+
     # Caché de tiles en disco
     cache_dir = Path("/var/cache/pantalla/global/satellite")
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -9829,7 +9943,14 @@ async def get_global_satellite_tile(
     
     # Descargar tile
     try:
-        tile_url = _gibs_provider.get_tile_url(timestamp, z, x, y)
+        tile_url = _gibs_provider.get_tile_url(
+            timestamp,
+            z,
+            x,
+            y,
+            layer=config.layer,
+            tile_matrix_set=config.tile_matrix_set,
+        )
         response = requests.get(tile_url, timeout=10, stream=True)
         response.raise_for_status()
         
