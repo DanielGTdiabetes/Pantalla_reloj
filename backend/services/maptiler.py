@@ -16,13 +16,19 @@ def resolve_maptiler_style_url(style: Optional[str], api_key: Optional[str] = No
         
     Returns:
         URL completa del estilo con ?key= si se proporciona api_key
+        
+    Nota:
+        - Si style="hybrid", retorna streets-v4 como base porque el modo híbrido
+          se maneja mediante satellite.enabled y MapHybrid añade la capa satelital encima.
+        - Si style="satellite", retorna streets-v4 como base por la misma razón.
     """
     style_map = {
         "streets-v4": "https://api.maptiler.com/maps/streets-v4/style.json",
-        "hybrid": "https://api.maptiler.com/maps/hybrid/style.json",
-        "satellite": "https://api.maptiler.com/maps/satellite/style.json",
+        "hybrid": "https://api.maptiler.com/maps/streets-v4/style.json",  # Base vectorial para modo híbrido
+        "satellite": "https://api.maptiler.com/maps/streets-v4/style.json",  # Base vectorial para modo satélite
         "vector-dark": "https://api.maptiler.com/maps/basic-dark/style.json",
         "vector-bright": "https://api.maptiler.com/maps/basic/style.json",
+        "vector-light": "https://api.maptiler.com/maps/basic-light/style.json",
         "basic": "https://api.maptiler.com/maps/basic/style.json",
         "basic-dark": "https://api.maptiler.com/maps/basic-dark/style.json",
     }

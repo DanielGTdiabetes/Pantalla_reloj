@@ -1383,12 +1383,25 @@ def _health_payload() -> Dict[str, Any]:
             else:
                 status_value = "ok" if api_key else "error"
             
-            # Determinar nombre del estilo desde styleUrl o style
+            # Determinar nombre del estilo desde style (fuente de verdad) o inferir desde styleUrl
             style_name = None
             if ui_map.maptiler:
-                style_name = ui_map.maptiler.style
-                if not style_name and style_url:
-                    # Intentar inferir desde URL
+                style_from_config = ui_map.maptiler.style
+                if style_from_config:
+                    # Mapear nombres de estilo a nombres legibles
+                    style_name_map = {
+                        "hybrid": "Hybrid",
+                        "satellite": "Satellite",
+                        "streets-v4": "Streets v4",
+                        "vector-dark": "Basic Dark",
+                        "vector-bright": "Basic",
+                        "vector-light": "Basic Light",
+                        "basic": "Basic",
+                        "basic-dark": "Basic Dark",
+                    }
+                    style_name = style_name_map.get(style_from_config, style_from_config)
+                elif style_url:
+                    # Fallback: intentar inferir desde URL solo si no hay style configurado
                     if "hybrid" in style_url:
                         style_name = "Hybrid"
                     elif "satellite" in style_url:
@@ -1647,6 +1660,95 @@ def config_metadata() -> Dict[str, Any]:
     """Retorna metadatos sobre la configuración cargada."""
     logger.debug("Config metadata requested")
     return config_manager.get_config_metadata()
+
+
+@app.get("/api/debug/maptiler-style")
+def debug_maptiler_style() -> Dict[str, Any]:
+    """Endpoint de diagnóstico para verificar la configuración de MapTiler.
+    
+    Retorna información detallada sobre:
+    - provider, style, styleUrl desde ui_map.maptiler
+    - satellite.enabled, satellite.style_url, labels_overlay desde ui_map.satellite
+    - Estado de validación y URLs firmadas
+    """
+    try:
+        config_v2, _ = _read_config_v2()
+        ui_map = config_v2.ui_map
+        
+        provider = ui_map.provider or "unknown"
+        maptiler_config = ui_map.maptiler
+        
+        # Obtener API key
+        api_key = secret_store.get_secret("maptiler_api_key")
+        if not api_key and maptiler_config:
+            api_key = maptiler_config.api_key
+        
+        # Información básica de maptiler
+        ui_map_style = maptiler_config.style if maptiler_config else None
+        ui_map_styleUrl = maptiler_config.styleUrl if maptiler_config else None
+        
+        # Información de satellite
+        satellite_config = ui_map.satellite
+        satellite_enabled = satellite_config.enabled if satellite_config else False
+        satellite_style_url = satellite_config.style_url if satellite_config else None
+        
+        # Información de labels_overlay
+        labels_overlay_enabled = False
+        labels_overlay_style_url = None
+        if satellite_config and satellite_config.labels_overlay:
+            labels_overlay_enabled = satellite_config.labels_overlay.enabled
+            labels_overlay_style_url = satellite_config.labels_overlay.style_url
+        
+        # Determinar estilo efectivo usado
+        effective_style_used = ui_map_style or "unknown"
+        if effective_style_used == "hybrid" and satellite_enabled:
+            effective_style_used = "hybrid (satellite + labels overlay)"
+        elif effective_style_used == "satellite" and satellite_enabled:
+            effective_style_used = "satellite (with labels overlay)"
+        
+        # Validar styleUrl si existe
+        validation_result = None
+        if ui_map_styleUrl:
+            validation_result = _validate_maptiler_style(ui_map_styleUrl)
+        
+        # Verificar si URLs están firmadas
+        style_signed = bool(ui_map_styleUrl and ("?key=" in ui_map_styleUrl or "&key=" in ui_map_styleUrl))
+        satellite_signed = bool(satellite_style_url and ("?key=" in satellite_style_url or "&key=" in satellite_style_url))
+        labels_signed = bool(labels_overlay_style_url and ("?key=" in labels_overlay_style_url or "&key=" in labels_overlay_style_url))
+        
+        # Determinar status
+        status = "ok"
+        error = None
+        if not api_key:
+            status = "error"
+            error = "No API key found"
+        elif validation_result and not validation_result.get("ok"):
+            status = "error"
+            error = validation_result.get("error", "Style validation failed")
+        
+        return {
+            "provider": provider,
+            "ui_map_style": ui_map_style,
+            "ui_map_styleUrl": ui_map_styleUrl,
+            "satellite_enabled": satellite_enabled,
+            "satellite_style_url": satellite_style_url,
+            "labels_overlay_enabled": labels_overlay_enabled,
+            "labels_overlay_style_url": labels_overlay_style_url,
+            "effective_style_used": effective_style_used,
+            "style_signed": style_signed,
+            "satellite_signed": satellite_signed,
+            "labels_signed": labels_signed,
+            "has_api_key": bool(api_key),
+            "validation": validation_result,
+            "status": status,
+            "error": error
+        }
+    except Exception as e:
+        logger.exception("Error in debug_maptiler_style")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
 
 
 @app.get("/api/map/validate")
@@ -3418,23 +3520,32 @@ def _validate_and_normalize_maptiler(config: Dict[str, Any]) -> None:
     if "apiKey" in maptiler:
         del maptiler["apiKey"]
     
-    # Normalizar style
+    # Normalizar style: respetar valores válidos (hybrid, satellite, streets-v4, etc.)
+    # Solo usar default si está vacío o inválido
     style = maptiler.get("style")
-    if not style or not isinstance(style, str) or not style.strip():
+    if isinstance(style, str) and style.strip():
+        normalized_style = style.strip()
+        # Validar que sea un estilo conocido
+        valid_styles = {"hybrid", "satellite", "streets-v4", "vector-dark", "vector-bright", "vector-light", "basic", "basic-dark"}
+        if normalized_style not in valid_styles:
+            logger.warning("[config] Unknown maptiler.style=%r, defaulting to streets-v4", normalized_style)
+            normalized_style = "streets-v4"
+        maptiler["style"] = normalized_style
+    elif not style or (isinstance(style, str) and not style.strip()):
         maptiler["style"] = "streets-v4"
     
     # Normalizar styleUrl: respetar si existe, resolver desde style si no
     style_url = maptiler.get("styleUrl")
-    style = maptiler.get("style")
+    current_style = maptiler.get("style", "streets-v4")
     
     if style_url and isinstance(style_url, str) and style_url.strip():
         # Si hay styleUrl, respetarlo pero asegurar que esté firmado
         normalized_url = normalize_maptiler_style_url(api_key, style_url.strip()) or style_url.strip()
         maptiler["styleUrl"] = normalized_url
-    elif style and isinstance(style, str) and style.strip():
+    elif isinstance(current_style, str) and current_style.strip():
         # Si no hay styleUrl pero hay style, resolver desde style
         from .services.maptiler import resolve_maptiler_style_url
-        resolved_url = resolve_maptiler_style_url(style.strip(), api_key)
+        resolved_url = resolve_maptiler_style_url(current_style.strip(), api_key)
         maptiler["styleUrl"] = resolved_url
     else:
         # Si no hay ni styleUrl ni style, usar default

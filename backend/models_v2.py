@@ -37,7 +37,7 @@ class MapTilerUrlsConfig(BaseModel):
 
 class MapTilerConfig(BaseModel):
     """Configuración del proveedor MapTiler vector."""
-    style: Optional[str] = Field(default="vector-bright", max_length=64)  # "vector-dark", "vector-bright", "streets-v4", etc.
+    style: Optional[str] = Field(default="vector-bright", max_length=64)  # "vector-dark", "vector-bright", "streets-v4", "hybrid", "satellite", etc.
     api_key: Optional[str] = Field(default=None, max_length=256)
     styleUrl: Optional[str] = Field(default=None, max_length=512)
     urls: Optional[MapTilerUrlsConfig] = None
@@ -45,11 +45,21 @@ class MapTilerConfig(BaseModel):
     @field_validator("style", mode="before")
     @classmethod
     def normalize_style(cls, value: object) -> str:
-        """Normalize style to default if empty."""
+        """Normalize style to default if empty.
+        
+        Valores válidos: "hybrid", "satellite", "streets-v4", "vector-dark", 
+        "vector-bright", "vector-light", "basic", "basic-dark"
+        """
         if value is None or (isinstance(value, str) and not value.strip()):
             return "vector-bright"
         if isinstance(value, str):
-            return value.strip()
+            normalized = value.strip()
+            # Validar que sea un estilo conocido
+            valid_styles = {"hybrid", "satellite", "streets-v4", "vector-dark", "vector-bright", "vector-light", "basic", "basic-dark"}
+            if normalized not in valid_styles:
+                # Si no es válido, usar default pero mantener el valor para logging
+                return "vector-bright"
+            return normalized
         return "vector-bright"
     
     @field_validator("api_key", mode="before")

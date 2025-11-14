@@ -124,14 +124,30 @@ def sanitize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
                 style_raw = maptiler_cfg.get("style")
                 style_url_raw = maptiler_cfg.get("styleUrl")
                 
+                # Normalizar style: respetar valores válidos (hybrid, satellite, streets-v4, etc.)
+                # Solo usar default si está vacío o inválido
+                if isinstance(style_raw, str) and style_raw.strip():
+                    normalized_style = style_raw.strip()
+                    # Validar que sea un estilo conocido
+                    valid_styles = {"hybrid", "satellite", "streets-v4", "vector-dark", "vector-bright", "vector-light", "basic", "basic-dark"}
+                    if normalized_style not in valid_styles:
+                        log.warning("[config-sanitize] Unknown maptiler.style=%r, defaulting to streets-v4", normalized_style)
+                        normalized_style = "streets-v4"
+                    maptiler_cfg["style"] = normalized_style
+                elif not style_raw or (isinstance(style_raw, str) and not style_raw.strip()):
+                    maptiler_cfg.setdefault("style", "streets-v4")
+                
+                # Resolver styleUrl según style y styleUrl existente
+                current_style = maptiler_cfg.get("style", "streets-v4")
+                
                 # Si hay styleUrl, respetarlo pero asegurar que esté firmado
                 if isinstance(style_url_raw, str) and style_url_raw.strip():
                     normalized = normalize_maptiler_style_url(api_key_in_cfg, style_url_raw.strip())
                     maptiler_cfg["styleUrl"] = normalized or style_url_raw.strip()
                 # Si no hay styleUrl pero hay style, resolver desde style
-                elif isinstance(style_raw, str) and style_raw.strip():
+                elif isinstance(current_style, str) and current_style.strip():
                     from .maptiler import resolve_maptiler_style_url
-                    resolved_url = resolve_maptiler_style_url(style_raw.strip(), api_key_in_cfg)
+                    resolved_url = resolve_maptiler_style_url(current_style.strip(), api_key_in_cfg)
                     maptiler_cfg["styleUrl"] = resolved_url
                 # Si no hay ni styleUrl ni style, usar default
                 else:
