@@ -80,7 +80,11 @@ def test_global_satellite_frames_default_config_returns_frames(
     assert last_frame.t_iso == "2025-11-14T15:30:00Z"
 
     assert module.GIBS_DEFAULT_LAYER in first_frame.tile_url
+    assert first_frame.tile_matrix_set == module.GIBS_DEFAULT_TILE_MATRIX_SET
+    assert f"/{module.GIBS_DEFAULT_TILE_MATRIX_SET}/" in first_frame.tile_url
+    assert "/default/default/" in first_frame.tile_url
     assert "{z}/{y}/{x}.jpg" in first_frame.tile_url
+    assert first_frame.time_key == module.GIBS_DEFAULT_TIME_VALUE
 
 
 def test_openapi_includes_global_satellite_frames(app_module: Tuple[object, Path]) -> None:
