@@ -9777,6 +9777,33 @@ def _resolve_gibs_config() -> Tuple[_EffectiveGIBSConfig, Optional[str]]:
     return effective_config, error
 
 
+def _build_gibs_tile_url(
+    *,
+    z: int,
+    x: int,
+    y: int,
+    config: _EffectiveGIBSConfig,
+) -> str:
+    """Build the WMTS URL for a GIBS tile using the effective configuration."""
+
+    current = datetime.now(timezone.utc)
+    time_key = _gibs_provider._resolve_time_key(  # type: ignore[attr-defined]
+        current=current,
+        time_mode=config.time_mode or GIBS_DEFAULT_TIME_MODE,
+        explicit_time=config.time_value or GIBS_DEFAULT_TIME_VALUE,
+    )
+
+    epsg_code = (config.epsg or GIBS_DEFAULT_EPSG).strip() or GIBS_DEFAULT_EPSG
+    layer_name = (config.layer or GIBS_DEFAULT_LAYER).strip() or GIBS_DEFAULT_LAYER
+    tile_matrix_set = (config.tile_matrix_set or GIBS_DEFAULT_TILE_MATRIX_SET).strip() or GIBS_DEFAULT_TILE_MATRIX_SET
+    extension = (config.format_ext or GIBS_DEFAULT_FORMAT_EXT).lstrip(".") or GIBS_DEFAULT_FORMAT_EXT
+
+    return (
+        f"{_gibs_provider.base_url}/wmts/{epsg_code}/best/{layer_name}/default/"
+        f"{time_key}/{tile_matrix_set}/{z}/{y}/{x}.{extension}"
+    )
+
+
 @app.get(
     "/api/global/satellite/frames",
     response_model=GlobalSatelliteFramesResponse,
@@ -9852,6 +9879,46 @@ def get_global_satellite_frames() -> GlobalSatelliteFramesResponse:
         frames=frames,
         error=config_error,
     )
+
+
+@app.get("/api/global/sat/tiles/{z:int}/{x:int}/{y:int}.png")
+async def get_global_sat_tile(z: int, x: int, y: int, request: Request) -> Response:
+    """Proxy simple para tiles actuales de GIBS."""
+
+    config, _ = _resolve_gibs_config()
+    enabled = config.enabled and config.provider == "gibs"
+
+    if not enabled:
+        raise HTTPException(status_code=404, detail="GIBS global satellite disabled")
+
+    tile_url = _build_gibs_tile_url(z=z, x=x, y=y, config=config)
+
+    headers = {"User-Agent": request.headers.get("user-agent", "pantalla-reloj/1.0")}
+    timeout = 10.0
+
+    try:
+        if httpx is not None:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                upstream = await client.get(tile_url, headers=headers)
+        else:
+            upstream = requests.get(tile_url, headers=headers, timeout=timeout)
+
+        response_headers = {}
+        for header_name in ("Content-Type", "Cache-Control", "ETag", "Last-Modified", "Expires", "Content-Length"):
+            value = upstream.headers.get(header_name)
+            if value is not None:
+                response_headers[header_name] = value
+
+        media_type = response_headers.pop("Content-Type", None)
+        return Response(
+            content=upstream.content,
+            status_code=upstream.status_code,
+            media_type=media_type,
+            headers=response_headers,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to proxy GIBS tile: %s", exc)
+        raise HTTPException(status_code=502, detail="gibs_proxy_error") from exc
 
 
 @app.get("/api/global/radar/frames")
