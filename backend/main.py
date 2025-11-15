@@ -3253,7 +3253,55 @@ def get_config(request: Request) -> JSONResponse:
 
     # Añadir secrets.calendar_ics (solo estructura, sin valores sensibles)
     public_config.setdefault("secrets", {}).setdefault("calendar_ics", {})
-
+    
+    # Unificar configuración de satélite global: asegurar que layers.global_satellite exista
+    # (además de layers.global_.satellite para compatibilidad)
+    try:
+        layers_block = public_config.setdefault("layers", {})
+        global_block = layers_block.get("global_") or layers_block.get("global")
+        
+        # Resolver configuración efectiva de GIBS
+        gibs_config, _ = _resolve_gibs_config()
+        
+        # Construir objeto global_satellite unificado
+        global_satellite_config = {
+            "enabled": gibs_config.enabled,
+            "provider": gibs_config.provider,
+            "refresh_minutes": gibs_config.refresh_minutes,
+            "history_minutes": gibs_config.history_minutes,
+            "frame_step": gibs_config.frame_step,
+            "layer": gibs_config.layer,
+            "tile_matrix_set": gibs_config.tile_matrix_set,
+            "min_zoom": gibs_config.min_zoom,
+            "max_zoom": gibs_config.max_zoom,
+            "default_zoom": gibs_config.default_zoom,
+            "gibs": {
+                "epsg": gibs_config.epsg,
+                "tile_matrix_set": gibs_config.tile_matrix_set,
+                "layer": gibs_config.layer,
+                "format_ext": gibs_config.format_ext,
+                "time_mode": gibs_config.time_mode,
+                "time_value": gibs_config.time_value,
+            }
+        }
+        
+        # Añadir layers.global_satellite para que el frontend lo encuentre
+        layers_block["global_satellite"] = global_satellite_config
+        
+        # También asegurar que layers.global_.satellite existe (para compatibilidad)
+        if global_block:
+            if isinstance(global_block, dict):
+                if "satellite" not in global_block:
+                    global_block["satellite"] = global_satellite_config
+            layers_block["global_"] = global_block
+        else:
+            layers_block["global_"] = {"satellite": global_satellite_config}
+            
+    except Exception as exc:
+        logger.warning("[config] Failed to unify global_satellite config: %s", exc)
+        # En caso de error, al menos añadir un objeto vacío
+        public_config.setdefault("layers", {}).setdefault("global_satellite", None)
+    
     response = JSONResponse(content=public_config)
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     response.headers["Pragma"] = "no-cache"
@@ -9795,8 +9843,32 @@ def _build_gibs_tile_url(
     y: int,
     config: _EffectiveGIBSConfig,
 ) -> str:
-    """Build the WMTS URL for a GIBS tile using the effective configuration."""
+    """Build the WMTS URL for a GIBS tile using the effective configuration.
+    
+    Valida y aplica clamp de zoom según los límites del tile_matrix_set para evitar
+    errores 400 Bad Request cuando z/x/y no cuadran con los límites válidos.
+    """
 
+    # Clamp de zoom: asegurar que z esté dentro de los límites válidos del tile_matrix_set
+    min_zoom = config.min_zoom if config.min_zoom is not None else GIBS_DEFAULT_MIN_ZOOM
+    max_zoom = config.max_zoom if config.max_zoom is not None else GIBS_DEFAULT_MAX_ZOOM
+    
+    # Para GoogleMapsCompatible_Level9, el máximo zoom efectivo es 9
+    # Asegurar que max_zoom nunca exceda 9 para este tile_matrix_set
+    tile_matrix_set = (config.tile_matrix_set or GIBS_DEFAULT_TILE_MATRIX_SET).strip() or GIBS_DEFAULT_TILE_MATRIX_SET
+    if "Level9" in tile_matrix_set:
+        max_zoom = min(max_zoom, 9)
+    
+    # Clamp z al rango válido [min_zoom, max_zoom]
+    z_clamped = max(min(int(z), int(max_zoom)), int(min_zoom))
+    
+    # Si el zoom fue modificado, registrar un warning para debugging
+    if z_clamped != z:
+        logger.debug(
+            "[GIBS] Clamped zoom z=%d -> z=%d (min=%d, max=%d, tile_matrix_set=%s)",
+            z, z_clamped, min_zoom, max_zoom, tile_matrix_set
+        )
+    
     current = datetime.now(timezone.utc)
     time_key = _gibs_provider._resolve_time_key(  # type: ignore[attr-defined]
         current=current,
@@ -9806,12 +9878,12 @@ def _build_gibs_tile_url(
 
     epsg_code = (config.epsg or GIBS_DEFAULT_EPSG).strip() or GIBS_DEFAULT_EPSG
     layer_name = (config.layer or GIBS_DEFAULT_LAYER).strip() or GIBS_DEFAULT_LAYER
-    tile_matrix_set = (config.tile_matrix_set or GIBS_DEFAULT_TILE_MATRIX_SET).strip() or GIBS_DEFAULT_TILE_MATRIX_SET
     extension = (config.format_ext or GIBS_DEFAULT_FORMAT_EXT).lstrip(".") or GIBS_DEFAULT_FORMAT_EXT
 
+    # Usar z_clamped en lugar de z en la URL
     return (
         f"{_gibs_provider.base_url}/wmts/{epsg_code}/best/{layer_name}/default/"
-        f"{time_key}/{tile_matrix_set}/{z}/{y}/{x}.{extension}"
+        f"{time_key}/{tile_matrix_set}/{z_clamped}/{y}/{x}.{extension}"
     )
 
 
@@ -9822,21 +9894,48 @@ def build_gibs_tile_url_for_frame(
     x: int,
     y: int,
 ) -> str:
-    """Return the WMTS URL for a specific GIBS frame."""
+    """Return the WMTS URL for a specific GIBS frame.
+    
+    Valida y aplica clamp de zoom según los límites del frame para evitar
+    errores 400 Bad Request cuando z/x/y no cuadran con los límites válidos.
+    """
+    # Obtener configuración efectiva para validar límites de zoom
+    config, _ = _resolve_gibs_config()
+    
+    # Clamp de zoom: usar min_zoom y max_zoom del frame si están disponibles,
+    # si no, usar los de la configuración
+    min_zoom = frame.min_zoom if frame.min_zoom is not None else (config.min_zoom if config.min_zoom is not None else GIBS_DEFAULT_MIN_ZOOM)
+    max_zoom = frame.max_zoom if frame.max_zoom is not None else (config.max_zoom if config.max_zoom is not None else GIBS_DEFAULT_MAX_ZOOM)
+    
+    # Para GoogleMapsCompatible_Level9, el máximo zoom efectivo es 9
+    tile_matrix_set = frame.tile_matrix_set if frame.tile_matrix_set else (config.tile_matrix_set if config.tile_matrix_set else GIBS_DEFAULT_TILE_MATRIX_SET)
+    if "Level9" in tile_matrix_set:
+        max_zoom = min(max_zoom, 9)
+    
+    # Clamp z al rango válido [min_zoom, max_zoom]
+    z_clamped = max(min(int(z), int(max_zoom)), int(min_zoom))
+    
+    # Si el zoom fue modificado, registrar un warning para debugging
+    if z_clamped != z:
+        logger.debug(
+            "[GIBS] Clamped zoom z=%d -> z=%d (min=%d, max=%d, tile_matrix_set=%s)",
+            z, z_clamped, min_zoom, max_zoom, tile_matrix_set
+        )
 
     template = (frame.tile_url or "").strip()
     if template:
         try:
-            return template.format(z=z, x=x, y=y)
+            # Usar z_clamped en lugar de z en el template
+            return template.format(z=z_clamped, x=x, y=y)
         except KeyError:
             logger.warning("Frame tile_url missing placeholders, falling back to defaults")
     layer_name = frame.layer or GIBS_DEFAULT_LAYER
-    tile_matrix_set = frame.tile_matrix_set or GIBS_DEFAULT_TILE_MATRIX_SET
     time_key = frame.time_key or GIBS_DEFAULT_TIME_VALUE
     extension = GIBS_DEFAULT_FORMAT_EXT.lstrip(".") or "jpg"
+    # Usar z_clamped y tile_matrix_set validado en lugar de z original
     return (
         f"{_gibs_provider.base_url}/wmts/{GIBS_DEFAULT_EPSG}/best/{layer_name}/default/"
-        f"{time_key}/{tile_matrix_set}/{z}/{y}/{x}.{extension}"
+        f"{time_key}/{tile_matrix_set}/{z_clamped}/{y}/{x}.{extension}"
     )
 
 
@@ -9934,14 +10033,27 @@ def get_global_satellite_frames() -> GlobalSatelliteFramesResponse:
 
 @app.get("/api/global/sat/tiles/{z:int}/{x:int}/{y:int}.png")
 async def get_global_sat_tile(z: int, x: int, y: int, request: Request) -> Response:
-    """Proxy simple para tiles actuales de GIBS."""
+    """Proxy simple para tiles actuales de GIBS.
+    
+    Valida z/x/y antes de construir la URL para evitar errores 400 Bad Request.
+    """
 
     config, _ = _resolve_gibs_config()
     enabled = config.enabled and config.provider == "gibs"
 
     if not enabled:
         raise HTTPException(status_code=404, detail="GIBS global satellite disabled")
-
+    
+    # Validar que z, x, y sean valores razonables antes de construir la URL
+    if z < 0 or z > 24:
+        logger.warning("[GIBS] Invalid zoom level z=%d (requested by client)", z)
+        raise HTTPException(status_code=400, detail=f"Invalid zoom level: {z}")
+    
+    if x < 0 or y < 0:
+        logger.warning("[GIBS] Invalid tile coordinates x=%d, y=%d (requested by client)", x, y)
+        raise HTTPException(status_code=400, detail=f"Invalid tile coordinates: x={x}, y={y}")
+    
+    # Construir URL con validación y clamp de zoom
     tile_url = _build_gibs_tile_url(z=z, x=x, y=y, config=config)
 
     headers = {"User-Agent": request.headers.get("user-agent", "pantalla-reloj/1.0")}
@@ -10077,7 +10189,10 @@ async def get_global_satellite_tile(
     y: int,
     request: Request
 ) -> Response:
-    """Return cached or proxied GIBS tiles for the requested frame."""
+    """Return cached or proxied GIBS tiles for the requested frame.
+    
+    Valida z/x/y antes de construir la URL para evitar errores 400 Bad Request.
+    """
 
     frames_response, config = _build_global_satellite_frames_response()
 
@@ -10087,11 +10202,21 @@ async def get_global_satellite_tile(
     frames = frames_response.frames
     if not frames:
         raise HTTPException(status_code=503, detail="No GIBS frames available")
+    
+    # Validar que z, x, y sean valores razonables antes de construir la URL
+    if z < 0 or z > 24:
+        logger.warning("[GIBS] Invalid zoom level z=%d (requested by client)", z)
+        raise HTTPException(status_code=400, detail=f"Invalid zoom level: {z}")
+    
+    if x < 0 or y < 0:
+        logger.warning("[GIBS] Invalid tile coordinates x=%d, y=%d (requested by client)", x, y)
+        raise HTTPException(status_code=400, detail=f"Invalid tile coordinates: x={x}, y={y}")
 
     frame = next((item for item in frames if item.timestamp == timestamp), None)
     if frame is None:
         frame = min(frames, key=lambda item: abs(item.timestamp - timestamp))
 
+    # Construir URL con validación y clamp de zoom (ya se hace dentro de build_gibs_tile_url_for_frame)
     upstream_url = build_gibs_tile_url_for_frame(frame, z=z, x=x, y=y)
 
     cache_path = (

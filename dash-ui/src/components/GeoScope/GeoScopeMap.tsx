@@ -2150,10 +2150,28 @@ export default function GeoScopeMap({
     // SEGUNDO: Si el satélite está activado, verificar que el estilo esté cargado
     // Función interna para adjuntar la capa cuando el estilo esté listo
     const attachGlobalSatelliteLayer = (targetMap: maplibregl.Map) => {
-      // Verificar que el estilo esté completamente cargado
-      const style = targetMap.getStyle();
-      if (!style || typeof style.version === "undefined") {
-        // El estilo aún no está listo
+      // Verificar que el mapa y el estilo estén completamente cargados
+      // Proteger contra "Cannot read properties of null (reading 'version')"
+      try {
+        if (!targetMap.isStyleLoaded()) {
+          // El estilo aún no está listo
+          return;
+        }
+        
+        const style = targetMap.getStyle();
+        if (!style) {
+          // El estilo es null, aún no está listo
+          return;
+        }
+        
+        // Verificar que version exista y sea un número válido
+        if (typeof style.version === "undefined" || style.version === null) {
+          // El estilo aún no tiene versión, no está completamente cargado
+          return;
+        }
+      } catch (error) {
+        // Si hay un error accediendo al estilo, esperar
+        console.debug("[GlobalSatelliteLayer] Style not ready yet, waiting:", error);
         return;
       }
 
@@ -2188,14 +2206,19 @@ export default function GeoScopeMap({
       }
     };
 
-    // Verificar si el estilo ya está cargado
-    if (map.isStyleLoaded()) {
-      const style = map.getStyle();
-      if (style && typeof style.version !== "undefined") {
-        // El estilo ya está listo, adjuntar inmediatamente
-        attachGlobalSatelliteLayer(map);
-        return;
+    // Verificar si el estilo ya está cargado (con protección contra null)
+    try {
+      if (map.isStyleLoaded()) {
+        const style = map.getStyle();
+        if (style && typeof style.version !== "undefined" && style.version !== null) {
+          // El estilo ya está listo, adjuntar inmediatamente
+          attachGlobalSatelliteLayer(map);
+          return;
+        }
       }
+    } catch (error) {
+      // Si hay un error accediendo al estilo, esperar al evento
+      console.debug("[GlobalSatelliteLayer] Error checking style, waiting for load event:", error);
     }
 
     // El estilo aún no está listo, esperar al evento 'styledata' o 'load'
@@ -3091,11 +3114,18 @@ export default function GeoScopeMap({
       }
 
       // Añadir min_zoom y max_zoom si están disponibles
+      // Asegurar que max_zoom nunca exceda 9 para GoogleMapsCompatible_Level9
       if (frame.min_zoom !== undefined) {
         updateOpts.minZoom = frame.min_zoom;
       }
       if (frame.max_zoom !== undefined) {
-        updateOpts.maxZoom = frame.max_zoom;
+        // Para GoogleMapsCompatible_Level9, el máximo zoom efectivo es 9
+        const tileMatrixSet = frame.tile_matrix_set || "GoogleMapsCompatible_Level9";
+        if (tileMatrixSet.includes("Level9")) {
+          updateOpts.maxZoom = Math.min(frame.max_zoom, 9);
+        } else {
+          updateOpts.maxZoom = frame.max_zoom;
+        }
       }
 
       // Actualizar la capa con todas las opciones
