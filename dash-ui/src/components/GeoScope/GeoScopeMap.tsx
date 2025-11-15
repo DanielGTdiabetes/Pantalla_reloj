@@ -34,7 +34,9 @@ import type {
   MapConfig,
   MapPreferences,
   MapThemeConfig,
-  RotationConfig
+  RotationConfig,
+  GlobalSatelliteLayerConfig,
+  GlobalRadarLayerConfig
 } from "../../types/config";
 import type {
   AppConfigV2,
@@ -1731,7 +1733,7 @@ export default function GeoScopeMap({
           const configAsV2Init = config as unknown as { 
             version?: number; 
             ui_global?: { satellite?: { enabled?: boolean; opacity?: number } };
-            layers?: { global_?: { satellite?: typeof mergedConfig.layers.global?.satellite } };
+            layers?: { global_?: { satellite?: GlobalSatelliteLayerConfig } };
           };
           const globalSatelliteConfig = configAsV2Init.version === 2 && configAsV2Init.layers?.global_?.satellite
             ? configAsV2Init.layers.global_.satellite
@@ -2852,8 +2854,8 @@ export default function GeoScopeMap({
         radar?: { enabled?: boolean; opacity?: number };
       };
       layers?: { global_?: { 
-        satellite?: typeof merged.layers.global?.satellite;
-        radar?: typeof merged.layers.global?.radar;
+        satellite?: GlobalSatelliteLayerConfig;
+        radar?: GlobalRadarLayerConfig;
       } };
     };
     
