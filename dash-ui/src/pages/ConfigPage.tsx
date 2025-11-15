@@ -744,25 +744,42 @@ export const ConfigPage: React.FC = () => {
     setGibsTesting(true);
     setGibsTestResult(null);
     try {
-      const result = await testGIBS();
-      setGibsTestResult(result || { ok: false, reason: "Sin respuesta" });
+      // Primero obtener frames disponibles
+      const framesResponse = await fetch(`${window.location.origin}/api/global/satellite/frames`);
+      if (!framesResponse.ok) {
+        setGibsTestResult({ ok: false, reason: "backend_error" });
+        return;
+      }
       
-      // Si el test es exitoso, intentar cargar un tile de ejemplo
-      if (result?.ok) {
+      const framesData = await framesResponse.json();
+      if (framesData.error !== null || !framesData.frames || framesData.frames.length === 0) {
+        setGibsTestResult({ ok: false, reason: "tile_not_available" });
+        return;
+      }
+      
+      // Usar el último frame disponible
+      const lastFrame = framesData.frames[framesData.frames.length - 1];
+      const timestamp = lastFrame.timestamp;
+      
+      // Probar un tile con el timestamp del frame
+      const tileUrl = `${window.location.origin}/api/global/satellite/tiles/${timestamp}/0/0/0.png`;
+      const tileResponse = await fetch(tileUrl);
+      
+      if (tileResponse.ok && tileResponse.headers.get("content-type")?.includes("image")) {
+        setGibsTestResult({ ok: true });
+        // Cargar preview del tile
         try {
-          const tileUrl = `${window.location.origin}/api/global/sat/tiles/2/1/1.png`;
-          const response = await fetch(tileUrl);
-          if (response.ok && response.headers.get("content-type")?.includes("image")) {
-            const blob = await response.blob();
-            const blobUrl = URL.createObjectURL(blob);
-            setGibsTilePreview(blobUrl);
-          }
+          const blob = await tileResponse.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          setGibsTilePreview(blobUrl);
         } catch (error) {
           console.debug("Could not load GIBS tile preview:", error);
         }
+      } else {
+        setGibsTestResult({ ok: false, reason: "tile_not_available" });
       }
     } catch (error) {
-      setGibsTestResult({ ok: false, reason: "Error al probar GIBS" });
+      setGibsTestResult({ ok: false, reason: "connection_error" });
       console.error("Error testing GIBS:", error);
     } finally {
       setGibsTesting(false);

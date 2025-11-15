@@ -908,13 +908,35 @@ export type GIBSTestResponse = {
 };
 
 export async function testGIBS(): Promise<GIBSTestResponse> {
-  // GIBS no tiene endpoint específico de test, usar un tile de ejemplo
   try {
-    // Intentar obtener un tile de ejemplo (z=2, x=1, y=1)
-    const response = await fetch(`${BASE}/api/global/sat/tiles/2/1/1.png`);
-    if (response.ok && response.headers.get("content-type")?.includes("image")) {
+    // Primero obtener frames disponibles
+    const framesResponse = await apiGet<{
+      frames: Array<{ timestamp: number; iso: string }>;
+      count: number;
+      provider: string;
+      error: string | null;
+    }>("/api/global/satellite/frames");
+    
+    if (!framesResponse || framesResponse.error !== null) {
+      return { ok: false, reason: "backend_error" };
+    }
+    
+    if (!framesResponse.frames || framesResponse.frames.length === 0) {
+      return { ok: false, reason: "tile_not_available" };
+    }
+    
+    // Usar el último frame disponible
+    const lastFrame = framesResponse.frames[framesResponse.frames.length - 1];
+    const timestamp = lastFrame.timestamp;
+    
+    // Probar un tile con el timestamp del frame
+    const tileUrl = `${BASE}/api/global/satellite/tiles/${timestamp}/0/0/0.png`;
+    const tileResponse = await fetch(tileUrl);
+    
+    if (tileResponse.ok && tileResponse.headers.get("content-type")?.includes("image")) {
       return { ok: true };
     }
+    
     return { ok: false, reason: "tile_not_available" };
   } catch (error) {
     return { ok: false, reason: "connection_error" };

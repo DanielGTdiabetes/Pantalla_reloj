@@ -193,19 +193,25 @@ export function computeStyleUrlFromConfig(mapConfig: any): string | null {
   const apiKey = maptiler.api_key || maptiler.apiKey || maptiler.key;
   if (!apiKey) return null;
 
-  const style = mapConfig.style || "vector-dark";
+  // Usar el estilo de la configuración, pero no forzar "vector-dark" como fallback
+  // Si no hay estilo definido, devolver null para que se use el styleUrl si está disponible
+  const style = mapConfig.style;
+  if (!style) return null;
   
   // Mapear estilos a URLs de MapTiler
   const styleMap: Record<string, string> = {
     "vector-dark": "dataviz-dark",
     "vector-light": "streets-v2",
     "vector-bright": "bright-v2",
+    "streets-v4": "streets-v4",
     "dark": "dataviz-dark",
     "light": "streets-v2",
     "bright": "bright-v2",
   };
 
-  const styleSlug = styleMap[style] || "dataviz-dark";
+  const styleSlug = styleMap[style];
+  if (!styleSlug) return null;
+  
   return `https://api.maptiler.com/maps/${styleSlug}/style.json?key=${apiKey}`;
 }
 
