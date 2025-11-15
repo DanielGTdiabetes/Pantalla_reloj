@@ -55,7 +55,7 @@ export default class GlobalSatelliteLayer implements Layer {
     this.applyOpacity();
   }
 
-  private errorHandler: ((e: maplibregl.MapLibreEvent) => void) | null = null;
+  private errorHandler: ((e: maplibregl.MapLibreEvent & { error?: unknown }) => void) | null = null;
 
   private setupErrorHandlers(): void {
     if (!this.map) return;
@@ -67,7 +67,7 @@ export default class GlobalSatelliteLayer implements Layer {
     }
 
     // Crear nuevo handler que solo capture errores específicos de GIBS
-    this.errorHandler = (e: maplibregl.MapLibreEvent) => {
+    this.errorHandler = (e: maplibregl.MapLibreEvent & { error?: unknown }) => {
       const error = e.error as { status?: number; message?: string; url?: string; source?: { id?: string } } | undefined;
       
       // Verificar que el error sea específicamente de la source de GIBS
