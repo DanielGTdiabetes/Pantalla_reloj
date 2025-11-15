@@ -36,7 +36,10 @@ import type {
   MapThemeConfig,
   RotationConfig,
   GlobalSatelliteLayerConfig,
-  GlobalRadarLayerConfig
+  GlobalRadarLayerConfig,
+  FlightsLayerConfig,
+  OpenSkyConfig,
+  AEMETConfig
 } from "../../types/config";
 import type {
   AppConfigV2,
@@ -1728,13 +1731,21 @@ export default function GeoScopeMap({
         // Usar defaults si config aún no está disponible
         const mergedConfig = config ? withConfigDefaults(config) : withConfigDefaults();
 
-          // Global Satellite Layer (z-index 10, debajo de AEMET)
-          // Verificar tanto layers.global_.satellite como ui_global.satellite
+          // Declarar configAsV2Init una sola vez con todas las propiedades necesarias
           const configAsV2Init = config as unknown as { 
             version?: number; 
             ui_global?: { satellite?: { enabled?: boolean; opacity?: number } };
-            layers?: { global_?: { satellite?: GlobalSatelliteLayerConfig } };
+            layers?: { 
+              global_?: { satellite?: GlobalSatelliteLayerConfig };
+              flights?: FlightsLayerConfig;
+              ships?: typeof mergedConfig.layers.ships;
+            };
+            aemet?: AEMETConfig;
+            opensky?: OpenSkyConfig;
           };
+
+          // Global Satellite Layer (z-index 10, debajo de AEMET)
+          // Verificar tanto layers.global_.satellite como ui_global.satellite
           const globalSatelliteConfig = configAsV2Init.version === 2 && configAsV2Init.layers?.global_?.satellite
             ? configAsV2Init.layers.global_.satellite
             : mergedConfig.layers.global?.satellite;
@@ -1766,12 +1777,6 @@ export default function GeoScopeMap({
 
           // Weather Layer (z-index 12, entre radar/satélite y AEMET warnings)
           // Leer configuración AEMET desde v2 o v1
-          const configAsV2Init = config as unknown as { 
-            version?: number; 
-            aemet?: { enabled?: boolean; cap_enabled?: boolean; cache_minutes?: number };
-            layers?: { flights?: typeof mergedConfig.layers.flights }; 
-            opensky?: typeof mergedConfig.opensky;
-          };
           const aemetConfigInit = configAsV2Init.version === 2 
             ? configAsV2Init.aemet 
             : mergedConfig.aemet;
