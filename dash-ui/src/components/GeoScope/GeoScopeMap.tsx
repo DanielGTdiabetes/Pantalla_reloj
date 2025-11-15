@@ -3106,7 +3106,22 @@ export default function GeoScopeMap({
       stopAnimation();
       clearInterval(refreshTimer);
       // Limpiar capas si están desactivadas al desmontar
-      if (!isSatelliteEnabled) {
+      // Nota: isSatelliteEnabled se recalcula dentro del efecto basado en config
+      const merged = withConfigDefaults(config);
+      const globalConfig = merged.layers.global;
+      const configAsV2 = config as unknown as { 
+        version?: number; 
+        ui_global?: { satellite?: { enabled?: boolean } };
+        layers?: { global_?: { satellite?: GlobalSatelliteLayerConfig } };
+      };
+      const globalSatelliteConfig = configAsV2.version === 2 && configAsV2.layers?.global_?.satellite
+        ? configAsV2.layers.global_.satellite
+        : globalConfig?.satellite;
+      const uiGlobalSatellite = configAsV2.version === 2 ? configAsV2.ui_global?.satellite : undefined;
+      const isSatEnabled = uiGlobalSatellite?.enabled === true || 
+                           (uiGlobalSatellite?.enabled === undefined && globalSatelliteConfig?.enabled === true);
+      
+      if (!isSatEnabled) {
         const globalSatLayer = globalSatelliteLayerRef.current;
         if (globalSatLayer && mapRef.current) {
           globalSatLayer.remove(mapRef.current);
@@ -3114,7 +3129,7 @@ export default function GeoScopeMap({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config, radarPlaying, radarPlaybackSpeed, radarOpacity, isSatelliteEnabled]);
+  }, [config, radarPlaying, radarPlaybackSpeed, radarOpacity]);
 
 
   // Mostrar error si WebGL no está disponible o el mapa falló
