@@ -2131,52 +2131,97 @@ export default function GeoScopeMap({
       return;
     }
 
-    // Verificar que el mapa tenga el estilo cargado antes de crear la capa GIBS
-    const style = map.getStyle();
-    if (!style || typeof style.version === "undefined") {
-      // El mapa todavía no tiene estilo cargado; esperar
-      return;
-    }
-
     const existingLayer = globalSatelliteLayerRef.current;
 
+    // PRIMERO: Verificar si el satélite está desactivado - hacer cleanup y salir
     if (!satelliteSettings.isEnabled) {
       if (existingLayer) {
+        // Limpiar completamente: quitar capa, source y referencias
         layerRegistry.removeById(existingLayer.id);
         globalSatelliteLayerRef.current = null;
         if (globalSatelliteReady) {
           setGlobalSatelliteReady(false);
         }
-        console.info("[GlobalSatelliteLayer] removed");
+        console.info("[GlobalSatelliteLayer] removed (satellite disabled)");
       }
       return;
     }
 
-    const opacity = satelliteSettings.opacity ?? 1;
-
-    if (!existingLayer) {
-      const globalSatelliteLayer = new GlobalSatelliteLayer({
-        enabled: true,
-        opacity,
-      });
-      layerRegistry.add(globalSatelliteLayer);
-      globalSatelliteLayerRef.current = globalSatelliteLayer;
-      if (!globalSatelliteReady) {
-        setGlobalSatelliteReady(true);
+    // SEGUNDO: Si el satélite está activado, verificar que el estilo esté cargado
+    // Función interna para adjuntar la capa cuando el estilo esté listo
+    const attachGlobalSatelliteLayer = (targetMap: maplibregl.Map) => {
+      // Verificar que el estilo esté completamente cargado
+      const style = targetMap.getStyle();
+      if (!style || typeof style.version === "undefined") {
+        // El estilo aún no está listo
+        return;
       }
-      console.info("[GlobalSatelliteLayer] created", {
-        opacity,
-        minzoom: 1,
-        maxzoom: 9,
-      });
-      console.info("[GeoScopeMap] GlobalSatelliteLayer attached");
-      return;
+
+      // Verificar que el satélite siga habilitado (puede haber cambiado mientras esperábamos)
+      if (!satelliteSettings.isEnabled) {
+        return;
+      }
+
+      const opacity = satelliteSettings.opacity ?? 1;
+
+      if (!existingLayer) {
+        const globalSatelliteLayer = new GlobalSatelliteLayer({
+          enabled: true,
+          opacity,
+        });
+        layerRegistry.add(globalSatelliteLayer);
+        globalSatelliteLayerRef.current = globalSatelliteLayer;
+        if (!globalSatelliteReady) {
+          setGlobalSatelliteReady(true);
+        }
+        console.info("[GlobalSatelliteLayer] created", {
+          opacity,
+          minzoom: 1,
+          maxzoom: 9,
+        });
+        console.info("[GeoScopeMap] GlobalSatelliteLayer attached");
+      } else {
+        existingLayer.update({ enabled: true, opacity });
+        if (!globalSatelliteReady) {
+          setGlobalSatelliteReady(true);
+        }
+      }
+    };
+
+    // Verificar si el estilo ya está cargado
+    if (map.isStyleLoaded()) {
+      const style = map.getStyle();
+      if (style && typeof style.version !== "undefined") {
+        // El estilo ya está listo, adjuntar inmediatamente
+        attachGlobalSatelliteLayer(map);
+        return;
+      }
     }
 
-    existingLayer.update({ enabled: true, opacity });
-    if (!globalSatelliteReady) {
-      setGlobalSatelliteReady(true);
-    }
+    // El estilo aún no está listo, esperar al evento 'styledata' o 'load'
+    let styleDataHandler: (() => void) | null = null;
+    let loadHandler: (() => void) | null = null;
+
+    styleDataHandler = () => {
+      attachGlobalSatelliteLayer(map);
+    };
+
+    loadHandler = () => {
+      attachGlobalSatelliteLayer(map);
+    };
+
+    map.once("styledata", styleDataHandler);
+    map.once("load", loadHandler);
+
+    // Cleanup: remover listeners si el efecto se desmonta o cambia
+    return () => {
+      if (styleDataHandler) {
+        map.off("styledata", styleDataHandler);
+      }
+      if (loadHandler) {
+        map.off("load", loadHandler);
+      }
+    };
   }, [
     globalLayersSettings.satellite.isEnabled,
     globalLayersSettings.satellite.opacity,
@@ -2976,8 +3021,19 @@ export default function GeoScopeMap({
     const isSatelliteEnabled = satelliteSettings.isEnabled;
     const isRadarEnabled = radarSettings.isEnabled;
 
+    // Si el satélite está desactivado, NO hacer nada relacionado con GIBS
     if (!isSatelliteEnabled && !isRadarEnabled) {
       return;
+    }
+
+    // Si solo el radar está activado, no procesar frames de satélite
+    if (!isSatelliteEnabled) {
+      // Solo procesar radar si está activado
+      if (isRadarEnabled) {
+        // El código del radar continúa más abajo
+      } else {
+        return;
+      }
     }
 
     if (
@@ -3060,6 +3116,12 @@ export default function GeoScopeMap({
 
     const fetchFrames = async () => {
       try {
+        // Verificar nuevamente que el satélite esté habilitado antes de hacer fetch
+        if (!isSatelliteEnabled) {
+          satelliteFrames = [];
+          return;
+        }
+
         if (isSatelliteEnabled) {
           if (!canRenderSatellite()) {
             if (!notifiedWaitingForSatellite) {
@@ -3068,6 +3130,7 @@ export default function GeoScopeMap({
               );
               notifiedWaitingForSatellite = true;
             }
+            return; // No hacer fetch hasta que la capa esté lista
           } else {
             const satResponse = await apiGet<{
               frames: SatelliteFrame[];

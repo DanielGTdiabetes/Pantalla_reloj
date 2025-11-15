@@ -1,4 +1,5 @@
 import maplibregl from "maplibre-gl";
+import type { MapLibreEvent } from "maplibre-gl";
 
 import type { Layer } from "./LayerRegistry";
 
@@ -54,15 +55,28 @@ export default class GlobalSatelliteLayer implements Layer {
     this.applyOpacity();
   }
 
+  private errorHandler: ((e: maplibregl.MapLibreEvent) => void) | null = null;
+
   private setupErrorHandlers(): void {
     if (!this.map) return;
 
-    // Manejar errores de tiles de la source
-    this.map.on("error", (e) => {
-      const error = e.error as { status?: number; message?: string; url?: string } | undefined;
-      if (error?.status === 400 && error.url?.includes("gibs.earthdata.nasa.gov")) {
+    // Limpiar handler anterior si existe
+    if (this.errorHandler) {
+      this.map.off("error", this.errorHandler);
+      this.errorHandler = null;
+    }
+
+    // Crear nuevo handler que solo capture errores específicos de GIBS
+    this.errorHandler = (e: maplibregl.MapLibreEvent) => {
+      const error = e.error as { status?: number; message?: string; url?: string; source?: { id?: string } } | undefined;
+      
+      // Verificar que el error sea específicamente de la source de GIBS
+      const isGIBSource = error?.source?.id === this.sourceId || 
+                          (error?.url && error.url.includes("gibs.earthdata.nasa.gov"));
+      
+      if (error?.status === 400 && isGIBSource) {
         // Extraer z, x, y de la URL si es posible
-        const urlMatch = error.url.match(/\/Level\d+\/(\d+)\/(\d+)\/(\d+)/);
+        const urlMatch = error.url?.match(/\/Level\d+\/(\d+)\/(\d+)\/(\d+)/);
         const z = urlMatch ? urlMatch[1] : "?";
         const x = urlMatch ? urlMatch[2] : "?";
         const y = urlMatch ? urlMatch[3] : "?";
@@ -73,11 +87,12 @@ export default class GlobalSatelliteLayer implements Layer {
         
         this.errorCount++;
         
-        // Si hay demasiados errores, deshabilitar temporalmente la capa
+        // Si hay demasiados errores, deshabilitar solo la capa GIBS sin tocar el mapa base
         if (this.errorCount >= this.MAX_ERRORS) {
           console.warn(
-            `[GlobalSatelliteLayer] Demasiados errores GIBS (${this.errorCount}), deshabilitando temporalmente`
+            `[GlobalSatelliteLayer] too many GIBS errors (${this.errorCount}), disabling satellite overlay (base map intact)`
           );
+          // Deshabilitar solo la capa GIBS, sin tocar el estilo base
           this.enabled = false;
           this.applyVisibility();
           // Resetear contador después de un tiempo
@@ -86,20 +101,33 @@ export default class GlobalSatelliteLayer implements Layer {
           }, 60000); // 1 minuto
         }
       }
-    });
+      // NO hacer nada más - no cambiar el estilo base, no lanzar excepciones
+    };
+
+    // Registrar el handler
+    this.map.on("error", this.errorHandler);
   }
 
   remove(map: maplibregl.Map): void {
+    // Limpiar error handler primero
+    if (this.map && this.errorHandler) {
+      this.map.off("error", this.errorHandler);
+      this.errorHandler = null;
+    }
+
+    // Quitar capa y source
     if (map.getLayer(this.id)) {
       map.removeLayer(this.id);
     }
     if (map.getSource(this.sourceId)) {
       map.removeSource(this.sourceId);
     }
+    
     // Limpiar estado interno
     this.errorCount = 0;
     this.tileUrl = undefined;
     this.currentTimestamp = undefined;
+    this.map = undefined;
   }
 
   update(opts: Partial<GlobalSatelliteLayerOptions>): void {
