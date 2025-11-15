@@ -1085,7 +1085,27 @@ export default function GeoScopeMap({
   const [globalSatelliteReady, setGlobalSatelliteReady] = useState(false);
   const [layerRegistryReady, setLayerRegistryReady] = useState(false);
 
+  // TEMPORALMENTE DESACTIVADO: Todas las capas globales (GIBS, radar global) están deshabilitadas
+  // para dejar solo el mapa base MapTiler (streets-v4) funcionando de forma estable.
+  // TODO: Re-activar en una segunda iteración controlada cuando GIBS esté completamente probado.
   const globalLayersSettings = useMemo(() => {
+    // Forzar isEnabled=false siempre, ignorando completamente la configuración
+    return {
+      satellite: {
+        config: undefined as GlobalSatelliteLayerConfig | undefined,
+        ui: undefined as { enabled?: boolean; opacity?: number } | undefined,
+        isEnabled: false, // FORZADO: siempre false
+        opacity: 1,
+      },
+      radar: {
+        config: undefined as GlobalRadarLayerConfig | undefined,
+        ui: undefined as { enabled?: boolean; opacity?: number } | undefined,
+        isEnabled: false, // FORZADO: siempre false
+        opacity: undefined as number | undefined,
+      },
+    };
+    
+    /* CÓDIGO DESACTIVADO TEMPORALMENTE - IGNORAR CONFIG
     const defaults = {
       satellite: {
         config: undefined as GlobalSatelliteLayerConfig | undefined,
@@ -1152,6 +1172,7 @@ export default function GeoScopeMap({
         opacity: radarOpacityValue,
       },
     };
+    */
   }, [config]);
   
   // Recargar config cuando la página se vuelve visible (después de guardar en /config)
@@ -1824,6 +1845,10 @@ export default function GeoScopeMap({
             opensky?: OpenSkyConfig;
           };
 
+          // TEMPORALMENTE DESACTIVADO: Global Radar Layer
+          // Todas las capas globales están deshabilitadas temporalmente para dejar solo el mapa base.
+          // TODO: Re-activar en una segunda iteración controlada.
+          /*
           // Global Radar Layer (z-index 10, debajo de AEMET)
           const globalRadarConfig = mergedConfig.layers.global?.radar;
           if (globalRadarConfig?.enabled) {
@@ -1834,6 +1859,7 @@ export default function GeoScopeMap({
             layerRegistry.add(globalRadarLayer);
             globalRadarLayerRef.current = globalRadarLayer;
           }
+          */
 
           // Weather Layer (z-index 12, entre radar/satélite y AEMET warnings)
           // Leer configuración AEMET desde v2 o v1
@@ -2122,11 +2148,31 @@ export default function GeoScopeMap({
     };
   }, []);
 
+  // TEMPORALMENTE DESACTIVADO: useEffect que gestiona GlobalSatelliteLayer
+  // Todas las capas globales están deshabilitadas temporalmente para dejar solo el mapa base.
+  // TODO: Re-activar en una segunda iteración controlada cuando GIBS esté completamente probado.
   useEffect(() => {
     const map = mapRef.current;
     const layerRegistry = layerRegistryRef.current;
     const satelliteSettings = globalLayersSettings.satellite;
 
+    // FORZADO: GlobalSatelliteLayer siempre deshabilitado temporalmente
+    // Limpiar cualquier capa existente y salir inmediatamente
+    if (map && layerRegistry && layerRegistryReady) {
+      const existingLayer = globalSatelliteLayerRef.current;
+      if (existingLayer) {
+        // Limpiar completamente: quitar capa, source y referencias
+        layerRegistry.removeById(existingLayer.id);
+        globalSatelliteLayerRef.current = null;
+        if (globalSatelliteReady) {
+          setGlobalSatelliteReady(false);
+        }
+        console.info("[GlobalSatelliteLayer] removed (temporarily disabled - base map only mode)");
+      }
+    }
+    return; // Salir inmediatamente, no crear ni gestionar la capa
+    
+    /* CÓDIGO DESACTIVADO TEMPORALMENTE
     if (!map || !layerRegistry || !layerRegistryReady) {
       return;
     }
@@ -3032,8 +3078,15 @@ export default function GeoScopeMap({
     };
   }, [config]);
 
-  // useEffect para gestionar frames de capas globales (satellite/radar)
+  // TEMPORALMENTE DESACTIVADO: useEffect para gestionar frames de capas globales (satellite/radar)
+  // Todas las capas globales están deshabilitadas temporalmente para dejar solo el mapa base.
+  // TODO: Re-activar en una segunda iteración controlada cuando GIBS esté completamente probado.
   useEffect(() => {
+    // FORZADO: No gestionar frames de capas globales, salir inmediatamente
+    // Esto asegura que no se hagan peticiones a /api/global/satellite/frames ni /api/global/radar/frames
+    return;
+    
+    /* CÓDIGO DESACTIVADO TEMPORALMENTE
     if (!mapRef.current) {
       return;
     }
@@ -3334,6 +3387,7 @@ export default function GeoScopeMap({
       stopAnimation();
       window.clearInterval(refreshTimer);
     };
+    */
   }, [
     globalLayersSettings,
     globalSatelliteReady,
