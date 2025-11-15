@@ -1465,6 +1465,7 @@ export default function GeoScopeMap({
       safeFit();
       mapStateMachineRef.current?.notifyStyleData("load");
       mapStateMachineRef.current?.notifyIdle("load");
+      console.info("[GeoScopeMap] Map load");
     };
 
     const handleStyleData = () => {
@@ -2130,6 +2131,13 @@ export default function GeoScopeMap({
       return;
     }
 
+    // Verificar que el mapa tenga el estilo cargado antes de crear la capa GIBS
+    const style = map.getStyle();
+    if (!style || typeof style.version === "undefined") {
+      // El mapa todavía no tiene estilo cargado; esperar
+      return;
+    }
+
     const existingLayer = globalSatelliteLayerRef.current;
 
     if (!satelliteSettings.isEnabled) {
@@ -2158,7 +2166,10 @@ export default function GeoScopeMap({
       }
       console.info("[GlobalSatelliteLayer] created", {
         opacity,
+        minzoom: 1,
+        maxzoom: 9,
       });
+      console.info("[GeoScopeMap] GlobalSatelliteLayer attached");
       return;
     }
 
@@ -2982,6 +2993,9 @@ export default function GeoScopeMap({
       iso?: string;
       t_iso?: string;
       tile_url?: string;
+      min_zoom?: number;
+      max_zoom?: number;
+      tile_matrix_set?: string;
     };
     type RadarFrame = { timestamp: number; iso?: string };
 
@@ -3006,16 +3020,39 @@ export default function GeoScopeMap({
         return;
       }
 
+      // Preparar opciones de actualización
+      const updateOpts: {
+        tileUrl?: string;
+        currentTimestamp?: number;
+        minZoom?: number;
+        maxZoom?: number;
+      } = {};
+
       if (frame.tile_url) {
-        layer.update({ tileUrl: frame.tile_url });
+        updateOpts.tileUrl = frame.tile_url;
       } else if (frame.timestamp) {
-        layer.update({ currentTimestamp: frame.timestamp });
+        updateOpts.currentTimestamp = frame.timestamp;
+      }
+
+      // Añadir min_zoom y max_zoom si están disponibles
+      if (frame.min_zoom !== undefined) {
+        updateOpts.minZoom = frame.min_zoom;
+      }
+      if (frame.max_zoom !== undefined) {
+        updateOpts.maxZoom = frame.max_zoom;
+      }
+
+      // Actualizar la capa con todas las opciones
+      if (Object.keys(updateOpts).length > 0) {
+        layer.update(updateOpts);
       }
 
       if (source === "fetch") {
         console.info("[GlobalSatelliteLayer] update frame", {
           ts: frame.timestamp,
           mode: frame.tile_url ? "tile_url" : "legacy",
+          min_zoom: frame.min_zoom,
+          max_zoom: frame.max_zoom,
           source,
         });
       }
@@ -3039,25 +3076,40 @@ export default function GeoScopeMap({
               error: string | null;
             }>("/api/global/satellite/frames");
 
+            // Validación robusta de frames
             if (
-              satResponse &&
-              satResponse.error === null &&
-              Array.isArray(satResponse.frames) &&
-              satResponse.frames.length > 0
+              !satResponse ||
+              satResponse.error !== null ||
+              !Array.isArray(satResponse.frames) ||
+              satResponse.frames.length === 0
             ) {
-              notifiedWaitingForSatellite = false;
-              satelliteFrames = satResponse.frames;
-              satelliteFrameIndex = satelliteFrames.length - 1;
-              const currentFrame = satelliteFrames[satelliteFrameIndex];
-              if (currentFrame) {
-                applySatelliteFrame(currentFrame, "fetch");
+              if (satResponse?.error) {
+                console.warn("[GeoScopeMap] GIBS frames error:", satResponse.error);
+              } else {
+                console.warn("[GeoScopeMap] GIBS frames empty or not available");
               }
-            } else if (satResponse?.error) {
-              console.warn("[GeoScopeMap] GIBS frames error:", satResponse.error);
               satelliteFrames = [];
-            } else {
-              console.warn("[GeoScopeMap] GIBS frames empty or not available");
+              return;
+            }
+
+            // Filtrar frames que tengan al menos tile_url o timestamp válido
+            const validFrames = satResponse.frames.filter(
+              (frame) => frame && (frame.tile_url || frame.timestamp)
+            );
+
+            if (validFrames.length === 0) {
+              console.warn("[GeoScopeMap] GIBS frames: no hay frames válidos con tile_url o timestamp");
               satelliteFrames = [];
+              return;
+            }
+
+            notifiedWaitingForSatellite = false;
+            satelliteFrames = validFrames;
+            satelliteFrameIndex = satelliteFrames.length - 1;
+            const currentFrame = satelliteFrames[satelliteFrameIndex];
+            if (currentFrame) {
+              applySatelliteFrame(currentFrame, "fetch");
+              console.info(`[GeoScopeMap] GIBS frames fetched N=${satelliteFrames.length}`);
             }
           }
         } else {

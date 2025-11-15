@@ -8,6 +8,8 @@ interface GlobalSatelliteLayerOptions {
   currentTimestamp?: number;
   tileUrl?: string; // URL template del frame actual (ej: https://gibs.earthdata.nasa.gov/.../{z}/{y}/{x}.jpg)
   baseUrl?: string; // Deprecated: mantener por compatibilidad pero no usar
+  minZoom?: number; // min_zoom del frame (default: 1)
+  maxZoom?: number; // max_zoom del frame (default: 9 para GoogleMapsCompatible_Level9)
 }
 
 export default class GlobalSatelliteLayer implements Layer {
@@ -18,14 +20,23 @@ export default class GlobalSatelliteLayer implements Layer {
   private opacity: number;
   private currentTimestamp?: number;
   private tileUrl?: string; // URL template actual del frame
+  private minZoom: number; // minzoom para la source (default: 1)
+  private maxZoom: number; // maxzoom para la source (default: 9)
   private map?: maplibregl.Map;
   private readonly sourceId = "geoscope-global-satellite-source";
+  private errorCount: number = 0; // Contador de errores 400 consecutivos
+  private readonly MAX_ERRORS = 10; // Máximo de errores antes de deshabilitar temporalmente
 
   constructor(options: GlobalSatelliteLayerOptions = {}) {
     this.enabled = options.enabled ?? false;
     this.opacity = options.opacity ?? 0.7;
     this.currentTimestamp = options.currentTimestamp;
     this.tileUrl = options.tileUrl;
+    // minzoom: usar frame.min_zoom si existe, si no 1 por defecto
+    this.minZoom = options.minZoom ?? 1;
+    // maxzoom: usar frame.max_zoom si existe, si no 9 por defecto (GoogleMapsCompatible_Level9)
+    // Asegurar que nunca exceda 9 para este tile_matrix_set
+    this.maxZoom = options.maxZoom !== undefined ? Math.min(options.maxZoom, 9) : 9;
     // Mantener baseUrl por compatibilidad pero preferir tileUrl
     if (!this.tileUrl && options.baseUrl) {
       // Si no hay tileUrl pero hay baseUrl y timestamp, construir URL legacy
@@ -37,9 +48,45 @@ export default class GlobalSatelliteLayer implements Layer {
 
   add(map: maplibregl.Map): void {
     this.map = map;
+    this.setupErrorHandlers();
     this.ensureLayer();
     this.applyVisibility();
     this.applyOpacity();
+  }
+
+  private setupErrorHandlers(): void {
+    if (!this.map) return;
+
+    // Manejar errores de tiles de la source
+    this.map.on("error", (e) => {
+      const error = e.error as { status?: number; message?: string; url?: string } | undefined;
+      if (error?.status === 400 && error.url?.includes("gibs.earthdata.nasa.gov")) {
+        // Extraer z, x, y de la URL si es posible
+        const urlMatch = error.url.match(/\/Level\d+\/(\d+)\/(\d+)\/(\d+)/);
+        const z = urlMatch ? urlMatch[1] : "?";
+        const x = urlMatch ? urlMatch[2] : "?";
+        const y = urlMatch ? urlMatch[3] : "?";
+        
+        console.warn(
+          `[GlobalSatelliteLayer] GIBS tile error (HTTP 400) en z=${z} x=${x} y=${y}`
+        );
+        
+        this.errorCount++;
+        
+        // Si hay demasiados errores, deshabilitar temporalmente la capa
+        if (this.errorCount >= this.MAX_ERRORS) {
+          console.warn(
+            `[GlobalSatelliteLayer] Demasiados errores GIBS (${this.errorCount}), deshabilitando temporalmente`
+          );
+          this.enabled = false;
+          this.applyVisibility();
+          // Resetear contador después de un tiempo
+          setTimeout(() => {
+            this.errorCount = 0;
+          }, 60000); // 1 minuto
+        }
+      }
+    });
   }
 
   remove(map: maplibregl.Map): void {
@@ -49,21 +96,50 @@ export default class GlobalSatelliteLayer implements Layer {
     if (map.getSource(this.sourceId)) {
       map.removeSource(this.sourceId);
     }
+    // Limpiar estado interno
+    this.errorCount = 0;
+    this.tileUrl = undefined;
+    this.currentTimestamp = undefined;
   }
 
   update(opts: Partial<GlobalSatelliteLayerOptions>): void {
     if (opts.enabled !== undefined) {
+      const wasEnabled = this.enabled;
       this.enabled = opts.enabled;
-      this.ensureLayer();
-      this.applyVisibility();
+      
+      if (!this.enabled && wasEnabled) {
+        // Deshabilitar: quitar capa y source, limpiar estado
+        if (this.map) {
+          this.remove(this.map);
+        }
+      } else if (this.enabled && !wasEnabled) {
+        // Habilitar: recrear capa si hay tileUrl válido
+        this.ensureLayer();
+        this.applyVisibility();
+      } else {
+        this.ensureLayer();
+        this.applyVisibility();
+      }
     }
     if (opts.opacity !== undefined) {
       this.opacity = opts.opacity;
       this.applyOpacity();
     }
+    
+    // Actualizar minZoom/maxZoom si se proporcionan
+    if (opts.minZoom !== undefined) {
+      this.minZoom = opts.minZoom;
+    }
+    if (opts.maxZoom !== undefined) {
+      // Asegurar que maxzoom nunca exceda 9 para GoogleMapsCompatible_Level9
+      this.maxZoom = Math.min(opts.maxZoom, 9);
+    }
+    
     // Actualizar tileUrl si se proporciona
     if (opts.tileUrl !== undefined) {
       this.tileUrl = opts.tileUrl;
+      // Resetear contador de errores cuando se actualiza el tileUrl
+      this.errorCount = 0;
       // Si hay tileUrl y está habilitado, recrear la capa
       if (this.enabled && this.tileUrl) {
         this.updateTileUrl();
@@ -111,25 +187,31 @@ export default class GlobalSatelliteLayer implements Layer {
       
       // Recrear con nuevo timestamp (legacy)
       const legacyBaseUrl = "/api/global/satellite/tiles";
-      this.map.addSource(this.sourceId, {
-        type: "raster",
-        tiles: [
-          `${legacyBaseUrl}/${timestamp}/{z}/{x}/{y}.png`
-        ],
-        tileSize: 256,
-        scheme: "xyz"
-      });
-      
-      this.map.addLayer({
-        id: this.id,
-        type: "raster",
-        source: this.sourceId,
-        paint: {
-          "raster-opacity": this.opacity
-        },
-        minzoom: 0,
-        maxzoom: 18
-      });
+      try {
+        this.map.addSource(this.sourceId, {
+          type: "raster",
+          tiles: [
+            `${legacyBaseUrl}/${timestamp}/{z}/{x}/{y}.png`
+          ],
+          tileSize: 256,
+          scheme: "xyz",
+          minzoom: this.minZoom,
+          maxzoom: this.maxZoom
+        });
+        
+        this.map.addLayer({
+          id: this.id,
+          type: "raster",
+          source: this.sourceId,
+          paint: {
+            "raster-opacity": this.opacity
+          },
+          minzoom: this.minZoom,
+          maxzoom: this.maxZoom
+        });
+      } catch (error) {
+        console.error("[GlobalSatelliteLayer] Error al actualizar timestamp:", error);
+      }
     }
   }
 
@@ -147,29 +229,42 @@ export default class GlobalSatelliteLayer implements Layer {
       this.map.removeSource(this.sourceId);
     }
     
-    // Crear nueva fuente con tileUrl del frame
-    this.map.addSource(this.sourceId, {
-      type: "raster",
-      tiles: [this.tileUrl],
-      tileSize: 256,
-      scheme: "xyz"
-    });
-    
-    // Añadir capa
-    this.map.addLayer({
-      id: this.id,
-      type: "raster",
-      source: this.sourceId,
-      paint: {
-        "raster-opacity": this.opacity
-      },
-      minzoom: 0,
-      maxzoom: 18
-    });
-    
-    // Aplicar visibilidad y opacidad después de añadir la capa
-    this.applyVisibility();
-    this.applyOpacity();
+    // Crear nueva fuente con tileUrl del frame y minzoom/maxzoom
+    try {
+      this.map.addSource(this.sourceId, {
+        type: "raster",
+        tiles: [this.tileUrl],
+        tileSize: 256,
+        scheme: "xyz",
+        minzoom: this.minZoom,
+        maxzoom: this.maxZoom
+      });
+      
+      // Añadir capa con minzoom/maxzoom
+      this.map.addLayer({
+        id: this.id,
+        type: "raster",
+        source: this.sourceId,
+        paint: {
+          "raster-opacity": this.opacity
+        },
+        minzoom: this.minZoom,
+        maxzoom: this.maxZoom
+      });
+      
+      // Aplicar visibilidad y opacidad después de añadir la capa
+      this.applyVisibility();
+      this.applyOpacity();
+      
+      console.info("[GlobalSatelliteLayer] update frame", {
+        minzoom: this.minZoom,
+        maxzoom: this.maxZoom,
+        tileUrl: this.tileUrl.substring(0, 80) + "..."
+      });
+    } catch (error) {
+      console.error("[GlobalSatelliteLayer] Error al actualizar tileUrl:", error);
+      // No lanzar la excepción para evitar romper el mapa
+    }
   }
 
   private ensureLayer(): void {
@@ -180,25 +275,37 @@ export default class GlobalSatelliteLayer implements Layer {
     // Preferir tileUrl si está disponible
     if (this.tileUrl) {
       if (!this.map.getSource(this.sourceId)) {
-        this.map.addSource(this.sourceId, {
-          type: "raster",
-          tiles: [this.tileUrl],
-          tileSize: 256,
-          scheme: "xyz"
-        });
+        try {
+          this.map.addSource(this.sourceId, {
+            type: "raster",
+            tiles: [this.tileUrl],
+            tileSize: 256,
+            scheme: "xyz",
+            minzoom: this.minZoom,
+            maxzoom: this.maxZoom
+          });
+        } catch (error) {
+          console.error("[GlobalSatelliteLayer] Error al crear source:", error);
+          return;
+        }
       }
 
       if (!this.map.getLayer(this.id)) {
-        this.map.addLayer({
-          id: this.id,
-          type: "raster",
-          source: this.sourceId,
-          paint: {
-            "raster-opacity": this.opacity
-          },
-          minzoom: 0,
-          maxzoom: 18
-        });
+        try {
+          this.map.addLayer({
+            id: this.id,
+            type: "raster",
+            source: this.sourceId,
+            paint: {
+              "raster-opacity": this.opacity
+            },
+            minzoom: this.minZoom,
+            maxzoom: this.maxZoom
+          });
+        } catch (error) {
+          console.error("[GlobalSatelliteLayer] Error al crear layer:", error);
+          return;
+        }
       }
       return;
     }
@@ -207,25 +314,37 @@ export default class GlobalSatelliteLayer implements Layer {
     if (this.currentTimestamp) {
       const legacyBaseUrl = "/api/global/satellite/tiles";
       if (!this.map.getSource(this.sourceId)) {
-        this.map.addSource(this.sourceId, {
-          type: "raster",
-          tiles: [`${legacyBaseUrl}/${this.currentTimestamp}/{z}/{x}/{y}.png`],
-          tileSize: 256,
-          scheme: "xyz"
-        });
+        try {
+          this.map.addSource(this.sourceId, {
+            type: "raster",
+            tiles: [`${legacyBaseUrl}/${this.currentTimestamp}/{z}/{x}/{y}.png`],
+            tileSize: 256,
+            scheme: "xyz",
+            minzoom: this.minZoom,
+            maxzoom: this.maxZoom
+          });
+        } catch (error) {
+          console.error("[GlobalSatelliteLayer] Error al crear source legacy:", error);
+          return;
+        }
       }
 
       if (!this.map.getLayer(this.id)) {
-        this.map.addLayer({
-          id: this.id,
-          type: "raster",
-          source: this.sourceId,
-          paint: {
-            "raster-opacity": this.opacity
-          },
-          minzoom: 0,
-          maxzoom: 18
-        });
+        try {
+          this.map.addLayer({
+            id: this.id,
+            type: "raster",
+            source: this.sourceId,
+            paint: {
+              "raster-opacity": this.opacity
+            },
+            minzoom: this.minZoom,
+            maxzoom: this.maxZoom
+          });
+        } catch (error) {
+          console.error("[GlobalSatelliteLayer] Error al crear layer legacy:", error);
+          return;
+        }
       }
     }
   }
