@@ -41,6 +41,26 @@ export class LayerRegistry {
     }
   }
 
+  removeById(layerId: string) {
+    const index = this.layers.findIndex((layer) => layer.id === layerId);
+    if (index === -1) {
+      return;
+    }
+
+    const [layer] = this.layers.splice(index, 1);
+    try {
+      layer.remove(this.map);
+    } catch (err) {
+      console.warn(`[LayerRegistry] Failed to remove layer ${layer.id}`, err);
+    }
+
+    try {
+      layer.destroy?.();
+    } catch (err) {
+      console.warn(`[LayerRegistry] Failed to destroy layer ${layer.id}`, err);
+    }
+  }
+
   destroy() {
     for (const layer of this.layers) {
       try {
