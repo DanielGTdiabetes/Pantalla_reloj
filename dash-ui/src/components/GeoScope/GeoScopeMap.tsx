@@ -1564,6 +1564,13 @@ export default function GeoScopeMap({
         maptiler_key_present: Boolean(maptilerKey),
       });
 
+      // Validar que el style no sea null antes de crear el mapa
+      if (!runtime.style || !runtime.style.style) {
+        console.error("[GeoScopeMap] Invalid style: runtime.style.style is null or undefined");
+        setWebglError("Error: el estilo del mapa no está disponible. Por favor, verifica la configuración.");
+        return;
+      }
+
       let map: maplibregl.Map;
       try {
         map = new maplibregl.Map({
@@ -1751,8 +1758,12 @@ export default function GeoScopeMap({
             : mergedConfig.layers.global?.satellite;
           const uiGlobalSatellite = configAsV2Init.version === 2 ? configAsV2Init.ui_global?.satellite : undefined;
           
-          // La capa está habilitada si layers.global_.satellite.enabled Y ui_global.satellite.enabled (si existe)
-          const isEnabled = globalSatelliteConfig?.enabled && (uiGlobalSatellite?.enabled !== false);
+          // La capa está habilitada si:
+          // - ui_global.satellite.enabled es true (prioridad), O
+          // - layers.global_.satellite.enabled es true (si ui_global no está definido)
+          // Si ui_global.satellite.enabled es explícitamente false, se desactiva
+          const isEnabled = uiGlobalSatellite?.enabled === true || 
+                           (uiGlobalSatellite?.enabled === undefined && globalSatelliteConfig?.enabled === true);
           const opacity = uiGlobalSatellite?.opacity ?? globalSatelliteConfig?.opacity ?? 1.0;
           
           if (isEnabled) {
@@ -1762,6 +1773,12 @@ export default function GeoScopeMap({
             });
             layerRegistry.add(globalSatelliteLayer);
             globalSatelliteLayerRef.current = globalSatelliteLayer;
+            console.info("[GeoScopeMap] GlobalSatelliteLayer initialized", { 
+              enabled: true, 
+              opacity,
+              uiGlobalEnabled: uiGlobalSatellite?.enabled,
+              layersEnabled: globalSatelliteConfig?.enabled 
+            });
           }
 
           // Global Radar Layer (z-index 10, debajo de AEMET)
@@ -2869,7 +2886,12 @@ export default function GeoScopeMap({
       ? configAsV2.layers.global_.satellite
       : globalConfig?.satellite;
     const uiGlobalSatellite = configAsV2.version === 2 ? configAsV2.ui_global?.satellite : undefined;
-    const isSatelliteEnabled = globalSatelliteConfig?.enabled && (uiGlobalSatellite?.enabled !== false);
+    // La capa está habilitada si:
+    // - ui_global.satellite.enabled es true (prioridad), O
+    // - layers.global_.satellite.enabled es true (si ui_global no está definido)
+    // Si ui_global.satellite.enabled es explícitamente false, se desactiva
+    const isSatelliteEnabled = uiGlobalSatellite?.enabled === true || 
+                              (uiGlobalSatellite?.enabled === undefined && globalSatelliteConfig?.enabled === true);
     
     // Determinar si el radar global está habilitado
     const globalRadarConfig = configAsV2.version === 2 && configAsV2.layers?.global_?.radar
@@ -2902,8 +2924,11 @@ export default function GeoScopeMap({
             frames: Array<{ timestamp: number; iso: string }>;
             count: number;
             provider: string;
+            error: string | null;
           }>("/api/global/satellite/frames");
-          if (satResponse?.frames && satResponse.frames.length > 0) {
+          
+          // Verificar que no haya error y que haya frames disponibles
+          if (satResponse && satResponse.error === null && satResponse.frames && satResponse.frames.length > 0) {
             satelliteFrames = satResponse.frames;
             // Usar el último frame disponible (más reciente)
             satelliteFrameIndex = satelliteFrames.length - 1;
@@ -2912,7 +2937,14 @@ export default function GeoScopeMap({
             const globalSatLayer = globalSatelliteLayerRef.current;
             if (globalSatLayer && satelliteFrames[satelliteFrameIndex]) {
               globalSatLayer.update({ currentTimestamp: satelliteFrames[satelliteFrameIndex].timestamp });
+              console.info("[GeoScopeMap] GIBS overlay updated with timestamp:", satelliteFrames[satelliteFrameIndex].timestamp);
+            } else {
+              console.warn("[GeoScopeMap] GIBS frames available but globalSatelliteLayer is not initialized");
             }
+          } else if (satResponse?.error) {
+            console.warn("[GeoScopeMap] GIBS frames error:", satResponse.error);
+          } else if (!satResponse?.frames || satResponse.frames.length === 0) {
+            console.warn("[GeoScopeMap] GIBS frames empty or not available");
           }
         }
 
