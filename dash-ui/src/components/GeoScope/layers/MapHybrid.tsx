@@ -191,12 +191,13 @@ export default function MapHybrid({
     ];
 
     const style = getSafeMapStyle(map);
-    if (!style?.layers) {
+    const layers = Array.isArray(style?.layers) ? (style!.layers as Array<{ id?: string }>) : [];
+    if (layers.length === 0) {
       return undefined;
     }
 
     for (const id of overlayIds) {
-      if (style.layers.some((layer) => layer.id === id) && map.getLayer(id)) {
+      if (layers.some((layer: { id?: string }) => layer.id === id) && map.getLayer(id)) {
         return id;
       }
     }
@@ -223,7 +224,8 @@ export default function MapHybrid({
     }
 
     try {
-      const layers = getSafeMapStyle(map)?.layers ?? [];
+      const style = getSafeMapStyle(map);
+      const layers = Array.isArray(style?.layers) ? (style!.layers as Array<{ id?: string }>) : [];
       for (const layer of layers) {
         if (layer.id && layer.id.startsWith("labels-ov-")) {
           try {

@@ -530,28 +530,31 @@ export default class AircraftLayer implements Layer {
       try {
         if (map.getLayer(this.id)) {
           // Mover al tope (sin beforeId)
-          const layers = getSafeMapStyle(map)?.layers || [];
-          if (layers.length > 0) {
+          const style = getSafeMapStyle(map);
+          const layers = Array.isArray(style?.layers) ? (style!.layers as Array<{ id?: string }>) : [];
+          if (Array.isArray(layers) && layers.length > 0) {
             // Intentar mover después de la última capa
-            const lastLayer = layers[layers.length - 1];
+            const lastLayer = layers[layers.length - 1] as { id?: string } | undefined;
             if (lastLayer && lastLayer.id !== this.id) {
               map.moveLayer(this.id, lastLayer.id);
             }
           }
         }
         if (map.getLayer(this.clusterLayerId)) {
-          const layers = getSafeMapStyle(map)?.layers || [];
-          if (layers.length > 0) {
-            const lastLayer = layers[layers.length - 1];
+          const style2 = getSafeMapStyle(map);
+          const layers2 = Array.isArray(style2?.layers) ? (style2!.layers as Array<{ id?: string }>) : [];
+          if (Array.isArray(layers2) && layers2.length > 0) {
+            const lastLayer = layers2[layers2.length - 1] as { id?: string } | undefined;
             if (lastLayer && lastLayer.id !== this.clusterLayerId) {
               map.moveLayer(this.clusterLayerId, lastLayer.id);
             }
           }
         }
         if (map.getLayer(this.clusterCountLayerId)) {
-          const layers = getSafeMapStyle(map)?.layers || [];
-          if (layers.length > 0) {
-            const lastLayer = layers[layers.length - 1];
+          const style3 = getSafeMapStyle(map);
+          const layers3 = Array.isArray(style3?.layers) ? (style3!.layers as Array<{ id?: string }>) : [];
+          if (Array.isArray(layers3) && layers3.length > 0) {
+            const lastLayer = layers3[layers3.length - 1] as { id?: string } | undefined;
             if (lastLayer && lastLayer.id !== this.clusterCountLayerId) {
               map.moveLayer(this.clusterCountLayerId, lastLayer.id);
             }

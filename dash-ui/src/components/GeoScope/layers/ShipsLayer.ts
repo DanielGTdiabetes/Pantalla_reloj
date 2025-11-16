@@ -511,10 +511,11 @@ export default class ShipsLayer implements Layer {
       try {
         if (map.getLayer(this.id)) {
           // Mover al tope (sin beforeId)
-          const layers = getSafeMapStyle(map)?.layers || [];
-          if (layers.length > 0) {
+          const style = getSafeMapStyle(map);
+          const layers = Array.isArray(style?.layers) ? (style!.layers as Array<{ id?: string }>) : [];
+          if (Array.isArray(layers) && layers.length > 0) {
             // Intentar mover después de la última capa
-            const lastLayer = layers[layers.length - 1];
+            const lastLayer = layers[layers.length - 1] as { id?: string } | undefined;
             if (lastLayer && lastLayer.id !== this.id) {
               map.moveLayer(this.id, lastLayer.id);
             }
