@@ -733,6 +733,25 @@ export const OverlayRotator: React.FC = () => {
     });
 
     // astronomy (EphemeridesCard - efemérides + fase lunar)
+    // Combinar eventos astronómicos con efemérides históricas
+    const historicalEventsItems = Array.isArray(historicalEvents.items) ? historicalEvents.items : [];
+    const allEphemeridesEvents = [
+      ...ephemeridesEvents,
+      ...historicalEventsItems
+        .map(item => {
+          if (typeof item === "string") {
+            return item.trim();
+          }
+          const str = String(item).trim();
+          return str.length > 0 ? str : null;
+        })
+        .filter((item): item is string => item !== null && item.length > 0)
+    ].filter((value, index, self) => {
+      // Eliminar duplicados (case-insensitive)
+      const normalized = value.toLowerCase().trim();
+      return self.findIndex(v => v.toLowerCase().trim() === normalized) === index;
+    });
+    
     map.set("astronomy", {
       id: "astronomy",
       duration: (durations.astronomy ?? 10) * 1000,
@@ -742,7 +761,7 @@ export const OverlayRotator: React.FC = () => {
           sunset={sunset}
           moonPhase={moonPhase}
           illumination={moonIllumination}
-          events={ephemeridesEvents}
+          events={allEphemeridesEvents}
         />
       )
     });
@@ -768,8 +787,9 @@ export const OverlayRotator: React.FC = () => {
       render: () => <NewsCard items={newsItems} />
     });
 
-    // historicalEvents (HistoricalEventsCard)
-    const historicalEventsItems = Array.isArray(historicalEvents.items) 
+    // historicalEvents (HistoricalEventsCard) - ahora también se muestran en EphemeridesCard
+    // Mantener el panel separado por si se quiere mostrar solo efemérides históricas
+    const historicalEventsItemsForCard = Array.isArray(historicalEvents.items) 
       ? historicalEvents.items 
       : [];
     const v2ConfigForDuration = config as unknown as { panels?: { historicalEvents?: { rotation_seconds?: number } } };
@@ -777,7 +797,7 @@ export const OverlayRotator: React.FC = () => {
     map.set("historicalEvents", {
       id: "historicalEvents",
       duration: (durations.historicalEvents ?? 6) * 1000,
-      render: () => <HistoricalEventsCard items={historicalEventsItems} rotationSeconds={rotationSeconds} />
+      render: () => <HistoricalEventsCard items={historicalEventsItemsForCard} rotationSeconds={rotationSeconds} />
     });
 
     // Legacy panels (mapeo v1 -> v2 para retrocompatibilidad)

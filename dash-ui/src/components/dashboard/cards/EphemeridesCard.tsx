@@ -17,7 +17,8 @@ const repeatItems = <T,>(items: T[]): T[] => {
 };
 
 export const EphemeridesCard = ({ sunrise, sunset, moonPhase, events, illumination }: EphemeridesCardProps): JSX.Element => {
-  const items = events.length > 0 ? events : ["Sin efemérides registradas"];
+  // Si no hay eventos, no mostrar mensaje "Sin datos" - dejar espacio para que se vean mejor los datos astronómicos
+  const items = events.length > 0 ? events : [];
   const repeatedItems = repeatItems(items);
 
   return (
@@ -62,15 +63,27 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, events, illuminati
           </div>
         </div>
       </div>
-      <div className="ephemerides-card__scroller">
-        <div className="ephemerides-card__events">
-          {repeatedItems.map((item, index) => (
-            // Usar índice completo para garantizar keys únicas (incluso después de duplicar)
-            <p key={`ephemerides-${index}`}>{item}</p>
-          ))}
+      {items.length > 0 ? (
+        <div className="ephemerides-card__scroller">
+          <div className="ephemerides-card__events">
+            {repeatedItems.map((item, index) => (
+              // Usar índice completo para garantizar keys únicos (incluso después de duplicar)
+              <p key={`ephemerides-${index}`}>{item}</p>
+            ))}
+          </div>
+          <div className="ephemerides-card__gradient" aria-hidden="true" />
         </div>
-        <div className="ephemerides-card__gradient" aria-hidden="true" />
-      </div>
+      ) : (
+        <div style={{ 
+          padding: "20px", 
+          textAlign: "center", 
+          color: "var(--text-muted)",
+          fontSize: "0.95rem",
+          opacity: 0.7
+        }}>
+          Cargando efemérides históricas...
+        </div>
+      )}
     </div>
   );
 };
