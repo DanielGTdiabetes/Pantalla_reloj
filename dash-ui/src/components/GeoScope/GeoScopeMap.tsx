@@ -1636,16 +1636,21 @@ export default function GeoScopeMap({
         configV2?.ui_map?.provider ??
         (runtime.mapSettings?.provider ? String(runtime.mapSettings.provider) : null);
 
+      // Preferir la URL de estilo directamente desde runtime.mapConfigV2.ui_map.maptiler.styleUrl
+      const styleUrlFromRuntimeConfig =
+        (runtime.mapConfigV2 as (AppConfigV2 | undefined))?.ui_map?.maptiler?.styleUrl ?? null;
+      const baseStyleUrlFinal = styleUrlFromRuntimeConfig || runtimeBaseStyleUrl || null;
+
       const keyPresentForLog =
         Boolean(maptilerKey) ||
         Boolean(
-          (runtimeBaseStyleUrl && /\bkey=/.test(runtimeBaseStyleUrl)) ||
+          (baseStyleUrlFinal && /\bkey=/.test(baseStyleUrlFinal)) ||
             (effectiveSatelliteStyleUrl && /\bkey=/.test(effectiveSatelliteStyleUrl))
         );
 
       console.info("[HybridFix] runtime options before maplibregl.Map", {
         provider: providerForLog,
-        base_style_url: maskMaptilerUrl(runtimeBaseStyleUrl),
+        base_style_url: maskMaptilerUrl(baseStyleUrlFinal),
         satellite_style_url: maskMaptilerUrl(effectiveSatelliteStyleUrl),
         maptiler_key_present: keyPresentForLog,
         satellite_enabled: effectiveSatelliteEnabled,
@@ -1656,7 +1661,7 @@ export default function GeoScopeMap({
       });
       console.info("[GeoScopeMap] Map init", {
         provider: providerForLog,
-        base_style_url: maskMaptilerUrl(runtimeBaseStyleUrl),
+        base_style_url: maskMaptilerUrl(baseStyleUrlFinal),
         hybrid_enabled: effectiveSatelliteEnabled,
         satellite_overlay_enabled: effectiveSatelliteEnabled && normalizedLabelsOverlay.enabled,
         labels_overlay_style_url: maskMaptilerUrl(normalizedLabelsOverlay.style_url),
@@ -1664,9 +1669,11 @@ export default function GeoScopeMap({
         maptiler_key_present: keyPresentForLog,
       });
 
-      // Forzar el estilo desde config.ui_map.maptiler.styleUrl con logs claros
-      const cfgV2ForStyleUrl = (config as unknown as { ui_map?: { maptiler?: { styleUrl?: string | null } } }) || null;
-      const styleUrlFromConfig = cfgV2ForStyleUrl?.ui_map?.maptiler?.styleUrl ?? null;
+      // Forzar el estilo desde ui_map.maptiler.styleUrl (preferir runtime.mapConfigV2)
+      const cfgV2ForStyleUrl =
+        (config as unknown as { ui_map?: { maptiler?: { styleUrl?: string | null } } }) || null;
+      const styleUrlFromConfigRaw = cfgV2ForStyleUrl?.ui_map?.maptiler?.styleUrl ?? null;
+      const styleUrlFromConfig = (styleUrlFromRuntimeConfig ?? styleUrlFromConfigRaw) || null;
       console.log("[MapInit] styleUrl from config:", styleUrlFromConfig);
       if (!styleUrlFromConfig) {
         console.error("[MapInit] Missing ui_map.maptiler.styleUrl in config");
@@ -1674,7 +1681,9 @@ export default function GeoScopeMap({
       // Validar que tengamos algún estilo para inicializar el mapa
       const initialStyle = styleUrlFromConfig ?? (runtime.style ? runtime.style.style : null);
       if (!initialStyle) {
-        console.error("[GeoScopeMap] Invalid style: neither config.ui_map.maptiler.styleUrl nor runtime.style.style are available");
+        console.error(
+          "[MapInit] no valid styleUrlFinal, aborting map init (neither ui_map.maptiler.styleUrl nor runtime.style.style available)"
+        );
         setWebglError("Error: el estilo del mapa no está disponible. Por favor, verifica la configuración.");
         return;
       }
