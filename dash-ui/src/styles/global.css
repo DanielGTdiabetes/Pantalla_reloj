@@ -805,6 +805,64 @@ main {
   overflow: hidden;
 }
 
+.ephemerides-card__moon-container {
+  background: rgba(12, 18, 34, 0.74);
+  border-radius: 16px;
+  padding: clamp(14px, 1.8vw, 24px);
+  border: 1px solid rgba(104, 162, 255, 0.18);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  max-height: fit-content;
+}
+
+.ephemerides-card__moon-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.ephemerides-card__moon-phase {
+  text-align: center;
+  font-size: 0.95em;
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  width: 100%;
+  max-width: 100%;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(104, 162, 255, 0.3) transparent;
+}
+
+.ephemerides-card__moon-phase::-webkit-scrollbar {
+  height: 4px;
+}
+
+.ephemerides-card__moon-phase::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ephemerides-card__moon-phase::-webkit-scrollbar-thumb {
+  background: rgba(104, 162, 255, 0.3);
+  border-radius: 2px;
+}
+
+.ephemerides-card__moon-phase::-webkit-scrollbar-thumb:hover {
+  background: rgba(104, 162, 255, 0.5);
+}
+
+.ephemerides-card__moon-illumination {
+  font-size: 0.85em;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
 .ephemerides-card__label {
   display: block;
   font-size: clamp(0.82rem, 1.1vw, 1rem);
