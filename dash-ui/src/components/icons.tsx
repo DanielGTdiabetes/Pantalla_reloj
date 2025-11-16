@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 
 type IconProps = React.SVGProps<SVGSVGElement>;
 
@@ -86,36 +86,76 @@ export const StarIcon = (props: IconProps) => (
   </svg>
 );
 
-export const SunriseIcon = (props: IconProps) => (
-  <svg viewBox="0 0 24 24" {...createStrokeProps(props)}>
-    {/* Línea del horizonte (abajo) */}
-    <path d="M2 20h20" strokeWidth="2" />
-    {/* Sol saliendo (mitad visible sobre el horizonte) */}
-    <circle cx="12" cy="16" r="4" />
-    {/* Rayos del sol hacia arriba */}
-    <path d="M12 8v2" />
-    <path d="M8.93 9.07l1.41 1.41" />
-    <path d="M15.07 9.07l-1.41 1.41" />
-    <path d="M6 12h2" />
-    <path d="M16 12h2" />
-    <path d="M8.93 14.93l1.41-1.41" />
-    <path d="M15.07 14.93l-1.41-1.41" />
-  </svg>
-);
+export const SunriseIcon = (props: IconProps) => {
+  const uniqueId = useMemo(() => `sunrise-${Math.random().toString(36).substr(2, 9)}`, []);
+  return (
+    <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" {...props}>
+      <defs>
+        {/* Gradiente para el cielo del amanecer */}
+        <linearGradient id={`${uniqueId}-sky`} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#FF6B35" stopOpacity="0.4" />
+          <stop offset="50%" stopColor="#F7931E" stopOpacity="0.3" />
+          <stop offset="100%" stopColor="#FFD23F" stopOpacity="0.2" />
+        </linearGradient>
+        {/* Gradiente para el sol */}
+        <radialGradient id={`${uniqueId}-sun`} cx="50%" cy="50%">
+          <stop offset="0%" stopColor="#FFD23F" />
+          <stop offset="70%" stopColor="#F7931E" />
+          <stop offset="100%" stopColor="#FF6B35" />
+        </radialGradient>
+      </defs>
+      {/* Fondo del cielo con gradiente */}
+      <rect x="0" y="0" width="24" height="20" fill={`url(#${uniqueId}-sky)`} />
+      {/* Línea del horizonte */}
+      <path d="M2 20h20" stroke="#8B4513" strokeWidth="2.5" strokeLinecap="round" />
+      {/* Sol saliendo (mitad visible sobre el horizonte) */}
+      <circle cx="12" cy="16" r="4.5" fill={`url(#${uniqueId}-sun)`} />
+      <circle cx="12" cy="16" r="3.8" fill="#FFD23F" opacity="0.95" />
+      {/* Rayos del sol hacia arriba */}
+      <path d="M12 5v3.5" stroke="#FFD23F" strokeWidth="2" strokeLinecap="round" />
+      <path d="M8.2 7.2l2.12 2.12" stroke="#FFD23F" strokeWidth="2" strokeLinecap="round" />
+      <path d="M15.8 7.2l-2.12 2.12" stroke="#FFD23F" strokeWidth="2" strokeLinecap="round" />
+      <path d="M4.5 12h3.5" stroke="#FFD23F" strokeWidth="2" strokeLinecap="round" />
+      <path d="M16 12h3.5" stroke="#FFD23F" strokeWidth="2" strokeLinecap="round" />
+      <path d="M8.2 16.8l2.12-2.12" stroke="#FFD23F" strokeWidth="2" strokeLinecap="round" />
+      <path d="M15.8 16.8l-2.12-2.12" stroke="#FFD23F" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+};
 
-export const SunsetIcon = (props: IconProps) => (
-  <svg viewBox="0 0 24 24" {...createStrokeProps(props)}>
-    {/* Línea del horizonte (arriba) */}
-    <path d="M2 4h20" strokeWidth="2" />
-    {/* Sol poniéndose (mitad visible sobre el horizonte) */}
-    <circle cx="12" cy="8" r="4" />
-    {/* Rayos del sol hacia abajo */}
-    <path d="M12 16v2" />
-    <path d="M8.93 14.93l1.41 1.41" />
-    <path d="M15.07 14.93l-1.41 1.41" />
-    <path d="M6 12h2" />
-    <path d="M16 12h2" />
-    <path d="M8.93 9.07l1.41-1.41" />
-    <path d="M15.07 9.07l-1.41-1.41" />
-  </svg>
-);
+export const SunsetIcon = (props: IconProps) => {
+  const uniqueId = useMemo(() => `sunset-${Math.random().toString(36).substr(2, 9)}`, []);
+  return (
+    <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" {...props}>
+      <defs>
+        {/* Gradiente para el cielo del atardecer */}
+        <linearGradient id={`${uniqueId}-sky`} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#FF6B35" stopOpacity="0.2" />
+          <stop offset="50%" stopColor="#F7931E" stopOpacity="0.3" />
+          <stop offset="100%" stopColor="#FF6B35" stopOpacity="0.4" />
+        </linearGradient>
+        {/* Gradiente para el sol del atardecer (más cálido) */}
+        <radialGradient id={`${uniqueId}-sun`} cx="50%" cy="50%">
+          <stop offset="0%" stopColor="#FF8C42" />
+          <stop offset="60%" stopColor="#FF6B35" />
+          <stop offset="100%" stopColor="#E63946" />
+        </radialGradient>
+      </defs>
+      {/* Fondo del cielo con gradiente */}
+      <rect x="0" y="4" width="24" height="20" fill={`url(#${uniqueId}-sky)`} />
+      {/* Línea del horizonte */}
+      <path d="M2 4h20" stroke="#8B4513" strokeWidth="2.5" strokeLinecap="round" />
+      {/* Sol poniéndose (mitad visible sobre el horizonte) */}
+      <circle cx="12" cy="8" r="4.5" fill={`url(#${uniqueId}-sun)`} />
+      <circle cx="12" cy="8" r="3.8" fill="#FF8C42" opacity="0.95" />
+      {/* Rayos del sol hacia abajo */}
+      <path d="M12 19v3.5" stroke="#FF8C42" strokeWidth="2" strokeLinecap="round" />
+      <path d="M8.2 16.8l2.12 2.12" stroke="#FF8C42" strokeWidth="2" strokeLinecap="round" />
+      <path d="M15.8 16.8l-2.12 2.12" stroke="#FF8C42" strokeWidth="2" strokeLinecap="round" />
+      <path d="M4.5 12h3.5" stroke="#FF8C42" strokeWidth="2" strokeLinecap="round" />
+      <path d="M16 12h3.5" stroke="#FF8C42" strokeWidth="2" strokeLinecap="round" />
+      <path d="M8.2 7.2l2.12-2.12" stroke="#FF8C42" strokeWidth="2" strokeLinecap="round" />
+      <path d="M15.8 7.2l-2.12-2.12" stroke="#FF8C42" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+};

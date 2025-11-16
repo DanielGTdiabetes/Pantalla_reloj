@@ -43,7 +43,7 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, events, illuminati
         </div>
         <div>
           <span className="ephemerides-card__label">Fase lunar</span>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", justifyContent: "center" }}>
             <MoonIcon
               phase={moonPhase}
               illumination={illumination}
@@ -51,12 +51,14 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, events, illuminati
               className="ephemerides-card__moon-icon"
               alt="Fase lunar actual"
             />
-            <span>{moonPhase ?? "Sin datos"}</span>
-            {illumination !== null && illumination !== undefined && (
-              <span style={{ fontSize: "0.9em", opacity: 0.8 }}>
-                {Math.round(illumination > 1 ? illumination : illumination * 100)}%
-              </span>
-            )}
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", minWidth: 0, flex: "1 1 auto" }}>
+              <span style={{ wordBreak: "break-word", textAlign: "center", fontSize: "0.95em" }}>{moonPhase ?? "Sin datos"}</span>
+              {illumination !== null && illumination !== undefined && (
+                <span style={{ fontSize: "0.85em", opacity: 0.8 }}>
+                  {Math.round(illumination > 1 ? illumination : illumination * 100)}%
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>

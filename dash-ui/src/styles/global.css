@@ -798,6 +798,11 @@ main {
   border-radius: 16px;
   padding: clamp(14px, 1.8vw, 24px);
   border: 1px solid rgba(104, 162, 255, 0.18);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .ephemerides-card__label {
