@@ -1,13 +1,8 @@
-import { readFileSync } from "fs";
-import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf-8")) as {
-  version?: string;
-};
-const appVersion = pkg.version ?? "dev";
+const appVersion = process.env.npm_package_version ?? "dev";
 
-export default defineConfig({
+export default {
   base: "/",
   plugins: [react()],
   server: {
@@ -26,4 +21,4 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts"
   }
-});
+};
