@@ -976,13 +976,29 @@ def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
     payload = config.model_dump(mode="json", exclude_none=True)
     
     # Ocultar todos los secretos pero mantener estructura
-    # Solo metadata, nunca valores reales
+    # Solo metadata, nunca valores reales (EXCEPTO maptiler para alinear api_key con ui_map)
     if "secrets" in payload:
         secrets_public = {}
         
-        # MapTiler
+        # MapTiler: alinear secrets.maptiler.api_key con ui_map.maptiler.api_key para coherencia en /api/config
         if "maptiler" in payload.get("secrets", {}):
-            secrets_public["maptiler"] = {"api_key": None}
+            # Intentar obtener api_key efectiva desde ui_map o secret_store
+            effective_key: Optional[str] = None
+            try:
+                ui_map_block = payload.get("ui_map") or {}
+                maptiler_block = ui_map_block.get("maptiler") or {}
+                if isinstance(maptiler_block, dict):
+                    candidate = maptiler_block.get("api_key")
+                    if isinstance(candidate, str) and candidate.strip():
+                        effective_key = candidate.strip()
+                if not effective_key:
+                    # Fallback a secret store si existe
+                    secret_key = secret_store.get_secret("maptiler_api_key")
+                    if isinstance(secret_key, str) and secret_key.strip():
+                        effective_key = secret_key.strip()
+            except Exception:
+                effective_key = None
+            secrets_public["maptiler"] = {"api_key": effective_key or None}
         
         # OpenSky
         if "opensky" in payload.get("secrets", {}):
@@ -1067,6 +1083,12 @@ def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
             # Establecer api_key si se encontró
             if extracted_key:
                 maptiler["api_key"] = extracted_key
+        
+        # Desactivar explícitamente overlays satélite en respuesta pública (modo base-map simple)
+        # Evita que el frontend active satélite global por confusiones previas
+        satellite_block = ui_map.get("satellite")
+        if isinstance(satellite_block, dict):
+            satellite_block["enabled"] = False
     
     # Ocultar cualquier api_key o secret que pueda estar en otros lugares
     # (por seguridad adicional), pero NO tocar la estructura de secrets que ya construimos
@@ -1131,6 +1153,32 @@ def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
             
             # Eliminar labels_style_url de la respuesta pública (deprecated)
             satellite.pop("labels_style_url", None)
+    
+    # Asegurar que todas las flags satélite global estén en false en respuesta pública
+    try:
+        ui_global_block = payload.get("ui_global")
+        if isinstance(ui_global_block, dict):
+            sat = ui_global_block.get("satellite")
+            if isinstance(sat, dict):
+                sat["enabled"] = False
+            wl = ui_global_block.get("weather_layers")
+            if isinstance(wl, dict):
+                sat_w = wl.get("satellite")
+                if isinstance(sat_w, dict):
+                    sat_w["enabled"] = False
+        layers_block = payload.get("layers")
+        if isinstance(layers_block, dict):
+            global__block = layers_block.get("global_")
+            if isinstance(global__block, dict):
+                gl_sat = global__block.get("satellite")
+                if isinstance(gl_sat, dict):
+                    gl_sat["enabled"] = False
+            gl_sat2 = layers_block.get("global_satellite")
+            if isinstance(gl_sat2, dict):
+                gl_sat2["enabled"] = False
+    except Exception:
+        # No impedir respuesta si hay cualquier error no crítico
+        pass
     
     return payload
 
@@ -3858,6 +3906,21 @@ async def save_config(request: Request) -> JSONResponse:
             logger.info("[config] Validating and normalizing MapTiler URLs")
             try:
                 _validate_and_normalize_maptiler(sanitized)
+                # Normalizar secreto de MapTiler: si ui_map.maptiler.api_key viene en payload/merge y el secreto falta, guardarlo
+                try:
+                    mt = sanitized.get("ui_map", {}).get("maptiler", {})
+                    api_key_candidate = None
+                    if isinstance(mt, dict):
+                        raw_key = mt.get("api_key")
+                        if isinstance(raw_key, str) and raw_key.strip():
+                            api_key_candidate = raw_key.strip()
+                    if api_key_candidate:
+                        current_secret = secret_store.get_secret("maptiler_api_key")
+                        if not current_secret or current_secret.strip() != api_key_candidate:
+                            secret_store.set_secret("maptiler_api_key", api_key_candidate)
+                            logger.info("[maptiler] Secret synchronized from ui_map.maptiler.api_key (length=%d)", len(api_key_candidate))
+                except Exception as sync_exc:
+                    logger.debug("[maptiler] Secret sync skipped: %s", sync_exc)
             except HTTPException:
                 raise
             except Exception as exc:  # noqa: BLE001

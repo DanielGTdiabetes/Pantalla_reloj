@@ -76,16 +76,10 @@
     "overlay": {
       "rotator": {
         "enabled": true,
-        "order": ["clock", "weather", "astronomy", "santoral", "calendar", "harvest", "news", "historicalEvents"],
+        "order": ["clock", "santoral"],
         "durations_sec": {
           "clock": 10,
-          "weather": 12,
-          "astronomy": 10,
-          "santoral": 8,
-          "calendar": 12,
-          "harvest": 10,
-          "news": 12,
-          "historicalEvents": 6
+          "santoral": 10
         },
         "transition_ms": 400,
         "pause_on_alert": false
