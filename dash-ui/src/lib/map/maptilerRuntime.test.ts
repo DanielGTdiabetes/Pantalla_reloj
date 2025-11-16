@@ -5,6 +5,7 @@ import {
   containsApiKey,
   extractMaptilerApiKey,
   buildFinalMaptilerStyleUrl,
+  resolveMaptilerStyleSlug,
 } from "./maptilerRuntime";
 
 describe("maptilerRuntime helpers", () => {
@@ -177,6 +178,21 @@ describe("maptilerRuntime helpers", () => {
       const result = buildFinalMaptilerStyleUrl(cfg, health, baseStyleUrl);
       expect(result).toBe("https://api.maptiler.com/maps/streets-v4/style.json?key=HEALTHKEY");
     });
+
+    it("construye URL canónica cuando solo hay style + api_key", () => {
+      const cfg = {
+        ui_map: {
+          maptiler: { style: "vector-dark", api_key: "STYLEKEY" },
+        },
+      };
+      const result = buildFinalMaptilerStyleUrl(cfg, null, null);
+      expect(result).toBe("https://api.maptiler.com/maps/dataviz-dark/style.json?key=STYLEKEY");
+    });
+
+    it("retorna null cuando no hay styleUrl ni style válido", () => {
+      const cfg = { ui_map: { maptiler: { style: "" } } };
+      expect(buildFinalMaptilerStyleUrl(cfg, null, null)).toBeNull();
+    });
   });
 
   describe("containsApiKey", () => {
@@ -195,6 +211,21 @@ describe("maptilerRuntime helpers", () => {
     it("returns false for null/undefined", () => {
       expect(containsApiKey(null)).toBe(false);
       expect(containsApiKey(undefined)).toBe(false);
+    });
+  });
+
+  describe("resolveMaptilerStyleSlug", () => {
+    it("normaliza estilos legacy", () => {
+      expect(resolveMaptilerStyleSlug("vector-bright")).toBe("bright-v2");
+    });
+
+    it("acepta slugs ya normalizados", () => {
+      expect(resolveMaptilerStyleSlug("streets-v4")).toBe("streets-v4");
+    });
+
+    it("retorna null para entradas inválidas", () => {
+      expect(resolveMaptilerStyleSlug("")).toBeNull();
+      expect(resolveMaptilerStyleSlug(undefined)).toBeNull();
     });
   });
 });

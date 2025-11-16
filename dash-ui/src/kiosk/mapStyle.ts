@@ -1,5 +1,9 @@
 import maplibregl from "maplibre-gl";
-import { buildFinalMaptilerStyleUrl, buildMaptilerStyleUrl } from "../lib/map/maptilerRuntime";
+import {
+  buildFinalMaptilerStyleUrl,
+  buildMaptilerStyleUrl,
+  resolveMaptilerStyleSlug,
+} from "../lib/map/maptilerRuntime";
 
 let styleChangeInFlight = false;
 
@@ -199,21 +203,7 @@ export function computeStyleUrlFromConfig(mapConfig: any, health?: any): string 
 
   // Usar el estilo de la configuración, pero no forzar "vector-dark" como fallback
   // Si no hay estilo definido, devolver null para que se use el styleUrl si está disponible
-  const style = mapConfig.style;
-  if (!style) return null;
-  
-  // Mapear estilos a URLs de MapTiler
-  const styleMap: Record<string, string> = {
-    "vector-dark": "dataviz-dark",
-    "vector-light": "streets-v2",
-    "vector-bright": "bright-v2",
-    "streets-v4": "streets-v4",
-    "dark": "dataviz-dark",
-    "light": "streets-v2",
-    "bright": "bright-v2",
-  };
-
-  const styleSlug = styleMap[style];
+  const styleSlug = resolveMaptilerStyleSlug(mapConfig.style);
   if (!styleSlug) return null;
   
   const baseUrl = `https://api.maptiler.com/maps/${styleSlug}/style.json`;
