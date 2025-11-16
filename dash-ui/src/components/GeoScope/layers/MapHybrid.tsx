@@ -3,6 +3,7 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 import { getSatelliteTileUrl } from "../../../lib/map/utils/maptilerHelpers";
 import { ensureLabelsOverlay, removeLabelsOverlay } from "../../../lib/map/overlays/vectorLabels";
 import type { NormalizedLabelsOverlay } from "../../../lib/map/labelsOverlay";
+import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
 
 export interface MapHybridProps {
   map: MapLibreMap;
@@ -189,8 +190,13 @@ export default function MapHybrid({
       "geoscope-ships",
     ];
 
+    const style = getSafeMapStyle(map);
+    if (!style?.layers) {
+      return undefined;
+    }
+
     for (const id of overlayIds) {
-      if (map.getLayer(id)) {
+      if (style.layers.some((layer) => layer.id === id) && map.getLayer(id)) {
         return id;
       }
     }
@@ -217,7 +223,7 @@ export default function MapHybrid({
     }
 
     try {
-      const layers = map.getStyle()?.layers ?? [];
+      const layers = getSafeMapStyle(map)?.layers ?? [];
       for (const layer of layers) {
         if (layer.id && layer.id.startsWith("labels-ov-")) {
           try {

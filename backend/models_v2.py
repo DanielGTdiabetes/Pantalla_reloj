@@ -718,6 +718,25 @@ class CalendarConfig(BaseModel):
         raise TypeError("ics_path must be a string or null")
 
 
+class HarvestConfig(BaseModel):
+    """Configuración de hortalizas (harvest) v2."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = True
+    custom_items: List[Dict[str, str]] = Field(default_factory=list)
+
+
+class SaintsConfig(BaseModel):
+    """Configuración de santoral v2."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = True
+    include_namedays: bool = True
+    locale: str = Field(default="es", min_length=2, max_length=5)
+
+
 class PanelsConfig(BaseModel):
     """Configuración de paneles v2."""
     weatherWeekly: Optional[PanelWeatherWeeklyConfig] = None
@@ -887,6 +906,8 @@ class AppConfigV2(BaseModel):
     news: Optional[NewsTopLevelConfig] = None
     ephemerides: Optional[EphemeridesTopLevelConfig] = None
     calendar: Optional[CalendarConfig] = None
+    harvest: HarvestConfig = Field(default_factory=HarvestConfig)
+    saints: SaintsConfig = Field(default_factory=SaintsConfig)
     opensky: Optional[OpenSkyTopLevelConfig] = None
     ais: Optional[AISConfig] = None
     secrets: Optional[SecretsConfig] = None

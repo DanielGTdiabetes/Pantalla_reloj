@@ -84,6 +84,7 @@ describe("maptilerRuntime helpers", () => {
       const base = "https://api.maptiler.com/maps/streets-v4/style.json";
       const out = buildMaptilerStyleUrl(base, "TESTKEY");
       expect(out).toContain("key=TESTKEY");
+      expect(out).toContain("cache=");
       expect(containsApiKey(out)).toBe(true);
     });
 
@@ -92,13 +93,15 @@ describe("maptilerRuntime helpers", () => {
       const out = buildMaptilerStyleUrl(base, "TESTKEY");
       expect(out).toContain("key=EXISTING");
       expect(out).not.toContain("key=TESTKEY");
+      expect(out).toContain("cache=");
     });
 
     it("returns URL without key when no apiKey provided", () => {
       const base = "https://api.maptiler.com/maps/streets-v4/style.json";
       const out = buildMaptilerStyleUrl(base, null);
-      expect(out).toBe(base);
+      expect(out?.startsWith(base)).toBe(true);
       expect(containsApiKey(out)).toBe(false);
+      expect(out).toContain("cache=");
     });
 
     it("handles URL with existing query params", () => {
@@ -106,6 +109,7 @@ describe("maptilerRuntime helpers", () => {
       const out = buildMaptilerStyleUrl(base, "TESTKEY");
       expect(out).toContain("v=1");
       expect(out).toContain("key=TESTKEY");
+      expect(out).toContain("cache=");
     });
   });
 
@@ -123,6 +127,7 @@ describe("maptilerRuntime helpers", () => {
       const result = buildFinalMaptilerStyleUrl(cfg, health, baseStyleUrl);
       expect(result).toContain("key=TEST");
       expect(containsApiKey(result)).toBe(true);
+      expect(result).toContain("cache=");
       expect(hasMaptilerKey(cfg, health)).toBe(true);
     });
 
@@ -141,7 +146,8 @@ describe("maptilerRuntime helpers", () => {
       const baseStyleUrl = "https://api.maptiler.com/maps/streets-v4/style.json";
 
       const result = buildFinalMaptilerStyleUrl(cfg, health, baseStyleUrl);
-      expect(result).toBe("https://api.maptiler.com/maps/streets-v4/style.json?key=HEALTH");
+      expect(result).toContain("key=HEALTH");
+      expect(result).toContain("cache=");
       expect(hasMaptilerKey(cfg, health)).toBe(true);
     });
 
@@ -155,7 +161,8 @@ describe("maptilerRuntime helpers", () => {
       const baseStyleUrl = "https://api.maptiler.com/maps/streets-v4/style.json";
 
       const result = buildFinalMaptilerStyleUrl(cfg, health, baseStyleUrl);
-      expect(result).toBe("https://api.maptiler.com/maps/streets-v4/style.json");
+      expect(result?.startsWith("https://api.maptiler.com/maps/streets-v4/style.json")).toBe(true);
+      expect(result).toContain("cache=");
       expect(containsApiKey(result)).toBe(false);
       expect(hasMaptilerKey(cfg, health)).toBe(false);
     });

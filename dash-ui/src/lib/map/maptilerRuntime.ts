@@ -1,3 +1,5 @@
+import { withStyleCacheBuster } from "./utils/styleCacheBuster";
+
 export type UiMapLike = {
   ui_map?: {
     provider?: string | null;
@@ -101,7 +103,7 @@ export function buildMaptilerStyleUrl(
 
   // Si ya tiene key, devolver tal cual
   if (containsApiKey(trimmed)) {
-    return trimmed;
+    return withStyleCacheBuster(trimmed);
   }
 
   // Si no tiene key pero tenemos apiKey, añadirla
@@ -109,16 +111,18 @@ export function buildMaptilerStyleUrl(
     try {
       const url = new URL(trimmed);
       url.searchParams.set("key", apiKey.trim());
-      return url.toString();
+      return withStyleCacheBuster(url.toString());
     } catch {
       // Si no es una URL válida, añadir key manualmente
       const sep = trimmed.includes("?") ? "&" : "?";
-      return `${trimmed}${sep}key=${encodeURIComponent(apiKey.trim())}`;
+      return withStyleCacheBuster(
+        `${trimmed}${sep}key=${encodeURIComponent(apiKey.trim())}`
+      );
     }
   }
 
   // Sin key disponible, devolver URL sin firmar
-  return trimmed;
+  return withStyleCacheBuster(trimmed);
 }
 
 /**
@@ -138,7 +142,7 @@ export function buildFinalMaptilerStyleUrl(
   if (health?.maptiler?.styleUrl && typeof health.maptiler.styleUrl === "string") {
     const healthUrl = health.maptiler.styleUrl.trim();
     if (healthUrl) {
-      return healthUrl; // Ya viene con ?key=, usarlo tal cual
+      return withStyleCacheBuster(healthUrl);
     }
   }
 
@@ -149,7 +153,7 @@ export function buildFinalMaptilerStyleUrl(
     if (trimmed) {
       // Si ya tiene key, devolver tal cual
       if (containsApiKey(trimmed)) {
-        return trimmed;
+        return withStyleCacheBuster(trimmed);
       }
 
       // Extraer apiKey y construir URL firmada

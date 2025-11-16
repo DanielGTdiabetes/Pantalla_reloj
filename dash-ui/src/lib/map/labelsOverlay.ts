@@ -10,7 +10,7 @@ export type NormalizedLabelsOverlay = {
 export const DEFAULT_LABELS_STYLE_URL = "https://api.maptiler.com/maps/streets-v4/style.json";
 
 export const DEFAULT_NORMALIZED_LABELS_OVERLAY: NormalizedLabelsOverlay = {
-  enabled: true,
+  enabled: false,
   style_url: DEFAULT_LABELS_STYLE_URL,
   layer_filter: null,
   opacity: 1,

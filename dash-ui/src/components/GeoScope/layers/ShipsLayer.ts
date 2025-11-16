@@ -6,6 +6,7 @@ import type { ShipsLayerCircleConfig, ShipsLayerRenderMode, ShipsLayerSymbolConf
 import type { Layer } from "./LayerRegistry";
 import { getExistingPopup, isGeoJSONSource } from "./layerUtils";
 import { registerShipIcon } from "../utils/shipIcon";
+import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
 
 type EffectiveRenderMode = "symbol" | "symbol_custom" | "circle";
 
@@ -469,8 +470,8 @@ export default class ShipsLayer implements Layer {
    * Retorna undefined si no se encuentra.
    */
   private findBeforeId(map: maplibregl.Map): string | undefined {
-    const style = map.getStyle();
-    if (!style || !style.layers || !Array.isArray(style.layers)) {
+    const style = getSafeMapStyle(map);
+    if (!style || !Array.isArray(style.layers)) {
       return undefined;
     }
     
@@ -510,7 +511,7 @@ export default class ShipsLayer implements Layer {
       try {
         if (map.getLayer(this.id)) {
           // Mover al tope (sin beforeId)
-          const layers = map.getStyle()?.layers || [];
+          const layers = getSafeMapStyle(map)?.layers || [];
           if (layers.length > 0) {
             // Intentar mover después de la última capa
             const lastLayer = layers[layers.length - 1];
