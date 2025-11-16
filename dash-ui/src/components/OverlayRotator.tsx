@@ -977,8 +977,9 @@ export const OverlayRotator: React.FC = () => {
     }
 
     // Asegurar que el índice actual sea válido
-    const validIndex = currentPanelIndexRef.current % availablePanels.length;
-    if (currentPanelIndexRef.current !== validIndex) {
+    const currentIndexValue = currentPanelIndexRef.current ?? 0;
+    const validIndex = currentIndexValue % availablePanels.length;
+    if (currentIndexValue !== validIndex) {
       setCurrentPanelIndex(validIndex);
       currentPanelIndexRef.current = validIndex;
     }
@@ -1016,7 +1017,8 @@ export const OverlayRotator: React.FC = () => {
     // Programar el siguiente cambio usando duración del panel actual
     const scheduleNext = () => {
       // Verificar que la rotación sigue habilitada antes de programar
-      if (!rotationConfig.enabled || availablePanelsRef.current.length <= 1) {
+      const currentPanels = availablePanelsRef.current;
+      if (!rotationConfig.enabled || !currentPanels || currentPanels.length <= 1) {
         return;
       }
       const duration = getCurrentPanelDuration();
