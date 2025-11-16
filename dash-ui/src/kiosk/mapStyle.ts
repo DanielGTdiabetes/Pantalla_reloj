@@ -1,4 +1,5 @@
 import maplibregl from "maplibre-gl";
+import { buildFinalMaptilerStyleUrl, buildMaptilerStyleUrl } from "../lib/map/maptilerRuntime";
 
 let styleChangeInFlight = false;
 
@@ -176,17 +177,20 @@ function clientLog(where: string, msg: string): void {
 
 /**
  * Computa el styleUrl desde la configuración del mapa.
+ * Usa buildFinalMaptilerStyleUrl para asegurar que siempre se firma con la API key cuando está disponible.
  */
-export function computeStyleUrlFromConfig(mapConfig: any): string | null {
+export function computeStyleUrlFromConfig(mapConfig: any, health?: any): string | null {
   if (!mapConfig) return null;
 
   const maptiler = mapConfig.maptiler;
   if (!maptiler) return null;
 
   // Si hay styleUrl personalizado (styleUrlDark, styleUrlLight, styleUrlBright o styleUrl), usarlo
-  const styleUrl = maptiler.styleUrl || maptiler.styleUrlDark || maptiler.styleUrlLight || maptiler.styleUrlBright;
-  if (styleUrl) {
-    return styleUrl;
+  const baseStyleUrl = maptiler.styleUrl || maptiler.styleUrlDark || maptiler.styleUrlLight || maptiler.styleUrlBright;
+  
+  // Si hay baseStyleUrl, usar buildFinalMaptilerStyleUrl para firmarlo
+  if (baseStyleUrl) {
+    return buildFinalMaptilerStyleUrl(mapConfig, health, baseStyleUrl, null);
   }
 
   // Si hay apiKey, construir URL según el estilo
@@ -212,6 +216,7 @@ export function computeStyleUrlFromConfig(mapConfig: any): string | null {
   const styleSlug = styleMap[style];
   if (!styleSlug) return null;
   
-  return `https://api.maptiler.com/maps/${styleSlug}/style.json?key=${apiKey}`;
+  const baseUrl = `https://api.maptiler.com/maps/${styleSlug}/style.json`;
+  return buildMaptilerStyleUrl(baseUrl, apiKey);
 }
 

@@ -28,7 +28,7 @@ import {
   createDefaultMapSettings,
   withConfigDefaults
 } from "../../config/defaults";
-import { hasMaptilerKey, containsApiKey } from "../../lib/map/maptilerRuntime";
+import { hasMaptilerKey, containsApiKey, buildFinalMaptilerStyleUrl } from "../../lib/map/maptilerRuntime";
 import { DEFAULT_OPENSKY_CONFIG } from "../../config/defaults_v2";
 import type {
   AppConfig,
@@ -1656,13 +1656,17 @@ export default function GeoScopeMap({
         configV2?.ui_map?.provider ??
         (runtime.mapSettings?.provider ? String(runtime.mapSettings.provider) : null);
 
-      // Preferir la URL de estilo directamente desde runtime.mapConfigV2.ui_map.maptiler.styleUrl
+      // Construir URL final firmada usando buildFinalMaptilerStyleUrl
+      // Esta función prioriza health.maptiler.styleUrl (ya firmado) y luego construye desde config + apiKey
       const styleUrlFromRuntimeConfig =
         (runtime.mapConfigV2 as (AppConfigV2 | undefined))?.ui_map?.maptiler?.styleUrl ?? null;
-
-      // Preferir estilo firmado desde health si existe; si no, usar el de runtime/config
-      const baseStyleUrlFinal =
-        (health?.maptiler?.styleUrl ?? null) || styleUrlFromRuntimeConfig || runtimeBaseStyleUrl || null;
+      
+      const baseStyleUrlFinal = buildFinalMaptilerStyleUrl(
+        config as unknown as any,
+        health as any,
+        styleUrlFromRuntimeConfig || runtimeBaseStyleUrl || null,
+        runtimeBaseStyleUrl
+      );
 
       const keyPresentForLog =
         hasMaptilerKey((config as unknown) as any, health as any) ||
@@ -1690,11 +1694,8 @@ export default function GeoScopeMap({
         maptiler_key_present: keyPresentForLog,
       });
 
-      // Forzar el estilo desde ui_map.maptiler.styleUrl (preferir runtime.mapConfigV2)
-      const cfgV2ForStyleUrl =
-        (config as unknown as { ui_map?: { maptiler?: { styleUrl?: string | null } } }) || null;
-      const styleUrlFromConfigRaw = cfgV2ForStyleUrl?.ui_map?.maptiler?.styleUrl ?? null;
-      const styleUrlFromConfig = (health?.maptiler?.styleUrl ?? null) || (styleUrlFromRuntimeConfig ?? styleUrlFromConfigRaw) || null;
+      // Usar la URL final firmada como estilo para MapLibre
+      const styleUrlFromConfig = baseStyleUrlFinal;
       console.log("[MapInit] styleUrl from config:", styleUrlFromConfig ? maskMaptilerUrl(styleUrlFromConfig) : styleUrlFromConfig);
       if (!styleUrlFromConfig) {
         console.error("[MapInit] Missing ui_map.maptiler.styleUrl in config");
@@ -2031,16 +2032,23 @@ export default function GeoScopeMap({
           if (current && current !== lastChecksum) {
             lastChecksum = current;
             
-            // Leer config fresca
+            // Leer config fresca y health
             const cfg = await fetch("/api/config", { cache: "no-store" }).then((r) => r.json());
+            const healthData = await fetch("/api/health/full", { cache: "no-store" }).then((r) => r.json()).catch(() => null);
             
-            // Obtener styleUrl desde la configuración
+            // Obtener styleUrl desde la configuración usando buildFinalMaptilerStyleUrl
             const merged = withConfigDefaults(cfg);
             const mapSettings = merged.ui?.map;
-            const styleUrl = computeStyleUrlFromConfig(mapSettings?.maptiler ? {
+            const baseStyleUrl = mapSettings?.maptiler?.styleUrl || null;
+            const styleUrl = buildFinalMaptilerStyleUrl(
+              cfg as any,
+              healthData as any,
+              baseStyleUrl,
+              null
+            ) || computeStyleUrlFromConfig(mapSettings?.maptiler ? {
               maptiler: mapSettings.maptiler,
               style: mapSettings.style || "vector-dark",
-            } : null);
+            } : null, healthData);
             
             if (styleUrl) {
               // Desactivado temporalmente: no aplicar cambios de estilo en caliente
