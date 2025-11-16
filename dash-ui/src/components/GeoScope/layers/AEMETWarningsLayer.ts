@@ -298,7 +298,7 @@ export default class AEMETWarningsLayer implements Layer {
     if (!beforeId) {
       // Mover al tope si no se encuentra referencia
       try {
-        const layers = this.map.getStyle().layers || [];
+        const layers = this.map.getStyle()?.layers || [];
         if (layers.length > 0) {
           const lastLayer = layers[layers.length - 1];
           if (lastLayer && lastLayer.id !== this.id) {

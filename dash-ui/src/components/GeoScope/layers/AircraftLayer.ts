@@ -529,7 +529,7 @@ export default class AircraftLayer implements Layer {
       try {
         if (map.getLayer(this.id)) {
           // Mover al tope (sin beforeId)
-          const layers = map.getStyle().layers || [];
+          const layers = map.getStyle()?.layers || [];
           if (layers.length > 0) {
             // Intentar mover después de la última capa
             const lastLayer = layers[layers.length - 1];
@@ -539,7 +539,7 @@ export default class AircraftLayer implements Layer {
           }
         }
         if (map.getLayer(this.clusterLayerId)) {
-          const layers = map.getStyle().layers || [];
+          const layers = map.getStyle()?.layers || [];
           if (layers.length > 0) {
             const lastLayer = layers[layers.length - 1];
             if (lastLayer && lastLayer.id !== this.clusterLayerId) {
@@ -548,7 +548,7 @@ export default class AircraftLayer implements Layer {
           }
         }
         if (map.getLayer(this.clusterCountLayerId)) {
-          const layers = map.getStyle().layers || [];
+          const layers = map.getStyle()?.layers || [];
           if (layers.length > 0) {
             const lastLayer = layers[layers.length - 1];
             if (lastLayer && lastLayer.id !== this.clusterCountLayerId) {
