@@ -1611,7 +1611,8 @@ export default function GeoScopeMap({
             ? innerError.message
             : "";
         if (typeof statusCandidate === "number" && statusCandidate >= 400) {
-          applyFallbackStyle(error);
+          console.error("[GeoScopeMap] Style load error (HTTP " + statusCandidate + "):", error);
+          setWebglError(`Error al cargar el estilo del mapa (HTTP ${statusCandidate})`);
           return;
         }
         if (
@@ -1619,7 +1620,8 @@ export default function GeoScopeMap({
           /style/i.test(messageCandidate) &&
           /fail|unauthorized|forbidden|error/i.test(messageCandidate)
         ) {
-          applyFallbackStyle(error);
+          console.error("[GeoScopeMap] Style load error:", error);
+          setWebglError("Error al cargar el estilo del mapa");
         }
       };
 
