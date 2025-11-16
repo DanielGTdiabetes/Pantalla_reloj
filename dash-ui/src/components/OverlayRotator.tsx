@@ -485,12 +485,21 @@ export const OverlayRotator: React.FC = () => {
           })(),
           (async () => {
             try {
-              const fromDate = new Date().toISOString();
-              const toDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-              const events = await apiGet<Array<Record<string, unknown>>>(`/api/calendar/events?from_date=${fromDate}&to_date=${toDate}`);
-              return { events };
+              // Obtener datos completos del calendario (eventos, harvest, saints)
+              const calendarData = await apiGet<Record<string, unknown>>("/api/calendar");
+              // Mantener retrocompatibilidad: si viene 'upcoming' usarlo, sino 'events'
+              const events = safeArray(calendarData.upcoming || calendarData.events || []);
+              const harvest = safeArray(calendarData.harvest || []);
+              const saints = safeArray(calendarData.saints || []);
+              const namedays = safeArray(calendarData.namedays || []);
+              return { 
+                events,
+                harvest,
+                saints,
+                namedays
+              };
             } catch {
-              return { events: [] };
+              return { events: [], harvest: [], saints: [], namedays: [] };
             }
           })(),
           (async () => {
@@ -845,15 +854,22 @@ export const OverlayRotator: React.FC = () => {
         const panelsConfig = config as unknown as { panels?: { calendar?: { enabled?: boolean } } };
         shouldInclude = panelsConfig.panels?.calendar?.enabled !== false && calendarEvents.length >= 0;
       } else if (panelId === "harvest") {
-        const harvestConfig = config as unknown as { harvest?: { enabled?: boolean } };
-        shouldInclude = harvestConfig.harvest?.enabled !== false && harvestItems.length >= 0;
+        // Verificar configuración V2 o V1
+        const v2Config = config as unknown as { panels?: { harvest?: { enabled?: boolean } } };
+        const harvestEnabledV2 = v2Config.panels?.harvest?.enabled !== false;
+        const harvestConfigV1 = config as unknown as { harvest?: { enabled?: boolean } };
+        const harvestEnabledV1 = harvestConfigV1.harvest?.enabled !== false;
+        // Mostrar si está habilitado (V2 o V1) y hay items (incluso si está vacío, puede aparecer)
+        shouldInclude = (harvestEnabledV2 || harvestEnabledV1) && harvestItems.length >= 0;
       } else if (panelId === "news") {
         const panelsConfig = config as unknown as { panels?: { news?: { enabled?: boolean } } };
         shouldInclude = panelsConfig.panels?.news?.enabled !== false && newsItems.length >= 0;
       } else if (panelId === "historicalEvents") {
         const panelsConfig = config as unknown as { panels?: { historicalEvents?: { enabled?: boolean } } };
         const historicalEventsItems = Array.isArray(historicalEvents.items) ? historicalEvents.items : [];
-        shouldInclude = panelsConfig.panels?.historicalEvents?.enabled !== false && historicalEventsItems.length > 0;
+        // Mostrar si está habilitado Y hay items disponibles
+        const enabled = panelsConfig.panels?.historicalEvents?.enabled !== false;
+        shouldInclude = enabled && historicalEventsItems.length > 0;
       } else if (panelId === "ephemerides") {
         const panelsConfig = config as unknown as { panels?: { ephemerides?: { enabled?: boolean } } };
         const ephemeridesEnabled = panelsConfig.panels?.ephemerides?.enabled !== false;
@@ -952,7 +968,19 @@ export const OverlayRotator: React.FC = () => {
       if (IS_DEV) {
         console.log(`[OverlayRotator] Timer no iniciado: enabled=${rotationConfig.enabled}, panels=${availablePanels.length}`);
       }
+      // Resetear índice cuando se desactiva la rotación
+      if (!rotationConfig.enabled || availablePanels.length <= 1) {
+        setCurrentPanelIndex(0);
+        currentPanelIndexRef.current = 0;
+      }
       return;
+    }
+
+    // Asegurar que el índice actual sea válido
+    const validIndex = currentPanelIndexRef.current % availablePanels.length;
+    if (currentPanelIndexRef.current !== validIndex) {
+      setCurrentPanelIndex(validIndex);
+      currentPanelIndexRef.current = validIndex;
     }
 
     // Usar duración del panel actual en lugar de una duración global
@@ -987,6 +1015,10 @@ export const OverlayRotator: React.FC = () => {
 
     // Programar el siguiente cambio usando duración del panel actual
     const scheduleNext = () => {
+      // Verificar que la rotación sigue habilitada antes de programar
+      if (!rotationConfig.enabled || availablePanelsRef.current.length <= 1) {
+        return;
+      }
       const duration = getCurrentPanelDuration();
       rotationTimerRef.current = window.setTimeout(() => {
         advanceToNextPanel();

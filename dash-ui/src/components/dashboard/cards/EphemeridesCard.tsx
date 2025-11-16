@@ -1,4 +1,4 @@
-import { BookOpenIcon } from "../../icons";
+import { BookOpenIcon, SunriseIcon, SunsetIcon } from "../../icons";
 import { MoonIcon } from "../../MoonIcon";
 
 type EphemeridesCardProps = {
@@ -29,11 +29,17 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, events, illuminati
       <div className="ephemerides-card__meta">
         <div>
           <span className="ephemerides-card__label">Amanecer</span>
-          <span>{sunrise ?? "--:--"}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexDirection: "column" }}>
+            <span>{sunrise ?? "--:--"}</span>
+            <SunriseIcon style={{ width: "32px", height: "32px", opacity: 0.9 }} aria-hidden="true" />
+          </div>
         </div>
         <div>
           <span className="ephemerides-card__label">Atardecer</span>
-          <span>{sunset ?? "--:--"}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexDirection: "column" }}>
+            <span>{sunset ?? "--:--"}</span>
+            <SunsetIcon style={{ width: "32px", height: "32px", opacity: 0.9 }} aria-hidden="true" />
+          </div>
         </div>
         <div>
           <span className="ephemerides-card__label">Fase lunar</span>

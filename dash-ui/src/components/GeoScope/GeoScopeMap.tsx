@@ -2360,8 +2360,7 @@ export default function GeoScopeMap({
       return;
     }
 
-    // Desactivado temporalmente: no cambiar el estilo base del mapa tras la creación
-    return;
+    // Reactivado: cambiar el estilo del mapa cuando cambia la configuración
 
     let cancelled = false;
     const map = mapRef.current;
@@ -2577,16 +2576,21 @@ export default function GeoScopeMap({
             }
           }
           
-          // Reinyectar barcos
+          // Reinyectar barcos (esto re-registra los iconos)
           const shipsLayer = shipsLayerRef.current;
           if (shipsLayer) {
             await shipsLayer.ensureShipsLayer();
           }
           
-          // Reinyectar aviones
+          // Reinyectar aviones (esto re-registra los iconos)
           const aircraftLayer = aircraftLayerRef.current;
           if (aircraftLayer) {
             await aircraftLayer.ensureFlightsLayer();
+          }
+          
+          // Disparar evento personalizado para notificar que el estilo se cargó
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("map:style:loaded"));
           }
           
           mapStateMachineRef.current?.notifyStyleData("config-style-change");

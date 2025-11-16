@@ -85,3 +85,37 @@ export const StarIcon = (props: IconProps) => (
     <path d="m12 4 2.4 4.9 5.4.8-3.9 3.8.9 5.5L12 16.8l-4.8 2.2.9-5.5L4 9.7l5.4-.8Z" />
   </svg>
 );
+
+export const SunriseIcon = (props: IconProps) => (
+  <svg viewBox="0 0 24 24" {...createStrokeProps(props)}>
+    {/* Línea del horizonte (abajo) */}
+    <path d="M2 20h20" strokeWidth="2" />
+    {/* Sol saliendo (mitad visible sobre el horizonte) */}
+    <circle cx="12" cy="16" r="4" />
+    {/* Rayos del sol hacia arriba */}
+    <path d="M12 8v2" />
+    <path d="M8.93 9.07l1.41 1.41" />
+    <path d="M15.07 9.07l-1.41 1.41" />
+    <path d="M6 12h2" />
+    <path d="M16 12h2" />
+    <path d="M8.93 14.93l1.41-1.41" />
+    <path d="M15.07 14.93l-1.41-1.41" />
+  </svg>
+);
+
+export const SunsetIcon = (props: IconProps) => (
+  <svg viewBox="0 0 24 24" {...createStrokeProps(props)}>
+    {/* Línea del horizonte (arriba) */}
+    <path d="M2 4h20" strokeWidth="2" />
+    {/* Sol poniéndose (mitad visible sobre el horizonte) */}
+    <circle cx="12" cy="8" r="4" />
+    {/* Rayos del sol hacia abajo */}
+    <path d="M12 16v2" />
+    <path d="M8.93 14.93l1.41 1.41" />
+    <path d="M15.07 14.93l-1.41 1.41" />
+    <path d="M6 12h2" />
+    <path d="M16 12h2" />
+    <path d="M8.93 9.07l1.41-1.41" />
+    <path d="M15.07 9.07l-1.41-1.41" />
+  </svg>
+);
