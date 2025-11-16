@@ -1,5 +1,8 @@
 import react from "@vitejs/plugin-react";
 
+// Declaración mínima para evitar dependencia de @types/node
+declare const process: { env: { npm_package_version?: string } };
+
 const appVersion = process.env.npm_package_version ?? "dev";
 
 export default {
