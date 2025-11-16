@@ -49,5 +49,4 @@ export function containsApiKey(url: string | null | undefined): boolean {
   if (!url || typeof url !== "string") return false;
   return /[?&]key=/.test(url);
 }
-*** End Patch```️} -->
 
