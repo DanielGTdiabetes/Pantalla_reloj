@@ -1657,9 +1657,17 @@ export default function GeoScopeMap({
         maptiler_key_present: Boolean(maptilerKey),
       });
 
-      // Validar que el style no sea null antes de crear el mapa
-      if (!runtime.style || !runtime.style.style) {
-        console.error("[GeoScopeMap] Invalid style: runtime.style.style is null or undefined");
+      // Forzar el estilo desde config.ui_map.maptiler.styleUrl con logs claros
+      const cfgV2ForStyleUrl = (config as unknown as { ui_map?: { maptiler?: { styleUrl?: string | null } } }) || null;
+      const styleUrlFromConfig = cfgV2ForStyleUrl?.ui_map?.maptiler?.styleUrl ?? null;
+      console.log("[MapInit] styleUrl from config:", styleUrlFromConfig);
+      if (!styleUrlFromConfig) {
+        console.error("[MapInit] Missing ui_map.maptiler.styleUrl in config");
+      }
+      // Validar que tengamos algún estilo para inicializar el mapa
+      const initialStyle = styleUrlFromConfig ?? (runtime.style ? runtime.style.style : null);
+      if (!initialStyle) {
+        console.error("[GeoScopeMap] Invalid style: neither config.ui_map.maptiler.styleUrl nor runtime.style.style are available");
         setWebglError("Error: el estilo del mapa no está disponible. Por favor, verifica la configuración.");
         return;
       }
@@ -1668,7 +1676,7 @@ export default function GeoScopeMap({
       try {
         map = new maplibregl.Map({
           container: host,
-          style: runtime.style.style,
+          style: initialStyle,
           center: viewState ? [viewState.lng, viewState.lat] : [0, 0],
           zoom: viewState?.zoom ?? 2.6,
           minZoom: viewMode === "fixed" ? (mapSettings?.fixed?.zoom ?? 9.0) - 2 : 0,
@@ -1976,6 +1984,8 @@ export default function GeoScopeMap({
       let lastChecksum: string | null = null;
       
       async function pollHealthAndReact(map: maplibregl.Map) {
+        // Desactivado temporalmente: no cambiar el style del mapa tras la inicialización
+        return;
         try {
           const h = await fetch("/api/health/full", { cache: "no-store" }).then((r) => r.json());
           const current = h?.config_checksum || null;
@@ -1995,7 +2005,8 @@ export default function GeoScopeMap({
             } : null);
             
             if (styleUrl) {
-              await applyMapStyle(map, styleUrl, current);
+              // Desactivado temporalmente: no aplicar cambios de estilo en caliente
+              // await applyMapStyle(map, styleUrl, current);
             }
           }
         } catch (e) {
@@ -2015,23 +2026,20 @@ export default function GeoScopeMap({
         }
       }
       
-      // Iniciar polling después de que el mapa esté listo
-      map.once("load", () => {
-        if (!destroyed && mapRef.current) {
-          // Obtener checksum inicial
-          fetch("/api/health/full", { cache: "no-store" })
-            .then((r) => r.json())
-            .then((h) => {
-              lastChecksum = h?.config_checksum || null;
-              // Iniciar polling
-              setTimeout(() => pollHealthAndReact(map), 5000);
-            })
-            .catch(() => {
-              // Si falla, iniciar polling de todos modos
-              setTimeout(() => pollHealthAndReact(map), 5000);
-            });
-        }
-      });
+      // Desactivado: no iniciar polling que pueda provocar setStyle en caliente
+      // map.once("load", () => {
+      //   if (!destroyed && mapRef.current) {
+      //     fetch("/api/health/full", { cache: "no-store" })
+      //       .then((r) => r.json())
+      //       .then((h) => {
+      //         lastChecksum = h?.config_checksum || null;
+      //         setTimeout(() => pollHealthAndReact(map), 5000);
+      //       })
+      //       .catch(() => {
+      //         setTimeout(() => pollHealthAndReact(map), 5000);
+      //       });
+      //   }
+      // });
 
       // Listener para reinyectar capas después de cambiar estilo
       const handleStyleLoaded = () => {
@@ -2305,6 +2313,9 @@ export default function GeoScopeMap({
     if (mapStyleVersion === 0) {
       return;
     }
+
+    // Desactivado temporalmente: no cambiar el estilo base del mapa tras la creación
+    return;
 
     let cancelled = false;
     const map = mapRef.current;
