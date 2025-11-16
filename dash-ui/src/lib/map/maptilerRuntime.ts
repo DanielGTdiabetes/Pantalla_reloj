@@ -5,7 +5,14 @@ export type UiMapLike = {
       api_key?: string | null;
       apiKey?: string | null;
       key?: string | null;
+      style?: string | null;
+      style_url?: string | null;
       styleUrl?: string | null;
+      urls?: {
+        styleUrlDark?: string | null;
+        styleUrlLight?: string | null;
+        styleUrlBright?: string | null;
+      } | null;
     } | null;
   } | null;
   secrets?: {
@@ -137,21 +144,34 @@ export function buildFinalMaptilerStyleUrl(
 
   // Prioridad 2: baseStyleUrl desde config (runtimeBaseStyleUrl o baseStyleUrl)
   const candidateUrl = runtimeBaseStyleUrl || baseStyleUrl;
-  if (!candidateUrl || typeof candidateUrl !== "string") {
+  if (candidateUrl && typeof candidateUrl === "string") {
+    const trimmed = candidateUrl.trim();
+    if (trimmed) {
+      // Si ya tiene key, devolver tal cual
+      if (containsApiKey(trimmed)) {
+        return trimmed;
+      }
+
+      // Extraer apiKey y construir URL firmada
+      const apiKey = extractMaptilerApiKey(config, health);
+      const signed = buildMaptilerStyleUrl(trimmed, apiKey);
+      if (signed) {
+        return signed;
+      }
+    }
+  }
+
+  // Prioridad 3: construir desde nombre de estilo + apiKey cuando no hay styleUrl
+  const styleSlug = resolveMaptilerStyleSlug(
+    (config?.ui_map?.maptiler as { style?: string | null })?.style ?? null
+  );
+  if (!styleSlug) {
     return null;
   }
 
-  const trimmed = candidateUrl.trim();
-  if (!trimmed) return null;
-
-  // Si ya tiene key, devolver tal cual
-  if (containsApiKey(trimmed)) {
-    return trimmed;
-  }
-
-  // Extraer apiKey y construir URL firmada
   const apiKey = extractMaptilerApiKey(config, health);
-  return buildMaptilerStyleUrl(trimmed, apiKey);
+  const canonicalUrl = `https://api.maptiler.com/maps/${styleSlug}/style.json`;
+  return buildMaptilerStyleUrl(canonicalUrl, apiKey);
 }
 
 /**
@@ -160,5 +180,47 @@ export function buildFinalMaptilerStyleUrl(
 export function containsApiKey(url: string | null | undefined): boolean {
   if (!url || typeof url !== "string") return false;
   return /[?&]key=/.test(url);
+}
+
+const STYLE_SLUG_MAP: Record<string, string> = {
+  "vector-dark": "dataviz-dark",
+  "vector-light": "streets-v2",
+  "vector-bright": "bright-v2",
+  "dataviz-dark": "dataviz-dark",
+  "streets": "streets",
+  "streets-v2": "streets-v2",
+  "streets-v4": "streets-v4",
+  "bright": "bright",
+  "bright-v2": "bright-v2",
+  "light": "streets-v2",
+  "dark": "dataviz-dark",
+  "outdoor": "outdoor",
+  "topo": "topo",
+  "winter": "winter",
+  "osm-bright": "osm-bright",
+};
+
+/**
+ * Normaliza el nombre de estilo configurado para MapTiler y devuelve el slug final.
+ */
+export function resolveMaptilerStyleSlug(styleName?: string | null): string | null {
+  if (typeof styleName !== "string") {
+    return null;
+  }
+  const normalized = styleName.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (STYLE_SLUG_MAP[normalized]) {
+    return STYLE_SLUG_MAP[normalized];
+  }
+
+  // Si parece un slug válido (solo caracteres permitidos), usarlo tal cual
+  if (/^[a-z0-9-]+$/i.test(normalized)) {
+    return normalized;
+  }
+
+  return null;
 }
 
