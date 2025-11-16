@@ -1636,11 +1636,18 @@ export default function GeoScopeMap({
         configV2?.ui_map?.provider ??
         (runtime.mapSettings?.provider ? String(runtime.mapSettings.provider) : null);
 
+      const keyPresentForLog =
+        Boolean(maptilerKey) ||
+        Boolean(
+          (runtimeBaseStyleUrl && /\bkey=/.test(runtimeBaseStyleUrl)) ||
+            (effectiveSatelliteStyleUrl && /\bkey=/.test(effectiveSatelliteStyleUrl))
+        );
+
       console.info("[HybridFix] runtime options before maplibregl.Map", {
         provider: providerForLog,
         base_style_url: maskMaptilerUrl(runtimeBaseStyleUrl),
         satellite_style_url: maskMaptilerUrl(effectiveSatelliteStyleUrl),
-        maptiler_key_present: Boolean(maptilerKey),
+        maptiler_key_present: keyPresentForLog,
         satellite_enabled: effectiveSatelliteEnabled,
         satellite_opacity: effectiveSatelliteOpacity,
         labels_overlay_enabled: normalizedLabelsOverlay.enabled,
@@ -1654,7 +1661,7 @@ export default function GeoScopeMap({
         satellite_overlay_enabled: effectiveSatelliteEnabled && normalizedLabelsOverlay.enabled,
         labels_overlay_style_url: maskMaptilerUrl(normalizedLabelsOverlay.style_url),
         satellite_style_url: maskMaptilerUrl(effectiveSatelliteStyleUrl),
-        maptiler_key_present: Boolean(maptilerKey),
+        maptiler_key_present: keyPresentForLog,
       });
 
       // Forzar el estilo desde config.ui_map.maptiler.styleUrl con logs claros
@@ -1687,6 +1694,7 @@ export default function GeoScopeMap({
           renderWorldCopies: runtime.renderWorldCopies,
           trackResize: false
         });
+        console.log("[MapInit] final style used for maplibre", { styleUrlFinal: initialStyle });
       } catch (error) {
         console.error("[GeoScopeMap] Failed to create map:", error);
         setWebglError(`Error al inicializar el mapa: ${error instanceof Error ? error.message : String(error)}`);
