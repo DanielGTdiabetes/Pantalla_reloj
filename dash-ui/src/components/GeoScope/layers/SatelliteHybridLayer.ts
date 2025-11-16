@@ -423,7 +423,11 @@ export default class SatelliteHybridLayer implements Layer {
     }
 
     const style = map.getStyle() as StyleSpecification | undefined;
-    if (!style?.layers || !Array.isArray(style.layers)) {
+    if (!style) {
+      console.warn("[GeoScope] getStyle() returned null, aborting SatelliteHybridLayer ensure*");
+      return;
+    }
+    if (!style.layers || !Array.isArray(style.layers)) {
       return;
     }
 

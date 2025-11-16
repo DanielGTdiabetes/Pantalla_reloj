@@ -498,7 +498,8 @@ export const OverlayRotator: React.FC = () => {
                 saints,
                 namedays
               };
-            } catch {
+            } catch (error) {
+              console.warn("[Calendar] API error while fetching /api/calendar:", error);
               return { events: [], harvest: [], saints: [], namedays: [] };
             }
           })(),

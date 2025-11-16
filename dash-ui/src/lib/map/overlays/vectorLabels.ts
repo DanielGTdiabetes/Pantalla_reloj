@@ -206,8 +206,12 @@ const addSymbolLayers = (
 };
 
 export const removeLabelsOverlay = (map: Map): void => {
-  const style = map.getStyle();
-  const layers = style?.layers ?? [];
+  const style = map.getStyle() as StyleSpecification | undefined;
+  if (!style) {
+    console.warn("[GeoScope] getStyle() returned null, aborting removeLabelsOverlay");
+    return;
+  }
+  const layers = style.layers ?? [];
 
   for (const layer of layers) {
     if (!layer.id || !layer.id.startsWith(LABELS_LAYER_PREFIX)) {
@@ -288,7 +292,12 @@ export const ensureLabelsOverlay = async (
 
 export const updateLabelsOpacity = (map: Map, opacity: number | null | undefined): void => {
   const target = clampLabelsOpacity(typeof opacity === "number" ? opacity : 1);
-  const layers = map.getStyle()?.layers ?? [];
+  const style = map.getStyle() as StyleSpecification | undefined;
+  if (!style) {
+    console.warn("[GeoScope] getStyle() returned null, aborting updateLabelsOpacity");
+    return;
+  }
+  const layers = style.layers ?? [];
 
   for (const layer of layers) {
     if (!layer.id || !layer.id.startsWith(LABELS_LAYER_PREFIX)) {
