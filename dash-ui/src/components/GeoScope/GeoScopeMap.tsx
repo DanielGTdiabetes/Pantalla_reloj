@@ -1561,7 +1561,25 @@ export default function GeoScopeMap({
       const styleFromRuntime = (runtime.mapConfigV2 as any)?.ui_map?.maptiler?.styleUrl ?? null;
       const styleFromConfig = baseStyleUrlFinal;
       
-      const initialStyle = styleFromHealth || styleFromRuntime || styleFromConfig || null;
+      let initialStyle = styleFromHealth || styleFromRuntime || styleFromConfig || null;
+
+      // Fallback adicional: si sigue sin estilo, construir desde config v2 (api_key + style)
+      if (!initialStyle) {
+        try {
+          const cfgV2 = config as unknown as AppConfigV2 | null;
+          const apiKey = cfgV2?.ui_map?.maptiler?.api_key || null;
+          const styleName = cfgV2?.ui_map?.maptiler?.style || "streets-v4";
+          if (apiKey) {
+            const normalized = styleName === "hybrid" || styleName === "satellite" || styleName === "vector-bright"
+              ? "streets-v4"
+              : styleName;
+            initialStyle = `https://api.maptiler.com/maps/${normalized}/style.json?key=${encodeURIComponent(apiKey)}`;
+            console.warn("[MapInit] Using constructed styleUrl fallback from config v2:", maskMaptilerUrl(initialStyle));
+          }
+        } catch (e) {
+          console.warn("[MapInit] Failed to build fallback styleUrl from config:", e);
+        }
+      }
       
       console.log("[MapInit] styleUrl sources:", {
         health: styleFromHealth ? maskMaptilerUrl(styleFromHealth) : null,
@@ -1574,7 +1592,12 @@ export default function GeoScopeMap({
       const maptilerStatus = (health as any)?.maptiler?.status;
       if (!initialStyle) {
         if (maptilerStatus === "ok") {
-          console.error("[MapInit] health says ok but no styleUrl available");
+          console.error("[MapInit] health says ok but no styleUrl available", {
+            styleFromHealth: styleFromHealth ? maskMaptilerUrl(styleFromHealth) : null,
+            styleFromRuntime: styleFromRuntime ? maskMaptilerUrl(styleFromRuntime) : null,
+            styleFromConfig: styleFromConfig ? maskMaptilerUrl(styleFromConfig) : null,
+            baseStyleUrlFinal: baseStyleUrlFinal ? maskMaptilerUrl(baseStyleUrlFinal) : null,
+          });
         }
         console.error(
           "[MapInit] no valid styleUrlFinal, aborting map init"
