@@ -100,6 +100,24 @@ const WATER_PATTERN = /(background|ocean|sea|water)/i;
 const LAND_PATTERN = /(land|landcover|park|continent)/i;
 const LABEL_PATTERN = /(label|place|road-name|poi)/i;
 
+// Helper defensivo para obtener el estilo actual del mapa de forma segura
+const safeGetStyle = (map: maplibregl.Map | null | undefined): StyleSpecification | null => {
+  if (!map) return null;
+  try {
+    const style = map.getStyle() as StyleSpecification | null | undefined;
+    if (!style || typeof style !== "object") {
+      return null;
+    }
+    // Verificar que version sea un número (estilo cargado y válido)
+    if (typeof (style as unknown as { version?: unknown }).version !== "number") {
+      return null;
+    }
+    return style;
+  } catch {
+    return null;
+  }
+};
+
 type LightningFeatureProperties = {
   timestamp?: number;
   intensity?: number;
@@ -212,7 +230,7 @@ const flightsResponseToGeoJSON = (payload: FlightsApiResponse): FeatureCollectio
 };
 
 const applyVectorTheme = (map: maplibregl.Map, theme: MapThemeConfig) => {
-  const style = map.getStyle();
+  const style = safeGetStyle(map);
   const layers = style?.layers ?? [];
   if (!layers.length) {
     return;
@@ -1498,8 +1516,13 @@ export default function GeoScopeMap({
       fallbackAppliedRef.current = false;
 
       if (!destroyed) {
+        // No aplicar tintados cuando el estilo base es streets-v4 (evita apariencia "dark" no deseada)
+        const cfgV2ForTint = config as unknown as AppConfigV2 | null;
+        const baseStyleName = cfgV2ForTint?.ui_map?.maptiler?.style || "streets-v4";
         const tintCandidate = runtime.theme?.tint ?? null;
-        if (typeof tintCandidate === "string" && tintCandidate.trim().length > 0) {
+        if (baseStyleName === "streets-v4") {
+          setTintColor(null);
+        } else if (typeof tintCandidate === "string" && tintCandidate.trim().length > 0) {
           setTintColor(tintCandidate);
         } else {
           setTintColor(null);
@@ -1761,7 +1784,7 @@ export default function GeoScopeMap({
           const initializeAircraftLayer = async () => {
             let spriteAvailable = false;
             try {
-              const style = map.getStyle() as StyleSpecification | undefined;
+              const style = safeGetStyle(map);
               spriteAvailable = style ? await hasSprite(style) : false;
             } catch {
               spriteAvailable = false;
@@ -1798,7 +1821,7 @@ export default function GeoScopeMap({
             : mergedConfig.layers.ships;
           let spriteAvailableShips = false;
           try {
-            const style = map.getStyle() as StyleSpecification | undefined;
+            const style = safeGetStyle(map);
             spriteAvailableShips = style ? await hasSprite(style) : false;
           } catch {
             spriteAvailableShips = false;
@@ -2072,17 +2095,13 @@ export default function GeoScopeMap({
           return;
         }
         
-        const style = targetMap.getStyle();
+        const style = safeGetStyle(targetMap);
         if (!style) {
           // El estilo es null, aún no está listo
           return;
         }
         
-        // Verificar que version exista y sea un número válido
-        if (typeof style.version === "undefined" || style.version === null) {
-          // El estilo aún no tiene versión, no está completamente cargado
-          return;
-        }
+        // style es válido aquí (ya verificado en safeGetStyle)
       } catch (error) {
         // Si hay un error accediendo al estilo, esperar
         console.debug("[GlobalSatelliteLayer] Style not ready yet, waiting:", error);
@@ -2123,8 +2142,8 @@ export default function GeoScopeMap({
     // Verificar si el estilo ya está cargado (con protección contra null)
     try {
       if (map.isStyleLoaded()) {
-        const style = map.getStyle();
-        if (style && typeof style.version !== "undefined" && style.version !== null) {
+        const style = safeGetStyle(map);
+        if (style) {
           // El estilo ya está listo, adjuntar inmediatamente
           attachGlobalSatelliteLayer(map);
           return;
@@ -2314,8 +2333,12 @@ export default function GeoScopeMap({
         // Fallback desactivado: solo usar streets-v4
         fallbackAppliedRef.current = false;
 
+        const cfgV2ForTint = config as unknown as AppConfigV2 | null;
+        const baseStyleName = cfgV2ForTint?.ui_map?.maptiler?.style || "streets-v4";
         const tintCandidate = mapSettings.theme?.tint ?? null;
-        if (typeof tintCandidate === "string" && tintCandidate.trim().length > 0) {
+        if (baseStyleName === "streets-v4") {
+          setTintColor(null);
+        } else if (typeof tintCandidate === "string" && tintCandidate.trim().length > 0) {
           setTintColor(tintCandidate);
         } else {
           setTintColor(null);
@@ -2344,7 +2367,7 @@ export default function GeoScopeMap({
 
           let spriteAvailable = false;
           try {
-            const style = map.getStyle() as StyleSpecification | undefined;
+            const style = safeGetStyle(map);
             spriteAvailable = style ? await hasSprite(style) : false;
           } catch {
             spriteAvailable = false;
