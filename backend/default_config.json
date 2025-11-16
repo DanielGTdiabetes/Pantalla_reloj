@@ -8,6 +8,17 @@
     "maptiler_api_key": null,
     "styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A"
   },
+  "ui_map": {
+    "engine": "maplibre",
+    "provider": "maptiler_vector",
+    "maptiler": {
+      "style": "streets-v4",
+      "api_key": "fBZDqPrUD4EwoZLV4L6A",
+      "styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A"
+    },
+    "interactive": false,
+    "controls": false
+  },
   "ui": {
     "layout": "grid-2-1",
     "map": {
@@ -217,7 +228,7 @@
     },
     "global": {
       "satellite": {
-        "enabled": true,
+        "enabled": false,
         "provider": "gibs",
         "refresh_minutes": 10,
         "history_minutes": 90,
@@ -238,7 +249,7 @@
         }
       },
       "radar": {
-        "enabled": true,
+        "enabled": false,
         "provider": "rainviewer",
         "refresh_minutes": 5,
         "history_minutes": 90,
@@ -249,7 +260,7 @@
   },
   "ui_global": {
     "satellite": {
-      "enabled": true,
+      "enabled": false,
       "provider": "gibs",
       "opacity": 1.0,
       "layer": "MODIS_Terra_CorrectedReflectance_TrueColor",

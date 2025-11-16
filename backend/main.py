@@ -1045,6 +1045,29 @@ def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
             ics.pop("stored_path", None)
             ics.pop("file_path", None)
     
+    # Extraer API key de styleUrl antes de sanitizar
+    # Esto asegura que ui_map.maptiler.api_key se rellene automáticamente
+    if "ui_map" in payload and isinstance(payload["ui_map"], dict):
+        ui_map = payload["ui_map"]
+        if "maptiler" in ui_map and isinstance(ui_map["maptiler"], dict):
+            maptiler = ui_map["maptiler"]
+            style_url = maptiler.get("styleUrl")
+            
+            # Intentar extraer key del styleUrl
+            extracted_key = None
+            if isinstance(style_url, str) and style_url:
+                extracted_key = _extract_maptiler_key_from_url(style_url)
+            
+            # Si no hay key en styleUrl, intentar desde secrets
+            if not extracted_key:
+                api_key_from_secrets = secret_store.get_secret("maptiler_api_key")
+                if api_key_from_secrets and api_key_from_secrets.strip():
+                    extracted_key = api_key_from_secrets.strip()
+            
+            # Establecer api_key si se encontró
+            if extracted_key:
+                maptiler["api_key"] = extracted_key
+    
     # Ocultar cualquier api_key o secret que pueda estar en otros lugares
     # (por seguridad adicional), pero NO tocar la estructura de secrets que ya construimos
     def _sanitize_secrets_recursive(obj: Any, path: str = "") -> Any:
@@ -1058,10 +1081,14 @@ def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
             for key, value in obj.items():
                 new_path = f"{path}.{key}" if path else key
                 # Ocultar campos sensibles fuera de secrets
-                # Especialmente api_key en ui_map.maptiler (ya está en las URLs firmadas)
+                # EXCEPCIÓN: No ocultar api_key en ui_map.maptiler si ya la extrajimos del styleUrl
                 if key in ["api_key", "apiKey", "client_id", "client_secret", "clientId", "clientSecret", 
                           "username", "password", "token", "secret", "key"] and not new_path.startswith("secrets"):
-                    result[key] = None
+                    # Mantener api_key en ui_map.maptiler si existe (ya la extrajimos arriba)
+                    if new_path == "ui_map.maptiler.api_key" and obj.get("api_key"):
+                        result[key] = obj.get("api_key")
+                    else:
+                        result[key] = None
                 else:
                     result[key] = _sanitize_secrets_recursive(value, new_path)
             return result

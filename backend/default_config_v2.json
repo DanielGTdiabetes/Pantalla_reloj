@@ -17,13 +17,8 @@
     },
     "maptiler": {
       "style": "streets-v4",
-      "api_key": null,
-      "styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json",
-      "urls": {
-        "styleUrlDark": null,
-        "styleUrlLight": null,
-        "styleUrlBright": null
-      }
+      "api_key": "fBZDqPrUD4EwoZLV4L6A",
+      "styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A"
     },
     "satellite": {
       "enabled": false,
@@ -53,7 +48,7 @@
   },
   "ui_global": {
     "satellite": {
-      "enabled": true,
+      "enabled": false,
       "provider": "gibs",
       "opacity": 1.0,
       "layer": "MODIS_Terra_CorrectedReflectance_TrueColor",
@@ -72,10 +67,10 @@
         "time_value": "default"
       }
     },
-    "radar": { "enabled": true, "provider": "rainviewer", "opacity": 0.7, "layer_type": "precipitation_new" },
+    "radar": { "enabled": false, "provider": "rainviewer", "opacity": 0.7, "layer_type": "precipitation_new" },
     "weather_layers": {
       "radar": { "enabled": true, "provider": "rainviewer", "opacity": 0.7 },
-      "satellite": { "enabled": true, "provider": "gibs", "opacity": 0.8 },
+      "satellite": { "enabled": false, "provider": "gibs", "opacity": 0.8 },
       "alerts": { "enabled": true, "provider": "cap_aemet", "opacity": 0.6 }
     },
     "overlay": {
@@ -100,7 +95,7 @@
   "layers": {
     "global": {
       "satellite": {
-        "enabled": true,
+        "enabled": false,
         "provider": "gibs",
         "refresh_minutes": 10,
         "history_minutes": 90,
@@ -120,7 +115,7 @@
         }
       },
       "radar": {
-        "enabled": true,
+        "enabled": false,
         "provider": "rainviewer",
         "refresh_minutes": 5,
         "history_minutes": 90,
@@ -171,7 +166,7 @@
       }
     },
     "ships": {
-      "enabled": false,
+      "enabled": true,
       "provider": "aisstream",
       "refresh_seconds": 10,
       "max_age_seconds": 180,

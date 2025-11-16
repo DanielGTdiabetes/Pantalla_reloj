@@ -19,7 +19,6 @@ import LightningLayer from "./layers/LightningLayer";
 import WeatherLayer from "./layers/WeatherLayer";
 import { LayerRegistry } from "./layers/LayerRegistry";
 import SatelliteHybridLayer, { type SatelliteLabelsStyle } from "./layers/SatelliteHybridLayer";
-import MapHybrid from "./layers/MapHybrid";
 import ShipsLayer from "./layers/ShipsLayer";
 import MapSpinner from "../MapSpinner";
 import { hasSprite } from "./utils/styleSprite";
@@ -830,31 +829,7 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
       }
     }
 
-    console.info("[HybridFix] ui_map raw config", {
-      provider: ui_map?.provider ?? null,
-      base_style_url: maskMaptilerUrl(rawBaseStyleUrl),
-      satellite_enabled: Boolean(ui_map?.satellite?.enabled),
-      satellite_style_url: maskMaptilerUrl(rawSatelliteStyleUrl),
-      satellite_opacity: typeof ui_map?.satellite?.opacity === "number" ? ui_map.satellite.opacity : ui_map?.satellite?.opacity ?? null,
-      labels_overlay_enabled: Boolean(rawLabelsOverlay?.enabled),
-      labels_overlay_style_url: maskMaptilerUrl(rawLabelsStyleUrl),
-      labels_overlay_filter: stringOrNull(rawLabelsOverlay?.layer_filter ?? null),
-      maptiler_key_present: rawKeyPresent,
-    });
-
-    const hybridSnapshot = extractHybridMappingConfig(mapConfigV2);
-
-    console.info("[HybridFix] ui_map snapshot", {
-      provider: ui_map?.provider ?? null,
-      base_style_url: maskMaptilerUrl(hybridSnapshot.baseStyleUrl),
-      satellite_enabled: hybridSnapshot.satellite.enabled,
-      satellite_style_url: maskMaptilerUrl(hybridSnapshot.satellite.styleUrl),
-      satellite_opacity: hybridSnapshot.satellite.opacity,
-      labels_overlay_enabled: hybridSnapshot.satellite.labels.enabled,
-      labels_overlay_style_url: maskMaptilerUrl(hybridSnapshot.satellite.labels.styleUrl),
-      labels_overlay_filter: hybridSnapshot.satellite.labels.layerFilter,
-      maptiler_key_present: Boolean(hybridSnapshot.maptilerKey),
-    });
+    // Solo usar estilo base streets-v4, sin híbridos ni satélite
     
     // Si hay viewMode "fixed" y región con postalCode, geocodificar primero
     if (ui_map.viewMode === "fixed" && ui_map.region?.postalCode) {
@@ -1018,82 +993,23 @@ export default function GeoScopeMap({
     return null;
   }, [config]);
 
-  const hybridConfig = useMemo(
-    () => extractHybridMappingConfig(configV2),
-    [configV2],
-  );
+  // Obtener estilo base directamente desde ui_map.maptiler.styleUrl
+  const baseStyleUrl = useMemo(() => {
+    const styleUrl = configV2?.ui_map?.maptiler?.styleUrl;
+    if (!styleUrl) {
+      return null;
+    }
+    // Ya viene firmado del backend, solo asegurar que esté firmado
+    const apiKey = configV2?.ui_map?.maptiler?.api_key ?? extractApiKeyFromUrl(styleUrl);
+    return signMapTilerUrl(styleUrl, apiKey ?? undefined) ?? styleUrl;
+  }, [configV2?.ui_map?.maptiler?.styleUrl, configV2?.ui_map?.maptiler?.api_key]);
 
   const maptilerKey = useMemo(() => {
-    if (hybridConfig.maptilerKey) {
-      return hybridConfig.maptilerKey;
-    }
-    return (
-      extractApiKeyFromUrl(hybridConfig.satellite.styleUrl) ??
-      extractApiKeyFromUrl(hybridConfig.satellite.labels.styleUrl) ??
-      extractApiKeyFromUrl(hybridConfig.baseStyleUrl)
-    );
-  }, [
-    hybridConfig.baseStyleUrl,
-    hybridConfig.maptilerKey,
-    hybridConfig.satellite.labels.styleUrl,
-    hybridConfig.satellite.styleUrl,
-  ]);
+    return configV2?.ui_map?.maptiler?.api_key ?? extractApiKeyFromUrl(baseStyleUrl ?? undefined) ?? null;
+  }, [configV2?.ui_map?.maptiler?.api_key, baseStyleUrl]);
 
-  const baseStyleUrl = useMemo(
-    () => signMapTilerUrl(hybridConfig.baseStyleUrl, maptilerKey) ?? hybridConfig.baseStyleUrl,
-    [hybridConfig.baseStyleUrl, maptilerKey],
-  );
-
-  const effectiveSatelliteStyleUrl = useMemo(
-    () => signMapTilerUrl(hybridConfig.satellite.styleUrl, maptilerKey) ?? hybridConfig.satellite.styleUrl,
-    [hybridConfig.satellite.styleUrl, maptilerKey],
-  );
-
-  const effectiveSatelliteEnabled = useMemo(
-    () =>
-      Boolean(
-        (hybridConfig.satellite.enabled || satelliteEnabled) &&
-          effectiveSatelliteStyleUrl &&
-          maptilerKey,
-      ),
-    [
-      hybridConfig.satellite.enabled,
-      satelliteEnabled,
-      effectiveSatelliteStyleUrl,
-      maptilerKey,
-    ],
-  );
-
-  const effectiveSatelliteOpacity =
-    typeof satelliteOpacity === "number"
-      ? clamp01(satelliteOpacity, hybridConfig.satellite.opacity)
-      : hybridConfig.satellite.opacity;
-
-  const normalizedLabelsOverlay = useMemo(() => {
-    const overlaySource: SatelliteLabelsOverlay = {
-      enabled: hybridConfig.satellite.labels.enabled,
-      style_url: hybridConfig.satellite.labels.styleUrl ?? undefined,
-      layer_filter: hybridConfig.satellite.labels.layerFilter ?? undefined,
-      opacity: hybridConfig.satellite.labels.opacity,
-    };
-    const normalized = normalizeLabelsOverlay(overlaySource, null);
-    const signedStyleUrl =
-      signMapTilerUrl(normalized.style_url, maptilerKey) ?? normalized.style_url;
-    return {
-      ...normalized,
-      style_url: signedStyleUrl,
-    };
-  }, [
-    hybridConfig.satellite.labels.enabled,
-    hybridConfig.satellite.labels.layerFilter,
-    hybridConfig.satellite.labels.opacity,
-    hybridConfig.satellite.labels.styleUrl,
-    maptilerKey,
-  ]);
-
-  const runtimeBaseStyleUrl = effectiveSatelliteEnabled
-    ? effectiveSatelliteStyleUrl
-    : baseStyleUrl;
+  // Satellite y hybrid desactivados: siempre usar solo el estilo base streets-v4
+  const runtimeBaseStyleUrl = baseStyleUrl;
   
   const mapFillRef = useRef<HTMLDivElement | null>(null);
   const [webglError, setWebglError] = useState<string | null>(null);
@@ -1256,7 +1172,7 @@ export default function GeoScopeMap({
   const currentMinZoomRef = useRef(DEFAULT_MIN_ZOOM);
   const themeRef = useRef<MapThemeConfig>(cloneTheme(null));
   const styleTypeRef = useRef<MapStyleDefinition["type"]>("raster");
-  const fallbackStyleRef = useRef<MapStyleDefinition | null>(null);
+  // Fallback desactivado: solo usar streets-v4
   const fallbackAppliedRef = useRef(false);
   const respectReducedMotionRef = useRef(false);
   const reducedMotionMediaRef = useRef<MediaQueryList | null>(null);
@@ -1286,67 +1202,7 @@ export default function GeoScopeMap({
     layer.setApiKey(maptilerKey);
   }, [maptilerKey]);
 
-  useEffect(() => {
-    const layer = satelliteLayerRef.current;
-    if (!layer) {
-      return;
-    }
-    layer.setOpacity(effectiveSatelliteOpacity);
-  }, [effectiveSatelliteOpacity]);
-
-  useEffect(() => {
-    const layer = satelliteLayerRef.current;
-    if (!layer) {
-      return;
-    }
-    layer.setEnabled(effectiveSatelliteEnabled);
-  }, [effectiveSatelliteEnabled]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) {
-      return;
-    }
-
-    const overlay = normalizedLabelsOverlay;
-
-    const applyOverlay = () => {
-      const currentMap = mapRef.current;
-      if (!currentMap) {
-        return;
-      }
-      if (!overlay.enabled || !effectiveSatelliteEnabled) {
-        removeLabelsOverlay(currentMap);
-        return;
-      }
-    };
-
-    applyOverlay();
-
-    const handleStyleLoad = () => {
-      applyOverlay();
-    };
-
-    map.on("style.load", handleStyleLoad);
-
-    return () => {
-      map.off("style.load", handleStyleLoad);
-    };
-  }, [
-    normalizedLabelsOverlay.enabled,
-    normalizedLabelsOverlay.style_url,
-    normalizedLabelsOverlay.layer_filter,
-    mapStyleVersion,
-    effectiveSatelliteEnabled,
-  ]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) {
-      return;
-    }
-    updateLabelsOpacity(map, normalizedLabelsOverlay.opacity);
-  }, [normalizedLabelsOverlay.opacity]);
+  // Satellite y labels overlay desactivados: no hay efectos que ejecutar
 
 
   const updateMapView = (map: maplibregl.Map) => {
@@ -1638,9 +1494,8 @@ export default function GeoScopeMap({
 
       themeRef.current = cloneTheme(runtime.theme);
       styleTypeRef.current = runtime.style.type;
-      fallbackStyleRef.current = runtime.fallbackStyle;
-      fallbackAppliedRef.current =
-        runtime.styleWasFallback || runtime.style.type !== "vector";
+      // Fallback desactivado: solo usar streets-v4
+      fallbackAppliedRef.current = false;
 
       if (!destroyed) {
         const tintCandidate = runtime.theme?.tint ?? null;
@@ -1670,27 +1525,11 @@ export default function GeoScopeMap({
 
       const keyPresentForLog =
         hasMaptilerKey((config as unknown) as any, health as any) ||
-        containsApiKey(baseStyleUrlFinal) ||
-        containsApiKey(effectiveSatelliteStyleUrl);
+        containsApiKey(baseStyleUrlFinal);
 
-      console.info("[HybridFix] runtime options before maplibregl.Map", {
+      console.info("[MapInit] runtime options before maplibregl.Map", {
         provider: providerForLog,
         base_style_url: maskMaptilerUrl(baseStyleUrlFinal),
-        satellite_style_url: maskMaptilerUrl(effectiveSatelliteStyleUrl),
-        maptiler_key_present: keyPresentForLog,
-        satellite_enabled: effectiveSatelliteEnabled,
-        satellite_opacity: effectiveSatelliteOpacity,
-        labels_overlay_enabled: normalizedLabelsOverlay.enabled,
-        labels_overlay_style_url: maskMaptilerUrl(normalizedLabelsOverlay.style_url),
-        labels_overlay_filter: normalizedLabelsOverlay.layer_filter,
-      });
-      console.info("[GeoScopeMap] Map init", {
-        provider: providerForLog,
-        base_style_url: maskMaptilerUrl(baseStyleUrlFinal),
-        hybrid_enabled: effectiveSatelliteEnabled,
-        satellite_overlay_enabled: effectiveSatelliteEnabled && normalizedLabelsOverlay.enabled,
-        labels_overlay_style_url: maskMaptilerUrl(normalizedLabelsOverlay.style_url),
-        satellite_style_url: maskMaptilerUrl(effectiveSatelliteStyleUrl),
         maptiler_key_present: keyPresentForLog,
       });
 
@@ -1700,8 +1539,8 @@ export default function GeoScopeMap({
       if (!styleUrlFromConfig) {
         console.error("[MapInit] Missing ui_map.maptiler.styleUrl in config");
       }
-      // Validar que tengamos algún estilo para inicializar el mapa
-      const initialStyle = styleUrlFromConfig ?? (runtime.style ? runtime.style.style : null);
+      // Usar siempre el estilo desde config (streets-v4)
+      const initialStyle = styleUrlFromConfig;
       if (!initialStyle) {
         console.error(
           "[MapInit] no valid styleUrlFinal, aborting map init (neither ui_map.maptiler.styleUrl nor runtime.style.style available)"
@@ -1745,37 +1584,7 @@ export default function GeoScopeMap({
 
       attachStateMachine(map, "initial-style");
 
-      const applyFallbackStyle = (reason?: unknown) => {
-        if (fallbackAppliedRef.current) {
-          return;
-        }
-        const fallbackStyle = fallbackStyleRef.current;
-        if (!fallbackStyle) {
-          return;
-        }
-        fallbackAppliedRef.current = true;
-        styleTypeRef.current = fallbackStyle.type;
-        console.warn("[map] vector style failed, using raster fallback", reason);
-        const center = map.getCenter();
-        const zoom = map.getZoom();
-        const pitch = map.getPitch();
-        const bearing = 0;
-        console.debug("[map] applyStyle (fallback) preserving view", { center, zoom, pitch });
-        map.setStyle(fallbackStyle.style as maplibregl.StyleSpecification);
-        mapStateMachineRef.current?.notifyStyleLoading("fallback-style");
-        // Reaplicar vista tras style load
-        map.once("load", async () => {
-          let spriteAvailable = false;
-          try {
-            const style = map.getStyle() as StyleSpecification | undefined;
-            spriteAvailable = style ? await hasSprite(style) : false;
-          } catch {
-            spriteAvailable = false;
-          }
-          aircraftLayerRef.current?.setSpriteAvailability(spriteAvailable);
-          map.jumpTo({ center, zoom, pitch, bearing });
-        });
-      };
+      // Fallback desactivado: solo usar streets-v4
 
       styleErrorHandler = (event: MapLibreEvent & { error?: unknown }) => {
         if (styleTypeRef.current !== "vector" || fallbackAppliedRef.current) {
@@ -1860,15 +1669,7 @@ export default function GeoScopeMap({
         layerRegistryRef.current = layerRegistry;
         setLayerRegistryReady(true);
 
-        const satelliteLayer = new SatelliteHybridLayer({
-          apiKey: maptilerKey,
-          enabled: effectiveSatelliteEnabled,
-          opacity: effectiveSatelliteOpacity,
-          labelsEnabled: false,
-          zIndex: 5,
-        });
-        layerRegistry.add(satelliteLayer);
-        satelliteLayerRef.current = satelliteLayer;
+        // Satellite layer desactivado: solo usar estilo base streets-v4
 
         // Inicializar LightningLayer (siempre habilitado si hay datos)
         const lightningLayer = new LightningLayer({ enabled: true });
@@ -2497,8 +2298,8 @@ export default function GeoScopeMap({
 
         themeRef.current = cloneTheme(mapSettings.theme);
         styleTypeRef.current = styleResult.resolved.type;
-        fallbackStyleRef.current = styleResult.fallback;
-        fallbackAppliedRef.current = styleResult.usedFallback || styleResult.resolved.type !== "vector";
+        // Fallback desactivado: solo usar streets-v4
+        fallbackAppliedRef.current = false;
 
         const tintCandidate = mapSettings.theme?.tint ?? null;
         if (typeof tintCandidate === "string" && tintCandidate.trim().length > 0) {
@@ -3480,17 +3281,7 @@ export default function GeoScopeMap({
       {tintColor ? (
         <div className="map-tint" style={{ background: tintColor }} aria-hidden="true" />
       ) : null}
-      {/* MapHybrid consume ui_map.satellite.* y añade la capa raster + etiquetas vectoriales sobre el estilo base. */}
-      {mapRef.current && effectiveSatelliteEnabled ? (
-        <MapHybrid
-          map={mapRef.current}
-          enabled={effectiveSatelliteEnabled}
-          opacity={effectiveSatelliteOpacity}
-          satelliteStyleUrl={effectiveSatelliteStyleUrl}
-          labelsOverlay={normalizedLabelsOverlay}
-          apiKey={maptilerKey}
-        />
-      ) : null}
+      {/* MapHybrid desactivado: solo usar estilo base streets-v4 */}
     </div>
   );
 }
