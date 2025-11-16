@@ -1,5 +1,5 @@
 import maplibregl from "maplibre-gl";
-import type { MapLibreEvent, StyleSpecification, LayerSpecification } from "maplibre-gl";
+import type { MapLibreEvent, StyleSpecification } from "maplibre-gl";
 import type { Feature, FeatureCollection, GeoJsonProperties, Geometry, Point } from "geojson";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
@@ -231,7 +231,7 @@ const flightsResponseToGeoJSON = (payload: FlightsApiResponse): FeatureCollectio
 
 const applyVectorTheme = (map: maplibregl.Map, theme: MapThemeConfig) => {
   const style = safeGetStyle(map);
-  const layers = (style?.layers ?? []) as LayerSpecification[];
+  const layers = (Array.isArray(style?.layers) ? style!.layers : []) as Array<{ id?: string; type?: string }>;
   if (!layers.length) {
     return;
   }
