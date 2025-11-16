@@ -28,6 +28,7 @@ import {
   createDefaultMapSettings,
   withConfigDefaults
 } from "../../config/defaults";
+import { hasMaptilerKey, containsApiKey } from "../../lib/map/maptilerRuntime";
 import { DEFAULT_OPENSKY_CONFIG } from "../../config/defaults_v2";
 import type {
   AppConfig,
@@ -990,6 +991,25 @@ export default function GeoScopeMap({
   satelliteLabelsStyle = "maptiler-streets-v4-labels",
 }: GeoScopeMapProps = {}) {
   const { data: config, reload: reloadConfig, mapStyleVersion } = useConfig();
+  const [health, setHealth] = useState<{ maptiler?: { has_api_key?: boolean; styleUrl?: string | null } } | null>(null);
+
+  // Leer /api/health/full una vez para disponer de has_api_key y styleUrl firmado
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const h = await fetch("/api/health/full", { cache: "no-store" }).then((r) => r.json());
+        if (!cancelled) {
+          setHealth(h ?? null);
+        }
+      } catch {
+        // Silencioso: si falla health, seguimos con config
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const configV2 = useMemo(() => {
     const candidate = config as unknown as AppConfigV2 | null;
     if (candidate?.version === 2) {
@@ -1639,14 +1659,15 @@ export default function GeoScopeMap({
       // Preferir la URL de estilo directamente desde runtime.mapConfigV2.ui_map.maptiler.styleUrl
       const styleUrlFromRuntimeConfig =
         (runtime.mapConfigV2 as (AppConfigV2 | undefined))?.ui_map?.maptiler?.styleUrl ?? null;
-      const baseStyleUrlFinal = styleUrlFromRuntimeConfig || runtimeBaseStyleUrl || null;
+
+      // Preferir estilo firmado desde health si existe; si no, usar el de runtime/config
+      const baseStyleUrlFinal =
+        (health?.maptiler?.styleUrl ?? null) || styleUrlFromRuntimeConfig || runtimeBaseStyleUrl || null;
 
       const keyPresentForLog =
-        Boolean(maptilerKey) ||
-        Boolean(
-          (baseStyleUrlFinal && /\bkey=/.test(baseStyleUrlFinal)) ||
-            (effectiveSatelliteStyleUrl && /\bkey=/.test(effectiveSatelliteStyleUrl))
-        );
+        hasMaptilerKey((config as unknown) as any, health as any) ||
+        containsApiKey(baseStyleUrlFinal) ||
+        containsApiKey(effectiveSatelliteStyleUrl);
 
       console.info("[HybridFix] runtime options before maplibregl.Map", {
         provider: providerForLog,
@@ -1673,8 +1694,8 @@ export default function GeoScopeMap({
       const cfgV2ForStyleUrl =
         (config as unknown as { ui_map?: { maptiler?: { styleUrl?: string | null } } }) || null;
       const styleUrlFromConfigRaw = cfgV2ForStyleUrl?.ui_map?.maptiler?.styleUrl ?? null;
-      const styleUrlFromConfig = (styleUrlFromRuntimeConfig ?? styleUrlFromConfigRaw) || null;
-      console.log("[MapInit] styleUrl from config:", styleUrlFromConfig);
+      const styleUrlFromConfig = (health?.maptiler?.styleUrl ?? null) || (styleUrlFromRuntimeConfig ?? styleUrlFromConfigRaw) || null;
+      console.log("[MapInit] styleUrl from config:", styleUrlFromConfig ? maskMaptilerUrl(styleUrlFromConfig) : styleUrlFromConfig);
       if (!styleUrlFromConfig) {
         console.error("[MapInit] Missing ui_map.maptiler.styleUrl in config");
       }
