@@ -1608,9 +1608,31 @@ export default function GeoScopeMap({
 
       let map: maplibregl.Map;
       try {
+        // Prefetch del style.json para validar que contiene 'version' y evitar estados internos inconsistentes.
+        let styleForMap: string | StyleSpecification = initialStyle;
+        if (typeof initialStyle === "string") {
+          try {
+            const res = await fetch(initialStyle, { cache: "no-store" });
+            if (res.ok) {
+              const text = await res.text();
+              const parsed = JSON.parse(text) as Partial<StyleSpecification>;
+              if (parsed && typeof (parsed as any).version === "number") {
+                styleForMap = parsed as StyleSpecification;
+                console.info("[MapInit] Using pre-fetched style object with version", (parsed as any).version);
+              } else {
+                console.warn("[MapInit] Prefetched style missing numeric version, falling back to URL");
+              }
+            } else {
+              console.error("[MapInit] Prefetch style HTTP error", res.status);
+            }
+          } catch (prefetchError) {
+            console.warn("[MapInit] Prefetch style failed, using URL directly", prefetchError);
+          }
+        }
+
         map = new maplibregl.Map({
           container: host,
-          style: initialStyle,
+          style: styleForMap,
           center: viewState ? [viewState.lng, viewState.lat] : [0, 0],
           zoom: viewState?.zoom ?? 2.6,
           minZoom: viewMode === "fixed" ? (mapSettings?.fixed?.zoom ?? 9.0) - 2 : 0,
@@ -1621,7 +1643,7 @@ export default function GeoScopeMap({
           renderWorldCopies: runtime.renderWorldCopies,
           trackResize: false
         });
-        console.log("[MapInit] final style used for maplibre", { styleUrlFinal: initialStyle });
+        console.log("[MapInit] final style used for maplibre", { styleUrlFinal: typeof initialStyle === "string" ? initialStyle : "[object]" });
       } catch (error) {
         console.error("[GeoScopeMap] Failed to create map:", error);
         setWebglError(`Error al inicializar el mapa: ${error instanceof Error ? error.message : String(error)}`);
@@ -1667,18 +1689,15 @@ export default function GeoScopeMap({
             : typeof innerError?.message === "string"
             ? innerError.message
             : "";
+        // Mostrar overlay SOLO si falló la carga del JSON de estilo (HTTP 4xx/5xx)
         if (typeof statusCandidate === "number" && statusCandidate >= 400) {
           console.error("[GeoScopeMap] Style load error (HTTP " + statusCandidate + "):", error);
           setWebglError(`Error al cargar el estilo del mapa (HTTP ${statusCandidate})`);
           return;
         }
-        if (
-          messageCandidate &&
-          /style/i.test(messageCandidate) &&
-          /fail|unauthorized|forbidden|error/i.test(messageCandidate)
-        ) {
-          console.error("[GeoScopeMap] Style load error:", error);
-          setWebglError("Error al cargar el estilo del mapa");
+        // Para otros errores (sprites, fuentes, tiles), no tumbar el mapa ni mostrar overlay
+        if (messageCandidate) {
+          console.warn("[GeoScopeMap] Map error (non-fatal):", messageCandidate);
         }
       };
 
