@@ -1533,17 +1533,28 @@ export default function GeoScopeMap({
         maptiler_key_present: keyPresentForLog,
       });
 
-      // Usar la URL final firmada como estilo para MapLibre
-      const styleUrlFromConfig = baseStyleUrlFinal;
-      console.log("[MapInit] styleUrl from config:", styleUrlFromConfig ? maskMaptilerUrl(styleUrlFromConfig) : styleUrlFromConfig);
-      if (!styleUrlFromConfig) {
-        console.error("[MapInit] Missing ui_map.maptiler.styleUrl in config");
-      }
-      // Usar siempre el estilo desde config (streets-v4)
-      const initialStyle = styleUrlFromConfig;
+      // Calcular initialStyle con múltiples fallbacks (prioridad: health > runtime > config)
+      const styleFromHealth = (health as any)?.maptiler?.styleUrl ?? null;
+      const styleFromRuntime = (runtime.mapConfigV2 as any)?.ui_map?.maptiler?.styleUrl ?? null;
+      const styleFromConfig = baseStyleUrlFinal;
+      
+      const initialStyle = styleFromHealth || styleFromRuntime || styleFromConfig || null;
+      
+      console.log("[MapInit] styleUrl sources:", {
+        health: styleFromHealth ? maskMaptilerUrl(styleFromHealth) : null,
+        runtime: styleFromRuntime ? maskMaptilerUrl(styleFromRuntime) : null,
+        config: styleFromConfig ? maskMaptilerUrl(styleFromConfig) : null,
+        final: initialStyle ? maskMaptilerUrl(initialStyle) : null
+      });
+      
+      // Solo mostrar error si health dice que está ok pero no tenemos estilo
+      const maptilerStatus = (health as any)?.maptiler?.status;
       if (!initialStyle) {
+        if (maptilerStatus === "ok") {
+          console.error("[MapInit] health says ok but no styleUrl available");
+        }
         console.error(
-          "[MapInit] no valid styleUrlFinal, aborting map init (neither ui_map.maptiler.styleUrl nor runtime.style.style available)"
+          "[MapInit] no valid styleUrlFinal, aborting map init"
         );
         setWebglError("Error: el estilo del mapa no está disponible. Por favor, verifica la configuración.");
         return;

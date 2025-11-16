@@ -93,7 +93,7 @@
     }
   },
   "layers": {
-    "global": {
+    "global_": {
       "satellite": {
         "enabled": false,
         "provider": "gibs",

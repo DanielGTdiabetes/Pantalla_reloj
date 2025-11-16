@@ -3291,8 +3291,9 @@ def get_config(request: Request) -> JSONResponse:
         gibs_config, _ = _resolve_gibs_config()
         
         # Construir objeto global_satellite unificado
+        # FORZADO: Siempre desactivado para vista principal (solo streets-v4)
         global_satellite_config = {
-            "enabled": gibs_config.enabled,
+            "enabled": False,  # FORZADO: siempre false para vista principal
             "provider": gibs_config.provider,
             "refresh_minutes": gibs_config.refresh_minutes,
             "history_minutes": gibs_config.history_minutes,
