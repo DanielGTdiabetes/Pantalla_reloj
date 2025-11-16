@@ -7,6 +7,7 @@ import type {
 } from "@maplibre/maplibre-gl-style-spec";
 
 import type { Layer } from "./LayerRegistry";
+import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
 
 export type SatelliteLabelsStyle = "maptiler-streets-v4-labels" | "none" | "custom-url";
 
@@ -422,7 +423,7 @@ export default class SatelliteHybridLayer implements Layer {
       return;
     }
 
-    const style = map.getStyle() as StyleSpecification | undefined;
+    const style = getSafeMapStyle(map) as StyleSpecification | null;
     if (!style) {
       console.warn("[GeoScope] getStyle() returned null, aborting SatelliteHybridLayer ensure*");
       return;

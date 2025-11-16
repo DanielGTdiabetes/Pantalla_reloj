@@ -11,6 +11,7 @@ import { kioskRuntime } from "../../lib/runtimeFlags";
 import { removeLabelsOverlay, updateLabelsOpacity } from "../../lib/map/overlays/vectorLabels";
 import { normalizeLabelsOverlay } from "../../lib/map/labelsOverlay";
 import { signMapTilerUrl } from "../../lib/map/utils/maptilerHelpers";
+import { getSafeMapStyle } from "../../lib/map/utils/safeMapStyle";
 import AircraftLayer from "./layers/AircraftLayer";
 import GlobalRadarLayer from "./layers/GlobalRadarLayer";
 import GlobalSatelliteLayer from "./layers/GlobalSatelliteLayer";
@@ -29,6 +30,7 @@ import {
 } from "../../config/defaults";
 import { hasMaptilerKey, containsApiKey, buildFinalMaptilerStyleUrl } from "../../lib/map/maptilerRuntime";
 import { DEFAULT_OPENSKY_CONFIG } from "../../config/defaults_v2";
+import { withStyleCacheBuster } from "../../lib/map/utils/styleCacheBuster";
 import type {
   AppConfig,
   MapConfig,
@@ -99,24 +101,6 @@ const setPaintProperty = (
 const WATER_PATTERN = /(background|ocean|sea|water)/i;
 const LAND_PATTERN = /(land|landcover|park|continent)/i;
 const LABEL_PATTERN = /(label|place|road-name|poi)/i;
-
-// Helper defensivo para obtener el estilo actual del mapa de forma segura
-const safeGetStyle = (map: maplibregl.Map | null | undefined): StyleSpecification | null => {
-  if (!map) return null;
-  try {
-    const style = map.getStyle() as StyleSpecification | null | undefined;
-    if (!style || typeof style !== "object") {
-      return null;
-    }
-    // Verificar que version sea un número (estilo cargado y válido)
-    if (typeof (style as unknown as { version?: unknown }).version !== "number") {
-      return null;
-    }
-    return style;
-  } catch {
-    return null;
-  }
-};
 
 type LightningFeatureProperties = {
   timestamp?: number;
@@ -230,7 +214,7 @@ const flightsResponseToGeoJSON = (payload: FlightsApiResponse): FeatureCollectio
 };
 
 const applyVectorTheme = (map: maplibregl.Map, theme: MapThemeConfig) => {
-  const style = safeGetStyle(map);
+  const style = getSafeMapStyle(map);
   const layers = (Array.isArray(style?.layers) ? style!.layers : []) as Array<{ id?: string; type?: string }>;
   if (!layers.length) {
     return;
@@ -1210,6 +1194,19 @@ export default function GeoScopeMap({
   const [tintColor, setTintColor] = useState<string | null>(null);
   const mapStateMachineRef = useRef<MapStateMachine | null>(null);
   const runtimeRef = useRef<RuntimePreferences | null>(null);
+  const shouldApplyTheme = (): boolean => {
+    const runtime = runtimeRef.current;
+    if (!runtime) {
+      return false;
+    }
+    const providerV1 = runtime.mapSettings?.provider;
+    const providerV2 = runtime.mapConfigV2?.ui_map?.provider;
+    const usingMaptiler = providerV1 === "maptiler" || providerV2 === "maptiler_vector";
+    if (usingMaptiler && !runtime.styleWasFallback) {
+      return false;
+    }
+    return true;
+  };
   const styleLoadedHandlerRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -1373,7 +1370,7 @@ export default function GeoScopeMap({
       if (map) {
         const styleType = styleTypeRef.current;
         const theme = themeRef.current;
-        if (styleType && theme) {
+        if (styleType && theme && shouldApplyTheme()) {
           applyThemeToMap(map, styleType, theme);
         }
       }
@@ -1388,7 +1385,7 @@ export default function GeoScopeMap({
       if (map) {
         const styleType = styleTypeRef.current;
         const theme = themeRef.current;
-        if (styleType && theme) {
+        if (styleType && theme && shouldApplyTheme()) {
           applyThemeToMap(map, styleType, theme);
         }
       }
@@ -1580,7 +1577,11 @@ export default function GeoScopeMap({
           console.warn("[MapInit] Failed to build fallback styleUrl from config:", e);
         }
       }
-      
+
+      if (typeof initialStyle === "string") {
+        initialStyle = withStyleCacheBuster(initialStyle);
+      }
+
       console.log("[MapInit] styleUrl sources:", {
         health: styleFromHealth ? maskMaptilerUrl(styleFromHealth) : null,
         runtime: styleFromRuntime ? maskMaptilerUrl(styleFromRuntime) : null,
@@ -1826,7 +1827,7 @@ export default function GeoScopeMap({
           const initializeAircraftLayer = async () => {
             let spriteAvailable = false;
             try {
-              const style = safeGetStyle(map);
+              const style = getSafeMapStyle(map);
               spriteAvailable = style ? await hasSprite(style) : false;
             } catch {
               spriteAvailable = false;
@@ -1863,7 +1864,7 @@ export default function GeoScopeMap({
             : mergedConfig.layers.ships;
           let spriteAvailableShips = false;
           try {
-            const style = safeGetStyle(map);
+            const style = getSafeMapStyle(map);
             spriteAvailableShips = style ? await hasSprite(style) : false;
           } catch {
             spriteAvailableShips = false;
@@ -2137,13 +2138,13 @@ export default function GeoScopeMap({
           return;
         }
         
-        const style = safeGetStyle(targetMap);
+        const style = getSafeMapStyle(targetMap);
         if (!style) {
           // El estilo es null, aún no está listo
           return;
         }
         
-        // style es válido aquí (ya verificado en safeGetStyle)
+        // style es válido aquí (ya verificado en getSafeMapStyle)
       } catch (error) {
         // Si hay un error accediendo al estilo, esperar
         console.debug("[GlobalSatelliteLayer] Style not ready yet, waiting:", error);
@@ -2184,7 +2185,7 @@ export default function GeoScopeMap({
     // Verificar si el estilo ya está cargado (con protección contra null)
     try {
       if (map.isStyleLoaded()) {
-        const style = safeGetStyle(map);
+        const style = getSafeMapStyle(map);
         if (style) {
           // El estilo ya está listo, adjuntar inmediatamente
           attachGlobalSatelliteLayer(map);
@@ -2409,7 +2410,7 @@ export default function GeoScopeMap({
 
           let spriteAvailable = false;
           try {
-            const style = safeGetStyle(map);
+            const style = getSafeMapStyle(map);
             spriteAvailable = style ? await hasSprite(style) : false;
           } catch {
             spriteAvailable = false;
@@ -2430,7 +2431,7 @@ export default function GeoScopeMap({
           });
           const styleType = styleTypeRef.current;
           const theme = themeRef.current;
-          if (styleType && theme) {
+          if (styleType && theme && shouldApplyTheme()) {
             applyThemeToMap(map, styleType, theme);
           }
           

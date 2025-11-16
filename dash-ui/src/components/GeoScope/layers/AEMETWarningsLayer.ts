@@ -4,6 +4,7 @@ import type { FeatureCollection } from "geojson";
 
 import type { Layer } from "./LayerRegistry";
 import { getExistingPopup, isGeoJSONSource } from "./layerUtils";
+import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
 
 interface AEMETWarningsLayerOptions {
   enabled?: boolean;
@@ -268,8 +269,8 @@ export default class AEMETWarningsLayer implements Layer {
       return undefined;
     }
 
-    const style = this.map.getStyle();
-    if (!style || !style.layers || !Array.isArray(style.layers)) {
+    const style = getSafeMapStyle(this.map);
+    if (!style || !Array.isArray(style.layers)) {
       return undefined;
     }
 
@@ -298,7 +299,7 @@ export default class AEMETWarningsLayer implements Layer {
     if (!beforeId) {
       // Mover al tope si no se encuentra referencia
       try {
-        const layers = this.map.getStyle()?.layers || [];
+        const layers = getSafeMapStyle(this.map)?.layers || [];
         if (layers.length > 0) {
           const lastLayer = layers[layers.length - 1];
           if (lastLayer && lastLayer.id !== this.id) {

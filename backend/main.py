@@ -6813,44 +6813,103 @@ def get_calendar_preview(limit: int = 10) -> Dict[str, Any]:
 def get_calendar() -> Dict[str, Any]:
     """Obtiene datos del calendario (eventos, hortalizas, santoral)."""
     config = config_manager.read()
-    calendar_config = config.calendar
-    harvest_config = config.harvest
-    saints_config = config.saints
-    
+    calendar_config = getattr(config, "calendar", None)
+    harvest_config = getattr(config, "harvest", None)
+    saints_config = getattr(config, "saints", None)
+
+    provider, calendar_enabled, ics_path = _resolve_calendar_settings(config)
+
     # Verificar caché
     cached = cache_store.load("calendar", max_age_minutes=60)
     if cached:
         return cached.payload
-    
+
     payload: Dict[str, Any] = {
+        "enabled": bool(calendar_enabled),
+        "provider": provider,
+        "source": provider,
+        "status": "disabled" if not calendar_enabled else "ok",
         "upcoming": [],
+        "events": [],
         "harvest": [],
         "saints": [],
         "namedays": [],
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
-    
-    # Eventos de Google Calendar (si está configurado)
-    if calendar_config.enabled and calendar_config.google_api_key and calendar_config.google_calendar_id:
-        try:
-            events = fetch_google_calendar_events(
-                api_key=calendar_config.google_api_key,
-                calendar_id=calendar_config.google_calendar_id,
-                days_ahead=calendar_config.days_ahead,
-                max_results=20,
+
+    error_message: Optional[str] = None
+    events: List[Dict[str, Any]] = []
+
+    # Eventos de calendario según provider configurado
+    if calendar_enabled:
+        days_ahead = (
+            getattr(calendar_config, "days_ahead", None)
+            or getattr(getattr(calendar_config, "ics", None), "days_ahead", None)
+            or 14
+        )
+
+        if provider == "google":
+            api_key = (
+                getattr(calendar_config, "google_api_key", None)
+                or secret_store.get_secret("google_calendar_api_key")
+                or secret_store.get_secret("google_api_key")
             )
-            payload["upcoming"] = events
-        except Exception as exc:
-            logger.warning("Failed to fetch Google Calendar events: %s", exc)
-            payload["upcoming"] = []
-    else:
-        payload["upcoming"] = []
-    
+            calendar_id = (
+                getattr(calendar_config, "google_calendar_id", None)
+                or secret_store.get_secret("google_calendar_id")
+            )
+
+            if not api_key or not calendar_id:
+                payload["status"] = "error"
+                error_message = "Google Calendar credentials are missing"
+            else:
+                try:
+                    events = fetch_google_calendar_events(
+                        api_key=api_key,
+                        calendar_id=calendar_id,
+                        days_ahead=days_ahead,
+                        max_results=20,
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to fetch Google Calendar events: %s", exc)
+                    payload["status"] = "error"
+                    error_message = f"Google Calendar error: {exc}"
+        elif provider == "ics":
+            file_path = ics_path or secret_store.get_secret("calendar_ics_path")
+
+            if not file_path:
+                payload["status"] = "error"
+                error_message = "ICS calendar enabled but no file path configured"
+            elif not _ics_path_is_readable(file_path):
+                payload["status"] = "error"
+                error_message = f"ICS calendar file is not readable: {file_path}"
+            else:
+                now = datetime.now(timezone.utc)
+                time_max = now + timedelta(days=days_ahead)
+                try:
+                    events = fetch_ics_calendar_events(
+                        path=str(file_path),
+                        time_min=now,
+                        time_max=time_max,
+                    )
+                except ICSCalendarError as exc:
+                    logger.warning("Failed to fetch ICS calendar events: %s", exc)
+                    payload["status"] = "error"
+                    error_message = f"ICS calendar error: {exc}"
+        else:
+            payload["status"] = "error"
+            error_message = f"Unknown calendar provider: {provider}"
+
+    payload["upcoming"] = events
+    payload["events"] = events
+    if error_message:
+        payload["error_message"] = error_message
+
     # Hortalizas estacionales (mejoradas con siembra y mantenimiento)
-    if harvest_config.enabled:
+    if getattr(harvest_config, "enabled", False):
         try:
             harvest_data = get_harvest_data(
-                custom_items=harvest_config.custom_items,
+                custom_items=getattr(harvest_config, "custom_items", []),
                 include_planting=True,
                 include_maintenance=False  # Por defecto no incluir mantenimiento para no saturar
             )
@@ -6872,12 +6931,12 @@ def get_calendar() -> Dict[str, Any]:
         payload["maintenance"] = []
     
     # Santoral (mejorado con información enriquecida)
-    if saints_config.enabled:
+    if getattr(saints_config, "enabled", False):
         try:
             # Obtener información enriquecida
             saints_data = get_saints_today(
-                include_namedays=saints_config.include_namedays,
-                locale=saints_config.locale,
+                include_namedays=getattr(saints_config, "include_namedays", True),
+                locale=getattr(saints_config, "locale", "es"),
                 include_info=True,  # Solicitar información enriquecida
             )
             
@@ -6903,7 +6962,7 @@ def get_calendar() -> Dict[str, Any]:
             logger.warning("Failed to get saints data: %s", exc)
             payload["saints"] = []
             payload["namedays"] = []
-    
+
     cache_store.store("calendar", payload)
     return payload
 

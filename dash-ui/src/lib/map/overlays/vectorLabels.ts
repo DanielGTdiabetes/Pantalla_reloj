@@ -9,6 +9,7 @@ import type {
 
 import { DEFAULT_LABELS_STYLE_URL, clampLabelsOpacity } from "../labelsOverlay";
 import { signMapTilerUrl } from "../utils/maptilerHelpers";
+import { getSafeMapStyle } from "../utils/safeMapStyle";
 
 export type LabelsOverlayCfg = {
   enabled: boolean;
@@ -206,7 +207,7 @@ const addSymbolLayers = (
 };
 
 export const removeLabelsOverlay = (map: Map): void => {
-  const style = map.getStyle() as StyleSpecification | undefined;
+  const style = getSafeMapStyle(map) as StyleSpecification | null;
   if (!style) {
     console.warn("[GeoScope] getStyle() returned null, aborting removeLabelsOverlay");
     return;
@@ -292,7 +293,7 @@ export const ensureLabelsOverlay = async (
 
 export const updateLabelsOpacity = (map: Map, opacity: number | null | undefined): void => {
   const target = clampLabelsOpacity(typeof opacity === "number" ? opacity : 1);
-  const style = map.getStyle() as StyleSpecification | undefined;
+  const style = getSafeMapStyle(map) as StyleSpecification | null;
   if (!style) {
     console.warn("[GeoScope] getStyle() returned null, aborting updateLabelsOpacity");
     return;
