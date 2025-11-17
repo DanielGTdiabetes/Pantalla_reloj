@@ -120,6 +120,21 @@ find_firefox() {
 prepare_dir() {
   local dir="$1"
   install -d -m 0700 "$dir"
+  
+  # Validar permisos del directorio antes de continuar
+  if [[ -d "$dir" ]]; then
+    local owner perms
+    owner="$(stat -c '%U:%G' "$dir" 2>/dev/null || echo "")"
+    perms="$(stat -c '%a' "$dir" 2>/dev/null || echo "")"
+    local expected_owner="$(id -un):$(id -gn)"
+    
+    if [[ "$owner" != "$expected_owner" ]] || [[ "$perms" != "700" ]]; then
+      log "WARN: Permisos incorrectos en $dir (owner=$owner, perms=$perms), corrigiendo..."
+      chown -R "$(id -un):$(id -gn)" "$dir" 2>/dev/null || true
+      chmod -R 700 "$dir" 2>/dev/null || true
+      log "Permisos corregidos en $dir"
+    fi
+  fi
 }
 
 prepare_log_dir() {
@@ -163,10 +178,60 @@ launch_chromium() {
   log "launch: ${cmd[*]}"
   log "url: ${url}"
 
-  if ! exec "${cmd[@]}" >>"$log_file" 2>&1; then
-    log "ERROR: fallo al ejecutar Chromium (${binary})"
-    exit 1
+  # Validar permisos del perfil antes de lanzar Chrome
+  if [[ -d "$profile_dir" ]]; then
+    local owner perms
+    owner="$(stat -c '%U:%G' "$profile_dir" 2>/dev/null || echo "")"
+    perms="$(stat -c '%a' "$profile_dir" 2>/dev/null || echo "")"
+    local expected_owner="$(id -un):$(id -gn)"
+    
+    if [[ "$owner" != "$expected_owner" ]] || [[ "$perms" != "700" ]]; then
+      log "WARN: Permisos incorrectos en perfil Chrome, corrigiendo..."
+      chown -R "$(id -un):$(id -gn)" "$profile_dir" 2>/dev/null || true
+      chmod -R 700 "$profile_dir" 2>/dev/null || true
+      log "Permisos del perfil Chrome corregidos"
+    fi
   fi
+
+  # Intentar lanzar Chrome con relanzamiento si falla rápidamente (evita pantallazos negros)
+  local quick_fail_threshold=2
+  local start_time=$(date +%s)
+  
+  # Ejecutar Chrome en background para poder detectar si termina rápido
+  "${cmd[@]}" >>"$log_file" 2>&1 &
+  local chrome_pid=$!
+  sleep "$quick_fail_threshold"
+  
+  # Verificar si Chrome sigue ejecutándose
+  if ! kill -0 "$chrome_pid" 2>/dev/null; then
+    # Chrome terminó, verificar si fue muy rápido (posible fallo puntual)
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+    
+    if [[ $duration -le $quick_fail_threshold ]]; then
+      log "WARN: Chrome terminó en ${duration}s (posible fallo puntual), relanzando una vez..."
+      sleep 1
+      
+      # Relanzar Chrome una vez más
+      start_time=$(date +%s)
+      "${cmd[@]}" >>"$log_file" 2>&1 &
+      chrome_pid=$!
+      sleep "$quick_fail_threshold"
+      
+      if ! kill -0 "$chrome_pid" 2>/dev/null; then
+        end_time=$(date +%s)
+        duration=$((end_time - start_time))
+        if [[ $duration -le $quick_fail_threshold ]]; then
+          log "ERROR: Chrome falló nuevamente tras ${duration}s, no se relanzará más"
+          exit 1
+        fi
+      fi
+    fi
+  fi
+  
+  # Chrome está ejecutándose correctamente, esperar a que termine normalmente
+  wait "$chrome_pid"
+  exit $?
 }
 
 launch_firefox() {

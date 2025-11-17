@@ -13,10 +13,13 @@ Environment=GTK_USE_PORTAL=0
 Environment=GIO_USE_PORTALS=0
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
 EnvironmentFile=-/var/lib/pantalla-reloj/state/kiosk.env
-ExecStartPre=/bin/sh -lc 'xset -dpms; xset s off; xset s noblank || true'
+ExecStartPre=/bin/sh -c 'xset -dpms; xset s off; xset s noblank || true'
+ExecStartPre=/bin/sh -c 'PROFILE_DIR="/var/lib/pantalla-reloj/state/chromium-kiosk"; if [ ! -d "$PROFILE_DIR" ]; then install -d -m 0700 -o %i -g %i "$PROFILE_DIR" && echo "[pantalla-kiosk] Perfil Chrome creado: $PROFILE_DIR"; fi; OWNER=$(stat -c "%U:%G" "$PROFILE_DIR" 2>/dev/null || echo ""); PERMS=$(stat -c "%a" "$PROFILE_DIR" 2>/dev/null || echo ""); if [ "$OWNER" != "%i:%i" ] || [ "$PERMS" != "700" ]; then echo "[pantalla-kiosk] Corrigiendo permisos del perfil Chrome: $PROFILE_DIR"; chown -R %i:%i "$PROFILE_DIR" 2>/dev/null || true; chmod -R 700 "$PROFILE_DIR" 2>/dev/null || true; fi'
 ExecStart=/usr/local/bin/pantalla-kiosk
 Restart=on-failure
 RestartSec=2
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

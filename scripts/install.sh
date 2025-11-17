@@ -132,7 +132,29 @@ install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$LOG_DIR"
 # Asegurar directorio principal con permisos 700 (alineado con StateDirectory)
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_RUNTIME"
-install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "${STATE_RUNTIME}/chromium-kiosk"
+
+# Validar y reparar perfil de Chrome si está corrupto
+CHROME_PROFILE_DIR="${STATE_RUNTIME}/chromium-kiosk"
+if [[ -d "$CHROME_PROFILE_DIR" ]]; then
+  # Detectar si el perfil está corrupto (carpeta vacía o crash reports)
+  PROFILE_CORRUPT=0
+  if [[ -z "$(find "$CHROME_PROFILE_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
+    log_warn "Perfil de Chrome vacío detectado, será regenerado"
+    PROFILE_CORRUPT=1
+  elif [[ -d "$CHROME_PROFILE_DIR/Crash Reports" ]] && [[ -n "$(find "$CHROME_PROFILE_DIR/Crash Reports" -type f -print -quit 2>/dev/null)" ]]; then
+    log_warn "Crash Reports detectados en perfil de Chrome, será regenerado"
+    PROFILE_CORRUPT=1
+  fi
+  
+  if [[ $PROFILE_CORRUPT -eq 1 ]]; then
+    log_info "Eliminando perfil corrupto de Chrome: $CHROME_PROFILE_DIR"
+    rm -rf "$CHROME_PROFILE_DIR"
+    SUMMARY+=("[install] perfil corrupto de Chrome eliminado")
+  fi
+fi
+
+# Crear perfil de Chrome con permisos correctos
+install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$CHROME_PROFILE_DIR"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "${STATE_RUNTIME}/firefox-kiosk"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$PROFILE_DIR_DST"
 KIOSK_ENV_FILE="${STATE_RUNTIME}/kiosk.env"
@@ -328,6 +350,49 @@ else
   chown "$USER_NAME:$USER_NAME" "$CONFIG_FILE" 2>/dev/null || true
   chmod 0644 "$CONFIG_FILE" 2>/dev/null || true
   log_info "Config existente preservado en ${CONFIG_FILE} (permisos ajustados)"
+  
+  # Validar que config.json tenga estructura válida de mapa
+  # Si no tiene ui_map o está vacío, asegurar estructura mínima
+  if ! jq -e '.ui_map' "$CONFIG_FILE" >/dev/null 2>&1; then
+    log_warn "config.json no tiene ui_map, añadiendo estructura mínima"
+    if command -v jq >/dev/null 2>&1; then
+      jq '. + {
+        "ui_map": {
+          "provider": "maptiler",
+          "style_id": "streets-v4",
+          "style_url": null,
+          "initial_zoom": 8,
+          "min_zoom": 0,
+          "max_zoom": 18,
+          "center": { "lat": 39.98, "lon": 0.2 }
+        }
+      }' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+      chown "$USER_NAME:$USER_NAME" "$CONFIG_FILE"
+      chmod 0644 "$CONFIG_FILE"
+      SUMMARY+=("[install] estructura ui_map añadida a config.json")
+    fi
+  elif ! jq -e '.ui_map.provider' "$CONFIG_FILE" >/dev/null 2>&1; then
+    log_warn "config.json.ui_map no tiene provider, añadiendo valores por defecto"
+    if command -v jq >/dev/null 2>&1; then
+      jq '.ui_map += {
+        "provider": "maptiler",
+        "style_id": (.ui_map.style_id // "streets-v4"),
+        "style_url": (.ui_map.style_url // null),
+        "initial_zoom": (.ui_map.initial_zoom // 8),
+        "min_zoom": (.ui_map.min_zoom // 0),
+        "max_zoom": (.ui_map.max_zoom // 18),
+        "center": (.ui_map.center // { "lat": 39.98, "lon": 0.2 })
+      }' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+      chown "$USER_NAME:$USER_NAME" "$CONFIG_FILE"
+      chmod 0644 "$CONFIG_FILE"
+      SUMMARY+=("[install] valores por defecto añadidos a ui_map")
+    fi
+  fi
+  
+  # Si ya hay style_url, no tocarla (preservar configuración existente)
+  if jq -e '.ui_map.style_url' "$CONFIG_FILE" >/dev/null 2>&1; then
+    log_info "style_url existente preservada en config.json"
+  fi
 fi
 
 # Verificar que config.json tenga la estructura v2 necesaria
@@ -465,8 +530,29 @@ if [[ -f "$AUTO_FILE" && ! -f "$AUTO_BACKUP" ]]; then
 fi
 install -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$REPO_ROOT/openbox/autostart" "$AUTO_FILE"
 
-if [[ ! -f "${STATE_DIR}/.Xauthority" ]]; then
-  install -m 0600 -o "$USER_NAME" -g "$USER_NAME" /dev/null "${STATE_DIR}/.Xauthority"
+# Validar y preparar Xauthority
+STATE_XAUTH="${STATE_DIR}/.Xauthority"
+HOME_XAUTH="${USER_HOME}/.Xauthority"
+
+# Asegurar que .Xauthority existe en STATE_DIR (será generado por pantalla-xorg.service)
+if [[ ! -f "$STATE_XAUTH" ]]; then
+  install -m 0600 -o "$USER_NAME" -g "$USER_NAME" /dev/null "$STATE_XAUTH"
+  log_info ".Xauthority inicial creado en $STATE_XAUTH"
+fi
+
+# Validar permisos de .Xauthority en home del usuario
+if [[ -f "$HOME_XAUTH" ]]; then
+  # Verificar que pertenece al usuario correcto y tiene permisos 600
+  XAUTH_OWNER=$(stat -c '%U:%G' "$HOME_XAUTH" 2>/dev/null || echo "")
+  XAUTH_PERMS=$(stat -c '%a' "$HOME_XAUTH" 2>/dev/null || echo "")
+  if [[ "$XAUTH_OWNER" != "${USER_NAME}:${USER_NAME}" ]] || [[ "$XAUTH_PERMS" != "600" ]]; then
+    log_warn "Corrigiendo permisos de .Xauthority en $HOME_XAUTH"
+    chown "$USER_NAME:$USER_NAME" "$HOME_XAUTH" 2>/dev/null || true
+    chmod 600 "$HOME_XAUTH" 2>/dev/null || true
+    SUMMARY+=("[install] permisos de .Xauthority corregidos")
+  fi
+else
+  log_info ".Xauthority no existe en $HOME_XAUTH (se copiará desde pantalla-xorg.service después de iniciar Xorg)"
 fi
 
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/xorg-openbox-env.sh" "$SESSION_PREFIX/bin/xorg-openbox-env.sh"
@@ -504,6 +590,18 @@ if ! bash -n /usr/local/bin/pantalla-kiosk-verify; then
   exit 1
 fi
 SUMMARY+=("[install] verificador de kiosk instalado en /usr/local/bin/pantalla-kiosk-verify")
+
+# Instalar script de verificación completo del kiosk
+if [[ -f "$REPO_ROOT/opt/pantalla-reloj/verify_kiosk.sh" ]]; then
+  install -D -m 0755 "$REPO_ROOT/opt/pantalla-reloj/verify_kiosk.sh" /opt/pantalla-reloj/verify_kiosk.sh
+  if ! bash -n /opt/pantalla-reloj/verify_kiosk.sh; then
+    echo "[ERROR] Syntax check failed for verify_kiosk.sh" >&2
+    exit 1
+  fi
+  SUMMARY+=("[install] script de verificación completo instalado en /opt/pantalla-reloj/verify_kiosk.sh")
+else
+  log_warn "verify_kiosk.sh no encontrado en $REPO_ROOT/opt/pantalla-reloj/verify_kiosk.sh"
+fi
 
 install -D -m 0755 "$REPO_ROOT/scripts/diag_kiosk.sh" /usr/local/bin/diag_kiosk.sh
 if ! bash -n /usr/local/bin/diag_kiosk.sh; then
@@ -1318,6 +1416,38 @@ else
   log_warn "Omitiendo reinicio de ${OPENBOX_SERVICE} - pantalla-xorg.service no está activo"
 fi
 
+# Validar que el mapa responde antes de arrancar el kiosk
+log_info "Validando endpoint de mapa MapTiler antes de iniciar kiosk"
+MAP_TEST_URL="http://127.0.0.1/api/maps/test_maptiler"
+MAP_TEST_MAX_RETRIES=3
+MAP_TEST_RETRY_DELAY=2
+MAP_TEST_OK=0
+
+for i in $(seq 1 $MAP_TEST_MAX_RETRIES); do
+  if curl -f -s -X POST "$MAP_TEST_URL" \
+    -H "Content-Type: application/json" \
+    -d '{"style": "streets-v4", "provider": "maptiler"}' \
+    >/dev/null 2>&1; then
+    MAP_TEST_OK=1
+    log_ok "Endpoint test_maptiler responde correctamente"
+    SUMMARY+=("[install] endpoint test_maptiler validado")
+    break
+  else
+    if [[ $i -lt $MAP_TEST_MAX_RETRIES ]]; then
+      log_info "Endpoint test_maptiler no responde, reintentando en ${MAP_TEST_RETRY_DELAY}s (intento $i/$MAP_TEST_MAX_RETRIES)..."
+      sleep "$MAP_TEST_RETRY_DELAY"
+    fi
+  fi
+done
+
+if [[ $MAP_TEST_OK -eq 0 ]]; then
+  log_error "ERROR: El endpoint test_maptiler no responde tras ${MAP_TEST_MAX_RETRIES} intentos"
+  log_error "La instalación no puede completarse sin un mapa funcional"
+  log_error "Verifica que el backend esté funcionando y que config.json tenga la estructura correcta"
+  SUMMARY+=('[install] ERROR: endpoint test_maptiler no responde - abortando instalación')
+  exit 1
+fi
+
 # Reiniciar servicio kiosk solo si Google Chrome está disponible y el backend está listo
 if [[ ${CHROME_AVAILABLE:-0} -eq 1 ]]; then
   CHROME_SERVICE="pantalla-kiosk-chrome@${USER_NAME}.service"
@@ -1394,20 +1524,19 @@ fi
 SUMMARY+=('[install] pantalla-kiosk-verify completado')
 
 # Ejecutar verificador de kiosk (Chrome)
-log_info "Ejecutando verificador de kiosk..."
-if [[ -f "$REPO_ROOT/scripts/verify_kiosk.sh" ]]; then
-  chmod +x "$REPO_ROOT/scripts/verify_kiosk.sh"
-  if OUTPUT=$(DISPLAY=:0 XAUTHORITY=/home/${USER_NAME}/.Xauthority "$REPO_ROOT/scripts/verify_kiosk.sh" "$USER_NAME" 2>&1); then
+log_info "Ejecutando verificador completo de kiosk..."
+if [[ -f /opt/pantalla-reloj/verify_kiosk.sh ]]; then
+  if OUTPUT=$(DISPLAY=:0 XAUTHORITY=/home/${USER_NAME}/.Xauthority /opt/pantalla-reloj/verify_kiosk.sh "$USER_NAME" 2>&1); then
     printf '%s\n' "$OUTPUT"
-    SUMMARY+=('[install] ventana de Chrome kiosk detectada')
-    log_ok "Verificador de kiosk: OK"
+    SUMMARY+=('[install] verificador completo de kiosk: todas las verificaciones pasaron')
+    log_ok "Verificador completo de kiosk: OK"
   else
     printf '%s\n' "$OUTPUT"
-    log_warn 'ventana de Chrome kiosk no detectada'
-    SUMMARY+=('[install] ventana de Chrome kiosk no detectada')
+    log_warn 'Verificador completo de kiosk detectó algunos problemas (revisa arriba)'
+    SUMMARY+=('[install] verificador completo de kiosk: algunos problemas detectados')
   fi
 else
-  log_warn "Verificador de kiosk no encontrado en $REPO_ROOT/scripts/verify_kiosk.sh"
+  log_warn "Verificador completo de kiosk no encontrado en /opt/pantalla-reloj/verify_kiosk.sh"
 fi
 
 if DISPLAY=:0 XAUTHORITY=/home/${USER_NAME}/.Xauthority xprop -root _NET_ACTIVE_WINDOW >/dev/null 2>&1; then

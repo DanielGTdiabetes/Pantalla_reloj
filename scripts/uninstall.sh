@@ -12,15 +12,17 @@ Pantalla_reloj uninstaller
 Usage: sudo bash uninstall.sh [options]
 
 Options:
-  --purge-webroot   Remove all files under /var/www/html (keeps directory)
-  --purge-logs      Remove log files under /var/log/pantalla-reloj
-  --purge-venv      Remove backend virtualenv and caches
-  --purge-node      Remove frontend node_modules/dist artifacts
-  --purge-assets    Remove assets stored in /opt/pantalla-reloj
-  --purge-config    Remove configuration under /var/lib/pantalla-reloj and config.json
-                    Use this for clean installations to avoid inheriting old configs
-                    with maps: null or layers_global: null from previous versions
-  -h, --help        Show this message
+  --purge-webroot        Remove all files under /var/www/html (keeps directory)
+  --purge-logs           Remove log files under /var/log/pantalla-reloj
+  --purge-venv           Remove backend virtualenv and caches
+  --purge-node           Remove frontend node_modules/dist artifacts
+  --purge-assets         Remove assets stored in /opt/pantalla-reloj
+  --purge-config         Remove configuration under /var/lib/pantalla-reloj and config.json
+                         Use this for clean installations to avoid inheriting old configs
+                         with maps: null or layers_global: null from previous versions
+  --purge-browser-profile Remove Chrome browser profile under /var/lib/pantalla-reloj/state/chromium-kiosk
+                         Use this to fix corrupted browser profiles or start fresh
+  -h, --help             Show this message
 
 Examples:
   # Standard uninstall (preserves config for user settings)
@@ -28,6 +30,9 @@ Examples:
 
   # Complete clean uninstall (removes everything including config)
   sudo bash uninstall.sh --purge-config --purge-assets --purge-webroot
+
+  # Uninstall and remove corrupted browser profile
+  sudo bash uninstall.sh --purge-browser-profile
 USAGE
 }
 
@@ -37,6 +42,7 @@ PURGE_VENV=0
 PURGE_NODE=0
 PURGE_ASSETS=0
 PURGE_CONFIG=0
+PURGE_BROWSER_PROFILE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -46,6 +52,7 @@ while [[ $# -gt 0 ]]; do
     --purge-node) PURGE_NODE=1 ;;
     --purge-assets) PURGE_ASSETS=1 ;;
     --purge-config) PURGE_CONFIG=1 ;;
+    --purge-browser-profile) PURGE_BROWSER_PROFILE=1 ;;
     -h|--help)
       usage
       exit 0
@@ -98,8 +105,15 @@ SYSTEMD_UNITS=(
 )
 
 log_info "Stopping systemd units"
+# Detener servicios en orden inverso de dependencias para evitar errores
 for unit in "${SYSTEMD_UNITS[@]}"; do
-  systemctl disable --now "$unit" >/dev/null 2>&1 || true
+  if systemctl is-active --quiet "$unit" 2>/dev/null; then
+    log_info "Deteniendo $unit..."
+    systemctl stop "$unit" >/dev/null 2>&1 || true
+  fi
+  if systemctl is-enabled --quiet "$unit" 2>/dev/null; then
+    systemctl disable "$unit" >/dev/null 2>&1 || true
+  fi
   rm -f "/etc/systemd/system/${unit}" >/dev/null 2>&1 || true
   rm -f "/etc/systemd/system/graphical.target.wants/${unit}" >/dev/null 2>&1 || true
   rm -f "/etc/systemd/system/multi-user.target.wants/${unit}" >/dev/null 2>&1 || true
@@ -321,6 +335,44 @@ clean_empty_chromium_dir() {
 
 clean_empty_chromium_dir "$CHROMIUM_HOME_DATA_DIR"
 clean_empty_chromium_dir "$CHROMIUM_HOME_CACHE_DIR"
+
+# Eliminar perfil de Chrome si se solicita
+if [[ $PURGE_BROWSER_PROFILE -eq 1 ]]; then
+  CHROME_PROFILE_DIR="${STATE_RUNTIME}/chromium-kiosk"
+  if [[ -d "$CHROME_PROFILE_DIR" ]]; then
+    log_info "Eliminando perfil de Chrome: $CHROME_PROFILE_DIR"
+    rm -rf "$CHROME_PROFILE_DIR"
+    log_ok "Perfil de Chrome eliminado"
+  else
+    log_info "Perfil de Chrome no existe: $CHROME_PROFILE_DIR"
+  fi
+fi
+
+# Limpiar logs, cachés y snapshots
+log_info "Limpiando logs, cachés y snapshots residuales"
+if [[ -d "$LOG_DIR" ]]; then
+  find "$LOG_DIR" -type f -name "*.log" -delete >/dev/null 2>&1 || true
+  find "$LOG_DIR" -type f -name "*.log.*" -delete >/dev/null 2>&1 || true
+fi
+if [[ -d "$KIOSK_LOG_DIR" ]]; then
+  find "$KIOSK_LOG_DIR" -type f -name "*.log" -delete >/dev/null 2>&1 || true
+fi
+if [[ -d "$STATE_RUNTIME" ]]; then
+  find "$STATE_RUNTIME" -type f -name "*.snapshot" -delete >/dev/null 2>&1 || true
+  find "$STATE_RUNTIME" -type f -name "*.bak" -delete >/dev/null 2>&1 || true
+fi
+
+# Restaurar permisos correctos en /var/lib/pantalla-reloj
+if [[ -d "$STATE_DIR" ]]; then
+  log_info "Restaurando permisos en $STATE_DIR"
+  chown -R "$USER_NAME:$USER_NAME" "$STATE_DIR" >/dev/null 2>&1 || true
+  find "$STATE_DIR" -type d -exec chmod 700 {} + >/dev/null 2>&1 || true
+  find "$STATE_DIR" -type f -exec chmod 600 {} + >/dev/null 2>&1 || true
+  # Permitir lectura de config.json
+  if [[ -f "$STATE_DIR/config.json" ]]; then
+    chmod 644 "$STATE_DIR/config.json" >/dev/null 2>&1 || true
+  fi
+fi
 
 if command -v nginx >/dev/null 2>&1; then
   if nginx -t >/dev/null 2>&1; then
