@@ -254,9 +254,40 @@ export type ShipsLayerConfigV2 = {
   custom?: CustomShipProviderConfig;
 };
 
+export type GlobalRadarLayerConfigV2 = {
+  enabled: boolean;
+  provider: "rainviewer";
+  opacity: number;
+  layer_type: string;
+  refresh_minutes?: number;
+  history_minutes?: number;
+  frame_step?: number;
+};
+
+export type GlobalSatelliteLayerConfigV2 = {
+  enabled: boolean;
+  provider: "gibs";
+  refresh_minutes?: number;
+  history_minutes?: number;
+  frame_step?: number;
+  layer?: string;
+  tile_matrix_set?: string;
+  min_zoom?: number;
+  max_zoom?: number;
+  default_zoom?: number;
+  opacity?: number;
+};
+
+export type GlobalLayersConfigV2 = {
+  satellite?: GlobalSatelliteLayerConfigV2;
+  radar?: GlobalRadarLayerConfigV2;
+};
+
 export type LayersConfigV2 = {
   flights?: FlightsLayerConfigV2;
   ships?: ShipsLayerConfigV2;
+  global?: GlobalLayersConfigV2;
+  global_?: GlobalLayersConfigV2; // Alias para compatibilidad con backend
 };
 
 export type PanelWeatherWeeklyConfig = {

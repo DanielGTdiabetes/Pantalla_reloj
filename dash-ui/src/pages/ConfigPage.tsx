@@ -38,6 +38,7 @@ import {
   reloadConfig,
   type CalendarPreviewItem,
   type NewsFeedTestResult,
+  type RainViewerTestResponse,
   type WiFiNetwork,
   wifiConnect,
   wifiDisconnect,
@@ -165,7 +166,7 @@ export const ConfigPage: React.FC = () => {
   const [aishubApiKey, setAishubApiKey] = useState<string>("");
   
   // RainViewer
-  const [rainviewerTestResult, setRainviewerTestResult] = useState<{ ok: boolean; frames_count?: number; reason?: string } | null>(null);
+  const [rainviewerTestResult, setRainviewerTestResult] = useState<RainViewerTestResponse | null>(null);
   const [rainviewerTesting, setRainviewerTesting] = useState(false);
   const [rainviewerTilePreview, setRainviewerTilePreview] = useState<string | null>(null);
   const [rainviewerLoadingTile, setRainviewerLoadingTile] = useState(false);
@@ -697,7 +698,7 @@ export const ConfigPage: React.FC = () => {
     setRainviewerTesting(true);
     setRainviewerTestResult(null);
     try {
-      const radarConfig = config.layers?.global_?.radar ?? config.layers?.global?.radar;
+      const radarConfig = config.layers?.global?.radar ?? config.layers?.global_?.radar;
       const provider = radarConfig?.provider ?? "rainviewer";
       const layer_type = radarConfig?.layer_type ?? "precipitation_new";
       const opacity = radarConfig?.opacity ?? 0.7;
@@ -1068,14 +1069,14 @@ export const ConfigPage: React.FC = () => {
     try {
       // Guardar layers.global (radar y satélite)
       const layersPayload = config.layers ?? {};
-      const globalPayload = layersPayload.global_ ?? layersPayload.global ?? {};
+      const globalPayload = layersPayload.global ?? layersPayload.global_ ?? {};
       
       // Asegurar que layers existe
       if (!config.layers) {
         await saveConfigV2({
           ...config,
           layers: {
-            global_: globalPayload,
+            global: globalPayload,
           },
         });
       } else {
@@ -1520,15 +1521,15 @@ export const ConfigPage: React.FC = () => {
               <label>
                 <input
                   type="checkbox"
-                  checked={config.layers?.global_?.radar?.enabled || config.layers?.global?.radar?.enabled || false}
+                  checked={config.layers?.global?.radar?.enabled || config.layers?.global_?.radar?.enabled || false}
                   onChange={(e) => {
                     const currentLayers = config.layers ?? {};
-                    const currentGlobal = currentLayers.global_ ?? currentLayers.global ?? {};
+                    const currentGlobal = currentLayers.global ?? currentLayers.global_ ?? {};
                     setConfig({
                       ...config,
                       layers: {
                         ...currentLayers,
-                        global_: {
+                        global: {
                           ...currentGlobal,
                           radar: {
                             ...currentGlobal.radar,
@@ -1546,7 +1547,7 @@ export const ConfigPage: React.FC = () => {
               </label>
             </div>
             
-            {(config.layers?.global_?.radar?.enabled || config.layers?.global?.radar?.enabled) && (
+            {(config.layers?.global?.radar?.enabled || config.layers?.global_?.radar?.enabled) && (
               <>
                 <div className="config-field">
                   <label>Proveedor</label>
@@ -1560,23 +1561,23 @@ export const ConfigPage: React.FC = () => {
                 
                 <div className="config-field">
                   <label>
-                    Opacidad: {((config.layers?.global_?.radar?.opacity ?? config.layers?.global?.radar?.opacity ?? 0.7) * 100).toFixed(0)}%
+                    Opacidad: {((config.layers?.global?.radar?.opacity ?? config.layers?.global_?.radar?.opacity ?? 0.7) * 100).toFixed(0)}%
                   </label>
                   <input
                     type="range"
                     min="0"
                     max="100"
                     step="5"
-                    value={((config.layers?.global_?.radar?.opacity ?? config.layers?.global?.radar?.opacity ?? 0.7) * 100)}
+                    value={((config.layers?.global?.radar?.opacity ?? config.layers?.global_?.radar?.opacity ?? 0.7) * 100)}
                     onChange={(e) => {
                       const currentLayers = config.layers ?? {};
-                      const currentGlobal = currentLayers.global_ ?? currentLayers.global ?? {};
+                      const currentGlobal = currentLayers.global ?? currentLayers.global_ ?? {};
                       const newOpacity = parseFloat(e.target.value) / 100;
                       setConfig({
                         ...config,
                         layers: {
                           ...currentLayers,
-                          global_: {
+                          global: {
                             ...currentGlobal,
                             radar: {
                               ...currentGlobal.radar,
@@ -1598,15 +1599,15 @@ export const ConfigPage: React.FC = () => {
                 <div className="config-field">
                   <label>Tipo de Capa</label>
                   <select
-                    value={config.layers?.global_?.radar?.layer_type ?? config.layers?.global?.radar?.layer_type ?? "precipitation_new"}
+                    value={config.layers?.global?.radar?.layer_type ?? config.layers?.global_?.radar?.layer_type ?? "precipitation_new"}
                     onChange={(e) => {
                       const currentLayers = config.layers ?? {};
-                      const currentGlobal = currentLayers.global_ ?? currentLayers.global ?? {};
+                      const currentGlobal = currentLayers.global ?? currentLayers.global_ ?? {};
                       setConfig({
                         ...config,
                         layers: {
                           ...currentLayers,
-                          global_: {
+                          global: {
                             ...currentGlobal,
                             radar: {
                               ...currentGlobal.radar,
