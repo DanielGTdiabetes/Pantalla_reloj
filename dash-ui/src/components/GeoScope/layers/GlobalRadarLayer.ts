@@ -121,7 +121,13 @@ export default class GlobalRadarLayer implements Layer {
       return undefined;
     }
 
-    for (const layer of style.layers) {
+    // Verificar que layers es un array antes de iterar
+    const layers = style.layers;
+    if (!Array.isArray(layers)) {
+      return undefined;
+    }
+
+    for (const layer of layers) {
       // Buscar capas de aviones (geoscope-aircraft) o barcos (geoscope-ships)
       if (layer.id === "geoscope-aircraft" || layer.id === "geoscope-ships") {
         return layer.id;
