@@ -861,15 +861,36 @@ export async function testLightning(): Promise<LightningTestResponse> {
 
 export type RainViewerTestResponse = {
   ok: boolean;
-  frames_count: number;
+  status?: number;
+  provider?: string;
+  timestamp?: number;
+  test_tile?: string;
+  error?: string;
+  message?: string;
+  // Legacy fields para compatibilidad
+  frames_count?: number;
   reason?: string;
 };
 
-export async function testRainViewer(): Promise<RainViewerTestResponse> {
+export async function testRainViewer(
+  provider: string = "rainviewer",
+  layer_type: string = "precipitation_new",
+  opacity: number = 0.7
+): Promise<RainViewerTestResponse> {
   try {
-    return apiGet<RainViewerTestResponse>("/api/rainviewer/test");
+    const response = await apiPost<RainViewerTestResponse>("/api/maps/test_rainviewer", {
+      provider,
+      layer_type,
+      opacity,
+    });
+    return response;
   } catch (error) {
-    return { ok: false, frames_count: 0, reason: "connection_error" };
+    return { 
+      ok: false, 
+      status: 0,
+      error: "connection_error",
+      message: error instanceof Error ? error.message : "Error de conexión"
+    };
   }
 }
 

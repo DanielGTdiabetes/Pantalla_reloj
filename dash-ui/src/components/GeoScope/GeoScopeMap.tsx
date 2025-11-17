@@ -1817,19 +1817,13 @@ export default function GeoScopeMap({
           };
 
           // Global Radar Layer (z-index 10, debajo de AEMET y aviones/barcos)
-          // Leer configuración desde v2: ui_global.weather_layers.radar o ui_global.radar
-          const uiGlobalRadarInit = configAsV2Init.version === 2 
-            ? (configAsV2Init.ui_global?.weather_layers?.radar ?? configAsV2Init.ui_global?.radar)
-            : undefined;
+          // Leer configuración desde layers.global.radar (migrado desde ui_global.radar)
           const globalRadarConfigInit = configAsV2Init.version === 2 && configAsV2Init.layers?.global_?.radar
             ? configAsV2Init.layers.global_.radar
             : mergedConfig.layers.global?.radar;
           
-          const isRadarEnabledInit = Boolean(
-            globalRadarConfigInit?.enabled && 
-            (uiGlobalRadarInit?.enabled !== false)
-          );
-          const radarOpacityInit = uiGlobalRadarInit?.opacity ?? globalRadarConfigInit?.opacity ?? 1.0;
+          const isRadarEnabledInit = Boolean(globalRadarConfigInit?.enabled);
+          const radarOpacityInit = globalRadarConfigInit?.opacity ?? 0.7;
 
           if (isRadarEnabledInit) {
             const globalRadarLayer = new GlobalRadarLayer({
@@ -3089,17 +3083,12 @@ export default function GeoScopeMap({
       };
     };
 
-    const uiGlobalRadar = configAsV2Radar.version === 2
-      ? (configAsV2Radar.ui_global?.weather_layers?.radar ?? configAsV2Radar.ui_global?.radar)
-      : undefined;
+    // Leer configuración desde layers.global.radar (migrado desde ui_global.radar)
     const globalRadarConfig = configAsV2Radar.version === 2 && configAsV2Radar.layers?.global_?.radar
       ? configAsV2Radar.layers.global_.radar
       : (config ? withConfigDefaults(config) : withConfigDefaults()).layers.global?.radar;
 
-    const isRadarEnabled = Boolean(
-      globalRadarConfig?.enabled &&
-      (uiGlobalRadar?.enabled !== false)
-    );
+    const isRadarEnabled = Boolean(globalRadarConfig?.enabled);
 
     if (!isRadarEnabled) {
       // Si el radar está desactivado, limpiar la capa si existe
@@ -3203,7 +3192,7 @@ export default function GeoScopeMap({
     }, refreshIntervalMs);
 
     // Actualizar opacidad si cambia
-    const radarOpacityValue = uiGlobalRadar?.opacity ?? globalRadarConfig?.opacity ?? 1.0;
+    const radarOpacityValue = globalRadarConfig?.opacity ?? 0.7;
     const globalRadarLayer = globalRadarLayerRef.current;
     if (globalRadarLayer) {
       globalRadarLayer.update({ opacity: radarOpacityValue });

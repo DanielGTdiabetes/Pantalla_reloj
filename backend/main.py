@@ -538,6 +538,13 @@ class MapTilerTestRequest(BaseModel):
         return self
 
 
+class RainViewerTestRequest(BaseModel):
+    """Modelo para test de RainViewer."""
+    provider: Literal["rainviewer"] = "rainviewer"
+    layer_type: Optional[str] = Field(default="precipitation_new", max_length=64)
+    opacity: Optional[float] = Field(default=0.7, ge=0.0, le=1.0)
+
+
 class XyzTestRequest(BaseModel):
     tileUrl: str = Field(min_length=1, max_length=512)
 
@@ -1073,34 +1080,75 @@ def _ensure_maps_defaults(config_dict: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _ensure_layers_global_defaults(config_dict: Dict[str, Any]) -> Dict[str, Any]:
-    """Asegura que el bloque 'layers_global' existe y tiene valores válidos.
+    """Asegura que el bloque 'layers.global' existe y tiene valores válidos.
     
-    Si layers_global es null o no existe, crea un bloque por defecto con radar desactivado.
+    Si layers.global es null o no existe, crea un bloque por defecto con radar desactivado.
+    Migra automáticamente desde ui_global.radar si layers.global.radar es null.
+    La migración es idempotente: no sobreescribe layers.global.radar si ya está configurado.
     """
-    if "layers_global" not in config_dict or config_dict["layers_global"] is None:
-        logger.info("[Config] layers_global was null or missing; applying defaults")
-        config_dict["layers_global"] = {}
+    if "layers" not in config_dict:
+        config_dict["layers"] = {}
     
-    layers_global = config_dict["layers_global"]
+    layers = config_dict["layers"]
+    if not isinstance(layers, dict):
+        layers = {}
+        config_dict["layers"] = layers
+    
+    # Asegurar que global existe en layers
+    if "global" not in layers or layers["global"] is None:
+        layers["global"] = {}
+    
+    layers_global = layers["global"]
     if not isinstance(layers_global, dict):
-        logger.warning("[Config] layers_global was not a dict, resetting to defaults")
         layers_global = {}
-        config_dict["layers_global"] = layers_global
+        layers["global"] = layers_global
     
-    # Asegurar que radar existe con valores por defecto
+    # Asegurar que radar existe en layers.global
     if "radar" not in layers_global or layers_global["radar"] is None:
-        layers_global["radar"] = {}
+        # Intentar migrar desde ui_global.radar si existe
+        ui_global = config_dict.get("ui_global", {})
+        if isinstance(ui_global, dict):
+            ui_radar = ui_global.get("radar")
+            if isinstance(ui_radar, dict) and ui_radar:
+                # Migrar desde ui_global.radar
+                logger.info("[Config] Migrating radar config from ui_global.radar to layers.global.radar")
+                layers_global["radar"] = {
+                    "enabled": ui_radar.get("enabled", False),
+                    "provider": ui_radar.get("provider", "rainviewer"),
+                    "opacity": ui_radar.get("opacity", 0.7),
+                    "layer_type": ui_radar.get("layer_type") or "precipitation_new",
+                    "refresh_minutes": ui_radar.get("refresh_minutes", 5),
+                    "history_minutes": ui_radar.get("history_minutes", 90),
+                    "frame_step": ui_radar.get("frame_step", 5),
+                }
+                # Si layer_type es null pero provider es rainviewer, usar precipitation_new
+                if layers_global["radar"].get("layer_type") is None and layers_global["radar"].get("provider") == "rainviewer":
+                    layers_global["radar"]["layer_type"] = "precipitation_new"
+            else:
+                # No hay ui_global.radar, crear con valores por defecto
+                layers_global["radar"] = {}
+        else:
+            # No hay ui_global, crear con valores por defecto
+            layers_global["radar"] = {}
     
     radar = layers_global["radar"]
     if not isinstance(radar, dict):
         radar = {}
         layers_global["radar"] = radar
     
-    # Valores por defecto para radar
+    # Valores por defecto para radar (solo si no existen)
     radar.setdefault("enabled", False)
     radar.setdefault("provider", "rainviewer")
     radar.setdefault("opacity", 0.7)
-    radar.setdefault("layer_type", None)
+    # Si layer_type es null o no existe, usar precipitation_new para rainviewer
+    if radar.get("layer_type") is None or radar.get("layer_type") == "":
+        if radar.get("provider") == "rainviewer":
+            radar["layer_type"] = "precipitation_new"
+        else:
+            radar["layer_type"] = "precipitation_new"
+    radar.setdefault("refresh_minutes", 5)
+    radar.setdefault("history_minutes", 90)
+    radar.setdefault("frame_step", 5)
     
     return config_dict
 
@@ -2249,6 +2297,89 @@ async def test_maptiler(request: MapTilerTestRequest) -> Dict[str, Any]:
             "ok": False,
             "status": 0,
             "error": "internal_error"
+        }
+
+
+@app.post("/api/maps/test_rainviewer")
+async def test_rainviewer(request: RainViewerTestRequest) -> Dict[str, Any]:
+    """Prueba la conexión con RainViewer descargando un tile de referencia.
+    
+    Obtiene un timestamp reciente de RainViewer y prueba descargar un tile
+    de ejemplo (zoom 3, x 4, y 2) para validar que el servicio responde.
+    """
+    try:
+        from .global_providers import RainViewerProvider
+        
+        provider = RainViewerProvider()
+        
+        # Obtener frames disponibles (solo necesitamos uno reciente)
+        frames = provider.get_available_frames(history_minutes=30, frame_step=5)
+        
+        if not frames:
+            return {
+                "ok": False,
+                "status": 0,
+                "error": "no_frames_available",
+                "message": "RainViewer API returned no available frames"
+            }
+        
+        # Usar el frame más reciente
+        latest_frame = frames[-1]
+        timestamp = latest_frame["timestamp"]
+        
+        # Construir URL de tile de prueba (zoom 3, x 4, y 2)
+        test_z = 3
+        test_x = 4
+        test_y = 2
+        tile_url = provider.get_tile_url(timestamp, test_z, test_x, test_y)
+        
+        # Intentar descargar el tile con timeout razonable
+        try:
+            response = requests.head(tile_url, timeout=10, allow_redirects=True)
+            # Si HEAD no está disponible, intentar GET
+            if response.status_code == 405:
+                response = requests.get(tile_url, timeout=10, allow_redirects=True, stream=True)
+                # Leer solo los primeros bytes para verificar que es una imagen
+                if response.status_code == 200:
+                    content_type = response.headers.get("content-type", "").lower()
+                    if "image" not in content_type:
+                        return {
+                            "ok": False,
+                            "status": 200,
+                            "error": "invalid_content_type",
+                            "message": f"Expected image, got {content_type}"
+                        }
+            
+            if response.status_code == 200:
+                return {
+                    "ok": True,
+                    "status": 200,
+                    "provider": "rainviewer",
+                    "timestamp": timestamp,
+                    "test_tile": f"{test_z}/{test_x}/{test_y}"
+                }
+            else:
+                return {
+                    "ok": False,
+                    "status": response.status_code,
+                    "error": f"http_{response.status_code}",
+                    "message": f"Tile request returned HTTP {response.status_code}"
+                }
+        except requests.RequestException as exc:
+            return {
+                "ok": False,
+                "status": 0,
+                "error": "network_error",
+                "message": str(exc)
+            }
+            
+    except Exception as exc:
+        logger.error("[maps] Error testing RainViewer: %s", exc, exc_info=True)
+        return {
+            "ok": False,
+            "status": 0,
+            "error": "internal_error",
+            "message": str(exc)
         }
 
 
@@ -4211,18 +4342,23 @@ async def save_config(request: Request) -> JSONResponse:
             else:
                 sanitized = _ensure_maps_defaults(sanitized)
         
-        if "layers_global" in sanitized and sanitized["layers_global"] is None:
-            logger.info("[Config] layers_global was null in payload; preserving existing or applying defaults")
-            # Si hay layers_global en current_raw, mantenerlo; si no, aplicar defaults
-            if "layers_global" in current_raw and current_raw["layers_global"] is not None:
-                sanitized["layers_global"] = current_raw["layers_global"]
+        # Asegurar que layers.global existe (no layers_global)
+        if "layers" not in sanitized:
+            sanitized["layers"] = {}
+        if "layers" in sanitized and isinstance(sanitized["layers"], dict):
+            layers = sanitized["layers"]
+            if "global" not in layers or layers["global"] is None:
+                # Si no viene layers.global en el payload, mantener el existente o aplicar defaults
+                if "layers" in current_raw and isinstance(current_raw.get("layers"), dict):
+                    existing_global = current_raw["layers"].get("global") or current_raw["layers"].get("global_")
+                    if existing_global is not None:
+                        layers["global"] = existing_global
+                    else:
+                        sanitized = _ensure_layers_global_defaults(sanitized)
+                else:
+                    sanitized = _ensure_layers_global_defaults(sanitized)
             else:
-                sanitized = _ensure_layers_global_defaults(sanitized)
-        elif "layers_global" not in sanitized:
-            # Si no viene layers_global en el payload, mantener el existente o aplicar defaults
-            if "layers_global" in current_raw and current_raw["layers_global"] is not None:
-                sanitized["layers_global"] = current_raw["layers_global"]
-            else:
+                # Asegurar que layers.global.radar tiene valores por defecto si falta algo
                 sanitized = _ensure_layers_global_defaults(sanitized)
         
         # Validar con Pydantic (usar sanitized)
@@ -4230,11 +4366,14 @@ async def save_config(request: Request) -> JSONResponse:
             config_v2 = AppConfigV2.model_validate(sanitized)
             config_dict = config_v2.model_dump(mode="json", exclude_none=True)
             
-            # Asegurar que maps y layers_global estén presentes después de validar
+            # Asegurar que maps y layers.global estén presentes después de validar
             # (por si Pydantic los excluyó por ser None)
             if "maps" not in config_dict or config_dict["maps"] is None:
                 config_dict = _ensure_maps_defaults(config_dict)
-            if "layers_global" not in config_dict or config_dict["layers_global"] is None:
+            # Verificar layers.global (no layers_global)
+            if "layers" not in config_dict or not isinstance(config_dict.get("layers"), dict):
+                config_dict = _ensure_layers_global_defaults(config_dict)
+            elif "global" not in config_dict["layers"] or config_dict["layers"]["global"] is None:
                 config_dict = _ensure_layers_global_defaults(config_dict)
         except ValidationError as exc:
             logger.warning("[config] Validation error after merge: %s", exc.errors())

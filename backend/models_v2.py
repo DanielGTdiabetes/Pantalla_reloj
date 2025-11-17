@@ -604,8 +604,10 @@ class GlobalSatelliteLayerConfig(BaseModel):
 
 class GlobalRadarLayerConfig(BaseModel):
     """Configuración de radar meteorológico global (RainViewer, etc.)."""
-    enabled: bool = Field(default=True)
+    enabled: bool = Field(default=False)
     provider: Literal["rainviewer"] = "rainviewer"
+    opacity: float = Field(default=0.7, ge=0.0, le=1.0)
+    layer_type: str = Field(default="precipitation_new", max_length=64)
     refresh_minutes: int = Field(default=5, ge=1, le=120)
     history_minutes: int = Field(default=90, ge=5, le=360)
     frame_step: int = Field(default=5, ge=1, le=60)

@@ -692,13 +692,20 @@ export const ConfigPage: React.FC = () => {
   };
 
   const handleTestRainViewer = async () => {
+    if (!config) return;
+    
     setRainviewerTesting(true);
     setRainviewerTestResult(null);
     try {
-      const result = await testRainViewer();
-      setRainviewerTestResult(result || { ok: false, frames_count: 0, reason: "Sin respuesta" });
+      const radarConfig = config.layers?.global_?.radar ?? config.layers?.global?.radar;
+      const provider = radarConfig?.provider ?? "rainviewer";
+      const layer_type = radarConfig?.layer_type ?? "precipitation_new";
+      const opacity = radarConfig?.opacity ?? 0.7;
+      
+      const result = await testRainViewer(provider, layer_type, opacity);
+      setRainviewerTestResult(result || { ok: false, status: 0, error: "Sin respuesta" });
     } catch (error) {
-      setRainviewerTestResult({ ok: false, frames_count: 0, reason: "Error al probar RainViewer" });
+      setRainviewerTestResult({ ok: false, status: 0, error: "Error al probar RainViewer", message: error instanceof Error ? error.message : "Error desconocido" });
       console.error("Error testing RainViewer:", error);
     } finally {
       setRainviewerTesting(false);
@@ -1059,8 +1066,26 @@ export const ConfigPage: React.FC = () => {
 
     setGlobalSaving(true);
     try {
-      const payload = config.ui_global ?? DEFAULT_CONFIG_V2.ui_global ?? {};
-      await saveConfigGroup("ui_global", payload);
+      // Guardar layers.global (radar y satélite)
+      const layersPayload = config.layers ?? {};
+      const globalPayload = layersPayload.global_ ?? layersPayload.global ?? {};
+      
+      // Asegurar que layers existe
+      if (!config.layers) {
+        await saveConfigV2({
+          ...config,
+          layers: {
+            global_: globalPayload,
+          },
+        });
+      } else {
+        // Actualizar solo layers.global
+        await saveConfigGroup("layers", {
+          ...layersPayload,
+          global: globalPayload,
+        });
+      }
+      
       await reloadConfig();
       alert("Capas globales guardadas. La pantalla se reiniciará en unos segundos.");
 
@@ -1495,15 +1520,23 @@ export const ConfigPage: React.FC = () => {
               <label>
                 <input
                   type="checkbox"
-                  checked={config.ui_global?.radar?.enabled || false}
+                  checked={config.layers?.global_?.radar?.enabled || config.layers?.global?.radar?.enabled || false}
                   onChange={(e) => {
+                    const currentLayers = config.layers ?? {};
+                    const currentGlobal = currentLayers.global_ ?? currentLayers.global ?? {};
                     setConfig({
                       ...config,
-                      ui_global: {
-                        ...config.ui_global,
-                        radar: {
-                          enabled: e.target.checked,
-                          provider: "rainviewer",
+                      layers: {
+                        ...currentLayers,
+                        global_: {
+                          ...currentGlobal,
+                          radar: {
+                            ...currentGlobal.radar,
+                            enabled: e.target.checked,
+                            provider: "rainviewer",
+                            opacity: currentGlobal.radar?.opacity ?? 0.7,
+                            layer_type: currentGlobal.radar?.layer_type ?? "precipitation_new",
+                          },
                         },
                       },
                     });
@@ -1513,7 +1546,7 @@ export const ConfigPage: React.FC = () => {
               </label>
             </div>
             
-            {config.ui_global?.radar?.enabled && (
+            {(config.layers?.global_?.radar?.enabled || config.layers?.global?.radar?.enabled) && (
               <>
                 <div className="config-field">
                   <label>Proveedor</label>
@@ -1525,6 +1558,75 @@ export const ConfigPage: React.FC = () => {
                   </div>
                 </div>
                 
+                <div className="config-field">
+                  <label>
+                    Opacidad: {((config.layers?.global_?.radar?.opacity ?? config.layers?.global?.radar?.opacity ?? 0.7) * 100).toFixed(0)}%
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="5"
+                    value={((config.layers?.global_?.radar?.opacity ?? config.layers?.global?.radar?.opacity ?? 0.7) * 100)}
+                    onChange={(e) => {
+                      const currentLayers = config.layers ?? {};
+                      const currentGlobal = currentLayers.global_ ?? currentLayers.global ?? {};
+                      const newOpacity = parseFloat(e.target.value) / 100;
+                      setConfig({
+                        ...config,
+                        layers: {
+                          ...currentLayers,
+                          global_: {
+                            ...currentGlobal,
+                            radar: {
+                              ...currentGlobal.radar,
+                              enabled: currentGlobal.radar?.enabled ?? true,
+                              provider: "rainviewer",
+                              opacity: newOpacity,
+                              layer_type: currentGlobal.radar?.layer_type ?? "precipitation_new",
+                            },
+                          },
+                        },
+                      });
+                    }}
+                  />
+                  <div className="config-field__hint">
+                    Ajusta la opacidad de la capa de radar (0-100%)
+                  </div>
+                </div>
+                
+                <div className="config-field">
+                  <label>Tipo de Capa</label>
+                  <select
+                    value={config.layers?.global_?.radar?.layer_type ?? config.layers?.global?.radar?.layer_type ?? "precipitation_new"}
+                    onChange={(e) => {
+                      const currentLayers = config.layers ?? {};
+                      const currentGlobal = currentLayers.global_ ?? currentLayers.global ?? {};
+                      setConfig({
+                        ...config,
+                        layers: {
+                          ...currentLayers,
+                          global_: {
+                            ...currentGlobal,
+                            radar: {
+                              ...currentGlobal.radar,
+                              enabled: currentGlobal.radar?.enabled ?? true,
+                              provider: "rainviewer",
+                              opacity: currentGlobal.radar?.opacity ?? 0.7,
+                              layer_type: e.target.value,
+                            },
+                          },
+                        },
+                      });
+                    }}
+                  >
+                    <option value="precipitation_new">Precipitación (nuevo)</option>
+                    <option value="precipitation">Precipitación (legacy)</option>
+                  </select>
+                  <div className="config-field__hint">
+                    Tipo de datos de radar a mostrar
+                  </div>
+                </div>
                 
                 <div className="config-field__actions">
                   <button
@@ -1552,14 +1654,19 @@ export const ConfigPage: React.FC = () => {
                     {rainviewerTestResult.ok ? (
                       <>
                         ✓ RainViewer funcionando correctamente
-                        {rainviewerTestResult.frames_count !== undefined && (
+                        {rainviewerTestResult.status && (
                           <span className="config-badge" style={{ marginLeft: "8px" }}>
-                            {rainviewerTestResult.frames_count} frames
+                            HTTP {rainviewerTestResult.status}
+                          </span>
+                        )}
+                        {rainviewerTestResult.test_tile && (
+                          <span className="config-badge" style={{ marginLeft: "8px" }}>
+                            Tile: {rainviewerTestResult.test_tile}
                           </span>
                         )}
                       </>
                     ) : (
-                      `✗ Error: ${rainviewerTestResult.reason || "Desconocido"}`
+                      `✗ Error: ${rainviewerTestResult.message || rainviewerTestResult.error || rainviewerTestResult.reason || "Desconocido"}`
                     )}
                   </div>
                 )}
