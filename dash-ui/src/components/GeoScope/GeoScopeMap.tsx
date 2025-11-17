@@ -4,7 +4,7 @@ import type { Feature, FeatureCollection, GeoJsonProperties, Geometry, Point } f
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 
-import { apiGet, apiPost, saveConfig } from "../../lib/api";
+import { apiGet, apiPost, saveConfig, getRainViewerFrames } from "../../lib/api";
 import { useConfig } from "../../lib/useConfig";
 import { applyMapStyle, computeStyleUrlFromConfig } from "../../kiosk/mapStyle";
 import { kioskRuntime } from "../../lib/runtimeFlags";
@@ -1762,9 +1762,18 @@ export default function GeoScopeMap({
           // Declarar configAsV2Init una sola vez con todas las propiedades necesarias
           const configAsV2Init = config as unknown as { 
             version?: number; 
-            ui_global?: { satellite?: { enabled?: boolean; opacity?: number } };
+            ui_global?: { 
+              satellite?: { enabled?: boolean; opacity?: number };
+              radar?: { enabled?: boolean; opacity?: number };
+              weather_layers?: {
+                radar?: { enabled?: boolean; opacity?: number; provider?: string };
+              };
+            };
             layers?: { 
-              global_?: { satellite?: GlobalSatelliteLayerConfig };
+              global_?: { 
+                satellite?: GlobalSatelliteLayerConfig;
+                radar?: GlobalRadarLayerConfig;
+              };
               flights?: FlightsLayerConfig;
               ships?: typeof mergedConfig.layers.ships;
             };
@@ -1772,21 +1781,29 @@ export default function GeoScopeMap({
             opensky?: OpenSkyConfig;
           };
 
-          // TEMPORALMENTE DESACTIVADO: Global Radar Layer
-          // Todas las capas globales están deshabilitadas temporalmente para dejar solo el mapa base.
-          // TODO: Re-activar en una segunda iteración controlada.
-          /*
-          // Global Radar Layer (z-index 10, debajo de AEMET)
-          const globalRadarConfig = mergedConfig.layers.global?.radar;
-          if (globalRadarConfig?.enabled) {
+          // Global Radar Layer (z-index 10, debajo de AEMET y aviones/barcos)
+          // Leer configuración desde v2: ui_global.weather_layers.radar o ui_global.radar
+          const uiGlobalRadarInit = configAsV2Init.version === 2 
+            ? (configAsV2Init.ui_global?.weather_layers?.radar ?? configAsV2Init.ui_global?.radar)
+            : undefined;
+          const globalRadarConfigInit = configAsV2Init.version === 2 && configAsV2Init.layers?.global_?.radar
+            ? configAsV2Init.layers.global_.radar
+            : mergedConfig.layers.global?.radar;
+          
+          const isRadarEnabledInit = Boolean(
+            globalRadarConfigInit?.enabled && 
+            (uiGlobalRadarInit?.enabled !== false)
+          );
+          const radarOpacityInit = uiGlobalRadarInit?.opacity ?? globalRadarConfigInit?.opacity ?? 1.0;
+
+          if (isRadarEnabledInit) {
             const globalRadarLayer = new GlobalRadarLayer({
-              enabled: globalRadarConfig.enabled,
-              opacity: globalRadarConfig.opacity,
+              enabled: true,
+              opacity: radarOpacityInit,
             });
             layerRegistry.add(globalRadarLayer);
             globalRadarLayerRef.current = globalRadarLayer;
           }
-          */
 
           // Weather Layer (z-index 12, entre radar/satélite y AEMET warnings)
           // Leer configuración AEMET desde v2 o v1
@@ -3019,13 +3036,154 @@ export default function GeoScopeMap({
     };
   }, [config]);
 
-  // TEMPORALMENTE DESACTIVADO: useEffect para gestionar frames de capas globales (satellite/radar)
-  // Todas las capas globales están deshabilitadas temporalmente para dejar solo el mapa base.
-  // TODO: Re-activar en una segunda iteración controlada cuando GIBS esté completamente probado.
+  // useEffect para gestionar frames del radar RainViewer
   useEffect(() => {
-    // FORZADO: No gestionar frames de capas globales, salir inmediatamente
-    // Esto asegura que no se hagan peticiones a /api/global/satellite/frames ni /api/global/radar/frames
-    return;
+    if (!mapRef.current) {
+      return;
+    }
+
+    // Leer configuración del radar
+    const configAsV2Radar = config as unknown as {
+      version?: number;
+      ui_global?: {
+        radar?: { enabled?: boolean; opacity?: number };
+        weather_layers?: {
+          radar?: { enabled?: boolean; opacity?: number; provider?: string };
+        };
+      };
+      layers?: {
+        global_?: {
+          radar?: GlobalRadarLayerConfig;
+        };
+      };
+    };
+
+    const uiGlobalRadar = configAsV2Radar.version === 2
+      ? (configAsV2Radar.ui_global?.weather_layers?.radar ?? configAsV2Radar.ui_global?.radar)
+      : undefined;
+    const globalRadarConfig = configAsV2Radar.version === 2 && configAsV2Radar.layers?.global_?.radar
+      ? configAsV2Radar.layers.global_.radar
+      : (config ? withConfigDefaults(config) : withConfigDefaults()).layers.global?.radar;
+
+    const isRadarEnabled = Boolean(
+      globalRadarConfig?.enabled &&
+      (uiGlobalRadar?.enabled !== false)
+    );
+
+    if (!isRadarEnabled) {
+      // Si el radar está desactivado, limpiar la capa si existe
+      const globalRadarLayer = globalRadarLayerRef.current;
+      if (globalRadarLayer) {
+        globalRadarLayer.update({ enabled: false });
+      }
+      return;
+    }
+
+    // Configuración para fetch de frames
+    const historyMinutes = globalRadarConfig?.history_minutes ?? 90;
+    const frameStep = globalRadarConfig?.frame_step ?? 5;
+    const refreshMinutes = globalRadarConfig?.refresh_minutes ?? 5;
+
+    let radarFrames: number[] = [];
+    let radarFrameIndex = 0;
+    let animationTimer: number | null = null;
+
+    const fetchRadarFrames = async () => {
+      try {
+        console.debug("[RadarLayer] Fetching frames from /api/rainviewer/frames");
+        const frames = await getRainViewerFrames(historyMinutes, frameStep);
+        
+        if (frames && frames.length > 0) {
+          radarFrames = frames;
+          radarFrameIndex = radarFrames.length - 1; // Usar el último frame (más reciente)
+          
+          const globalRadarLayer = globalRadarLayerRef.current;
+          if (globalRadarLayer && radarFrames.length > 0) {
+            const activeTimestamp = radarFrames[radarFrameIndex];
+            console.debug("[RadarLayer] frames:", radarFrames.length, "active timestamp:", activeTimestamp);
+            globalRadarLayer.update({ 
+              enabled: true,
+              currentTimestamp: activeTimestamp 
+            });
+          }
+        } else {
+          console.warn("[RadarLayer] No frames available");
+          radarFrames = [];
+        }
+      } catch (err) {
+        console.error("[RadarLayer] Failed to fetch frames:", err);
+        radarFrames = [];
+      }
+    };
+
+    const advanceFrame = () => {
+      if (radarFrames.length === 0) {
+        return;
+      }
+
+      // Avanzar al siguiente frame (circular)
+      radarFrameIndex = (radarFrameIndex + 1) % radarFrames.length;
+      const activeTimestamp = radarFrames[radarFrameIndex];
+      
+      const globalRadarLayer = globalRadarLayerRef.current;
+      if (globalRadarLayer) {
+        console.debug("[RadarLayer] active timestamp:", activeTimestamp);
+        globalRadarLayer.update({ currentTimestamp: activeTimestamp });
+      }
+    };
+
+    const startAnimation = () => {
+      if (animationTimer !== null || radarFrames.length === 0) {
+        return;
+      }
+
+      // Calcular intervalo basado en frame_step (minutos entre frames)
+      const intervalMs = (frameStep * 60 * 1000) / Math.max(0.25, 1.0); // 1.0 = velocidad normal
+
+      const animate = () => {
+        advanceFrame();
+        animationTimer = window.setTimeout(animate, intervalMs);
+      };
+
+      animate();
+    };
+
+    const stopAnimation = () => {
+      if (animationTimer !== null) {
+        window.clearTimeout(animationTimer);
+        animationTimer = null;
+      }
+    };
+
+    // Cargar frames inicialmente
+    void fetchRadarFrames();
+
+    // Iniciar animación después de un breve delay para que los frames se carguen
+    const startDelay = setTimeout(() => {
+      if (radarFrames.length > 0) {
+        startAnimation();
+      }
+    }, 1000);
+
+    // Refrescar frames periódicamente
+    const refreshIntervalMs = refreshMinutes * 60 * 1000;
+    const refreshTimer = window.setInterval(() => {
+      void fetchRadarFrames();
+    }, refreshIntervalMs);
+
+    // Actualizar opacidad si cambia
+    const radarOpacityValue = uiGlobalRadar?.opacity ?? globalRadarConfig?.opacity ?? 1.0;
+    const globalRadarLayer = globalRadarLayerRef.current;
+    if (globalRadarLayer) {
+      globalRadarLayer.update({ opacity: radarOpacityValue });
+    }
+
+    return () => {
+      stopAnimation();
+      clearTimeout(startDelay);
+      window.clearInterval(refreshTimer);
+    };
+  }, [config]);
     
     /* CÓDIGO DESACTIVADO TEMPORALMENTE
     if (!mapRef.current) {

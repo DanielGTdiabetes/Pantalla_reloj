@@ -24,7 +24,7 @@ export default class GlobalRadarLayer implements Layer {
     this.enabled = options.enabled ?? false;
     this.opacity = options.opacity ?? 0.7;
     this.currentTimestamp = options.currentTimestamp;
-    this.baseUrl = options.baseUrl ?? "/api/global/radar/tiles";
+    this.baseUrl = options.baseUrl ?? "/api/rainviewer/tiles";
   }
 
   add(map: maplibregl.Map): void {
@@ -88,10 +88,10 @@ export default class GlobalRadarLayer implements Layer {
         tiles: [
           `${this.baseUrl}/${timestamp}/{z}/{x}/{y}.png`
         ],
-        tileSize: 256,
-        scheme: "xyz"
+        tileSize: 256
       });
       
+      const beforeId = this.findBeforeId();
       this.map.addLayer({
         id: this.id,
         type: "raster",
@@ -101,8 +101,33 @@ export default class GlobalRadarLayer implements Layer {
         },
         minzoom: 0,
         maxzoom: 18
-      });
+      }, beforeId);
     }
+  }
+
+  /**
+   * Encuentra el ID de la primera capa de aviones o barcos para usar como beforeId.
+   * Esto asegura que el radar se añada por debajo de aviones/barcos pero por encima del mapa base.
+   */
+  private findBeforeId(): string | undefined {
+    if (!this.map) {
+      return undefined;
+    }
+
+    // Buscar la primera capa de aviones o barcos
+    const style = this.map.getStyle();
+    if (!style || !style.layers) {
+      return undefined;
+    }
+
+    for (const layer of style.layers) {
+      // Buscar capas de aviones (geoscope-aircraft) o barcos (geoscope-ships)
+      if (layer.id === "geoscope-aircraft" || layer.id === "geoscope-ships") {
+        return layer.id;
+      }
+    }
+
+    return undefined;
   }
 
   private ensureLayer(): void {
@@ -114,12 +139,12 @@ export default class GlobalRadarLayer implements Layer {
       this.map.addSource(this.sourceId, {
         type: "raster",
         tiles: [`${this.baseUrl}/${this.currentTimestamp}/{z}/{x}/{y}.png`],
-        tileSize: 256,
-        scheme: "xyz"
+        tileSize: 256
       });
     }
 
     if (!this.map.getLayer(this.id)) {
+      const beforeId = this.findBeforeId();
       this.map.addLayer({
         id: this.id,
         type: "raster",
@@ -129,7 +154,7 @@ export default class GlobalRadarLayer implements Layer {
         },
         minzoom: 0,
         maxzoom: 18
-      });
+      }, beforeId);
     }
   }
 
