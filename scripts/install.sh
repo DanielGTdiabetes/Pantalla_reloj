@@ -133,11 +133,24 @@ install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$LOG_DIR"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR"
 install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_RUNTIME"
 
-# Validar y reparar perfil de Chrome si está corrupto
+# ============================================================================
+# GESTIÓN DEL PERFIL DEL NAVEGADOR KIOSK
+# ============================================================================
+# IMPORTANTE: Esta es la ÚNICA ubicación donde se crea y gestiona el perfil
+# del navegador kiosk. El wrapper /usr/local/bin/pantalla-kiosk y los servicios
+# systemd NO deben crear ni modificar permisos de este directorio.
+#
+# Ubicación: /var/lib/pantalla-reloj/state/chromium-kiosk
+# Permisos: 700 (dani:dani)
+# ============================================================================
+
 CHROME_PROFILE_DIR="${STATE_RUNTIME}/chromium-kiosk"
+
+# Detectar y eliminar perfil corrupto si existe
 if [[ -d "$CHROME_PROFILE_DIR" ]]; then
-  # Detectar si el perfil está corrupto (carpeta vacía o crash reports)
   PROFILE_CORRUPT=0
+  
+  # Detectar si el perfil está corrupto (carpeta vacía o crash reports)
   if [[ -z "$(find "$CHROME_PROFILE_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
     log_warn "Perfil de Chrome vacío detectado, será regenerado"
     PROFILE_CORRUPT=1
@@ -153,8 +166,11 @@ if [[ -d "$CHROME_PROFILE_DIR" ]]; then
   fi
 fi
 
-# Crear perfil de Chrome con permisos correctos
+# Crear perfil de Chrome con permisos correctos (idempotente)
+# Esta es la única creación autorizada del perfil del kiosk
+log_info "Creando perfil del navegador kiosk: $CHROME_PROFILE_DIR"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$CHROME_PROFILE_DIR"
+SUMMARY+=("[install] perfil del navegador kiosk creado: $CHROME_PROFILE_DIR (700, $USER_NAME:$USER_NAME)")
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "${STATE_RUNTIME}/firefox-kiosk"
 install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$PROFILE_DIR_DST"
 KIOSK_ENV_FILE="${STATE_RUNTIME}/kiosk.env"

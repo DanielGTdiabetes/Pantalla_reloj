@@ -690,7 +690,29 @@ Chrome/Chromium se lanza con los flags mínimos requeridos para kiosk estable: `
 
 El wrapper elimina previamente cualquier ventana `pantalla-kiosk` o `chrome.chromium` con `wmctrl -ic` y replica el stderr del navegador en `/tmp/pantalla-chromium.XXXXXX.log` y `/var/log/pantalla/browser-kiosk.log`. Usa `PANTALLA_CHROMIUM_VERBOSE=1` para habilitar `--v=1` o `PANTALLA_ALLOW_SWIFTSHADER=1` para permitir el fallback software.
 
-Los perfiles viven en `/var/lib/pantalla-reloj/state/chromium-kiosk` y `/var/lib/pantalla-reloj/state/firefox-kiosk` (permisos `0700`). Puedes moverlos editando `kiosk.env`.
+### Gestión del perfil del navegador kiosk
+
+**IMPORTANTE**: El perfil del navegador kiosk se crea y gestiona **exclusivamente** en `scripts/install.sh`. El wrapper `/usr/local/bin/pantalla-kiosk` y los servicios systemd **NO** crean ni modifican permisos de este directorio.
+
+**Ubicación del perfil**:
+- Chrome/Chromium: `/var/lib/pantalla-reloj/state/chromium-kiosk`
+- Firefox: `/var/lib/pantalla-reloj/state/firefox-kiosk`
+- Permisos: `700` (dani:dani)
+
+**No modificar manualmente en producción** salvo indicación explícita. Si el kiosk muestra "pantalla negra" o errores de visualización y el backend responde bien (`/api/maps/test_maptiler` devuelve `ok: true`), una opción de recuperación es:
+
+```bash
+sudo systemctl stop pantalla-kiosk@dani.service
+sudo rm -rf /var/lib/pantalla-reloj/state/chromium-kiosk
+sudo install -d -m 700 -o dani -g dani /var/lib/pantalla-reloj/state/chromium-kiosk
+sudo systemctl start pantalla-kiosk@dani.service
+```
+
+En condiciones normales, los scripts de instalación/desinstalación se encargan de esto automáticamente:
+- `scripts/install.sh` crea el perfil con permisos correctos
+- `scripts/uninstall.sh` elimina el perfil automáticamente para garantizar instalaciones limpias
+
+**Nota**: Puedes cambiar la ubicación del perfil editando `kiosk.env` (variable `CHROMIUM_PROFILE_DIR`), pero asegúrate de que el nuevo directorio tenga permisos `700` y owner `dani:dani` antes de iniciar el kiosk.
 
 ### Troubleshooting DBus y portals
 

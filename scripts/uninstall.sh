@@ -20,8 +20,9 @@ Options:
   --purge-config         Remove configuration under /var/lib/pantalla-reloj and config.json
                          Use this for clean installations to avoid inheriting old configs
                          with maps: null or layers_global: null from previous versions
-  --purge-browser-profile Remove Chrome browser profile under /var/lib/pantalla-reloj/state/chromium-kiosk
-                         Use this to fix corrupted browser profiles or start fresh
+  --purge-browser-profile [DEPRECATED] El perfil del navegador kiosk se elimina siempre
+                         automáticamente durante la desinstalación. Esta opción se mantiene
+                         por compatibilidad pero no tiene efecto.
   -h, --help             Show this message
 
 Examples:
@@ -336,16 +337,31 @@ clean_empty_chromium_dir() {
 clean_empty_chromium_dir "$CHROMIUM_HOME_DATA_DIR"
 clean_empty_chromium_dir "$CHROMIUM_HOME_CACHE_DIR"
 
-# Eliminar perfil de Chrome si se solicita
-if [[ $PURGE_BROWSER_PROFILE -eq 1 ]]; then
-  CHROME_PROFILE_DIR="${STATE_RUNTIME}/chromium-kiosk"
-  if [[ -d "$CHROME_PROFILE_DIR" ]]; then
-    log_info "Eliminando perfil de Chrome: $CHROME_PROFILE_DIR"
-    rm -rf "$CHROME_PROFILE_DIR"
-    log_ok "Perfil de Chrome eliminado"
-  else
-    log_info "Perfil de Chrome no existe: $CHROME_PROFILE_DIR"
-  fi
+# ============================================================================
+# ELIMINACIÓN DEL PERFIL DEL NAVEGADOR KIOSK
+# ============================================================================
+# El perfil del navegador kiosk se elimina siempre en una desinstalación
+# para garantizar que futuras instalaciones empiezan desde cero, sin estado
+# corrupto. Esto previene problemas de permisos y perfiles corruptos.
+# ============================================================================
+
+CHROME_PROFILE_DIR="${STATE_RUNTIME}/chromium-kiosk"
+FIREFOX_PROFILE_DIR="${STATE_RUNTIME}/firefox-kiosk"
+
+# Eliminar perfil de Chrome (idempotente)
+if [[ -d "$CHROME_PROFILE_DIR" ]]; then
+  log_info "Eliminando perfil del navegador kiosk (Chrome): $CHROME_PROFILE_DIR"
+  rm -rf "$CHROME_PROFILE_DIR"
+  log_ok "Perfil de Chrome eliminado"
+else
+  log_info "Perfil de Chrome no existe: $CHROME_PROFILE_DIR (ya limpio)"
+fi
+
+# Eliminar perfil de Firefox si existe (idempotente)
+if [[ -d "$FIREFOX_PROFILE_DIR" ]]; then
+  log_info "Eliminando perfil del navegador kiosk (Firefox): $FIREFOX_PROFILE_DIR"
+  rm -rf "$FIREFOX_PROFILE_DIR"
+  log_ok "Perfil de Firefox eliminado"
 fi
 
 # Limpiar logs, cachés y snapshots

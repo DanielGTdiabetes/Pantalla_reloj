@@ -340,9 +340,61 @@ check_openbox() {
   return 0
 }
 
+# Función para verificar perfil del navegador kiosk
+check_kiosk_profile() {
+  log_info "Verificando perfil del navegador kiosk..."
+  
+  local PROFILE_DIR="/var/lib/pantalla-reloj/state/chromium-kiosk"
+  
+  # Verificar que el directorio existe
+  if [[ ! -d "$PROFILE_DIR" ]]; then
+    log_error "El directorio del perfil del kiosk no existe: $PROFILE_DIR"
+    log_error "Ejecuta scripts/install.sh para crear el perfil correctamente"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Verificar owner (debe ser dani:dani)
+  local owner
+  owner="$(stat -c '%U:%G' "$PROFILE_DIR" 2>/dev/null || echo "unknown:unknown")"
+  if [[ "$owner" != "${RUN_USER}:${RUN_USER}" ]]; then
+    log_error "Owner incorrecto en perfil del kiosk: $PROFILE_DIR (owner=$owner, esperado=${RUN_USER}:${RUN_USER})"
+    log_error "Ejecuta scripts/install.sh para corregir los permisos"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Verificar permisos (deben ser 700)
+  local perms
+  perms="$(stat -c '%a' "$PROFILE_DIR" 2>/dev/null || echo "unknown")"
+  if [[ "$perms" != "700" ]]; then
+    log_error "Permisos incorrectos en perfil del kiosk: $PROFILE_DIR (perms=$perms, esperado=700)"
+    log_error "Ejecuta scripts/install.sh para corregir los permisos"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  # Verificar que es accesible
+  if [[ ! -r "$PROFILE_DIR" ]] || [[ ! -x "$PROFILE_DIR" ]]; then
+    log_error "El perfil del kiosk no es accesible: $PROFILE_DIR"
+    log_error "Ejecuta scripts/install.sh para corregir los permisos"
+    ((ERRORS++)) || true
+    return 1
+  fi
+  
+  log_success "Perfil del kiosk verificado: $PROFILE_DIR (owner=$owner, perms=$perms)"
+  return 0
+}
+
 # Función para verificar Kiosk
 check_kiosk() {
   log_info "Verificando Kiosk Browser..."
+  
+  # Primero verificar que el perfil existe y tiene permisos correctos
+  if ! check_kiosk_profile; then
+    log_error "Fallo en verificación del perfil del kiosk"
+    return 1
+  fi
   
   local kiosk_active=0
   local active_unit=""

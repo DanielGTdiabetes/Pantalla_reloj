@@ -117,24 +117,30 @@ find_firefox() {
   return 1
 }
 
-prepare_dir() {
+# Verificar que el directorio del perfil existe y es accesible
+# NO crear ni modificar permisos aquí - eso se hace solo en scripts/install.sh
+verify_profile_dir() {
   local dir="$1"
-  install -d -m 0700 "$dir"
+  local profile_name="$2"
   
-  # Validar permisos del directorio antes de continuar
-  if [[ -d "$dir" ]]; then
-    local owner perms
-    owner="$(stat -c '%U:%G' "$dir" 2>/dev/null || echo "")"
-    perms="$(stat -c '%a' "$dir" 2>/dev/null || echo "")"
-    local expected_owner="$(id -un):$(id -gn)"
-    
-    if [[ "$owner" != "$expected_owner" ]] || [[ "$perms" != "700" ]]; then
-      log "WARN: Permisos incorrectos en $dir (owner=$owner, perms=$perms), corrigiendo..."
-      chown -R "$(id -un):$(id -gn)" "$dir" 2>/dev/null || true
-      chmod -R 700 "$dir" 2>/dev/null || true
-      log "Permisos corregidos en $dir"
-    fi
+  if [[ ! -d "$dir" ]]; then
+    log "ERROR: El directorio del perfil ${profile_name} no existe: $dir"
+    log "ERROR: Ejecuta scripts/install.sh para crear el perfil correctamente"
+    exit 1
   fi
+  
+  # Verificar que es accesible (lectura)
+  if [[ ! -r "$dir" ]] || [[ ! -x "$dir" ]]; then
+    log "ERROR: El directorio del perfil ${profile_name} no es accesible: $dir"
+    log "ERROR: Ejecuta scripts/install.sh para corregir los permisos"
+    exit 1
+  fi
+  
+  # Log informativo sobre el estado (sin modificar nada)
+  local owner perms
+  owner="$(stat -c '%U:%G' "$dir" 2>/dev/null || echo "unknown")"
+  perms="$(stat -c '%a' "$dir" 2>/dev/null || echo "unknown")"
+  log "Perfil ${profile_name}: $dir (owner=$owner, perms=$perms)"
 }
 
 prepare_log_dir() {
@@ -178,20 +184,8 @@ launch_chromium() {
   log "launch: ${cmd[*]}"
   log "url: ${url}"
 
-  # Validar permisos del perfil antes de lanzar Chrome
-  if [[ -d "$profile_dir" ]]; then
-    local owner perms
-    owner="$(stat -c '%U:%G' "$profile_dir" 2>/dev/null || echo "")"
-    perms="$(stat -c '%a' "$profile_dir" 2>/dev/null || echo "")"
-    local expected_owner="$(id -un):$(id -gn)"
-    
-    if [[ "$owner" != "$expected_owner" ]] || [[ "$perms" != "700" ]]; then
-      log "WARN: Permisos incorrectos en perfil Chrome, corrigiendo..."
-      chown -R "$(id -un):$(id -gn)" "$profile_dir" 2>/dev/null || true
-      chmod -R 700 "$profile_dir" 2>/dev/null || true
-      log "Permisos del perfil Chrome corregidos"
-    fi
-  fi
+  # Verificar que el perfil existe (no modificar permisos aquí)
+  verify_profile_dir "$profile_dir" "Chrome"
 
   # Intentar lanzar Chrome con relanzamiento si falla rápidamente (evita pantallazos negros)
   local quick_fail_threshold=2
@@ -286,10 +280,12 @@ main() {
   log_dir="${PANTALLA_KIOSK_LOG_DIR:-${DEFAULT_LOG_DIR}}"
   log_file="${log_dir}/browser-kiosk.log"
 
-  install -d -m 0755 "$state_base"
-  prepare_dir "$chromium_profile"
-  prepare_dir "$firefox_profile"
+  # Verificar que los directorios base existen (solo crear logs, no perfiles)
   prepare_log_dir "$log_dir"
+  
+  # Verificar perfiles (NO crear ni modificar permisos - eso se hace en install.sh)
+  verify_profile_dir "$chromium_profile" "Chrome"
+  verify_profile_dir "$firefox_profile" "Firefox"
 
   kill_existing
 
