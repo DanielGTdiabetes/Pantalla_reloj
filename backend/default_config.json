@@ -6,15 +6,15 @@
   "map": {
     "provider": "maptiler",
     "maptiler_api_key": null,
-    "styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A"
+    "styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json?key=TU_API_KEY_AQUI"
   },
   "ui_map": {
     "engine": "maplibre",
     "provider": "maptiler_vector",
     "maptiler": {
       "style": "streets-v4",
-      "api_key": "fBZDqPrUD4EwoZLV4L6A",
-      "styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A"
+      "api_key": "TU_API_KEY_AQUI",
+      "styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json?key=TU_API_KEY_AQUI"
     },
     "interactive": false,
     "controls": false
@@ -28,7 +28,7 @@
       "maptiler": {
         "key": null,
         "apiKey": null,
-        "styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A"
+        "styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json?key=TU_API_KEY_AQUI"
       },
       "xyz": {
         "urlTemplate": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",

@@ -50,7 +50,12 @@ class MapTilerUrlsConfig(BaseModel):
 
 
 class MapTilerConfig(BaseModel):
-    """Configuración del proveedor MapTiler vector."""
+    """Configuración del proveedor MapTiler vector.
+    
+    IMPORTANTE: Cuando se usa provider="maptiler_vector", styleUrl debe estar presente
+    y ser válido. Si solo se proporciona style + api_key, el backend puede construir
+    styleUrl automáticamente, pero es preferible proporcionarlo explícitamente.
+    """
     style: Optional[str] = Field(default="vector-bright", max_length=64)  # "vector-dark", "vector-bright", "streets-v4", "hybrid", "satellite", etc.
     api_key: Optional[str] = Field(default=None, max_length=256)
     styleUrl: Optional[str] = Field(default=None, max_length=512)
@@ -91,6 +96,22 @@ class MapTilerConfig(BaseModel):
                 stripped = legacy_key.strip()
                 return stripped or None
         return None
+    
+    @field_validator("styleUrl")
+    @classmethod
+    def validate_style_url_format(cls, value: Optional[str]) -> Optional[str]:
+        """Valida el formato de styleUrl si está presente."""
+        if value is None:
+            return None
+        if not isinstance(value, str) or not value.strip():
+            return None
+        value = value.strip()
+        # Validar formato básico: debe empezar con https://api.maptiler.com/maps/ y contener style.json
+        if not value.startswith("https://api.maptiler.com/maps/"):
+            raise ValueError("styleUrl must start with 'https://api.maptiler.com/maps/'")
+        if "style.json" not in value:
+            raise ValueError("styleUrl must contain 'style.json'")
+        return value
 
 
 class CustomXyzConfig(BaseModel):
@@ -240,7 +261,12 @@ class MapSatelliteConfig(BaseModel):
 
 
 class MapConfig(BaseModel):
-    """Configuración del mapa v2."""
+    """Configuración del mapa v2.
+    
+    IMPORTANTE: Cuando provider="maptiler_vector", maptiler.styleUrl debe estar presente
+    y ser válido. Si falta, el backend intentará construirlo desde maptiler.style + maptiler.api_key,
+    pero es preferible proporcionarlo explícitamente para evitar estados inconsistentes.
+    """
     engine: Literal["maplibre"] = "maplibre"
     provider: Literal["local_raster_xyz", "maptiler_vector", "custom_xyz"] = "local_raster_xyz"
     renderWorldCopies: bool = Field(default=True)
@@ -259,6 +285,42 @@ class MapConfig(BaseModel):
     fixed: Optional[MapFixedView] = None
     aoiCycle: Optional[MapAoiCycle] = None
     region: Optional[MapRegion] = None
+    
+    @model_validator(mode="after")
+    def validate_maptiler_config(self) -> "MapConfig":
+        """Valida que cuando provider="maptiler_vector", maptiler.styleUrl esté presente o se pueda construir."""
+        if self.provider == "maptiler_vector":
+            if not self.maptiler:
+                raise ValueError("maptiler config is required when provider='maptiler_vector'")
+            
+            # Si no hay styleUrl, intentar construir desde style + api_key
+            if not self.maptiler.styleUrl or not self.maptiler.styleUrl.strip():
+                if not self.maptiler.style or not self.maptiler.api_key:
+                    raise ValueError(
+                        "When provider='maptiler_vector', either styleUrl must be provided, "
+                        "or both style and api_key must be present to construct styleUrl"
+                    )
+                
+                # Construir styleUrl automáticamente
+                style_name = self.maptiler.style.strip()
+                if style_name in {"hybrid", "satellite", "vector-bright"}:
+                    style_name = "streets-v4"
+                
+                api_key = self.maptiler.api_key.strip()
+                self.maptiler.styleUrl = f"https://api.maptiler.com/maps/{style_name}/style.json?key={api_key}"
+                # Validar el styleUrl construido
+                try:
+                    MapTilerConfig.validate_style_url_format(self.maptiler.styleUrl)
+                except ValueError as e:
+                    raise ValueError(f"Invalid constructed styleUrl: {e}") from e
+            else:
+                # Validar el styleUrl proporcionado
+                try:
+                    MapTilerConfig.validate_style_url_format(self.maptiler.styleUrl)
+                except ValueError as e:
+                    raise ValueError(f"Invalid styleUrl format: {e}") from e
+        
+        return self
 
 
 class WeatherLayerConfig(BaseModel):

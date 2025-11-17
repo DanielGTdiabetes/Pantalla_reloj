@@ -1368,6 +1368,18 @@ export default function GeoScopeMap({
     const handleLoad = () => {
       const map = mapRef.current;
       if (map) {
+        // Verificar que el estilo no sea null para evitar crashes de "Cannot read properties of null (reading 'version')"
+        const style = getSafeMapStyle(map);
+        if (!style) {
+          console.error("[GeoScopeMap] Map style is null after load event, showing error overlay");
+          setWebglError(
+            "Error cargando el estilo del mapa (MapTiler). " +
+            "Revisa la API key y la configuración en /config. " +
+            "El mapa no puede funcionar sin un estilo válido."
+          );
+          return; // No continuar si el estilo es null
+        }
+        
         const styleType = styleTypeRef.current;
         const theme = themeRef.current;
         if (styleType && theme && shouldApplyTheme()) {
@@ -1383,6 +1395,15 @@ export default function GeoScopeMap({
     const handleStyleData = () => {
       const map = mapRef.current;
       if (map) {
+        // Verificar que el estilo no sea null después de cambios de estilo
+        const style = getSafeMapStyle(map);
+        if (!style) {
+          console.warn("[GeoScopeMap] Map style is null after styledata event, skipping style-dependent logic");
+          // No mostrar error aquí porque puede ser temporal durante cambios de estilo
+          // Solo loguear y saltar la lógica dependiente del estilo
+          return;
+        }
+        
         const styleType = styleTypeRef.current;
         const theme = themeRef.current;
         if (styleType && theme && shouldApplyTheme()) {

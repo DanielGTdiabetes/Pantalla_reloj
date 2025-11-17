@@ -44,7 +44,7 @@ from fastapi import Body, FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from threading import Lock, Thread
 import threading
 
@@ -511,7 +511,31 @@ class LightningWsTestRequest(BaseModel):
 
 
 class MapTilerTestRequest(BaseModel):
-    styleUrl: str = Field(min_length=1, max_length=512)
+    """Modelo para test de MapTiler. Soporta dos formatos:
+    - A) styleUrl completo (modo preferido)
+    - B) style + provider (construye styleUrl internamente usando api_key de config)
+    """
+    styleUrl: Optional[str] = Field(default=None, max_length=512)
+    style: Optional[str] = Field(default=None, max_length=64)
+    provider: Optional[Literal["maptiler"]] = Field(default=None)
+    
+    @model_validator(mode="after")
+    def validate_request(self) -> "MapTilerTestRequest":
+        """Valida que se proporcione styleUrl o (style + provider)."""
+        if self.styleUrl:
+            # Modo A: styleUrl completo
+            if not self.styleUrl.strip():
+                raise ValueError("styleUrl cannot be empty")
+            return self
+        
+        # Modo B: style + provider
+        if not self.style or not self.provider:
+            raise ValueError("Either styleUrl must be provided, or both style and provider='maptiler'")
+        
+        if self.provider != "maptiler":
+            raise ValueError("provider must be 'maptiler' when using style parameter")
+        
+        return self
 
 
 class XyzTestRequest(BaseModel):
@@ -683,6 +707,7 @@ def _validate_maptiler_style(style_url: str) -> Dict[str, Any]:
         - status: int - Código HTTP
         - error: str | None - Mensaje de error si falla
         - name: str | None - Nombre del estilo si está disponible
+        - bytes: int | None - Tamaño en bytes del estilo si está disponible
     """
     try:
         response = requests.get(style_url, timeout=5)
@@ -690,41 +715,46 @@ def _validate_maptiler_style(style_url: str) -> Dict[str, Any]:
             try:
                 style_json = response.json()
                 # Verificar que tiene la estructura básica de un estilo MapLibre
-                if isinstance(style_json, dict) and "glyphs" in style_json:
+                if isinstance(style_json, dict) and ("glyphs" in style_json or "sources" in style_json):
                     name = style_json.get("name", "Unknown")
                     return {
                         "ok": True,
                         "status": 200,
                         "error": None,
-                        "name": str(name) if name else None
+                        "name": str(name) if name else None,
+                        "bytes": len(response.content)
                     }
                 else:
                     return {
                         "ok": False,
                         "status": 200,
-                        "error": "Style JSON missing required fields (glyphs)",
-                        "name": None
+                        "error": "Style JSON missing required fields (glyphs or sources)",
+                        "name": None,
+                        "bytes": None
                     }
             except (ValueError, KeyError) as e:
                 return {
                     "ok": False,
                     "status": 200,
                     "error": f"Invalid JSON or missing required fields: {e}",
-                    "name": None
+                    "name": None,
+                    "bytes": None
                 }
         else:
             return {
                 "ok": False,
                 "status": response.status_code,
                 "error": f"HTTP {response.status_code}",
-                "name": None
+                "name": None,
+                "bytes": None
             }
     except requests.RequestException as e:
         return {
             "ok": False,
             "status": 0,
             "error": str(e),
-            "name": None
+            "name": None,
+            "bytes": None
         }
 
 
@@ -1061,8 +1091,8 @@ def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
             ics.pop("stored_path", None)
             ics.pop("file_path", None)
     
-    # Extraer API key de styleUrl antes de sanitizar
-    # Esto asegura que ui_map.maptiler.api_key se rellene automáticamente
+    # Asegurar que ui_map.maptiler.styleUrl esté presente y api_key esté alineada
+    # Esto evita estados inconsistentes donde el frontend no puede construir el styleUrl
     if "ui_map" in payload and isinstance(payload["ui_map"], dict):
         ui_map = payload["ui_map"]
         if "maptiler" in ui_map and isinstance(ui_map["maptiler"], dict):
@@ -1074,15 +1104,29 @@ def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
             if isinstance(style_url, str) and style_url:
                 extracted_key = _extract_maptiler_key_from_url(style_url)
             
-            # Si no hay key en styleUrl, intentar desde secrets
+            # Si no hay key en styleUrl, intentar desde secrets o api_key existente
             if not extracted_key:
                 api_key_from_secrets = secret_store.get_secret("maptiler_api_key")
                 if api_key_from_secrets and api_key_from_secrets.strip():
                     extracted_key = api_key_from_secrets.strip()
+                elif isinstance(maptiler.get("api_key"), str) and maptiler["api_key"].strip():
+                    extracted_key = maptiler["api_key"].strip()
             
             # Establecer api_key si se encontró
             if extracted_key:
                 maptiler["api_key"] = extracted_key
+            
+            # Si falta styleUrl pero hay style + api_key, construir styleUrl automáticamente
+            if (not style_url or not style_url.strip()) and extracted_key:
+                style_name = maptiler.get("style", "streets-v4")
+                if isinstance(style_name, str):
+                    style_name = style_name.strip()
+                    # Normalizar nombres de estilo
+                    if style_name in {"hybrid", "satellite", "vector-bright"}:
+                        style_name = "streets-v4"
+                    # Construir styleUrl
+                    maptiler["styleUrl"] = f"https://api.maptiler.com/maps/{style_name}/style.json?key={extracted_key}"
+                    logger.info("[config] Auto-constructed styleUrl for MapTiler: %s", _mask_maptiler_url(maptiler["styleUrl"]))
         
         # Desactivar explícitamente overlays satélite en respuesta pública (modo base-map simple)
         # Evita que el frontend active satélite global por confusiones previas
@@ -2010,10 +2054,54 @@ def validate_map_config() -> Dict[str, Any]:
 async def test_maptiler(request: MapTilerTestRequest) -> Dict[str, Any]:
     """Prueba una URL de estilo de MapTiler.
     
+    Soporta dos formatos:
+    - A) styleUrl completo: {"styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json?key=..."}
+    - B) style + provider: {"style": "streets-v4", "provider": "maptiler"} (construye styleUrl usando api_key de config)
+    
     Descarga el JSON del estilo y verifica que sea válido.
     """
     try:
-        response = requests.get(request.styleUrl, timeout=5, allow_redirects=True)
+        # Determinar styleUrl a usar
+        style_url_to_test = request.styleUrl
+        
+        # Si no hay styleUrl pero hay style + provider, construir desde config
+        if not style_url_to_test and request.style and request.provider == "maptiler":
+            # Obtener api_key desde secrets o config
+            api_key = secret_store.get_secret("maptiler_api_key")
+            if not api_key:
+                # Intentar desde config v2
+                try:
+                    config_v2, _ = _read_config_v2()
+                    if config_v2 and config_v2.ui_map and config_v2.ui_map.maptiler:
+                        api_key = config_v2.ui_map.maptiler.api_key
+                except Exception:
+                    pass
+            
+            if not api_key or not api_key.strip():
+                return {
+                    "ok": False,
+                    "status": 0,
+                    "error": "missing_maptiler_api_key",
+                    "message": "MapTiler API key is required but not found in secrets or config"
+                }
+            
+            # Normalizar style name (hybrid/satellite → streets-v4)
+            style_name = request.style.strip()
+            if style_name in {"hybrid", "satellite", "vector-bright"}:
+                style_name = "streets-v4"
+            
+            # Construir styleUrl
+            style_url_to_test = f"https://api.maptiler.com/maps/{style_name}/style.json?key={api_key.strip()}"
+        
+        if not style_url_to_test:
+            return {
+                "ok": False,
+                "status": 0,
+                "error": "missing_style_url",
+                "message": "Either styleUrl or (style + provider) must be provided"
+            }
+        
+        response = requests.get(style_url_to_test, timeout=5, allow_redirects=True)
         if response.status_code == 200:
             try:
                 style_json = response.json()
@@ -3186,6 +3274,62 @@ def _health_payload_full_helper() -> Dict[str, Any]:
         payload["maptiler_provider"] = "unknown"
         payload["backend_provider"] = "unknown"
         payload["ui_provider_runtime"] = "unknown"
+    
+    # Estado del mapa (MapTiler)
+    # Información sobre el estilo del mapa para diagnóstico
+    try:
+        config_v2, _ = _read_config_v2()
+        ui_map = config_v2.ui_map
+        maptiler_config = ui_map.maptiler if ui_map else None
+        
+        map_status = "ok"
+        map_style = None
+        map_styleUrl_ok = False
+        map_style_bytes = None
+        map_error = None
+        
+        if ui_map and ui_map.provider == "maptiler_vector" and maptiler_config:
+            map_style = maptiler_config.style or "unknown"
+            style_url = maptiler_config.styleUrl
+            
+            if style_url:
+                # Validar el estilo (con timeout y caché para no abusar de MapTiler)
+                validation_result = _validate_maptiler_style(style_url)
+                map_styleUrl_ok = validation_result.get("ok", False)
+                map_style_bytes = validation_result.get("bytes") if map_styleUrl_ok else None
+                
+                if not map_styleUrl_ok:
+                    map_status = "error"
+                    map_error = validation_result.get("error", "Style validation failed")
+            else:
+                map_status = "error"
+                map_error = "Missing styleUrl"
+        elif ui_map and ui_map.provider != "maptiler_vector":
+            # Para otros proveedores, considerar ok
+            map_status = "ok"
+            map_style = ui_map.provider or "unknown"
+        else:
+            map_status = "unknown"
+            map_error = "Map configuration not available"
+        
+        payload["maps"] = {
+            "provider": str(ui_map.provider) if ui_map else "unknown",
+            "style": map_style,
+            "styleUrl_ok": map_styleUrl_ok,
+            "style_bytes": map_style_bytes,
+            "status": map_status,
+            "error": map_error
+        }
+    except Exception as exc:
+        logger.debug("[health] Error getting map status: %s", exc)
+        payload["maps"] = {
+            "provider": "unknown",
+            "style": None,
+            "styleUrl_ok": False,
+            "style_bytes": None,
+            "status": "error",
+            "error": str(exc)
+        }
     
     return payload
 

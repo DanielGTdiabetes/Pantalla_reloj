@@ -1,6 +1,7 @@
 import maplibregl from "maplibre-gl";
 
 import type { Layer } from "./LayerRegistry";
+import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
 
 interface GlobalRadarLayerOptions {
   enabled?: boolean;
@@ -114,8 +115,8 @@ export default class GlobalRadarLayer implements Layer {
       return undefined;
     }
 
-    // Buscar la primera capa de aviones o barcos
-    const style = this.map.getStyle();
+    // Usar getSafeMapStyle para evitar crashes si style es null
+    const style = getSafeMapStyle(this.map);
     if (!style || !style.layers) {
       return undefined;
     }
