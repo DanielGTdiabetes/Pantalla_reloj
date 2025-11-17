@@ -3038,10 +3038,6 @@ export default function GeoScopeMap({
 
   // useEffect para gestionar frames del radar RainViewer
   useEffect(() => {
-    if (!mapRef.current) {
-      return;
-    }
-
     // Leer configuración del radar
     const configAsV2Radar = config as unknown as {
       version?: number;
