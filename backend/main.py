@@ -805,6 +805,10 @@ def _read_config_v2() -> Tuple[AppConfigV2, bool]:
                     ui_map["provider"] = "maptiler_vector"
                     config_data["ui_map"] = ui_map
             
+            # Asegurar que maps y layers_global no sean null
+            config_data = _ensure_maps_defaults(config_data)
+            config_data = _ensure_layers_global_defaults(config_data)
+            
             # Asegurar que panels.news.feeds existe
             panels = config_data.get("panels", {})
             if isinstance(panels, dict):
@@ -957,6 +961,9 @@ def _read_config_v2() -> Tuple[AppConfigV2, bool]:
                 logger.warning("Invalid v2 config, migrating from defaults")
                 # Fallback a defaults
                 default_data = json.loads((Path(__file__).parent / "default_config_v2.json").read_text(encoding="utf-8"))
+                # Asegurar que maps y layers_global estén presentes en los defaults
+                default_data = _ensure_maps_defaults(default_data)
+                default_data = _ensure_layers_global_defaults(default_data)
                 config_v2 = AppConfigV2.model_validate(default_data)
                 return config_v2, False
         else:
@@ -978,6 +985,10 @@ def _read_config_v2() -> Tuple[AppConfigV2, bool]:
                     except Exception as e:
                         logger.warning("Could not geocode postal code %s: %s", postal_code, e)
             
+            # Asegurar que maps y layers_global no sean null antes de validar
+            config_v2_dict = _ensure_maps_defaults(config_v2_dict)
+            config_v2_dict = _ensure_layers_global_defaults(config_v2_dict)
+            
             # Validar y guardar v2
             config_v2 = AppConfigV2.model_validate(config_v2_dict)
             
@@ -993,8 +1004,105 @@ def _read_config_v2() -> Tuple[AppConfigV2, bool]:
         logger.error("Error reading config: %s", e, exc_info=True)
         # Fallback a defaults v2
         default_data = json.loads((Path(__file__).parent / "default_config_v2.json").read_text(encoding="utf-8"))
+        # Asegurar que maps y layers_global estén presentes en los defaults
+        default_data = _ensure_maps_defaults(default_data)
+        default_data = _ensure_layers_global_defaults(default_data)
         config_v2 = AppConfigV2.model_validate(default_data)
         return config_v2, False
+
+
+def _ensure_maps_defaults(config_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Asegura que el bloque 'maps' existe y tiene valores válidos.
+    
+    Si maps es null o no existe, crea un bloque por defecto usando la API key de MapTiler
+    desde secrets o config.
+    """
+    if "maps" not in config_dict or config_dict["maps"] is None:
+        logger.info("[Config] maps was null or missing; applying defaults")
+        config_dict["maps"] = {}
+    
+    maps = config_dict["maps"]
+    if not isinstance(maps, dict):
+        logger.warning("[Config] maps was not a dict, resetting to defaults")
+        maps = {}
+        config_dict["maps"] = maps
+    
+    # Obtener API key de MapTiler
+    api_key = None
+    try:
+        # Intentar desde secrets.maptiler.api_key
+        secrets = config_dict.get("secrets", {})
+        if isinstance(secrets, dict):
+            maptiler_secrets = secrets.get("maptiler", {})
+            if isinstance(maptiler_secrets, dict):
+                api_key = maptiler_secrets.get("api_key")
+        
+        # Fallback a secret_store
+        if not api_key or not api_key.strip():
+            api_key = secret_store.get_secret("maptiler_api_key")
+        
+        # Fallback a ui_map.maptiler.api_key
+        if not api_key or not api_key.strip():
+            ui_map = config_dict.get("ui_map", {})
+            if isinstance(ui_map, dict):
+                maptiler = ui_map.get("maptiler", {})
+                if isinstance(maptiler, dict):
+                    api_key = maptiler.get("api_key")
+    except Exception as e:
+        logger.warning("[Config] Error extracting MapTiler API key: %s", e)
+    
+    # Construir style_url con la API key
+    style_id = maps.get("style_id") or maps.get("style") or "streets-v4"
+    if api_key and api_key.strip():
+        style_url = f"https://api.maptiler.com/maps/{style_id}/style.json?key={api_key.strip()}"
+    else:
+        # Si no hay API key, usar placeholder
+        style_url = f"https://api.maptiler.com/maps/{style_id}/style.json?key=TU_API_KEY_AQUI"
+        logger.warning("[Config] No MapTiler API key found, using placeholder in style_url")
+    
+    # Asegurar campos mínimos en maps
+    maps.setdefault("provider", "maptiler")
+    maps.setdefault("style_id", style_id)
+    maps.setdefault("style_url", style_url)
+    maps.setdefault("min_zoom", 0)
+    maps.setdefault("max_zoom", 18)
+    maps.setdefault("initial_zoom", 9.0)
+    maps.setdefault("center", {"lat": 39.98, "lon": 0.20})
+    
+    return config_dict
+
+
+def _ensure_layers_global_defaults(config_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Asegura que el bloque 'layers_global' existe y tiene valores válidos.
+    
+    Si layers_global es null o no existe, crea un bloque por defecto con radar desactivado.
+    """
+    if "layers_global" not in config_dict or config_dict["layers_global"] is None:
+        logger.info("[Config] layers_global was null or missing; applying defaults")
+        config_dict["layers_global"] = {}
+    
+    layers_global = config_dict["layers_global"]
+    if not isinstance(layers_global, dict):
+        logger.warning("[Config] layers_global was not a dict, resetting to defaults")
+        layers_global = {}
+        config_dict["layers_global"] = layers_global
+    
+    # Asegurar que radar existe con valores por defecto
+    if "radar" not in layers_global or layers_global["radar"] is None:
+        layers_global["radar"] = {}
+    
+    radar = layers_global["radar"]
+    if not isinstance(radar, dict):
+        radar = {}
+        layers_global["radar"] = radar
+    
+    # Valores por defecto para radar
+    radar.setdefault("enabled", False)
+    radar.setdefault("provider", "rainviewer")
+    radar.setdefault("opacity", 0.7)
+    radar.setdefault("layer_type", None)
+    
+    return config_dict
 
 
 def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
@@ -3405,9 +3513,16 @@ def get_config(request: Request) -> JSONResponse:
         # Firmar URLs de MapTiler antes de serializar
         sign_maptiler_urls(config_v2)
         public_config = _build_public_config_v2(config_v2)
-    except Exception:
-        # Si no es v2 o hay error, devolver tal cual desde disco
+        
+        # Asegurar que maps y layers_global nunca sean null
+        public_config = _ensure_maps_defaults(public_config)
+        public_config = _ensure_layers_global_defaults(public_config)
+    except Exception as e:
+        logger.warning("[config] Error building public config v2: %s", e)
+        # Si no es v2 o hay error, devolver tal cual desde disco pero asegurar defaults
         public_config = disk_config
+        public_config = _ensure_maps_defaults(public_config)
+        public_config = _ensure_layers_global_defaults(public_config)
     
     # Añadir metadatos de configuración
     config_metadata = config_manager.get_config_metadata()
@@ -4080,10 +4195,47 @@ async def save_config(request: Request) -> JSONResponse:
         # NO aplicar defaults aquí - mantener solo lo que está en disco y payload
         # Los defaults se aplican solo en load_effective_config() al iniciar
         
+        # Asegurar que maps y layers_global no sean null antes de validar
+        # Si vienen como null en el payload, mantener los existentes o aplicar defaults
+        if "maps" in sanitized and sanitized["maps"] is None:
+            logger.info("[Config] maps was null in payload; preserving existing or applying defaults")
+            # Si hay maps en current_raw, mantenerlo; si no, aplicar defaults
+            if "maps" in current_raw and current_raw["maps"] is not None:
+                sanitized["maps"] = current_raw["maps"]
+            else:
+                sanitized = _ensure_maps_defaults(sanitized)
+        elif "maps" not in sanitized:
+            # Si no viene maps en el payload, mantener el existente o aplicar defaults
+            if "maps" in current_raw and current_raw["maps"] is not None:
+                sanitized["maps"] = current_raw["maps"]
+            else:
+                sanitized = _ensure_maps_defaults(sanitized)
+        
+        if "layers_global" in sanitized and sanitized["layers_global"] is None:
+            logger.info("[Config] layers_global was null in payload; preserving existing or applying defaults")
+            # Si hay layers_global en current_raw, mantenerlo; si no, aplicar defaults
+            if "layers_global" in current_raw and current_raw["layers_global"] is not None:
+                sanitized["layers_global"] = current_raw["layers_global"]
+            else:
+                sanitized = _ensure_layers_global_defaults(sanitized)
+        elif "layers_global" not in sanitized:
+            # Si no viene layers_global en el payload, mantener el existente o aplicar defaults
+            if "layers_global" in current_raw and current_raw["layers_global"] is not None:
+                sanitized["layers_global"] = current_raw["layers_global"]
+            else:
+                sanitized = _ensure_layers_global_defaults(sanitized)
+        
         # Validar con Pydantic (usar sanitized)
         try:
             config_v2 = AppConfigV2.model_validate(sanitized)
             config_dict = config_v2.model_dump(mode="json", exclude_none=True)
+            
+            # Asegurar que maps y layers_global estén presentes después de validar
+            # (por si Pydantic los excluyó por ser None)
+            if "maps" not in config_dict or config_dict["maps"] is None:
+                config_dict = _ensure_maps_defaults(config_dict)
+            if "layers_global" not in config_dict or config_dict["layers_global"] is None:
+                config_dict = _ensure_layers_global_defaults(config_dict)
         except ValidationError as exc:
             logger.warning("[config] Validation error after merge: %s", exc.errors())
             # Extraer el primer error para formato {"error": "...", "field": "..."}
@@ -4177,8 +4329,9 @@ async def save_config(request: Request) -> JSONResponse:
             ) from exc
 
         # Guardar config normalizado
-        # Calcular tamaño del payload antes de guardar (usar sanitized)
-        config_size = len(json.dumps(sanitized, ensure_ascii=False).encode('utf-8'))
+        # Usar config_dict que tiene los defaults de maps y layers_global aplicados
+        # Calcular tamaño del payload antes de guardar
+        config_size = len(json.dumps(config_dict, ensure_ascii=False).encode('utf-8'))
         logger.info(
             "[config] Will save config to %s (size=%d bytes)",
             config_manager.config_file,
@@ -4186,7 +4339,7 @@ async def save_config(request: Request) -> JSONResponse:
         )
         
         try:
-            write_config_atomic(sanitized, config_manager.config_file)
+            write_config_atomic(config_dict, config_manager.config_file)
             logger.info(
                 "[config] Configuration persisted atomically to %s",
                 config_manager.config_file,
@@ -4232,10 +4385,13 @@ async def save_config(request: Request) -> JSONResponse:
         try:
             persisted_config = load_raw_config(config_manager.config_file)
             logger.info("[config] Reloaded config from disk after save")
+            # Asegurar que maps y layers_global estén presentes en la respuesta
+            persisted_config = _ensure_maps_defaults(persisted_config)
+            persisted_config = _ensure_layers_global_defaults(persisted_config)
         except (json.JSONDecodeError, OSError) as reload_exc:
             logger.warning("[config] Failed to reload config from disk after save: %s", reload_exc)
-            # Usar sanitized como fallback
-            persisted_config = sanitized
+            # Usar config_dict como fallback (ya tiene defaults aplicados)
+            persisted_config = config_dict
 
         if google_api_key:
             masked_key = _mask_secret(str(google_api_key))

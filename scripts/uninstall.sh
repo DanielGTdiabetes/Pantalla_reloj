@@ -17,8 +17,17 @@ Options:
   --purge-venv      Remove backend virtualenv and caches
   --purge-node      Remove frontend node_modules/dist artifacts
   --purge-assets    Remove assets stored in /opt/pantalla-reloj
-  --purge-config    Remove configuration under /var/lib/pantalla-reloj
+  --purge-config    Remove configuration under /var/lib/pantalla-reloj and config.json
+                    Use this for clean installations to avoid inheriting old configs
+                    with maps: null or layers_global: null from previous versions
   -h, --help        Show this message
+
+Examples:
+  # Standard uninstall (preserves config for user settings)
+  sudo bash uninstall.sh
+
+  # Complete clean uninstall (removes everything including config)
+  sudo bash uninstall.sh --purge-config --purge-assets --purge-webroot
 USAGE
 }
 
@@ -235,9 +244,29 @@ if [[ $PURGE_CONFIG -eq 1 ]]; then
     log_info "Removing secrets.json"
     rm -f "$SECRETS_FILE"
   fi
+  # Eliminar config.json si existe (puede estar en diferentes ubicaciones)
+  CONFIG_PATHS=(
+    "$STATE_DIR/config/config.json"
+    "$PANTALLA_PREFIX/config/config.json"
+    "/opt/pantalla-reloj/config/config.json"
+  )
+  for config_path in "${CONFIG_PATHS[@]}"; do
+    if [[ -f "$config_path" ]]; then
+      log_info "Removing config.json: $config_path"
+      rm -f "$config_path"
+      # Intentar eliminar el directorio padre si está vacío
+      config_dir="$(dirname "$config_path")"
+      if [[ -d "$config_dir" ]]; then
+        rmdir --ignore-fail-on-non-empty "$config_dir" 2>/dev/null || true
+      fi
+    fi
+  done
+  log_info "Configuration purged. Future installations will start with clean defaults."
+  log_info "NOTE: This prevents inheriting old config.json with maps: null or layers_global: null"
 else
   # Keep state but remove runtime markers
   rm -rf "$STATE_RUNTIME"
+  log_info "Configuration preserved (use --purge-config to remove it for clean install)"
 fi
 
 # Limpiar directorios de caché de layers y focus masks

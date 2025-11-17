@@ -1581,22 +1581,36 @@ export default function GeoScopeMap({
       
       let initialStyle = styleFromHealth || styleFromRuntime || styleFromConfig || null;
 
-      // Fallback adicional: si sigue sin estilo, construir desde config v2 (api_key + style)
+      // Fallback adicional: si sigue sin estilo, intentar desde config.maps o construir desde config v2
       if (!initialStyle) {
         try {
-          const cfgV2 = config as unknown as AppConfigV2 | null;
-          const apiKey = cfgV2?.ui_map?.maptiler?.api_key || null;
-          const styleName = cfgV2?.ui_map?.maptiler?.style || "streets-v4";
-          if (apiKey) {
-            const normalized = styleName === "hybrid" || styleName === "satellite" || styleName === "vector-bright"
-              ? "streets-v4"
-              : styleName;
-            initialStyle = `https://api.maptiler.com/maps/${normalized}/style.json?key=${encodeURIComponent(apiKey)}`;
-            console.warn("[MapInit] Using constructed styleUrl fallback from config v2:", maskMaptilerUrl(initialStyle));
+          // Intentar desde config.maps si existe (nuevo formato)
+          const configAny = config as any;
+          if (configAny?.maps?.style_url) {
+            initialStyle = configAny.maps.style_url;
+            console.warn("[MapInit] Using styleUrl from config.maps fallback:", maskMaptilerUrl(initialStyle));
+          } else {
+            // Fallback: construir desde config v2 (api_key + style)
+            const cfgV2 = config as unknown as AppConfigV2 | null;
+            const apiKey = cfgV2?.ui_map?.maptiler?.api_key || null;
+            const styleName = cfgV2?.ui_map?.maptiler?.style || "streets-v4";
+            if (apiKey) {
+              const normalized = styleName === "hybrid" || styleName === "satellite" || styleName === "vector-bright"
+                ? "streets-v4"
+                : styleName;
+              initialStyle = `https://api.maptiler.com/maps/${normalized}/style.json?key=${encodeURIComponent(apiKey)}`;
+              console.warn("[MapInit] Using constructed styleUrl fallback from config v2:", maskMaptilerUrl(initialStyle));
+            }
           }
         } catch (e) {
           console.warn("[MapInit] Failed to build fallback styleUrl from config:", e);
         }
+      }
+      
+      // Verificar que config.maps y config.layers_global no sean null (defensa adicional)
+      const configAny = config as any;
+      if (configAny && (configAny.maps === null || configAny.layers_global === null)) {
+        console.warn("[GeoScopeMap] config.maps or config.layers_global is null. Backend should provide defaults.");
       }
 
       if (typeof initialStyle === "string") {
