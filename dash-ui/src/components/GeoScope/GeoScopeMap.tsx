@@ -1059,6 +1059,10 @@ export default function GeoScopeMap({
       ui_global?: {
         satellite?: { enabled?: boolean; opacity?: number };
         radar?: { enabled?: boolean; opacity?: number };
+        weather_layers?: {
+          radar?: { enabled?: boolean; opacity?: number; provider?: string };
+          satellite?: { enabled?: boolean; opacity?: number; provider?: string };
+        };
       };
       layers?: {
         global_?: {
@@ -1082,9 +1086,21 @@ export default function GeoScopeMap({
       configAsV2.version === 2 && configAsV2.layers?.global_?.radar
         ? configAsV2.layers.global_.radar
         : merged.layers.global?.radar;
+    // Leer radar desde weather_layers (nuevo) o ui_global.radar (legacy)
+    const weatherLayersRadar = configAsV2.version === 2 ? configAsV2.ui_global?.weather_layers?.radar : undefined;
     const uiGlobalRadar = configAsV2.version === 2 ? configAsV2.ui_global?.radar : undefined;
-    const isRadarEnabled = Boolean(globalRadarConfig?.enabled && uiGlobalRadar?.enabled !== false);
-    const radarOpacityValue = uiGlobalRadar?.opacity ?? globalRadarConfig?.opacity;
+    
+    // Prioridad: weather_layers.radar > ui_global.radar > layers.global*.radar
+    const isRadarEnabled = 
+      weatherLayersRadar?.enabled ?? 
+      uiGlobalRadar?.enabled ?? 
+      globalRadarConfig?.enabled ?? 
+      false;
+    const radarOpacityValue = 
+      weatherLayersRadar?.opacity ?? 
+      uiGlobalRadar?.opacity ?? 
+      globalRadarConfig?.opacity ?? 
+      0.7;
 
     return {
       satellite: {
@@ -1866,13 +1882,33 @@ export default function GeoScopeMap({
           };
 
           // Global Radar Layer (z-index 10, debajo de AEMET y aviones/barcos)
-          // Leer configuración desde layers.global.radar (migrado desde ui_global.radar)
+          // Leer configuración desde layers.global.radar + ui_global.weather_layers.radar
           const globalRadarConfigInit = configAsV2Init.version === 2 && configAsV2Init.layers?.global_?.radar
             ? configAsV2Init.layers.global_.radar
             : mergedConfig.layers.global?.radar;
           
-          const isRadarEnabledInit = Boolean(globalRadarConfigInit?.enabled);
-          const radarOpacityInit = globalRadarConfigInit?.opacity ?? 0.7;
+          const weatherLayersRadarInit = configAsV2Init.version === 2 ? configAsV2Init.ui_global?.weather_layers?.radar : undefined;
+          const uiGlobalRadarInit = configAsV2Init.version === 2 ? configAsV2Init.ui_global?.radar : undefined;
+          
+          // Prioridad: weather_layers.radar > ui_global.radar > layers.global*.radar
+          const isRadarEnabledInit = 
+            weatherLayersRadarInit?.enabled ?? 
+            uiGlobalRadarInit?.enabled ?? 
+            globalRadarConfigInit?.enabled ?? 
+            false;
+          const radarOpacityInit = 
+            weatherLayersRadarInit?.opacity ?? 
+            uiGlobalRadarInit?.opacity ?? 
+            globalRadarConfigInit?.opacity ?? 
+            0.7;
+
+          console.log("[GlobalRadarLayer] Init config:", {
+            weatherLayersRadar: weatherLayersRadarInit,
+            uiGlobalRadar: uiGlobalRadarInit,
+            layersGlobalRadar: globalRadarConfigInit,
+            isEnabled: isRadarEnabledInit,
+            opacity: radarOpacityInit
+          });
 
           if (isRadarEnabledInit) {
             const globalRadarLayer = new GlobalRadarLayer({
@@ -3287,17 +3323,33 @@ export default function GeoScopeMap({
       };
     };
 
-    // Leer configuración desde layers.global.radar (migrado desde ui_global.radar)
+    // Leer configuración desde layers.global.radar + ui_global.weather_layers.radar
     const globalRadarConfig = configAsV2Radar.version === 2 && configAsV2Radar.layers?.global_?.radar
       ? configAsV2Radar.layers.global_.radar
       : (config ? withConfigDefaults(config) : withConfigDefaults()).layers.global?.radar;
 
-    const isRadarEnabled = Boolean(globalRadarConfig?.enabled);
+    const weatherLayersRadar = configAsV2Radar.version === 2 ? configAsV2Radar.ui_global?.weather_layers?.radar : undefined;
+    const uiGlobalRadar = configAsV2Radar.version === 2 ? configAsV2Radar.ui_global?.radar : undefined;
+
+    // Prioridad: weather_layers.radar > ui_global.radar > layers.global*.radar
+    const isRadarEnabled = 
+      weatherLayersRadar?.enabled ?? 
+      uiGlobalRadar?.enabled ?? 
+      globalRadarConfig?.enabled ?? 
+      false;
+
+    console.log("[RadarLayer] useEffect config:", {
+      weatherLayersRadar,
+      uiGlobalRadar,
+      layersGlobalRadar: globalRadarConfig,
+      isEnabled: isRadarEnabled
+    });
 
     if (!isRadarEnabled) {
       // Si el radar está desactivado, limpiar la capa si existe
       const globalRadarLayer = globalRadarLayerRef.current;
       if (globalRadarLayer) {
+        console.log("[RadarLayer] Disabling radar layer");
         globalRadarLayer.update({ enabled: false });
       }
       return;
