@@ -210,6 +210,8 @@ export function useConfig() {
           console.log("[useConfig] Detected map config change", {
             prev: prevMapConfig,
             new: newMapConfig,
+            prevJson,
+            newJson,
           });
         }
 
@@ -229,9 +231,18 @@ export function useConfig() {
           setPrevData(prev);
           // Incrementar mapStyleVersion si cambió la configuración del mapa o el hot swap descriptor
           // Esto incluye cambios en api_key, styleUrl, provider, etc.
-          if (mapConfigChanged || mapHotSwapChanged) {
-            setMapStyleVersion((value) => value + 1);
-          }
+          // SIEMPRE incrementar cuando hay un cambio
+          setMapStyleVersion((value) => {
+            const newValue = value + 1;
+            console.log("[useConfig] Incrementing mapStyleVersion", { 
+              from: value, 
+              to: newValue, 
+              reason: mapConfigChanged ? "mapConfigChanged" : "mapHotSwapChanged",
+              mapConfigChanged,
+              mapHotSwapChanged
+            });
+            return newValue;
+          });
           return newData;
         }
 

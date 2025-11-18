@@ -2349,6 +2349,16 @@ export default function GeoScopeMap({
       try {
         await reloadConfig();
         console.log("[GeoScopeMap] Config reloaded after save event");
+        
+        // Si el mapa está en estado de error, esperar un momento y luego forzar recarga de la página
+        // Esto asegura que el mapa se reinicie completamente con la nueva configuración
+        if (webglError) {
+          console.log("[GeoScopeMap] Map has error, will reload page in 2 seconds to apply new config");
+          setTimeout(() => {
+            console.log("[GeoScopeMap] Reloading page to apply new configuration");
+            window.location.reload();
+          }, 2000);
+        }
       } catch (error) {
         console.error("[GeoScopeMap] Error reloading config after save:", error);
       }
@@ -2361,7 +2371,7 @@ export default function GeoScopeMap({
       window.removeEventListener("pantalla:config:saved", handleConfigSaved);
       window.removeEventListener("config-changed", handleConfigSaved);
     };
-  }, [reloadConfig]);
+  }, [reloadConfig, webglError]);
 
   useEffect(() => {
     if (!config) {
@@ -2406,6 +2416,8 @@ export default function GeoScopeMap({
     // Si el mapa está en estado de error y tenemos un cambio de configuración, intentar reiniciar
     if (webglError && mapStyleVersion > 0 && map) {
       console.log("[GeoScopeMap] Map has error but config changed, attempting to recover by applying new style");
+      // Limpiar el error para permitir que se intente aplicar el nuevo estilo
+      setWebglError(null);
     }
     let cleanup: (() => void) | null = null;
     let styleLoadTimeout: ReturnType<typeof setTimeout> | null = null;
