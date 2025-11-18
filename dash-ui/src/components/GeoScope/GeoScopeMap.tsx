@@ -2326,24 +2326,14 @@ export default function GeoScopeMap({
   // Escuchar eventos de cambio de configuración para forzar actualización
   useEffect(() => {
     const handleConfigSaved = async () => {
-      console.log("[GeoScopeMap] Config saved event received, forcing reload and style update");
-      // Forzar recarga de configuración para detectar cambios
-      try {
-        await reloadConfig();
-        console.log("[GeoScopeMap] Config reloaded after save event");
-        
-        // Si el mapa está en estado de error, esperar un momento y luego forzar recarga de la página
-        // Esto asegura que el mapa se reinicie completamente con la nueva configuración
-        if (webglError) {
-          console.log("[GeoScopeMap] Map has error, will reload page in 2 seconds to apply new config");
-          setTimeout(() => {
-            console.log("[GeoScopeMap] Reloading page to apply new configuration");
-            window.location.reload();
-          }, 2000);
-        }
-      } catch (error) {
-        console.error("[GeoScopeMap] Error reloading config after save:", error);
-      }
+      console.log("[GeoScopeMap] Config saved event received, forcing page reload to apply new configuration");
+      // Forzar recarga completa de la página para asegurar que todos los cambios se apliquen
+      // Esto es especialmente importante para cambios en la API key de MapTiler y URLs
+      // Esperar 2 segundos antes de recargar para que el guardado se complete y el usuario vea el mensaje
+      setTimeout(() => {
+        console.log("[GeoScopeMap] Reloading page to apply new configuration");
+        window.location.reload();
+      }, 2000);
     };
 
     window.addEventListener("pantalla:config:saved", handleConfigSaved);
