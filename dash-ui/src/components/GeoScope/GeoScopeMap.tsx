@@ -1032,25 +1032,8 @@ export default function GeoScopeMap({
 
   // TEMPORALMENTE DESACTIVADO: Todas las capas globales (GIBS, radar global) están deshabilitadas
   // para dejar solo el mapa base MapTiler (streets-v4) funcionando de forma estable.
-  // TODO: Re-activar en una segunda iteración controlada cuando GIBS esté completamente probado.
+  // Leer configuración de capas globales (satélite y radar)
   const globalLayersSettings = useMemo(() => {
-    // Forzar isEnabled=false siempre, ignorando completamente la configuración
-    return {
-      satellite: {
-        config: undefined as GlobalSatelliteLayerConfig | undefined,
-        ui: undefined as { enabled?: boolean; opacity?: number } | undefined,
-        isEnabled: false, // FORZADO: siempre false
-        opacity: 1,
-      },
-      radar: {
-        config: undefined as GlobalRadarLayerConfig | undefined,
-        ui: undefined as { enabled?: boolean; opacity?: number } | undefined,
-        isEnabled: false, // FORZADO: siempre false
-        opacity: undefined as number | undefined,
-      },
-    };
-    
-    /* CÓDIGO DESACTIVADO TEMPORALMENTE - IGNORAR CONFIG
     const defaults = {
       satellite: {
         config: undefined as GlobalSatelliteLayerConfig | undefined,
@@ -1117,7 +1100,6 @@ export default function GeoScopeMap({
         opacity: radarOpacityValue,
       },
     };
-    */
   }, [config]);
   
   // Recargar config cuando la página se vuelve visible (después de guardar en /config)
