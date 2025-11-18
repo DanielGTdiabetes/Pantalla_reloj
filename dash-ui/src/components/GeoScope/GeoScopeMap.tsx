@@ -950,10 +950,17 @@ function checkWebGLSupport(): { supported: boolean; reason?: string } {
       return { supported: false, reason: "WebGL no está disponible en este navegador" };
     }
     
-    // Verificar que WebGL esté realmente funcional
-    const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
-    if (!debugInfo) {
-      return { supported: false, reason: "WebGL no está completamente funcional" };
+    // Verificar que WebGL esté realmente funcional intentando obtener un parámetro básico
+    try {
+      const vendor = gl.getParameter(gl.VENDOR);
+      const renderer = gl.getParameter(gl.RENDERER);
+      if (!vendor || !renderer) {
+        return { supported: false, reason: "WebGL no está completamente funcional" };
+      }
+    } catch (e) {
+      // Si falla al obtener parámetros, WebGL puede no estar completamente funcional
+      console.warn("[WebGL] No se pudieron obtener parámetros WebGL:", e);
+      // No fallar aquí - algunos sistemas pueden funcionar sin estos parámetros
     }
     
     return { supported: true };
@@ -1332,9 +1339,32 @@ export default function GeoScopeMap({
     const waitForStableSize = (): Promise<HTMLDivElement | null> => {
       return new Promise((resolve) => {
         let stableFrames = 0;
+        const MAX_WAIT_MS = 10000; // 10 segundos máximo
+        const startTime = Date.now();
 
         const check = () => {
           if (destroyed) {
+            resolve(null);
+            return;
+          }
+
+          // Timeout de seguridad: si pasan más de 10 segundos, continuar de todos modos
+          if (Date.now() - startTime > MAX_WAIT_MS) {
+            console.warn("[GeoScopeMap] waitForStableSize timeout, continuando con el tamaño actual");
+            const host = mapFillRef.current;
+            if (host) {
+              const { width, height } = host.getBoundingClientRect();
+              if (width > 0 && height > 0) {
+                sizeCheckFrame = null;
+                resolve(host);
+                return;
+              } else {
+                console.error("[GeoScopeMap] Timeout y contenedor tiene tamaño 0, mostrando error");
+                setWebglError("El contenedor del mapa no tiene un tamaño válido. Verifica que la pantalla esté configurada correctamente.");
+                resolve(null);
+                return;
+              }
+            }
             resolve(null);
             return;
           }
@@ -1462,27 +1492,45 @@ export default function GeoScopeMap({
     };
 
     const initializeMap = async () => {
-      // Verificar WebGL antes de continuar
-      const webglCheck = checkWebGLSupport();
-      if (!webglCheck.supported) {
-        console.error("[GeoScopeMap] WebGL no disponible:", webglCheck.reason);
-        setWebglError(webglCheck.reason || "WebGL no está disponible");
-        return;
-      }
+      let hostPromise: Promise<HTMLDivElement | null>;
+      let runtime: RuntimePreferences;
       
-      setWebglError(null);
-      const hostPromise = waitForStableSize();
-      const runtime = await loadRuntimePreferences();
-      runtimeRef.current = runtime;
-      respectDefaultRef.current = Boolean(runtime.respectReducedMotion);
+      try {
+        // Verificar WebGL antes de continuar
+        const webglCheck = checkWebGLSupport();
+        if (!webglCheck.supported) {
+          console.error("[GeoScopeMap] WebGL no disponible:", webglCheck.reason);
+          setWebglError(webglCheck.reason || "WebGL no está disponible");
+          return;
+        }
+        
+        setWebglError(null);
+        hostPromise = waitForStableSize();
+        runtime = await loadRuntimePreferences();
+        runtimeRef.current = runtime;
+        respectDefaultRef.current = Boolean(runtime.respectReducedMotion);
 
-      if (destroyed) {
+        if (destroyed) {
+          return;
+        }
+      } catch (error) {
+        console.error("[GeoScopeMap] Error en inicialización temprana:", error);
+        setWebglError(`Error al inicializar el mapa: ${error instanceof Error ? error.message : String(error)}`);
         return;
       }
 
       const host = await hostPromise;
 
-      if (!host || destroyed || mapRef.current) return;
+      if (!host) {
+        console.error("[GeoScopeMap] No se pudo obtener el contenedor del mapa");
+        setWebglError("No se pudo obtener el contenedor del mapa. Verifica que la pantalla esté configurada correctamente.");
+        return;
+      }
+
+      if (destroyed || mapRef.current) {
+        console.warn("[GeoScopeMap] Mapa ya inicializado o componente destruido");
+        return;
+      }
 
       const mapSettings = runtime.mapSettings;
       const viewMode = mapSettings?.viewMode ?? "fixed"; // Por defecto fixed para v2
@@ -1490,7 +1538,9 @@ export default function GeoScopeMap({
       // Por defecto usar fixed view (v2)
       let viewState = viewStateRef.current;
       if (!viewState) {
-        return;
+        console.error("[GeoScopeMap] viewState es null, inicializando con valores por defecto");
+        viewStateRef.current = { ...DEFAULT_VIEW };
+        viewState = viewStateRef.current;
       }
       
       // Vista fija por defecto (v2)
@@ -1525,6 +1575,8 @@ export default function GeoScopeMap({
       
       viewState = viewStateRef.current;
       if (!viewState) {
+        console.error("[GeoScopeMap] viewState es null después de configurar vista");
+        setWebglError("Error al configurar la vista del mapa. Verifica la configuración.");
         return;
       }
 
@@ -1682,22 +1734,37 @@ export default function GeoScopeMap({
         console.log("[MapInit] final style used for maplibre", { styleUrlFinal: typeof initialStyle === "string" ? initialStyle : "[object]" });
       } catch (error) {
         console.error("[GeoScopeMap] Failed to create map:", error);
-        setWebglError(`Error al inicializar el mapa: ${error instanceof Error ? error.message : String(error)}`);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        setWebglError(`Error al inicializar el mapa: ${errorMessage}. Verifica que WebGL esté habilitado y que los controladores gráficos estén actualizados.`);
         return;
       }
 
-      mapRef.current = map;
-      // Configurar minZoom según viewMode
-      if (viewMode === "fixed") {
-        const fixedZoom = mapSettings?.fixed?.zoom ?? 9.0;
-        map.setMinZoom(Math.max(fixedZoom - 2, 0));
-      } else {
-        // Para otros modos, usar zoom mínimo razonable
-        map.setMinZoom(0);
-      }
-      refreshRuntimePolicy(runtime.respectReducedMotion);
+      try {
+        mapRef.current = map;
+        // Configurar minZoom según viewMode
+        if (viewMode === "fixed") {
+          const fixedZoom = mapSettings?.fixed?.zoom ?? 9.0;
+          map.setMinZoom(Math.max(fixedZoom - 2, 0));
+        } else {
+          // Para otros modos, usar zoom mínimo razonable
+          map.setMinZoom(0);
+        }
+        refreshRuntimePolicy(runtime.respectReducedMotion);
 
-      attachStateMachine(map, "initial-style");
+        attachStateMachine(map, "initial-style");
+      } catch (error) {
+        console.error("[GeoScopeMap] Error configurando mapa después de creación:", error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        setWebglError(`Error al configurar el mapa: ${errorMessage}`);
+        // Limpiar el mapa si falló la configuración
+        if (mapRef.current) {
+          try {
+            mapRef.current.remove();
+          } catch {}
+          mapRef.current = null;
+        }
+        return;
+      }
 
       // Fallback desactivado: solo usar streets-v4
 
