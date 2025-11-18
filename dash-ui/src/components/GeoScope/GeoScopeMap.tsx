@@ -2342,11 +2342,24 @@ export default function GeoScopeMap({
   ]);
 
   useEffect(() => {
-    if (!config || !mapRef.current) {
+    if (!config) {
       return;
     }
-    if (mapStyleVersion === 0) {
+    // No requerir que mapRef.current exista - si hay un error previo, intentar aplicar el estilo de todos modos
+    // Esto permite recuperarse de errores anteriores
+    if (!mapRef.current) {
+      console.warn("[GeoScopeMap] mapRef.current is null, cannot apply style change yet");
       return;
+    }
+    // Permitir mapStyleVersion === 0 solo si es la primera carga y el mapa ya está inicializado
+    // Si mapStyleVersion > 0, significa que hubo un cambio de configuración
+    if (mapStyleVersion === 0) {
+      // Solo retornar si el mapa ya está inicializado y no hay errores
+      if (!webglError) {
+        return;
+      }
+      // Si hay un error, intentar aplicar el estilo de todos modos para recuperarse
+      console.log("[GeoScopeMap] mapStyleVersion is 0 but there's an error, attempting to apply style anyway");
     }
 
     // Reactivado: cambiar el estilo del mapa cuando cambia la configuración
@@ -2380,6 +2393,11 @@ export default function GeoScopeMap({
 
       setStyleChangeInProgress(true);
       mapStateMachineRef.current?.notifyStyleLoading("config-style-change");
+      // Limpiar error previo al intentar aplicar un nuevo estilo
+      if (webglError) {
+        console.log("[GeoScopeMap] Attempting to apply new style, clearing previous error");
+        setWebglError(null);
+      }
 
       const currentCenter = map.getCenter();
       const currentZoom = map.getZoom();
@@ -2631,6 +2649,11 @@ export default function GeoScopeMap({
           
           mapStateMachineRef.current?.notifyStyleData("config-style-change");
           setStyleChangeInProgress(false);
+          // Limpiar error previo si el estilo se cargó correctamente
+          if (webglError) {
+            console.log("[GeoScopeMap] Style loaded successfully, clearing previous error");
+            setWebglError(null);
+          }
         };
 
         // Timeout de 8s: si no llega style.load, recargar la página

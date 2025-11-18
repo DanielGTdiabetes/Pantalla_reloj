@@ -161,25 +161,32 @@ export function useConfig() {
         let newMapConfig: Record<string, unknown>;
         
         if (isPrevV2 && isNewV2) {
-          // Comparar v2
+          // Comparar v2 - incluir api_key para detectar cambios en la clave de MapTiler
           prevMapConfig = {
             provider: prevAsV2.ui_map?.provider,
             style: prevAsV2.ui_map?.maptiler?.styleUrl || prevAsV2.ui_map?.customXyz?.tileUrl || prevAsV2.ui_map?.local?.tileUrl,
+            api_key: prevAsV2.ui_map?.maptiler?.api_key,
+            style_name: prevAsV2.ui_map?.maptiler?.style,
             fixed: prevAsV2.ui_map?.fixed,
             viewMode: prevAsV2.ui_map?.viewMode,
           };
           newMapConfig = {
             provider: newAsV2.ui_map?.provider,
             style: newAsV2.ui_map?.maptiler?.styleUrl || newAsV2.ui_map?.customXyz?.tileUrl || newAsV2.ui_map?.local?.tileUrl,
+            api_key: newAsV2.ui_map?.maptiler?.api_key,
+            style_name: newAsV2.ui_map?.maptiler?.style,
             fixed: newAsV2.ui_map?.fixed,
             viewMode: newAsV2.ui_map?.viewMode,
           };
         } else {
-          // Comparar v1 (legacy)
+          // Comparar v1 (legacy) - incluir api_key si está disponible
           prevMapConfig = {
             provider: prev.ui?.map?.provider,
             style: prev.ui?.map?.style,
             xyz: prev.ui?.map?.xyz,
+            api_key: (prev.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.apiKey || 
+                    (prev.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.key ||
+                    (prev.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.api_key,
             fixed: prev.ui?.map?.fixed,
             viewMode: prev.ui?.map?.viewMode,
           };
@@ -187,6 +194,9 @@ export function useConfig() {
             provider: newData.ui?.map?.provider,
             style: newData.ui?.map?.style,
             xyz: newData.ui?.map?.xyz,
+            api_key: (newData.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.apiKey || 
+                    (newData.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.key ||
+                    (newData.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.api_key,
             fixed: newData.ui?.map?.fixed,
             viewMode: newData.ui?.map?.viewMode,
           };
@@ -217,7 +227,9 @@ export function useConfig() {
         if (mapConfigChanged || mapHotSwapChanged) {
           wasUpdated = true;
           setPrevData(prev);
-          if (mapHotSwapChanged) {
+          // Incrementar mapStyleVersion si cambió la configuración del mapa o el hot swap descriptor
+          // Esto incluye cambios en api_key, styleUrl, provider, etc.
+          if (mapConfigChanged || mapHotSwapChanged) {
             setMapStyleVersion((value) => value + 1);
           }
           return newData;
