@@ -873,35 +873,53 @@ export const OverlayRotator: React.FC = () => {
       
       if (panelId === "calendar") {
         const panelsConfig = config as unknown as { panels?: { calendar?: { enabled?: boolean } } };
-        shouldInclude = panelsConfig.panels?.calendar?.enabled !== false && calendarEvents.length >= 0;
+        const calendarConfigV1 = config as unknown as { calendar?: { enabled?: boolean } };
+        const calendarEnabledV2 = panelsConfig.panels?.calendar?.enabled !== false;
+        const calendarEnabledV1 = calendarConfigV1.calendar?.enabled !== false;
+        shouldInclude = (calendarEnabledV2 || calendarEnabledV1) && calendarEvents.length >= 0;
       } else if (panelId === "harvest") {
         // Verificar configuración V2 o V1
         const v2Config = config as unknown as { panels?: { harvest?: { enabled?: boolean } } };
         const harvestEnabledV2 = v2Config.panels?.harvest?.enabled !== false;
         const harvestConfigV1 = config as unknown as { harvest?: { enabled?: boolean } };
         const harvestEnabledV1 = harvestConfigV1.harvest?.enabled !== false;
-        // Mostrar si está habilitado (V2 o V1) y hay items (incluso si está vacío, puede aparecer)
-        shouldInclude = (harvestEnabledV2 || harvestEnabledV1) && harvestItems.length >= 0;
+        // Mostrar si está habilitado (V2 o V1) - siempre mostrar cuando está habilitado, incluso sin items
+        // El HarvestCard maneja el caso de items vacíos mostrando "Sin datos de cultivo"
+        shouldInclude = harvestEnabledV2 || harvestEnabledV1;
       } else if (panelId === "news") {
         const panelsConfig = config as unknown as { panels?: { news?: { enabled?: boolean } } };
-        shouldInclude = panelsConfig.panels?.news?.enabled !== false && newsItems.length >= 0;
+        const newsConfigV1 = config as unknown as { news?: { enabled?: boolean } };
+        const newsEnabledV2 = panelsConfig.panels?.news?.enabled !== false;
+        const newsEnabledV1 = newsConfigV1.news?.enabled !== false;
+        shouldInclude = (newsEnabledV2 || newsEnabledV1) && newsItems.length >= 0;
       } else if (panelId === "historicalEvents") {
         const panelsConfig = config as unknown as { panels?: { historicalEvents?: { enabled?: boolean } } };
         const historicalEventsItems = Array.isArray(historicalEvents.items) ? historicalEvents.items : [];
         // Mostrar si está habilitado Y hay items disponibles
         const enabled = panelsConfig.panels?.historicalEvents?.enabled !== false;
         shouldInclude = enabled && historicalEventsItems.length > 0;
-      } else if (panelId === "ephemerides") {
+      } else if (panelId === "astronomy") {
+        // El panel "astronomy" usa la configuración de "ephemerides"
         const panelsConfig = config as unknown as { panels?: { ephemerides?: { enabled?: boolean } } };
-        const ephemeridesEnabled = panelsConfig.panels?.ephemerides?.enabled !== false;
+        const ephemeridesConfigV1 = config as unknown as { ephemerides?: { enabled?: boolean } };
+        const ephemeridesEnabledV2 = panelsConfig.panels?.ephemerides?.enabled !== false;
+        const ephemeridesEnabledV1 = ephemeridesConfigV1.ephemerides?.enabled !== false;
         const hasData = !!(sunrise || sunset || moonPhase || ephemeridesEvents.length > 0);
-        shouldInclude = ephemeridesEnabled && hasData;
+        shouldInclude = (ephemeridesEnabledV2 || ephemeridesEnabledV1) && hasData;
+      } else if (panelId === "ephemerides") {
+        // Legacy: panel "ephemerides" también debe funcionar
+        const panelsConfig = config as unknown as { panels?: { ephemerides?: { enabled?: boolean } } };
+        const ephemeridesConfigV1 = config as unknown as { ephemerides?: { enabled?: boolean } };
+        const ephemeridesEnabledV2 = panelsConfig.panels?.ephemerides?.enabled !== false;
+        const ephemeridesEnabledV1 = ephemeridesConfigV1.ephemerides?.enabled !== false;
+        const hasData = !!(sunrise || sunset || moonPhase || ephemeridesEvents.length > 0);
+        shouldInclude = (ephemeridesEnabledV2 || ephemeridesEnabledV1) && hasData;
       } else if (panelId === "forecast") {
         shouldInclude = forecastDays.length > 0;
       } else if (panelId === "weather") {
         shouldInclude = condition !== null || temperature.value !== "--";
       }
-      // "time" y "moon" siempre están disponibles
+      // "time", "clock", "santoral" y "moon" siempre están disponibles
 
       if (shouldInclude) {
         validPanels.push(panel);

@@ -65,6 +65,7 @@ const ROTATION_PANEL_LABELS: Record<string, string> = {
   astronomy: "Astronomía",
   santoral: "Santoral",
   calendar: "Calendario",
+  harvest: "Cosechas",
   news: "Noticias",
   historicalEvents: "Efemérides históricas",
 };
@@ -346,6 +347,12 @@ export const ConfigPage: React.FC = () => {
     if (panels.ephemerides) {
       payload.ephemerides = {
         enabled: panels.ephemerides.enabled ?? false,
+      };
+    }
+
+    if (panels.harvest) {
+      payload.harvest = {
+        enabled: panels.harvest.enabled ?? false,
       };
     }
 
@@ -4512,6 +4519,32 @@ export const ConfigPage: React.FC = () => {
                 />
                 Habilitar Panel de Efemérides
               </label>
+            </div>
+
+            {/* Panel Cosechas */}
+            <div className="config-field">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={config.panels?.harvest?.enabled || false}
+                  onChange={(e) => {
+                    setConfig({
+                      ...config,
+                      panels: {
+                        ...config.panels,
+                        harvest: {
+                          ...config.panels?.harvest,
+                          enabled: e.target.checked,
+                        },
+                      },
+                    });
+                  }}
+                />
+                Habilitar Panel de Cosechas (Frutas, Verduras y Hortalizas de Temporada)
+              </label>
+              <div className="config-field__hint" style={{ marginTop: "8px" }}>
+                Muestra las frutas, verduras y hortalizas de temporada según el mes actual. Los datos se obtienen automáticamente del calendario estacional.
+              </div>
             </div>
 
             {/* Panel Clima Semanal */}
