@@ -2435,8 +2435,9 @@ export default function GeoScopeMap({
             // Si falla el parsing, intentar añadir key manualmente
             if (currentApiKey && styleUrlFromConfig) {
               const sep = styleUrlFromConfig.includes("?") ? "&" : "?";
-              // Remover key antiguo si existe
-              const urlWithoutKey = styleUrlFromConfig.replace(/[?&]key=[^&]*/, "");
+              // Remover key antiguo si existe - usar RegExp constructor para evitar problemas de parsing
+              const keyPattern = new RegExp("[?&]key=[^&]*");
+              const urlWithoutKey = styleUrlFromConfig.replace(keyPattern, "");
               styleUrlWithCacheBuster = `${urlWithoutKey}${sep}key=${encodeURIComponent(currentApiKey)}&v=${configChecksum}`;
             } else {
               styleUrlWithCacheBuster = styleUrlFromConfig;
@@ -2482,7 +2483,8 @@ export default function GeoScopeMap({
                   } catch {
                     // Si falla, intentar añadir key manualmente
                     const sep = finalStyleUrl.includes("?") ? "&" : "?";
-                    const urlWithoutKey = finalStyleUrl.replace(/[?&]key=[^&]*/, "");
+                    const keyPattern = new RegExp("[?&]key=[^&]*");
+                    const urlWithoutKey = finalStyleUrl.replace(keyPattern, "");
                     finalStyleUrl = `${urlWithoutKey}${sep}key=${encodeURIComponent(resolvedKey)}`;
                   }
                 }
