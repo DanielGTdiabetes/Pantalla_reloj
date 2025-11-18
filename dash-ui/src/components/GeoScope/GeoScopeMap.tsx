@@ -2400,21 +2400,47 @@ export default function GeoScopeMap({
         // Calcular checksum para cache-buster (usar mapStyleVersion o timestamp)
         const configChecksum = mapStyleVersion || Date.now();
         
+        // Obtener API key actualizada desde la configuración
+        const currentApiKey =
+          maptilerConfigV2?.api_key ??
+          mapSettings.maptiler?.apiKey ??
+          mapSettings.maptiler?.key ??
+          mapSettings.maptiler?.api_key ??
+          maptilerKey ??
+          null;
+        
         // Obtener styleUrl desde configuración V2 o desde mapSettings
-        let styleUrlWithCacheBuster =
+        let styleUrlFromConfig =
           maptilerConfigV2?.styleUrl ||
           mapSettings.maptiler?.styleUrl ||
           mapSettings.maptiler?.styleUrlDark ||
           mapSettings.maptiler?.styleUrlLight ||
           mapSettings.maptiler?.styleUrlBright ||
           null;
-        if (styleUrlWithCacheBuster) {
+        
+        // Asegurar que el styleUrl esté firmado con el API key actual
+        // Si la URL no tiene key o tiene un key diferente, reemplazarlo
+        let styleUrlWithCacheBuster: string | null = null;
+        if (styleUrlFromConfig) {
           try {
-            const url = new URL(styleUrlWithCacheBuster);
+            const url = new URL(styleUrlFromConfig);
+            // Si hay un API key nuevo, siempre actualizar el parámetro key
+            if (currentApiKey) {
+              url.searchParams.set("key", currentApiKey);
+            }
+            // Añadir cache buster
             url.searchParams.set("v", String(configChecksum));
             styleUrlWithCacheBuster = url.toString();
           } catch {
-            // Si falla el parsing, usar tal cual
+            // Si falla el parsing, intentar añadir key manualmente
+            if (currentApiKey && styleUrlFromConfig) {
+              const sep = styleUrlFromConfig.includes("?") ? "&" : "?";
+              // Remover key antiguo si existe
+              const urlWithoutKey = styleUrlFromConfig.replace(/[?&]key=[^&]*/, "");
+              styleUrlWithCacheBuster = `${urlWithoutKey}${sep}key=${encodeURIComponent(currentApiKey)}&v=${configChecksum}`;
+            } else {
+              styleUrlWithCacheBuster = styleUrlFromConfig;
+            }
           }
         }
         
@@ -2446,12 +2472,27 @@ export default function GeoScopeMap({
                   maptilerKey ??
                   null;
 
+                // Asegurar que styleUrl esté firmado con el API key actual
+                let finalStyleUrl = styleUrlWithCacheBuster;
+                if (finalStyleUrl && resolvedKey) {
+                  try {
+                    const url = new URL(finalStyleUrl);
+                    url.searchParams.set("key", resolvedKey);
+                    finalStyleUrl = url.toString();
+                  } catch {
+                    // Si falla, intentar añadir key manualmente
+                    const sep = finalStyleUrl.includes("?") ? "&" : "?";
+                    const urlWithoutKey = finalStyleUrl.replace(/[?&]key=[^&]*/, "");
+                    finalStyleUrl = `${urlWithoutKey}${sep}key=${encodeURIComponent(resolvedKey)}`;
+                  }
+                }
+                
                 return {
                   api_key: resolvedKey,
                   apiKey: resolvedKey,
                   key: legacyMaptiler.key ?? resolvedKey,
                   style: styleFromConfig,
-                  styleUrl: styleUrlWithCacheBuster,
+                  styleUrl: finalStyleUrl,
                   styleUrlDark: legacyMaptiler.styleUrlDark ?? null,
                   styleUrlLight: legacyMaptiler.styleUrlLight ?? null,
                   styleUrlBright: legacyMaptiler.styleUrlBright ?? null,
@@ -2598,25 +2639,71 @@ export default function GeoScopeMap({
           }
         }, 8000);
 
+        // Manejar errores de carga de estilo
+        const handleStyleError = (event: MapLibreEvent & { error?: unknown }) => {
+          if (cancelled || !mapRef.current) {
+            return;
+          }
+          map.off("error", handleStyleError);
+          
+          const error = event.error as { status?: number; message?: string } | undefined;
+          const status = error?.status;
+          const message = error?.message || String(error);
+          
+          console.error("[GeoScopeMap] Error loading style:", error);
+          
+          // Limpiar timeout si existe
+          if (styleLoadTimeout) {
+            clearTimeout(styleLoadTimeout);
+            styleLoadTimeout = null;
+          }
+          
+          // Mostrar error específico según el código HTTP
+          if (status === 401 || status === 403) {
+            setWebglError("Error: API key de MapTiler inválida o sin permisos. Por favor, verifica tu API key en la configuración.");
+          } else if (status === 404) {
+            setWebglError("Error: URL del estilo de MapTiler no encontrada. Por favor, verifica la URL en la configuración.");
+          } else if (status && status >= 400) {
+            setWebglError(`Error al cargar el estilo del mapa (HTTP ${status}): ${message}`);
+          } else {
+            setWebglError(`Error al cargar el estilo del mapa: ${message}. Verifica que el API key y la URL sean correctos.`);
+          }
+          
+          setStyleChangeInProgress(false);
+          mapStateMachineRef.current?.notifyStyleData("config-style-change-error");
+        };
+        
+        map.once("style.load", handleStyleLoad);
+        map.once("error", handleStyleError);
+        
         cleanup = () => {
           map.off("style.load", handleStyleLoad);
+          map.off("error", handleStyleError);
           if (styleLoadTimeout) {
             clearTimeout(styleLoadTimeout);
             styleLoadTimeout = null;
           }
         };
-
-        map.once("style.load", handleStyleLoad);
         
         try {
           map.setStyle(styleResult.resolved.style as maplibregl.StyleSpecification, { diff: false });
         } catch (error) {
+          // Limpiar listeners si falla inmediatamente
+          map.off("style.load", handleStyleLoad);
+          map.off("error", handleStyleError);
+          
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error("[GeoScopeMap] Error setting style:", error);
+          setWebglError(`Error al aplicar el estilo del mapa: ${errorMessage}. Verifica que el API key y la URL sean correctos.`);
           void logError(error instanceof Error ? error : new Error(String(error)));
-          throw error;
+          setStyleChangeInProgress(false);
+          return;
         }
       } catch (error) {
         if (!cancelled) {
           console.error("[GeoScopeMap] Error applying live style change", error);
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          setWebglError(`Error al actualizar el mapa: ${errorMessage}. Verifica que el API key y la URL de MapTiler sean correctos.`);
           void logError(error instanceof Error ? error : new Error(String(error)));
           setStyleChangeInProgress(false);
         }
