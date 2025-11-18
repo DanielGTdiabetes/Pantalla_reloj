@@ -2341,6 +2341,28 @@ export default function GeoScopeMap({
     layerRegistryReady,
   ]);
 
+  // Escuchar eventos de cambio de configuración para forzar actualización
+  useEffect(() => {
+    const handleConfigSaved = async () => {
+      console.log("[GeoScopeMap] Config saved event received, forcing reload and style update");
+      // Forzar recarga de configuración para detectar cambios
+      try {
+        await reloadConfig();
+        console.log("[GeoScopeMap] Config reloaded after save event");
+      } catch (error) {
+        console.error("[GeoScopeMap] Error reloading config after save:", error);
+      }
+    };
+
+    window.addEventListener("pantalla:config:saved", handleConfigSaved);
+    window.addEventListener("config-changed", handleConfigSaved);
+
+    return () => {
+      window.removeEventListener("pantalla:config:saved", handleConfigSaved);
+      window.removeEventListener("config-changed", handleConfigSaved);
+    };
+  }, [reloadConfig]);
+
   useEffect(() => {
     if (!config) {
       return;
@@ -2351,21 +2373,40 @@ export default function GeoScopeMap({
       console.warn("[GeoScopeMap] mapRef.current is null, cannot apply style change yet");
       return;
     }
+    // Si hay un error previo, intentar aplicar el estilo de todos modos para recuperarse
+    // Esto permite que el mapa se recupere cuando se actualiza la configuración
+    if (webglError && mapStyleVersion > 0) {
+      console.log("[GeoScopeMap] mapStyleVersion > 0 and there's an error, attempting to apply style to recover");
+    }
+    
     // Permitir mapStyleVersion === 0 solo si es la primera carga y el mapa ya está inicializado
-    // Si mapStyleVersion > 0, significa que hubo un cambio de configuración
-    if (mapStyleVersion === 0) {
+    // Si mapStyleVersion > 0, significa que hubo un cambio de configuración y DEBEMOS aplicar el estilo
+    if (mapStyleVersion === 0 && !webglError) {
       // Solo retornar si el mapa ya está inicializado y no hay errores
-      if (!webglError) {
-        return;
-      }
-      // Si hay un error, intentar aplicar el estilo de todos modos para recuperarse
-      console.log("[GeoScopeMap] mapStyleVersion is 0 but there's an error, attempting to apply style anyway");
+      return;
+    }
+    
+    // Si mapStyleVersion > 0, siempre intentar aplicar el estilo (incluso si hay error previo)
+    if (mapStyleVersion > 0) {
+      console.log("[GeoScopeMap] mapStyleVersion > 0, applying style change", { 
+        mapStyleVersion, 
+        hasError: !!webglError,
+        hasMap: !!mapRef.current,
+        configProvider: (config as any)?.ui_map?.provider,
+        configApiKey: (config as any)?.ui_map?.maptiler?.api_key ? "***" : null,
+        configStyleUrl: (config as any)?.ui_map?.maptiler?.styleUrl ? "***" : null
+      });
     }
 
     // Reactivado: cambiar el estilo del mapa cuando cambia la configuración
 
     let cancelled = false;
     const map = mapRef.current;
+    
+    // Si el mapa está en estado de error y tenemos un cambio de configuración, intentar reiniciar
+    if (webglError && mapStyleVersion > 0 && map) {
+      console.log("[GeoScopeMap] Map has error but config changed, attempting to recover by applying new style");
+    }
     let cleanup: (() => void) | null = null;
     let styleLoadTimeout: ReturnType<typeof setTimeout> | null = null;
 
