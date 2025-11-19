@@ -329,10 +329,18 @@ export function useConfig() {
 
     const handleConfigSaved = () => {
       console.log("[useConfig] Config saved event received, forcing reload");
+      // Forzar recarga inmediata
+      void load();
+    };
+    
+    const handleConfigChanged = () => {
+      console.log("[useConfig] Config changed event received, forcing reload");
+      // También recargar cuando se dispara config-changed
       void load();
     };
 
     window.addEventListener("pantalla:config:saved", handleConfigSaved);
+    window.addEventListener("config-changed", handleConfigChanged);
 
     return () => {
       cancelled = true;
@@ -340,6 +348,7 @@ export function useConfig() {
         window.clearTimeout(timeoutId);
       }
       window.removeEventListener("pantalla:config:saved", handleConfigSaved);
+      window.removeEventListener("config-changed", handleConfigChanged);
     };
   }, [load]);
 

@@ -1029,11 +1029,21 @@ export const ConfigPage: React.FC = () => {
 
       await reloadConfig();
       
+      // Esperar un momento para que el backend procese el cambio
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       // Disparar eventos para forzar actualización del mapa
       if (typeof window !== "undefined") {
+        console.log("[ConfigPage] Disparando eventos para actualizar mapa");
         window.dispatchEvent(new CustomEvent("pantalla:config:saved"));
         window.dispatchEvent(new CustomEvent("config-changed"));
         window.dispatchEvent(new CustomEvent("map:style:changed"));
+        
+        // Forzar recarga de configuración después de un breve delay
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent("config-changed"));
+          window.dispatchEvent(new CustomEvent("map:style:changed"));
+        }, 1000);
       }
       
       alert("Mapa base guardado. El mapa se actualizará en unos segundos.");

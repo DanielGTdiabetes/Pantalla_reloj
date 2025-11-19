@@ -2465,12 +2465,22 @@ export default function GeoScopeMap({
       console.log("[GeoScopeMap] Config saved event received");
       // Recargar configuración para detectar cambios
       await reloadConfig();
+      // Forzar recarga adicional después de un breve delay para asegurar que el backend procesó el cambio
+      setTimeout(async () => {
+        console.log("[GeoScopeMap] Forcing additional config reload after save");
+        await reloadConfig();
+      }, 1000);
     };
 
     const handleMapStyleChanged = async () => {
       console.log("[GeoScopeMap] Map style changed event received, forcing style reload");
       // Recargar configuración para que mapStyleVersion se actualice
       await reloadConfig();
+      // Forzar recarga adicional después de un breve delay
+      setTimeout(async () => {
+        console.log("[GeoScopeMap] Forcing additional config reload after style change");
+        await reloadConfig();
+      }, 1000);
     };
 
     window.addEventListener("pantalla:config:saved", handleConfigSaved);
@@ -2515,8 +2525,15 @@ export default function GeoScopeMap({
         hasMap: !!mapRef.current,
         configProvider: (config as any)?.ui_map?.provider,
         configApiKey: (config as any)?.ui_map?.maptiler?.api_key ? "***" : null,
-        configStyleUrl: (config as any)?.ui_map?.maptiler?.styleUrl ? "***" : null
+        configStyleUrl: (config as any)?.ui_map?.maptiler?.styleUrl ? "***" : null,
+        styleChangeInProgress
       });
+      
+      // Si ya hay un cambio en progreso, esperar a que termine antes de iniciar otro
+      if (styleChangeInProgress) {
+        console.log("[GeoScopeMap] Style change already in progress, skipping duplicate");
+        return;
+      }
     }
 
     // Reactivado: cambiar el estilo del mapa cuando cambia la configuración

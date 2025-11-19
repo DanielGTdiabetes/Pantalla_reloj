@@ -4974,10 +4974,13 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
         logger.error("[config] Failed to save config: %s", e)
         raise HTTPException(status_code=500, detail=f"Failed to save config: {str(e)}")
     
-    # Hot-reload global_config
+    # Hot-reload global_config y forzar actualización de config_loaded_at
     try:
         global global_config
         global_config = load_effective_config()
+        # Forzar recarga del config_manager para actualizar config_loaded_at
+        # Esto asegura que el polling del frontend detecte el cambio
+        config_manager.reload()
         logger.info("[config] Hot-reloaded global_config after group '%s' save", group_name)
     except Exception as reload_exc:
         logger.warning("[config] Failed to hot-reload global_config: %s", reload_exc)
