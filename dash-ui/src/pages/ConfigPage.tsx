@@ -1028,7 +1028,15 @@ export const ConfigPage: React.FC = () => {
       }
 
       await reloadConfig();
-      alert("Mapa base guardado. La pantalla se reiniciará en unos segundos.");
+      
+      // Disparar eventos para forzar actualización del mapa
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("pantalla:config:saved"));
+        window.dispatchEvent(new CustomEvent("config-changed"));
+        window.dispatchEvent(new CustomEvent("map:style:changed"));
+      }
+      
+      alert("Mapa base guardado. El mapa se actualizará en unos segundos.");
 
       const loadedConfig = await getConfigV2();
       setConfig(withConfigDefaultsV2(loadedConfig));

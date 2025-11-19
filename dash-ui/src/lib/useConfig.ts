@@ -15,11 +15,12 @@ type MapHotSwapDescriptor = {
   provider: string | null;
   style: string | null;
   model: string | null;
+  api_key: string | null; // Incluir API key para detectar cambios
 };
 
 const extractMapHotSwapDescriptor = (config: AppConfig | null): MapHotSwapDescriptor => {
   if (!config) {
-    return { provider: null, style: null, model: null };
+    return { provider: null, style: null, model: null, api_key: null };
   }
 
   // Soporte para v2
@@ -28,17 +29,24 @@ const extractMapHotSwapDescriptor = (config: AppConfig | null): MapHotSwapDescri
     const provider = v2Config.ui_map.provider ?? null;
     // Para v2, extraer tileUrl según el proveedor
     let style: string | null = null;
+    let api_key: string | null = null;
     if (v2Config.ui_map.provider === "custom_xyz") {
       style = v2Config.ui_map.customXyz?.tileUrl ?? null;
     } else if (v2Config.ui_map.provider === "local_raster_xyz") {
       style = v2Config.ui_map.local?.tileUrl ?? null;
     } else if (v2Config.ui_map.provider === "maptiler_vector") {
       style = v2Config.ui_map.maptiler?.styleUrl ?? null;
+      // Incluir API key para detectar cambios
+      api_key = v2Config.ui_map.maptiler?.api_key ?? 
+                v2Config.ui_map.maptiler?.apiKey ?? 
+                v2Config.ui_map.maptiler?.key ?? 
+                null;
     }
     return {
       provider,
       style,
       model: null,
+      api_key,
     };
   }
 
@@ -66,15 +74,25 @@ const extractMapHotSwapDescriptor = (config: AppConfig | null): MapHotSwapDescri
     ? modelCandidate.trim()
     : null;
 
+  // Extraer API key para v1 legacy
+  const api_key = (uiMap?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.apiKey ?? 
+                  (uiMap?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.key ??
+                  (uiMap?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.api_key ??
+                  null;
+
   return {
     provider: provider ?? null,
     style: style ?? null,
     model,
+    api_key,
   };
 };
 
 const descriptorsEqual = (a: MapHotSwapDescriptor, b: MapHotSwapDescriptor) => {
-  return a.provider === b.provider && a.style === b.style && a.model === b.model;
+  return a.provider === b.provider && 
+         a.style === b.style && 
+         a.model === b.model &&
+         a.api_key === b.api_key;
 };
 
 export function useConfig() {
