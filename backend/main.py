@@ -7253,7 +7253,17 @@ def get_calendar() -> Dict[str, Any]:
     """Obtiene datos del calendario (eventos, hortalizas, santoral)."""
     config = config_manager.read()
     calendar_config = getattr(config, "calendar", None)
-    harvest_config = getattr(config, "harvest", None)
+    
+    # Leer configuración de harvest desde v2 o v1
+    harvest_config = None
+    if hasattr(config, "version") and config.version == 2:
+        # V2: panels.harvest
+        if hasattr(config, "panels") and config.panels:
+            harvest_config = getattr(config.panels, "harvest", None)
+    # Fallback a v1: harvest
+    if harvest_config is None:
+        harvest_config = getattr(config, "harvest", None)
+    
     saints_config = getattr(config, "saints", None)
 
     provider, calendar_enabled, ics_path = _resolve_calendar_settings(config)
@@ -7345,7 +7355,15 @@ def get_calendar() -> Dict[str, Any]:
         payload["error_message"] = error_message
 
     # Hortalizas estacionales (mejoradas con siembra y mantenimiento)
-    if getattr(harvest_config, "enabled", False):
+    # Si harvest_config es None o enabled no está definido, usar True por defecto
+    harvest_enabled = False
+    if harvest_config is not None:
+        harvest_enabled = getattr(harvest_config, "enabled", True)
+    else:
+        # Si no hay configuración, habilitar por defecto para mostrar datos estacionales
+        harvest_enabled = True
+    
+    if harvest_enabled:
         try:
             harvest_data = get_harvest_data(
                 custom_items=getattr(harvest_config, "custom_items", []),
@@ -8240,6 +8258,16 @@ def get_history(date: Optional[str] = None, lang: str = "es") -> Dict[str, Any]:
                     "max_items": historical_events_config.wikimedia.max_items or 10,
                     "timeout_seconds": historical_events_config.wikimedia.timeout_seconds or 10
                 }
+        
+        # Si no hay configuración, usar valores por defecto para wikimedia
+        if not wikimedia_config:
+            wikimedia_config = {
+                "language": lang,
+                "event_type": "all",
+                "api_user_agent": None,
+                "max_items": 10,
+                "timeout_seconds": 10
+            }
         
         # Usar lang del parámetro si no está en config
         if wikimedia_config and not wikimedia_config.get("language"):

@@ -1980,6 +1980,11 @@ export default function GeoScopeMap({
             });
             layerRegistry.add(aircraftLayer);
             aircraftLayerRef.current = aircraftLayer;
+            
+            // Asegurar que la capa se inicialice correctamente
+            if (flightsConfig.enabled) {
+              void aircraftLayer.ensureFlightsLayer();
+            }
           };
 
           void initializeAircraftLayer();
@@ -2013,6 +2018,11 @@ export default function GeoScopeMap({
             });
             layerRegistry.add(shipsLayer);
             shipsLayerRef.current = shipsLayer;
+            
+            // Asegurar que la capa se inicialice correctamente
+            if (shipsConfig.enabled) {
+              void shipsLayer.ensureShipsLayer();
+            }
           }
       });
 
@@ -2034,8 +2044,7 @@ export default function GeoScopeMap({
       let lastChecksum: string | null = null;
       
       async function pollHealthAndReact(map: maplibregl.Map) {
-        // Desactivado temporalmente: no cambiar el style del mapa tras la inicialización
-        return;
+        // Habilitado: detectar cambios de configuración y recargar capas sin cambiar el estilo del mapa
         try {
           const h = await fetch("/api/health/full", { cache: "no-store" }).then((r) => r.json());
           const current = h?.config_checksum || null;
@@ -2047,24 +2056,45 @@ export default function GeoScopeMap({
             const cfg = await fetch("/api/config", { cache: "no-store" }).then((r) => r.json());
             const healthData = await fetch("/api/health/full", { cache: "no-store" }).then((r) => r.json()).catch(() => null);
             
-            // Obtener styleUrl desde la configuración usando buildFinalMaptilerStyleUrl
-            const merged = withConfigDefaults(cfg);
-            const mapSettings = merged.ui?.map;
-            const baseStyleUrl = mapSettings?.maptiler?.styleUrl || null;
-            const styleUrl = buildFinalMaptilerStyleUrl(
-              cfg as any,
-              healthData as any,
-              baseStyleUrl,
-              null
-            ) || computeStyleUrlFromConfig(mapSettings?.maptiler ? {
-              maptiler: mapSettings.maptiler,
-              style: mapSettings.style || "vector-dark",
-            } : null, healthData);
+            // Recargar capas sin cambiar el estilo del mapa
+            // Disparar evento para que useConfig recargue la configuración
+            window.dispatchEvent(new CustomEvent('config-changed'));
             
-            if (styleUrl) {
-              // Desactivado temporalmente: no aplicar cambios de estilo en caliente
-              // await applyMapStyle(map, styleUrl, current);
+            // Reinyectar capas usando LayerRegistry
+            if (layerRegistryRef.current) {
+              layerRegistryRef.current.reapply();
             }
+            
+            // Reinyectar capas específicas
+            const merged = withConfigDefaults(cfg);
+            const configAsV2 = (cfg || {}) as unknown as {
+              version?: number;
+              aemet?: { enabled?: boolean; cap_enabled?: boolean };
+              layers?: { flights?: typeof merged.layers.flights; ships?: typeof merged.layers.ships };
+              opensky?: typeof merged.opensky;
+            };
+            
+            // Reinyectar radar AEMET
+            if (configAsV2.aemet?.enabled && configAsV2.aemet?.cap_enabled) {
+              const aemetWarningsLayer = aemetWarningsLayerRef.current;
+              if (aemetWarningsLayer) {
+                void aemetWarningsLayer.ensureWarningsLayer();
+              }
+            }
+            
+            // Reinyectar barcos
+            const shipsLayer = shipsLayerRef.current;
+            if (shipsLayer) {
+              void shipsLayer.ensureShipsLayer();
+            }
+            
+            // Reinyectar aviones
+            const aircraftLayer = aircraftLayerRef.current;
+            if (aircraftLayer) {
+              void aircraftLayer.ensureFlightsLayer();
+            }
+            
+            console.log("[GeoScopeMap] Config reloaded, layers reinjected");
           }
         } catch (e) {
           // Log error pero continuar polling
@@ -2083,20 +2113,20 @@ export default function GeoScopeMap({
         }
       }
       
-      // Desactivado: no iniciar polling que pueda provocar setStyle en caliente
-      // map.once("load", () => {
-      //   if (!destroyed && mapRef.current) {
-      //     fetch("/api/health/full", { cache: "no-store" })
-      //       .then((r) => r.json())
-      //       .then((h) => {
-      //         lastChecksum = h?.config_checksum || null;
-      //         setTimeout(() => pollHealthAndReact(map), 5000);
-      //       })
-      //       .catch(() => {
-      //         setTimeout(() => pollHealthAndReact(map), 5000);
-      //       });
-      //   }
-      // });
+      // Iniciar polling para detectar cambios de configuración
+      map.once("load", () => {
+        if (!destroyed && mapRef.current) {
+          fetch("/api/health/full", { cache: "no-store" })
+            .then((r) => r.json())
+            .then((h) => {
+              lastChecksum = h?.config_checksum || null;
+              setTimeout(() => pollHealthAndReact(map), 5000);
+            })
+            .catch(() => {
+              setTimeout(() => pollHealthAndReact(map), 5000);
+            });
+        }
+      });
 
       // Listener para reinyectar capas después de cambiar estilo
       const handleStyleLoaded = () => {
