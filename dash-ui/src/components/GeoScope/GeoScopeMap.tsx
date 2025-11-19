@@ -857,7 +857,40 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
       }
     }
     
-    const styleResult = await loadMapStyle(ui_map);
+    // Envolver loadMapStyle en try/catch para manejar errores de red/CORS
+    let styleResult;
+    try {
+      styleResult = await loadMapStyle(ui_map);
+    } catch (styleError) {
+      console.warn(
+        "[GeoScopeMap] Failed to load map style, using fallback:",
+        styleError
+      );
+      // Usar configuración por defecto segura si falla loadMapStyle
+      const fallbackMapConfigV2: MapConfigV2 = {
+        engine: "maplibre",
+        provider: "local_raster_xyz",
+        renderWorldCopies: true,
+        interactive: false,
+        controls: false,
+        local: {
+          tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+          minzoom: 0,
+          maxzoom: 19,
+        },
+        maptiler: undefined,
+        customXyz: undefined,
+        viewMode: "fixed",
+        fixed: {
+          center: { lat: 39.98, lon: 0.20 },
+          zoom: 9.0,
+          bearing: 0,
+          pitch: 0,
+        },
+        region: undefined,
+      };
+      styleResult = await loadMapStyle(fallbackMapConfigV2);
+    }
     
     // Convertir a formato compatible con buildRuntimePreferences
     // Construir un MapConfig compatible usando unknown para evitar errores de tipo
@@ -1844,16 +1877,22 @@ export default function GeoScopeMap({
       map.once("load", async () => {
         if (destroyed || !mapRef.current) return;
         
-        const layerRegistry = new LayerRegistry(map);
-        layerRegistryRef.current = layerRegistry;
-        setLayerRegistryReady(true);
+        try {
+          const layerRegistry = new LayerRegistry(map);
+          layerRegistryRef.current = layerRegistry;
+          setLayerRegistryReady(true);
 
-        // Satellite layer desactivado: solo usar estilo base streets-v4
+          // Satellite layer desactivado: solo usar estilo base streets-v4
 
-        // Inicializar LightningLayer (siempre habilitado si hay datos)
-        const lightningLayer = new LightningLayer({ enabled: true });
-        layerRegistry.add(lightningLayer);
-        lightningLayerRef.current = lightningLayer;
+          // Inicializar LightningLayer (siempre habilitado si hay datos)
+          try {
+            const lightningLayer = new LightningLayer({ enabled: true });
+            layerRegistry.add(lightningLayer);
+            lightningLayerRef.current = lightningLayer;
+          } catch (lightningError) {
+            console.error("[GeoScopeMap] Failed to initialize LightningLayer:", lightningError);
+            // Continuar sin la capa de rayos
+          }
 
         // Inicializar AircraftLayer y ShipsLayer según configuración
         // Usar defaults si config aún no está disponible
@@ -1911,12 +1950,17 @@ export default function GeoScopeMap({
           });
 
           if (isRadarEnabledInit) {
-            const globalRadarLayer = new GlobalRadarLayer({
-              enabled: true,
-              opacity: radarOpacityInit,
-            });
-            layerRegistry.add(globalRadarLayer);
-            globalRadarLayerRef.current = globalRadarLayer;
+            try {
+              const globalRadarLayer = new GlobalRadarLayer({
+                enabled: true,
+                opacity: radarOpacityInit,
+              });
+              layerRegistry.add(globalRadarLayer);
+              globalRadarLayerRef.current = globalRadarLayer;
+            } catch (radarError) {
+              console.error("[GeoScopeMap] Failed to initialize GlobalRadarLayer:", radarError);
+              // Continuar sin la capa de radar - no bloquear el resto de la aplicación
+            }
           }
 
           // Weather Layer (z-index 12, entre radar/satélite y AEMET warnings)
@@ -1925,25 +1969,33 @@ export default function GeoScopeMap({
             ? configAsV2Init.aemet 
             : mergedConfig.aemet;
           if (aemetConfigInit?.enabled && aemetConfigInit?.cap_enabled) {
-            const weatherLayer = new WeatherLayer({
-              enabled: true,
-              opacity: 0.3,
-              refreshSeconds: (aemetConfigInit.cache_minutes ?? 15) * 60,
-            });
-            layerRegistry.add(weatherLayer);
-            weatherLayerRef.current = weatherLayer;
-          }
+            try {
+              const weatherLayer = new WeatherLayer({
+                enabled: true,
+                opacity: 0.3,
+                refreshSeconds: (aemetConfigInit.cache_minutes ?? 15) * 60,
+              });
+              layerRegistry.add(weatherLayer);
+              weatherLayerRef.current = weatherLayer;
+            } catch (weatherError) {
+              console.error("[GeoScopeMap] Failed to initialize WeatherLayer:", weatherError);
+              // Continuar sin la capa de clima
+            }
 
-          // AEMET Warnings Layer (z-index 15, entre radar y vuelos)
-          if (aemetConfigInit?.enabled && aemetConfigInit?.cap_enabled) {
-            const aemetWarningsLayer = new AEMETWarningsLayer({
-              enabled: true,
-              opacity: 0.6,
-              minSeverity: "moderate",
-              refreshSeconds: (aemetConfigInit.cache_minutes ?? 15) * 60,
-            });
-            layerRegistry.add(aemetWarningsLayer);
-            aemetWarningsLayerRef.current = aemetWarningsLayer;
+            // AEMET Warnings Layer (z-index 15, entre radar y vuelos)
+            try {
+              const aemetWarningsLayer = new AEMETWarningsLayer({
+                enabled: true,
+                opacity: 0.6,
+                minSeverity: "moderate",
+                refreshSeconds: (aemetConfigInit.cache_minutes ?? 15) * 60,
+              });
+              layerRegistry.add(aemetWarningsLayer);
+              aemetWarningsLayerRef.current = aemetWarningsLayer;
+            } catch (aemetError) {
+              console.error("[GeoScopeMap] Failed to initialize AEMETWarningsLayer:", aemetError);
+              // Continuar sin la capa de avisos AEMET
+            }
           }
 
           // AircraftLayer
@@ -1967,23 +2019,28 @@ export default function GeoScopeMap({
               return;
             }
 
-            const aircraftLayer = new AircraftLayer({
-              enabled: flightsConfig.enabled,
-              opacity: flightsConfig.opacity,
-              maxAgeSeconds: flightsConfig.max_age_seconds,
-              cluster: openskyConfig.cluster,
-              styleScale: flightsConfig.styleScale ?? 1,
-              renderMode: flightsConfig.render_mode ?? "auto",
-              circle: flightsConfig.circle,
-              symbol: flightsConfig.symbol,
-              spriteAvailable,
-            });
-            layerRegistry.add(aircraftLayer);
-            aircraftLayerRef.current = aircraftLayer;
-            
-            // Asegurar que la capa se inicialice correctamente
-            if (flightsConfig.enabled) {
-              void aircraftLayer.ensureFlightsLayer();
+            try {
+              const aircraftLayer = new AircraftLayer({
+                enabled: flightsConfig.enabled,
+                opacity: flightsConfig.opacity,
+                maxAgeSeconds: flightsConfig.max_age_seconds,
+                cluster: openskyConfig.cluster,
+                styleScale: flightsConfig.styleScale ?? 1,
+                renderMode: flightsConfig.render_mode ?? "auto",
+                circle: flightsConfig.circle,
+                symbol: flightsConfig.symbol,
+                spriteAvailable,
+              });
+              layerRegistry.add(aircraftLayer);
+              aircraftLayerRef.current = aircraftLayer;
+              
+              // Asegurar que la capa se inicialice correctamente
+              if (flightsConfig.enabled) {
+                void aircraftLayer.ensureFlightsLayer();
+              }
+            } catch (aircraftError) {
+              console.error("[GeoScopeMap] Failed to initialize AircraftLayer:", aircraftError);
+              // Continuar sin la capa de aviones
             }
           };
 
@@ -2006,24 +2063,34 @@ export default function GeoScopeMap({
             spriteAvailableShips = false;
           }
           if (!destroyed && mapRef.current) {
-            const shipsLayer = new ShipsLayer({
-              enabled: shipsConfig.enabled,
-              opacity: shipsConfig.opacity,
-              maxAgeSeconds: shipsConfig.max_age_seconds,
-              styleScale: shipsConfig.styleScale,
-              renderMode: shipsConfig.render_mode,
-              circle: shipsConfig.circle,
-              symbol: shipsConfig.symbol,
-              spriteAvailable: spriteAvailableShips,
-            });
-            layerRegistry.add(shipsLayer);
-            shipsLayerRef.current = shipsLayer;
-            
-            // Asegurar que la capa se inicialice correctamente
-            if (shipsConfig.enabled) {
-              void shipsLayer.ensureShipsLayer();
+            try {
+              const shipsLayer = new ShipsLayer({
+                enabled: shipsConfig.enabled,
+                opacity: shipsConfig.opacity,
+                maxAgeSeconds: shipsConfig.max_age_seconds,
+                styleScale: shipsConfig.styleScale,
+                renderMode: shipsConfig.render_mode,
+                circle: shipsConfig.circle,
+                symbol: shipsConfig.symbol,
+                spriteAvailable: spriteAvailableShips,
+              });
+              layerRegistry.add(shipsLayer);
+              shipsLayerRef.current = shipsLayer;
+              
+              // Asegurar que la capa se inicialice correctamente
+              if (shipsConfig.enabled) {
+                void shipsLayer.ensureShipsLayer();
+              }
+            } catch (shipsError) {
+              console.error("[GeoScopeMap] Failed to initialize ShipsLayer:", shipsError);
+              // Continuar sin la capa de barcos
             }
           }
+        } catch (layerInitError) {
+          // Capturar cualquier error no manejado durante la inicialización de capas
+          console.error("[GeoScopeMap] Error durante inicialización de capas:", layerInitError);
+          // No lanzar el error - permitir que el mapa continúe funcionando sin algunas capas
+        }
       });
 
       setupResizeObserver(host);
