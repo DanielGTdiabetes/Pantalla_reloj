@@ -67,9 +67,19 @@ export default class GlobalRadarLayer implements Layer {
       return;
     }
     
+    // Verificar que el mapa esté completamente cargado
+    if (!this.map.isStyleLoaded()) {
+      // Si el estilo no está cargado, esperar a que se cargue
+      this.map.once('styledata', () => {
+        this.updateTimestamp(timestamp);
+      });
+      return;
+    }
+    
     // Actualizar la fuente con nuevo timestamp
     const source = this.map.getSource(this.sourceId);
     if (!source) {
+      // Si no existe la fuente, crearla
       this.ensureLayer();
       this.applyVisibility();
       this.applyOpacity();
@@ -78,31 +88,41 @@ export default class GlobalRadarLayer implements Layer {
 
     if (source.type === "raster") {
       // Eliminar y recrear la fuente con el nuevo timestamp
-      if (this.map.getLayer(this.id)) {
-        this.map.removeLayer(this.id);
+      try {
+        if (this.map.getLayer(this.id)) {
+          this.map.removeLayer(this.id);
+        }
+        this.map.removeSource(this.sourceId);
+        
+        // Recrear con nuevo timestamp
+        this.map.addSource(this.sourceId, {
+          type: "raster",
+          tiles: [
+            `${this.baseUrl}/${timestamp}/{z}/{x}/{y}.png`
+          ],
+          tileSize: 256
+        });
+        
+        const beforeId = this.findBeforeId();
+        this.map.addLayer({
+          id: this.id,
+          type: "raster",
+          source: this.sourceId,
+          paint: {
+            "raster-opacity": this.opacity
+          },
+          minzoom: 0,
+          maxzoom: 18
+        }, beforeId);
+      } catch (error) {
+        console.error("[GlobalRadarLayer] Error updating timestamp:", error);
+        // Reintentar cuando el mapa esté listo
+        if (this.map) {
+          this.map.once('styledata', () => {
+            this.updateTimestamp(timestamp);
+          });
+        }
       }
-      this.map.removeSource(this.sourceId);
-      
-      // Recrear con nuevo timestamp
-      this.map.addSource(this.sourceId, {
-        type: "raster",
-        tiles: [
-          `${this.baseUrl}/${timestamp}/{z}/{x}/{y}.png`
-        ],
-        tileSize: 256
-      });
-      
-      const beforeId = this.findBeforeId();
-      this.map.addLayer({
-        id: this.id,
-        type: "raster",
-        source: this.sourceId,
-        paint: {
-          "raster-opacity": this.opacity
-        },
-        minzoom: 0,
-        maxzoom: 18
-      }, beforeId);
     }
   }
 
@@ -141,27 +161,45 @@ export default class GlobalRadarLayer implements Layer {
     if (!this.map || !this.enabled || !this.currentTimestamp) {
       return;
     }
+    
+    // Verificar que el mapa esté completamente cargado
+    if (!this.map.isStyleLoaded()) {
+      // Esperar a que el estilo se cargue antes de añadir la capa
+      this.map.once('styledata', () => {
+        this.ensureLayer();
+      });
+      return;
+    }
 
     if (!this.map.getSource(this.sourceId)) {
-      this.map.addSource(this.sourceId, {
-        type: "raster",
-        tiles: [`${this.baseUrl}/${this.currentTimestamp}/{z}/{x}/{y}.png`],
-        tileSize: 256
-      });
+      try {
+        this.map.addSource(this.sourceId, {
+          type: "raster",
+          tiles: [`${this.baseUrl}/${this.currentTimestamp}/{z}/{x}/{y}.png`],
+          tileSize: 256
+        });
+      } catch (error) {
+        console.error("[GlobalRadarLayer] Error adding source:", error);
+        return;
+      }
     }
 
     if (!this.map.getLayer(this.id)) {
-      const beforeId = this.findBeforeId();
-      this.map.addLayer({
-        id: this.id,
-        type: "raster",
-        source: this.sourceId,
-        paint: {
-          "raster-opacity": this.opacity
-        },
-        minzoom: 0,
-        maxzoom: 18
-      }, beforeId);
+      try {
+        const beforeId = this.findBeforeId();
+        this.map.addLayer({
+          id: this.id,
+          type: "raster",
+          source: this.sourceId,
+          paint: {
+            "raster-opacity": this.opacity
+          },
+          minzoom: 0,
+          maxzoom: 18
+        }, beforeId);
+      } catch (error) {
+        console.error("[GlobalRadarLayer] Error adding layer:", error);
+      }
     }
   }
 

@@ -3480,10 +3480,32 @@ export default function GeoScopeMap({
           if (globalRadarLayer && radarFrames.length > 0) {
             const activeTimestamp = radarFrames[radarFrameIndex];
             console.debug("[RadarLayer] frames:", radarFrames.length, "active timestamp:", activeTimestamp);
-            globalRadarLayer.update({ 
-              enabled: true,
-              currentTimestamp: activeTimestamp 
-            });
+            
+            // Asegurar que el mapa esté listo antes de actualizar
+            const map = mapRef.current;
+            if (map && map.isStyleLoaded()) {
+              globalRadarLayer.update({ 
+                enabled: true,
+                currentTimestamp: activeTimestamp 
+              });
+            } else if (map) {
+              // Esperar a que el mapa se cargue
+              map.once('styledata', () => {
+                if (globalRadarLayerRef.current) {
+                  globalRadarLayerRef.current.update({ 
+                    enabled: true,
+                    currentTimestamp: activeTimestamp 
+                  });
+                }
+              });
+            } else {
+              // Si no hay mapa aún, intentar actualizar de todas formas
+              // La capa manejará el caso cuando se añada al mapa
+              globalRadarLayer.update({ 
+                enabled: true,
+                currentTimestamp: activeTimestamp 
+              });
+            }
           }
         } else {
           console.warn("[RadarLayer] No frames available");
