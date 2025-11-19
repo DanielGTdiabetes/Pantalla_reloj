@@ -240,6 +240,7 @@ rm -f /usr/local/bin/pantalla-kiosk-autorefresh
 rm -f /usr/local/bin/diag_kiosk.sh
 rm -f /usr/local/bin/kiosk-ui /usr/local/bin/kiosk-diag
 rm -f /usr/local/bin/pantalla-config-snapshot
+rm -f /usr/local/bin/pantalla-uninstall
 rm -f /etc/systemd/system/pantalla-config-snapshot.timer
 rm -f /etc/systemd/system/pantalla-config-snapshot.service
 rm -f /etc/logrotate.d/pantalla-reloj

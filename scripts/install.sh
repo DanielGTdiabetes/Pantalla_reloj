@@ -634,6 +634,14 @@ for helper in /usr/local/bin/kiosk-ui /usr/local/bin/kiosk-diag; do
     exit 1
   fi
 done
+
+# Instalar script de desinstalación en ubicación permanente
+install -D -m 0755 "$REPO_ROOT/scripts/uninstall.sh" /usr/local/bin/pantalla-uninstall
+if ! bash -n /usr/local/bin/pantalla-uninstall; then
+  echo "[ERROR] Syntax check failed for pantalla-uninstall" >&2
+  exit 1
+fi
+SUMMARY+=("[install] script de desinstalación instalado en /usr/local/bin/pantalla-uninstall")
 SUMMARY+=("[install] helpers kiosk-ui y kiosk-diag instalados")
 
 if command -v update-desktop-database >/dev/null 2>&1; then

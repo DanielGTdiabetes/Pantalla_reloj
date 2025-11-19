@@ -770,8 +770,14 @@ Al finalizar verás un resumen con el estado del backend, frontend, Nginx y los 
 ## Desinstalación
 
 ```bash
+# Opción 1: Usar el script instalado (recomendado)
+sudo pantalla-uninstall
+
+# Opción 2: Desde el repositorio
 sudo bash scripts/uninstall.sh
 ```
+
+El script de desinstalación se instala automáticamente en `/usr/local/bin/pantalla-uninstall` durante la instalación, por lo que estará disponible incluso si el repositorio se elimina.
 
 Detiene y elimina los servicios, borra `/opt/pantalla`, `/opt/firefox`, `/var/lib/pantalla`, `/var/log/pantalla`, restaura `/var/www/html` con el HTML por defecto y elimina el symlink de Firefox si apuntaba a `/opt/firefox`. También desinstala las unidades systemd sin reactivar ningún display manager.
 
