@@ -4247,9 +4247,19 @@ async def save_config(request: Request) -> JSONResponse:
     payload = _sanitize_incoming_config_payload(payload)
 
     ui_map_satellite_updated = False
+    ui_map_maptiler_updated = False
     ui_map_payload = payload.get("ui_map")
-    if isinstance(ui_map_payload, dict) and "satellite" in ui_map_payload:
-        ui_map_satellite_updated = True
+    if isinstance(ui_map_payload, dict):
+        if "satellite" in ui_map_payload:
+            ui_map_satellite_updated = True
+        # Detectar cambios en maptiler (api_key o styleUrl)
+        if "maptiler" in ui_map_payload:
+            maptiler_payload = ui_map_payload.get("maptiler")
+            if isinstance(maptiler_payload, dict):
+                # Verificar si hay cambios en api_key o styleUrl
+                if "api_key" in maptiler_payload or "styleUrl" in maptiler_payload:
+                    ui_map_maptiler_updated = True
+                    logger.info("[config] Detected changes in ui_map.maptiler (api_key or styleUrl)")
     
     # Log del método HTTP recibido
     logger.info("[config] Received %s /api/config", request.method)
@@ -4492,6 +4502,11 @@ async def save_config(request: Request) -> JSONResponse:
             if ui_map_satellite_updated:
                 if not refresh_ui_if_possible():
                     logger.debug("[kiosk] refresh UI request skipped or failed after ui_map.satellite update")
+            # Forzar refresh del kiosk si cambió la configuración de MapTiler (api_key o styleUrl)
+            if ui_map_maptiler_updated:
+                logger.info("[kiosk] MapTiler config changed, forcing UI refresh")
+                if not refresh_ui_if_possible():
+                    logger.debug("[kiosk] refresh UI request skipped or failed after ui_map.maptiler update")
 
             # Publicar evento config_changed después de guardar exitosamente
             try:

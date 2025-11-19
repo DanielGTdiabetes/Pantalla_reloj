@@ -2042,9 +2042,10 @@ export default function GeoScopeMap({
 
       // Watchdog por checksum: polling cada 5s para detectar cambios de configuración
       let lastChecksum: string | null = null;
+      let lastMapStyleDescriptor: string | null = null;
       
       async function pollHealthAndReact(map: maplibregl.Map) {
-        // Habilitado: detectar cambios de configuración y recargar capas sin cambiar el estilo del mapa
+        // Habilitado: detectar cambios de configuración y recargar mapa/estilo si es necesario
         try {
           const h = await fetch("/api/health/full", { cache: "no-store" }).then((r) => r.json());
           const current = h?.config_checksum || null;
@@ -2056,45 +2057,87 @@ export default function GeoScopeMap({
             const cfg = await fetch("/api/config", { cache: "no-store" }).then((r) => r.json());
             const healthData = await fetch("/api/health/full", { cache: "no-store" }).then((r) => r.json()).catch(() => null);
             
-            // Recargar capas sin cambiar el estilo del mapa
-            // Disparar evento para que useConfig recargue la configuración
-            window.dispatchEvent(new CustomEvent('config-changed'));
-            
-            // Reinyectar capas usando LayerRegistry
-            if (layerRegistryRef.current) {
-              layerRegistryRef.current.reapply();
-            }
-            
-            // Reinyectar capas específicas
+            // Verificar si cambió el estilo del mapa (URL o API key)
             const merged = withConfigDefaults(cfg);
-            const configAsV2 = (cfg || {}) as unknown as {
-              version?: number;
-              aemet?: { enabled?: boolean; cap_enabled?: boolean };
-              layers?: { flights?: typeof merged.layers.flights; ships?: typeof merged.layers.ships };
-              opensky?: typeof merged.opensky;
-            };
+            const configAsV2 = (cfg || {}) as unknown as AppConfigV2;
             
-            // Reinyectar radar AEMET
-            if (configAsV2.aemet?.enabled && configAsV2.aemet?.cap_enabled) {
-              const aemetWarningsLayer = aemetWarningsLayerRef.current;
-              if (aemetWarningsLayer) {
-                void aemetWarningsLayer.ensureWarningsLayer();
+            // Extraer descriptor del estilo del mapa para comparar
+            let currentMapStyleDescriptor: string | null = null;
+            if (configAsV2.version === 2 && configAsV2.ui_map) {
+              const provider = configAsV2.ui_map.provider ?? null;
+              let style: string | null = null;
+              if (configAsV2.ui_map.provider === "custom_xyz") {
+                style = configAsV2.ui_map.customXyz?.tileUrl ?? null;
+              } else if (configAsV2.ui_map.provider === "local_raster_xyz") {
+                style = configAsV2.ui_map.local?.tileUrl ?? null;
+              } else if (configAsV2.ui_map.provider === "maptiler_vector") {
+                style = configAsV2.ui_map.maptiler?.styleUrl ?? null;
               }
+              const apiKey = configAsV2.ui_map.maptiler?.api_key ?? null;
+              // Crear descriptor que incluya provider, style y api_key
+              currentMapStyleDescriptor = JSON.stringify({ provider, style, api_key: apiKey ? "***" : null });
+            } else {
+              // V1 legacy
+              const uiMap = merged.ui?.map ?? null;
+              const provider = uiMap?.provider ?? null;
+              const style = uiMap?.style ?? null;
+              const apiKey = (uiMap?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.apiKey ?? 
+                           (uiMap?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.key ??
+                           (uiMap?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.api_key ??
+                           null;
+              currentMapStyleDescriptor = JSON.stringify({ provider, style, api_key: apiKey ? "***" : null });
             }
             
-            // Reinyectar barcos
-            const shipsLayer = shipsLayerRef.current;
-            if (shipsLayer) {
-              void shipsLayer.ensureShipsLayer();
+            // Si cambió el estilo del mapa, forzar recarga del estilo
+            const mapStyleChanged = currentMapStyleDescriptor !== lastMapStyleDescriptor;
+            if (mapStyleChanged) {
+              lastMapStyleDescriptor = currentMapStyleDescriptor;
+              console.log("[GeoScopeMap] Map style changed detected, forcing style reload");
+              // Disparar evento para que useConfig recargue y mapStyleVersion cambie
+              window.dispatchEvent(new CustomEvent('config-changed'));
+              // También disparar evento específico para recarga de estilo
+              window.dispatchEvent(new CustomEvent('map:style:changed'));
+              // Forzar recarga de configuración para que mapStyleVersion se actualice
+              reloadConfig();
+            } else {
+              // Solo recargar capas si no cambió el estilo
+              window.dispatchEvent(new CustomEvent('config-changed'));
+              
+              // Reinyectar capas usando LayerRegistry
+              if (layerRegistryRef.current) {
+                layerRegistryRef.current.reapply();
+              }
+              
+              // Reinyectar capas específicas
+              const configAsV2ForLayers = (cfg || {}) as unknown as {
+                version?: number;
+                aemet?: { enabled?: boolean; cap_enabled?: boolean };
+                layers?: { flights?: typeof merged.layers.flights; ships?: typeof merged.layers.ships };
+                opensky?: typeof merged.opensky;
+              };
+              
+              // Reinyectar radar AEMET
+              if (configAsV2ForLayers.aemet?.enabled && configAsV2ForLayers.aemet?.cap_enabled) {
+                const aemetWarningsLayer = aemetWarningsLayerRef.current;
+                if (aemetWarningsLayer) {
+                  void aemetWarningsLayer.ensureWarningsLayer();
+                }
+              }
+              
+              // Reinyectar barcos
+              const shipsLayer = shipsLayerRef.current;
+              if (shipsLayer) {
+                void shipsLayer.ensureShipsLayer();
+              }
+              
+              // Reinyectar aviones
+              const aircraftLayer = aircraftLayerRef.current;
+              if (aircraftLayer) {
+                void aircraftLayer.ensureFlightsLayer();
+              }
+              
+              console.log("[GeoScopeMap] Config reloaded, layers reinjected");
             }
-            
-            // Reinyectar aviones
-            const aircraftLayer = aircraftLayerRef.current;
-            if (aircraftLayer) {
-              void aircraftLayer.ensureFlightsLayer();
-            }
-            
-            console.log("[GeoScopeMap] Config reloaded, layers reinjected");
           }
         } catch (e) {
           // Log error pero continuar polling
@@ -2120,6 +2163,33 @@ export default function GeoScopeMap({
             .then((r) => r.json())
             .then((h) => {
               lastChecksum = h?.config_checksum || null;
+              
+              // Inicializar descriptor del estilo del mapa
+              const merged = withConfigDefaults(config || {});
+              const configAsV2Init = (config || {}) as unknown as AppConfigV2;
+              if (configAsV2Init.version === 2 && configAsV2Init.ui_map) {
+                const provider = configAsV2Init.ui_map.provider ?? null;
+                let style: string | null = null;
+                if (configAsV2Init.ui_map.provider === "custom_xyz") {
+                  style = configAsV2Init.ui_map.customXyz?.tileUrl ?? null;
+                } else if (configAsV2Init.ui_map.provider === "local_raster_xyz") {
+                  style = configAsV2Init.ui_map.local?.tileUrl ?? null;
+                } else if (configAsV2Init.ui_map.provider === "maptiler_vector") {
+                  style = configAsV2Init.ui_map.maptiler?.styleUrl ?? null;
+                }
+                const apiKey = configAsV2Init.ui_map.maptiler?.api_key ?? null;
+                lastMapStyleDescriptor = JSON.stringify({ provider, style, api_key: apiKey ? "***" : null });
+              } else {
+                const uiMap = merged.ui?.map ?? null;
+                const provider = uiMap?.provider ?? null;
+                const style = uiMap?.style ?? null;
+                const apiKey = (uiMap?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.apiKey ?? 
+                             (uiMap?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.key ??
+                             (uiMap?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.api_key ??
+                             null;
+                lastMapStyleDescriptor = JSON.stringify({ provider, style, api_key: apiKey ? "***" : null });
+              }
+              
               setTimeout(() => pollHealthAndReact(map), 5000);
             })
             .catch(() => {
@@ -2392,22 +2462,25 @@ export default function GeoScopeMap({
   // Escuchar eventos de cambio de configuración para forzar actualización
   useEffect(() => {
     const handleConfigSaved = async () => {
-      console.log("[GeoScopeMap] Config saved event received, forcing page reload to apply new configuration");
-      // Forzar recarga completa de la página para asegurar que todos los cambios se apliquen
-      // Esto es especialmente importante para cambios en la API key de MapTiler y URLs
-      // Esperar 2 segundos antes de recargar para que el guardado se complete y el usuario vea el mensaje
-      setTimeout(() => {
-        console.log("[GeoScopeMap] Reloading page to apply new configuration");
-        window.location.reload();
-      }, 2000);
+      console.log("[GeoScopeMap] Config saved event received");
+      // Recargar configuración para detectar cambios
+      await reloadConfig();
+    };
+
+    const handleMapStyleChanged = async () => {
+      console.log("[GeoScopeMap] Map style changed event received, forcing style reload");
+      // Recargar configuración para que mapStyleVersion se actualice
+      await reloadConfig();
     };
 
     window.addEventListener("pantalla:config:saved", handleConfigSaved);
     window.addEventListener("config-changed", handleConfigSaved);
+    window.addEventListener("map:style:changed", handleMapStyleChanged);
 
     return () => {
       window.removeEventListener("pantalla:config:saved", handleConfigSaved);
       window.removeEventListener("config-changed", handleConfigSaved);
+      window.removeEventListener("map:style:changed", handleMapStyleChanged);
     };
   }, [reloadConfig, webglError]);
 
