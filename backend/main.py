@@ -6276,7 +6276,7 @@ async def post_news_rss(request: Request) -> Dict[str, Any]:
 
 
 @app.get("/api/news/sample")
-def get_news_sample(limit: int = 10) -> Dict[str, Any]:
+async def get_news_sample(limit: int = 10) -> Dict[str, Any]:
     """Obtiene una muestra de noticias de los feeds configurados.
     
     Args:
