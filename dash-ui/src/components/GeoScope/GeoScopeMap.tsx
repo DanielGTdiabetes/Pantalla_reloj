@@ -1877,6 +1877,40 @@ export default function GeoScopeMap({
       map.once("load", async () => {
         if (destroyed || !mapRef.current) return;
         
+        // Esperar a que el estilo esté completamente cargado
+        // Verificar que getStyle() devuelva un objeto válido con version
+        let styleReady = false;
+        let retries = 0;
+        const maxRetries = 10;
+        
+        while (!styleReady && retries < maxRetries && !destroyed && mapRef.current) {
+          try {
+            const style = getSafeMapStyle(map);
+            if (style && typeof (style as { version?: unknown }).version === "number") {
+              styleReady = true;
+              console.log("[GeoScopeMap] Map style ready with version", (style as { version: number }).version);
+            } else {
+              retries++;
+              if (retries < maxRetries) {
+                // Esperar un poco antes de reintentar
+                await new Promise(resolve => setTimeout(resolve, 100));
+              }
+            }
+          } catch (e) {
+            console.warn("[GeoScopeMap] Error checking style readiness:", e);
+            retries++;
+            if (retries < maxRetries) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+          }
+        }
+        
+        if (!styleReady) {
+          console.warn("[GeoScopeMap] Style not ready after retries, proceeding anyway");
+        }
+        
+        if (destroyed || !mapRef.current) return;
+        
         try {
           const layerRegistry = new LayerRegistry(map);
           layerRegistryRef.current = layerRegistry;

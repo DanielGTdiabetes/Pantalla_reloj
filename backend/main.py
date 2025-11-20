@@ -3271,17 +3271,16 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     
     # RainViewer Radar
     try:
-        if config_v2.layers and config_v2.layers.global_ and config_v2.layers.global_.radar:
-            radar_config = config_v2.layers.global_.radar
-            radar_enabled = radar_config.enabled
-            radar_status = "ok" if radar_enabled else "down"
+        # Prioridad: weather_layers.radar > ui_global.radar > layers.global_.radar
+        radar_enabled = False
+        if config_v2.ui_global and config_v2.ui_global.weather_layers and config_v2.ui_global.weather_layers.radar:
+            radar_enabled = config_v2.ui_global.weather_layers.radar.enabled
         elif config_v2.ui_global and config_v2.ui_global.radar:
-            radar_config = config_v2.ui_global.radar
-            radar_enabled = radar_config.enabled
-            radar_status = "ok" if radar_enabled else "down"
-        else:
-            radar_enabled = False
-            radar_status = "down"
+            radar_enabled = config_v2.ui_global.radar.enabled
+        elif config_v2.layers and config_v2.layers.global_ and config_v2.layers.global_.radar:
+            radar_enabled = config_v2.layers.global_.radar.enabled
+        
+        radar_status = "ok" if radar_enabled else "down"
         
         payload["providers"]["rainviewer"] = {
             "enabled": radar_enabled,
@@ -3435,11 +3434,37 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     global_radar_last_fetch = None
     global_radar_cache_age = None
     global_radar_last_error = None
-    radar_provider = global_config.radar.provider
+    
+    # Determinar si el radar está habilitado considerando todas las fuentes
+    # Prioridad: weather_layers.radar > ui_global.radar > layers.global_.radar
+    radar_enabled_global = False
+    radar_config_global = None
+    radar_provider = "rainviewer"
+    radar_history_minutes = 90
+    radar_frame_step = 5
+    
+    if config_v2.ui_global and config_v2.ui_global.weather_layers and config_v2.ui_global.weather_layers.radar:
+        radar_config_global = config_v2.ui_global.weather_layers.radar
+        radar_enabled_global = radar_config_global.enabled
+        radar_provider = getattr(radar_config_global, "provider", "rainviewer")
+        radar_history_minutes = getattr(radar_config_global, "history_minutes", 90)
+        radar_frame_step = getattr(radar_config_global, "frame_step", 5)
+    elif config_v2.ui_global and config_v2.ui_global.radar:
+        radar_config_global = config_v2.ui_global.radar
+        radar_enabled_global = radar_config_global.enabled
+        radar_provider = getattr(radar_config_global, "provider", "rainviewer")
+        radar_history_minutes = getattr(radar_config_global, "history_minutes", 90)
+        radar_frame_step = getattr(radar_config_global, "frame_step", 5)
+    elif global_config and global_config.radar:
+        radar_config_global = global_config.radar
+        radar_enabled_global = global_config.radar.enabled
+        radar_provider = global_config.radar.provider
+        radar_history_minutes = global_config.radar.history_minutes
+        radar_frame_step = global_config.radar.frame_step
 
-    if global_config.radar.enabled:
+    if radar_enabled_global:
         if radar_provider == "openweathermap":
-            layer_type = getattr(global_config.radar, "layer_type", "precipitation_new")
+            layer_type = getattr(radar_config_global, "layer_type", "precipitation_new") if radar_config_global else "precipitation_new"
             openweather_provider = _get_openweather_provider(layer_type)
             api_key = openweather_provider.resolve_api_key()
             if not api_key:
@@ -3448,8 +3473,8 @@ def _health_payload_full_helper() -> Dict[str, Any]:
             else:
                 try:
                     frames = openweather_provider.get_available_frames(
-                        history_minutes=global_config.radar.history_minutes,
-                        frame_step=global_config.radar.frame_step,
+                        history_minutes=radar_history_minutes,
+                        frame_step=radar_frame_step,
                     )
                     if frames:
                         global_radar_status = "ok"
@@ -3471,8 +3496,8 @@ def _health_payload_full_helper() -> Dict[str, Any]:
         else:
             try:
                 frames = _rainviewer_provider.get_available_frames(
-                    history_minutes=global_config.radar.history_minutes,
-                    frame_step=global_config.radar.frame_step
+                    history_minutes=radar_history_minutes,
+                    frame_step=radar_frame_step
                 )
                 if frames:
                     global_radar_status = "ok"

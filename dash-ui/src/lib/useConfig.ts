@@ -102,8 +102,37 @@ export function useConfig() {
   const [error, setError] = useState<string | null>(null);
   const [mapStyleVersion, setMapStyleVersion] = useState(0);
   const metaTimestampRef = useRef<string | null>(null);
+  const configChecksumRef = useRef<string | null>(null);
+  const reloadDebounceRef = useRef<number | null>(null);
+  const isReloadingRef = useRef(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (forceReload = false) => {
+    // Prevenir recargas concurrentes
+    if (isReloadingRef.current && !forceReload) {
+      console.debug("[useConfig] Reload already in progress, skipping");
+      return;
+    }
+
+    // Obtener checksum actual antes de cargar config
+    let currentChecksum: string | null = null;
+    try {
+      const healthResponse = await fetch(`${API_ORIGIN}/api/health/full`, { cache: "no-store" });
+      if (healthResponse.ok) {
+        const healthData = await healthResponse.json().catch(() => null);
+        currentChecksum = healthData?.config_checksum ?? null;
+        
+        // Si el checksum no ha cambiado y no es una recarga forzada, no hacer nada
+        if (!forceReload && currentChecksum && configChecksumRef.current === currentChecksum) {
+          console.debug("[useConfig] Config checksum unchanged, skipping reload");
+          return;
+        }
+      }
+    } catch (e) {
+      console.debug("[useConfig] Failed to get checksum, proceeding with reload", e);
+      // Continuar con la recarga aunque falle el checksum
+    }
+
+    isReloadingRef.current = true;
     try {
       // Intentar cargar v2 primero
       let cfg: AppConfig | AppConfigV2 | undefined;
@@ -273,8 +302,24 @@ export function useConfig() {
         metaTimestampRef.current = meta.config_loaded_at;
       }
 
+      // Actualizar checksum solo si la carga fue exitosa
+      if (currentChecksum) {
+        configChecksumRef.current = currentChecksum;
+      }
+
+      // Solo disparar evento si realmente hubo cambios (wasUpdated) y no estamos recargando por el evento mismo
       if (wasUpdated) {
-        window.dispatchEvent(new CustomEvent("config-changed"));
+        // Usar debounce para evitar múltiples eventos seguidos
+        if (reloadDebounceRef.current !== null) {
+          window.clearTimeout(reloadDebounceRef.current);
+        }
+        reloadDebounceRef.current = window.setTimeout(() => {
+          // Marcar flag antes de disparar evento para evitar bucle
+          isReloadingRef.current = false;
+          window.dispatchEvent(new CustomEvent("config-changed"));
+        }, 100);
+      } else {
+        isReloadingRef.current = false;
       }
       
       setError(null);
@@ -283,6 +328,7 @@ export function useConfig() {
       console.error("[useConfig] Error loading config:", e);
       setError(API_UNREACHABLE);
       setLoading(false);
+      isReloadingRef.current = false;
     }
   }, []);
 
@@ -329,14 +375,47 @@ export function useConfig() {
 
     const handleConfigSaved = () => {
       console.log("[useConfig] Config saved event received, forcing reload");
-      // Forzar recarga inmediata
-      void load();
+      // Forzar recarga inmediata cuando se guarda desde /config
+      void load(true);
     };
     
     const handleConfigChanged = () => {
-      console.log("[useConfig] Config changed event received, forcing reload");
-      // También recargar cuando se dispara config-changed
-      void load();
+      // Si ya estamos recargando, ignorar el evento para evitar bucle infinito
+      if (isReloadingRef.current) {
+        console.debug("[useConfig] Config changed event ignored (reload in progress)");
+        return;
+      }
+      
+      // Usar debounce para evitar múltiples recargas seguidas
+      if (reloadDebounceRef.current !== null) {
+        window.clearTimeout(reloadDebounceRef.current);
+      }
+      
+      reloadDebounceRef.current = window.setTimeout(async () => {
+        console.log("[useConfig] Config changed event received, checking for changes");
+        // Verificar checksum antes de recargar
+        try {
+          const healthResponse = await fetch(`${API_ORIGIN}/api/health/full`, { cache: "no-store" });
+          if (healthResponse.ok) {
+            const healthData = await healthResponse.json().catch(() => null);
+            const newChecksum = healthData?.config_checksum ?? null;
+            
+            // Solo recargar si el checksum cambió
+            if (newChecksum && newChecksum !== configChecksumRef.current) {
+              console.log("[useConfig] Checksum changed, reloading config");
+              void load(true);
+            } else {
+              console.debug("[useConfig] Checksum unchanged, skipping reload");
+            }
+          } else {
+            // Si falla health check, recargar de todas formas
+            void load(true);
+          }
+        } catch (e) {
+          console.debug("[useConfig] Failed to check checksum, reloading anyway", e);
+          void load(true);
+        }
+      }, 500); // Debounce de 500ms
     };
 
     window.addEventListener("pantalla:config:saved", handleConfigSaved);
@@ -346,6 +425,10 @@ export function useConfig() {
       cancelled = true;
       if (timeoutId !== null) {
         window.clearTimeout(timeoutId);
+      }
+      if (reloadDebounceRef.current !== null) {
+        window.clearTimeout(reloadDebounceRef.current);
+        reloadDebounceRef.current = null;
       }
       window.removeEventListener("pantalla:config:saved", handleConfigSaved);
       window.removeEventListener("config-changed", handleConfigChanged);
