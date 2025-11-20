@@ -18,6 +18,7 @@ import {
   normalizeLabelsOverlay,
 } from "../lib/map/labelsOverlay";
 
+// Coordenadas por defecto: Castellón
 export const DEFAULT_MAP_CENTER = {
   lat: 39.98,
   lon: 0.20,
@@ -186,6 +187,11 @@ export const DEFAULT_PANELS_CONFIG: PanelsConfigV2 = {
   weatherWeekly: {
     enabled: true,
   },
+  weather: {
+    enabled: true,
+    latitude: 39.98,  // Castellón
+    longitude: 0.20,
+  },
   ephemerides: {
     enabled: true,
   },
@@ -196,6 +202,11 @@ export const DEFAULT_PANELS_CONFIG: PanelsConfigV2 = {
   calendar: {
     enabled: false,
     provider: "google",
+  },
+  historicalEvents: {
+    enabled: true,
+    provider: "wikimedia",
+    lang: "es",
   },
 };
 

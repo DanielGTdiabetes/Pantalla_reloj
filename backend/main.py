@@ -4043,11 +4043,24 @@ def _validate_ics_basic(content: bytes) -> None:
     Raises HTTPException con 400 si no cumple.
     """
     try:
-        content_str = content.decode('utf-8', errors='replace')
+        # Intentar decodificar con múltiples encodings para mayor compatibilidad
+        # entre diferentes sistemas (PC Windows/Linux a mini PC Linux)
+        content_str = None
+        for encoding in ['utf-8', 'utf-8-sig', 'iso-8859-1', 'windows-1252', 'latin1']:
+            try:
+                content_str = content.decode(encoding)
+                break
+            except (UnicodeDecodeError, LookupError):
+                continue
+        
+        if content_str is None:
+            # Si ninguno funciona, usar UTF-8 con replace como fallback
+            content_str = content.decode('utf-8', errors='replace')
+            logger.warning("[calendar] ICS file decoded with errors='replace', may have encoding issues")
     except Exception as exc:
         raise HTTPException(
             status_code=400,
-            detail={"error": "ICS file is not valid UTF-8", "reason": str(exc)},
+            detail={"error": "ICS file encoding not recognized", "reason": str(exc)},
         ) from exc
     
     # Validar que tiene BEGIN:VCALENDAR
@@ -5856,14 +5869,45 @@ def get_weather() -> Dict[str, Any]:
 
 
 @app.get("/api/weather/weekly")
-def get_weather_weekly(lat: float, lon: float) -> Dict[str, Any]:
-    """Obtiene pronóstico semanal de OpenWeatherMap (7 días)."""
+def get_weather_weekly(
+    lat: Optional[float] = None,
+    lon: Optional[float] = None
+) -> Dict[str, Any]:
+    """Obtiene pronóstico semanal de OpenWeatherMap (7 días).
+    
+    VALORES POR DEFECTO: Si no se proporcionan lat/lon, usa Castellón (39.98, 0.20)
+    
+    Args:
+        lat: Latitud (default: 39.98 - Castellón)
+        lon: Longitud (default: 0.20 - Castellón)
+        
+    Returns:
+        Diccionario con pronóstico de 7 días
+    """
+    # Valores por defecto: Castellón
+    DEFAULT_LAT = 39.98
+    DEFAULT_LON = 0.20
+    
+    # Usar valores por defecto si no se proporcionan o son inválidos
+    if lat is None or not (-90 <= lat <= 90):
+        if lat is not None:
+            logger.warning("[weather/weekly] Invalid latitude: %s, using default: %s", lat, DEFAULT_LAT)
+        lat = DEFAULT_LAT
+    if lon is None or not (-180 <= lon <= 180):
+        if lon is not None:
+            logger.warning("[weather/weekly] Invalid longitude: %s, using default: %s", lon, DEFAULT_LON)
+        lon = DEFAULT_LON
+    
+    logger.info("[weather/weekly] Fetching forecast for lat=%s, lon=%s", lat, lon)
+    
     api_key = secret_store.get_secret("openweathermap_api_key")
     if not api_key:
+        logger.warning("[weather/weekly] OpenWeatherMap API key not configured")
         return {
             "ok": False,
             "reason": "api_key_not_configured",
-            "daily": []
+            "daily": [],
+            "location": {"lat": lat, "lon": lon}
         }
     
     try:
@@ -5893,24 +5937,38 @@ def get_weather_weekly(lat: float, lon: float) -> Dict[str, Any]:
                 "wind_speed": day.get("wind_speed"),
             })
         
+        logger.info("[weather/weekly] Successfully fetched %d days of forecast", len(daily))
         return {
             "ok": True,
             "daily": daily,
             "location": {"lat": lat, "lon": lon}
         }
-    except requests.RequestException as e:
-        logger.error("Error fetching OpenWeatherMap weekly forecast: %s", e)
+    except requests.HTTPError as e:
+        logger.error("[weather/weekly] HTTP error fetching forecast: %s (status: %s)", e, e.response.status_code if hasattr(e, 'response') else 'N/A')
         return {
             "ok": False,
-            "reason": "api_error",
-            "daily": []
+            "reason": "api_http_error",
+            "error": str(e),
+            "daily": [],
+            "location": {"lat": lat, "lon": lon}
+        }
+    except requests.RequestException as e:
+        logger.error("[weather/weekly] Network error fetching forecast: %s", e)
+        return {
+            "ok": False,
+            "reason": "api_network_error",
+            "error": str(e),
+            "daily": [],
+            "location": {"lat": lat, "lon": lon}
         }
     except Exception as e:
-        logger.error("Unexpected error fetching weekly forecast: %s", e)
+        logger.error("[weather/weekly] Unexpected error fetching forecast: %s", e, exc_info=True)
         return {
             "ok": False,
             "reason": "unexpected_error",
-            "daily": []
+            "error": str(e),
+            "daily": [],
+            "location": {"lat": lat, "lon": lon}
         }
 
 
@@ -8284,13 +8342,18 @@ def get_lightning_sample(limit: int = 50) -> Dict[str, Any]:
 def get_history(date: Optional[str] = None, lang: str = "es") -> Dict[str, Any]:
     """Obtiene efemérides históricas para una fecha específica.
     
+    GARANTÍA: Este endpoint SIEMPRE devuelve datos, usando fallback a Wikimedia si es necesario.
+    
     Args:
         date: Fecha en formato MM-DD (por defecto: hoy)
-        lang: Código de idioma ISO 639-1 (por defecto: "es")
+        lang: Código de idioma ISO 639-1 (FORZADO a "es" para Castellón)
         
     Returns:
-        Diccionario con {"date": "YYYY-MM-DD", "count": N, "items": [...]}
+        Diccionario con {"date": "YYYY-MM-DD", "count": N, "items": [...], "source": "..."}
     """
+    # FORZAR lang="es" SIEMPRE para garantizar contenido en castellano
+    lang = "es"
+    
     try:
         # Parsear fecha
         target_date = None
@@ -8302,74 +8365,145 @@ def get_history(date: Optional[str] = None, lang: str = "es") -> Dict[str, Any]:
                     day = int(parts[1])
                     # Usar año actual
                     now = datetime.now(timezone.utc)
-                    target_date = date(now.year, month, day)
+                    target_date = datetime(now.year, month, day).date()
             except (ValueError, IndexError):
-                logger.warning("Invalid date format: %s, using today", date)
+                logger.warning("[history] Invalid date format: %s, using today", date)
+        
+        if not target_date:
+            target_date = datetime.now(timezone.utc).date()
         
         # Leer configuración V2
         config_v2, _ = _read_config_v2()
         
         # Obtener configuración de efemérides históricas
         historical_events_config = None
-        provider = "wikimedia"
+        provider = "wikimedia"  # DEFAULT siempre wikimedia
         data_path = None
         wikimedia_config = None
+        attempt_local_first = False
         
         if config_v2.panels and config_v2.panels.historicalEvents:
             historical_events_config = config_v2.panels.historicalEvents
-            provider = historical_events_config.provider or "wikimedia"
+            configured_provider = historical_events_config.provider or "wikimedia"
             
-            if provider == "local" and historical_events_config.local:
+            # Si está configurado como local, intentar local primero pero con fallback garantizado
+            if configured_provider == "local" and historical_events_config.local:
                 data_path = historical_events_config.local.data_path
-            elif provider == "wikimedia" and historical_events_config.wikimedia:
+                # Verificar si el archivo existe antes de intentar usarlo
+                if data_path and Path(data_path).exists():
+                    attempt_local_first = True
+                    provider = "local"
+                    logger.info("[history] Attempting local provider first: %s", data_path)
+                else:
+                    logger.warning("[history] Local provider configured but file not found: %s, falling back to wikimedia", data_path)
+                    provider = "wikimedia"
+            else:
+                provider = "wikimedia"
+            
+            # Preparar config de wikimedia (siempre, por si necesitamos fallback)
+            if historical_events_config.wikimedia:
                 wikimedia_config = {
-                    "language": historical_events_config.wikimedia.language or lang,
+                    "language": "es",  # FORZADO
                     "event_type": historical_events_config.wikimedia.event_type or "all",
-                    "api_user_agent": historical_events_config.wikimedia.api_user_agent,
+                    "api_user_agent": historical_events_config.wikimedia.api_user_agent or "PantallaReloj/1.0 (https://github.com/DanielGTdiabetes/Pantalla_reloj; contact@example.com)",
                     "max_items": historical_events_config.wikimedia.max_items or 10,
                     "timeout_seconds": historical_events_config.wikimedia.timeout_seconds or 10
                 }
         
-        # Si no hay configuración, usar valores por defecto para wikimedia
+        # Si no hay configuración de wikimedia, crear una por defecto (SIEMPRE necesaria para fallback)
         if not wikimedia_config:
             wikimedia_config = {
-                "language": lang,
+                "language": "es",  # FORZADO
                 "event_type": "all",
-                "api_user_agent": None,
+                "api_user_agent": "PantallaReloj/1.0 (https://github.com/DanielGTdiabetes/Pantalla_reloj; contact@example.com)",
                 "max_items": 10,
                 "timeout_seconds": 10
             }
         
-        # Usar lang del parámetro si no está en config
-        if wikimedia_config and not wikimedia_config.get("language"):
-            wikimedia_config["language"] = lang
-        
-        # Cache key basado en fecha y lang
-        cache_key = f"history_{date or 'today'}_{lang}"
+        # Cache key basado en fecha y provider (siempre lang=es)
+        cache_key = f"history_{target_date.isoformat()}_es_{provider}"
         cached = cache_store.load(cache_key, max_age_minutes=24 * 60)  # 24 horas
         if cached:
-            logger.debug("History cache hit for %s", cache_key)
+            logger.debug("[history] Cache hit for %s", cache_key)
             return cached.payload
         
-        # Obtener efemérides
-        result = get_efemerides_for_date(
-            data_path=data_path,
-            target_date=target_date,
-            tz_str="Europe/Madrid",
-            provider=provider,
-            wikimedia_config=wikimedia_config
-        )
+        # Intentar obtener efemérides
+        result = None
         
-        # Guardar en caché (24h)
-        cache_store.store(cache_key, result)
+        try:
+            result = get_efemerides_for_date(
+                data_path=data_path if attempt_local_first else None,
+                target_date=target_date,
+                tz_str="Europe/Madrid",
+                provider=provider,
+                wikimedia_config=wikimedia_config
+            )
+            
+            # Verificar que haya datos
+            if result and result.get("count", 0) > 0:
+                logger.info("[history] Successfully fetched %d items from %s", result["count"], provider)
+                # Guardar en caché
+                cache_store.store(cache_key, result)
+                return result
+            else:
+                logger.warning("[history] Provider %s returned no items, trying fallback to wikimedia", provider)
+                raise ValueError("No items returned")
+                
+        except Exception as first_exc:
+            logger.warning("[history] Primary provider failed: %s, falling back to wikimedia", first_exc)
+            
+            # FALLBACK GARANTIZADO: Siempre intentar wikimedia si falla el primero
+            if provider != "wikimedia":
+                try:
+                    result = get_efemerides_for_date(
+                        data_path=None,
+                        target_date=target_date,
+                        tz_str="Europe/Madrid",
+                        provider="wikimedia",
+                        wikimedia_config=wikimedia_config
+                    )
+                    
+                    if result and result.get("count", 0) > 0:
+                        logger.info("[history] Fallback to wikimedia successful: %d items", result["count"])
+                        # Guardar en caché con indicador de fallback
+                        cache_store.store(cache_key, result)
+                        return result
+                    else:
+                        logger.error("[history] Wikimedia fallback returned no items")
+                        
+                except Exception as fallback_exc:
+                    logger.error("[history] Wikimedia fallback also failed: %s", fallback_exc)
         
-        return result
-    except Exception as exc:
-        logger.error("[history] Error getting historical events: %s", exc)
+        # Si llegamos aquí, TODO falló - devolver mensaje informativo pero NO vacío
+        logger.error("[history] All providers failed, returning placeholder message")
         return {
-            "date": date or datetime.now(timezone.utc).date().isoformat(),
-            "count": 0,
-            "items": []
+            "date": target_date.isoformat(),
+            "count": 1,
+            "items": [{
+                "year": target_date.year,
+                "text": f"No se pudieron cargar efemérides históricas para el {target_date.strftime('%d de %B')}. Por favor, verifica la configuración.",
+                "type": "info",
+                "source": "system"
+            }],
+            "source": "placeholder",
+            "error": True
+        }
+        
+    except Exception as exc:
+        logger.error("[history] Fatal error getting historical events: %s", exc, exc_info=True)
+        # Aún en error fatal, devolver estructura con mensaje
+        fallback_date = date or datetime.now(timezone.utc).date().isoformat()
+        return {
+            "date": fallback_date,
+            "count": 1,
+            "items": [{
+                "year": datetime.now().year,
+                "text": "Error al cargar efemérides históricas. Sistema en mantenimiento.",
+                "type": "error",
+                "source": "system"
+            }],
+            "source": "error",
+            "error": True
         }
 
 

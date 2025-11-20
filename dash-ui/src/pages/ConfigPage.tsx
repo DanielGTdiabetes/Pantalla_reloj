@@ -967,6 +967,12 @@ export const ConfigPage: React.FC = () => {
       if (Object.keys(secrets).length > 0) {
         await updateSecrets(secrets);
         alert("Secrets guardados correctamente");
+        
+        // Disparar evento para forzar reinicialización de capas
+        console.log("[ConfigPage] Dispatching layers:secrets:updated event for flights");
+        window.dispatchEvent(new CustomEvent('layers:secrets:updated', {
+          detail: { layer: 'flights' }
+        }));
       }
     } catch (error) {
       console.error("Error saving flights secrets:", error);
@@ -993,6 +999,12 @@ export const ConfigPage: React.FC = () => {
       if (Object.keys(secrets).length > 0) {
         await updateSecrets(secrets);
         alert("Secrets guardados correctamente");
+        
+        // Disparar evento para forzar reinicialización de capas
+        console.log("[ConfigPage] Dispatching layers:secrets:updated event for ships");
+        window.dispatchEvent(new CustomEvent('layers:secrets:updated', {
+          detail: { layer: 'ships' }
+        }));
       }
     } catch (error) {
       console.error("Error saving ships secrets:", error);

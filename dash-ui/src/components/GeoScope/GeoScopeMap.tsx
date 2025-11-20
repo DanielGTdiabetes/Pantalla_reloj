@@ -3495,6 +3495,12 @@ export default function GeoScopeMap({
       aircraftLayer.setMaxAgeSeconds(flightsConfig.max_age_seconds);
       aircraftLayer.setCluster(openskyConfig.cluster);
       aircraftLayer.setStyleScale(flightsConfig.styleScale ?? 1);
+      
+      // Reinicializar capa si está habilitada para asegurar que use nueva configuración
+      if (flightsConfig.enabled && openskyConfig.enabled) {
+        console.log("[GeoScopeMap] Reinitializing AircraftLayer due to config change");
+        void aircraftLayer.ensureFlightsLayer();
+      }
     }
 
     // Actualizar ShipsLayer
@@ -3507,6 +3513,12 @@ export default function GeoScopeMap({
       shipsLayer.setRenderMode(shipsConfig.render_mode);
       shipsLayer.setCircleOptions(shipsConfig.circle);
       shipsLayer.setSymbolOptions(shipsConfig.symbol);
+      
+      // Reinicializar capa si está habilitada para asegurar que use nueva configuración
+      if (shipsConfig.enabled) {
+        console.log("[GeoScopeMap] Reinitializing ShipsLayer due to config change");
+        void shipsLayer.ensureShipsLayer();
+      }
     }
 
     // Actualizar Weather Layer y AEMET Warnings Layer
@@ -3534,6 +3546,80 @@ export default function GeoScopeMap({
     } else if (aemetLayer) {
       aemetLayer.setEnabled(false);
     }
+  }, [config]);
+
+  // useEffect para escuchar eventos de actualización de secrets (API keys)
+  useEffect(() => {
+    const handleSecretsUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<{ layer?: string }>;
+      const affectedLayer = customEvent.detail?.layer;
+      
+      console.log("[GeoScopeMap] Secrets updated event received", { affectedLayer });
+      
+      if (!config || !mapRef.current) {
+        console.warn("[GeoScopeMap] Cannot reinitialize layers: config or map not available");
+        return;
+      }
+      
+      const merged = withConfigDefaults(config);
+      const configAsV2Update = config as unknown as { 
+        version?: number; 
+        layers?: { 
+          flights?: typeof merged.layers.flights;
+          ships?: typeof merged.layers.ships;
+        }; 
+        opensky?: typeof merged.opensky;
+      };
+      
+      // Reinicializar capa de aviones si afecta a flights
+      if ((!affectedLayer || affectedLayer === 'flights') && aircraftLayerRef.current) {
+        const flightsConfig = configAsV2Update.version === 2 && configAsV2Update.layers?.flights
+          ? configAsV2Update.layers.flights
+          : merged.layers.flights;
+        const openskyConfig = configAsV2Update.version === 2 && configAsV2Update.opensky
+          ? configAsV2Update.opensky
+          : merged.opensky;
+        
+        if (flightsConfig.enabled && openskyConfig.enabled) {
+          console.log("[GeoScopeMap] Forcing AircraftLayer reinitialization after secrets update");
+          // Forzar recarga inmediata de datos
+          void aircraftLayerRef.current.ensureFlightsLayer();
+          // Disparar carga de datos inmediatamente
+          setTimeout(() => {
+            if (aircraftLayerRef.current && mapRef.current) {
+              console.log("[GeoScopeMap] Triggering immediate flights data load");
+              // La carga se dispara automáticamente por el useEffect de loadFlightsData
+            }
+          }, 100);
+        }
+      }
+      
+      // Reinicializar capa de barcos si afecta a ships
+      if ((!affectedLayer || affectedLayer === 'ships') && shipsLayerRef.current) {
+        const shipsConfig = configAsV2Update.version === 2 && configAsV2Update.layers?.ships
+          ? configAsV2Update.layers.ships
+          : merged.layers.ships;
+        
+        if (shipsConfig.enabled) {
+          console.log("[GeoScopeMap] Forcing ShipsLayer reinitialization after secrets update");
+          // Forzar recarga inmediata de datos
+          void shipsLayerRef.current.ensureShipsLayer();
+          // Disparar carga de datos inmediatamente
+          setTimeout(() => {
+            if (shipsLayerRef.current && mapRef.current) {
+              console.log("[GeoScopeMap] Triggering immediate ships data load");
+              // La carga se dispara automáticamente por el useEffect de loadShipsData
+            }
+          }, 100);
+        }
+      }
+    };
+    
+    window.addEventListener('layers:secrets:updated', handleSecretsUpdated);
+    
+    return () => {
+      window.removeEventListener('layers:secrets:updated', handleSecretsUpdated);
+    };
   }, [config]);
 
   // useEffect para cargar datos de flights periódicamente

@@ -733,26 +733,8 @@ export const OverlayRotator: React.FC = () => {
       )
     });
 
-    // astronomy (EphemeridesCard - efemérides + fase lunar)
-    // Combinar eventos astronómicos con efemérides históricas
-    const historicalEventsItems = Array.isArray(historicalEvents.items) ? historicalEvents.items : [];
-    const allEphemeridesEvents = [
-      ...ephemeridesEvents,
-      ...historicalEventsItems
-        .map(item => {
-          if (typeof item === "string") {
-            return item.trim();
-          }
-          const str = String(item).trim();
-          return str.length > 0 ? str : null;
-        })
-        .filter((item): item is string => item !== null && item.length > 0)
-    ].filter((value, index, self) => {
-      // Eliminar duplicados (case-insensitive)
-      const normalized = value.toLowerCase().trim();
-      return self.findIndex(v => v.toLowerCase().trim() === normalized) === index;
-    });
-    
+    // astronomy (EphemeridesCard - SOLO efemérides astronómicas + fase lunar)
+    // NO incluir efemérides históricas aquí - tienen su propio panel exclusivo
     map.set("astronomy", {
       id: "astronomy",
       duration: (durations.astronomy ?? 10) * 1000,
@@ -762,7 +744,7 @@ export const OverlayRotator: React.FC = () => {
           sunset={sunset}
           moonPhase={moonPhase}
           illumination={moonIllumination}
-          events={allEphemeridesEvents}
+          events={ephemeridesEvents}
         />
       )
     });
@@ -788,8 +770,8 @@ export const OverlayRotator: React.FC = () => {
       render: () => <NewsCard items={newsItems} />
     });
 
-    // historicalEvents (HistoricalEventsCard) - ahora también se muestran en EphemeridesCard
-    // Mantener el panel separado por si se quiere mostrar solo efemérides históricas
+    // historicalEvents (HistoricalEventsCard) - Panel EXCLUSIVO para efemérides históricas
+    // Este panel muestra SOLO eventos históricos de Wikimedia/local, NO eventos astronómicos
     const historicalEventsItemsForCard = Array.isArray(historicalEvents.items) 
       ? historicalEvents.items 
       : [];
@@ -846,7 +828,8 @@ export const OverlayRotator: React.FC = () => {
     sunset,
     ephemeridesEvents,
     santoralEntries,
-    historicalEvents
+    historicalEvents,
+    config  // Añadido para detectar cambios en configuración de panels.historicalEvents
   ]);
 
   // Filtrar y validar paneles según configuración y disponibilidad
