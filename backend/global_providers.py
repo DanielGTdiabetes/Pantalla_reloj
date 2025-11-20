@@ -252,12 +252,13 @@ class RainViewerProvider:
             # Procesar past - asegurar que solo se añaden ints
             for item in past_frames:
                 if isinstance(item, (int, float)):
-                    all_timestamps.append(int(item))
+                    all_timestamps.append({"ts": int(item), "path": f"/v2/radar/{int(item)}"})
                 elif isinstance(item, dict):
                     timestamp = item.get("time")
+                    path = item.get("path")
                     if timestamp is not None:
                         try:
-                            all_timestamps.append(int(timestamp))
+                            all_timestamps.append({"ts": int(timestamp), "path": path or f"/v2/radar/{int(timestamp)}"})
                         except (TypeError, ValueError):
                             logger.warning("Invalid timestamp in past_frames dict: %s", timestamp)
                             continue
@@ -267,12 +268,13 @@ class RainViewerProvider:
             # Procesar nowcast - asegurar que solo se añaden ints
             for item in nowcast_frames:
                 if isinstance(item, (int, float)):
-                    all_timestamps.append(int(item))
+                    all_timestamps.append({"ts": int(item), "path": f"/v2/radar/{int(item)}"})
                 elif isinstance(item, dict):
                     timestamp = item.get("time")
+                    path = item.get("path")
                     if timestamp is not None:
                         try:
-                            all_timestamps.append(int(timestamp))
+                            all_timestamps.append({"ts": int(timestamp), "path": path or f"/v2/radar/{int(timestamp)}"})
                         except (TypeError, ValueError):
                             logger.warning("Invalid timestamp in nowcast_frames dict: %s", timestamp)
                             continue
@@ -284,14 +286,16 @@ class RainViewerProvider:
                 return []
             
             # Eliminar duplicados y ordenar
-            all_timestamps = sorted(set(all_timestamps))
+            # Usar diccionario por timestamp para eliminar duplicados manteniendo path más reciente
+            ts_map = {item["ts"]: item["path"] for item in all_timestamps}
+            sorted_timestamps = sorted(ts_map.keys())
             
             # Filtrar por history_minutes y frame_step
             now = datetime.now(timezone.utc)
             cutoff_time = now - timedelta(minutes=history_minutes)
             
             frames = []
-            for timestamp in all_timestamps:
+            for timestamp in sorted_timestamps:
                 # timestamp es un Unix timestamp (int)
                 frame_time = datetime.fromtimestamp(timestamp, tz=timezone.utc)
                 
@@ -309,6 +313,7 @@ class RainViewerProvider:
                 
                 frames.append({
                     "timestamp": timestamp,
+                    "path": ts_map[timestamp],
                     "iso": frame_time.isoformat(),
                 })
             
@@ -328,7 +333,8 @@ class RainViewerProvider:
         y: int,
         color: int = 4,
         smooth: int = 1,
-        snow: int = 0
+        snow: int = 0,
+        path: Optional[str] = None
     ) -> str:
         """Genera URL de tile para RainViewer.
         
@@ -340,13 +346,22 @@ class RainViewerProvider:
             color: Esquema de color (1-12, default 4 = clásico)
             smooth: Suavizado (0 o 1)
             snow: Incluir nieve (0 o 1)
+            path: Path del frame (opcional, necesario para nowcast)
             
         Returns:
             URL del tile
         """
         # RainViewer v4 tile format:
-        # https://tilecache.rainviewer.com/v2/radar/{timestamp}/256/{z}/{x}/{y}/2/1_1.png
-        # Usamos el formato estándar de tilecache
+        # https://tilecache.rainviewer.com{path}/256/{z}/{x}/{y}/2/1_1.png
+        
+        # Si tenemos path, usarlo
+        if path:
+            # Asegurar que path empieza con /
+            if not path.startswith("/"):
+                path = f"/{path}"
+            return f"https://tilecache.rainviewer.com{path}/256/{z}/{x}/{y}/2/1_1.png"
+            
+        # Fallback antiguo (funciona para datos pasados si siguen patrón standard)
         return f"https://tilecache.rainviewer.com/v2/radar/{timestamp}/256/{z}/{x}/{y}/2/1_1.png"
     
     def get_radar_data_for_focus(

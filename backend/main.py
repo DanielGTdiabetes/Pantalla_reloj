@@ -5317,6 +5317,15 @@ def get_rainviewer_frames(
             frame_step=frame_step
         )
         
+        # Cachear mapa timestamp -> path para uso en tiles
+        paths_map = {f["timestamp"]: f.get("path") for f in frames}
+        try:
+            # Usar un TTL razonable (ej. 15 min) ya que los frames cambian
+            # Serializar a dict simple por si acaso el cache store tiene limitaciones
+            cache_store.store("rainviewer_paths", paths_map)
+        except Exception as e:
+            logger.warning("Error caching RainViewer paths: %s", e)
+        
         # Extraer solo los timestamps como array de números
         timestamps = [f["timestamp"] for f in frames]
         
@@ -5346,19 +5355,32 @@ def get_rainviewer_tile(
         PNG tile desde RainViewer
     """
     try:
+        # Intentar obtener path del cache global de paths
+        path = None
+        try:
+            cached_paths = cache_store.load("rainviewer_paths", max_age_minutes=30)
+            if cached_paths and cached_paths.payload and isinstance(cached_paths.payload, dict):
+                path = cached_paths.payload.get(timestamp)
+                # Si es timestamp string key, intentar convertir
+                if path is None and str(timestamp) in cached_paths.payload:
+                    path = cached_paths.payload[str(timestamp)]
+        except Exception as e:
+            logger.warning("Error loading RainViewer path cache: %s", e)
+
         provider = RainViewerProvider()
-        tile_url = provider.get_tile_url(timestamp=timestamp, z=z, x=x, y=y)
+        # Pasar path explícito si lo tenemos
+        tile_url = provider.get_tile_url(timestamp=timestamp, z=z, x=x, y=y, path=path)
         
         # Intentar obtener desde caché primero
         cache_key = f"rainviewer_tile_{timestamp}_{z}_{x}_{y}"
-        cached = cache_store.load(cache_key, max_age_minutes=5)
+        cached = cache_store.load(cache_key, max_age_minutes=60) # Tiles son inmutables por timestamp, aumentar cache
         if cached and cached.payload:
             # Si está en caché como bytes, retornarlo
             if isinstance(cached.payload, bytes):
                 return Response(
                     content=cached.payload,
                     media_type="image/png",
-                    headers={"Cache-Control": "public, max-age=300"}
+                    headers={"Cache-Control": "public, max-age=3600"}
                 )
         
         # Obtener tile desde RainViewer con reintentos
@@ -5366,15 +5388,21 @@ def get_rainviewer_tile(
         for attempt in range(max_retries + 1):
             try:
                 response = requests.get(tile_url, timeout=10)
+                if response.status_code == 404 and not path:
+                     # Si falla 404 y no teníamos path, tal vez es un nowcast frame nuevo
+                     # y necesitamos refrescar el mapa de paths.
+                     # Pero no podemos hacerlo aquí fácilmente sin riesgo de recursión/latencia.
+                     pass
+                
                 response.raise_for_status()
                 break
             except requests.RequestException as e:
                 if attempt < max_retries:
-                    logger.warning(f"RainViewer tile attempt {attempt + 1} failed: {e}, retrying...")
+                    # logger.warning(f"RainViewer tile attempt {attempt + 1} failed: {e}, retrying...")
                     time.sleep(0.5)
                     continue
                 else:
-                    logger.warning(f"RainViewer tile failed after {max_retries + 1} attempts: {e}")
+                    logger.warning(f"RainViewer tile failed after {max_retries + 1} attempts: {e} URL: {tile_url}")
                     raise HTTPException(status_code=404, detail="Tile no disponible")
         
         # Guardar en caché
@@ -5383,7 +5411,7 @@ def get_rainviewer_tile(
         return Response(
             content=response.content,
             media_type="image/png",
-            headers={"Cache-Control": "public, max-age=300"}
+            headers={"Cache-Control": "public, max-age=3600"}
         )
     except HTTPException:
         raise
