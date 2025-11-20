@@ -317,10 +317,13 @@ def _get_calendar_runtime_state() -> Dict[str, Any]:
         return dict(_calendar_runtime_state)
 
 
-app = FastAPI(title="Pantalla Reloj Backend", version="2025.10.0")
+# 1. MEJORA CORS: Configurable por variable de entorno
+ALLOWED_ORIGINS = os.getenv("PANTALLA_CORS_ORIGINS", "*").split(",")
+
+app = FastAPI(title="Pantalla Reloj Backend", version="2025.10.1")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS, 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -2257,40 +2260,20 @@ async def test_maptiler(request: MapTilerTestRequest) -> Dict[str, Any]:
                 "message": "Either styleUrl or (style + provider) must be provided"
             }
         
-        response = requests.get(style_url_to_test, timeout=5, allow_redirects=True)
-        if response.status_code == 200:
-            try:
-                style_json = response.json()
-                # Verificar estructura básica
-                if isinstance(style_json, dict) and ("glyphs" in style_json or "sources" in style_json):
-                    return {
-                        "ok": True,
-                        "bytes": len(response.content)
-                    }
-                else:
-                    return {
-                        "ok": False,
-                        "status": 200,
-                        "error": "Invalid style format"
-                    }
-            except ValueError:
-                return {
-                    "ok": False,
-                    "status": 200,
-                    "error": "Not valid JSON"
-                }
-        else:
-            return {
-                "ok": False,
-                "status": response.status_code,
-                "error": f"HTTP {response.status_code}"
-            }
-    except requests.RequestException as exc:
-        return {
-            "ok": False,
-            "status": 0,
-            "error": str(exc)
-        }
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(style_url_to_test)
+            
+            if response.status_code == 200:
+                try:
+                    style_json = response.json()
+                    return {"ok": True, "bytes": len(response.content)}
+                except ValueError:
+                    return {"ok": False, "status": 200, "error": "Not valid JSON"}
+            else:
+                return {"ok": False, "status": response.status_code, "error": f"HTTP {response.status_code}"}
+        except httpx.RequestError as exc:
+            return {"ok": False, "status": 0, "error": str(exc)}
     except Exception as exc:
         logger.error("[maps] Error testing MapTiler: %s", exc)
         return {
@@ -2484,9 +2467,9 @@ async def upload_ics_file(
             },
         )
     
-    # Validar formato ICS básico ANTES de escribir
+    # Validar formato ICS en thread (CPU bound)
     try:
-        _validate_ics_basic(content)
+        await asyncio.to_thread(_validate_ics_basic, content)
     except HTTPException:
         raise
 
@@ -2505,8 +2488,8 @@ async def upload_ics_file(
     except OSError as exc:
         logger.debug("[config] Could not stat config file for ownership: %s", exc)
 
-    # Crear directorio ICS con permisos adecuados
-    try:
+    # Operaciones de disco bloqueantes en thread (I/O bound)
+    async def save_file_securely():
         if not ICS_STORAGE_DIR.exists():
             ICS_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
             if uid is not None and gid is not None:
@@ -2526,39 +2509,40 @@ async def upload_ics_file(
                     status_code=400,
                     detail={"error": f"ICS directory is not writable: {ICS_STORAGE_DIR}", "missing": ["storage.dir"]},
                 )
-    except (PermissionError, OSError) as exc:
-        logger.error("[config] Cannot create or access ICS directory %s: %s", ICS_STORAGE_DIR, exc)
-        raise HTTPException(
-            status_code=400,
-            detail={"error": f"Cannot create ICS directory: {str(exc)}", "missing": ["storage.dir"]},
-        ) from exc
-
-    try:
+        
         with ICS_STORAGE_PATH.open("wb") as handle:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
-    except (OSError, PermissionError) as exc:
-        logger.error("[config] Cannot write ICS file %s: %s", ICS_STORAGE_PATH, exc)
-        raise HTTPException(
-            status_code=400,
-            detail={"error": f"Cannot write ICS file: {str(exc)}", "missing": ["storage.file"]},
-        ) from exc
-
-    # Asegurar permisos correctos del archivo después de escribirlo
-    try:
+        
+        # Asegurar permisos correctos del archivo después de escribirlo
         if uid is not None and gid is not None:
-            os.chown(ICS_STORAGE_PATH, uid, gid)
-    except OSError as exc:
-        logger.debug("[config] Could not chown ICS file after writing: %s", exc)
+            try:
+                os.chown(ICS_STORAGE_PATH, uid, gid)
+            except OSError as exc:
+                logger.debug("[config] Could not chown ICS file after writing: %s", exc)
+        
+        try:
+            os.chmod(ICS_STORAGE_PATH, 0o644)
+        except OSError as exc:
+            logger.debug("[config] Could not chmod ICS file: %s", exc)
+        
+        return str(ICS_STORAGE_PATH)
     
     try:
-        os.chmod(ICS_STORAGE_PATH, 0o644)
-    except OSError as exc:
-        logger.debug("[config] Could not chmod ICS file: %s", exc)
+        saved_path = await asyncio.to_thread(save_file_securely)
+    except (PermissionError, OSError) as exc:
+        logger.error("[config] IO Error: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail="File save error"
+        )
+    except HTTPException:
+        raise
 
+    # Parsing en thread
     try:
-        preview_events = fetch_ics_calendar_events(path=str(ICS_STORAGE_PATH))
+        preview_events = await asyncio.to_thread(fetch_ics_calendar_events, path=saved_path)
     except ICSCalendarError as exc:
         logger.warning("[config] Uploaded ICS file is not parseable: %s", exc)
         raise HTTPException(
@@ -2605,8 +2589,9 @@ async def upload_ics_file(
             detail={"error": str(exc), "missing": exc.missing if exc.missing else []},
         ) from exc
 
+    # Lógica de configuración usando await asyncio.to_thread(write_config_atomic, ...)
     try:
-        write_config_atomic(sanitized_ics, config_manager.config_file)
+        await asyncio.to_thread(write_config_atomic, sanitized_ics, config_manager.config_file)
         logger.info("[config] ICS file uploaded and configuration updated: %s", ICS_STORAGE_PATH)
         _schedule_kiosk_refresh("calendar_ics_upload_manual")
     except (PermissionError, OSError) as exc:
@@ -6213,7 +6198,7 @@ async def upload_efemerides(file: UploadFile = File(...)) -> Dict[str, Any]:
 
 
 @app.get("/api/news")
-def get_news() -> Dict[str, Any]:
+async def get_news() -> Dict[str, Any]:
     """Obtiene noticias de feeds RSS configurados (legacy endpoint)."""
     try:
         config_v2, _ = _read_config_v2()
@@ -6236,7 +6221,7 @@ def get_news() -> Dict[str, Any]:
             continue
         
         try:
-            items = parse_rss_feed(feed_url, max_items=10)
+            items = await parse_rss_feed(feed_url, max_items=10)
             all_items.extend(items)
         except Exception as exc:
             logger.warning("Failed to fetch RSS feed %s: %s", feed_url, exc)
@@ -6276,7 +6261,7 @@ async def post_news_rss(request: Request) -> Dict[str, Any]:
             continue
         
         try:
-            items = parse_rss_feed(feed_url.strip(), max_items=10)
+            items = await parse_rss_feed(feed_url.strip(), max_items=10)
             for item in items:
                 # Normalizar formato
                 all_items.append({
@@ -6331,7 +6316,7 @@ def get_news_sample(limit: int = 10) -> Dict[str, Any]:
                 continue
             
             try:
-                items = parse_rss_feed(feed_url.strip(), max_items=limit)
+                items = await parse_rss_feed(feed_url.strip(), max_items=limit)
                 all_items.extend(items)
             except Exception as exc:
                 logger.warning("Failed to fetch RSS feed %s: %s", feed_url, exc)
@@ -6411,7 +6396,7 @@ async def test_news_feeds(request: NewsTestFeedsRequest) -> Dict[str, Any]:
             
             # Parsear feed
             try:
-                items = parse_rss_feed(feed_url, max_items=100, timeout=5)
+                items = await parse_rss_feed(feed_url, max_items=100, timeout=5)
                 result["reachable"] = True
                 result["items"] = len(items)
                 
@@ -6645,7 +6630,7 @@ def get_astronomical_events_endpoint(
 
 
 @app.get("/api/calendar/events")
-def get_calendar_events(
+async def get_calendar_events(
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     inspect: Optional[int] = None,
@@ -6843,7 +6828,8 @@ def get_calendar_events(
         
         # Obtener eventos según provider
         if calendar_provider == "google":
-            events = fetch_google_calendar_events(
+            # Llamada a la nueva versión async
+            events = await fetch_google_calendar_events(
                 api_key=api_key or "",
                 calendar_id=calendar_id or "",
                 days_ahead=days_ahead,
@@ -6852,7 +6838,9 @@ def get_calendar_events(
                 time_max=utc_end,
             )
         else:  # ics
-            events = fetch_ics_calendar_events(
+            # Ejecutar en thread porque es disco local
+            events = await asyncio.to_thread(
+                fetch_ics_calendar_events,
                 path=ics_path if credentials_present else None,
                 time_min=utc_start,
                 time_max=utc_end,
@@ -7172,7 +7160,7 @@ async def test_calendar(request: Optional[CalendarTestRequest] = Body(default=No
                 time_min = now
                 time_max = now + timedelta(days=min(days_ahead, 7))
                 
-                events = fetch_google_calendar_events(
+                events = await fetch_google_calendar_events(
                     api_key=api_key,
                     calendar_id=calendar_id,
                     days_ahead=min(days_ahead, 7),
@@ -7324,7 +7312,7 @@ def get_calendar_preview(limit: int = 10) -> Dict[str, Any]:
                 }
             
             try:
-                events = fetch_google_calendar_events(
+                events = await fetch_google_calendar_events(
                     api_key=api_key,
                     calendar_id=calendar_id,
                     days_ahead=days_ahead,
@@ -7442,7 +7430,7 @@ def get_calendar() -> Dict[str, Any]:
                 error_message = "Google Calendar credentials are missing"
             else:
                 try:
-                    events = fetch_google_calendar_events(
+                    events = await fetch_google_calendar_events(
                         api_key=api_key,
                         calendar_id=calendar_id,
                         days_ahead=days_ahead,

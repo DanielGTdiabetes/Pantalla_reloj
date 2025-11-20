@@ -7,7 +7,10 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlparse
 
-import requests
+import logging
+import httpx  # CAMBIO: Usar httpx en lugar de requests
+
+logger = logging.getLogger(__name__)
 
 # Datos estáticos mejorados con siembra, cosecha y mantenimiento
 HARVEST_SEASON_DATA: Dict[int, Dict[str, List[Dict[str, str]]]] = {
@@ -415,48 +418,40 @@ SAINTS_BY_DATE: Dict[str, List[str]] = {
 }
 
 
-def parse_rss_feed(feed_url: str, max_items: int = 10, timeout: int = 10) -> List[Dict[str, Any]]:
-    """Parsea un feed RSS/Atom y devuelve una lista de artículos."""
+async def parse_rss_feed(feed_url: str, max_items: int = 10, timeout: int = 10) -> List[Dict[str, Any]]:
+    """Parsea un feed RSS/Atom y devuelve una lista de artículos de forma asíncrona."""
     try:
-        response = requests.get(feed_url, timeout=timeout, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; PantallaReloj/1.0)"
-        })
-        response.raise_for_status()
+        async with httpx.AsyncClient(timeout=float(timeout), follow_redirects=True) as client:
+            response = await client.get(feed_url, headers={
+                "User-Agent": "Mozilla/5.0 (compatible; PantallaReloj/1.0)"
+            })
+            response.raise_for_status()
+            content = response.text
         
-        # Parsear XML básico (sin dependencia externa)
         items: List[Dict[str, Any]] = []
-        content = response.text
-        
-        # Extraer items/elements
         item_pattern = re.compile(r'<(?:item|entry)[^>]*>(.*?)</(?:item|entry)>', re.DOTALL | re.IGNORECASE)
         matches = item_pattern.findall(content)
         
         for match in matches[:max_items]:
             item: Dict[str, Any] = {}
-            
-            # Título
             title_match = re.search(r'<(?:title|dc:title)[^>]*>(.*?)</(?:title|dc:title)>', match, re.DOTALL | re.IGNORECASE)
             if title_match:
                 title = html.unescape(re.sub(r'<[^>]+>', '', title_match.group(1)).strip())
                 item["title"] = title
             
-            # Descripción/summary
             desc_match = re.search(r'<(?:description|summary|content|dc:description)[^>]*>(.*?)</(?:description|summary|content|dc:description)>', match, re.DOTALL | re.IGNORECASE)
             if desc_match:
                 desc = html.unescape(re.sub(r'<[^>]+>', '', desc_match.group(1)).strip())
                 item["summary"] = desc[:200] + "..." if len(desc) > 200 else desc
             
-            # Link
             link_match = re.search(r'<(?:link|guid)[^>]*>(.*?)</(?:link|guid)>', match, re.DOTALL | re.IGNORECASE)
             if link_match:
                 item["link"] = link_match.group(1).strip()
             
-            # Fecha
             date_match = re.search(r'<(?:pubDate|published|dc:date)[^>]*>(.*?)</(?:pubDate|published|dc:date)>', match, re.DOTALL | re.IGNORECASE)
             if date_match:
                 item["published_at"] = date_match.group(1).strip()
             
-            # Source (del feed)
             parsed_url = urlparse(feed_url)
             item["source"] = parsed_url.netloc.replace("www.", "")
             
@@ -465,7 +460,7 @@ def parse_rss_feed(feed_url: str, max_items: int = 10, timeout: int = 10) -> Lis
         
         return items
     except Exception as exc:
-        print(f"Error parsing RSS feed {feed_url}: {exc}")
+        logger.warning(f"Error parsing RSS feed {feed_url}: {exc}")
         return []
 
 
@@ -1101,7 +1096,7 @@ def get_astronomical_events(
     return events
 
 
-def fetch_google_calendar_events(
+async def fetch_google_calendar_events(
     api_key: str,
     calendar_id: str,
     days_ahead: int = 14,
@@ -1109,11 +1104,7 @@ def fetch_google_calendar_events(
     time_min: Optional[datetime] = None,
     time_max: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
-    """Obtiene eventos de Google Calendar.
-    
-    Si se proporcionan time_min/time_max, se usan directamente (deben estar en UTC).
-    Si no, se calculan desde ahora hasta days_ahead.
-    """
+    """Obtiene eventos de Google Calendar de forma asíncrona."""
     try:
         if time_min is None:
             time_min = datetime.now(timezone.utc)
@@ -1133,26 +1124,25 @@ def fetch_google_calendar_events(
             "singleEvents": "true",
         }
         
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
         
-        data = response.json()
         events = []
-        
         for item in data.get("items", []):
             event: Dict[str, Any] = {
                 "title": item.get("summary", "Evento sin título"),
                 "location": item.get("location", ""),
             }
-            
-            # Fecha de inicio
             start = item.get("start", {})
             if "dateTime" in start:
                 event["start"] = start["dateTime"]
+                event["allDay"] = False 
             elif "date" in start:
                 event["start"] = start["date"]
+                event["allDay"] = True
             
-            # Fecha de fin
             end = item.get("end", {})
             if "dateTime" in end:
                 event["end"] = end["dateTime"]
@@ -1162,9 +1152,8 @@ def fetch_google_calendar_events(
                 event["end"] = event.get("start", "")
             
             events.append(event)
-        
         return events
     except Exception as exc:
-        print(f"Error fetching Google Calendar events: {exc}")
+        logger.error(f"Error fetching Google Calendar events: {exc}")
         return []
 

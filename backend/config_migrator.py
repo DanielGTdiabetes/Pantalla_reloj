@@ -76,7 +76,7 @@ def migrate_v1_to_v2(
         logger.warning("Invalid provider %s, defaulting to maptiler_vector", provider_v2)
         provider_v2 = "maptiler_vector"
     
-    # Inicializar estructura base
+    # Inicializar ui_map base limpio
     v2["ui_map"] = {
         "engine": "maplibre",
         "provider": provider_v2,
@@ -86,59 +86,45 @@ def migrate_v1_to_v2(
         "viewMode": "fixed"
     }
     
-    # Configurar según el proveedor
+    # CAMBIO: Poblar SOLO la configuración relevante
     if provider_v2 == "local_raster_xyz":
         v2["ui_map"]["local"] = {
             "tileUrl": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
             "minzoom": 0,
             "maxzoom": 19
         }
-        v2["ui_map"]["maptiler"] = {"apiKey": None, "styleUrl": None}
-        v2["ui_map"]["customXyz"] = {"tileUrl": None, "minzoom": 0, "maxzoom": 19}
     
     elif provider_v2 == "maptiler_vector":
         maptiler_v1 = map_v1.get("maptiler", {})
         api_key = maptiler_v1.get("key") or config_v1.get("map", {}).get("maptiler_api_key")
-        # Determinar styleUrl desde style v1 o maptiler config
+        
         style_url = None
         style_v1 = map_v1.get("style", "vector-dark")
-        if style_v1 == "vector-dark":
-            style_url = "https://api.maptiler.com/maps/dark/style.json"
-        elif style_v1 == "vector-light":
-            style_url = "https://api.maptiler.com/maps/streets/style.json"
-        elif style_v1 == "vector-bright":
-            style_url = "https://api.maptiler.com/maps/bright/style.json"
+        style_map = {
+            "vector-dark": "https://api.maptiler.com/maps/dark/style.json",
+            "vector-light": "https://api.maptiler.com/maps/streets/style.json",
+            "vector-bright": "https://api.maptiler.com/maps/bright/style.json"
+        }
+        
+        if style_v1 in style_map:
+            style_url = style_map[style_v1]
         elif maptiler_v1.get("styleUrlDark"):
             style_url = maptiler_v1.get("styleUrlDark")
-        elif maptiler_v1.get("styleUrlLight"):
-            style_url = maptiler_v1.get("styleUrlLight")
-        elif maptiler_v1.get("styleUrlBright"):
-            style_url = maptiler_v1.get("styleUrlBright")
-        
+        else:
+            logger.warning(f"Estilo V1 '{style_v1}' no reconocido, usando 'streets'.")
+            style_url = "https://api.maptiler.com/maps/streets/style.json"
         v2["ui_map"]["maptiler"] = {
             "apiKey": api_key,
             "styleUrl": style_url
         }
-        v2["ui_map"]["local"] = {
-            "tileUrl": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-            "minzoom": 0,
-            "maxzoom": 19
-        }
-        v2["ui_map"]["customXyz"] = {"tileUrl": None, "minzoom": 0, "maxzoom": 19}
     
     elif provider_v2 == "custom_xyz":
         xyz_config = map_v1.get("xyz", {})
         v2["ui_map"]["customXyz"] = {
-            "tileUrl": xyz_config.get("urlTemplate") if xyz_config.get("urlTemplate") else None,
+            "tileUrl": xyz_config.get("urlTemplate"),
             "minzoom": xyz_config.get("minzoom", 0),
             "maxzoom": xyz_config.get("maxzoom", 19)
         }
-        v2["ui_map"]["local"] = {
-            "tileUrl": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-            "minzoom": 0,
-            "maxzoom": 19
-        }
-        v2["ui_map"]["maptiler"] = {"apiKey": None, "styleUrl": None}
     
     # Código postal
     region_postal = config_v1.get("region", {}).get("postalCode") or map_v1.get("region", {}).get("postalCode")
