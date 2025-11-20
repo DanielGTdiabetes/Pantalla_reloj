@@ -1875,6 +1875,7 @@ export default function GeoScopeMap({
 
       // Inicializar sistema de capas cuando el mapa esté listo
       map.once("load", async () => {
+        console.log("[GeoScopeMap] initLayers enter, event=load");
         if (destroyed || !mapRef.current) return;
         
         // Esperar a que el estilo esté completamente cargado
@@ -1907,24 +1908,41 @@ export default function GeoScopeMap({
         
         if (!styleReady) {
           console.warn("[GeoScopeMap] Style not ready after retries, proceeding anyway");
+          // Verificar una vez más antes de continuar
+          const finalStyle = getSafeMapStyle(map);
+          if (!finalStyle) {
+            console.error("[GeoScopeMap] Style still not ready after retries, aborting layer initialization");
+            return;
+          }
         }
         
         if (destroyed || !mapRef.current) return;
         
         try {
+          // Verificar estilo una vez más antes de crear LayerRegistry
+          const finalStyleCheck = getSafeMapStyle(map);
+          if (!finalStyleCheck) {
+            console.error("[GeoScopeMap] Style check failed before LayerRegistry creation, aborting");
+            return;
+          }
+          
           const layerRegistry = new LayerRegistry(map);
           layerRegistryRef.current = layerRegistry;
           setLayerRegistryReady(true);
+          console.log("[GeoScopeMap] LayerRegistry created successfully");
 
           // Satellite layer desactivado: solo usar estilo base streets-v4
 
           // Inicializar LightningLayer (siempre habilitado si hay datos)
           try {
+            console.log("[GeoScopeMap] Initializing LightningLayer");
             const lightningLayer = new LightningLayer({ enabled: true });
             layerRegistry.add(lightningLayer);
             lightningLayerRef.current = lightningLayer;
+            console.log("[GeoScopeMap] LightningLayer initialized successfully");
           } catch (lightningError) {
-            console.error("[GeoScopeMap] Failed to initialize LightningLayer:", lightningError);
+            console.error("[GeoScopeMap] LightningLayer failed:", lightningError);
+            console.trace("[GeoScopeMap] LightningLayer trace");
             // Continuar sin la capa de rayos
           }
 
@@ -1956,35 +1974,37 @@ export default function GeoScopeMap({
 
           // Global Radar Layer (z-index 10, debajo de AEMET y aviones/barcos)
           // Leer configuración desde layers.global.radar + ui_global.weather_layers.radar
-          const globalRadarConfigInit = configAsV2Init.version === 2 && configAsV2Init.layers?.global_?.radar
-            ? configAsV2Init.layers.global_.radar
-            : mergedConfig.layers.global?.radar;
-          
-          const weatherLayersRadarInit = configAsV2Init.version === 2 ? configAsV2Init.ui_global?.weather_layers?.radar : undefined;
-          const uiGlobalRadarInit = configAsV2Init.version === 2 ? configAsV2Init.ui_global?.radar : undefined;
-          
-          // Prioridad: weather_layers.radar > ui_global.radar > layers.global*.radar
-          const isRadarEnabledInit = 
-            weatherLayersRadarInit?.enabled ?? 
-            uiGlobalRadarInit?.enabled ?? 
-            globalRadarConfigInit?.enabled ?? 
-            false;
-          const radarOpacityInit = 
-            weatherLayersRadarInit?.opacity ?? 
-            uiGlobalRadarInit?.opacity ?? 
-            globalRadarConfigInit?.opacity ?? 
-            0.7;
+          try {
+            console.log("[GeoScopeMap] Initializing GlobalRadarLayer");
+            
+            const globalRadarConfigInit = configAsV2Init.version === 2 && configAsV2Init.layers?.global_?.radar
+              ? configAsV2Init.layers.global_.radar
+              : mergedConfig.layers.global?.radar;
+            
+            const weatherLayersRadarInit = configAsV2Init.version === 2 ? configAsV2Init.ui_global?.weather_layers?.radar : undefined;
+            const uiGlobalRadarInit = configAsV2Init.version === 2 ? configAsV2Init.ui_global?.radar : undefined;
+            
+            // Prioridad: weather_layers.radar > ui_global.radar > layers.global*.radar
+            const isRadarEnabledInit = 
+              weatherLayersRadarInit?.enabled ?? 
+              uiGlobalRadarInit?.enabled ?? 
+              globalRadarConfigInit?.enabled ?? 
+              false;
+            const radarOpacityInit = 
+              weatherLayersRadarInit?.opacity ?? 
+              uiGlobalRadarInit?.opacity ?? 
+              globalRadarConfigInit?.opacity ?? 
+              0.7;
 
-          console.log("[GlobalRadarLayer] Init config:", {
-            weatherLayersRadar: weatherLayersRadarInit,
-            uiGlobalRadar: uiGlobalRadarInit,
-            layersGlobalRadar: globalRadarConfigInit,
-            isEnabled: isRadarEnabledInit,
-            opacity: radarOpacityInit
-          });
+            console.log("[GlobalRadarLayer] enter init, cfg=", {
+              globalRadarConfig: globalRadarConfigInit,
+              weatherLayersRadar: weatherLayersRadarInit,
+              uiGlobalRadar: uiGlobalRadarInit,
+              isEnabled: isRadarEnabledInit,
+              opacity: radarOpacityInit
+            });
 
-          if (isRadarEnabledInit) {
-            try {
+            if (isRadarEnabledInit) {
               // Verificar health endpoint para obtener frames disponibles
               // Esto asegura que solo inicializamos si hay frames disponibles
               fetch("/api/health/full", { cache: "no-store" })
@@ -1993,30 +2013,64 @@ export default function GeoScopeMap({
                   const globalRadar = health?.global_radar;
                   const hasFrames = globalRadar?.status === "ok" && (globalRadar?.frames_count ?? 0) > 0;
                   
-                  if (hasFrames && !destroyed && mapRef.current) {
-                    console.log("[GlobalRadarLayer] Radar enabled from config, initializing layer", {
-                      status: globalRadar?.status,
-                      framesCount: globalRadar?.frames_count,
-                      opacity: radarOpacityInit
-                    });
-                    
-                    const globalRadarLayer = new GlobalRadarLayer({
-                      enabled: true,
-                      opacity: radarOpacityInit,
-                    });
-                    layerRegistry.add(globalRadarLayer);
-                    globalRadarLayerRef.current = globalRadarLayer;
-                    console.log("[GlobalRadarLayer] Layer initialized and added to registry");
-                  } else {
-                    console.log("[GlobalRadarLayer] Radar enabled but no frames available yet", {
-                      status: globalRadar?.status,
-                      framesCount: globalRadar?.frames_count
-                    });
+                  console.log("[GlobalRadarLayer] health=", {
+                    status: globalRadar?.status,
+                    framesCount: globalRadar?.frames_count,
+                    hasFrames
+                  });
+                  
+                  if (!hasFrames) {
+                    console.warn("[GlobalRadarLayer] Radar not started: status=", globalRadar?.status, "frames=", globalRadar?.frames_count);
                     // La capa se inicializará cuando haya frames (ver useEffect más abajo)
+                    return;
                   }
+                  
+                  if (destroyed || !mapRef.current) {
+                    console.warn("[GlobalRadarLayer] Map destroyed or not available, skipping initialization");
+                    return;
+                  }
+                  
+                  // Verificar estilo antes de crear la capa
+                  const style = getSafeMapStyle(map);
+                  if (!style) {
+                    console.warn("[GlobalRadarLayer] Style not ready, will retry when styledata event fires");
+                    // Esperar al styledata para intentar de nuevo
+                    map.once('styledata', () => {
+                      if (!destroyed && mapRef.current && globalRadarLayerRef.current === null) {
+                        const globalRadarLayer = new GlobalRadarLayer({
+                          enabled: true,
+                          opacity: radarOpacityInit,
+                        });
+                        layerRegistry.add(globalRadarLayer);
+                        globalRadarLayerRef.current = globalRadarLayer;
+                        console.log("[GlobalRadarLayer] Layer initialized after styledata event");
+                      }
+                    });
+                    return;
+                  }
+                  
+                  console.log("[GlobalRadarLayer] Radar enabled from config, initializing layer", {
+                    status: globalRadar?.status,
+                    framesCount: globalRadar?.frames_count,
+                    opacity: radarOpacityInit
+                  });
+                  
+                  const globalRadarLayer = new GlobalRadarLayer({
+                    enabled: true,
+                    opacity: radarOpacityInit,
+                  });
+                  layerRegistry.add(globalRadarLayer);
+                  globalRadarLayerRef.current = globalRadarLayer;
+                  console.log("[GlobalRadarLayer] Layer initialized and added to registry");
                 })
                 .catch((healthError) => {
                   console.warn("[GlobalRadarLayer] Failed to check health, initializing anyway:", healthError);
+                  // Verificar estilo antes de crear la capa
+                  const style = getSafeMapStyle(map);
+                  if (!style) {
+                    console.warn("[GlobalRadarLayer] Style not ready after health error, skipping");
+                    return;
+                  }
                   // Inicializar de todas formas si falla el health check
                   const globalRadarLayer = new GlobalRadarLayer({
                     enabled: true,
@@ -2024,114 +2078,150 @@ export default function GeoScopeMap({
                   });
                   layerRegistry.add(globalRadarLayer);
                   globalRadarLayerRef.current = globalRadarLayer;
+                  console.log("[GlobalRadarLayer] Layer initialized after health error");
                 });
-            } catch (radarError) {
-              console.error("[GeoScopeMap] Failed to initialize GlobalRadarLayer:", radarError);
-              // Continuar sin la capa de radar - no bloquear el resto de la aplicación
+            } else {
+              console.log("[GlobalRadarLayer] Radar disabled in config, skipping initialization");
             }
+          } catch (radarError) {
+            console.error("[GeoScopeMap] RadarLayer failed:", radarError);
+            console.trace("[GeoScopeMap] RadarLayer trace");
+            // Continuar sin la capa de radar - no bloquear el resto de la aplicación
           }
 
           // Weather Layer (z-index 12, entre radar/satélite y AEMET warnings)
           // Leer configuración AEMET desde v2 o v1
-          const aemetConfigInit = configAsV2Init.version === 2 
-            ? configAsV2Init.aemet 
-            : mergedConfig.aemet;
-          if (aemetConfigInit?.enabled && aemetConfigInit?.cap_enabled) {
-            try {
-              const weatherLayer = new WeatherLayer({
-                enabled: true,
-                opacity: 0.3,
-                refreshSeconds: (aemetConfigInit.cache_minutes ?? 15) * 60,
-              });
-              layerRegistry.add(weatherLayer);
-              weatherLayerRef.current = weatherLayer;
-            } catch (weatherError) {
-              console.error("[GeoScopeMap] Failed to initialize WeatherLayer:", weatherError);
-              // Continuar sin la capa de clima
-            }
+          try {
+            const aemetConfigInit = configAsV2Init.version === 2 
+              ? configAsV2Init.aemet 
+              : mergedConfig.aemet;
+            if (aemetConfigInit?.enabled && aemetConfigInit?.cap_enabled) {
+              try {
+                console.log("[GeoScopeMap] Initializing WeatherLayer");
+                const weatherLayer = new WeatherLayer({
+                  enabled: true,
+                  opacity: 0.3,
+                  refreshSeconds: (aemetConfigInit.cache_minutes ?? 15) * 60,
+                });
+                layerRegistry.add(weatherLayer);
+                weatherLayerRef.current = weatherLayer;
+                console.log("[GeoScopeMap] WeatherLayer initialized successfully");
+              } catch (weatherError) {
+                console.error("[GeoScopeMap] WeatherLayer failed:", weatherError);
+                console.trace("[GeoScopeMap] WeatherLayer trace");
+                // Continuar sin la capa de clima
+              }
 
-            // AEMET Warnings Layer (z-index 15, entre radar y vuelos)
-            try {
-              const aemetWarningsLayer = new AEMETWarningsLayer({
-                enabled: true,
-                opacity: 0.6,
-                minSeverity: "moderate",
-                refreshSeconds: (aemetConfigInit.cache_minutes ?? 15) * 60,
-              });
-              layerRegistry.add(aemetWarningsLayer);
-              aemetWarningsLayerRef.current = aemetWarningsLayer;
-            } catch (aemetError) {
-              console.error("[GeoScopeMap] Failed to initialize AEMETWarningsLayer:", aemetError);
-              // Continuar sin la capa de avisos AEMET
+              // AEMET Warnings Layer (z-index 15, entre radar y vuelos)
+              try {
+                console.log("[GeoScopeMap] Initializing AEMETWarningsLayer");
+                const aemetWarningsLayer = new AEMETWarningsLayer({
+                  enabled: true,
+                  opacity: 0.6,
+                  minSeverity: "moderate",
+                  refreshSeconds: (aemetConfigInit.cache_minutes ?? 15) * 60,
+                });
+                layerRegistry.add(aemetWarningsLayer);
+                aemetWarningsLayerRef.current = aemetWarningsLayer;
+                console.log("[GeoScopeMap] AEMETWarningsLayer initialized successfully");
+              } catch (aemetError) {
+                console.error("[GeoScopeMap] AEMETWarningsLayer failed:", aemetError);
+                console.trace("[GeoScopeMap] AEMETWarningsLayer trace");
+                // Continuar sin la capa de avisos AEMET
+              }
             }
+          } catch (aemetInitError) {
+            console.error("[GeoScopeMap] AEMET initialization failed:", aemetInitError);
+            console.trace("[GeoScopeMap] AEMET init trace");
           }
 
           // AircraftLayer
           // Leer configuración desde v2 o v1 (usando la misma variable configAsV2Init)
-          const flightsConfig = configAsV2Init.version === 2 && configAsV2Init.layers?.flights
-            ? configAsV2Init.layers.flights
-            : mergedConfig.layers.flights;
-          const openskyConfig = configAsV2Init.version === 2 && configAsV2Init.opensky
-            ? configAsV2Init.opensky
-            : mergedConfig.opensky;
+          try {
+            const flightsConfig = configAsV2Init.version === 2 && configAsV2Init.layers?.flights
+              ? configAsV2Init.layers.flights
+              : mergedConfig.layers.flights;
+            const openskyConfig = configAsV2Init.version === 2 && configAsV2Init.opensky
+              ? configAsV2Init.opensky
+              : mergedConfig.opensky;
 
-          const initializeAircraftLayer = async () => {
-            let spriteAvailable = false;
-            try {
-              const style = getSafeMapStyle(map);
-              spriteAvailable = style ? await hasSprite(style) : false;
-            } catch {
-              spriteAvailable = false;
-            }
-            if (destroyed || !mapRef.current) {
-              return;
-            }
+            const initializeAircraftLayer = async () => {
+              try {
+                console.log("[GeoScopeMap] Initializing AircraftLayer");
+                let spriteAvailable = false;
+                try {
+                  const style = getSafeMapStyle(map);
+                  if (!style) {
+                    console.warn("[GeoScopeMap] Style not ready for AircraftLayer sprite check");
+                  } else {
+                    spriteAvailable = await hasSprite(style);
+                  }
+                } catch (spriteError) {
+                  console.warn("[GeoScopeMap] Error checking sprite availability:", spriteError);
+                  spriteAvailable = false;
+                }
+                if (destroyed || !mapRef.current) {
+                  console.warn("[GeoScopeMap] Map destroyed/unavailable during AircraftLayer init");
+                  return;
+                }
 
-            try {
-              const aircraftLayer = new AircraftLayer({
-                enabled: flightsConfig.enabled,
-                opacity: flightsConfig.opacity,
-                maxAgeSeconds: flightsConfig.max_age_seconds,
-                cluster: openskyConfig.cluster,
-                styleScale: flightsConfig.styleScale ?? 1,
-                renderMode: flightsConfig.render_mode ?? "auto",
-                circle: flightsConfig.circle,
-                symbol: flightsConfig.symbol,
-                spriteAvailable,
-              });
-              layerRegistry.add(aircraftLayer);
-              aircraftLayerRef.current = aircraftLayer;
-              
-              // Asegurar que la capa se inicialice correctamente
-              if (flightsConfig.enabled) {
-                void aircraftLayer.ensureFlightsLayer();
+                const aircraftLayer = new AircraftLayer({
+                  enabled: flightsConfig.enabled,
+                  opacity: flightsConfig.opacity,
+                  maxAgeSeconds: flightsConfig.max_age_seconds,
+                  cluster: openskyConfig.cluster,
+                  styleScale: flightsConfig.styleScale ?? 1,
+                  renderMode: flightsConfig.render_mode ?? "auto",
+                  circle: flightsConfig.circle,
+                  symbol: flightsConfig.symbol,
+                  spriteAvailable,
+                });
+                layerRegistry.add(aircraftLayer);
+                aircraftLayerRef.current = aircraftLayer;
+                
+                // Asegurar que la capa se inicialice correctamente
+                if (flightsConfig.enabled) {
+                  void aircraftLayer.ensureFlightsLayer();
+                }
+                console.log("[GeoScopeMap] AircraftLayer initialized successfully");
+              } catch (aircraftError) {
+                console.error("[GeoScopeMap] AircraftLayer failed:", aircraftError);
+                console.trace("[GeoScopeMap] AircraftLayer trace");
+                // Continuar sin la capa de aviones
               }
-            } catch (aircraftError) {
-              console.error("[GeoScopeMap] Failed to initialize AircraftLayer:", aircraftError);
-              // Continuar sin la capa de aviones
-            }
-          };
+            };
 
-          void initializeAircraftLayer();
+            void initializeAircraftLayer();
+          } catch (aircraftInitError) {
+            console.error("[GeoScopeMap] AircraftLayer initialization setup failed:", aircraftInitError);
+            console.trace("[GeoScopeMap] AircraftLayer setup trace");
+          }
 
           // ShipsLayer
           // Leer configuración desde v2 o v1
-          const configAsV2ShipsInit = config as unknown as { 
-            version?: number; 
-            layers?: { ships?: typeof mergedConfig.layers.ships };
-          };
-          const shipsConfig = configAsV2ShipsInit.version === 2 && configAsV2ShipsInit.layers?.ships
-            ? configAsV2ShipsInit.layers.ships
-            : mergedConfig.layers.ships;
-          let spriteAvailableShips = false;
           try {
-            const style = getSafeMapStyle(map);
-            spriteAvailableShips = style ? await hasSprite(style) : false;
-          } catch {
-            spriteAvailableShips = false;
-          }
-          if (!destroyed && mapRef.current) {
+            const configAsV2ShipsInit = config as unknown as { 
+              version?: number; 
+              layers?: { ships?: typeof mergedConfig.layers.ships };
+            };
+            const shipsConfig = configAsV2ShipsInit.version === 2 && configAsV2ShipsInit.layers?.ships
+              ? configAsV2ShipsInit.layers.ships
+              : mergedConfig.layers.ships;
+            
+            console.log("[GeoScopeMap] Initializing ShipsLayer");
+            let spriteAvailableShips = false;
             try {
+              const style = getSafeMapStyle(map);
+              if (!style) {
+                console.warn("[GeoScopeMap] Style not ready for ShipsLayer sprite check");
+              } else {
+                spriteAvailableShips = await hasSprite(style);
+              }
+            } catch (spriteError) {
+              console.warn("[GeoScopeMap] Error checking sprite availability for ShipsLayer:", spriteError);
+              spriteAvailableShips = false;
+            }
+            if (!destroyed && mapRef.current) {
               const shipsLayer = new ShipsLayer({
                 enabled: shipsConfig.enabled,
                 opacity: shipsConfig.opacity,
@@ -2149,14 +2239,21 @@ export default function GeoScopeMap({
               if (shipsConfig.enabled) {
                 void shipsLayer.ensureShipsLayer();
               }
-            } catch (shipsError) {
-              console.error("[GeoScopeMap] Failed to initialize ShipsLayer:", shipsError);
-              // Continuar sin la capa de barcos
+              console.log("[GeoScopeMap] ShipsLayer initialized successfully");
+            } else {
+              console.warn("[GeoScopeMap] Map destroyed/unavailable during ShipsLayer init");
             }
+          } catch (shipsError) {
+            console.error("[GeoScopeMap] ShipsLayer failed:", shipsError);
+            console.trace("[GeoScopeMap] ShipsLayer trace");
+            // Continuar sin la capa de barcos
           }
+          
+          console.log("[GeoScopeMap] All layers initialization completed");
         } catch (layerInitError) {
           // Capturar cualquier error no manejado durante la inicialización de capas
-          console.error("[GeoScopeMap] Error durante inicialización de capas:", layerInitError);
+          console.error("[GeoScopeMap] Fatal error during layer initialization:", layerInitError);
+          console.trace("[GeoScopeMap] Fatal layer init trace");
           // No lanzar el error - permitir que el mapa continúe funcionando sin algunas capas
         }
       });
@@ -3579,6 +3676,13 @@ export default function GeoScopeMap({
 
   // useEffect para gestionar frames del radar RainViewer
   useEffect(() => {
+    console.log("[GlobalRadarLayer] useEffect enter, checking radar configuration");
+    
+    if (!config) {
+      console.log("[GlobalRadarLayer] No config available, skipping");
+      return;
+    }
+    
     // Leer configuración del radar
     const configAsV2Radar = config as unknown as {
       version?: number;
@@ -3610,7 +3714,8 @@ export default function GeoScopeMap({
       globalRadarConfig?.enabled ?? 
       false;
 
-    console.log("[RadarLayer] useEffect config:", {
+    console.log("[GlobalRadarLayer] enter init, cfg=", {
+      globalRadarConfig,
       weatherLayersRadar,
       uiGlobalRadar,
       layersGlobalRadar: globalRadarConfig,
@@ -3621,34 +3726,53 @@ export default function GeoScopeMap({
       // Si el radar está desactivado, limpiar la capa si existe
       const globalRadarLayer = globalRadarLayerRef.current;
       if (globalRadarLayer) {
-        console.log("[RadarLayer] Disabling radar layer");
+        console.log("[GlobalRadarLayer] Disabling radar layer (disabled in config)");
         globalRadarLayer.update({ enabled: false });
+      } else {
+        console.log("[GlobalRadarLayer] Radar disabled in config, no layer to clean");
       }
       return;
+    }
+    
+    // Verificar que la capa exista o pueda ser creada
+    if (!globalRadarLayerRef.current) {
+      console.log("[GlobalRadarLayer] Layer not initialized yet, will be created when frames are available");
+      // La capa se creará cuando haya frames disponibles
     }
 
     // Configuración para fetch de frames
     const historyMinutes = globalRadarConfig?.history_minutes ?? 90;
     const frameStep = globalRadarConfig?.frame_step ?? 5;
     const refreshMinutes = globalRadarConfig?.refresh_minutes ?? 5;
+    const radarOpacityValue = 
+      weatherLayersRadar?.opacity ?? 
+      uiGlobalRadar?.opacity ?? 
+      globalRadarConfig?.opacity ?? 
+      0.7;
 
     let radarFrames: number[] = [];
     let radarFrameIndex = 0;
     let animationTimer: number | null = null;
 
     const fetchRadarFrames = async () => {
+      console.log("[GlobalRadarLayer] fetchRadarFrames enter");
       try {
+        console.log("[GlobalRadarLayer] Fetching frames from /api/rainviewer/frames");
+        
         // Primero verificar health endpoint para confirmar que hay frames disponibles
         const healthResponse = await fetch("/api/health/full", { cache: "no-store" });
         const healthData = await healthResponse.json().catch(() => null);
         const globalRadar = healthData?.global_radar;
         const hasFrames = globalRadar?.status === "ok" && (globalRadar?.frames_count ?? 0) > 0;
         
+        console.log("[GlobalRadarLayer] health=", {
+          status: globalRadar?.status,
+          framesCount: globalRadar?.frames_count,
+          hasFrames
+        });
+        
         if (!hasFrames) {
-          console.log("[GlobalRadarLayer] No frames available in health endpoint", {
-            status: globalRadar?.status,
-            framesCount: globalRadar?.frames_count
-          });
+          console.warn("[GlobalRadarLayer] Radar not started: status=", globalRadar?.status, "frames=", globalRadar?.frames_count);
           radarFrames = [];
           return;
         }
@@ -3661,6 +3785,11 @@ export default function GeoScopeMap({
         });
         
         const frames = await getRainViewerFrames(historyMinutes, frameStep);
+        
+        console.log("[GlobalRadarLayer] Frames received:", {
+          framesCount: frames?.length ?? 0,
+          frames: frames
+        });
         
         if (frames && frames.length > 0) {
           radarFrames = frames;
@@ -3808,7 +3937,6 @@ export default function GeoScopeMap({
     }, refreshIntervalMs);
 
     // Actualizar opacidad si cambia
-    const radarOpacityValue = globalRadarConfig?.opacity ?? 0.7;
     const globalRadarLayer = globalRadarLayerRef.current;
     if (globalRadarLayer) {
       globalRadarLayer.update({ opacity: radarOpacityValue });
