@@ -159,12 +159,28 @@ export default class GlobalRadarLayer implements Layer {
 
   private ensureLayer(): void {
     if (!this.map || !this.enabled || !this.currentTimestamp) {
+      console.debug("[GlobalRadarLayer] ensureLayer skipped", {
+        hasMap: !!this.map,
+        enabled: this.enabled,
+        hasTimestamp: !!this.currentTimestamp
+      });
       return;
     }
     
     // Verificar que el mapa esté completamente cargado
     if (!this.map.isStyleLoaded()) {
+      console.debug("[GlobalRadarLayer] Map style not loaded, waiting for styledata");
       // Esperar a que el estilo se cargue antes de añadir la capa
+      this.map.once('styledata', () => {
+        this.ensureLayer();
+      });
+      return;
+    }
+
+    // Verificar que el estilo esté completamente cargado antes de acceder a sources/layers
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[GlobalRadarLayer] Style not ready, waiting for styledata");
       this.map.once('styledata', () => {
         this.ensureLayer();
       });
@@ -173,11 +189,18 @@ export default class GlobalRadarLayer implements Layer {
 
     if (!this.map.getSource(this.sourceId)) {
       try {
+        const tileUrlTemplate = `${this.baseUrl}/${this.currentTimestamp}/{z}/{x}/{y}.png`;
+        console.log("[GlobalRadarLayer] Adding RainViewer raster source", {
+          sourceId: this.sourceId,
+          tileUrlTemplate,
+          timestamp: this.currentTimestamp
+        });
         this.map.addSource(this.sourceId, {
           type: "raster",
-          tiles: [`${this.baseUrl}/${this.currentTimestamp}/{z}/{x}/{y}.png`],
+          tiles: [tileUrlTemplate],
           tileSize: 256
         });
+        console.log("[GlobalRadarLayer] Source added successfully");
       } catch (error) {
         console.error("[GlobalRadarLayer] Error adding source:", error);
         return;
@@ -187,6 +210,12 @@ export default class GlobalRadarLayer implements Layer {
     if (!this.map.getLayer(this.id)) {
       try {
         const beforeId = this.findBeforeId();
+        console.log("[GlobalRadarLayer] Adding RainViewer raster layer", {
+          layerId: this.id,
+          sourceId: this.sourceId,
+          opacity: this.opacity,
+          beforeId
+        });
         this.map.addLayer({
           id: this.id,
           type: "raster",
@@ -197,6 +226,7 @@ export default class GlobalRadarLayer implements Layer {
           minzoom: 0,
           maxzoom: 18
         }, beforeId);
+        console.log("[GlobalRadarLayer] Layer added successfully");
       } catch (error) {
         console.error("[GlobalRadarLayer] Error adding layer:", error);
       }

@@ -1985,12 +1985,46 @@ export default function GeoScopeMap({
 
           if (isRadarEnabledInit) {
             try {
-              const globalRadarLayer = new GlobalRadarLayer({
-                enabled: true,
-                opacity: radarOpacityInit,
-              });
-              layerRegistry.add(globalRadarLayer);
-              globalRadarLayerRef.current = globalRadarLayer;
+              // Verificar health endpoint para obtener frames disponibles
+              // Esto asegura que solo inicializamos si hay frames disponibles
+              fetch("/api/health/full", { cache: "no-store" })
+                .then((r) => r.json())
+                .then((health: { global_radar?: { status?: string; frames_count?: number } }) => {
+                  const globalRadar = health?.global_radar;
+                  const hasFrames = globalRadar?.status === "ok" && (globalRadar?.frames_count ?? 0) > 0;
+                  
+                  if (hasFrames && !destroyed && mapRef.current) {
+                    console.log("[GlobalRadarLayer] Radar enabled from config, initializing layer", {
+                      status: globalRadar?.status,
+                      framesCount: globalRadar?.frames_count,
+                      opacity: radarOpacityInit
+                    });
+                    
+                    const globalRadarLayer = new GlobalRadarLayer({
+                      enabled: true,
+                      opacity: radarOpacityInit,
+                    });
+                    layerRegistry.add(globalRadarLayer);
+                    globalRadarLayerRef.current = globalRadarLayer;
+                    console.log("[GlobalRadarLayer] Layer initialized and added to registry");
+                  } else {
+                    console.log("[GlobalRadarLayer] Radar enabled but no frames available yet", {
+                      status: globalRadar?.status,
+                      framesCount: globalRadar?.frames_count
+                    });
+                    // La capa se inicializará cuando haya frames (ver useEffect más abajo)
+                  }
+                })
+                .catch((healthError) => {
+                  console.warn("[GlobalRadarLayer] Failed to check health, initializing anyway:", healthError);
+                  // Inicializar de todas formas si falla el health check
+                  const globalRadarLayer = new GlobalRadarLayer({
+                    enabled: true,
+                    opacity: radarOpacityInit,
+                  });
+                  layerRegistry.add(globalRadarLayer);
+                  globalRadarLayerRef.current = globalRadarLayer;
+                });
             } catch (radarError) {
               console.error("[GeoScopeMap] Failed to initialize GlobalRadarLayer:", radarError);
               // Continuar sin la capa de radar - no bloquear el resto de la aplicación
@@ -2302,6 +2336,23 @@ export default function GeoScopeMap({
       // Listener para reinyectar capas después de cambiar estilo
       const handleStyleLoaded = () => {
         if (destroyed || !mapRef.current) return;
+        
+        // Verificar que el estilo esté completamente cargado antes de reinyectar capas
+        // Protección contra "Cannot read properties of null (reading 'version')"
+        try {
+          const style = getSafeMapStyle(map);
+          if (!style) {
+            console.warn("[GeoScopeMap] Style not ready in handleStyleLoaded, retrying on styledata");
+            // Esperar al siguiente styledata si el estilo aún no está listo
+            map.once('styledata', handleStyleLoaded);
+            return;
+          }
+        } catch (error) {
+          console.warn("[GeoScopeMap] Error checking style in handleStyleLoaded:", error);
+          map.once('styledata', handleStyleLoaded);
+          return;
+        }
+        
         // Reinyectar capas usando LayerRegistry
         layerRegistryRef.current?.reapply();
         
@@ -3587,7 +3638,28 @@ export default function GeoScopeMap({
 
     const fetchRadarFrames = async () => {
       try {
-        console.debug("[RadarLayer] Fetching frames from /api/rainviewer/frames");
+        // Primero verificar health endpoint para confirmar que hay frames disponibles
+        const healthResponse = await fetch("/api/health/full", { cache: "no-store" });
+        const healthData = await healthResponse.json().catch(() => null);
+        const globalRadar = healthData?.global_radar;
+        const hasFrames = globalRadar?.status === "ok" && (globalRadar?.frames_count ?? 0) > 0;
+        
+        if (!hasFrames) {
+          console.log("[GlobalRadarLayer] No frames available in health endpoint", {
+            status: globalRadar?.status,
+            framesCount: globalRadar?.frames_count
+          });
+          radarFrames = [];
+          return;
+        }
+        
+        console.log("[GlobalRadarLayer] Fetching frames from /api/rainviewer/frames", {
+          historyMinutes,
+          frameStep,
+          healthStatus: globalRadar?.status,
+          healthFramesCount: globalRadar?.frames_count
+        });
+        
         const frames = await getRainViewerFrames(historyMinutes, frameStep);
         
         if (frames && frames.length > 0) {
@@ -3595,24 +3667,68 @@ export default function GeoScopeMap({
           radarFrameIndex = radarFrames.length - 1; // Usar el último frame (más reciente)
           
           const globalRadarLayer = globalRadarLayerRef.current;
+          
+          // Si la capa no existe aún, crearla
+          if (!globalRadarLayer) {
+            const map = mapRef.current;
+            if (map && layerRegistryRef.current) {
+              console.log("[GlobalRadarLayer] Creating layer after frames received", {
+                framesCount: radarFrames.length,
+                activeTimestamp: radarFrames[radarFrameIndex]
+              });
+              
+              const newRadarLayer = new GlobalRadarLayer({
+                enabled: true,
+                opacity: radarOpacityValue,
+                currentTimestamp: radarFrames[radarFrameIndex],
+              });
+              layerRegistryRef.current.add(newRadarLayer);
+              globalRadarLayerRef.current = newRadarLayer;
+              console.log("[GlobalRadarLayer] Layer created and added to registry");
+              return;
+            }
+          }
+          
           if (globalRadarLayer && radarFrames.length > 0) {
             const activeTimestamp = radarFrames[radarFrameIndex];
-            console.debug("[RadarLayer] frames:", radarFrames.length, "active timestamp:", activeTimestamp);
+            console.log("[GlobalRadarLayer] Updating layer with frames", {
+              framesCount: radarFrames.length,
+              activeTimestamp,
+              opacity: radarOpacityValue
+            });
             
             // Asegurar que el mapa esté listo antes de actualizar
             const map = mapRef.current;
             if (map && map.isStyleLoaded()) {
-              globalRadarLayer.update({ 
-                enabled: true,
-                currentTimestamp: activeTimestamp 
-              });
+              const style = getSafeMapStyle(map);
+              if (style) {
+                globalRadarLayer.update({ 
+                  enabled: true,
+                  currentTimestamp: activeTimestamp,
+                  opacity: radarOpacityValue
+                });
+                console.log("[GlobalRadarLayer] Layer updated successfully");
+              } else {
+                console.warn("[GlobalRadarLayer] Map style not ready, waiting for styledata");
+                map.once('styledata', () => {
+                  if (globalRadarLayerRef.current && mapRef.current?.isStyleLoaded()) {
+                    globalRadarLayerRef.current.update({ 
+                      enabled: true,
+                      currentTimestamp: activeTimestamp,
+                      opacity: radarOpacityValue
+                    });
+                  }
+                });
+              }
             } else if (map) {
               // Esperar a que el mapa se cargue
+              console.log("[GlobalRadarLayer] Map not ready, waiting for styledata");
               map.once('styledata', () => {
-                if (globalRadarLayerRef.current) {
+                if (globalRadarLayerRef.current && mapRef.current?.isStyleLoaded()) {
                   globalRadarLayerRef.current.update({ 
                     enabled: true,
-                    currentTimestamp: activeTimestamp 
+                    currentTimestamp: activeTimestamp,
+                    opacity: radarOpacityValue
                   });
                 }
               });
@@ -3621,16 +3737,17 @@ export default function GeoScopeMap({
               // La capa manejará el caso cuando se añada al mapa
               globalRadarLayer.update({ 
                 enabled: true,
-                currentTimestamp: activeTimestamp 
+                currentTimestamp: activeTimestamp,
+                opacity: radarOpacityValue
               });
             }
           }
         } else {
-          console.warn("[RadarLayer] No frames available");
+          console.warn("[GlobalRadarLayer] No frames returned from API");
           radarFrames = [];
         }
       } catch (err) {
-        console.error("[RadarLayer] Failed to fetch frames:", err);
+        console.error("[GlobalRadarLayer] Failed to fetch frames:", err);
         radarFrames = [];
       }
     };
