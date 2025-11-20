@@ -187,11 +187,6 @@ export const DEFAULT_PANELS_CONFIG: PanelsConfigV2 = {
   weatherWeekly: {
     enabled: true,
   },
-  weather: {
-    enabled: true,
-    latitude: 39.98,  // Castellón
-    longitude: 0.20,
-  },
   ephemerides: {
     enabled: true,
   },
