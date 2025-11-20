@@ -782,7 +782,21 @@ export const OverlayRotator: React.FC = () => {
     // historicalEvents (HistoricalEventsCard) - Panel EXCLUSIVO para efemérides históricas
     // Este panel muestra SOLO eventos históricos de Wikimedia/local, NO eventos astronómicos
     const historicalEventsItemsForCard = Array.isArray(historicalEvents.items) 
-      ? historicalEvents.items 
+      ? historicalEvents.items.map((item) => {
+          if (typeof item === "string") {
+            return item;
+          }
+          if (item && typeof item === "object") {
+            const obj = item as { year?: number; text?: string; type?: string; source?: string };
+            const text = obj.text || "";
+            const year = obj.year;
+            if (year && text) {
+              return `${year}: ${text}`;
+            }
+            return text;
+          }
+          return String(item);
+        })
       : [];
     const v2ConfigForDuration = config as unknown as { panels?: { historicalEvents?: { rotation_seconds?: number } } };
     const rotationSeconds = v2ConfigForDuration.panels?.historicalEvents?.rotation_seconds ?? 6;
