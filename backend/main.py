@@ -5854,21 +5854,11 @@ def get_weather() -> Dict[str, Any]:
 
 
 @app.get("/api/weather/weekly")
-def get_weather_weekly(
+async def get_weather_weekly(
     lat: Optional[float] = None,
     lon: Optional[float] = None
 ) -> Dict[str, Any]:
-    """Obtiene pronóstico semanal de OpenWeatherMap (7 días).
-    
-    VALORES POR DEFECTO: Si no se proporcionan lat/lon, usa Castellón (39.98, 0.20)
-    
-    Args:
-        lat: Latitud (default: 39.98 - Castellón)
-        lon: Longitud (default: 0.20 - Castellón)
-        
-    Returns:
-        Diccionario con pronóstico de 7 días
-    """
+    """Obtiene pronóstico semanal de OpenWeatherMap (7 días) de forma asíncrona."""
     # Valores por defecto: Castellón
     DEFAULT_LAT = 39.98
     DEFAULT_LON = 0.20
@@ -5906,9 +5896,11 @@ def get_weather_weekly(
             "exclude": "current,minutely,hourly,alerts"
         }
         
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+        # CAMBIO: Uso de httpx asíncrono
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
         
         daily = []
         for day in data.get("daily", [])[:7]:
@@ -5928,8 +5920,8 @@ def get_weather_weekly(
             "daily": daily,
             "location": {"lat": lat, "lon": lon}
         }
-    except requests.HTTPError as e:
-        logger.error("[weather/weekly] HTTP error fetching forecast: %s (status: %s)", e, e.response.status_code if hasattr(e, 'response') else 'N/A')
+    except httpx.HTTPStatusError as e:
+        logger.error("[weather/weekly] HTTP error fetching forecast: %s", e)
         return {
             "ok": False,
             "reason": "api_http_error",
@@ -5937,7 +5929,7 @@ def get_weather_weekly(
             "daily": [],
             "location": {"lat": lat, "lon": lon}
         }
-    except requests.RequestException as e:
+    except httpx.RequestError as e:
         logger.error("[weather/weekly] Network error fetching forecast: %s", e)
         return {
             "ok": False,
