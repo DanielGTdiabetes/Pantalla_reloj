@@ -7218,7 +7218,7 @@ async def test_calendar(request: Optional[CalendarTestRequest] = Body(default=No
 
 
 @app.get("/api/calendar/preview")
-def get_calendar_preview(limit: int = 10) -> Dict[str, Any]:
+async def get_calendar_preview(limit: int = 10) -> Dict[str, Any]:
     """Obtiene preview de próximos eventos del calendario activo.
     
     Args:
