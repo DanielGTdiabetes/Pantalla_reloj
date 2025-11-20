@@ -1044,20 +1044,16 @@ export const ConfigPage: React.FC = () => {
       // Esperar un momento para que el backend procese el cambio
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      alert("Mapa base guardado. La página se recargará en 2 segundos para aplicar los cambios.");
-      
-      // Forzar recarga completa de la página después de guardar configuración del mapa
-      // Esto asegura que el mapa se actualice correctamente en modo kiosko
-      // No ejecutar código después de esto ya que la página se recargará
-      setTimeout(() => {
-        if (typeof window !== "undefined") {
-          console.log("[ConfigPage] Recargando página para aplicar cambios en el mapa");
-          window.location.reload();
+      // Disparar evento personalizado para actualizar el mapa sin recargar
+      console.log("[ConfigPage] Dispatching maptiler:config:updated event");
+      window.dispatchEvent(new CustomEvent('maptiler:config:updated', {
+        detail: { 
+          styleUrl: config.ui_map.maptiler?.styleUrl,
+          provider: config.ui_map?.provider
         }
-      }, 2000);
+      }));
       
-      // No ejecutar más código después de programar la recarga
-      return;
+      alert("Mapa base guardado. Los cambios se aplicarán automáticamente.");
     } catch (error) {
       console.error("Error saving map settings:", error);
       alert("Error al guardar el mapa base");

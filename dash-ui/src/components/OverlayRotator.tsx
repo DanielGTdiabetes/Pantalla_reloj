@@ -100,18 +100,27 @@ const ROTATION_DEFAULT_ORDER = [
   "historicalEvents",
 ] as const;
 
+// Mapeo de nombres legacy v1 a v2 para conversión automática
+// IMPORTANTE: Este mapeo solo se usa para normalización, los paneles legacy ya no se renderizan directamente
 const LEGACY_ROTATION_PANEL_MAP: Record<string, string> = {
-  time: "clock",
+  // Nombres canónicos v2
   clock: "clock",
   weather: "weather",
-  forecast: "weather",
   astronomy: "astronomy",
-  ephemerides: "astronomy",
-  moon: "astronomy",
-  saints: "santoral",
   santoral: "santoral",
   calendar: "calendar",
   harvest: "harvest",
+  news: "news",
+  historicalEvents: "historicalEvents",
+  
+  // Mapeos legacy v1 → v2 (solo para conversión automática)
+  time: "clock",
+  forecast: "weather",  // forecast ahora se incluye en weather
+  ephemerides: "astronomy",
+  moon: "astronomy",  // moon ahora se incluye en astronomy
+  saints: "santoral",
+  
+  // Variaciones en español (mapeo a harvest)
   cosecha: "harvest",
   cosechas: "harvest",
   hortaliza: "harvest",
@@ -124,9 +133,9 @@ const LEGACY_ROTATION_PANEL_MAP: Record<string, string> = {
   siembras: "harvest",
   cultivo: "harvest",
   cultivos: "harvest",
-  news: "news",
+  
+  // Variaciones de nombres
   historicalevents: "historicalEvents",
-  historicalEvents: "historicalEvents",
 };
 
 const DEFAULT_ROTATION_DURATION_SEC = 10;
@@ -783,31 +792,9 @@ export const OverlayRotator: React.FC = () => {
       render: () => <HistoricalEventsCard items={historicalEventsItemsForCard} rotationSeconds={rotationSeconds} />
     });
 
-    // Legacy panels (mapeo v1 -> v2 para retrocompatibilidad)
-    map.set("time", map.get("clock")!); // time -> clock
-    map.set("ephemerides", map.get("astronomy")!); // ephemerides -> astronomy
-    map.set("saints", map.get("santoral")!); // saints -> santoral
-    map.set("forecast", {
-      id: "forecast",
-      duration: (durations.weather ?? 12) * 1000,
-      render: () => (
-        <WeatherForecastCard
-          forecast={forecastDays}
-          unit={temperature.unit}
-        />
-      )
-    });
-    map.set("moon", {
-      id: "moon",
-      duration: (durations.astronomy ?? 10) * 1000,
-      render: () => <MoonCard moonPhase={moonPhase} illumination={moonIllumination} />
-    });
-    map.set("harvest", {
-      id: "harvest",
-      duration: (durations.harvest ?? 10) * 1000,
-      render: () => <HarvestCard items={harvestItems} />
-    });
-
+    // NOTA: Paneles legacy v1 eliminados. Ahora solo se soportan nombres v2.
+    // Los mapeos legacy se mantienen en LEGACY_ROTATION_PANEL_MAP para conversión automática.
+    
     return map;
   }, [
     rotationConfig.durations_sec,

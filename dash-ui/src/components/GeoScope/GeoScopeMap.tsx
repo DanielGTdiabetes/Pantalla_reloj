@@ -1522,7 +1522,11 @@ export default function GeoScopeMap({
       resizeObserverRef.current = observer;
     };
 
-    const initializeMap = async () => {
+    const initializeMap = async (attempt: number = 1, maxAttempts: number = 3) => {
+      const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 4000); // 1s, 2s, 4s
+      
+      console.log(`[GeoScopeMap] Map initialization attempt ${attempt}/${maxAttempts}`);
+      
       let hostPromise: Promise<HTMLDivElement | null>;
       let runtime: RuntimePreferences;
       
@@ -1531,7 +1535,7 @@ export default function GeoScopeMap({
         const webglCheck = checkWebGLSupport();
         if (!webglCheck.supported) {
           console.error("[GeoScopeMap] WebGL no disponible:", webglCheck.reason);
-          setWebglError(webglCheck.reason || "WebGL no está disponible");
+          setWebglError(webglCheck.reason || "WebGL no está disponible. Por favor, verifica la configuración de tu navegador.");
           return;
         }
         
@@ -1542,11 +1546,24 @@ export default function GeoScopeMap({
         respectDefaultRef.current = Boolean(runtime.respectReducedMotion);
 
         if (destroyed) {
+          console.warn(`[GeoScopeMap] Component destroyed during init attempt ${attempt}`);
           return;
         }
       } catch (error) {
-        console.error("[GeoScopeMap] Error en inicialización temprana:", error);
-        setWebglError(`Error al inicializar el mapa: ${error instanceof Error ? error.message : String(error)}`);
+        console.error(`[GeoScopeMap] Error en inicialización temprana (attempt ${attempt}/${maxAttempts}):`, error);
+        
+        // Retry si no es el último intento
+        if (attempt < maxAttempts && !destroyed) {
+          console.log(`[GeoScopeMap] Retrying initialization in ${backoffMs}ms...`);
+          setTimeout(() => {
+            if (!destroyed && !mapRef.current) {
+              void initializeMap(attempt + 1, maxAttempts);
+            }
+          }, backoffMs);
+          return;
+        }
+        
+        setWebglError(`Error al inicializar el mapa (intento ${attempt}/${maxAttempts}): ${error instanceof Error ? error.message : String(error)}`);
         return;
       }
 
@@ -1711,7 +1728,7 @@ export default function GeoScopeMap({
       const maptilerStatus = (health as any)?.maptiler?.status;
       if (!initialStyle) {
         if (maptilerStatus === "ok") {
-          console.error("[MapInit] health says ok but no styleUrl available", {
+          console.error(`[MapInit] health says ok but no styleUrl available (attempt ${attempt}/${maxAttempts})`, {
             styleFromHealth: styleFromHealth ? maskMaptilerUrl(styleFromHealth) : null,
             styleFromRuntime: styleFromRuntime ? maskMaptilerUrl(styleFromRuntime) : null,
             styleFromConfig: styleFromConfig ? maskMaptilerUrl(styleFromConfig) : null,
@@ -1719,9 +1736,21 @@ export default function GeoScopeMap({
           });
         }
         console.error(
-          "[MapInit] no valid styleUrlFinal, aborting map init"
+          `[MapInit] no valid styleUrlFinal (attempt ${attempt}/${maxAttempts}), aborting map init`
         );
-        setWebglError("Error: el estilo del mapa no está disponible. Por favor, verifica la configuración.");
+        
+        // Retry si no es el último intento
+        if (attempt < maxAttempts && !destroyed) {
+          console.log(`[GeoScopeMap] Retrying initialization in ${backoffMs}ms due to missing style...`);
+          setTimeout(() => {
+            if (!destroyed && !mapRef.current) {
+              void initializeMap(attempt + 1, maxAttempts);
+            }
+          }, backoffMs);
+          return;
+        }
+        
+        setWebglError(`Error: el estilo del mapa no está disponible (intento ${attempt}/${maxAttempts}). Por favor, verifica la configuración de MapTiler en /config.`);
         return;
       }
 
@@ -2005,81 +2034,132 @@ export default function GeoScopeMap({
             });
 
             if (isRadarEnabledInit) {
-              // Verificar health endpoint para obtener frames disponibles
-              // Esto asegura que solo inicializamos si hay frames disponibles
-              fetch("/api/health/full", { cache: "no-store" })
-                .then((r) => r.json())
-                .then((health: { global_radar?: { status?: string; frames_count?: number } }) => {
-                  const globalRadar = health?.global_radar;
-                  const hasFrames = globalRadar?.status === "ok" && (globalRadar?.frames_count ?? 0) > 0;
-                  
-                  console.log("[GlobalRadarLayer] health=", {
-                    status: globalRadar?.status,
-                    framesCount: globalRadar?.frames_count,
-                    hasFrames
-                  });
-                  
-                  if (!hasFrames) {
-                    console.warn("[GlobalRadarLayer] Radar not started: status=", globalRadar?.status, "frames=", globalRadar?.frames_count);
-                    // La capa se inicializará cuando haya frames (ver useEffect más abajo)
-                    return;
-                  }
-                  
-                  if (destroyed || !mapRef.current) {
-                    console.warn("[GlobalRadarLayer] Map destroyed or not available, skipping initialization");
-                    return;
-                  }
-                  
-                  // Verificar estilo antes de crear la capa
-                  const style = getSafeMapStyle(map);
-                  if (!style) {
-                    console.warn("[GlobalRadarLayer] Style not ready, will retry when styledata event fires");
-                    // Esperar al styledata para intentar de nuevo
-                    map.once('styledata', () => {
-                      if (!destroyed && mapRef.current && globalRadarLayerRef.current === null) {
+              // Función helper para inicializar la capa con retry logic
+              const initializeRadarLayer = (attempt: number = 1, maxAttempts: number = 3): void => {
+                const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 4000); // 1s, 2s, 4s
+                
+                console.log(`[GlobalRadarLayer] Initialization attempt ${attempt}/${maxAttempts}`);
+                
+                // Verificar health endpoint con timeout
+                const healthController = new AbortController();
+                const healthTimeout = setTimeout(() => healthController.abort(), 10000); // 10s timeout
+                
+                fetch("/api/health/full", { 
+                  cache: "no-store",
+                  signal: healthController.signal
+                })
+                  .then((r) => {
+                    clearTimeout(healthTimeout);
+                    return r.json();
+                  })
+                  .then((health: { global_radar?: { status?: string; frames_count?: number } }) => {
+                    const globalRadar = health?.global_radar;
+                    const hasFrames = globalRadar?.status === "ok" && (globalRadar?.frames_count ?? 0) > 0;
+                    
+                    console.log("[GlobalRadarLayer] health check result=", {
+                      status: globalRadar?.status,
+                      framesCount: globalRadar?.frames_count,
+                      hasFrames,
+                      attempt
+                    });
+                    
+                    if (!hasFrames) {
+                      console.warn(`[GlobalRadarLayer] No frames available (attempt ${attempt}/${maxAttempts}): status=${globalRadar?.status}, frames=${globalRadar?.frames_count}`);
+                      
+                      // Retry si no es el último intento
+                      if (attempt < maxAttempts) {
+                        console.log(`[GlobalRadarLayer] Retrying in ${backoffMs}ms...`);
+                        setTimeout(() => {
+                          if (!destroyed && mapRef.current && !globalRadarLayerRef.current) {
+                            initializeRadarLayer(attempt + 1, maxAttempts);
+                          }
+                        }, backoffMs);
+                      } else {
+                        console.error("[GlobalRadarLayer] Max retry attempts reached, giving up");
+                      }
+                      return;
+                    }
+                    
+                    if (destroyed || !mapRef.current) {
+                      console.warn("[GlobalRadarLayer] Map destroyed or not available, aborting initialization");
+                      return;
+                    }
+                    
+                    // Verificar estilo antes de crear la capa
+                    const style = getSafeMapStyle(map);
+                    if (!style) {
+                      console.warn("[GlobalRadarLayer] Style not ready, waiting for styledata event");
+                      // Esperar al styledata para intentar de nuevo
+                      map.once('styledata', () => {
+                        if (!destroyed && mapRef.current && globalRadarLayerRef.current === null) {
+                          console.log("[GlobalRadarLayer] Style loaded, initializing layer");
+                          const globalRadarLayer = new GlobalRadarLayer({
+                            enabled: true,
+                            opacity: radarOpacityInit,
+                          });
+                          layerRegistry.add(globalRadarLayer);
+                          globalRadarLayerRef.current = globalRadarLayer;
+                          console.log("[GlobalRadarLayer] Layer initialized after styledata event");
+                        }
+                      });
+                      return;
+                    }
+                    
+                    console.log("[GlobalRadarLayer] Initializing layer with radar data", {
+                      status: globalRadar?.status,
+                      framesCount: globalRadar?.frames_count,
+                      opacity: radarOpacityInit,
+                      attempt
+                    });
+                    
+                    const globalRadarLayer = new GlobalRadarLayer({
+                      enabled: true,
+                      opacity: radarOpacityInit,
+                    });
+                    layerRegistry.add(globalRadarLayer);
+                    globalRadarLayerRef.current = globalRadarLayer;
+                    console.log("[GlobalRadarLayer] ✓ Layer successfully initialized and added to registry");
+                  })
+                  .catch((healthError) => {
+                    clearTimeout(healthTimeout);
+                    
+                    const isTimeout = healthError.name === 'AbortError';
+                    console.warn(`[GlobalRadarLayer] Health check failed (attempt ${attempt}/${maxAttempts}):`, 
+                      isTimeout ? 'Timeout after 10s' : healthError.message);
+                    
+                    // Retry si no es el último intento
+                    if (attempt < maxAttempts) {
+                      console.log(`[GlobalRadarLayer] Retrying in ${backoffMs}ms...`);
+                      setTimeout(() => {
+                        if (!destroyed && mapRef.current && !globalRadarLayerRef.current) {
+                          initializeRadarLayer(attempt + 1, maxAttempts);
+                        }
+                      }, backoffMs);
+                    } else {
+                      console.warn("[GlobalRadarLayer] Max retry attempts reached, initializing without health check");
+                      
+                      // Último intento: inicializar de todas formas
+                      const style = getSafeMapStyle(map);
+                      if (!style) {
+                        console.error("[GlobalRadarLayer] Style not ready and max retries reached, giving up");
+                        return;
+                      }
+                      
+                      if (!destroyed && mapRef.current) {
                         const globalRadarLayer = new GlobalRadarLayer({
                           enabled: true,
                           opacity: radarOpacityInit,
                         });
                         layerRegistry.add(globalRadarLayer);
                         globalRadarLayerRef.current = globalRadarLayer;
-                        console.log("[GlobalRadarLayer] Layer initialized after styledata event");
+                        console.log("[GlobalRadarLayer] Layer initialized as fallback after all retries failed");
                       }
-                    });
-                    return;
-                  }
-                  
-                  console.log("[GlobalRadarLayer] Radar enabled from config, initializing layer", {
-                    status: globalRadar?.status,
-                    framesCount: globalRadar?.frames_count,
-                    opacity: radarOpacityInit
+                    }
                   });
-                  
-                  const globalRadarLayer = new GlobalRadarLayer({
-                    enabled: true,
-                    opacity: radarOpacityInit,
-                  });
-                  layerRegistry.add(globalRadarLayer);
-                  globalRadarLayerRef.current = globalRadarLayer;
-                  console.log("[GlobalRadarLayer] Layer initialized and added to registry");
-                })
-                .catch((healthError) => {
-                  console.warn("[GlobalRadarLayer] Failed to check health, initializing anyway:", healthError);
-                  // Verificar estilo antes de crear la capa
-                  const style = getSafeMapStyle(map);
-                  if (!style) {
-                    console.warn("[GlobalRadarLayer] Style not ready after health error, skipping");
-                    return;
-                  }
-                  // Inicializar de todas formas si falla el health check
-                  const globalRadarLayer = new GlobalRadarLayer({
-                    enabled: true,
-                    opacity: radarOpacityInit,
-                  });
-                  layerRegistry.add(globalRadarLayer);
-                  globalRadarLayerRef.current = globalRadarLayer;
-                  console.log("[GlobalRadarLayer] Layer initialized after health error");
-                });
+              };
+              
+              // Iniciar proceso de inicialización con retry logic
+              initializeRadarLayer(1, 3);
             } else {
               console.log("[GlobalRadarLayer] Radar disabled in config, skipping initialization");
             }
@@ -3547,6 +3627,64 @@ export default function GeoScopeMap({
       aemetLayer.setEnabled(false);
     }
   }, [config]);
+
+  // useEffect para escuchar eventos de actualización de MapTiler config
+  useEffect(() => {
+    const handleMaptilerConfigUpdated = async (event: Event) => {
+      const customEvent = event as CustomEvent<{ styleUrl?: string; provider?: string }>;
+      
+      console.log("[GeoScopeMap] MapTiler config updated event received", customEvent.detail);
+      
+      if (!mapRef.current) {
+        console.warn("[GeoScopeMap] Cannot update map: map not available");
+        return;
+      }
+      
+      try {
+        // Recargar configuración y health del backend
+        console.log("[GeoScopeMap] Fetching fresh config and health data...");
+        const [freshConfig, freshHealth] = await Promise.all([
+          fetch("/api/config", { cache: "no-store" }).then((r) => r.json()),
+          fetch("/api/health/full", { cache: "no-store" }).then((r) => r.json())
+        ]);
+        
+        // Construir nueva URL de estilo
+        const configV2 = freshConfig as AppConfigV2;
+        const styleUrlFromHealth = freshHealth?.maptiler?.styleUrl ?? null;
+        const styleUrlFromConfig = configV2?.ui_map?.maptiler?.styleUrl ?? null;
+        const newStyleUrl = styleUrlFromHealth || styleUrlFromConfig || customEvent.detail?.styleUrl;
+        
+        if (!newStyleUrl) {
+          console.warn("[GeoScopeMap] No new style URL available, skipping update");
+          return;
+        }
+        
+        console.log("[GeoScopeMap] Updating map style to:", newStyleUrl.substring(0, 60) + "...");
+        
+        // Actualizar estilo del mapa
+        const map = mapRef.current;
+        map.setStyle(newStyleUrl);
+        
+        // Esperar a que el estilo se cargue y reinicializar capas
+        map.once('styledata', () => {
+          console.log("[GeoScopeMap] New style loaded, reinitializing layers...");
+          
+          // Disparar evento de cambio de estilo para que las capas se reinicialicen
+          window.dispatchEvent(new CustomEvent('map:style:changed'));
+        });
+        
+        console.log("[GeoScopeMap] ✓ Map style update initiated successfully");
+      } catch (error) {
+        console.error("[GeoScopeMap] Error updating map style:", error);
+      }
+    };
+    
+    window.addEventListener('maptiler:config:updated', handleMaptilerConfigUpdated);
+    
+    return () => {
+      window.removeEventListener('maptiler:config:updated', handleMaptilerConfigUpdated);
+    };
+  }, []);
 
   // useEffect para escuchar eventos de actualización de secrets (API keys)
   useEffect(() => {
