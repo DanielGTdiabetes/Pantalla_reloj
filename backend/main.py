@@ -7358,7 +7358,7 @@ async def get_calendar_preview(limit: int = 10) -> Dict[str, Any]:
 
 
 @app.get("/api/calendar")
-def get_calendar() -> Dict[str, Any]:
+async def get_calendar() -> Dict[str, Any]:
     """Obtiene datos del calendario (eventos, hortalizas, santoral)."""
     config = config_manager.read()
     calendar_config = getattr(config, "calendar", None)
