@@ -176,6 +176,13 @@ export default class AircraftLayer implements Layer {
     // Asegurar que el source existe (idempotente)
     this.ensureSource();
 
+    // Verificar que el source existe antes de crear capas
+    // Esto evita errores de MapLibre tipo "source not found"
+    if (!this.map.getSource(this.sourceId)) {
+      console.warn("[AircraftLayer] Source still missing after ensureSource, skipping ensureLayersAsync");
+      return;
+    }
+
     // Asegurar que las capas existen (idempotente)
     await this.ensureLayersAsync();
 
@@ -444,6 +451,7 @@ export default class AircraftLayer implements Layer {
 
   /**
    * Asegura que el source existe. Completamente idempotente.
+   * MapLibre permite añadir sources incluso si el estilo aún no está completamente cargado.
    */
   private ensureSource(): void {
     if (!this.map) {
@@ -461,14 +469,8 @@ export default class AircraftLayer implements Layer {
       return;
     }
 
-    // Verificar que el estilo esté listo antes de crear el source
-    const style = getSafeMapStyle(map);
-    if (!style) {
-      console.warn("[AircraftLayer] style not ready, skipping ensureSource");
-      return;
-    }
-
     // El source no existe, crearlo
+    // No necesitamos verificar el estilo para crear el source; MapLibre lo permite
     const expectedCluster = this.shouldUseClusters();
     const sourceInit: maplibregl.GeoJSONSourceSpecification = {
       type: "geojson",
@@ -481,19 +483,15 @@ export default class AircraftLayer implements Layer {
       sourceInit.clusterMaxZoom = 10;
     }
 
-    const sourceAdded = withSafeMapStyle(
-      map,
-      () => {
-        map.addSource(this.sourceId, sourceInit);
-      },
-      "AircraftLayer"
-    );
-
-    if (!sourceAdded) {
-      // Si falla, intentar actualizar datos si el source ya existe
+    try {
+      map.addSource(this.sourceId, sourceInit);
+    } catch (error) {
+      // Si falla (p. ej. source ya existe o estilo no listo), intentar actualizar datos si el source ya existe
       const source = map.getSource(this.sourceId);
       if (isGeoJSONSource(source)) {
         source.setData(this.lastData);
+      } else {
+        console.warn("[AircraftLayer] Could not add source, will retry later:", error);
       }
     }
   }
@@ -583,12 +581,21 @@ export default class AircraftLayer implements Layer {
 
   /**
    * Asegura que las capas existen. Completamente idempotente.
+   * Verifica que el source exista antes de crear capas para evitar errores de MapLibre.
    */
   private async ensureLayersAsync(): Promise<void> {
     if (!this.map) {
       return;
     }
     const map = this.map;
+
+    // No intentar crear capas si el source no existe aún
+    // Esto evita errores de MapLibre tipo "source not found"
+    const src = map.getSource(this.sourceId);
+    if (!src) {
+      console.warn("[AircraftLayer] Source not ready, skipping ensureLayersAsync");
+      return;
+    }
 
     // Verificar que el estilo esté listo antes de manipular layers
     const style = getSafeMapStyle(map);
@@ -761,12 +768,21 @@ export default class AircraftLayer implements Layer {
   /**
    * Versión síncrona de ensureLayers (para compatibilidad).
    * @deprecated Usar ensureLayersAsync en su lugar.
+   * Verifica que el source exista antes de crear capas para evitar errores de MapLibre.
    */
   private ensureLayers(): void {
     if (!this.map) {
       return;
     }
     const map = this.map;
+
+    // No intentar crear capas si el source no existe aún
+    // Esto evita errores de MapLibre tipo "source not found"
+    const src = map.getSource(this.sourceId);
+    if (!src) {
+      console.warn("[AircraftLayer] Source not ready, skipping ensureLayers");
+      return;
+    }
 
     // Verificar que el estilo esté listo antes de manipular layers
     const style = getSafeMapStyle(map);
@@ -973,32 +989,36 @@ export default class AircraftLayer implements Layer {
 
   private getCircleRadiusExpression(): maplibregl.ExpressionSpecification {
     // V2: calcular radio basado en zoom usando radius_base y radius_zoom_scale
-    // Fórmula: radius = radius_base * (1 + (zoom - 5) * radius_zoom_scale_factor)
-    // Factor de escala = radius_zoom_scale / 10 para hacerlo razonable
+    // Reescrito usando interpolate para cumplir las reglas de MapLibre:
+    // "zoom" solo puede aparecer como input de una expresión ["step", ...] o ["interpolate", ...] de primer nivel
     const radiusBase = this.circleOptions.radiusBase;
     const radiusZoomScale = this.circleOptions.radiusZoomScale;
 
-    // Usar expresión de MapLibre para calcular radio dinámicamente según zoom
-    // radius = radius_base * (1 + (zoom - 5) * scale_factor)
-    // Ajustamos scale_factor para que sea más razonable: radius_zoom_scale representa el incremento por unidad de zoom
+    // Calcular factor de escala
     const scaleFactor = radiusZoomScale / 10; // Dividir por 10 para hacerlo más razonable
 
+    // Función helper para calcular radio en un zoom dado
+    // Fórmula: radius = radius_base * (1 + (zoom - 5) * scale_factor)
+    const radiusAt = (zoom: number): number => {
+      return radiusBase * (1 + (zoom - 5) * scaleFactor);
+    };
+
+    // Calcular stops en diferentes niveles de zoom
+    // Asegurar que todos los radios sean >= 1 para evitar errores
+    const r2 = Math.max(1, radiusAt(2));
+    const r6 = Math.max(1, radiusAt(6));
+    const r10 = Math.max(1, radiusAt(10));
+    const r14 = Math.max(1, radiusAt(14));
+
+    // Devolver expresión interpolate válida de MapLibre
     return [
-      "*",
-      radiusBase,
-      [
-        "+",
-        1,
-        [
-          "*",
-          [
-            "-",
-            ["zoom"],
-            5 // Zoom de referencia
-          ],
-          scaleFactor
-        ]
-      ]
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      2, r2,
+      6, r6,
+      10, r10,
+      14, r14,
     ] as maplibregl.ExpressionSpecification;
   }
 
