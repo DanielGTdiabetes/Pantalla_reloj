@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 import asyncio
-import grp
+try:
+    import grp
+except ImportError:
+    grp = None
+
 import hashlib
 import json
 import os
-import pwd
+
+try:
+    import pwd
+except ImportError:
+    pwd = None
 import re
 import subprocess
 import tempfile

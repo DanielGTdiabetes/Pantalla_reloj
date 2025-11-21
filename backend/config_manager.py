@@ -1,11 +1,19 @@
 from __future__ import annotations
 
-import grp
+try:
+    import grp
+except ImportError:
+    grp = None
+
 import hashlib
 import json
 import logging
 import os
-import pwd
+
+try:
+    import pwd
+except ImportError:
+    pwd = None
 import re
 import tempfile
 from datetime import datetime, timezone
@@ -334,12 +342,18 @@ class ConfigManager:
             except OSError as exc:
                 self.logger.debug("[config] Could not fsync directory after atomic write: %s", exc)
             try:
-                user = pwd.getpwnam("dani")
-                uid = user.pw_uid
+                if pwd:
+                    user = pwd.getpwnam("dani")
+                    uid = user.pw_uid
+                else:
+                    uid = -1
             except KeyError:
                 uid = -1
             try:
-                gid = grp.getgrnam("dani").gr_gid
+                if grp:
+                    gid = grp.getgrnam("dani").gr_gid
+                else:
+                    gid = -1
             except KeyError:
                 gid = user.pw_gid if "user" in locals() else -1
 
