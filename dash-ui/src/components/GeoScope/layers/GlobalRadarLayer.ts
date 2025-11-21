@@ -2,6 +2,7 @@ import maplibregl from "maplibre-gl";
 
 import type { Layer } from "./LayerRegistry";
 import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
+import { withSafeMapStyle } from "../../../lib/map/utils/safeMapOperations";
 
 interface GlobalRadarLayerOptions {
   enabled?: boolean;
@@ -87,35 +88,41 @@ export default class GlobalRadarLayer implements Layer {
     }
 
     if (source.type === "raster") {
-      // Eliminar y recrear la fuente con el nuevo timestamp
-      try {
-        if (this.map.getLayer(this.id)) {
-          this.map.removeLayer(this.id);
-        }
-        this.map.removeSource(this.sourceId);
-        
-        // Recrear con nuevo timestamp
-        this.map.addSource(this.sourceId, {
-          type: "raster",
-          tiles: [
-            `${this.baseUrl}/${timestamp}/{z}/{x}/{y}.png`
-          ],
-          tileSize: 256
-        });
-        
-        const beforeId = this.findBeforeId();
-        this.map.addLayer({
-          id: this.id,
-          type: "raster",
-          source: this.sourceId,
-          paint: {
-            "raster-opacity": this.opacity
-          },
-          minzoom: 0,
-          maxzoom: 18
-        }, beforeId);
-      } catch (error) {
-        console.error("[GlobalRadarLayer] Error updating timestamp:", error);
+      // Eliminar y recrear la fuente con el nuevo timestamp de forma segura
+      const updated = withSafeMapStyle(
+        this.map,
+        () => {
+          if (this.map!.getLayer(this.id)) {
+            this.map!.removeLayer(this.id);
+          }
+          this.map!.removeSource(this.sourceId);
+          
+          // Recrear con nuevo timestamp
+          this.map!.addSource(this.sourceId, {
+            type: "raster",
+            tiles: [
+              `${this.baseUrl}/${timestamp}/{z}/{x}/{y}.png`
+            ],
+            tileSize: 256
+          });
+          
+          const beforeId = this.findBeforeId();
+          this.map!.addLayer({
+            id: this.id,
+            type: "raster",
+            source: this.sourceId,
+            paint: {
+              "raster-opacity": this.opacity
+            },
+            minzoom: 0,
+            maxzoom: 18
+          }, beforeId);
+        },
+        "GlobalRadarLayer"
+      );
+
+      if (!updated) {
+        console.warn("[GlobalRadarLayer] Could not update timestamp, will retry on styledata");
         // Reintentar cuando el mapa esté listo
         if (this.map) {
           this.map.once('styledata', () => {
@@ -187,49 +194,66 @@ export default class GlobalRadarLayer implements Layer {
       return;
     }
 
+    // Añadir source de forma segura
     if (!this.map.getSource(this.sourceId)) {
-      try {
-        const tileUrlTemplate = `${this.baseUrl}/${this.currentTimestamp}/{z}/{x}/{y}.png`;
-        console.log("[GlobalRadarLayer] Adding RainViewer raster source", {
-          sourceId: this.sourceId,
-          tileUrlTemplate,
-          timestamp: this.currentTimestamp
-        });
-        this.map.addSource(this.sourceId, {
-          type: "raster",
-          tiles: [tileUrlTemplate],
-          tileSize: 256
-        });
-        console.log("[GlobalRadarLayer] Source added successfully");
-      } catch (error) {
-        console.error("[GlobalRadarLayer] Error adding source:", error);
+      const tileUrlTemplate = `${this.baseUrl}/${this.currentTimestamp}/{z}/{x}/{y}.png`;
+      console.log("[GlobalRadarLayer] Adding RainViewer raster source", {
+        sourceId: this.sourceId,
+        tileUrlTemplate,
+        timestamp: this.currentTimestamp
+      });
+      
+      const sourceAdded = withSafeMapStyle(
+        this.map,
+        () => {
+          this.map!.addSource(this.sourceId, {
+            type: "raster",
+            tiles: [tileUrlTemplate],
+            tileSize: 256
+          });
+        },
+        "GlobalRadarLayer"
+      );
+
+      if (!sourceAdded) {
+        console.error("[GlobalRadarLayer] Could not add source, style not ready");
         return;
       }
+      console.log("[GlobalRadarLayer] Source added successfully");
     }
 
+    // Añadir layer de forma segura
     if (!this.map.getLayer(this.id)) {
-      try {
-        const beforeId = this.findBeforeId();
-        console.log("[GlobalRadarLayer] Adding RainViewer raster layer", {
-          layerId: this.id,
-          sourceId: this.sourceId,
-          opacity: this.opacity,
-          beforeId
-        });
-        this.map.addLayer({
-          id: this.id,
-          type: "raster",
-          source: this.sourceId,
-          paint: {
-            "raster-opacity": this.opacity
-          },
-          minzoom: 0,
-          maxzoom: 18
-        }, beforeId);
-        console.log("[GlobalRadarLayer] Layer added successfully");
-      } catch (error) {
-        console.error("[GlobalRadarLayer] Error adding layer:", error);
+      const beforeId = this.findBeforeId();
+      console.log("[GlobalRadarLayer] Adding RainViewer raster layer", {
+        layerId: this.id,
+        sourceId: this.sourceId,
+        opacity: this.opacity,
+        beforeId
+      });
+      
+      const layerAdded = withSafeMapStyle(
+        this.map,
+        () => {
+          this.map!.addLayer({
+            id: this.id,
+            type: "raster",
+            source: this.sourceId,
+            paint: {
+              "raster-opacity": this.opacity
+            },
+            minzoom: 0,
+            maxzoom: 18
+          }, beforeId);
+        },
+        "GlobalRadarLayer"
+      );
+
+      if (!layerAdded) {
+        console.error("[GlobalRadarLayer] Could not add layer, style not ready");
+        return;
       }
+      console.log("[GlobalRadarLayer] Layer added successfully");
     }
   }
 

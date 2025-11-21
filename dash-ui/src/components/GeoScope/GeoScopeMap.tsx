@@ -1947,6 +1947,33 @@ export default function GeoScopeMap({
         
         if (destroyed || !mapRef.current) return;
         
+        // Esperar al evento 'idle' para garantizar que MapLibre ha terminado
+        // completamente de procesar el estilo y está listo para operaciones
+        console.log("[GeoScopeMap] Waiting for map idle state...");
+        await new Promise<void>((resolve) => {
+          const checkIdle = () => {
+            if (destroyed || !mapRef.current) {
+              resolve();
+              return;
+            }
+            // Verificar que el mapa esté idle y el estilo listo
+            if (map.isStyleLoaded()) {
+              const style = getSafeMapStyle(map);
+              if (style) {
+                console.log("[GeoScopeMap] Map is idle and style is ready");
+                resolve();
+                return;
+              }
+            }
+            // Si no está listo, esperar al próximo idle
+            map.once('idle', checkIdle);
+          };
+          // Iniciar comprobación
+          map.once('idle', checkIdle);
+        });
+        
+        if (destroyed || !mapRef.current) return;
+        
         try {
           // Verificar estilo una vez más antes de crear LayerRegistry
           const finalStyleCheck = getSafeMapStyle(map);

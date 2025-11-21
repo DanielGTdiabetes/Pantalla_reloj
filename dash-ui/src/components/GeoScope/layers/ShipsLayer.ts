@@ -7,6 +7,7 @@ import type { Layer } from "./LayerRegistry";
 import { getExistingPopup, isGeoJSONSource } from "./layerUtils";
 import { registerShipIcon } from "../utils/shipIcon";
 import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
+import { withSafeMapStyle } from "../../../lib/map/utils/safeMapOperations";
 
 type EffectiveRenderMode = "symbol" | "symbol_custom" | "circle";
 
@@ -461,10 +462,16 @@ export default class ShipsLayer implements Layer {
       generateId: true,
     };
 
-    try {
-      map.addSource(this.sourceId, sourceInit);
-    } catch (error) {
-      // Si falla (p. ej. source ya existe), solo actualizar datos
+    const sourceAdded = withSafeMapStyle(
+      map,
+      () => {
+        map.addSource(this.sourceId, sourceInit);
+      },
+      "ShipsLayer"
+    );
+
+    if (!sourceAdded) {
+      // Si falla, intentar actualizar datos si el source ya existe
       const source = map.getSource(this.sourceId);
       if (isGeoJSONSource(source)) {
         source.setData(this.lastData);
@@ -577,8 +584,10 @@ export default class ShipsLayer implements Layer {
           ? this.getCustomSymbolSizeExpression()
           : this.getIconSizeExpression();
 
-        try {
-          map.addLayer({
+        withSafeMapStyle(
+          map,
+          () => {
+            map.addLayer({
             id: this.id,
             type: "symbol",
             source: this.sourceId,
@@ -623,21 +632,23 @@ export default class ShipsLayer implements Layer {
             },
           }, beforeId);
 
-          // Si se registró el icono custom después de añadir la capa, actualizar tamaño
-          if (this.currentRenderMode === "symbol_custom") {
-            map.setLayoutProperty(this.id, "icon-size", this.getCustomSymbolSizeExpression());
-            map.setLayoutProperty(this.id, "icon-allow-overlap", this.symbolOptions?.allow_overlap ?? true);
-          } else {
-            map.setLayoutProperty(this.id, "icon-size", this.getIconSizeExpression());
-            map.setLayoutProperty(this.id, "icon-allow-overlap", true);
-          }
-        } catch (error) {
-          console.warn("[ShipsLayer] Error al añadir symbol layer:", error);
-        }
+            // Si se registró el icono custom después de añadir la capa, actualizar tamaño
+            if (this.currentRenderMode === "symbol_custom") {
+              map.setLayoutProperty(this.id, "icon-size", this.getCustomSymbolSizeExpression());
+              map.setLayoutProperty(this.id, "icon-allow-overlap", this.symbolOptions?.allow_overlap ?? true);
+            } else {
+              map.setLayoutProperty(this.id, "icon-size", this.getIconSizeExpression());
+              map.setLayoutProperty(this.id, "icon-allow-overlap", true);
+            }
+          },
+          "ShipsLayer-symbol"
+        );
       } else {
         // Capa de círculos
-        try {
-          map.addLayer({
+        withSafeMapStyle(
+          map,
+          () => {
+            map.addLayer({
             id: this.id,
             type: "circle",
             source: this.sourceId,
@@ -676,9 +687,9 @@ export default class ShipsLayer implements Layer {
               ],
             },
           }, beforeId);
-        } catch (error) {
-          console.warn("[ShipsLayer] Error al añadir circle layer:", error);
-        }
+          },
+          "ShipsLayer-circle"
+        );
       }
     } else if (modeChanged) {
       // Si cambió el modo, actualizar propiedades de la capa existente

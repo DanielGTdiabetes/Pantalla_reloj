@@ -5,6 +5,7 @@ import type { FeatureCollection } from "geojson";
 import type { Layer } from "./LayerRegistry";
 import { getExistingPopup, isGeoJSONSource } from "./layerUtils";
 import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
+import { withSafeMapStyle } from "../../../lib/map/utils/safeMapOperations";
 
 interface AEMETWarningsLayerOptions {
   enabled?: boolean;
@@ -181,23 +182,21 @@ export default class AEMETWarningsLayer implements Layer {
       return;
     }
 
-    // Verificar que el estilo esté listo antes de manipular sources
-    const style = getSafeMapStyle(this.map);
-    if (!style) {
-      console.warn("[AEMETWarningsLayer] style not ready, skipping ensureSource");
-      return;
-    }
-
     if (!this.map.getSource(this.sourceId)) {
-      try {
-        this.map.addSource(this.sourceId, {
-          type: "geojson",
-          data: this.lastData,
-          generateId: true,
-        });
-      } catch (error) {
-        // Source ya existe o error
-        console.warn("[AEMETWarningsLayer] Error adding source:", error);
+      const sourceAdded = withSafeMapStyle(
+        this.map,
+        () => {
+          this.map!.addSource(this.sourceId, {
+            type: "geojson",
+            data: this.lastData,
+            generateId: true,
+          });
+        },
+        "AEMETWarningsLayer"
+      );
+
+      if (!sourceAdded) {
+        console.warn("[AEMETWarningsLayer] Could not add source, style not ready");
       }
     }
   }
@@ -207,73 +206,74 @@ export default class AEMETWarningsLayer implements Layer {
       return;
     }
 
-    // Verificar que el estilo esté listo antes de manipular layers
-    const style = getSafeMapStyle(this.map);
-    if (!style) {
-      console.warn("[AEMETWarningsLayer] style not ready, skipping ensureLayer");
-      return;
-    }
-
     if (!this.map.getLayer(this.id)) {
-      try {
-        // Capa de relleno (fill)
-        this.map.addLayer({
-          id: this.id,
-          type: "fill",
-          source: this.sourceId,
-          paint: {
-            "fill-color": [
-              "case",
-              ["==", ["get", "severity"], "extreme"],
-              SEVERITY_COLORS.extreme.fill,
-              ["==", ["get", "severity"], "severe"],
-              SEVERITY_COLORS.severe.fill,
-              ["==", ["get", "severity"], "moderate"],
-              SEVERITY_COLORS.moderate.fill,
-              ["==", ["get", "severity"], "minor"],
-              SEVERITY_COLORS.minor.fill,
-              SEVERITY_COLORS.unknown.fill,
-            ],
-            "fill-opacity": this.opacity * 0.4,
-            "fill-outline-color": [
-              "case",
-              ["==", ["get", "severity"], "extreme"],
-              SEVERITY_COLORS.extreme.stroke,
-              ["==", ["get", "severity"], "severe"],
-              SEVERITY_COLORS.severe.stroke,
-              ["==", ["get", "severity"], "moderate"],
-              SEVERITY_COLORS.moderate.stroke,
-              ["==", ["get", "severity"], "minor"],
-              SEVERITY_COLORS.minor.stroke,
-              SEVERITY_COLORS.unknown.stroke,
-            ],
-          },
-        }, this.findBeforeId());
+      const beforeId = this.findBeforeId();
+      
+      const layerAdded = withSafeMapStyle(
+        this.map,
+        () => {
+          // Capa de relleno (fill)
+          this.map!.addLayer({
+            id: this.id,
+            type: "fill",
+            source: this.sourceId,
+            paint: {
+              "fill-color": [
+                "case",
+                ["==", ["get", "severity"], "extreme"],
+                SEVERITY_COLORS.extreme.fill,
+                ["==", ["get", "severity"], "severe"],
+                SEVERITY_COLORS.severe.fill,
+                ["==", ["get", "severity"], "moderate"],
+                SEVERITY_COLORS.moderate.fill,
+                ["==", ["get", "severity"], "minor"],
+                SEVERITY_COLORS.minor.fill,
+                SEVERITY_COLORS.unknown.fill,
+              ],
+              "fill-opacity": this.opacity * 0.4,
+              "fill-outline-color": [
+                "case",
+                ["==", ["get", "severity"], "extreme"],
+                SEVERITY_COLORS.extreme.stroke,
+                ["==", ["get", "severity"], "severe"],
+                SEVERITY_COLORS.severe.stroke,
+                ["==", ["get", "severity"], "moderate"],
+                SEVERITY_COLORS.moderate.stroke,
+                ["==", ["get", "severity"], "minor"],
+                SEVERITY_COLORS.minor.stroke,
+                SEVERITY_COLORS.unknown.stroke,
+              ],
+            },
+          }, beforeId);
 
-        // Capa de contorno (line) para mejor visibilidad
-        this.map.addLayer({
-          id: `${this.id}-outline`,
-          type: "line",
-          source: this.sourceId,
-          paint: {
-            "line-color": [
-              "case",
-              ["==", ["get", "severity"], "extreme"],
-              SEVERITY_COLORS.extreme.stroke,
-              ["==", ["get", "severity"], "severe"],
-              SEVERITY_COLORS.severe.stroke,
-              ["==", ["get", "severity"], "moderate"],
-              SEVERITY_COLORS.moderate.stroke,
-              ["==", ["get", "severity"], "minor"],
-              SEVERITY_COLORS.minor.stroke,
-              SEVERITY_COLORS.unknown.stroke,
-            ],
-            "line-width": 2,
-            "line-opacity": this.opacity,
-          },
-        }, this.findBeforeId());
-      } catch (error) {
-        console.warn("[AEMETWarningsLayer] Error adding layer:", error);
+          // Capa de contorno (line) para mejor visibilidad
+          this.map!.addLayer({
+            id: `${this.id}-outline`,
+            type: "line",
+            source: this.sourceId,
+            paint: {
+              "line-color": [
+                "case",
+                ["==", ["get", "severity"], "extreme"],
+                SEVERITY_COLORS.extreme.stroke,
+                ["==", ["get", "severity"], "severe"],
+                SEVERITY_COLORS.severe.stroke,
+                ["==", ["get", "severity"], "moderate"],
+                SEVERITY_COLORS.moderate.stroke,
+                ["==", ["get", "severity"], "minor"],
+                SEVERITY_COLORS.minor.stroke,
+                SEVERITY_COLORS.unknown.stroke,
+              ],
+              "line-width": 2,
+              "line-opacity": this.opacity,
+            },
+          }, beforeId);
+        },
+        "AEMETWarningsLayer"
+      );
+
+      if (!layerAdded) {
+        console.warn("[AEMETWarningsLayer] Could not add layers, style not ready");
       }
     }
   }

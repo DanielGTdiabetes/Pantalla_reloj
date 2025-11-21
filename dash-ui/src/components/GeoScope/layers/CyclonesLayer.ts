@@ -2,7 +2,7 @@ import maplibregl from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
 
 import type { Layer } from "./LayerRegistry";
-import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
+import { withSafeMapStyle } from "../../../lib/map/utils/safeMapOperations";
 
 interface CyclonesLayerOptions {
   enabled?: boolean;
@@ -25,31 +25,48 @@ export default class CyclonesLayer implements Layer {
   add(map: maplibregl.Map): void {
     this.map = map;
     
-    // Verificar que el estilo esté listo antes de manipular sources/layers
-    const style = getSafeMapStyle(map);
-    if (!style) {
-      console.warn("[CyclonesLayer] style not ready, skipping add");
+    // Añadir source de forma segura
+    const sourceAdded = withSafeMapStyle(
+      map,
+      () => {
+        if (!map.getSource(this.sourceId)) {
+          map.addSource(this.sourceId, {
+            type: "geojson",
+            data: EMPTY
+          });
+        }
+      },
+      "CyclonesLayer"
+    );
+
+    if (!sourceAdded) {
+      console.warn("[CyclonesLayer] Could not add source, style not ready");
       return;
     }
-    
-    if (!map.getSource(this.sourceId)) {
-      map.addSource(this.sourceId, {
-        type: "geojson",
-        data: EMPTY
-      });
-    }
 
-    if (!map.getLayer(this.id)) {
-      map.addLayer({
-        id: this.id,
-        type: "line",
-        source: this.sourceId,
-        paint: {
-          "line-color": "#34d399",
-          "line-width": 2,
-          "line-dasharray": [2, 2]
+    // Añadir capa de forma segura
+    const layerAdded = withSafeMapStyle(
+      map,
+      () => {
+        if (!map.getLayer(this.id)) {
+          map.addLayer({
+            id: this.id,
+            type: "line",
+            source: this.sourceId,
+            paint: {
+              "line-color": "#34d399",
+              "line-width": 2,
+              "line-dasharray": [2, 2]
+            }
+          });
         }
-      });
+      },
+      "CyclonesLayer"
+    );
+
+    if (!layerAdded) {
+      console.warn("[CyclonesLayer] Could not add layer, style not ready");
+      return;
     }
 
     this.applyVisibility();

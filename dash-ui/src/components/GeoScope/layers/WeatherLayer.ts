@@ -3,7 +3,7 @@ import type { FeatureCollection } from "geojson";
 
 import type { Layer } from "./LayerRegistry";
 import { isGeoJSONSource } from "./layerUtils";
-import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
+import { withSafeMapStyle } from "../../../lib/map/utils/safeMapOperations";
 
 interface WeatherLayerOptions {
   enabled?: boolean;
@@ -34,31 +34,48 @@ export default class WeatherLayer implements Layer {
   add(map: maplibregl.Map): void {
     this.map = map;
     
-    // Verificar que el estilo esté listo antes de manipular sources/layers
-    const style = getSafeMapStyle(map);
-    if (!style) {
-      console.warn("[WeatherLayer] style not ready, skipping add");
+    // Añadir source de forma segura
+    const sourceAdded = withSafeMapStyle(
+      map,
+      () => {
+        if (!map.getSource(this.sourceId)) {
+          map.addSource(this.sourceId, {
+            type: "geojson",
+            data: this.lastData,
+            generateId: true
+          });
+        }
+      },
+      "WeatherLayer"
+    );
+
+    if (!sourceAdded) {
+      console.warn("[WeatherLayer] Could not add source, style not ready");
       return;
     }
-    
-    if (!map.getSource(this.sourceId)) {
-      map.addSource(this.sourceId, {
-        type: "geojson",
-        data: this.lastData,
-        generateId: true
-      });
-    }
 
-    if (!map.getLayer(this.id)) {
-      map.addLayer({
-        id: this.id,
-        type: "fill",
-        source: this.sourceId,
-        paint: {
-          "fill-color": "#60a5fa",
-          "fill-opacity": this.opacity
+    // Añadir capa de forma segura
+    const layerAdded = withSafeMapStyle(
+      map,
+      () => {
+        if (!map.getLayer(this.id)) {
+          map.addLayer({
+            id: this.id,
+            type: "fill",
+            source: this.sourceId,
+            paint: {
+              "fill-color": "#60a5fa",
+              "fill-opacity": this.opacity
+            }
+          });
         }
-      });
+      },
+      "WeatherLayer"
+    );
+
+    if (!layerAdded) {
+      console.warn("[WeatherLayer] Could not add layer, style not ready");
+      return;
     }
 
     // Iniciar refresco periódico

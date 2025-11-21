@@ -7,6 +7,7 @@ import type { Layer } from "./LayerRegistry";
 import { getExistingPopup, isGeoJSONSource } from "./layerUtils";
 import { registerPlaneIcon } from "../utils/planeIcon";
 import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
+import { withSafeMapStyle } from "../../../lib/map/utils/safeMapOperations";
 
 type EffectiveRenderMode = "symbol" | "symbol_custom" | "circle";
 
@@ -480,10 +481,16 @@ export default class AircraftLayer implements Layer {
       sourceInit.clusterMaxZoom = 10;
     }
 
-    try {
-      map.addSource(this.sourceId, sourceInit);
-    } catch (error) {
-      // Si falla (p. ej. source ya existe), solo actualizar datos
+    const sourceAdded = withSafeMapStyle(
+      map,
+      () => {
+        map.addSource(this.sourceId, sourceInit);
+      },
+      "AircraftLayer"
+    );
+
+    if (!sourceAdded) {
+      // Si falla, intentar actualizar datos si el source ya existe
       const source = map.getSource(this.sourceId);
       if (isGeoJSONSource(source)) {
         source.setData(this.lastData);
@@ -600,42 +607,45 @@ export default class AircraftLayer implements Layer {
     // Asegurar capas de cluster si es necesario
     if (this.shouldUseClusters()) {
       if (!map.getLayer(this.clusterLayerId)) {
-        try {
-          map.addLayer({
-            id: this.clusterLayerId,
-            type: "circle",
-            source: this.sourceId,
-            filter: ["has", "point_count"],
-            paint: {
-              "circle-color": "#f97316",
-              "circle-radius": 20,
-            },
-          }, beforeId);
-        } catch (error) {
-          // Si falla (p. ej. layer ya existe), continuar
-          console.warn("[AircraftLayer] Error al añadir cluster layer:", error);
-        }
+        withSafeMapStyle(
+          map,
+          () => {
+            map.addLayer({
+              id: this.clusterLayerId,
+              type: "circle",
+              source: this.sourceId,
+              filter: ["has", "point_count"],
+              paint: {
+                "circle-color": "#f97316",
+                "circle-radius": 20,
+              },
+            }, beforeId);
+          },
+          "AircraftLayer-cluster"
+        );
       }
 
       if (!map.getLayer(this.clusterCountLayerId)) {
-        try {
-          map.addLayer({
-            id: this.clusterCountLayerId,
-            type: "symbol",
-            source: this.sourceId,
-            filter: ["has", "point_count"],
-            layout: {
-              "text-field": "{point_count_abbreviated}",
-              "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
-              "text-size": 12,
-            },
-            paint: {
-              "text-color": "#ffffff",
-            },
-          }, beforeId);
-        } catch (error) {
-          console.warn("[AircraftLayer] Error al añadir cluster count layer:", error);
-        }
+        withSafeMapStyle(
+          map,
+          () => {
+            map.addLayer({
+              id: this.clusterCountLayerId,
+              type: "symbol",
+              source: this.sourceId,
+              filter: ["has", "point_count"],
+              layout: {
+                "text-field": "{point_count_abbreviated}",
+                "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+                "text-size": 12,
+              },
+              paint: {
+                "text-color": "#ffffff",
+              },
+            }, beforeId);
+          },
+          "AircraftLayer-clusterCount"
+        );
       }
     } else {
       // Eliminar capas de cluster si no se necesitan
@@ -663,30 +673,32 @@ export default class AircraftLayer implements Layer {
           ? this.getCustomSymbolSizeExpression()
           : this.getIconSizeExpression();
 
-        try {
-          map.addLayer({
-            id: this.id,
-            type: "symbol",
-            source: this.sourceId,
-            filter: ["!", ["has", "point_count"]],
-            layout: {
-              "icon-image": iconImage,
-              "icon-size": sizeExpression,
-              "icon-allow-overlap": allowOverlap,
-              "icon-rotate": ["coalesce", ["get", "track"], 0],
-              "icon-rotation-alignment": "map",
-              visibility: this.enabled ? "visible" : "none",
-            },
-            paint: {
-              "icon-color": "#f97316",
-              "icon-halo-color": "#111827",
-              "icon-halo-width": 0.25,
-              "icon-opacity": this.opacity,
-            },
-          }, beforeId);
-        } catch (error) {
-          console.warn("[AircraftLayer] Error al añadir symbol layer:", error);
-        }
+        withSafeMapStyle(
+          map,
+          () => {
+            map.addLayer({
+              id: this.id,
+              type: "symbol",
+              source: this.sourceId,
+              filter: ["!", ["has", "point_count"]],
+              layout: {
+                "icon-image": iconImage,
+                "icon-size": sizeExpression,
+                "icon-allow-overlap": allowOverlap,
+                "icon-rotate": ["coalesce", ["get", "track"], 0],
+                "icon-rotation-alignment": "map",
+                visibility: this.enabled ? "visible" : "none",
+              },
+              paint: {
+                "icon-color": "#f97316",
+                "icon-halo-color": "#111827",
+                "icon-halo-width": 0.25,
+                "icon-opacity": this.opacity,
+              },
+            }, beforeId);
+          },
+          "AircraftLayer-symbol"
+        );
       } else if (modeChanged) {
         // Si cambió el modo, actualizar propiedades de la capa existente
         try {
@@ -706,25 +718,27 @@ export default class AircraftLayer implements Layer {
     } else {
       // Capa circle
       if (!map.getLayer(this.id)) {
-        try {
-          map.addLayer({
-            id: this.id,
-            type: "circle",
-            source: this.sourceId,
-            filter: ["!", ["has", "point_count"]],
-            layout: {
-              visibility: this.enabled ? "visible" : "none",
-            },
-            paint: {
-              "circle-radius": this.getCircleRadiusExpression(),
-              "circle-color": this.circleOptions.color,
-              "circle-stroke-color": this.circleOptions.strokeColor,
-              "circle-stroke-width": this.circleOptions.strokeWidth,
-            },
-          }, beforeId);
-        } catch (error) {
-          console.warn("[AircraftLayer] Error al añadir circle layer:", error);
-        }
+        withSafeMapStyle(
+          map,
+          () => {
+            map.addLayer({
+              id: this.id,
+              type: "circle",
+              source: this.sourceId,
+              filter: ["!", ["has", "point_count"]],
+              layout: {
+                visibility: this.enabled ? "visible" : "none",
+              },
+              paint: {
+                "circle-radius": this.getCircleRadiusExpression(),
+                "circle-color": this.circleOptions.color,
+                "circle-stroke-color": this.circleOptions.strokeColor,
+                "circle-stroke-width": this.circleOptions.strokeWidth,
+              },
+            }, beforeId);
+          },
+          "AircraftLayer-circle"
+        );
       } else if (modeChanged) {
         // Si cambió el modo, actualizar propiedades de la capa existente
         try {
