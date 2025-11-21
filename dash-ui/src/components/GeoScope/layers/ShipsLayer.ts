@@ -154,6 +154,13 @@ export default class ShipsLayer implements Layer {
     // Asegurar que el source existe (idempotente)
     this.ensureSource();
 
+    // Verificar que el source existe antes de crear capas
+    // Esto evita errores de MapLibre tipo "source not found"
+    if (!this.map.getSource(this.sourceId)) {
+      console.warn("[ShipsLayer] Source still missing after ensureSource, skipping ensureLayersAsync");
+      return;
+    }
+
     // Asegurar que las capas existen (idempotente)
     await this.ensureLayersAsync();
 
@@ -432,6 +439,7 @@ export default class ShipsLayer implements Layer {
 
   /**
    * Asegura que el source existe. Completamente idempotente.
+   * MapLibre permite añadir sources incluso si el estilo aún no está completamente cargado.
    */
   private ensureSource(): void {
     if (!this.map) {
@@ -448,33 +456,23 @@ export default class ShipsLayer implements Layer {
       return;
     }
 
-    // Verificar que el estilo esté listo antes de crear el source
-    const style = getSafeMapStyle(map);
-    if (!style) {
-      console.warn("[ShipsLayer] style not ready, skipping ensureSource");
-      return;
-    }
-
     // El source no existe, crearlo
+    // No necesitamos verificar el estilo para crear el source; MapLibre lo permite
     const sourceInit: maplibregl.GeoJSONSourceSpecification = {
       type: "geojson",
       data: this.lastData,
       generateId: true,
     };
 
-    const sourceAdded = withSafeMapStyle(
-      map,
-      () => {
-        map.addSource(this.sourceId, sourceInit);
-      },
-      "ShipsLayer"
-    );
-
-    if (!sourceAdded) {
-      // Si falla, intentar actualizar datos si el source ya existe
+    try {
+      map.addSource(this.sourceId, sourceInit);
+    } catch (error) {
+      // Si falla (p. ej. source ya existe o estilo no listo), intentar actualizar datos si el source ya existe
       const source = map.getSource(this.sourceId);
       if (isGeoJSONSource(source)) {
         source.setData(this.lastData);
+      } else {
+        console.warn("[ShipsLayer] Could not add source, will retry later:", error);
       }
     }
   }
@@ -544,12 +542,21 @@ export default class ShipsLayer implements Layer {
 
   /**
    * Asegura que las capas existen. Completamente idempotente.
+   * Verifica que el source exista antes de crear capas para evitar errores de MapLibre.
    */
   private async ensureLayersAsync(): Promise<void> {
     if (!this.map) {
       return;
     }
     const map = this.map;
+
+    // No intentar crear capas si el source no existe aún
+    // Esto evita errores de MapLibre tipo "source not found"
+    const src = map.getSource(this.sourceId);
+    if (!src) {
+      console.warn("[ShipsLayer] Source not ready, skipping ensureLayersAsync");
+      return;
+    }
 
     // Verificar que el estilo esté listo antes de manipular layers
     const style = getSafeMapStyle(map);
