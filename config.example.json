@@ -56,6 +56,18 @@
     "radar": {
       "enabled": false,
       "provider": "rainviewer"
+    },
+    "overlay": {
+      "rotator": {
+        "enabled": true,
+        "order": ["clock", "santoral"],
+        "durations_sec": {
+          "clock": 10,
+          "santoral": 10
+        },
+        "transition_ms": 400,
+        "pause_on_alert": false
+      }
     }
   },
   "opensky": {
