@@ -7,7 +7,7 @@ import type { Layer } from "./LayerRegistry";
 import { getExistingPopup, isGeoJSONSource } from "./layerUtils";
 import { registerShipIcon } from "../utils/shipIcon";
 import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
-import { withSafeMapStyle } from "../../../lib/map/utils/safeMapOperations";
+import { withSafeMapStyle, safeHasImage } from "../../../lib/map/utils/safeMapOperations";
 
 type EffectiveRenderMode = "symbol" | "symbol_custom" | "circle";
 
@@ -311,7 +311,7 @@ export default class ShipsLayer implements Layer {
 
     this.ensureSource();
     const layerExists = Boolean(this.map.getLayer(this.id));
-    
+
     // Si cambió el modo o no existe la capa, recrearla
     if (modeChanged || !layerExists) {
       await this.ensureLayersAsync();
@@ -335,7 +335,7 @@ export default class ShipsLayer implements Layer {
 
     this.ensureSource();
     const layerExists = Boolean(this.map.getLayer(this.id));
-    
+
     // Si cambió el modo o no existe la capa, recrearla
     if (modeChanged || !layerExists) {
       // Usar versión async si es necesario
@@ -404,7 +404,7 @@ export default class ShipsLayer implements Layer {
     }
     if (this.renderMode === "symbol_custom") {
       // En modo síncrono, verificar si ya está registrado
-      if (this.shipIconRegistered && this.map?.hasImage("ship")) {
+      if (this.shipIconRegistered && safeHasImage(this.map, "ship")) {
         return "symbol_custom";
       }
       return "circle";
@@ -424,7 +424,7 @@ export default class ShipsLayer implements Layer {
       return "symbol";
     }
     // Para auto sin sprite, verificar si el icono custom ya está registrado
-    if (this.shipIconRegistered && this.map?.hasImage("ship")) {
+    if (this.shipIconRegistered && safeHasImage(this.map, "ship")) {
       return "symbol_custom";
     }
     return "circle";
@@ -438,7 +438,7 @@ export default class ShipsLayer implements Layer {
       return;
     }
     const map = this.map;
-    
+
     // Si el source ya existe, solo actualizar datos si es necesario
     if (map.getSource(this.sourceId)) {
       const source = map.getSource(this.sourceId);
@@ -488,7 +488,7 @@ export default class ShipsLayer implements Layer {
     if (!style || !Array.isArray(style.layers)) {
       return undefined;
     }
-    
+
     // Buscar el primer layer de tipo "symbol" que contenga "label", "place-", "country-", "text", o "name"
     for (const layer of style.layers) {
       if (layer.type === "symbol") {
@@ -504,7 +504,7 @@ export default class ShipsLayer implements Layer {
         }
       }
     }
-    
+
     return undefined;
   }
 
@@ -588,49 +588,49 @@ export default class ShipsLayer implements Layer {
           map,
           () => {
             map.addLayer({
-            id: this.id,
-            type: "symbol",
-            source: this.sourceId,
-            layout: {
-              "icon-image": iconImage,
-              "icon-size": sizeExpression,
-              "icon-rotate": ["get", "course"],
-              "icon-rotation-alignment": "map",
-              "icon-allow-overlap": this.symbolOptions?.allow_overlap ?? true,
-              "icon-ignore-placement": false,
-              "visibility": this.enabled ? "visible" : "none",
-            },
-            paint: {
-              "icon-color": this.circleOptions.color,
-              "icon-halo-color": this.circleOptions.strokeColor,
-              "icon-halo-width": 0.4,
-              "icon-opacity": [
-                "interpolate",
-                ["linear"],
-                ["get", "age_seconds"],
-                0,
-                [
-                  "case",
-                  ["get", "in_focus"],
-                  this.opacity,
-                  this.cineFocus?.enabled
-                    ? this.opacity * this.cineFocus.outsideDimOpacity
-                    : this.opacity
+              id: this.id,
+              type: "symbol",
+              source: this.sourceId,
+              layout: {
+                "icon-image": iconImage,
+                "icon-size": sizeExpression,
+                "icon-rotate": ["get", "course"],
+                "icon-rotation-alignment": "map",
+                "icon-allow-overlap": this.symbolOptions?.allow_overlap ?? true,
+                "icon-ignore-placement": false,
+                "visibility": this.enabled ? "visible" : "none",
+              },
+              paint: {
+                "icon-color": this.circleOptions.color,
+                "icon-halo-color": this.circleOptions.strokeColor,
+                "icon-halo-width": 0.4,
+                "icon-opacity": [
+                  "interpolate",
+                  ["linear"],
+                  ["get", "age_seconds"],
+                  0,
+                  [
+                    "case",
+                    ["get", "in_focus"],
+                    this.opacity,
+                    this.cineFocus?.enabled
+                      ? this.opacity * this.cineFocus.outsideDimOpacity
+                      : this.opacity
+                  ],
+                  this.maxAgeSeconds / 2,
+                  [
+                    "case",
+                    ["get", "in_focus"],
+                    this.opacity * 0.5,
+                    this.cineFocus?.enabled
+                      ? this.opacity * this.cineFocus.outsideDimOpacity * 0.5
+                      : this.opacity * 0.5
+                  ],
+                  this.maxAgeSeconds,
+                  0.0
                 ],
-                this.maxAgeSeconds / 2,
-                [
-                  "case",
-                  ["get", "in_focus"],
-                  this.opacity * 0.5,
-                  this.cineFocus?.enabled
-                    ? this.opacity * this.cineFocus.outsideDimOpacity * 0.5
-                    : this.opacity * 0.5
-                ],
-                this.maxAgeSeconds,
-                0.0
-              ],
-            },
-          }, beforeId);
+              },
+            }, beforeId);
 
             // Si se registró el icono custom después de añadir la capa, actualizar tamaño
             if (this.currentRenderMode === "symbol_custom") {
@@ -649,44 +649,44 @@ export default class ShipsLayer implements Layer {
           map,
           () => {
             map.addLayer({
-            id: this.id,
-            type: "circle",
-            source: this.sourceId,
-            layout: {
-              "visibility": this.enabled ? "visible" : "none",
-            },
-            paint: {
-              "circle-radius": this.getCircleRadiusExpression(),
-              "circle-color": this.circleOptions.color,
-              "circle-stroke-color": this.circleOptions.strokeColor,
-              "circle-stroke-width": this.circleOptions.strokeWidth,
-              "circle-opacity": [
-                "interpolate",
-                ["linear"],
-                ["get", "age_seconds"],
-                0,
-                [
-                  "case",
-                  ["get", "in_focus"],
-                  this.opacity * this.circleOptions.opacity,
-                  this.cineFocus?.enabled
-                    ? this.opacity * this.circleOptions.opacity * this.cineFocus.outsideDimOpacity
-                    : this.opacity * this.circleOptions.opacity
+              id: this.id,
+              type: "circle",
+              source: this.sourceId,
+              layout: {
+                "visibility": this.enabled ? "visible" : "none",
+              },
+              paint: {
+                "circle-radius": this.getCircleRadiusExpression(),
+                "circle-color": this.circleOptions.color,
+                "circle-stroke-color": this.circleOptions.strokeColor,
+                "circle-stroke-width": this.circleOptions.strokeWidth,
+                "circle-opacity": [
+                  "interpolate",
+                  ["linear"],
+                  ["get", "age_seconds"],
+                  0,
+                  [
+                    "case",
+                    ["get", "in_focus"],
+                    this.opacity * this.circleOptions.opacity,
+                    this.cineFocus?.enabled
+                      ? this.opacity * this.circleOptions.opacity * this.cineFocus.outsideDimOpacity
+                      : this.opacity * this.circleOptions.opacity
+                  ],
+                  this.maxAgeSeconds / 2,
+                  [
+                    "case",
+                    ["get", "in_focus"],
+                    this.opacity * this.circleOptions.opacity * 0.5,
+                    this.cineFocus?.enabled
+                      ? this.opacity * this.circleOptions.opacity * this.cineFocus.outsideDimOpacity * 0.5
+                      : this.opacity * this.circleOptions.opacity * 0.5
+                  ],
+                  this.maxAgeSeconds,
+                  0.0
                 ],
-                this.maxAgeSeconds / 2,
-                [
-                  "case",
-                  ["get", "in_focus"],
-                  this.opacity * this.circleOptions.opacity * 0.5,
-                  this.cineFocus?.enabled
-                    ? this.opacity * this.circleOptions.opacity * this.cineFocus.outsideDimOpacity * 0.5
-                    : this.opacity * this.circleOptions.opacity * 0.5
-                ],
-                this.maxAgeSeconds,
-                0.0
-              ],
-            },
-          }, beforeId);
+              },
+            }, beforeId);
           },
           "ShipsLayer-circle"
         );

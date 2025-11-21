@@ -7,7 +7,7 @@ import type { Layer } from "./LayerRegistry";
 import { getExistingPopup, isGeoJSONSource } from "./layerUtils";
 import { registerPlaneIcon } from "../utils/planeIcon";
 import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
-import { withSafeMapStyle } from "../../../lib/map/utils/safeMapOperations";
+import { withSafeMapStyle, safeHasImage } from "../../../lib/map/utils/safeMapOperations";
 
 type EffectiveRenderMode = "symbol" | "symbol_custom" | "circle";
 
@@ -64,13 +64,13 @@ const coerceNumber = (value: unknown, fallback: number): number => {
 const normalizeCircleOptions = (options?: FlightsLayerCircleConfig, viewportHeight?: number): CircleOptions => {
   // Soporte para v2 (radius_base, radius_zoom_scale) y v1 legacy (radius_vh)
   const source = (options ?? {}) as Partial<FlightsLayerCircleConfig>;
-  
+
   // Intentar leer parámetros v2 primero
   const hasV2Params = 'radius_base' in source || 'radius_zoom_scale' in source;
-  
+
   let radiusBase = DEFAULT_CIRCLE_OPTIONS.radiusBase;
   let radiusZoomScale = DEFAULT_CIRCLE_OPTIONS.radiusZoomScale;
-  
+
   if (hasV2Params) {
     // V2: usar radius_base y radius_zoom_scale
     radiusBase = clamp(coerceNumber((source as any).radius_base, DEFAULT_CIRCLE_OPTIONS.radiusBase), 1.0, 50.0);
@@ -324,7 +324,7 @@ export default class AircraftLayer implements Layer {
 
     this.ensureSource();
     const layerExists = Boolean(this.map.getLayer(this.id));
-    
+
     // Si cambió el modo o no existe la capa, recrearla
     if (modeChanged || !layerExists) {
       this.ensureLayers();
@@ -348,7 +348,7 @@ export default class AircraftLayer implements Layer {
 
     this.ensureSource();
     const layerExists = Boolean(this.map.getLayer(this.id));
-    
+
     // Si cambió el modo o no existe la capa, recrearla
     if (modeChanged || !layerExists) {
       this.ensureLayers();
@@ -415,7 +415,7 @@ export default class AircraftLayer implements Layer {
     }
     if (this.renderMode === "symbol_custom") {
       // En modo síncrono, verificar si ya está registrado
-      if (this.planeIconRegistered && this.map?.hasImage("plane")) {
+      if (this.planeIconRegistered && safeHasImage(this.map, "plane")) {
         return "symbol_custom";
       }
       // Si no está registrado, usar circle temporalmente hasta que se registre
@@ -436,7 +436,7 @@ export default class AircraftLayer implements Layer {
       return "symbol";
     }
     // Para auto sin sprite, verificar si el icono custom ya está registrado
-    if (this.planeIconRegistered && this.map?.hasImage("plane")) {
+    if (this.planeIconRegistered && safeHasImage(this.map, "plane")) {
       return "symbol_custom";
     }
     return "circle";
@@ -450,7 +450,7 @@ export default class AircraftLayer implements Layer {
       return;
     }
     const map = this.map;
-    
+
     // Si el source ya existe, solo actualizar datos si es necesario
     if (map.getSource(this.sourceId)) {
       const source = map.getSource(this.sourceId);
@@ -507,7 +507,7 @@ export default class AircraftLayer implements Layer {
     if (!style || !Array.isArray(style.layers)) {
       return undefined;
     }
-    
+
     // Buscar el primer layer de tipo "symbol" que contenga "label", "place-", "country-", "text", o "name"
     for (const layer of style.layers) {
       if (layer.type === "symbol") {
@@ -523,7 +523,7 @@ export default class AircraftLayer implements Layer {
         }
       }
     }
-    
+
     return undefined;
   }
 
@@ -652,12 +652,12 @@ export default class AircraftLayer implements Layer {
       if (map.getLayer(this.clusterLayerId)) {
         try {
           map.removeLayer(this.clusterLayerId);
-        } catch {}
+        } catch { }
       }
       if (map.getLayer(this.clusterCountLayerId)) {
         try {
           map.removeLayer(this.clusterCountLayerId);
-        } catch {}
+        } catch { }
       }
     }
 
@@ -813,10 +813,18 @@ export default class AircraftLayer implements Layer {
           },
         }, beforeId);
       }
+    } else {
+      if (map.getLayer(this.clusterLayerId)) {
+        map.removeLayer(this.clusterLayerId);
+      }
+      if (map.getLayer(this.clusterCountLayerId)) {
+        map.removeLayer(this.clusterCountLayerId);
+      }
     }
 
-    if (!map.getLayer(this.id)) {
-      if (this.currentRenderMode === "symbol" || this.currentRenderMode === "symbol_custom") {
+    // Asegurar capa principal (circle o symbol)
+    if (this.currentRenderMode === "symbol" || this.currentRenderMode === "symbol_custom") {
+      if (!map.getLayer(this.id)) {
         const iconImage = this.currentRenderMode === "symbol_custom" ? "plane" : this.iconImage;
         const allowOverlap = this.currentRenderMode === "symbol_custom"
           ? (this.symbolOptions?.allow_overlap ?? true)
@@ -845,7 +853,9 @@ export default class AircraftLayer implements Layer {
             "icon-opacity": this.opacity,
           },
         }, beforeId);
-      } else {
+      }
+    } else {
+      if (!map.getLayer(this.id)) {
         map.addLayer({
           id: this.id,
           type: "circle",
@@ -863,22 +873,26 @@ export default class AircraftLayer implements Layer {
         }, beforeId);
       }
     }
+
+    this.applyCirclePaintProperties();
+    this.applyOpacity();
+    this.applyStyleScale();
   }
 
   private removeLayers(map: maplibregl.Map): void {
-    if (map.getLayer(this.clusterCountLayerId)) {
-      map.removeLayer(this.clusterCountLayerId);
+    if (map.getLayer(this.id)) {
+      map.removeLayer(this.id);
     }
     if (map.getLayer(this.clusterLayerId)) {
       map.removeLayer(this.clusterLayerId);
     }
-    if (map.getLayer(this.id)) {
-      map.removeLayer(this.id);
+    if (map.getLayer(this.clusterCountLayerId)) {
+      map.removeLayer(this.clusterCountLayerId);
     }
   }
 
   private shouldUseClusters(): boolean {
-    return this.clusterEnabled && (this.currentRenderMode === "symbol" || this.currentRenderMode === "symbol_custom");
+    return this.clusterEnabled && this.currentRenderMode === "circle";
   }
 
   private getFeatureOpacityExpression(baseOpacity: number): maplibregl.ExpressionSpecification {
@@ -963,12 +977,12 @@ export default class AircraftLayer implements Layer {
     // Factor de escala = radius_zoom_scale / 10 para hacerlo razonable
     const radiusBase = this.circleOptions.radiusBase;
     const radiusZoomScale = this.circleOptions.radiusZoomScale;
-    
+
     // Usar expresión de MapLibre para calcular radio dinámicamente según zoom
     // radius = radius_base * (1 + (zoom - 5) * scale_factor)
     // Ajustamos scale_factor para que sea más razonable: radius_zoom_scale representa el incremento por unidad de zoom
     const scaleFactor = radiusZoomScale / 10; // Dividir por 10 para hacerlo más razonable
-    
+
     return [
       "*",
       radiusBase,

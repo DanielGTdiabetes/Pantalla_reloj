@@ -1,4 +1,5 @@
 import maplibregl from "maplibre-gl";
+import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
 
 export interface Layer {
   id: string;
@@ -20,10 +21,27 @@ export class LayerRegistry {
   add(layer: Layer) {
     this.layers.push(layer);
     this.layers.sort((a, b) => a.zIndex - b.zIndex);
-    layer.add(this.map);
+
+    // Check if style is ready before adding
+    const style = getSafeMapStyle(this.map);
+    if (style) {
+      try {
+        layer.add(this.map);
+      } catch (err) {
+        console.warn(`[LayerRegistry] Failed to add layer ${layer.id}`, err);
+      }
+    } else {
+      console.warn(`[LayerRegistry] Style not ready, skipping add for ${layer.id} (will be added on styledata)`);
+    }
   }
 
   reapply() {
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[LayerRegistry] Style not ready, skipping reapply");
+      return;
+    }
+
     for (const layer of this.layers) {
       try {
         layer.remove(this.map);

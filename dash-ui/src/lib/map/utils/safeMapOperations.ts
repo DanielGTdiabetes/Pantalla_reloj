@@ -108,3 +108,27 @@ export const safeAddLayer = (
   );
 };
 
+/**
+ * Checks if an image exists in the map style safely.
+ * 
+ * @param map - MapLibre map instance
+ * @param imageId - ID of the image to check
+ * @returns true if the image exists, false otherwise (including if style is not ready)
+ */
+export const safeHasImage = (
+  map: maplibregl.Map | undefined | null,
+  imageId: string
+): boolean => {
+  if (!map) {
+    return false;
+  }
+  const style = getSafeMapStyle(map);
+  if (!style) {
+    return false;
+  }
+  try {
+    return map.hasImage(imageId);
+  } catch {
+    return false;
+  }
+};
