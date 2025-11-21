@@ -819,8 +819,11 @@ def _read_config_v2() -> Tuple[AppConfigV2, bool]:
                 provider = ui_map.get("provider")
                 valid_providers = ["maptiler_vector", "local_raster_xyz", "custom_xyz"]
                 if provider not in valid_providers:
-                    logger.warning("Invalid provider %s, defaulting to maptiler_vector", provider)
-                    ui_map["provider"] = "maptiler_vector"
+                    # Corrección: Usar el proveedor más seguro por defecto si el valor es inválido o falta.
+                    # El valor por defecto más seguro es 'local_raster_xyz' (OpenStreetMap).
+                    default_provider = "local_raster_xyz"
+                    logger.warning("Invalid provider %s, defaulting to %s", provider, default_provider)
+                    ui_map["provider"] = default_provider
                     config_data["ui_map"] = ui_map
             
             # Asegurar que maps y layers_global no sean null

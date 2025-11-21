@@ -126,21 +126,6 @@ export async function saveConfig(data: AppConfig) {
 export async function getConfigV2(): Promise<AppConfigV2> {
   const config = await apiGet<AppConfigV2>("/api/config");
   
-  // Verificar que no contiene claves v1
-  if (config && typeof config === 'object') {
-    const v1Keys = ['ui', 'map', 'cinema', 'maptiler'];
-    const hasV1Keys = v1Keys.some(key => {
-      if (key === 'ui' && 'ui' in config && config.ui && typeof config.ui === 'object' && 'map' in config.ui) {
-        return true;
-      }
-      return key in config;
-    });
-    
-    if (hasV1Keys) {
-      throw new ApiError(400, { error: "v1 keys not allowed", message: "Config contains v1 keys" });
-    }
-  }
-  
   return config;
 }
 
@@ -148,19 +133,6 @@ export async function saveConfigV2(config: AppConfigV2): Promise<SaveConfigRespo
   // Verificar que es v2
   if (config.version !== 2) {
     throw new ApiError(400, { error: "Only v2 config allowed", version: config.version });
-  }
-  
-  // Verificar que no contiene claves v1
-  const v1Keys = ['ui', 'map', 'cinema', 'maptiler'];
-  const hasV1Keys = v1Keys.some(key => {
-    if (key === 'ui' && 'ui' in config && config.ui && typeof config.ui === 'object') {
-      return 'map' in config.ui || 'cinema' in config.ui || 'maptiler' in config.ui;
-    }
-    return key in config;
-  });
-  
-  if (hasV1Keys) {
-    throw new ApiError(400, { error: "v1 keys not allowed", v1_keys: v1Keys.filter(k => k in config) });
   }
   
   return apiPost<SaveConfigResponse>("/api/config", config);
