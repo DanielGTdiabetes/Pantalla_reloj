@@ -47,7 +47,19 @@
   },
   "ui_global": {
     "satellite": { "enabled": true, "provider": "gibs", "opacity": 1.0 },
-    "radar": { "enabled": true, "provider": "rainviewer", "opacity": 0.7, "layer_type": "precipitation_new" }
+    "radar": { "enabled": true, "provider": "rainviewer", "opacity": 0.7, "layer_type": "precipitation_new" },
+    "overlay": {
+      "rotator": {
+        "enabled": true,
+        "order": ["clock", "santoral"],
+        "durations_sec": {
+          "clock": 10,
+          "santoral": 10
+        },
+        "transition_ms": 400,
+        "pause_on_alert": false
+      }
+    }
   },
   "layers": {
     "global": {

@@ -578,6 +578,9 @@ export default class ShipsLayer implements Layer {
               "visibility": this.enabled ? "visible" : "none",
             },
             paint: {
+              "icon-color": this.circleOptions.color,
+              "icon-halo-color": this.circleOptions.strokeColor,
+              "icon-halo-width": 0.4,
               "icon-opacity": [
                 "interpolate",
                 ["linear"],
@@ -677,6 +680,9 @@ export default class ShipsLayer implements Layer {
               : this.getIconSizeExpression()
           );
           map.setLayoutProperty(this.id, "icon-allow-overlap", this.symbolOptions?.allow_overlap ?? true);
+          map.setPaintProperty(this.id, "icon-color", this.circleOptions.color);
+          map.setPaintProperty(this.id, "icon-halo-color", this.circleOptions.strokeColor);
+          map.setPaintProperty(this.id, "icon-halo-width", 0.4);
         } else {
           map.setPaintProperty(this.id, "circle-radius", this.getCircleRadiusExpression());
           map.setPaintProperty(this.id, "circle-color", this.circleOptions.color);
