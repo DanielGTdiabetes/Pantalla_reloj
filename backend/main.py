@@ -6284,7 +6284,7 @@ async def post_news_rss(request: Request) -> Dict[str, Any]:
 
 
 @app.get("/api/news/sample")
-def get_news_sample(limit: int = 10) -> Dict[str, Any]:
+async def get_news_sample(limit: int = 10) -> Dict[str, Any]:
     """Obtiene una muestra de noticias de los feeds configurados.
     
     Args:
@@ -7225,7 +7225,7 @@ async def test_calendar(request: Optional[CalendarTestRequest] = Body(default=No
 
 
 @app.get("/api/calendar/preview")
-def get_calendar_preview(limit: int = 10) -> Dict[str, Any]:
+async def get_calendar_preview(limit: int = 10) -> Dict[str, Any]:
     """Obtiene preview de próximos eventos del calendario activo.
     
     Args:
@@ -7365,7 +7365,7 @@ def get_calendar_preview(limit: int = 10) -> Dict[str, Any]:
 
 
 @app.get("/api/calendar")
-def get_calendar() -> Dict[str, Any]:
+async def get_calendar() -> Dict[str, Any]:
     """Obtiene datos del calendario (eventos, hortalizas, santoral)."""
     config = config_manager.read()
     calendar_config = getattr(config, "calendar", None)
