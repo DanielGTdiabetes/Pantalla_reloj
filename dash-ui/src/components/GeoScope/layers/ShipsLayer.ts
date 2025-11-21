@@ -447,6 +447,13 @@ export default class ShipsLayer implements Layer {
       return;
     }
 
+    // Verificar que el estilo esté listo antes de crear el source
+    const style = getSafeMapStyle(map);
+    if (!style) {
+      console.warn("[ShipsLayer] style not ready, skipping ensureSource");
+      return;
+    }
+
     // El source no existe, crearlo
     const sourceInit: maplibregl.GeoJSONSourceSpecification = {
       type: "geojson",
@@ -536,6 +543,13 @@ export default class ShipsLayer implements Layer {
       return;
     }
     const map = this.map;
+
+    // Verificar que el estilo esté listo antes de manipular layers
+    const style = getSafeMapStyle(map);
+    if (!style) {
+      console.warn("[ShipsLayer] style not ready, skipping ensureLayersAsync");
+      return;
+    }
 
     // Determinar el modo de renderizado actual
     const nextMode = await this.determineRenderModeAsync(false);

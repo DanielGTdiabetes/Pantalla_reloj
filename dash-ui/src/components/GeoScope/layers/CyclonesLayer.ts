@@ -2,6 +2,7 @@ import maplibregl from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
 
 import type { Layer } from "./LayerRegistry";
+import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
 
 interface CyclonesLayerOptions {
   enabled?: boolean;
@@ -23,6 +24,14 @@ export default class CyclonesLayer implements Layer {
 
   add(map: maplibregl.Map): void {
     this.map = map;
+    
+    // Verificar que el estilo esté listo antes de manipular sources/layers
+    const style = getSafeMapStyle(map);
+    if (!style) {
+      console.warn("[CyclonesLayer] style not ready, skipping add");
+      return;
+    }
+    
     if (!map.getSource(this.sourceId)) {
       map.addSource(this.sourceId, {
         type: "geojson",

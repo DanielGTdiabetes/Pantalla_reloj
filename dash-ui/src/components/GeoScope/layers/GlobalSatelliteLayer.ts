@@ -2,6 +2,7 @@ import maplibregl from "maplibre-gl";
 import type { MapLibreEvent } from "maplibre-gl";
 
 import type { Layer } from "./LayerRegistry";
+import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
 
 interface GlobalSatelliteLayerOptions {
   enabled?: boolean;
@@ -248,6 +249,13 @@ export default class GlobalSatelliteLayer implements Layer {
       return;
     }
     
+    // Verificar que el estilo esté listo antes de manipular sources/layers
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[GlobalSatelliteLayer] style not ready, skipping updateTileUrl");
+      return;
+    }
+    
     // Eliminar capa y fuente existentes si existen
     if (this.map.getLayer(this.id)) {
       this.map.removeLayer(this.id);
@@ -297,6 +305,13 @@ export default class GlobalSatelliteLayer implements Layer {
 
   private ensureLayer(): void {
     if (!this.map || !this.enabled) {
+      return;
+    }
+
+    // Verificar que el estilo esté listo antes de manipular sources/layers
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[GlobalSatelliteLayer] style not ready, skipping ensureLayer");
       return;
     }
 

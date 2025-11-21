@@ -181,6 +181,13 @@ export default class AEMETWarningsLayer implements Layer {
       return;
     }
 
+    // Verificar que el estilo esté listo antes de manipular sources
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[AEMETWarningsLayer] style not ready, skipping ensureSource");
+      return;
+    }
+
     if (!this.map.getSource(this.sourceId)) {
       try {
         this.map.addSource(this.sourceId, {
@@ -197,6 +204,13 @@ export default class AEMETWarningsLayer implements Layer {
 
   private ensureLayer(): void {
     if (!this.map) {
+      return;
+    }
+
+    // Verificar que el estilo esté listo antes de manipular layers
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[AEMETWarningsLayer] style not ready, skipping ensureLayer");
       return;
     }
 

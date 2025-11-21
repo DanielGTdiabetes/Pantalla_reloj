@@ -3,6 +3,7 @@ import type { FeatureCollection } from "geojson";
 
 import type { Layer } from "./LayerRegistry";
 import { isGeoJSONSource } from "./layerUtils";
+import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
 
 interface WeatherLayerOptions {
   enabled?: boolean;
@@ -32,6 +33,14 @@ export default class WeatherLayer implements Layer {
 
   add(map: maplibregl.Map): void {
     this.map = map;
+    
+    // Verificar que el estilo esté listo antes de manipular sources/layers
+    const style = getSafeMapStyle(map);
+    if (!style) {
+      console.warn("[WeatherLayer] style not ready, skipping add");
+      return;
+    }
+    
     if (!map.getSource(this.sourceId)) {
       map.addSource(this.sourceId, {
         type: "geojson",

@@ -460,6 +460,13 @@ export default class AircraftLayer implements Layer {
       return;
     }
 
+    // Verificar que el estilo esté listo antes de crear el source
+    const style = getSafeMapStyle(map);
+    if (!style) {
+      console.warn("[AircraftLayer] style not ready, skipping ensureSource");
+      return;
+    }
+
     // El source no existe, crearlo
     const expectedCluster = this.shouldUseClusters();
     const sourceInit: maplibregl.GeoJSONSourceSpecification = {
@@ -575,6 +582,13 @@ export default class AircraftLayer implements Layer {
       return;
     }
     const map = this.map;
+
+    // Verificar que el estilo esté listo antes de manipular layers
+    const style = getSafeMapStyle(map);
+    if (!style) {
+      console.warn("[AircraftLayer] style not ready, skipping ensureLayersAsync");
+      return;
+    }
 
     // Determinar el modo de renderizado actual
     const nextMode = await this.determineRenderModeAsync(false);
@@ -739,6 +753,14 @@ export default class AircraftLayer implements Layer {
       return;
     }
     const map = this.map;
+
+    // Verificar que el estilo esté listo antes de manipular layers
+    const style = getSafeMapStyle(map);
+    if (!style) {
+      console.warn("[AircraftLayer] style not ready, skipping ensureLayers");
+      return;
+    }
+
     const beforeId = this.findBeforeId(map);
 
     if (this.shouldUseClusters()) {
