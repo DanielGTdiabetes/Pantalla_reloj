@@ -10477,6 +10477,20 @@ def get_ships(
         return {"type": "FeatureCollection", "features": [], "stale": True}
 
 
+@app.get("/api/layers/ships")
+def get_ships_layer(request: Request) -> JSONResponse:
+    """Devuelve el FeatureCollection actual de AISStream.
+
+    Si la capa de barcos está deshabilitada, devuelve una colección vacía.
+    """
+    config = config_manager.read()
+    ships_config = config.layers.ships if config.layers else None
+    if not ships_config or not ships_config.enabled:
+        return JSONResponse({"type": "FeatureCollection", "features": [], "stale": True})
+    # Obtener snapshot del servicio AISStream
+    snapshot = ships_service.get_snapshot()
+    return JSONResponse(snapshot)
+
 # Proveedores globales
 _gibs_provider = GIBSProvider()
 _rainviewer_provider = RainViewerProvider()
