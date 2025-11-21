@@ -2316,22 +2316,23 @@ async def test_rainviewer(request: RainViewerTestRequest) -> Dict[str, Any]:
         test_y = 2
         tile_url = provider.get_tile_url(timestamp, test_z, test_x, test_y)
         
-        # Intentar descargar el tile con timeout razonable
+        # CAMBIO: httpx para test
         try:
-            response = requests.head(tile_url, timeout=10, allow_redirects=True)
-            # Si HEAD no está disponible, intentar GET
-            if response.status_code == 405:
-                response = requests.get(tile_url, timeout=10, allow_redirects=True, stream=True)
-                # Leer solo los primeros bytes para verificar que es una imagen
-                if response.status_code == 200:
-                    content_type = response.headers.get("content-type", "").lower()
-                    if "image" not in content_type:
-                        return {
-                            "ok": False,
-                            "status": 200,
-                            "error": "invalid_content_type",
-                            "message": f"Expected image, got {content_type}"
-                        }
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.head(tile_url, follow_redirects=True)
+                # Si HEAD no está disponible, intentar GET
+                if response.status_code == 405:
+                    response = await client.get(tile_url, follow_redirects=True)
+                    if response.status_code == 200:
+                        # Verificar content type
+                        content_type = response.headers.get("content-type", "").lower()
+                        if "image" not in content_type:
+                            return {
+                                "ok": False,
+                                "status": 200,
+                                "error": "invalid_content_type",
+                                "message": f"Expected image, got {content_type}"
+                            }
             
             if response.status_code == 200:
                 return {
@@ -2348,7 +2349,7 @@ async def test_rainviewer(request: RainViewerTestRequest) -> Dict[str, Any]:
                     "error": f"http_{response.status_code}",
                     "message": f"Tile request returned HTTP {response.status_code}"
                 }
-        except requests.RequestException as exc:
+        except httpx.RequestError as exc:
             return {
                 "ok": False,
                 "status": 0,
@@ -2376,7 +2377,9 @@ async def test_xyz(request: XyzTestRequest) -> Dict[str, Any]:
         # Reemplazar placeholders en la URL
         test_url = request.tileUrl.replace("{z}", "2").replace("{x}", "1").replace("{y}", "1")
         
-        response = requests.get(test_url, timeout=5, allow_redirects=True)
+        async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
+            response = await client.get(test_url)
+        
         if response.status_code == 200:
             content_type = response.headers.get("content-type", "").lower()
             if "image" in content_type:
@@ -2396,7 +2399,7 @@ async def test_xyz(request: XyzTestRequest) -> Dict[str, Any]:
                 "status": response.status_code,
                 "error": f"HTTP {response.status_code}"
             }
-    except requests.RequestException as exc:
+    except httpx.RequestError as exc:
         return {
             "ok": False,
             "error": str(exc)
@@ -2852,8 +2855,10 @@ async def set_calendar_ics_url(request: CalendarICSUrlRequest) -> Dict[str, Any]
     MAX_ICS_SIZE = 3 * 1024 * 1024  # 3 MB
     
     try:
-        # Descargar ICS desde URL
-        response = requests.get(request.url, timeout=5, allow_redirects=True)
+        # CAMBIO: Descargar ICS desde URL asíncronamente
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            response = await client.get(request.url)
+        
         if response.status_code != 200:
             return {
                 "ok": False,
@@ -2894,8 +2899,8 @@ async def set_calendar_ics_url(request: CalendarICSUrlRequest) -> Dict[str, Any]
             except OSError:
                 pass
         
-        # Guardar archivo
-        try:
+        # Guardar archivo en thread (operación de disco bloqueante)
+        def save_ics_file():
             with ICS_STORAGE_PATH.open("wb") as handle:
                 handle.write(content)
                 handle.flush()
@@ -2911,6 +2916,9 @@ async def set_calendar_ics_url(request: CalendarICSUrlRequest) -> Dict[str, Any]
                 os.chmod(ICS_STORAGE_PATH, 0o640)
             except OSError:
                 pass
+        
+        try:
+            await asyncio.to_thread(save_ics_file)
         except (OSError, PermissionError) as exc:
             return {
                 "ok": False,
@@ -2918,9 +2926,9 @@ async def set_calendar_ics_url(request: CalendarICSUrlRequest) -> Dict[str, Any]
                 "detail": f"Cannot write ICS file: {str(exc)}"
             }
         
-        # Contar eventos
+        # Contar eventos en thread
         try:
-            events = fetch_ics_calendar_events(path=str(ICS_STORAGE_PATH))
+            events = await asyncio.to_thread(fetch_ics_calendar_events, path=str(ICS_STORAGE_PATH))
             events_count = len(events)
         except Exception:
             events_count = 0
@@ -6363,15 +6371,14 @@ async def test_news_feeds(request: NewsTestFeedsRequest) -> Dict[str, Any]:
         }
         
         try:
-            # Hacer petición con timeout corto (5s máximo)
-            response = requests.get(
-                feed_url,
-                timeout=5,
-                allow_redirects=True,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (compatible; PantallaReloj/1.0)"
-                }
-            )
+            # CAMBIO: Usar httpx asíncrono
+            async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
+                response = await client.get(
+                    feed_url,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (compatible; PantallaReloj/1.0)"
+                    }
+                )
             
             # Verificar status code
             if response.status_code != 200:
@@ -6406,9 +6413,9 @@ async def test_news_feeds(request: NewsTestFeedsRequest) -> Dict[str, Any]:
                 result["error"] = f"Parse error: {str(parse_exc)}"
                 result["reachable"] = True  # El feed es accesible pero no se puede parsear
             
-        except requests.Timeout:
+        except httpx.TimeoutException:
             result["error"] = "timeout"
-        except requests.RequestException as exc:
+        except httpx.RequestError as exc:
             result["error"] = str(exc)
         except Exception as exc:
             result["error"] = f"internal_error: {str(exc)}"
@@ -11168,10 +11175,12 @@ async def get_global_radar_tile(
             tile_url = openweather_provider.get_tile_url(timestamp, z, x, y)
         else:
             tile_url = _rainviewer_provider.get_tile_url(timestamp, z, x, y)
-        response = requests.get(tile_url, timeout=10, stream=True)
-        response.raise_for_status()
 
-        tile_data = response.content
+        # CAMBIO: Usar httpx asíncrono
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(tile_url)
+            response.raise_for_status()
+            tile_data = response.content
 
         # Guardar en caché en disco
         tile_path.write_bytes(tile_data)
@@ -11187,7 +11196,7 @@ async def get_global_radar_tile(
     except OpenWeatherMapApiKeyError as exc:
         logger.warning("OpenWeatherMap radar tile requested but API key missing")
         raise HTTPException(status_code=502, detail="OWM API key missing") from exc
-    except Exception as exc:
+    except (httpx.HTTPStatusError, httpx.RequestError) as exc:
         logger.warning("Failed to fetch global radar tile: %s", exc)
         # Intentar servir desde caché aunque sea stale
         if tile_path.exists():
