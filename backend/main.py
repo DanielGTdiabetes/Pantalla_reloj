@@ -1173,7 +1173,7 @@ def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
     Oculta todos los valores sensibles de secrets.* pero mantiene la estructura
     para que el frontend sepa qué secretos están configurados.
     """
-    payload = config.model_dump(mode="json", exclude_none=True)
+    payload = config.model_dump(mode="json", exclude_none=True, by_alias=True)
     
     # Ocultar todos los secretos pero mantener estructura
     # Solo metadata, nunca valores reales (EXCEPTO maptiler para alinear api_key con ui_map)
@@ -1245,12 +1245,37 @@ def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
         # AISStream
         if "aisstream" in payload.get("secrets", {}):
             secrets_public["aisstream"] = {"api_key": None}
+            # Inject status into secrets block as well
+            stored_key = secret_store.get_secret("aisstream_api_key")
+            secrets_public["aisstream"]["has_api_key"] = bool(stored_key)
+            if stored_key and len(stored_key) >= 4:
+                secrets_public["aisstream"]["api_key_last4"] = stored_key[-4:]
         
         # AISHub
         if "aishub" in payload.get("secrets", {}):
             secrets_public["aishub"] = {"api_key": None}
         
         payload["secrets"] = secrets_public
+
+    # Inyectar estado de secretos en capas (para compatibilidad con frontend y tests)
+    # Global Radar (OpenWeatherMap)
+    if "layers" in payload and "global" in payload["layers"]:
+        radar = payload["layers"]["global"].get("radar", {})
+        stored_owm = secret_store.get_secret("openweathermap_api_key")
+        radar["has_api_key"] = bool(stored_owm)
+        if stored_owm and len(stored_owm) >= 4:
+            radar["api_key_last4"] = stored_owm[-4:]
+        payload["layers"]["global"]["radar"] = radar
+
+    # Ships AISStream
+    if "layers" in payload and "ships" in payload["layers"]:
+        ships = payload["layers"]["ships"]
+        if "aisstream" in ships:
+            stored_ais = secret_store.get_secret("aisstream_api_key")
+            ships["aisstream"]["has_api_key"] = bool(stored_ais)
+            if stored_ais and len(stored_ais) >= 4:
+                ships["aisstream"]["api_key_last4"] = stored_ais[-4:]
+
     
     # Filtrar stored_path del calendar.ics (no exponer rutas internas)
     if "calendar" in payload and isinstance(payload["calendar"], dict):

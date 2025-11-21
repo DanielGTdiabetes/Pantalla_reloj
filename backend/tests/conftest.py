@@ -55,11 +55,13 @@ def app_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[Tup
     config_file.write_text(DEFAULT_CONFIG_PATH.read_text(encoding="utf-8"), encoding="utf-8")
 
     monkeypatch.setenv("PANTALLA_STATE_DIR", str(state_dir))
-    monkeypatch.setenv("PANTALLA_CONFIG_FILE", str(config_file))
+    monkeypatch.setenv("PANTALLA_CONFIG", str(config_file))
     monkeypatch.setenv("PANTALLA_DEFAULT_CONFIG_FILE", str(DEFAULT_CONFIG_PATH))
 
     monkeypatch.setitem(sys.modules, "httpx", _DUMMY_HTTPX)
 
+    if "backend.config_manager" in sys.modules:
+        del sys.modules["backend.config_manager"]
     if "backend.main" in sys.modules:
         del sys.modules["backend.main"]
 

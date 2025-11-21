@@ -317,15 +317,18 @@ def write_config_atomic(config: Dict[str, Any], path: Path | None = None) -> Non
         # Sync file data to disk
         os.fsync(tmp_fd)
         
-        # Open directory fd for fsync
-        dir_fd = os.open(str(config_path.parent), os.O_RDONLY)
-        
-        # Sync directory metadata
-        os.fsync(dir_fd)
-        
-        # Close dir_fd before replace
-        os.close(dir_fd)
-        dir_fd = None
+        # Open directory fd for fsync (not supported on Windows, skip if fails)
+        try:
+            dir_fd = os.open(str(config_path.parent), os.O_RDONLY)
+            # Sync directory metadata
+            os.fsync(dir_fd)
+            # Close dir_fd before replace
+            os.close(dir_fd)
+            dir_fd = None
+        except (OSError, PermissionError) as dir_exc:
+            # Directory fsync not supported on Windows, skip
+            LOGGER.debug("Could not fsync directory (expected on Windows): %s", dir_exc)
+            dir_fd = None
         
         # Close tmp_fd before replace
         os.close(tmp_fd)
@@ -334,8 +337,8 @@ def write_config_atomic(config: Dict[str, Any], path: Path | None = None) -> Non
         # Atomic replace
         os.replace(tmp_path_str, str(config_path))
         
-        # Restore ownership if we had it
-        if uid is not None or gid is not None:
+        # Restore ownership if we had it (Unix only)
+        if (uid is not None or gid is not None) and hasattr(os, 'chown'):
             try:
                 os.chown(
                     config_path,
