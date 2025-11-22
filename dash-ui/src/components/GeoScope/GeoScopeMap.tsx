@@ -2269,7 +2269,7 @@ export default function GeoScopeMap({
             const aemetConfigInit = configAsV2Init.version === 2
               ? configAsV2Init.aemet
               : mergedConfig.aemet;
-            const isAemetEnabled = aemetConfigInit?.enabled && aemetConfigInit?.cap_enabled;
+            const isAemetEnabled = !!(aemetConfigInit?.enabled && aemetConfigInit?.cap_enabled);
             const weatherLayerId: LayerId = "weather";
             const aemetWarningsLayerId: LayerId = "aemet-warnings";
             
