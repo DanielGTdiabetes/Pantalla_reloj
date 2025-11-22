@@ -159,6 +159,7 @@ export default class GlobalRadarLayer implements Layer {
 
         layerDiagnostics.updatePreconditions(layerId, { apiKeysConfigured: true });
 
+        console.log("[GlobalRadarLayer] Initializing MapTiler Weather radar layer");
         await this.initializeMaptilerWeatherLayer(map, maptilerKey);
 
         this.currentTimestamp = this.currentTimestamp ?? Date.now();
@@ -768,9 +769,26 @@ export default class GlobalRadarLayer implements Layer {
     return null;
   }
 
+  /**
+   * Sanitiza una API key para logging (muestra solo primeros caracteres y longitud)
+   */
+  private sanitizeApiKey(apiKey: string): string {
+    if (apiKey.length <= 5) {
+      return "****";
+    }
+    const prefix = apiKey.substring(0, 5);
+    return `${prefix}**** (len=${apiKey.length})`;
+  }
+
   private async initializeMaptilerWeatherLayer(map: maplibregl.Map, apiKey: string): Promise<void> {
     const sourceId = this.maptilerSourceId;
     const layerId = this.maptilerLayerId;
+    const tileUrlTemplate = `https://api.maptiler.com/weather/tiles/v2/precipitation/{z}/{x}/{y}.png?key=${apiKey}`;
+
+    // Logs de diagnóstico antes de la inicialización
+    console.log("[GlobalRadarLayer] MapTiler Weather - using API key:", this.sanitizeApiKey(apiKey));
+    console.log("[GlobalRadarLayer] MapTiler Weather - sourceId:", sourceId, "layerId:", layerId);
+    console.log("[GlobalRadarLayer] MapTiler Weather - tile URL template:", tileUrlTemplate);
 
     const existingSource = map.getSource(sourceId);
     if (existingSource) {
@@ -781,32 +799,90 @@ export default class GlobalRadarLayer implements Layer {
       map.removeSource(sourceId);
     }
 
-    map.addSource(sourceId, {
-      type: "raster",
-      tiles: [
-        `https://api.maptiler.com/weather/tiles/v2/precipitation/{z}/{x}/{y}.png?key=${apiKey}`,
-      ],
-      tileSize: 256,
-      maxzoom: 12,
-    });
+    // Añadir source con manejo de errores
+    try {
+      map.addSource(sourceId, {
+        type: "raster",
+        tiles: [tileUrlTemplate],
+        tileSize: 256,
+        maxzoom: 12,
+      });
+      console.log("[GlobalRadarLayer] MapTiler Weather - addSource OK");
+    } catch (error) {
+      console.error("[GlobalRadarLayer] MapTiler Weather - addSource failed:", error);
+      const diagnosticLayerId: LayerId = "radar";
+      layerDiagnostics.recordError(
+        diagnosticLayerId,
+        new Error(`MapTiler Weather addSource failed: ${String(error)}`),
+        {
+          provider: "maptiler_weather",
+          sourceId,
+        },
+      );
+      throw error; // Re-lanzar para que el catch superior lo maneje
+    }
 
     const beforeId = this.findBeforeId();
 
-    map.addLayer(
-      {
-        id: layerId,
-        type: "raster",
-        source: sourceId,
-        paint: {
-          "raster-opacity": this.opacity,
+    // Añadir layer con manejo de errores
+    try {
+      map.addLayer(
+        {
+          id: layerId,
+          type: "raster",
+          source: sourceId,
+          paint: {
+            "raster-opacity": this.opacity,
+          },
+          layout: {
+            visibility: this.enabled ? "visible" : "none",
+          },
+          minzoom: 0,
+          maxzoom: 18,
         },
-        layout: {
-          visibility: this.enabled ? "visible" : "none",
+        beforeId,
+      );
+      console.log("[GlobalRadarLayer] MapTiler Weather - addLayer OK, opacity:", this.opacity);
+    } catch (error) {
+      console.error("[GlobalRadarLayer] MapTiler Weather - addLayer failed:", error);
+      const diagnosticLayerId: LayerId = "radar";
+      layerDiagnostics.recordError(
+        diagnosticLayerId,
+        new Error(`MapTiler Weather addLayer failed: ${String(error)}`),
+        {
+          provider: "maptiler_weather",
+          layerId,
         },
-        minzoom: 0,
-        maxzoom: 18,
-      },
-      beforeId,
-    );
+      );
+      throw error; // Re-lanzar para que el catch superior lo maneje
+    }
+
+    // Verificación final del estado de la capa
+    const hasSource = map.getSource(sourceId) != null;
+    const hasLayer = map.getLayer(layerId) != null;
+
+    console.log("[GlobalRadarLayer] MapTiler Weather - final state", {
+      sourceId,
+      layerId,
+      hasSource,
+      hasLayer,
+    });
+
+    // Si la capa no se adjuntó correctamente, marcar como error en diagnósticos
+    if (!hasSource || !hasLayer) {
+      const diagnosticLayerId: LayerId = "radar";
+      layerDiagnostics.recordError(
+        diagnosticLayerId,
+        new Error("MapTiler Weather layer not attached to map"),
+        {
+          provider: "maptiler_weather",
+          sourceId,
+          layerId,
+          hasSource,
+          hasLayer,
+        },
+      );
+      throw new Error(`MapTiler Weather layer not attached: hasSource=${hasSource}, hasLayer=${hasLayer}`);
+    }
   }
 }
