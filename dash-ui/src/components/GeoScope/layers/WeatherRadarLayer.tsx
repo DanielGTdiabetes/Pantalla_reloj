@@ -20,11 +20,17 @@ interface WeatherRadarLayerOptions {
 /**
  * Weather radar layer using MapTiler Weather JS (replaces RainViewer legacy tiles).
  * 
+ * Esta capa usa @maptiler/weather RadarLayer para mostrar datos de radar/precipitación globales.
+ * Reemplaza la capa legacy GlobalRadarLayer que usaba RainViewer.
+ * 
  * Features:
  * - Uses @maptiler/weather RadarLayer for precipitation/radar data
  * - Requires MapTiler API key configured globally
  * - Automatically animates radar frames
  * - Positioned below water layer for proper rendering
+ * 
+ * Solo se inicializa cuando config.layers.global.radar.provider === "maptiler_weather" (default).
+ * Para usar RainViewer legacy, configurar provider === "rainviewer" (usa GlobalRadarLayer).
  */
 export default function WeatherRadarLayer({
   enabled = false,
@@ -62,22 +68,24 @@ export default function WeatherRadarLayer({
     }
 
     // Check provider - only initialize if provider is maptiler_weather
+    // Leer configuración desde layers.global.radar (prioridad) o ui_global.radar
     const radarConfigFromLayers = config.layers?.global_?.radar ?? config.layers?.global?.radar;
     const radarConfigFromUI = config.ui_global?.radar;
     
     // Merge configs: layers.global.radar takes precedence, fallback to ui_global.radar with defaults
-    // RadarConfig (from ui_global) allows "aemet" but GlobalRadarLayerConfigV2 doesn't, so we filter it out
+    // Si viene de ui_global.radar, solo aceptar si provider es "maptiler_weather"
     const radarConfig: GlobalRadarLayerConfigV2 | undefined = radarConfigFromLayers ?? 
-      (radarConfigFromUI && (radarConfigFromUI.provider === "maptiler_weather" || radarConfigFromUI.provider === "rainviewer") ? {
+      (radarConfigFromUI && radarConfigFromUI.provider === "maptiler_weather" ? {
         enabled: radarConfigFromUI.enabled ?? false,
-        provider: radarConfigFromUI.provider as "maptiler_weather" | "rainviewer",
-        opacity: 0.7, // Default opacity for RadarConfig
+        provider: "maptiler_weather" as const,
+        opacity: radarConfigFromUI.opacity ?? 0.7,
         animation_speed: 1.0, // Default animation speed
       } : undefined);
     
+    // Default a maptiler_weather si no hay configuración
     const provider = radarConfig?.provider ?? "maptiler_weather";
     if (provider !== "maptiler_weather") {
-      console.log("[WeatherRadarLayer] Provider is not maptiler_weather, skipping");
+      console.log(`[WeatherRadarLayer] Provider is "${provider}", skipping (only maptiler_weather is supported)`);
       return;
     }
 

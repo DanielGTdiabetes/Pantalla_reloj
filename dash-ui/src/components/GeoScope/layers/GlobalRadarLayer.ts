@@ -40,8 +40,12 @@ let warnedLayerError = false;
 /**
  * Capa de radar global que muestra datos de RainViewer sobre el mapa base.
  * 
- * Legacy RainViewer radar (disabled by default).
- * TODO: En una futura versión se integrará la nueva capa de radar usando MapTiler Weather (precipitación/radar).
+ * ⚠️ LEGACY: Esta capa está marcada como legacy y solo se usa cuando el provider es "rainviewer".
+ * El proyecto ahora usa MapTiler Weather (@maptiler/weather) como fuente principal de radar
+ * mediante WeatherRadarLayer.tsx, que usa RadarLayer de @maptiler/weather.
+ * 
+ * Esta capa solo se inicializa cuando config.layers.global.radar.provider === "rainviewer".
+ * Para usar MapTiler Weather, configurar provider === "maptiler_weather" (default).
  * 
  * Características:
  * - Fetch centralizado de frames con cache en memoria
