@@ -226,7 +226,8 @@ export default class GlobalRadarLayer implements Layer {
         layerDiagnostics.recordError(layerId, new Error("No RainViewer frames available"), { provider });
         return;
       }
-      if (!framesInfoRaw.hasFrames) {
+      // TypeScript: después del return anterior, framesInfoRaw no puede ser null
+      if (!framesInfoRaw!.hasFrames) {
         if (!warnedNoFrames) {
           console.warn("[GlobalRadarLayer] no frames available, skipping layer creation");
           warnedNoFrames = true;
@@ -457,7 +458,8 @@ export default class GlobalRadarLayer implements Layer {
       if (!framesInfoRaw) {
         return;
       }
-      if (!framesInfoRaw.hasFrames) {
+      // TypeScript: después del return anterior, framesInfoRaw no puede ser null
+      if (!framesInfoRaw!.hasFrames) {
         return;
       }
 
