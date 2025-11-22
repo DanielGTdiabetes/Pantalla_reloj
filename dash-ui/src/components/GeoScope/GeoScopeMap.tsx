@@ -4375,7 +4375,9 @@ export default function GeoScopeMap({
     };
   }, [config]);
   
-  // useEffect para gestionar frames del radar RainViewer (legacy, solo si provider es "rainviewer")
+  // useEffect para gestionar la configuración del radar
+  // RainViewer está deprecado: si el provider es "rainviewer", se fuerza a "maptiler_weather"
+  // MapTiler Weather se gestiona mediante WeatherRadarLayer.tsx
   useEffect(() => {
     console.log("[GlobalRadarLayer] useEffect enter, checking radar configuration");
     
@@ -4412,12 +4414,19 @@ export default function GeoScopeMap({
     const uiGlobalRadar = configAsV2Radar.version === 2 ? configAsV2Radar.ui_global?.radar : undefined;
   
     // Determinar el provider: prioridad weather_layers > ui_global > layers.global
-    const radarProvider =
+    let providerRaw =
       weatherLayersRadar?.provider ??
       uiGlobalRadar?.provider ??
       globalRadarConfig?.provider ??
       "maptiler_weather";
-  
+
+    // Fuerza MapTiler Weather mientras RainViewer está deprecado
+    let radarProvider = providerRaw;
+    if (providerRaw === "rainviewer") {
+      console.log("[GlobalRadarLayer] (effect) Forcing radar provider to maptiler_weather (RainViewer deprecated)");
+      radarProvider = "maptiler_weather";
+    }
+
     // Prioridad: weather_layers.radar > ui_global.radar > layers.global*.radar
     const isRadarEnabled =
       weatherLayersRadar?.enabled ??
@@ -4447,10 +4456,18 @@ export default function GeoScopeMap({
       provider: radarProvider
     });
 
-    // Solo gestionar frames de RainViewer si el provider es "rainviewer"
-    // Si el provider es "maptiler_weather", WeatherRadarLayer se encarga del radar
-    if (radarProvider !== "rainviewer") {
-      console.log(`[GlobalRadarLayer] Using provider: ${radarProvider} (MapTiler branch)`);
+    // Legacy RainViewer (desactivado por ahora)
+    // Si el provider original era "rainviewer", lo forzamos a "maptiler_weather" arriba
+    // Este bloque desactiva completamente el flujo de RainViewer
+    if (providerRaw === "rainviewer") {
+      console.log("[GlobalRadarLayer] RainViewer prefetch disabled (provider rainviewer ignored in effect)");
+      // NO LLAMAR a fetchRadarFrames aquí
+      // El provider efectivo ahora es maptiler_weather, así que continuamos con la rama MapTiler
+    }
+
+    // Si el provider efectivo es "maptiler_weather", WeatherRadarLayer se encarga del radar
+    if (radarProvider === "maptiler_weather") {
+      console.log("[GlobalRadarLayer] MapTiler Weather selected in effect; skipping RainViewer prefetch");
       if (isRadarEnabled) {
         layerDiagnostics.recordInitializationAttempt("radar");
         layerDiagnostics.setState("radar", "initializing", { provider: radarProvider });
@@ -4470,246 +4487,11 @@ export default function GeoScopeMap({
       return;
     }
 
+    // Si llegamos aquí y el provider no es maptiler_weather ni rainviewer, es desconocido
     if (!isRadarEnabled) {
-      // Si el radar está desactivado, limpiar la capa si existe
-      const globalRadarLayer = globalRadarLayerRef.current;
-      if (globalRadarLayer) {
-        console.log("[GlobalRadarLayer] Disabling radar layer (disabled in config)");
-        globalRadarLayer.update({ enabled: false });
-      } else {
-        console.log("[GlobalRadarLayer] Radar disabled in config, no layer to clean");
-      }
       layerDiagnostics.setState("radar", "disabled", { provider: radarProvider });
       return;
     }
-    
-    // Verificar que la capa exista o pueda ser creada
-    if (!globalRadarLayerRef.current) {
-      console.log("[GlobalRadarLayer] Layer not initialized yet, will be created when frames are available");
-      // La capa se creará cuando haya frames disponibles
-    }
-  
-    // Configuración para fetch de frames
-    const historyMinutes = globalRadarConfig?.history_minutes ?? 90;
-    const frameStep = globalRadarConfig?.frame_step ?? 5;
-    const refreshMinutes = globalRadarConfig?.refresh_minutes ?? 5;
-    const radarOpacityValue =
-      weatherLayersRadar?.opacity ??
-      uiGlobalRadar?.opacity ??
-      globalRadarConfig?.opacity ??
-      0.7;
-
-    layerDiagnostics.recordInitializationAttempt("radar");
-    layerDiagnostics.setState("radar", "initializing", { provider: radarProvider });
-
-    let radarFrames: number[] = [];
-    let radarFrameIndex = 0;
-    let animationTimer: number | null = null;
-  
-    const fetchRadarFrames = async () => {
-      console.log("[GlobalRadarLayer] fetchRadarFrames enter");
-      try {
-        console.log("[GlobalRadarLayer] Fetching frames from /api/rainviewer/frames");
-
-        // Primero verificar health endpoint para confirmar que hay frames disponibles
-        const healthResponse = await fetch("/api/health/full", { cache: "no-store" });
-        const healthData = await healthResponse.json().catch(() => null);
-        const globalRadar = healthData?.global_radar;
-        const hasFrames = globalRadar?.status === "ok" && (globalRadar?.frames_count ?? 0) > 0;
-        
-        console.log("[GlobalRadarLayer] health=", {
-          status: globalRadar?.status,
-          framesCount: globalRadar?.frames_count,
-          hasFrames
-        });
-        
-        if (!hasFrames) {
-          console.warn("[GlobalRadarLayer] Radar not started: status=", globalRadar?.status, "frames=", globalRadar?.frames_count);
-          radarFrames = [];
-          layerDiagnostics.recordError("radar", new Error("No RainViewer frames available"), {
-            provider: radarProvider,
-            status: globalRadar?.status,
-          });
-          return;
-        }
-        
-        console.log("[GlobalRadarLayer] Fetching frames from /api/rainviewer/frames", {
-          historyMinutes,
-          frameStep,
-          healthStatus: globalRadar?.status,
-          healthFramesCount: globalRadar?.frames_count
-        });
-        
-        const frames = await getRainViewerFrames(historyMinutes, frameStep);
-        
-        console.log("[GlobalRadarLayer] Frames received:", {
-          framesCount: frames?.length ?? 0,
-          frames: frames
-        });
-        
-        if (frames && frames.length > 0) {
-          radarFrames = frames;
-          radarFrameIndex = radarFrames.length - 1; // Usar el último frame (más reciente)
-          
-          const globalRadarLayer = globalRadarLayerRef.current;
-          
-          // Si la capa no existe aún, crearla
-          if (!globalRadarLayer) {
-            const map = mapRef.current;
-            if (map && layerRegistryRef.current) {
-              console.log("[GlobalRadarLayer] Creating layer after frames received", {
-                framesCount: radarFrames.length,
-                activeTimestamp: radarFrames[radarFrameIndex]
-              });
-              
-              const newRadarLayer = new GlobalRadarLayer({
-                enabled: true,
-                opacity: radarOpacityValue,
-                currentTimestamp: radarFrames[radarFrameIndex],
-                provider: radarProvider,
-              });
-              layerRegistryRef.current.add(newRadarLayer);
-              globalRadarLayerRef.current = newRadarLayer;
-              console.log("[GlobalRadarLayer] Layer created and added to registry");
-              layerDiagnostics.setState("radar", "ready", { provider: radarProvider });
-              layerDiagnostics.recordDataUpdate("radar", radarFrames.length);
-              return;
-            }
-          }
-
-          if (globalRadarLayer && radarFrames.length > 0) {
-            const activeTimestamp = radarFrames[radarFrameIndex];
-            console.log("[GlobalRadarLayer] Updating layer with frames", {
-              framesCount: radarFrames.length,
-              activeTimestamp,
-              opacity: radarOpacityValue
-            });
-            
-            // Asegurar que el mapa esté listo antes de actualizar
-            const map = mapRef.current;
-            if (map && map.isStyleLoaded()) {
-              const style = getSafeMapStyle(map);
-              if (style) {
-                globalRadarLayer.update({
-                  enabled: true,
-                  currentTimestamp: activeTimestamp,
-                  opacity: radarOpacityValue
-                });
-                console.log("[GlobalRadarLayer] Layer updated successfully");
-                layerDiagnostics.setState("radar", "ready", { provider: radarProvider });
-                layerDiagnostics.recordDataUpdate("radar", radarFrames.length);
-              } else {
-                console.warn("[GlobalRadarLayer] Map style not ready, waiting for styledata");
-                map.once('styledata', () => {
-                  if (globalRadarLayerRef.current && mapRef.current?.isStyleLoaded()) {
-                    globalRadarLayerRef.current.update({
-                      enabled: true,
-                      currentTimestamp: activeTimestamp,
-                      opacity: radarOpacityValue
-                    });
-                  }
-                });
-              }
-            } else if (map) {
-              // Esperar a que el mapa se cargue
-              console.log("[GlobalRadarLayer] Map not ready, waiting for styledata");
-              map.once('styledata', () => {
-                if (globalRadarLayerRef.current && mapRef.current?.isStyleLoaded()) {
-                  globalRadarLayerRef.current.update({ 
-                    enabled: true,
-                    currentTimestamp: activeTimestamp,
-                    opacity: radarOpacityValue
-                  });
-                }
-              });
-            } else {
-              // Si no hay mapa aún, intentar actualizar de todas formas
-              // La capa manejará el caso cuando se añada al mapa
-              globalRadarLayer.update({
-                enabled: true,
-                currentTimestamp: activeTimestamp,
-                opacity: radarOpacityValue
-              });
-            }
-          }
-        } else {
-          console.warn("[GlobalRadarLayer] No frames returned from API");
-          radarFrames = [];
-          layerDiagnostics.recordError("radar", new Error("No RainViewer frames returned"), { provider: radarProvider });
-        }
-      } catch (err) {
-        console.error("[GlobalRadarLayer] Failed to fetch frames:", err);
-        radarFrames = [];
-        layerDiagnostics.recordError("radar", err as Error, { provider: radarProvider });
-      }
-    };
-  
-    const advanceFrame = () => {
-      if (radarFrames.length === 0) {
-        return;
-      }
-  
-      // Avanzar al siguiente frame (circular)
-      radarFrameIndex = (radarFrameIndex + 1) % radarFrames.length;
-      const activeTimestamp = radarFrames[radarFrameIndex];
-      
-      const globalRadarLayer = globalRadarLayerRef.current;
-      if (globalRadarLayer) {
-        console.debug("[RadarLayer] active timestamp:", activeTimestamp);
-        globalRadarLayer.update({ currentTimestamp: activeTimestamp });
-      }
-    };
-  
-    const startAnimation = () => {
-      if (animationTimer !== null || radarFrames.length === 0) {
-        return;
-      }
-  
-      // Calcular intervalo basado en frame_step (minutos entre frames)
-      const intervalMs = (frameStep * 60 * 1000) / Math.max(0.25, 1.0); // 1.0 = velocidad normal
-  
-      const animate = () => {
-        advanceFrame();
-        animationTimer = window.setTimeout(animate, intervalMs);
-      };
-  
-      animate();
-    };
-  
-    const stopAnimation = () => {
-      if (animationTimer !== null) {
-        window.clearTimeout(animationTimer);
-        animationTimer = null;
-      }
-    };
-  
-    // Cargar frames inicialmente
-    void fetchRadarFrames();
-  
-    // Iniciar animación después de un breve delay para que los frames se carguen
-    const startDelay = setTimeout(() => {
-      if (radarFrames.length > 0) {
-        startAnimation();
-      }
-    }, 1000);
-  
-    // Refrescar frames periódicamente
-    const refreshIntervalMs = refreshMinutes * 60 * 1000;
-    const refreshTimer = window.setInterval(() => {
-      void fetchRadarFrames();
-    }, refreshIntervalMs);
-  
-    // Actualizar opacidad si cambia
-    const globalRadarLayer = globalRadarLayerRef.current;
-    if (globalRadarLayer) {
-      globalRadarLayer.update({ opacity: radarOpacityValue });
-    }
-  
-    return () => {
-      stopAnimation();
-      clearTimeout(startDelay);
-      window.clearInterval(refreshTimer);
-    };
   }, [config]);
 
   useEffect(() => {
