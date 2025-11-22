@@ -42,7 +42,7 @@ export const DEFAULT_MAP_CONFIG: MapConfigV2 = {
     apiKey: null,
     key: null,
     style: "vector-bright",
-    styleUrl: "https://api.maptiler.com/maps/streets-v4/style.json",
+    styleUrl: "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A",
   },
   satellite: {
     enabled: false,
@@ -123,8 +123,8 @@ export const DEFAULT_OPENSKY_CONFIG = {
     lomax: 1.5,
   },
   oauth2: {
-    client_id: null,
-    client_secret: null,
+    client_id: "danigt-api-client",
+    client_secret: "Mph0txbYD1udcExVL7OrsLoxDjl3eKbQ",
     token_url:
       "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
     scope: null,
@@ -222,7 +222,17 @@ export const DEFAULT_CONFIG_V2: AppConfigV2 = {
   opensky: DEFAULT_OPENSKY_CONFIG,
   layers: DEFAULT_LAYERS_CONFIG,
   panels: DEFAULT_PANELS_CONFIG,
-  secrets: {},
+  secrets: {
+    aisstream: {
+      api_key: "38dd87bbfef35a1f4dc6133293bed27f0e2c9ff7",
+    },
+    opensky: {
+      oauth2: {
+        client_id: "danigt-api-client",
+        client_secret: "Mph0txbYD1udcExVL7OrsLoxDjl3eKbQ",
+      }
+    }
+  },
   calendar: DEFAULT_CALENDAR_CONFIG,
 };
 

@@ -106,12 +106,12 @@ const sanitizeRenderMode = (
   fallback: FlightsLayerRenderMode,
 ): FlightsLayerRenderMode => {
   if (value === "auto" || value === "symbol" || value === "symbol_custom" || value === "circle") {
-      return value;
-    }
-    if (typeof value === "string") {
-      const normalized = value.trim().toLowerCase();
-      if (normalized === "auto" || normalized === "symbol" || normalized === "symbol_custom" || normalized === "circle") {
-        return normalized as FlightsLayerRenderMode;
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "auto" || normalized === "symbol" || normalized === "symbol_custom" || normalized === "circle") {
+      return normalized as FlightsLayerRenderMode;
     }
   }
   return fallback;
@@ -448,8 +448,8 @@ const mergeMapPreferences = (candidate: unknown): MapPreferences => {
     source.provider === "maptiler"
       ? "maptiler"
       : source.provider === "openstreetmap"
-      ? "openstreetmap"
-      : fallback.provider;
+        ? "openstreetmap"
+        : fallback.provider;
   const key = sanitizeApiKey(source.maptiler_api_key);
   return {
     provider,
@@ -554,11 +554,11 @@ export const createDefaultOpenSky = (): OpenSkyConfig => ({
   oauth2: {
     token_url:
       "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
-    client_id: null,
-    client_secret: null,
+    client_id: "danigt-api-client",
+    client_secret: "Mph0txbYD1udcExVL7OrsLoxDjl3eKbQ",
     scope: null,
-    has_credentials: false,
-    client_id_last4: null,
+    has_credentials: true,
+    client_id_last4: "ient",
   },
 });
 
@@ -674,9 +674,9 @@ export const DEFAULT_CONFIG: AppConfig = {
       },
       aisstream: {
         ws_url: "wss://stream.aisstream.io/v0/stream",
-        api_key: null,
-        has_api_key: false,
-        api_key_last4: null,
+        api_key: "38dd87bbfef35a1f4dc6133293bed27f0e2c9ff7",
+        has_api_key: true,
+        api_key_last4: "9ff7",
       },
       aishub: {
         base_url: "https://www.aishub.net/api",
@@ -784,9 +784,9 @@ const mergeHarvest = (candidate: unknown): HarvestConfig => {
   const source = (candidate as Partial<HarvestConfig>) ?? {};
   const customItems = Array.isArray(source.custom_items)
     ? source.custom_items.filter(
-        (item): item is Record<string, string> =>
-          typeof item === "object" && item !== null && !Array.isArray(item),
-      )
+      (item): item is Record<string, string> =>
+        typeof item === "object" && item !== null && !Array.isArray(item),
+    )
     : fallback.custom_items;
   return {
     enabled: toBoolean(source.enabled, fallback.enabled),
@@ -1142,7 +1142,7 @@ const mergeGlobalSatelliteLayer = (candidate: unknown): GlobalSatelliteLayerConf
   const globalFallback = DEFAULT_CONFIG.layers.global ?? createDefaultGlobalLayers();
   const fallback = globalFallback.satellite;
   const source = (candidate as Partial<GlobalSatelliteLayerConfig>) ?? {};
-  
+
   return {
     enabled: toBoolean(source.enabled, fallback.enabled),
     provider: "gibs", // Solo un proveedor por ahora
@@ -1237,14 +1237,14 @@ export const withConfigDefaults = (payload?: Partial<AppConfig>): AppConfig => {
   const safeTimezone = typeof displayTimezone === "string" && displayTimezone.trim()
     ? displayTimezone.trim()
     : DEFAULT_CONFIG.display.timezone;
-  
+
   const displayModuleCycle = display?.module_cycle_seconds;
   const safeModuleCycle = clampNumber(
     Math.round(toNumber(displayModuleCycle, DEFAULT_CONFIG.display.module_cycle_seconds)),
     5,
     600,
   );
-  
+
   return {
     display: {
       timezone: safeTimezone,
