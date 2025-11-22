@@ -217,8 +217,8 @@ export default class GlobalRadarLayer implements Layer {
       }
 
       // Paso 3: Obtener frames disponibles (con cache)
-      const framesInfo = await this.fetchFramesOnce();
-      if (!framesInfo) {
+      const framesInfoRaw = await this.fetchFramesOnce();
+      if (!framesInfoRaw) {
         if (!warnedNoFrames) {
           console.warn("[GlobalRadarLayer] no frames available, skipping layer creation");
           warnedNoFrames = true;
@@ -226,7 +226,7 @@ export default class GlobalRadarLayer implements Layer {
         layerDiagnostics.recordError(layerId, new Error("No RainViewer frames available"), { provider });
         return;
       }
-      if (!framesInfo.hasFrames) {
+      if (!framesInfoRaw.hasFrames) {
         if (!warnedNoFrames) {
           console.warn("[GlobalRadarLayer] no frames available, skipping layer creation");
           warnedNoFrames = true;
@@ -235,7 +235,10 @@ export default class GlobalRadarLayer implements Layer {
         return;
       }
 
-      // TypeScript: después de las verificaciones anteriores, framesInfo no puede ser null y hasFrames es true
+      // TypeScript: después de las verificaciones anteriores, framesInfoRaw no puede ser null y hasFrames es true
+      // Creamos una variable con tipo explícito para ayudar al narrowing
+      const framesInfo: FramesInfo = framesInfoRaw;
+
       // Paso 4: Crear source y layer
       await this.ensureSource(framesInfo);
       await this.ensureLayer(framesInfo);
@@ -450,15 +453,18 @@ export default class GlobalRadarLayer implements Layer {
         return;
       }
 
-      const framesInfo = await this.fetchFramesOnce();
-      if (!framesInfo) {
+      const framesInfoRaw = await this.fetchFramesOnce();
+      if (!framesInfoRaw) {
         return;
       }
-      if (!framesInfo.hasFrames) {
+      if (!framesInfoRaw.hasFrames) {
         return;
       }
 
-      // TypeScript: después de las verificaciones anteriores, framesInfo no puede ser null y hasFrames es true
+      // TypeScript: después de las verificaciones anteriores, framesInfoRaw no puede ser null y hasFrames es true
+      // Creamos una variable con tipo explícito para ayudar al narrowing
+      const framesInfo: FramesInfo = framesInfoRaw;
+
       await this.ensureSource(framesInfo);
       await this.ensureLayer(framesInfo);
     } catch (error) {
