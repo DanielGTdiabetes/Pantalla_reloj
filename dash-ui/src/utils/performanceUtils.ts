@@ -72,7 +72,7 @@ export const useAnimationFrame = (callback: (deltaTime: number) => void) => {
   useEffect(() => {
     const animate = (time: number) => {
       const prevTime = previousTimeRef.current;
-      if (prevTime !== undefined) {
+      if (prevTime !== undefined && typeof prevTime === 'number') {
         const deltaTime = time - prevTime;
         callback(deltaTime);
       }

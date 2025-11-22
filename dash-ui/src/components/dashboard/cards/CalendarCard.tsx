@@ -55,7 +55,9 @@ const getCountdown = (startTime: string | null | undefined, timezone: string): s
   const now = dayjs().tz(timezone);
   const start = dayjs(startTime).tz(timezone);
   // Calcular diferencia en minutos usando valueOf()
-  const diffMs = start.valueOf() - now.valueOf();
+  const startMs = Number(start.valueOf());
+  const nowMs = Number(now.valueOf());
+  const diffMs = startMs - nowMs;
   const diff = Math.round(diffMs / (60 * 1000));
   
   if (diff < 0) return null; // Ya pasó
