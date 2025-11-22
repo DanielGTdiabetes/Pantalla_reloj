@@ -142,7 +142,14 @@ export default function MapHybrid({
           beforeId
         );
       } else {
-        map.setPaintProperty(rasterLayerId, "raster-opacity", opacity);
+        const style = getSafeMapStyle(map);
+        if (style) {
+          try {
+            map.setPaintProperty(rasterLayerId, "raster-opacity", opacity);
+          } catch (e) {
+            console.warn("[MapHybrid] paint skipped:", e);
+          }
+        }
       }
 
       if (labelsOverlay.enabled && labelsOverlay.style_url) {
@@ -210,10 +217,16 @@ export default function MapHybrid({
       return;
     }
 
+    const style = getSafeMapStyle(map);
+    if (!style) {
+      console.warn("[MapHybrid] Style not ready, skipping");
+      return;
+    }
+
     try {
       map.setPaintProperty(rasterLayerId, "raster-opacity", opacity);
     } catch (error) {
-      console.warn("[MapHybrid] Error actualizando opacidad:", error);
+      console.warn("[MapHybrid] paint skipped:", error);
     }
   }, [opacity, map, enabled]);
 

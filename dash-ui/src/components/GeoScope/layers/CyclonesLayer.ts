@@ -3,6 +3,7 @@ import type { FeatureCollection } from "geojson";
 
 import type { Layer } from "./LayerRegistry";
 import { withSafeMapStyle } from "../../../lib/map/utils/safeMapOperations";
+import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
 
 interface CyclonesLayerOptions {
   enabled?: boolean;
@@ -93,9 +94,18 @@ export default class CyclonesLayer implements Layer {
 
   private applyVisibility() {
     if (!this.map) return;
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[CyclonesLayer] Style not ready, skipping");
+      return;
+    }
     const visibility = this.enabled ? "visible" : "none";
     if (this.map.getLayer(this.id)) {
-      this.map.setLayoutProperty(this.id, "visibility", visibility);
+      try {
+        this.map.setLayoutProperty(this.id, "visibility", visibility);
+      } catch (e) {
+        console.warn("[CyclonesLayer] layout skipped:", e);
+      }
     }
   }
 }

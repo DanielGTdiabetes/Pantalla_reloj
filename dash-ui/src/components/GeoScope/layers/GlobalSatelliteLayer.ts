@@ -394,19 +394,37 @@ export default class GlobalSatelliteLayer implements Layer {
 
   private applyVisibility(): void {
     if (!this.map || !this.map.getLayer(this.id)) return;
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[GlobalSatelliteLayer] Style not ready, skipping");
+      return;
+    }
     
-    // La capa es visible si está habilitada y tiene tileUrl o timestamp
-    if (this.enabled && (this.tileUrl || this.currentTimestamp)) {
-      this.map.setLayoutProperty(this.id, "visibility", "visible");
-    } else {
-      this.map.setLayoutProperty(this.id, "visibility", "none");
+    try {
+      // La capa es visible si está habilitada y tiene tileUrl o timestamp
+      if (this.enabled && (this.tileUrl || this.currentTimestamp)) {
+        this.map.setLayoutProperty(this.id, "visibility", "visible");
+      } else {
+        this.map.setLayoutProperty(this.id, "visibility", "none");
+      }
+    } catch (e) {
+      console.warn("[GlobalSatelliteLayer] layout skipped:", e);
     }
   }
 
   private applyOpacity(): void {
     if (!this.map || !this.map.getLayer(this.id)) return;
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[GlobalSatelliteLayer] Style not ready, skipping");
+      return;
+    }
     
-    this.map.setPaintProperty(this.id, "raster-opacity", this.opacity);
+    try {
+      this.map.setPaintProperty(this.id, "raster-opacity", this.opacity);
+    } catch (e) {
+      console.warn("[GlobalSatelliteLayer] paint skipped:", e);
+    }
   }
 }
 

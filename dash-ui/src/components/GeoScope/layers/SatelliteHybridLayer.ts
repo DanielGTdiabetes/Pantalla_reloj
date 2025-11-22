@@ -116,11 +116,16 @@ export default class SatelliteHybridLayer implements Layer {
     if (!this.map) {
       return;
     }
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[SatelliteHybridLayer] Style not ready, skipping");
+      return;
+    }
     if (this.map.getLayer(this.rasterLayerId)) {
       try {
         this.map.setPaintProperty(this.rasterLayerId, "raster-opacity", this.opacity);
       } catch (error) {
-        console.warn("[SatelliteHybrid] No se pudo actualizar la opacidad del raster", error);
+        console.warn("[SatelliteHybridLayer] paint skipped:", error);
       }
     }
   }
@@ -245,7 +250,14 @@ export default class SatelliteHybridLayer implements Layer {
         beforeId,
       );
     } else {
-      map.setPaintProperty(this.rasterLayerId, "raster-opacity", this.opacity);
+      const style = getSafeMapStyle(map);
+      if (style) {
+        try {
+          map.setPaintProperty(this.rasterLayerId, "raster-opacity", this.opacity);
+        } catch (e) {
+          console.warn("[SatelliteHybridLayer] paint skipped:", e);
+        }
+      }
     }
   }
 
