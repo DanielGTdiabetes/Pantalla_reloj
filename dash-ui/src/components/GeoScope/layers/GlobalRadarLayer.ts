@@ -227,9 +227,13 @@ export default class GlobalRadarLayer implements Layer {
         return;
       }
 
+      // Type guard: después del return anterior, framesInfo no puede ser null
+      // y hasFrames es true
+      const validFramesInfo: FramesInfo = framesInfo;
+
       // Paso 4: Crear source y layer
-      await this.ensureSource(framesInfo);
-      await this.ensureLayer(framesInfo);
+      await this.ensureSource(validFramesInfo);
+      await this.ensureLayer(validFramesInfo);
 
       this.registeredInRegistry = true;
 
@@ -237,7 +241,7 @@ export default class GlobalRadarLayer implements Layer {
       warnedStyleNotReady = false;
       warnedNoFrames = false;
       layerDiagnostics.setState(layerId, "ready", { provider });
-      layerDiagnostics.recordDataUpdate(layerId, framesInfo.frames.length);
+      layerDiagnostics.recordDataUpdate(layerId, validFramesInfo.frames.length);
     } catch (error) {
       console.warn("[GlobalRadarLayer] error during add():", error);
       layerDiagnostics.recordError(layerId, error as Error, { provider });
@@ -446,8 +450,12 @@ export default class GlobalRadarLayer implements Layer {
         return;
       }
 
-      await this.ensureSource(framesInfo);
-      await this.ensureLayer(framesInfo);
+      // Type guard: después del return anterior, framesInfo no puede ser null
+      // y hasFrames es true
+      const validFramesInfo: FramesInfo = framesInfo;
+
+      await this.ensureSource(validFramesInfo);
+      await this.ensureLayer(validFramesInfo);
     } catch (error) {
       console.warn("[GlobalRadarLayer] error during reinitialize():", error);
     }
