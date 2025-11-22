@@ -11276,21 +11276,38 @@ async def get_global_radar_tile(
     except OpenWeatherMapApiKeyError as exc:
         logger.warning("OpenWeatherMap radar tile requested but API key missing")
         raise HTTPException(status_code=502, detail="OWM API key missing") from exc
+
     except (httpx.HTTPStatusError, httpx.RequestError) as exc:
         logger.warning("Failed to fetch global radar tile: %s", exc)
-        # Intentar servir desde caché aunque sea stale
-        if tile_path.exists():
-            tile_data = tile_path.read_bytes()
-            return Response(
-                content=tile_data,
-                media_type="image/png",
-                headers={
-                    "Cache-Control": "public, max-age=180",
-                    "ETag": f'"{timestamp}_{z}_{x}_{y}"',
-                    "X-Stale": "true"
-                }
-            )
-        raise HTTPException(status_code=500, detail="Failed to fetch tile")
+
+        # Intentar extraer el status original si existe
+        status = 502
+        try:
+            resp = getattr(exc, "response", None)
+            if resp is not None and hasattr(resp, "status_code"):
+                status = resp.status_code
+        except Exception:
+            pass
+
+        # Si es un 400/404 del proveedor, lo tratamos como tile no disponible
+        if status in (400, 404):
+            raise HTTPException(
+                status_code=404,
+                detail="Global radar tile_not_available"
+            ) from exc
+
+        # Para el resto, error de upstream
+        raise HTTPException(
+            status_code=502,
+            detail="Global radar upstream error"
+        ) from exc
+
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Unexpected error fetching global radar tile: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail="Global radar internal error"
+        ) from exc
 
 
 def sign_maptiler_urls(cfg: AppConfigV2) -> AppConfigV2:
