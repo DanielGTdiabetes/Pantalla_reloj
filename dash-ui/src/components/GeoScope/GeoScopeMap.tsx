@@ -2585,7 +2585,7 @@ export default function GeoScopeMap({
           
           // No lanzar el error - permitir que el mapa continúe funcionando sin algunas capas
         }
-      });
+      };
 
       setupResizeObserver(host);
 
