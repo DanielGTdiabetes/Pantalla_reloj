@@ -25,6 +25,35 @@ _FRAMES_CACHE: Dict[str, Any] = {
     "ttl": 120.0,       # segundos
 }
 
+# Flag para rastrear si RainViewer está devolviendo 403 (Forbidden)
+_RAINVIEWER_403_DETECTED: Dict[str, Any] = {
+    "detected": False,
+    "last_detection_ts": 0.0,
+    "ttl": 300.0,  # Considerar 403 como válido durante 5 minutos
+}
+
+
+def _mark_rainviewer_403() -> None:
+    """Marca que se detectó un 403 de RainViewer."""
+    _RAINVIEWER_403_DETECTED["detected"] = True
+    _RAINVIEWER_403_DETECTED["last_detection_ts"] = time.time()
+
+
+def is_rainviewer_down() -> bool:
+    """Verifica si RainViewer está marcado como down (403 detectado recientemente)."""
+    if not _RAINVIEWER_403_DETECTED.get("detected", False):
+        return False
+    
+    last_ts = float(_RAINVIEWER_403_DETECTED.get("last_detection_ts", 0.0))
+    ttl = float(_RAINVIEWER_403_DETECTED.get("ttl", 300.0))
+    
+    # Si el 403 fue detectado hace más de ttl segundos, considerar que ya no está down
+    if (time.time() - last_ts) > ttl:
+        _RAINVIEWER_403_DETECTED["detected"] = False
+        return False
+    
+    return True
+
 
 def _get_cached_frames(
     history_minutes: int = 90,
@@ -116,16 +145,63 @@ async def get_rainviewer_tile(
         tile_url = _rainviewer_provider.get_tile_url(timestamp, z, x, y, path=path)
 
         max_retries = 2
+        last_status_code = None
         for attempt in range(max_retries + 1):
             try:
                 response = requests.get(tile_url, timeout=10, stream=True)
+                last_status_code = response.status_code
                 response.raise_for_status()
                 content = response.content
                 return Response(content=content, media_type="image/png")
+            except requests.HTTPError as e:
+                # Detectar específicamente errores 403 (Forbidden)
+                if response.status_code == 403:
+                    logger.warning(
+                        "[RainViewer] Tile failed with 403 (ts=%s, z=%s, x=%s, y=%s, url=%s), marking provider as down",
+                        timestamp,
+                        z,
+                        x,
+                        y,
+                        tile_url,
+                    )
+                    # Marcar que RainViewer está devolviendo 403
+                    _mark_rainviewer_403()
+                    # Devolver JSON controlado en lugar de lanzar excepción sin capturar
+                    from fastapi.responses import JSONResponse
+                    return JSONResponse(
+                        status_code=404,
+                        content={"detail": "rainviewer_tile_forbidden"}
+                    )
+                # Para otros errores HTTP, reintentar si quedan intentos
+                if attempt < max_retries:
+                    logger.warning(
+                        "[RainViewer] Tile download attempt %d failed (ts=%s, z=%s, x=%s, y=%s, url=%s, status=%s): %s, retrying...",
+                        attempt + 1,
+                        timestamp,
+                        z,
+                        x,
+                        y,
+                        tile_url,
+                        response.status_code,
+                        e,
+                    )
+                    continue
+                logger.warning(
+                    "[RainViewer] Tile failed after %d attempts (ts=%s, z=%s, x=%s, y=%s, url=%s, status=%s): %s",
+                    max_retries + 1,
+                    timestamp,
+                    z,
+                    x,
+                    y,
+                    tile_url,
+                    response.status_code,
+                    e,
+                )
+                raise HTTPException(status_code=404, detail="Tile not available")
             except requests.RequestException as e:
                 if attempt < max_retries:
                     logger.warning(
-                        "RainViewer tile download attempt %d failed (ts=%s, z=%s, x=%s, y=%s, url=%s): %s, retrying...",
+                        "[RainViewer] Tile download attempt %d failed (ts=%s, z=%s, x=%s, y=%s, url=%s): %s, retrying...",
                         attempt + 1,
                         timestamp,
                         z,
@@ -136,7 +212,7 @@ async def get_rainviewer_tile(
                     )
                     continue
                 logger.warning(
-                    "RainViewer tile failed after %d attempts (ts=%s, z=%s, x=%s, y=%s, url=%s): %s",
+                    "[RainViewer] Tile failed after %d attempts (ts=%s, z=%s, x=%s, y=%s, url=%s): %s",
                     max_retries + 1,
                     timestamp,
                     z,

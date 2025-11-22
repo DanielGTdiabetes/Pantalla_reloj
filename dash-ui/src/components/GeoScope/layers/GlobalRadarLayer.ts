@@ -40,6 +40,9 @@ let warnedLayerError = false;
 /**
  * Capa de radar global que muestra datos de RainViewer sobre el mapa base.
  * 
+ * Legacy RainViewer radar (disabled by default).
+ * TODO: En una futura versión se integrará la nueva capa de radar usando MapTiler Weather (precipitación/radar).
+ * 
  * Características:
  * - Fetch centralizado de frames con cache en memoria
  * - Inicialización robusta con waitForMapReady
@@ -57,6 +60,7 @@ export default class GlobalRadarLayer implements Layer {
   private map?: maplibregl.Map;
   private readonly sourceId = "geoscope-global-radar-source";
   private registeredInRegistry: boolean = false;
+  private static warnedDisabled = false;
 
   constructor(options: GlobalRadarLayerOptions = {}) {
     this.enabled = options.enabled ?? false;
@@ -67,14 +71,23 @@ export default class GlobalRadarLayer implements Layer {
 
   /**
    * Añade la capa al mapa siguiendo una secuencia limpia:
-   * 1. Espera a que el mapa esté listo (waitForMapReady)
-   * 2. Verifica que el estilo esté cargado
-   * 3. Obtiene frames disponibles
-   * 4. Crea source y layer si hay frames
+   * 1. Verifica que enabled=true (si no, aborta sin hacer nada)
+   * 2. Espera a que el mapa esté listo (waitForMapReady)
+   * 3. Verifica que el estilo esté cargado
+   * 4. Obtiene frames disponibles
+   * 5. Crea source y layer si hay frames
    */
   async add(map: maplibregl.Map): Promise<void> {
     this.map = map;
-    this.enabled = this.enabled ?? true; // Respetar enabled inicial
+
+    // Si está deshabilitado, no hacer nada
+    if (!this.enabled) {
+      if (!GlobalRadarLayer.warnedDisabled) {
+        console.log("[GlobalRadarLayer] Radar disabled or unsupported provider, skipping initialization");
+        GlobalRadarLayer.warnedDisabled = true;
+      }
+      return;
+    }
 
     try {
       // Paso 1: Esperar a que el mapa esté completamente listo

@@ -3551,22 +3551,51 @@ def _health_payload_full_helper() -> Dict[str, Any]:
                     global_radar_status = "degraded"
                     global_radar_last_error = str(exc)
         else:
+            # Verificar si RainViewer está marcado como down (403 detectado)
             try:
-                frames = _rainviewer_provider.get_available_frames(
-                    history_minutes=radar_history_minutes,
-                    frame_step=radar_frame_step
-                )
-                if frames:
-                    global_radar_status = "ok"
-                    global_radar_frames_count = len(frames)
-                    latest_frame = frames[-1]
-                    timestamp = latest_frame.get("timestamp")
-                    if isinstance(timestamp, (int, float)):
-                        global_radar_last_fetch = datetime.fromtimestamp(
-                            int(timestamp), tz=timezone.utc
-                        ).isoformat()
+                from .routes import rainviewer
+                if rainviewer.is_rainviewer_down():
+                    global_radar_status = "down"
+                    global_radar_last_error = "RainViewer tiles returning 403 (Forbidden)"
+                    logger.debug("[health] RainViewer marked as down due to 403 detection")
                 else:
+                    frames = _rainviewer_provider.get_available_frames(
+                        history_minutes=radar_history_minutes,
+                        frame_step=radar_frame_step
+                    )
+                    if frames:
+                        global_radar_status = "ok"
+                        global_radar_frames_count = len(frames)
+                        latest_frame = frames[-1]
+                        timestamp = latest_frame.get("timestamp")
+                        if isinstance(timestamp, (int, float)):
+                            global_radar_last_fetch = datetime.fromtimestamp(
+                                int(timestamp), tz=timezone.utc
+                            ).isoformat()
+                    else:
+                        global_radar_status = "degraded"
+            except (ImportError, AttributeError):
+                # Si no se puede importar o la función no existe, intentar obtener frames normalmente
+                try:
+                    frames = _rainviewer_provider.get_available_frames(
+                        history_minutes=radar_history_minutes,
+                        frame_step=radar_frame_step
+                    )
+                    if frames:
+                        global_radar_status = "ok"
+                        global_radar_frames_count = len(frames)
+                        latest_frame = frames[-1]
+                        timestamp = latest_frame.get("timestamp")
+                        if isinstance(timestamp, (int, float)):
+                            global_radar_last_fetch = datetime.fromtimestamp(
+                                int(timestamp), tz=timezone.utc
+                            ).isoformat()
+                    else:
+                        global_radar_status = "degraded"
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Failed to get global radar status: %s", exc)
                     global_radar_status = "degraded"
+                    global_radar_last_error = str(exc)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Failed to get global radar status: %s", exc)
                 global_radar_status = "degraded"

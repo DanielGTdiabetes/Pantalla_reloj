@@ -2085,16 +2085,24 @@ export default function GeoScopeMap({
               uiGlobalRadarInit?.opacity ??
               globalRadarConfigInit?.opacity ??
               0.7;
+            // Verificar provider: GlobalRadarLayer solo soporta "rainviewer"
+            const radarProviderInit =
+              weatherLayersRadarInit?.provider ??
+              uiGlobalRadarInit?.provider ??
+              globalRadarConfigInit?.provider ??
+              "rainviewer";
 
             console.log("[GlobalRadarLayer] enter init, cfg=", {
               globalRadarConfig: globalRadarConfigInit,
               weatherLayersRadar: weatherLayersRadarInit,
               uiGlobalRadar: uiGlobalRadarInit,
               isEnabled: isRadarEnabledInit,
-              opacity: radarOpacityInit
+              opacity: radarOpacityInit,
+              provider: radarProviderInit
             });
 
-            if (isRadarEnabledInit) {
+            // Solo inicializar si está habilitado Y el provider es "rainviewer"
+            if (isRadarEnabledInit && radarProviderInit === "rainviewer") {
               // Función helper para inicializar la capa con retry logic
               const initializeRadarLayer = async (attempt: number = 1, maxAttempts: number = 3): Promise<void> => {
                 const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 4000); // 1s, 2s, 4s
