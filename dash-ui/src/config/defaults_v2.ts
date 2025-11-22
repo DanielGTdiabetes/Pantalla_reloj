@@ -155,6 +155,7 @@ export const ROTATION_PANEL_IDS = [
   "astronomy",
   "santoral",
   "calendar",
+  "harvest",
   "news",
   "historicalEvents",
 ] as const;
@@ -173,6 +174,20 @@ const ROTATION_LEGACY_MAP: Record<string, string> = {
   news: "news",
   historicalevents: "historicalEvents",
   historicalEvents: "historicalEvents",
+  // Variaciones en español (mapeo a harvest)
+  harvest: "harvest",
+  cosecha: "harvest",
+  cosechas: "harvest",
+  hortaliza: "harvest",
+  hortalizas: "harvest",
+  verdura: "harvest",
+  verduras: "harvest",
+  fruta: "harvest",
+  frutas: "harvest",
+  siembra: "harvest",
+  siembras: "harvest",
+  cultivo: "harvest",
+  cultivos: "harvest",
 } as const;
 
 const ROTATION_DEFAULT_ORDER = [...ROTATION_PANEL_IDS];
@@ -197,6 +212,9 @@ export const DEFAULT_PANELS_CONFIG: PanelsConfigV2 = {
   calendar: {
     enabled: false,
     provider: "google",
+  },
+  harvest: {
+    enabled: true,
   },
   historicalEvents: {
     enabled: true,
