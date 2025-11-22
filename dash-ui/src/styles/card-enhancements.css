@@ -421,13 +421,29 @@
    EPHEMERIDES CARD ENHANCED
    ============================================ */
 .ephemerides-card-enhanced {
-  display: grid;
-  grid-template-rows: auto 1fr;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-md);
   max-height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   min-height: 0;
+}
+
+.ephemerides-card-enhanced > .ephemerides-card__header {
+  flex-shrink: 0;
+}
+
+.ephemerides-card-enhanced > .moon-phase {
+  flex-shrink: 0;
+}
+
+.ephemerides-card-enhanced > .sun-timeline {
+  margin-top: auto;
+  flex-shrink: 0;
+}
+
+.ephemerides-card-enhanced > .astro-events {
+  display: none;
 }
 
 .moon-phase {
@@ -439,6 +455,7 @@
   border-radius: var(--radius-md);
   background: var(--theme-card-bg);
   border: var(--border-width-thin) solid var(--theme-border);
+  flex-shrink: 0;
 }
 
 .moon-phase-visual {
@@ -548,6 +565,8 @@
   display: grid;
   grid-template-rows: auto 1fr;
   gap: var(--space-md);
+  max-height: 100%;
+  overflow: hidden;
 }
 
 .timeline {
@@ -556,6 +575,29 @@
   gap: var(--space-md);
   position: relative;
   padding-left: var(--space-lg);
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  max-height: 100%;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(104, 162, 255, 0.3) transparent;
+}
+
+.timeline::-webkit-scrollbar {
+  width: 6px;
+}
+
+.timeline::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.timeline::-webkit-scrollbar-thumb {
+  background: rgba(104, 162, 255, 0.3);
+  border-radius: 3px;
+}
+
+.timeline::-webkit-scrollbar-thumb:hover {
+  background: rgba(104, 162, 255, 0.5);
 }
 
 .timeline::before {
