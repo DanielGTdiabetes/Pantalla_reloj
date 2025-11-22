@@ -1047,19 +1047,39 @@ export const ConfigPage: React.FC = () => {
       const layersPayload = config.layers ?? {};
       const globalPayload = layersPayload.global ?? layersPayload.global_ ?? {};
       
+      // Asegurar que el radar tiene todos los campos necesarios
+      const radarConfig = globalPayload.radar ?? {};
+      const sanitizedRadar = {
+        enabled: radarConfig.enabled ?? false,
+        provider: radarConfig.provider || "maptiler_weather",
+        opacity: radarConfig.opacity ?? 0.7,
+        animation_speed: radarConfig.animation_speed ?? 1.0,
+        ...(radarConfig.layer_type && { layer_type: radarConfig.layer_type }),
+        ...(radarConfig.refresh_minutes && { refresh_minutes: radarConfig.refresh_minutes }),
+        ...(radarConfig.history_minutes && { history_minutes: radarConfig.history_minutes }),
+        ...(radarConfig.frame_step && { frame_step: radarConfig.frame_step }),
+      };
+      
+      const sanitizedGlobalPayload = {
+        ...globalPayload,
+        radar: sanitizedRadar,
+      };
+      
       // Asegurar que layers existe
       if (!config.layers) {
         await saveConfigV2({
           ...config,
           layers: {
-            global: globalPayload,
+            global: sanitizedGlobalPayload,
+            global_: sanitizedGlobalPayload, // Mantener compatibilidad con backend
           },
         });
       } else {
-        // Actualizar solo layers.global
+        // Actualizar solo layers.global y layers.global_
         await saveConfigGroup("layers", {
           ...layersPayload,
-          global: globalPayload,
+          global: sanitizedGlobalPayload,
+          global_: sanitizedGlobalPayload, // Mantener compatibilidad con backend
         });
       }
       
@@ -1593,6 +1613,150 @@ export const ConfigPage: React.FC = () => {
                 )}
               </>
             )}
+          </div>
+        </div>
+
+        {/* Tarjeta: Radar global (MapTiler Weather) */}
+        <div className="config-card">
+          <h2>Radar Global (MapTiler Weather)</h2>
+          
+          <div className="config-form-fields">
+            <div className="config-field">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={config.layers?.global?.radar?.enabled ?? config.layers?.global_?.radar?.enabled ?? false}
+                  onChange={(e) => {
+                    const currentLayers = config.layers ?? {};
+                    const currentGlobal = currentLayers.global ?? currentLayers.global_ ?? {};
+                    const currentRadar = currentGlobal.radar ?? {};
+                    
+                    setConfig({
+                      ...config,
+                      layers: {
+                        ...currentLayers,
+                        global: {
+                          ...currentGlobal,
+                          radar: {
+                            ...currentRadar,
+                            enabled: e.target.checked,
+                            provider: currentRadar.provider || "maptiler_weather",
+                            opacity: currentRadar.opacity ?? 0.7,
+                            animation_speed: currentRadar.animation_speed ?? 1.0,
+                          },
+                        },
+                      },
+                    });
+                  }}
+                />
+                Habilitar Radar Global
+              </label>
+              <div className="config-field__hint">
+                Muestra radar de lluvia global usando los datos de MapTiler Weather
+              </div>
+            </div>
+            
+            {(config.layers?.global?.radar?.enabled || config.layers?.global_?.radar?.enabled) && (
+              <>
+                <div className="config-field">
+                  <label>Proveedor</label>
+                  <select value="maptiler_weather" disabled>
+                    <option value="maptiler_weather">MapTiler Weather</option>
+                  </select>
+                  <div className="config-field__hint">
+                    MapTiler Weather proporciona datos de radar/precipitación globales con animación
+                  </div>
+                </div>
+                
+                <div className="config-field">
+                  <label>
+                    Opacidad radar: {((config.layers?.global?.radar?.opacity ?? config.layers?.global_?.radar?.opacity ?? 0.7) * 100).toFixed(0)}%
+                  </label>
+                  <input
+                    type="range"
+                    min="0.2"
+                    max="1.0"
+                    step="0.05"
+                    value={config.layers?.global?.radar?.opacity ?? config.layers?.global_?.radar?.opacity ?? 0.7}
+                    onChange={(e) => {
+                      const currentLayers = config.layers ?? {};
+                      const currentGlobal = currentLayers.global ?? currentLayers.global_ ?? {};
+                      const currentRadar = currentGlobal.radar ?? {};
+                      const newOpacity = parseFloat(e.target.value);
+                      
+                      setConfig({
+                        ...config,
+                        layers: {
+                          ...currentLayers,
+                          global: {
+                            ...currentGlobal,
+                            radar: {
+                              ...currentRadar,
+                              enabled: currentRadar.enabled ?? true,
+                              provider: currentRadar.provider || "maptiler_weather",
+                              opacity: newOpacity,
+                              animation_speed: currentRadar.animation_speed ?? 1.0,
+                            },
+                          },
+                        },
+                      });
+                    }}
+                  />
+                  <div className="config-field__hint">
+                    Ajusta la opacidad de la capa de radar (20-100%)
+                  </div>
+                </div>
+                
+                <div className="config-field">
+                  <label>
+                    Velocidad animación: {(config.layers?.global?.radar?.animation_speed ?? config.layers?.global_?.radar?.animation_speed ?? 1.0).toFixed(2)}x
+                  </label>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="3.0"
+                    step="0.25"
+                    value={config.layers?.global?.radar?.animation_speed ?? config.layers?.global_?.radar?.animation_speed ?? 1.0}
+                    onChange={(e) => {
+                      const currentLayers = config.layers ?? {};
+                      const currentGlobal = currentLayers.global ?? currentLayers.global_ ?? {};
+                      const currentRadar = currentGlobal.radar ?? {};
+                      const newSpeed = parseFloat(e.target.value);
+                      
+                      setConfig({
+                        ...config,
+                        layers: {
+                          ...currentLayers,
+                          global: {
+                            ...currentGlobal,
+                            radar: {
+                              ...currentRadar,
+                              enabled: currentRadar.enabled ?? true,
+                              provider: currentRadar.provider || "maptiler_weather",
+                              opacity: currentRadar.opacity ?? 0.7,
+                              animation_speed: newSpeed,
+                            },
+                          },
+                        },
+                      });
+                    }}
+                  />
+                  <div className="config-field__hint">
+                    1.0 = velocidad normal, &gt;1.0 = más rápido, &lt;1.0 = más lento
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="config-field__actions" style={{ marginTop: "16px" }}>
+            <button
+              className="config-button"
+              onClick={handleSaveGlobalLayers}
+              disabled={globalSaving}
+            >
+              {globalSaving ? "Guardando..." : "Guardar capas globales"}
+            </button>
           </div>
         </div>
 

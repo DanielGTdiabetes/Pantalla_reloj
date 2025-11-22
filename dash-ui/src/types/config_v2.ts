@@ -258,10 +258,11 @@ export type GlobalRadarLayerConfigV2 = {
   enabled: boolean;
   provider: "rainviewer" | "maptiler_weather";
   opacity: number;
-  layer_type: string;
+  layer_type?: string;
   refresh_minutes?: number;
   history_minutes?: number;
   frame_step?: number;
+  animation_speed?: number;
 };
 
 export type GlobalSatelliteLayerConfigV2 = {

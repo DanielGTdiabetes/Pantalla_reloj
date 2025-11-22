@@ -4969,12 +4969,14 @@ export default function GeoScopeMap({
   const configV2ForRadar = config as unknown as AppConfigV2 | null;
   const radarConfig = 
     configV2ForRadar?.layers?.global_?.radar ?? 
+    configV2ForRadar?.layers?.global?.radar ??
     configV2ForRadar?.ui_global?.weather_layers?.radar ?? 
     configV2ForRadar?.ui_global?.radar;
   
   const radarProvider = radarConfig?.provider ?? "maptiler_weather";
   const radarEnabled = radarConfig?.enabled ?? false;
   const radarOpacity = radarConfig?.opacity ?? 0.7;
+  const radarAnimationSpeed = radarConfig?.animation_speed ?? 1.0;
 
   return (
     <div className="map-host">
@@ -4988,7 +4990,7 @@ export default function GeoScopeMap({
         <WeatherRadarLayer
           enabled={radarEnabled}
           opacity={radarOpacity}
-          animationSpeed={1}
+          animationSpeed={radarAnimationSpeed}
           map={mapRef.current}
           config={configV2ForRadar}
           health={health}

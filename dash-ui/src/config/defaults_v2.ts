@@ -8,6 +8,7 @@ import type {
   LayersConfigV2,
   FlightsLayerConfigV2,
   ShipsLayerConfigV2,
+  GlobalRadarLayerConfigV2,
   PanelsConfigV2,
   CalendarConfig,
   UIRotationConfigV2,
@@ -144,9 +145,19 @@ export const DEFAULT_SHIPS_LAYER_CONFIG: ShipsLayerConfigV2 = {
   styleScale: 1.4,
 };
 
+export const DEFAULT_GLOBAL_RADAR_CONFIG: GlobalRadarLayerConfigV2 = {
+  enabled: true,
+  provider: "maptiler_weather",
+  opacity: 0.7,
+  animation_speed: 1.0,
+};
+
 export const DEFAULT_LAYERS_CONFIG: LayersConfigV2 = {
   flights: DEFAULT_FLIGHTS_LAYER_CONFIG,
   ships: DEFAULT_SHIPS_LAYER_CONFIG,
+  global: {
+    radar: DEFAULT_GLOBAL_RADAR_CONFIG,
+  },
 };
 
 export const ROTATION_PANEL_IDS = [
@@ -382,6 +393,24 @@ export function withConfigDefaultsV2(
       ships: {
         ...DEFAULT_SHIPS_LAYER_CONFIG,
         ...config.layers?.ships,
+      },
+      global: {
+        radar: {
+          ...DEFAULT_GLOBAL_RADAR_CONFIG,
+          ...config.layers?.global?.radar,
+          ...config.layers?.global_?.radar,
+        },
+        ...config.layers?.global,
+        ...config.layers?.global_,
+      },
+      global_: {
+        radar: {
+          ...DEFAULT_GLOBAL_RADAR_CONFIG,
+          ...config.layers?.global?.radar,
+          ...config.layers?.global_?.radar,
+        },
+        ...config.layers?.global,
+        ...config.layers?.global_,
       },
     },
     panels: config.panels ?? DEFAULT_PANELS_CONFIG,
