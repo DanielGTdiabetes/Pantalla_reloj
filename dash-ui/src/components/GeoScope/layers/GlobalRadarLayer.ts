@@ -296,10 +296,10 @@ export default class GlobalRadarLayer implements Layer {
     }
 
     try {
-      const existing = this.map.getSource(this.sourceId) as maplibregl.RasterSource | undefined;
+      const existing = this.map.getSource(this.sourceId);
       const tileUrlTemplate = `${this.baseUrl}/${framesInfo.activeTimestamp}/{z}/{x}/{y}.png`;
 
-      if (existing) {
+      if (existing && existing.type === "raster") {
         // Si ya existe, verificar si necesita actualización
         // En raster sources, no podemos actualizar tiles directamente
         // Si el timestamp cambió, necesitamos recrear (pero esto se maneja en updateTimestamp)
