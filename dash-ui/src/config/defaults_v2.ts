@@ -132,7 +132,7 @@ export const DEFAULT_OPENSKY_CONFIG = {
 };
 
 export const DEFAULT_SHIPS_LAYER_CONFIG: ShipsLayerConfigV2 = {
-  enabled: false,
+  enabled: true,
   provider: "aisstream",
   refresh_seconds: 10,
   max_age_seconds: 180,
@@ -253,6 +253,13 @@ export function withConfigDefaultsV2(
     ...(uiMapInput.local ?? {}),
   };
 
+  const mergedMaptiler = {
+    ...DEFAULT_MAP_CONFIG.maptiler!,
+    ...(uiMapInput.maptiler ?? {}),
+    // Force default styleUrl if input is null/empty
+    styleUrl: uiMapInput.maptiler?.styleUrl || DEFAULT_MAP_CONFIG.maptiler?.styleUrl || null,
+  };
+
   const mergedSatellite = {
     ...DEFAULT_MAP_CONFIG.satellite!,
     ...(uiMapInput.satellite ?? {}),
@@ -325,7 +332,7 @@ export function withConfigDefaultsV2(
       ...DEFAULT_MAP_CONFIG,
       ...uiMapInput,
       local: mergedLocal,
-      maptiler: uiMapInput.maptiler ?? DEFAULT_MAP_CONFIG.maptiler,
+      maptiler: mergedMaptiler,
       satellite: mergedSatellite,
       customXyz: mergedCustomXyz,
       fixed: uiMapInput.fixed ?? DEFAULT_MAP_CONFIG.fixed,

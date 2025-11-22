@@ -385,10 +385,12 @@ const mergeMaptiler = (candidate: unknown): MaptilerConfig => {
   const fallback = { ...DEFAULT_MAPTILER };
   const source = (candidate as Partial<MaptilerConfig>) ?? {};
   return {
-    key: sanitizeNullableString(source.key, fallback.key),
-    styleUrlDark: sanitizeNullableString(source.styleUrlDark, fallback.styleUrlDark),
-    styleUrlLight: sanitizeNullableString(source.styleUrlLight, fallback.styleUrlLight),
-    styleUrlBright: sanitizeNullableString(source.styleUrlBright, fallback.styleUrlBright),
+    key: sanitizeNullableString(source.key, fallback.key ?? null),
+    apiKey: sanitizeNullableString(source.apiKey, fallback.apiKey ?? null),
+    styleUrl: source.styleUrl || fallback.styleUrl,
+    styleUrlDark: sanitizeNullableString(source.styleUrlDark, fallback.styleUrlDark ?? null),
+    styleUrlLight: sanitizeNullableString(source.styleUrlLight, fallback.styleUrlLight ?? null),
+    styleUrlBright: sanitizeNullableString(source.styleUrlBright, fallback.styleUrlBright ?? null),
   };
 };
 
@@ -414,6 +416,7 @@ const mergeMap = (candidate: unknown): MapConfig => {
     "vector-bright",
     "raster-carto-dark",
     "raster-carto-light",
+    "streets-v4",
   ];
   const allowedProviders: MapConfig["provider"][] = ["maptiler", "osm", "openstreetmap", "xyz"];
   const style = allowedStyles.includes(source.style ?? fallback.style)
@@ -634,7 +637,7 @@ export const DEFAULT_CONFIG: AppConfig = {
       },
     },
     ships: {
-      enabled: false,
+      enabled: true,
       opacity: 0.9,
       provider: "aisstream",
       update_interval: 10,
