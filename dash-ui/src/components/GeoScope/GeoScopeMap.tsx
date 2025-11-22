@@ -1007,7 +1007,7 @@ export default function GeoScopeMap({
   satelliteOpacity,
   satelliteLabelsStyle = "maptiler-streets-v4-labels",
 }: GeoScopeMapProps = {}) {
-  const { data: config, reload: reloadConfig, mapStyleVersion } = useConfig();
+  const { data: config, loading, reload: reloadConfig, mapStyleVersion } = useConfig();
   const [health, setHealth] = useState<{ maptiler?: { has_api_key?: boolean; styleUrl?: string | null } } | null>(null);
 
   // Leer /api/health/full una vez para disponer de has_api_key y styleUrl firmado
@@ -1273,6 +1273,7 @@ export default function GeoScopeMap({
   };
 
   useEffect(() => {
+    if (loading) return;
     let destroyed = false;
     let sizeCheckFrame: number | null = null;
     let styleErrorHandler: ((event: MapLibreEvent & { error?: unknown }) => void) | null =
@@ -2705,7 +2706,7 @@ export default function GeoScopeMap({
 
       mapStateMachineRef.current = null;
     };
-  }, []);
+  }, [loading, mapStyleVersion]);
 
   // TEMPORALMENTE DESACTIVADO: useEffect que gestiona GlobalSatelliteLayer
   // Todas las capas globales están deshabilitadas temporalmente para dejar solo el mapa base.
