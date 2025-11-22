@@ -227,9 +227,9 @@ export default class GlobalRadarLayer implements Layer {
         return;
       }
 
-      // Type guard: después del return anterior, framesInfo no puede ser null
-      // y hasFrames es true
-      const validFramesInfo: FramesInfo = framesInfo;
+      // TypeScript: después del return anterior, framesInfo no puede ser null y hasFrames es true
+      // Usamos aserción de tipo no-null porque sabemos que framesInfo es válido aquí
+      const validFramesInfo = framesInfo as FramesInfo;
 
       // Paso 4: Crear source y layer
       await this.ensureSource(validFramesInfo);
@@ -450,9 +450,9 @@ export default class GlobalRadarLayer implements Layer {
         return;
       }
 
-      // Type guard: después del return anterior, framesInfo no puede ser null
-      // y hasFrames es true
-      const validFramesInfo: FramesInfo = framesInfo;
+      // TypeScript: después del return anterior, framesInfo no puede ser null y hasFrames es true
+      // Usamos aserción de tipo porque sabemos que framesInfo es válido aquí
+      const validFramesInfo = framesInfo as FramesInfo;
 
       await this.ensureSource(validFramesInfo);
       await this.ensureLayer(validFramesInfo);
