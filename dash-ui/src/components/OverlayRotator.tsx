@@ -10,6 +10,7 @@ import { ensurePlainText, sanitizeRichText } from "../utils/sanitize";
 import { safeGetTimezone } from "../utils/timezone";
 import type { RotatingCardItem } from "./RotatingCard";
 import { RotatingCard } from "./RotatingCard";
+import { RotationProgress } from "./dashboard/RotationProgress";
 import { CalendarCard } from "./dashboard/cards/CalendarCard";
 import { EphemeridesCard } from "./dashboard/cards/EphemeridesCard";
 import { HarvestCard } from "./dashboard/cards/HarvestCard";
@@ -20,6 +21,7 @@ import { SaintsCard } from "./dashboard/cards/SaintsCard";
 import { TimeCard } from "./dashboard/cards/TimeCard";
 import { WeatherCard } from "./dashboard/cards/WeatherCard";
 import { WeatherForecastCard } from "./dashboard/cards/WeatherForecastCard";
+import { useRotationProgress } from "../hooks/useRotationProgress";
 
 type DashboardPayload = {
   weather?: Record<string, unknown>;
@@ -1116,6 +1118,12 @@ export const OverlayRotator: React.FC = () => {
     return "Datos no disponibles";
   }, [lastUpdatedAt, lastUpdatedLabel, loading]);
 
+  // Calcular progreso de rotación
+  const rotationProgress = useRotationProgress(
+    currentPanel?.duration ?? 0,
+    currentPanel !== null && rotationConfig.enabled
+  );
+
   if (!currentPanel) {
     return (
       <section className="overlay-rotator" role="complementary" aria-live="polite">
@@ -1132,8 +1140,21 @@ export const OverlayRotator: React.FC = () => {
   return (
     <section className="overlay-rotator" role="complementary" aria-live="polite">
       <div className="overlay-rotator__content">
-        <RotatingCard cards={[currentPanel]} />
-        <p className="overlay-rotator__status">{statusLabel}</p>
+        <div className="rotating-card-wrapper">
+          <RotatingCard cards={[currentPanel]} />
+          {rotationConfig.enabled && currentPanel.duration > 0 && (
+            <RotationProgress progress={rotationProgress} />
+          )}
+        </div>
+        <div className="overlay-rotator__status-container">
+          {lastUpdatedAt && (
+            <span className="overlay-rotator__live-indicator pulse-effect" aria-label="Datos en vivo">
+              <span className="overlay-rotator__live-dot"></span>
+              <span className="overlay-rotator__live-text">En vivo</span>
+            </span>
+          )}
+          <p className="overlay-rotator__status">{statusLabel}</p>
+        </div>
       </div>
     </section>
   );

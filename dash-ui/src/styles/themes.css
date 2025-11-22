@@ -1,0 +1,118 @@
+/* ============================================
+   SISTEMA DE TEMAS DÍA/NOCHE
+   Transición automática según hora del día
+   ============================================ */
+
+:root {
+  /* Modo día (7:00-20:00) - Valores por defecto */
+  --theme-bg-primary: #ffffff;
+  --theme-bg-secondary: #f8f9fa;
+  --theme-bg-tertiary: #f1f3f5;
+  
+  --theme-text-primary: #1a1a1a;
+  --theme-text-secondary: #4a5568;
+  --theme-text-muted: #718096;
+  
+  --theme-accent: #4ec9ff;
+  --theme-accent-secondary: #a987ff;
+  
+  --theme-border: rgba(0, 0, 0, 0.1);
+  --theme-border-strong: rgba(0, 0, 0, 0.2);
+  
+  --theme-shadow-color: rgba(0, 0, 0, 0.1);
+  
+  --theme-overlay: rgba(255, 255, 255, 0.9);
+  --theme-card-bg: rgba(255, 255, 255, 0.95);
+  
+  /* Transición suave entre modos */
+  --theme-transition: 1s ease;
+}
+
+/* Modo noche (20:00-7:00) */
+[data-theme="night"] {
+  --theme-bg-primary: #0f172a;
+  --theme-bg-secondary: #1e293b;
+  --theme-bg-tertiary: #334155;
+  
+  --theme-text-primary: #f1f5f9;
+  --theme-text-secondary: #cbd5e1;
+  --theme-text-muted: #94a3b8;
+  
+  --theme-accent: #4ec9ff;
+  --theme-accent-secondary: #a987ff;
+  
+  --theme-border: rgba(255, 255, 255, 0.1);
+  --theme-border-strong: rgba(255, 255, 255, 0.2);
+  
+  --theme-shadow-color: rgba(0, 0, 0, 0.3);
+  
+  --theme-overlay: rgba(15, 23, 42, 0.9);
+  --theme-card-bg: rgba(15, 23, 42, 0.85);
+}
+
+/* Aplicar transiciones a elementos que cambian con el tema */
+body,
+.card,
+.rotating-card,
+.side-panel,
+.overlay-rotator {
+  background-color: var(--theme-bg-primary);
+  color: var(--theme-text-primary);
+  transition: 
+    background-color var(--theme-transition),
+    color var(--theme-transition),
+    border-color var(--theme-transition);
+}
+
+/* Ajustar opacidad de elementos según modo */
+[data-theme="night"] .card-icon,
+[data-theme="night"] .weather-card__main-icon {
+  opacity: 0.9;
+}
+
+[data-theme="day"] .card-icon,
+[data-theme="day"] .weather-card__main-icon {
+  opacity: 1;
+}
+
+/* Gradientes de fondo según hora del día */
+[data-theme="day"] {
+  --background: 
+    radial-gradient(circle at 20% 20%, rgba(73, 161, 255, 0.15), transparent 60%),
+    radial-gradient(circle at 80% 15%, rgba(142, 76, 255, 0.12), transparent 65%),
+    linear-gradient(135deg, #ffffff, #f8f9fa);
+}
+
+[data-theme="night"] {
+  --background: 
+    radial-gradient(circle at 20% 20%, rgba(73, 161, 255, 0.24), transparent 60%),
+    radial-gradient(circle at 80% 15%, rgba(142, 76, 255, 0.26), transparent 65%),
+    linear-gradient(135deg, #030712, #060419);
+}
+
+/* Ajustar panel-bg según tema */
+[data-theme="day"] {
+  --panel-bg: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(248, 249, 250, 0.95));
+  --panel-border: rgba(0, 0, 0, 0.1);
+  --panel-glow: 0 28px 60px rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="night"] {
+  --panel-bg: linear-gradient(145deg, rgba(6, 11, 26, 0.92), rgba(3, 7, 18, 0.92));
+  --panel-border: rgba(97, 164, 255, 0.28);
+  --panel-glow: 0 28px 60px rgba(24, 46, 109, 0.55);
+}
+
+/* Ajustar card styles según tema */
+[data-theme="day"] {
+  --card-gradient: linear-gradient(160deg, rgba(255, 255, 255, 0.98), rgba(248, 249, 250, 0.95));
+  --card-border: rgba(0, 0, 0, 0.08);
+  --card-shadow: 0 24px 48px rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="night"] {
+  --card-gradient: linear-gradient(160deg, rgba(8, 15, 30, 0.88), rgba(4, 10, 24, 0.9));
+  --card-border: rgba(104, 162, 255, 0.22);
+  --card-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+}
+

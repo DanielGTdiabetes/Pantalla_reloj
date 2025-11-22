@@ -1,0 +1,335 @@
+/* ============================================
+   SISTEMA DE ANIMACIONES
+   Transiciones suaves y animaciones ambientales
+   ============================================ */
+
+/* ============================================
+   TRANSICIONES ENTRE PANELES
+   ============================================ */
+@keyframes slideInFade {
+  from {
+    opacity: 0;
+    transform: translateX(20px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes slideOutFade {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-20px) scale(0.96);
+  }
+}
+
+.rotating-card__content {
+  animation: slideInFade var(--transition-slow) var(--ease-in-out);
+}
+
+.rotating-card__content--hidden {
+  animation: slideOutFade var(--transition-fast) var(--ease-in-out);
+}
+
+/* ============================================
+   EFECTOS AMBIENTALES
+   ============================================ */
+
+/* Efecto de respiración (breathe) para iconos */
+@keyframes breathe {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.9;
+  }
+}
+
+.breathe-effect {
+  animation: breathe 3s ease-in-out infinite;
+}
+
+/* Efecto de pulso para indicadores en vivo */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
+}
+
+.pulse-effect {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Efecto de latido para alertas */
+@keyframes heartbeat {
+  0%, 100% {
+    transform: scale(1);
+  }
+  10%, 30% {
+    transform: scale(1.1);
+  }
+  20%, 40% {
+    transform: scale(1);
+  }
+}
+
+.heartbeat-effect {
+  animation: heartbeat 1.5s ease-in-out infinite;
+}
+
+/* ============================================
+   ANIMACIONES DE ENTRADA
+   ============================================ */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn var(--transition-normal) var(--ease-out);
+}
+
+.fade-in-up {
+  animation: fadeInUp var(--transition-slow) var(--ease-out);
+}
+
+.fade-in-down {
+  animation: fadeInDown var(--transition-slow) var(--ease-out);
+}
+
+/* ============================================
+   ANIMACIONES DE PROGRESO
+   ============================================ */
+
+@keyframes progress {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+.progress-bar {
+  animation: progress linear;
+}
+
+/* ============================================
+   ANIMACIONES DE ROTACIÓN
+   ============================================ */
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.rotate {
+  animation: rotate 2s linear infinite;
+}
+
+/* ============================================
+   ANIMACIONES DE CLIMA
+   ============================================ */
+
+/* Sol con rayos */
+@keyframes sunRays {
+  0%, 100% {
+    opacity: 0.8;
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: rotate(180deg) scale(1.05);
+  }
+}
+
+.sun-animation {
+  animation: sunRays 4s ease-in-out infinite;
+}
+
+/* Nubes moviéndose */
+@keyframes cloudMove {
+  0% {
+    transform: translateX(-10px);
+  }
+  50% {
+    transform: translateX(10px);
+  }
+  100% {
+    transform: translateX(-10px);
+  }
+}
+
+.cloud-animation {
+  animation: cloudMove 6s ease-in-out infinite;
+}
+
+/* Lluvia (animación para icono) */
+@keyframes rainIcon {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(5px);
+    opacity: 0.9;
+  }
+}
+
+.rain-animation {
+  animation: rainIcon 1.5s ease-in-out infinite;
+}
+
+/* Lluvia cayendo */
+@keyframes rain {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh);
+    opacity: 0;
+  }
+}
+
+.rain-drop {
+  animation: rain linear infinite;
+}
+
+/* Nieve cayendo */
+@keyframes snow {
+  0% {
+    transform: translateY(-100%) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+.snowflake {
+  animation: snow linear infinite;
+}
+
+/* ============================================
+   ANIMACIONES DE CRECIMIENTO
+   ============================================ */
+
+@keyframes grow {
+  from {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.grow-effect {
+  animation: grow var(--transition-slow) var(--ease-out);
+}
+
+/* ============================================
+   TRANSICIONES SUAVES
+   ============================================ */
+
+.smooth-transition {
+  transition: all var(--transition-slow) var(--ease-in-out);
+}
+
+.smooth-transition-fast {
+  transition: all var(--transition-fast) var(--ease-in-out);
+}
+
+/* Aplicar transiciones a elementos comunes */
+.card,
+.rotating-card,
+.weather-card__metric,
+.news-card__item,
+.calendar-card__list li {
+  transition: 
+    transform var(--transition-normal) var(--ease-in-out),
+    opacity var(--transition-normal) var(--ease-in-out),
+    background-color var(--transition-normal) var(--ease-in-out),
+    border-color var(--transition-normal) var(--ease-in-out);
+}
+
+/* Hover effects (si es necesario en el futuro) */
+.card:hover {
+  transform: translateY(-2px);
+}
+
+/* ============================================
+   ANIMACIONES DE SCROLL
+   ============================================ */
+
+@keyframes scroll-up {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(-50%);
+  }
+}
+
+.scroll-up {
+  animation: scroll-up linear infinite;
+}
+

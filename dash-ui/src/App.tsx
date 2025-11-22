@@ -1,6 +1,7 @@
 import React from "react";
 import { Route, Routes } from "react-router-dom";
 
+import { useDayNightMode } from "./hooks/useDayNightMode";
 import GeoScopeMap from "./components/GeoScope/GeoScopeMap";
 import { MapFrame } from "./components/MapFrame";
 import { RightPanel } from "./components/RightPanel";
@@ -8,6 +9,9 @@ import { ConfigPage } from "./pages/ConfigPage";
 import DiagnosticsAutoPan from "./pages/DiagnosticsAutoPan";
 
 const DashboardShell: React.FC = () => {
+  // Activar modo día/noche automático
+  useDayNightMode("Europe/Madrid");
+
   return (
     <div className="app-shell">
       <MapFrame className="map-area">
