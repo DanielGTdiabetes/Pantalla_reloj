@@ -6,13 +6,14 @@
 :root {
   /* ============================================
      TIPOGRAFÍA
+     Optimizado para pantalla 8.8"
      ============================================ */
-  --font-size-display: 6rem;
-  --font-size-title: 3.5rem;
-  --font-size-data: 4rem;
-  --font-size-subtitle: 2rem;
-  --font-size-body: 1.8rem;
-  --font-size-caption: 1.4rem;
+  --font-size-display: clamp(4rem, 8vw, 5rem);
+  --font-size-title: clamp(2.5rem, 5vw, 3rem);
+  --font-size-data: clamp(3rem, 6vw, 3.5rem);
+  --font-size-subtitle: clamp(1.5rem, 3vw, 1.8rem);
+  --font-size-body: clamp(1.2rem, 2.5vw, 1.5rem);
+  --font-size-caption: clamp(1rem, 2vw, 1.2rem);
   
   --font-weight-normal: 400;
   --font-weight-medium: 500;
@@ -29,13 +30,14 @@
   
   /* ============================================
      ESPACIADO
+     Optimizado para pantalla 8.8"
      ============================================ */
-  --space-xs: 8px;
-  --space-sm: 16px;
-  --space-md: 24px;
-  --space-lg: 32px;
-  --space-xl: 48px;
-  --space-2xl: 64px;
+  --space-xs: 6px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
   
   /* ============================================
      BORDES Y RADIOS

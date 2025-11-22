@@ -50,7 +50,7 @@ export const WeatherCard = ({
       <div className="weather-card__main">
         <AnimatedWeatherIcon 
           condition={condition} 
-          size={120}
+          size={90}
           className="weather-card__main-icon"
         />
         <div className="weather-card__temp-container">

@@ -443,10 +443,10 @@ main {
   flex: 1;
   width: 100%;
   height: 100%;
-  padding: clamp(20px, 3vw, 40px);
+  padding: clamp(12px, 2vw, 20px);
   display: flex;
   flex-direction: column;
-  gap: clamp(20px, 2.6vw, 36px);
+  gap: clamp(12px, 1.5vw, 20px);
   overflow: hidden;
 }
 
@@ -454,9 +454,10 @@ main {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: clamp(20px, 2.2vw, 32px);
+  gap: clamp(12px, 1.5vw, 18px);
   min-height: 0;
   overflow: hidden;
+  max-height: 100%;
 }
 
 .overlay-rotator__fallback {
@@ -541,18 +542,19 @@ main {
 .rotating-card {
   flex: 1;
   position: relative;
-  border-radius: 28px;
+  border-radius: 20px;
   background: rgba(7, 12, 26, 0.78);
   border: 1px solid var(--card-border);
   box-shadow: var(--card-shadow);
   overflow: hidden;
-  padding: clamp(28px, 3vw, 44px);
+  padding: clamp(16px, 2vw, 24px);
   display: flex;
   align-items: stretch;
   justify-content: center;
   backdrop-filter: blur(18px);
   pointer-events: none;
   min-height: 0;
+  max-height: 100%;
 }
 
 .rotating-card__content {
@@ -573,15 +575,19 @@ main {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: clamp(18px, 2vw, 28px);
+  gap: clamp(12px, 1.5vw, 20px);
   color: var(--text-primary);
   text-align: center;
+  max-height: 100%;
+  overflow: hidden;
+  min-height: 0;
 }
 
 .card-icon {
-  width: clamp(56px, 5vw, 88px);
-  height: clamp(56px, 5vw, 88px);
+  width: clamp(40px, 4vw, 64px);
+  height: clamp(40px, 4vw, 64px);
   color: var(--accent);
+  flex-shrink: 0;
 }
 
 .card--placeholder h2 {
@@ -597,9 +603,12 @@ main {
 .time-card__body {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
+  gap: var(--space-sm);
   align-items: center;
   width: 100%;
+  flex-shrink: 1;
+  min-height: 0;
+  max-height: 100%;
 }
 
 .time-card__greeting {
@@ -663,6 +672,10 @@ main {
 
 .weather-card__main-icon {
   flex-shrink: 0;
+  width: clamp(80px, 10vw, 100px) !important;
+  height: clamp(80px, 10vw, 100px) !important;
+  max-width: 100px;
+  max-height: 100px;
 }
 
 .weather-card__temp-container {
@@ -789,8 +802,9 @@ main {
 .news-card__scroller {
   position: relative;
   overflow: hidden;
-  height: 240px;
+  height: clamp(180px, 25vh, 220px);
   width: 100%;
+  max-height: 220px;
 }
 
 .news-card__list {
@@ -856,8 +870,9 @@ main {
 .historical-events-card__scroller {
   position: relative;
   overflow: hidden;
-  height: 240px;
+  height: clamp(180px, 25vh, 220px);
   width: 100%;
+  max-height: 220px;
 }
 
 .historical-events-card__list {
@@ -1010,10 +1025,11 @@ main {
 .ephemerides-card__scroller {
   position: relative;
   overflow: hidden;
-  height: 240px;
+  height: clamp(150px, 20vh, 200px);
   width: 100%;
   flex: 1;
   min-height: 0;
+  max-height: 200px;
 }
 
 .ephemerides-card__events {
@@ -1071,8 +1087,9 @@ main {
 .calendar-card__scroller {
   position: relative;
   overflow: hidden;
-  height: 280px;
+  height: clamp(200px, 28vh, 260px);
   width: 100%;
+  max-height: 260px;
 }
 
 .calendar-card__list {
@@ -1153,8 +1170,9 @@ main {
 .saints-card__scroller {
   position: relative;
   overflow: hidden;
-  height: 240px;
+  height: clamp(180px, 25vh, 220px);
   width: 100%;
+  max-height: 220px;
 }
 
 .harvest-card__list,

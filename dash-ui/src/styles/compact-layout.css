@@ -1,0 +1,140 @@
+/* ============================================
+   LAYOUT COMPACTO PARA PANTALLA 8.8"
+   Ajustes específicos para pantallas pequeñas
+   ============================================ */
+
+/* Asegurar que todo quepa en la altura disponible */
+.rotating-card {
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.rotating-card__content {
+  max-height: 100%;
+  overflow: hidden;
+}
+
+/* Reducir padding en pantallas pequeñas */
+@media (max-height: 800px) {
+  .rotating-card {
+    padding: clamp(12px, 1.5vw, 20px);
+    max-height: calc(100vh - 100px);
+  }
+
+  .overlay-rotator {
+    padding: clamp(8px, 1.5vw, 16px);
+    gap: clamp(8px, 1.2vw, 16px);
+  }
+
+  .overlay-rotator__content {
+    gap: clamp(8px, 1.2vw, 14px);
+  }
+
+  /* Reducir tamaños de fuente en pantallas pequeñas */
+  :root {
+    --font-size-display: clamp(3.5rem, 7vw, 4.5rem);
+    --font-size-title: clamp(2rem, 4vw, 2.5rem);
+    --font-size-data: clamp(2.5rem, 5vw, 3rem);
+    --font-size-subtitle: clamp(1.2rem, 2.5vw, 1.5rem);
+    --font-size-body: clamp(1rem, 2vw, 1.2rem);
+    --font-size-caption: clamp(0.85rem, 1.8vw, 1rem);
+  }
+
+  /* Reducir iconos */
+  .card-icon {
+    width: clamp(32px, 3vw, 48px) !important;
+    height: clamp(32px, 3vw, 48px) !important;
+  }
+
+  .weather-card__main-icon {
+    width: clamp(70px, 8vw, 85px) !important;
+    height: clamp(70px, 8vw, 85px) !important;
+  }
+
+  /* Reducir espaciados */
+  .card {
+    gap: clamp(8px, 1.2vw, 16px);
+  }
+
+  /* Ajustar scrolls */
+  .harvest-card__scroller,
+  .saints-card__scroller,
+  .news-card__scroller,
+  .historical-events-card__scroller {
+    height: clamp(150px, 20vh, 180px) !important;
+    max-height: 180px !important;
+  }
+
+  .calendar-card__scroller {
+    height: clamp(160px, 22vh, 200px) !important;
+    max-height: 200px !important;
+  }
+
+  .ephemerides-card__scroller {
+    height: clamp(120px, 16vh, 160px) !important;
+    max-height: 160px !important;
+  }
+
+  /* Reducir gaps en grids */
+  .weather-card__metrics {
+    gap: var(--space-xs);
+  }
+
+  .forecast-grid {
+    gap: clamp(4px, 0.8vw, 8px);
+  }
+
+  /* Ajustar moon phase */
+  .moon-phase-visual {
+    width: clamp(60px, 10vw, 80px) !important;
+    height: clamp(60px, 10vw, 80px) !important;
+  }
+
+  /* Reducir temp bars */
+  .temp-bars {
+    height: clamp(60px, 10vh, 80px) !important;
+  }
+}
+
+/* Asegurar que las imágenes no sobresalgan */
+img,
+svg {
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+.harvest-icon,
+.weather-card__main-icon,
+.forecast-day__icon {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/* Ajustar contenedores para evitar overflow */
+.card,
+.rotating-card,
+.overlay-rotator__content {
+  contain: layout style;
+}
+
+/* Scrollbar personalizado más delgado */
+.rotating-card::-webkit-scrollbar,
+.harvest-card__scroller::-webkit-scrollbar,
+.saints-card__scroller::-webkit-scrollbar {
+  width: 4px;
+}
+
+.rotating-card::-webkit-scrollbar-track,
+.harvest-card__scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.rotating-card::-webkit-scrollbar-thumb,
+.harvest-card__scroller::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+}
+
