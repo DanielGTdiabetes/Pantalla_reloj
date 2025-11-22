@@ -148,7 +148,7 @@ export const ConfigPage: React.FC = () => {
   const [aemetTesting, setAemetTesting] = useState(false);
   const [aemetApiKey, setAemetApiKey] = useState<string>("");
   const [openWeatherMapApiKey, setOpenWeatherMapApiKey] = useState<string>("");
-  const [openWeatherMapApiKeyMeta, setOpenWeatherMapApiKeyMeta] = useState<{ has_api_key: boolean; api_key_last4?: string } | null>(null);
+  const [openWeatherMapApiKeyMeta, setOpenWeatherMapApiKeyMeta] = useState<{ has_api_key: boolean; api_key_last4?: string | null } | null>(null);
   const [openskyStatus, setOpenskyStatus] = useState<any>(null);
   
   // Flights test
