@@ -1,9 +1,11 @@
 import maplibregl from "maplibre-gl";
+import { config as maptilerSdkConfig } from "@maptiler/sdk";
 
 import type { Layer } from "./LayerRegistry";
 import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
 import { waitForMapReady } from "../../../lib/map/utils/waitForMapReady";
 import { getRainViewerFrames } from "../../../lib/api";
+import { layerDiagnostics, type LayerId } from "./LayerDiagnostics";
 
 interface GlobalRadarLayerOptions {
   enabled?: boolean;
@@ -91,7 +93,67 @@ export default class GlobalRadarLayer implements Layer {
 
     // Rama MapTiler Weather: no depende de RainViewer
     if (this.provider === "maptiler_weather") {
-      console.log("[GlobalRadarLayer] Initializing MapTiler Weather radar layer (handled externally)");
+      console.log("[GlobalRadarLayer] Initializing MapTiler Weather radar layer");
+
+      const layerId: LayerId = "radar";
+      try {
+        await waitForMapReady(map);
+
+        layerDiagnostics.setEnabled(layerId, true);
+        layerDiagnostics.recordInitializationAttempt(layerId);
+        layerDiagnostics.setState(layerId, "initializing", { provider: this.provider });
+
+        const style = getSafeMapStyle(map);
+        if (!style) {
+          layerDiagnostics.recordError(layerId, new Error("Map style not ready"), {
+            provider: this.provider,
+          });
+          return;
+        }
+
+        const maptilerKey = this.extractMaptilerKey(style) ?? maptilerSdkConfig.apiKey ?? null;
+        if (!maptilerKey) {
+          layerDiagnostics.recordError(layerId, new Error("MapTiler API key unavailable"), {
+            provider: this.provider,
+          });
+          return;
+        }
+
+        // Limpiar instancias previas
+        if (map.getLayer(this.id)) {
+          map.removeLayer(this.id);
+        }
+        if (map.getSource(this.sourceId)) {
+          map.removeSource(this.sourceId);
+        }
+
+        const tilesUrl = `https://api.maptiler.com/weather/tiles/v2/precipitation/{z}/{x}/{y}.png?key=${maptilerKey}`;
+
+        map.addSource(this.sourceId, {
+          type: "raster",
+          tiles: [tilesUrl],
+          tileSize: 256,
+          maxzoom: 12,
+        });
+
+        const beforeId = this.findBeforeId();
+        map.addLayer({
+          id: this.id,
+          type: "raster",
+          source: this.sourceId,
+          paint: {
+            "raster-opacity": this.opacity ?? 0.7,
+          },
+        }, beforeId);
+
+        layerDiagnostics.setState(layerId, "ready", { provider: this.provider });
+        layerDiagnostics.recordDataUpdate(layerId);
+        console.log("[GlobalRadarLayer] MapTiler Weather radar initialized successfully");
+      } catch (error) {
+        layerDiagnostics.recordError(layerId, error as Error, { provider: this.provider });
+        console.warn("[GlobalRadarLayer] Failed to initialize MapTiler Weather radar layer", error);
+      }
+
       return;
     }
 
@@ -484,6 +546,52 @@ export default class GlobalRadarLayer implements Layer {
     }
 
     return undefined;
+  }
+
+  /**
+   * Intenta extraer la API key de MapTiler desde el estilo actual.
+   */
+  private extractMaptilerKey(style: maplibregl.StyleSpecification | null): string | null {
+    if (!style) {
+      return null;
+    }
+
+    const candidates: string[] = [];
+
+    if (typeof style.sprite === "string") {
+      candidates.push(style.sprite);
+    }
+
+    if (typeof style.glyphs === "string") {
+      candidates.push(style.glyphs);
+    }
+
+    if (style.sources && typeof style.sources === "object") {
+      for (const source of Object.values(style.sources)) {
+        if (source && typeof source === "object") {
+          const typed = source as { url?: string; tiles?: string[] };
+          if (typeof typed.url === "string") {
+            candidates.push(typed.url);
+          }
+          if (Array.isArray(typed.tiles)) {
+            candidates.push(...typed.tiles.filter((t) => typeof t === "string"));
+          }
+        }
+      }
+    }
+
+    for (const candidate of candidates) {
+      const match = candidate.match(/[?&]key=([^&]+)/);
+      if (match && match[1]) {
+        try {
+          return decodeURIComponent(match[1]);
+        } catch {
+          return match[1];
+        }
+      }
+    }
+
+    return null;
   }
 
   /**
