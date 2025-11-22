@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { withConfigDefaults } from "../config/defaults";
 import { apiGet, apiPost, getConfigMeta, getSantoralToday } from "../lib/api";
 import { useConfig } from "../lib/useConfig";
+import { fetchWikipediaEvents } from "../lib/services/wikipedia";
 import type { AppConfigV2 } from "../types/config_v2";
 import { dayjs } from "../utils/dayjs";
 import { ensurePlainText, sanitizeRichText } from "../utils/sanitize";
@@ -112,14 +113,14 @@ const LEGACY_ROTATION_PANEL_MAP: Record<string, string> = {
   harvest: "harvest",
   news: "news",
   historicalEvents: "historicalEvents",
-  
+
   // Mapeos legacy v1 → v2 (solo para conversión automática)
   time: "clock",
   forecast: "weather",  // forecast ahora se incluye en weather
   ephemerides: "astronomy",
   moon: "astronomy",  // moon ahora se incluye en astronomy
   saints: "santoral",
-  
+
   // Variaciones en español (mapeo a harvest)
   cosecha: "harvest",
   cosechas: "harvest",
@@ -133,7 +134,7 @@ const LEGACY_ROTATION_PANEL_MAP: Record<string, string> = {
   siembras: "harvest",
   cultivo: "harvest",
   cultivos: "harvest",
-  
+
   // Variaciones de nombres
   historicalevents: "historicalEvents",
 };
@@ -240,9 +241,9 @@ const extractStrings = (value: unknown): string[] => {
           const obj = entry as Record<string, unknown>;
           const name = typeof obj.name === "string" ? obj.name
             : typeof obj.title === "string" ? obj.title
-            : typeof obj.description === "string" ? obj.description
-            : typeof obj.text === "string" ? obj.text
-            : null;
+              : typeof obj.description === "string" ? obj.description
+                : typeof obj.text === "string" ? obj.text
+                  : null;
           if (name) {
             return ensurePlainText(name);
           }
@@ -266,7 +267,7 @@ export const OverlayRotator: React.FC = () => {
   const [configVersion, setConfigVersion] = useState<number | null>(null);
   const configVersionRef = useRef<number | null>(null);
   const [rotationRestartKey, setRotationRestartKey] = useState(0);
-  
+
   const timezone = useMemo(() => {
     const tz = safeGetTimezone(config as Record<string, unknown>);
     return tz;
@@ -312,7 +313,7 @@ export const OverlayRotator: React.FC = () => {
         : sanitizeRotationPanelOrder(undefined);
       const durations_sec = { ...DEFAULT_DURATIONS_SEC, ...(rotator.durations_sec ?? {}) };
       const transition_ms = Math.max(0, Math.min(2000, rotator.transition_ms ?? 400));
-      
+
       return {
         enabled: rotator.enabled ?? true,
         order,
@@ -321,13 +322,13 @@ export const OverlayRotator: React.FC = () => {
         pause_on_alert: rotator.pause_on_alert ?? false,
       };
     }
-    
+
     const uiConfigLegacy = config.ui || (config as unknown as { ui?: { rotation?: { enabled?: boolean; duration_sec?: number; panels?: string[] } } }).ui;
     const rotationLegacy = uiConfigLegacy?.rotation || {};
     const panelsLegacy = Array.isArray(rotationLegacy.panels) && rotationLegacy.panels.length > 0
       ? rotationLegacy.panels.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
       : [];
-    
+
     const order = panelsLegacy.map(p => {
       for (const [v2Id, v1Id] of Object.entries(PANEL_ID_MAP)) {
         if (v1Id === p) return v2Id;
@@ -335,7 +336,7 @@ export const OverlayRotator: React.FC = () => {
       const normalized = normalizeRotationPanelId(p);
       return normalized ?? p;
     });
-    
+
     return {
       enabled: rotationLegacy.enabled ?? false,
       order: sanitizeRotationPanelOrder(order),
@@ -360,7 +361,7 @@ export const OverlayRotator: React.FC = () => {
       try {
         const meta = await getConfigMeta();
         const newVersion = meta.config_version ?? 0;
-        
+
         if (mounted) {
           if (configVersionRef.current !== null && configVersionRef.current !== newVersion) {
             // Config cambió, recargar config
@@ -400,7 +401,7 @@ export const OverlayRotator: React.FC = () => {
   const astronomyCacheRef = useRef<{ data: Record<string, unknown> | null; timestamp: number | null }>({ data: null, timestamp: null });
   const santoralCacheRef = useRef<{ data: { date: string; names: string[] } | null; timestamp: number | null }>({ data: null, timestamp: null });
   const historicalEventsCacheRef = useRef<{ data: { date?: string; count?: number; items?: string[] } | null; timestamp: number | null }>({ data: null, timestamp: null });
-  
+
   // Invalidar cache de efemérides cuando se dispare el evento
   useEffect(() => {
     const handleCacheInvalidation = () => {
@@ -409,10 +410,10 @@ export const OverlayRotator: React.FC = () => {
         console.log("[OverlayRotator] Historical events cache invalidated");
       }
     };
-    
+
     window.addEventListener('historical-events-cache-invalidated', handleCacheInvalidation);
-    window.addEventListener('config-changed', handleCacheInvalidation); // También invalidar cuando cambie config (timezone, etc.)
-    
+    window.addEventListener('config-changed', handleCacheInvalidation);
+
     return () => {
       window.removeEventListener('historical-events-cache-invalidated', handleCacheInvalidation);
       window.removeEventListener('config-changed', handleCacheInvalidation);
@@ -426,26 +427,26 @@ export const OverlayRotator: React.FC = () => {
     const fetchAll = async () => {
       try {
         // Verificar cache de weather (2-5 min)
-        const weatherCacheAge = weatherCacheRef.current?.timestamp 
-          ? Date.now() - weatherCacheRef.current.timestamp 
+        const weatherCacheAge = weatherCacheRef.current?.timestamp
+          ? Date.now() - weatherCacheRef.current.timestamp
           : Infinity;
         const weatherCacheValid = weatherCacheAge < (2 + Math.random() * 3) * 60 * 1000;
 
         // Verificar cache de astronomy (1h)
-        const astronomyCacheAge = astronomyCacheRef.current?.timestamp 
-          ? Date.now() - astronomyCacheRef.current.timestamp 
+        const astronomyCacheAge = astronomyCacheRef.current?.timestamp
+          ? Date.now() - astronomyCacheRef.current.timestamp
           : Infinity;
         const astronomyCacheValid = astronomyCacheAge < 60 * 60 * 1000;
 
         // Verificar cache de santoral (1d)
-        const santoralCacheAge = santoralCacheRef.current?.timestamp 
-          ? Date.now() - santoralCacheRef.current.timestamp 
+        const santoralCacheAge = santoralCacheRef.current?.timestamp
+          ? Date.now() - santoralCacheRef.current.timestamp
           : Infinity;
         const santoralCacheValid = santoralCacheAge < 24 * 60 * 60 * 1000;
 
         // Verificar cache de efemérides históricas (5 min)
-        const historicalEventsCacheAge = historicalEventsCacheRef.current?.timestamp 
-          ? Date.now() - historicalEventsCacheRef.current.timestamp 
+        const historicalEventsCacheAge = historicalEventsCacheRef.current?.timestamp
+          ? Date.now() - historicalEventsCacheRef.current.timestamp
           : Infinity;
         const historicalEventsCacheValid = historicalEventsCacheAge < 5 * 60 * 1000;
 
@@ -501,7 +502,7 @@ export const OverlayRotator: React.FC = () => {
               const harvest = safeArray(calendarData.harvest || []);
               const saints = safeArray(calendarData.saints || []);
               const namedays = safeArray(calendarData.namedays || []);
-              return { 
+              return {
                 events,
                 harvest,
                 saints,
@@ -523,7 +524,7 @@ export const OverlayRotator: React.FC = () => {
               }
               return { saints: data.names, namedays: [] };
             } catch {
-              return santoralCacheRef.current?.data 
+              return santoralCacheRef.current?.data
                 ? { saints: santoralCacheRef.current.data.names, namedays: [] }
                 : { saints: [], namedays: [] };
             }
@@ -536,9 +537,9 @@ export const OverlayRotator: React.FC = () => {
               const v2Config = config as unknown as { panels?: { historicalEvents?: { enabled?: boolean } } };
               const enabled = v2Config.panels?.historicalEvents?.enabled !== false;
               if (!enabled) return { count: 0, items: [] };
-              
-              // Usar /api/history para efemérides históricas (según plan)
-              const data = await apiGet<{ date?: string; count?: number; items?: string[] }>("/api/history");
+
+              // Usar Wikipedia como fuente de datos para efemérides históricas
+              const data = await fetchWikipediaEvents();
               if (mounted) {
                 historicalEventsCacheRef.current = { data, timestamp: Date.now() };
               }
@@ -569,7 +570,7 @@ export const OverlayRotator: React.FC = () => {
     };
   }, [config]);
 
-  // Procesamiento de datos (sin cambios)
+  // Procesamiento de datos
   const weather = (payload.weather ?? {}) as Record<string, unknown>;
   const astronomy = (payload.astronomy ?? {}) as Record<string, unknown>;
   const news = (payload.news ?? {}) as Record<string, unknown>;
@@ -588,13 +589,13 @@ export const OverlayRotator: React.FC = () => {
 
   const humidity = typeof weather.humidity === "number" ? (weather.humidity as number)
     : typeof weather.relative_humidity === "number" ? (weather.relative_humidity as number)
-    : typeof weather.hum === "number" ? (weather.hum as number)
-    : null;
+      : typeof weather.hum === "number" ? (weather.hum as number)
+        : null;
   const wind = typeof weather.wind_speed === "number" ? (weather.wind_speed as number)
     : typeof weather.wind === "number" ? (weather.wind as number)
-    : typeof weather.windSpeed === "number" ? (weather.windSpeed as number)
-    : typeof weather.ws === "number" ? (weather.ws as number)
-    : null;
+      : typeof weather.windSpeed === "number" ? (weather.windSpeed as number)
+        : typeof weather.ws === "number" ? (weather.ws as number)
+          : null;
   const condition = sanitizeRichText(weather.summary) || sanitizeRichText(weather.condition) || null;
   const sunrise = sanitizeRichText(astronomy.sunrise) || null;
   const sunset = sanitizeRichText(astronomy.sunset) || null;
@@ -648,7 +649,7 @@ export const OverlayRotator: React.FC = () => {
       const date = ensurePlainText(day.date || day.dt || day.time);
       const dayName = ensurePlainText(day.dayName || day.day_name || day.name);
       const condition = sanitizeRichText(day.condition || day.weather || day.summary || day.description);
-      
+
       let tempMin: number | null = null;
       if (typeof day.temp_min === "number") {
         tempMin = day.temp_min;
@@ -660,7 +661,7 @@ export const OverlayRotator: React.FC = () => {
       } else if (typeof day.min === "number") {
         tempMin = day.min;
       }
-      
+
       let tempMax: number | null = null;
       if (typeof day.temp_max === "number") {
         tempMax = day.temp_max;
@@ -672,17 +673,17 @@ export const OverlayRotator: React.FC = () => {
       } else if (typeof day.max === "number") {
         tempMax = day.max;
       }
-      
+
       const precipitation = typeof day.precipitation === "number" ? day.precipitation
         : typeof day.precip === "number" ? day.precip
-        : typeof day.precipitation_probability === "number" ? day.precipitation_probability
-        : typeof day.pop === "number" ? day.pop * 100
-        : null;
-      
+          : typeof day.precipitation_probability === "number" ? day.precipitation_probability
+            : typeof day.pop === "number" ? day.pop * 100
+              : null;
+
       const wind = typeof day.wind === "number" ? day.wind
         : typeof day.wind_speed === "number" ? day.wind_speed
-        : null;
-      
+          : null;
+
       const humidity = typeof day.humidity === "number" ? day.humidity : null;
 
       return {
@@ -717,14 +718,14 @@ export const OverlayRotator: React.FC = () => {
   const allPanelsMap = useMemo<Map<string, RotatingCardItem>>(() => {
     const map = new Map<string, RotatingCardItem>();
     const durations = rotationConfig.durations_sec;
-    
+
     // clock (TimeCard)
     map.set("clock", {
       id: "clock",
       duration: (durations.clock ?? 10) * 1000,
       render: () => <TimeCard timezone={timezone} />
     });
-    
+
     // weather (WeatherCard - actual)
     map.set("weather", {
       id: "weather",
@@ -781,22 +782,22 @@ export const OverlayRotator: React.FC = () => {
 
     // historicalEvents (HistoricalEventsCard) - Panel EXCLUSIVO para efemérides históricas
     // Este panel muestra SOLO eventos históricos de Wikimedia/local, NO eventos astronómicos
-    const historicalEventsItemsForCard = Array.isArray(historicalEvents.items) 
+    const historicalEventsItemsForCard = Array.isArray(historicalEvents.items)
       ? historicalEvents.items.map((item) => {
-          if (typeof item === "string") {
-            return item;
+        if (typeof item === "string") {
+          return item;
+        }
+        if (item && typeof item === "object") {
+          const obj = item as { year?: number; text?: string; type?: string; source?: string };
+          const text = obj.text || "";
+          const year = obj.year;
+          if (year && text) {
+            return `${year}: ${text}`;
           }
-          if (item && typeof item === "object") {
-            const obj = item as { year?: number; text?: string; type?: string; source?: string };
-            const text = obj.text || "";
-            const year = obj.year;
-            if (year && text) {
-              return `${year}: ${text}`;
-            }
-            return text;
-          }
-          return String(item);
-        })
+          return text;
+        }
+        return String(item);
+      })
       : [];
     const v2ConfigForDuration = config as unknown as { panels?: { historicalEvents?: { rotation_seconds?: number } } };
     const rotationSeconds = v2ConfigForDuration.panels?.historicalEvents?.rotation_seconds ?? 6;
@@ -808,7 +809,7 @@ export const OverlayRotator: React.FC = () => {
 
     // NOTA: Paneles legacy v1 eliminados. Ahora solo se soportan nombres v2.
     // Los mapeos legacy se mantienen en LEGACY_ROTATION_PANEL_MAP para conversión automática.
-    
+
     return map;
   }, [
     rotationConfig.durations_sec,
@@ -835,12 +836,12 @@ export const OverlayRotator: React.FC = () => {
 
   // Filtrar y validar paneles según configuración y disponibilidad
   const availablePanels = useMemo<RotatingCardItem[]>(() => {
-    const orderToUse = rotationConfig.order.length > 0 
-      ? rotationConfig.order 
+    const orderToUse = rotationConfig.order.length > 0
+      ? rotationConfig.order
       : (rotationConfig.enabled ? [] : [DEFAULT_FALLBACK_PANEL]);
 
     const validPanels: RotatingCardItem[] = [];
-    
+
     for (const panelId of orderToUse) {
       // Validar que el panel existe en el mapa
       const panel = allPanelsMap.get(panelId);
@@ -854,7 +855,7 @@ export const OverlayRotator: React.FC = () => {
 
       // Validar disponibilidad de datos según el panel
       let shouldInclude = true;
-      
+
       if (panelId === "calendar") {
         const panelsConfig = config as unknown as { panels?: { calendar?: { enabled?: boolean } } };
         const calendarConfigV1 = config as unknown as { calendar?: { enabled?: boolean } };
@@ -1080,7 +1081,7 @@ export const OverlayRotator: React.FC = () => {
     if (availablePanels.length === 0) {
       return null;
     }
-    
+
     // Si rotation está deshabilitado o solo hay un panel, mostrar el primero
     if (!rotationConfig.enabled || availablePanels.length === 1) {
       return availablePanels[0] || null;
