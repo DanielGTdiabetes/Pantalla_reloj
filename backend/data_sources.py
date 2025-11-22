@@ -204,7 +204,7 @@ HARVEST_SEASON_DATA: Dict[int, Dict[str, List[Dict[str, str]]]] = {
     11: {  # Noviembre
         "harvest": [
             {"name": "Caquis", "status": "Temporada"},
-            {"name": "Castñas", "status": "Temporada"},
+            {"name": "Castañas", "status": "Temporada"},
             {"name": "Calabazas", "status": "Temporada"},
             {"name": "Coles", "status": "Temporada"},
             {"name": "Coliflor", "status": "Temporada"},

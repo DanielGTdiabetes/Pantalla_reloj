@@ -74,7 +74,8 @@ const getCategoryColor = (category?: string): string => {
 
 export const HistoricalEventsCard = ({ items, rotationSeconds = 6 }: HistoricalEventsCardProps): JSX.Element => {
   const list = items.length > 0 ? items : ["No hay efemérides para este día."];
-  const visibleEvents = list.slice(0, 3).map(parseEvent); // Máximo 3 eventos visibles
+  // Limitar a 2 eventos para evitar desbordes en pantalla
+  const visibleEvents = list.slice(0, 2).map(parseEvent);
 
   return (
     <div className="card historical-events-card historical-events-card-enhanced">

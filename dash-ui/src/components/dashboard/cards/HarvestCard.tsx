@@ -79,6 +79,10 @@ const getHarvestIcon = (itemName: string): string => {
     "membrillos": "pear",
     "castana": "pear",  // Si no hay icono específico de castaña
     "castanas": "pear",
+    "castaña": "pear",  // Con tilde
+    "castañas": "pear",  // Con tilde
+    "castanya": "pear",  // Variante catalana
+    "castanyes": "pear",  // Variante catalana
     "nispero": "pear",
     "nisperos": "pear",
     

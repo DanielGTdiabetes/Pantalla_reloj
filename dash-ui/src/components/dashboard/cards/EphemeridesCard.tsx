@@ -63,10 +63,10 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, events, illuminati
       </div>
 
       {items.length > 0 && (
-        <div className="astro-events">
+        <div className="astro-events" style={{ flexShrink: 1, minHeight: 0 }}>
           <h3>Eventos</h3>
           <ul>
-            {repeatedItems.slice(0, 5).map((item, index) => (
+            {repeatedItems.slice(0, 3).map((item, index) => (
               <li key={`ephemerides-${index}`}>
                 <span>⭐</span>
                 <span>{item}</span>

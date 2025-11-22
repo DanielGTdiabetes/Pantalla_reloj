@@ -275,6 +275,7 @@ export const OverlayRotator: React.FC = () => {
   const [configVersion, setConfigVersion] = useState<number | null>(null);
   const configVersionRef = useRef<number | null>(null);
   const [rotationRestartKey, setRotationRestartKey] = useState(0);
+  const historicalEventsCounterRef = useRef<number>(0);
 
   const timezone = useMemo(() => {
     const tz = safeGetTimezone(config as Record<string, unknown>);
@@ -471,12 +472,16 @@ export const OverlayRotator: React.FC = () => {
               const lat = v2Config.panels?.weather?.latitude ?? 39.98;
               const lon = v2Config.panels?.weather?.longitude ?? 0.20;
               const data = await apiGet<Record<string, unknown>>(`/api/weather/weekly?lat=${lat}&lon=${lon}`);
+              // Asegurar que los datos incluyan el array 'days' o 'daily' para el pronóstico
               if (mounted) {
                 weatherCacheRef.current = { data, timestamp: Date.now() };
               }
               return data;
-            } catch {
+            } catch (error) {
               // Si falla, usar cache si existe
+              if (IS_DEV) {
+                console.warn("[OverlayRotator] Error fetching weather:", error);
+              }
               return weatherCacheRef.current?.data || {};
             }
           })(),
@@ -657,8 +662,13 @@ export const OverlayRotator: React.FC = () => {
   }, [calendar.saints, calendar.namedays, config.saints?.include_namedays]);
 
   const forecastDays = useMemo(() => {
-    const forecastData = weather.days || weather.forecast || weather.daily || weather.weekly || [];
+    // Primero intentar obtener desde weather.days o weather.daily (formato del endpoint /api/weather/weekly)
+    const forecastData = weather.days || weather.daily || weather.forecast || weather.weekly || [];
     if (!Array.isArray(forecastData)) {
+      return [];
+    }
+    // Si weather.ok es false, no hay datos disponibles
+    if (weather.ok === false) {
       return [];
     }
     return forecastData.slice(0, 7).map((day: Record<string, unknown>) => {
@@ -760,17 +770,20 @@ export const OverlayRotator: React.FC = () => {
       )
     });
 
-    // forecast (WeatherForecastCard - pronóstico semanal)
-    map.set("forecast", {
-      id: "forecast",
-      duration: (durations.forecast ?? 15) * 1000,
-      render: () => (
-        <WeatherForecastCard
-          forecast={forecastDays}
-          unit={temperature.unit}
-        />
-      )
-    });
+        // forecast (WeatherForecastCard - pronóstico semanal)
+    // Solo mostrar si hay datos de pronóstico disponibles
+    if (forecastDays.length > 0) {
+      map.set("forecast", {
+        id: "forecast",
+        duration: (durations.forecast ?? 15) * 1000,
+        render: () => (
+          <WeatherForecastCard
+            forecast={forecastDays}
+            unit={temperature.unit}
+          />
+        )
+      });
+    }
 
     // astronomy (EphemeridesCard - SOLO efemérides astronómicas + fase lunar)
     // NO incluir efemérides históricas aquí - tienen su propio panel exclusivo
@@ -837,11 +850,44 @@ export const OverlayRotator: React.FC = () => {
       : [];
     const v2ConfigForDuration = config as unknown as { panels?: { historicalEvents?: { rotation_seconds?: number } } };
     const rotationSeconds = v2ConfigForDuration.panels?.historicalEvents?.rotation_seconds ?? 6;
-    map.set("historicalEvents", {
-      id: "historicalEvents",
-      duration: (durations.historicalEvents ?? 6) * 1000,
-      render: () => <HistoricalEventsCard items={historicalEventsItemsForCard} rotationSeconds={rotationSeconds} />
-    });
+    
+    // Alternar eventos históricos - mostrar diferentes eventos en cada rotación
+        map.set("historicalEvents", {
+          id: "historicalEvents",
+          duration: (durations.historicalEvents ?? 6) * 1000,
+          render: () => {
+            const totalEvents = historicalEventsItemsForCard.length;
+            if (totalEvents === 0) {
+              return <HistoricalEventsCard items={["No hay efemérides para este día."]} rotationSeconds={rotationSeconds} />;
+            }
+            
+            // Limitar a 2 eventos máximo para evitar desbordes en pantalla
+            const eventsPerDisplay = 2;
+            
+            // Usar el contador ref que se incrementa cada vez que se muestra este panel
+            const displayIndex = historicalEventsCounterRef.current % Math.max(1, Math.ceil(totalEvents / eventsPerDisplay));
+            const startIndex = (displayIndex * eventsPerDisplay) % totalEvents;
+            
+            // Tomar los eventos para esta rotación
+            let alternatingEvents: string[] = [];
+            if (startIndex + eventsPerDisplay <= totalEvents) {
+              alternatingEvents = historicalEventsItemsForCard.slice(startIndex, startIndex + eventsPerDisplay);
+            } else {
+              // Si se cruza el final del array, tomar desde startIndex hasta el final y completar desde el principio
+              const fromStart = historicalEventsItemsForCard.slice(startIndex);
+              const fromBeginning = historicalEventsItemsForCard.slice(0, eventsPerDisplay - fromStart.length);
+              alternatingEvents = [...fromStart, ...fromBeginning];
+            }
+            
+            // Incrementar contador para la próxima vez que se muestre este panel
+            historicalEventsCounterRef.current = (historicalEventsCounterRef.current + 1) % Math.max(1, Math.ceil(totalEvents / eventsPerDisplay));
+            
+            // Asegurar que siempre mostramos exactamente 2 eventos o menos
+            const finalEvents = alternatingEvents.slice(0, eventsPerDisplay);
+            
+            return <HistoricalEventsCard items={finalEvents} rotationSeconds={rotationSeconds} />;
+          }
+        });
 
     // NOTA: Paneles legacy v1 eliminados. Ahora solo se soportan nombres v2.
     // Los mapeos legacy se mantienen en LEGACY_ROTATION_PANEL_MAP para conversión automática.
@@ -937,7 +983,8 @@ export const OverlayRotator: React.FC = () => {
         const hasData = !!(sunrise || sunset || moonPhase || ephemeridesEvents.length > 0);
         shouldInclude = (ephemeridesEnabledV2 || ephemeridesEnabledV1) && hasData;
       } else if (panelId === "forecast") {
-        shouldInclude = forecastDays.length > 0;
+        // Solo incluir si hay datos de pronóstico y la respuesta es ok
+        shouldInclude = forecastDays.length > 0 && weather.ok !== false;
       } else if (panelId === "weather") {
         shouldInclude = condition !== null || temperature.value !== "--";
       }
@@ -1011,6 +1058,7 @@ export const OverlayRotator: React.FC = () => {
   useEffect(() => {
     setCurrentPanelIndex(0);
     currentPanelIndexRef.current = 0;
+    // No resetear el contador de efemérides históricas para mantener la continuidad del alternado
   }, [availablePanelIds, rotationRestartKey]);
 
   // Manejo del timer de rotación

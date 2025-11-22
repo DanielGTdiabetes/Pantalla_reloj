@@ -448,6 +448,7 @@ main {
   flex-direction: column;
   gap: clamp(12px, 1.5vw, 20px);
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 .overlay-rotator__content {
@@ -458,6 +459,7 @@ main {
   min-height: 0;
   overflow: hidden;
   max-height: 100%;
+  box-sizing: border-box;
 }
 
 .overlay-rotator__fallback {
@@ -547,7 +549,7 @@ main {
   border: 1px solid var(--card-border);
   box-shadow: var(--card-shadow);
   overflow: hidden;
-  padding: clamp(16px, 2vw, 24px);
+  padding: clamp(12px, 1.5vw, 20px);
   display: flex;
   align-items: stretch;
   justify-content: center;
@@ -555,6 +557,8 @@ main {
   pointer-events: none;
   min-height: 0;
   max-height: 100%;
+  box-sizing: border-box;
+  contain: layout style paint;
 }
 
 .rotating-card__content {
@@ -574,13 +578,17 @@ main {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: clamp(12px, 1.5vw, 20px);
   color: var(--text-primary);
   text-align: center;
   max-height: 100%;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
+  padding: clamp(8px, 1vw, 12px);
+  box-sizing: border-box;
+  contain: layout style;
 }
 
 .card-icon {
@@ -609,6 +617,8 @@ main {
   flex-shrink: 1;
   min-height: 0;
   max-height: 100%;
+  overflow: visible;
+  box-sizing: border-box;
 }
 
 .time-card__greeting {
@@ -650,12 +660,16 @@ main {
   opacity: 0.8;
 }
 
-.time-card__date {
+.time-card__date,
+.time-card__date-display {
   margin: 0;
   font-size: var(--font-size-body);
   color: var(--theme-text-secondary);
   text-transform: capitalize;
   line-height: var(--line-height-normal);
+  overflow: visible;
+  white-space: normal;
+  word-wrap: break-word;
 }
 
 .weather-card {
@@ -824,7 +838,7 @@ main {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  animation: scroll-up 24s linear infinite;
+  animation: scroll-up 120s linear infinite;
 }
 
 .news-card__item {
@@ -935,6 +949,8 @@ main {
 .ephemerides-card {
   align-items: stretch;
   gap: clamp(22px, 2vw, 32px);
+  overflow: visible;
+  min-height: 0;
 }
 
 .ephemerides-card__header {

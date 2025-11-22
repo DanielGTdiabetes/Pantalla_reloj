@@ -86,9 +86,14 @@
 }
 
 .time-card__date-full {
-  font-size: clamp(0.9rem, 1.8vw, 1.1rem);
+  font-size: clamp(0.85rem, 1.6vw, 1rem);
   color: var(--theme-text-secondary);
   text-transform: capitalize;
+  white-space: normal;
+  word-wrap: break-word;
+  text-align: center;
+  line-height: 1.4;
+  max-width: 100%;
 }
 
 /* ============================================
@@ -419,6 +424,10 @@
   display: grid;
   grid-template-rows: auto 1fr;
   gap: var(--space-md);
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
 }
 
 .moon-phase {
@@ -470,6 +479,8 @@
   padding: var(--space-md);
   border-radius: var(--radius-md);
   background: var(--theme-card-bg);
+  flex-shrink: 0;
+  min-height: fit-content;
 }
 
 .sun-event {
@@ -495,6 +506,12 @@
 
 .astro-events {
   margin-top: var(--space-md);
+  flex-shrink: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 0 1 auto;
 }
 
 .astro-events h3 {
