@@ -2089,7 +2089,7 @@ export default function GeoScopeMap({
             // Verificar provider: GlobalRadarLayer solo soporta "rainviewer"
             const radarProviderInit =
               weatherLayersRadarInit?.provider ??
-              uiGlobalRadarInit?.provider ??
+              (uiGlobalRadarInit as any)?.provider ??
               globalRadarConfigInit?.provider ??
               "rainviewer";
 
@@ -4967,15 +4967,14 @@ export default function GeoScopeMap({
 
   // Determine radar configuration for WeatherRadarLayer
   const configV2ForRadar = config as unknown as AppConfigV2 | null;
-  const radarConfig = 
+  const radarConfig: GlobalRadarLayerConfigV2 | undefined = 
     configV2ForRadar?.layers?.global_?.radar ?? 
     configV2ForRadar?.layers?.global?.radar ??
-    configV2ForRadar?.ui_global?.weather_layers?.radar ?? 
     configV2ForRadar?.ui_global?.radar;
   
   const radarProvider = radarConfig?.provider ?? "maptiler_weather";
   const radarEnabled = radarConfig?.enabled ?? false;
-  const radarOpacity = radarConfig?.opacity ?? 0.7;
+  const radarOpacityValue = radarConfig?.opacity ?? 0.7;
   const radarAnimationSpeed = radarConfig?.animation_speed ?? 1.0;
 
   return (
@@ -4989,7 +4988,7 @@ export default function GeoScopeMap({
       {mapRef.current && radarProvider === "maptiler_weather" ? (
         <WeatherRadarLayer
           enabled={radarEnabled}
-          opacity={radarOpacity}
+          opacity={radarOpacityValue}
           animationSpeed={radarAnimationSpeed}
           map={mapRef.current}
           config={configV2ForRadar}

@@ -6,7 +6,7 @@ import "@maptiler/sdk/dist/maptiler-sdk.css";
 import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
 import { waitForMapReady } from "../../../lib/map/utils/waitForMapReady";
 import { extractMaptilerApiKey } from "../../../lib/map/maptilerRuntime";
-import type { AppConfigV2 } from "../../../types/config_v2";
+import type { AppConfigV2, GlobalRadarLayerConfigV2 } from "../../../types/config_v2";
 
 interface WeatherRadarLayerOptions {
   enabled?: boolean;
@@ -41,7 +41,7 @@ export default function WeatherRadarLayer({
   useEffect(() => {
     // Early exit if disabled or missing dependencies
     if (!enabled || !map || !config) {
-      if (radarLayerRef.current) {
+      if (radarLayerRef.current && map) {
         // Cleanup existing layer if disabling
         try {
           radarLayerRef.current.animate(0); // Stop animation
@@ -62,9 +62,9 @@ export default function WeatherRadarLayer({
     }
 
     // Check provider - only initialize if provider is maptiler_weather
-    const radarConfig = 
+    const radarConfig: GlobalRadarLayerConfigV2 | undefined = 
       config.layers?.global_?.radar ?? 
-      config.ui_global?.weather_layers?.radar ?? 
+      config.layers?.global?.radar ??
       config.ui_global?.radar;
     
     const provider = radarConfig?.provider ?? "maptiler_weather";
@@ -74,7 +74,7 @@ export default function WeatherRadarLayer({
     }
 
     // Extract and configure MapTiler API key
-    const apiKey = extractMaptilerApiKey(config, health);
+    const apiKey = extractMaptilerApiKey(config as any, health);
     if (!apiKey) {
       console.warn("[WeatherRadarLayer] MapTiler API key not available, skipping radar layer");
       return;
@@ -100,7 +100,7 @@ export default function WeatherRadarLayer({
         }
 
         // Find water layer to insert radar below it
-        const styleLayers = style.layers || [];
+        const styleLayers = Array.isArray(style.layers) ? style.layers : [];
         let waterLayerId: string | undefined;
         
         // Look for water layer by common IDs
@@ -129,8 +129,9 @@ export default function WeatherRadarLayer({
         });
 
         // Add layer to map (RadarLayer implements MapLibre layer interface)
+        // Type assertion needed because RadarLayer from @maptiler/weather is compatible but types don't match exactly
         if (waterLayerId) {
-          map.addLayer(radar, waterLayerId);
+          map.addLayer(radar as any, waterLayerId);
           // Make water slightly transparent for better radar visibility
           try {
             const waterLayer = map.getLayer(waterLayerId);
@@ -143,11 +144,11 @@ export default function WeatherRadarLayer({
           }
         } else {
           // Fallback: add at the end (before labels if possible)
-          const labelLayer = styleLayers.find(l => l.type === "symbol");
+          const labelLayer = styleLayers.find((l: any) => l.type === "symbol");
           if (labelLayer && labelLayer.id) {
-            map.addLayer(radar, labelLayer.id);
+            map.addLayer(radar as any, labelLayer.id);
           } else {
-            map.addLayer(radar);
+            map.addLayer(radar as any);
           }
         }
 

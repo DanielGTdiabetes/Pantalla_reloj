@@ -48,6 +48,7 @@ import type {
   AppConfigV2,
   CalendarConfig,
   FlightsLayerConfigV2,
+  GlobalRadarLayerConfigV2,
   OpenSkyConfigV2,
   PanelsConfigV2,
   ShipsLayerConfigV2,
@@ -1048,8 +1049,8 @@ export const ConfigPage: React.FC = () => {
       const globalPayload = layersPayload.global ?? layersPayload.global_ ?? {};
       
       // Asegurar que el radar tiene todos los campos necesarios
-      const radarConfig = globalPayload.radar ?? {};
-      const sanitizedRadar = {
+      const radarConfig = (globalPayload.radar ?? {}) as Partial<GlobalRadarLayerConfigV2>;
+      const sanitizedRadar: GlobalRadarLayerConfigV2 = {
         enabled: radarConfig.enabled ?? false,
         provider: radarConfig.provider || "maptiler_weather",
         opacity: radarConfig.opacity ?? 0.7,
@@ -1629,7 +1630,7 @@ export const ConfigPage: React.FC = () => {
                   onChange={(e) => {
                     const currentLayers = config.layers ?? {};
                     const currentGlobal = currentLayers.global ?? currentLayers.global_ ?? {};
-                    const currentRadar = currentGlobal.radar ?? {};
+                    const currentRadar = (currentGlobal.radar ?? {}) as Partial<GlobalRadarLayerConfigV2>;
                     
                     setConfig({
                       ...config,
@@ -1643,7 +1644,7 @@ export const ConfigPage: React.FC = () => {
                             provider: currentRadar.provider || "maptiler_weather",
                             opacity: currentRadar.opacity ?? 0.7,
                             animation_speed: currentRadar.animation_speed ?? 1.0,
-                          },
+                          } as GlobalRadarLayerConfigV2,
                         },
                       },
                     });
@@ -1681,7 +1682,7 @@ export const ConfigPage: React.FC = () => {
                     onChange={(e) => {
                       const currentLayers = config.layers ?? {};
                       const currentGlobal = currentLayers.global ?? currentLayers.global_ ?? {};
-                      const currentRadar = currentGlobal.radar ?? {};
+                      const currentRadar = (currentGlobal.radar ?? {}) as Partial<GlobalRadarLayerConfigV2>;
                       const newOpacity = parseFloat(e.target.value);
                       
                       setConfig({
@@ -1696,7 +1697,7 @@ export const ConfigPage: React.FC = () => {
                               provider: currentRadar.provider || "maptiler_weather",
                               opacity: newOpacity,
                               animation_speed: currentRadar.animation_speed ?? 1.0,
-                            },
+                            } as GlobalRadarLayerConfigV2,
                           },
                         },
                       });
@@ -1720,7 +1721,7 @@ export const ConfigPage: React.FC = () => {
                     onChange={(e) => {
                       const currentLayers = config.layers ?? {};
                       const currentGlobal = currentLayers.global ?? currentLayers.global_ ?? {};
-                      const currentRadar = currentGlobal.radar ?? {};
+                      const currentRadar = (currentGlobal.radar ?? {}) as Partial<GlobalRadarLayerConfigV2>;
                       const newSpeed = parseFloat(e.target.value);
                       
                       setConfig({
@@ -1735,7 +1736,7 @@ export const ConfigPage: React.FC = () => {
                               provider: currentRadar.provider || "maptiler_weather",
                               opacity: currentRadar.opacity ?? 0.7,
                               animation_speed: newSpeed,
-                            },
+                            } as GlobalRadarLayerConfigV2,
                           },
                         },
                       });
