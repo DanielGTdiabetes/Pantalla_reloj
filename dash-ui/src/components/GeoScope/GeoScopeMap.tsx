@@ -4968,10 +4968,17 @@ export default function GeoScopeMap({
 
   // Determine radar configuration for WeatherRadarLayer
   const configV2ForRadar = config as unknown as AppConfigV2 | null;
-  const radarConfig: GlobalRadarLayerConfigV2 | undefined = 
-    configV2ForRadar?.layers?.global_?.radar ?? 
-    configV2ForRadar?.layers?.global?.radar ??
-    configV2ForRadar?.ui_global?.radar;
+  const radarConfigFromLayers = configV2ForRadar?.layers?.global_?.radar ?? configV2ForRadar?.layers?.global?.radar;
+  const radarConfigFromUI = configV2ForRadar?.ui_global?.radar;
+  
+  // Merge configs: layers.global.radar takes precedence, fallback to ui_global.radar with defaults
+  const radarConfig: GlobalRadarLayerConfigV2 | undefined = radarConfigFromLayers ?? 
+    (radarConfigFromUI ? {
+      enabled: radarConfigFromUI.enabled ?? false,
+      provider: radarConfigFromUI.provider ?? "maptiler_weather",
+      opacity: 0.7, // Default opacity for RadarConfig
+      animation_speed: 1.0, // Default animation speed
+    } : undefined);
   
   const radarProvider = radarConfig?.provider ?? "maptiler_weather";
   const radarEnabled = radarConfig?.enabled ?? false;

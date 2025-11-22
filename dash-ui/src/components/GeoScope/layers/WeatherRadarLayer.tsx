@@ -65,13 +65,14 @@ export default function WeatherRadarLayer({
     const radarConfigFromLayers = config.layers?.global_?.radar ?? config.layers?.global?.radar;
     const radarConfigFromUI = config.ui_global?.radar;
     
-    // Merge configs: layers.global.radar takes precedence, fallback to ui_global.radar
+    // Merge configs: layers.global.radar takes precedence, fallback to ui_global.radar with defaults
+    // RadarConfig (from ui_global) doesn't have opacity/animation_speed, so we use defaults
     const radarConfig: GlobalRadarLayerConfigV2 | undefined = radarConfigFromLayers ?? 
       (radarConfigFromUI ? {
         enabled: radarConfigFromUI.enabled ?? false,
-        provider: (radarConfigFromUI as any).provider ?? "maptiler_weather",
-        opacity: radarConfigFromUI.opacity ?? 0.7,
-        animation_speed: (radarConfigFromUI as any).animation_speed ?? 1.0,
+        provider: radarConfigFromUI.provider ?? "maptiler_weather",
+        opacity: 0.7, // Default opacity for RadarConfig
+        animation_speed: 1.0, // Default animation speed
       } : undefined);
     
     const provider = radarConfig?.provider ?? "maptiler_weather";
