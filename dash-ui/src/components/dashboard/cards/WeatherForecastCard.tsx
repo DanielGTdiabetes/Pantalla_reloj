@@ -1,4 +1,5 @@
 import { CloudIcon } from "../../icons";
+import { AnimatedWeatherIcon } from "../../icons/AnimatedWeatherIcons";
 
 type ForecastDay = {
   date: string;
@@ -16,6 +17,22 @@ type ForecastDay = {
 type WeatherForecastCardProps = {
   forecast: ForecastDay[];
   unit?: string;
+};
+
+// Normalizar temperatura para gráfico (0-100%)
+const normalizeTemp = (temp: number | null, minTemp: number, maxTemp: number): number => {
+  if (temp === null || Number.isNaN(temp)) return 0;
+  if (maxTemp === minTemp) return 50;
+  return ((temp - minTemp) / (maxTemp - minTemp)) * 100;
+};
+
+// Obtener color según temperatura
+const getTempColor = (temp: number | null, isMax: boolean): string => {
+  if (temp === null || Number.isNaN(temp)) return "#868e96";
+  if (temp >= 25) return isMax ? "#ff6b6b" : "#ff8787";
+  if (temp >= 15) return isMax ? "#ffd43b" : "#ffe066";
+  if (temp >= 5) return isMax ? "#4dabf7" : "#74c0fc";
+  return isMax ? "#339af0" : "#51cf66";
 };
 
 const getWeatherIcon = (condition: string | null): string => {
@@ -134,55 +151,75 @@ const formatTemperature = (value: number | null, suffix: string): string => {
 export const WeatherForecastCard = ({ forecast, unit = "°C" }: WeatherForecastCardProps): JSX.Element => {
   const forecastDays = forecast.length > 0 ? forecast.slice(0, 7) : [];
 
+  // Calcular min/max globales para normalización
+  const allTemps = forecastDays.flatMap(day => [
+    day.temperature.min,
+    day.temperature.max
+  ]).filter((temp): temp is number => temp !== null && !Number.isNaN(temp));
+  
+  const globalMin = allTemps.length > 0 ? Math.min(...allTemps) : 0;
+  const globalMax = allTemps.length > 0 ? Math.max(...allTemps) : 30;
+
   return (
-    <div className="card weather-forecast-card">
+    <div className="card weather-forecast-card weather-forecast-card-enhanced">
       <div className="weather-forecast-card__header">
         <CloudIcon className="card-icon" aria-hidden="true" />
         <h2>Pronóstico Semanal</h2>
       </div>
       <div className="weather-forecast-card__content">
         {forecastDays.length > 0 ? (
-          <div className="weather-forecast-card__list">
+          <div className="forecast-grid">
             {forecastDays.map((day, index) => {
               const dayName = day.dayName || formatDayName(day.date);
-              const iconPath = getWeatherIcon(day.condition);
+              const tempMax = day.temperature.max;
+              const tempMin = day.temperature.min;
+              const maxHeight = tempMax !== null ? normalizeTemp(tempMax, globalMin, globalMax) : 0;
+              const minHeight = tempMin !== null ? normalizeTemp(tempMin, globalMin, globalMax) : 0;
               
               return (
-                <div key={`forecast-${index}`} className="weather-forecast-card__day">
-                  <div className="weather-forecast-card__day-header">
-                    <span className="weather-forecast-card__day-name">{dayName}</span>
-                    <img
-                      src={iconPath}
-                      alt={day.condition || "Condición climática"}
-                      className="weather-forecast-card__icon"
-                      style={{ width: "32px", height: "32px" }}
-                      onError={(e) => {
-                        console.warn(`[WeatherForecastCard] Error al cargar icono: ${iconPath} para ${day.condition}`);
-                        (e.target as HTMLImageElement).style.display = "none";
-                      }}
-                    />
-                  </div>
-                  <div className="weather-forecast-card__day-temps">
-                    <span className="weather-forecast-card__temp-max">
-                      {formatTemperature(day.temperature.max, unit)}
-                    </span>
-                    <span className="weather-forecast-card__temp-min">
-                      {formatTemperature(day.temperature.min, unit)}
-                    </span>
+                <div key={`forecast-${index}`} className="forecast-day">
+                  <span className="forecast-day__name">{dayName}</span>
+                  <AnimatedWeatherIcon 
+                    condition={day.condition} 
+                    size={40}
+                    className="forecast-day__icon"
+                  />
+                  <div className="temp-bars">
+                    {tempMax !== null && (
+                      <div 
+                        className="temp-bar max" 
+                        style={{ 
+                          height: `${Math.max(20, maxHeight)}%`,
+                          background: getTempColor(tempMax, true)
+                        }}
+                      >
+                        <span className="temp-label">{formatTemperature(tempMax, unit)}</span>
+                      </div>
+                    )}
+                    {tempMin !== null && (
+                      <div 
+                        className="temp-bar min" 
+                        style={{ 
+                          height: `${Math.max(20, minHeight)}%`,
+                          background: getTempColor(tempMin, false)
+                        }}
+                      >
+                        <span className="temp-label">{formatTemperature(tempMin, unit)}</span>
+                      </div>
+                    )}
                   </div>
                   {day.precipitation !== null && day.precipitation !== undefined && (
-                    <span className="weather-forecast-card__precipitation">
-                      <img
-                        src="/icons/weather/rainy.svg"
-                        alt="Precipitación"
-                        style={{ width: "16px", height: "16px", verticalAlign: "middle", marginRight: "4px" }}
-                        onError={(e) => {
-                          console.warn(`[WeatherForecastCard] Error al cargar icono de precipitación`);
-                          (e.target as HTMLImageElement).style.display = "none";
-                        }}
-                      />
-                      {Math.round(day.precipitation)}%
-                    </span>
+                    <div className="precipitation">
+                      <div className="precip-bar">
+                        <div 
+                          className="precip-bar-fill"
+                          style={{ width: `${Math.min(100, day.precipitation)}%` }}
+                        />
+                      </div>
+                      <span style={{ fontSize: "0.75rem", color: "var(--theme-text-muted)" }}>
+                        {Math.round(day.precipitation)}%
+                      </span>
+                    </div>
                   )}
                 </div>
               );

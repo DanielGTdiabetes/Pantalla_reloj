@@ -21,67 +21,58 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, events, illuminati
   const items = events.length > 0 ? events : [];
   const repeatedItems = repeatItems(items);
 
+  const illuminationPercent = illumination !== null && illumination !== undefined
+    ? Math.round(illumination > 1 ? illumination : illumination * 100)
+    : null;
+
   return (
-    <div className="card ephemerides-card">
+    <div className="card ephemerides-card ephemerides-card-enhanced">
       <div className="ephemerides-card__header">
         <BookOpenIcon className="card-icon" aria-hidden="true" />
-        <h2>Efemérides</h2>
+        <h2>Astronomía</h2>
       </div>
-      <div className="ephemerides-card__meta">
-        <div>
-          <span className="ephemerides-card__label">Amanecer</span>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexDirection: "column" }}>
-            <span>{sunrise ?? "--:--"}</span>
-            <SunriseIcon style={{ width: "32px", height: "32px", opacity: 0.9 }} aria-hidden="true" />
-          </div>
-        </div>
-        <div>
-          <span className="ephemerides-card__label">Atardecer</span>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexDirection: "column" }}>
-            <span>{sunset ?? "--:--"}</span>
-            <SunsetIcon style={{ width: "32px", height: "32px", opacity: 0.9 }} aria-hidden="true" />
-          </div>
-        </div>
-        <div className="ephemerides-card__moon-container">
-          <span className="ephemerides-card__label">Fase lunar</span>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", justifyContent: "center", width: "100%" }}>
-            <MoonIcon
-              phase={moonPhase}
-              illumination={illumination}
-              size={48}
-              className="ephemerides-card__moon-icon"
-              alt="Fase lunar actual"
-            />
-            <div className="ephemerides-card__moon-text">
-              <span className="ephemerides-card__moon-phase">{moonPhase ?? "Sin datos"}</span>
-              {illumination !== null && illumination !== undefined && (
-                <span className="ephemerides-card__moon-illumination">
-                  {Math.round(illumination > 1 ? illumination : illumination * 100)}%
-                </span>
-              )}
-            </div>
-          </div>
+      
+      <div className="moon-phase">
+        <div className="moon-phase-visual" style={{
+          background: illuminationPercent !== null
+            ? `radial-gradient(circle at ${50 - (illuminationPercent / 2)}% 50%, #f0f0f0, #c0c0c0)`
+            : 'radial-gradient(circle at 50% 50%, #f0f0f0, #c0c0c0)',
+          boxShadow: illuminationPercent !== null
+            ? `inset ${-40 + (illuminationPercent / 2.5)}px 0 0 rgba(0, 0, 0, 0.3), 0 0 20px rgba(0, 0, 0, 0.2)`
+            : 'inset -40px 0 0 rgba(0, 0, 0, 0.3), 0 0 20px rgba(0, 0, 0, 0.2)'
+        }} />
+        <div className="moon-info">
+          <span className="phase-name">{moonPhase ?? "Sin datos"}</span>
+          {illuminationPercent !== null && (
+            <span className="illumination">{illuminationPercent}% iluminada</span>
+          )}
         </div>
       </div>
-      {items.length > 0 ? (
-        <div className="ephemerides-card__scroller">
-          <div className="ephemerides-card__events">
-            {repeatedItems.map((item, index) => (
-              // Usar índice completo para garantizar keys únicos (incluso después de duplicar)
-              <p key={`ephemerides-${index}`}>{item}</p>
+
+      <div className="sun-timeline">
+        <div className="sun-event">
+          <SunriseIcon style={{ width: "32px", height: "32px", color: "var(--theme-accent)" }} aria-hidden="true" />
+          <span className="label">Amanecer</span>
+          <span className="time">{sunrise ?? "--:--"}</span>
+        </div>
+        <div className="sun-event">
+          <SunsetIcon style={{ width: "32px", height: "32px", color: "var(--theme-accent-secondary)" }} aria-hidden="true" />
+          <span className="label">Atardecer</span>
+          <span className="time">{sunset ?? "--:--"}</span>
+        </div>
+      </div>
+
+      {items.length > 0 && (
+        <div className="astro-events">
+          <h3>Eventos</h3>
+          <ul>
+            {repeatedItems.slice(0, 5).map((item, index) => (
+              <li key={`ephemerides-${index}`}>
+                <span>⭐</span>
+                <span>{item}</span>
+              </li>
             ))}
-          </div>
-          <div className="ephemerides-card__gradient" aria-hidden="true" />
-        </div>
-      ) : (
-        <div style={{ 
-          padding: "20px", 
-          textAlign: "center", 
-          color: "var(--text-muted)",
-          fontSize: "0.95rem",
-          opacity: 0.7
-        }}>
-          Cargando efemérides históricas...
+          </ul>
         </div>
       )}
     </div>

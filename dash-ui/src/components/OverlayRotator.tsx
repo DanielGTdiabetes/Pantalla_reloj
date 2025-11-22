@@ -1119,7 +1119,7 @@ export const OverlayRotator: React.FC = () => {
   }, [lastUpdatedAt, lastUpdatedLabel, loading]);
 
   // Calcular progreso de rotación
-  const rotationProgress = useRotationProgress(
+  const { progress: rotationProgress } = useRotationProgress(
     currentPanel?.duration ?? 0,
     currentPanel !== null && rotationConfig.enabled
   );

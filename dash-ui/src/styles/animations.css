@@ -223,6 +223,67 @@
   animation: rainIcon 1.5s ease-in-out infinite;
 }
 
+/* ============================================
+   ANIMACIONES PARA ICONOS METEOROLÓGICOS
+   ============================================ */
+.animated-weather-icon {
+  display: block;
+}
+
+/* Sol con rayos rotando */
+.animated-weather-icon--sun .sun-ray {
+  animation: sunRays 4s ease-in-out infinite;
+  transform-origin: 50% 50%;
+}
+
+.animated-weather-icon--sun .sun-core {
+  animation: breathe 3s ease-in-out infinite;
+}
+
+/* Nubes moviéndose */
+.animated-weather-icon--cloud .cloud-main {
+  animation: cloudMove 6s ease-in-out infinite;
+}
+
+.animated-weather-icon--cloud .cloud-left {
+  animation: cloudMove 5s ease-in-out infinite;
+  animation-delay: 0.5s;
+}
+
+.animated-weather-icon--cloud .cloud-right {
+  animation: cloudMove 7s ease-in-out infinite;
+  animation-delay: 1s;
+}
+
+/* Lluvia cayendo */
+.animated-weather-icon--rain .rain-drop {
+  animation: rain linear infinite;
+}
+
+/* Nieve cayendo */
+.animated-weather-icon--snow .snowflake {
+  animation: snow linear infinite;
+}
+
+/* Rayo parpadeante */
+.animated-weather-icon--thunderstorm .lightning {
+  animation: heartbeat 1.5s ease-in-out infinite;
+}
+
+/* Niebla con opacidad variable */
+.animated-weather-icon--fog .fog-layer {
+  animation: breathe 4s ease-in-out infinite;
+}
+
+/* Parcialmente nublado */
+.animated-weather-icon--partly-cloudy .sun-core {
+  animation: breathe 3s ease-in-out infinite;
+}
+
+.animated-weather-icon--partly-cloudy .cloud-main {
+  animation: cloudMove 8s ease-in-out infinite;
+}
+
 /* Lluvia cayendo */
 @keyframes rain {
   0% {

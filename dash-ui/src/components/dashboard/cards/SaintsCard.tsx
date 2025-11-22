@@ -48,19 +48,20 @@ export const SaintsCard = ({ saints }: SaintsCardProps): JSX.Element => {
   const displayEntries = entries.length > 0 ? entries : ["—"];
 
   return (
-    <div className="card saints-card">
+    <div className="card saints-card saints-card-enhanced">
       <div className="saints-card__header">
         <SantoralIconImage size={48} className="card-icon" />
         <h2>Santoral</h2>
       </div>
       <div className="saints-card__scroller">
-        <ul className="saints-card__list">
+        <div className="saints-list">
           {displayEntries.map((entry, index) => (
-            <li key={`saints-${index}-${entry.substring(0, 10)}`}>
-              {entry}
-            </li>
+            <div key={`saints-${index}-${entry.substring(0, 10)}`} className="saint-item">
+              <span className="saint-icon">✝</span>
+              <span className="saint-name">{entry}</span>
+            </div>
           ))}
-        </ul>
+        </div>
         <div className="saints-card__gradient" aria-hidden="true" />
       </div>
     </div>

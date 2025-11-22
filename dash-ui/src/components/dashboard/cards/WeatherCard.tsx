@@ -1,4 +1,5 @@
 import { DropletsIcon, WindIcon } from "../../icons";
+import { AnimatedWeatherIcon } from "../../icons/AnimatedWeatherIcons";
 import { WeatherIcon } from "../../WeatherIcon";
 
 type WeatherCardProps = {
@@ -40,21 +41,26 @@ export const WeatherCard = ({
     return "";
   };
 
+  // Extraer valor numérico de la temperatura
+  const tempValue = temperatureLabel.replace(/[^\d-]/g, '');
+  const tempUnit = temperatureLabel.replace(/[\d-]/g, '').trim();
+
   return (
-    <div className="card weather-card">
-      <div className="weather-card__header">
-        <WeatherIcon 
+    <div className="card weather-card weather-card-enhanced">
+      <div className="weather-card__main">
+        <AnimatedWeatherIcon 
           condition={condition} 
-          timezone={timezone}
-          size={100}
-          className={`weather-card__main-icon ${getIconAnimation()}`}
-          alt="Condición climática actual"
+          size={120}
+          className="weather-card__main-icon"
         />
         <div className="weather-card__temp-container">
-          <p className="weather-card__temperature">{temperatureLabel}</p>
+          <div className="weather-card__temperature-display">
+            <span className="weather-card__temp-value">{tempValue}</span>
+            <span className="weather-card__temp-unit">{tempUnit}</span>
+          </div>
           {feelsLikeLabel && (
             <p className="weather-card__feels-like">
-              Sensación {feelsLikeLabel}
+              Sensación: {feelsLikeLabel}
             </p>
           )}
         </div>

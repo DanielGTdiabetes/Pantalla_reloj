@@ -212,7 +212,7 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
   const repeatedEntries = repeatItems(entries);
 
   return (
-    <div className="card harvest-card">
+    <div className="card harvest-card harvest-card-enhanced">
       <div className="harvest-card__header">
         <SproutIcon className="card-icon" aria-hidden="true" />
         <h2>Cosechas</h2>
@@ -223,12 +223,12 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
             const iconPath = getHarvestIcon(entry.name);
             return (
               // Usar índice completo para garantizar keys únicas (incluso después de duplicar)
-              <li key={`harvest-${index}`}>
+              <li key={`harvest-${index}`} style={{ animationDelay: `${index * 0.1}s` }}>
                 <img 
                   src={iconPath} 
                   alt={entry.name}
-                  className="h-8 w-8"
-                  style={{ marginRight: "8px", verticalAlign: "middle", width: "32px", height: "32px", display: "inline-block" }}
+                  className="harvest-icon"
+                  style={{ marginRight: "12px", verticalAlign: "middle", width: "48px", height: "48px", display: "inline-block" }}
                   onError={(e) => {
                     // Si falla la carga, intentar con el fallback si no es ya el fallback
                     const target = e.target as HTMLImageElement;

@@ -28,23 +28,31 @@ export const TimeCard = ({ timezone }: TimeCardProps): JSX.Element => {
   }, []);
 
   const localized = now.tz(timezone);
-  const timeLabel = localized.format("HH:mm");
-  const secondsLabel = localized.format("ss");
-  const dateLabel = localized.format("dddd, D [de] MMMM [de] YYYY");
+  const hours = localized.format("HH");
+  const minutes = localized.format("mm");
+  const seconds = localized.format("ss");
+  const dayName = localized.format("dddd");
+  const day = localized.format("D");
+  const month = localized.format("MMMM");
+  const year = localized.format("YYYY");
   const hour = localized.hour();
   const greeting = useMemo(() => getGreeting(hour), [hour]);
 
   return (
-    <div className="card time-card">
+    <div className="card time-card time-card-enhanced">
       <ClockIcon className="card-icon breathe-effect" aria-hidden="true" />
       <div className="time-card__body">
-        <p className="time-card__greeting">{greeting}</p>
-        <div className="time-card__time-container">
-          <span className="time-card__time">{timeLabel}</span>
-          <span className="time-card__separator">:</span>
-          <span className="time-card__seconds">{secondsLabel}</span>
+        <div className="time-card__greeting">{greeting}</div>
+        <div className="time-card__time-display">
+          <span className="time-card__hours">{hours}</span>
+          <span className="time-card__separator blink">:</span>
+          <span className="time-card__minutes">{minutes}</span>
         </div>
-        <p className="time-card__date">{dateLabel}</p>
+        <div className="time-card__seconds">{seconds}</div>
+        <div className="time-card__date-display">
+          <span className="time-card__day-name">{dayName}</span>
+          <span className="time-card__date-full">{day} de {month} de {year}</span>
+        </div>
       </div>
     </div>
   );

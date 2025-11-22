@@ -50,8 +50,38 @@ const CalendarIconImage: React.FC<{ size?: number; className?: string }> = ({ si
   );
 };
 
+const getCountdown = (startTime: string | null, timezone: string): string | null => {
+  if (!startTime) return null;
+  const now = dayjs().tz(timezone);
+  const start = dayjs(startTime).tz(timezone);
+  const diff = start.diff(now, 'minute');
+  
+  if (diff < 0) return null; // Ya pasó
+  if (diff < 60) return `En ${diff} min`;
+  
+  const hours = Math.floor(diff / 60);
+  const minutes = diff % 60;
+  if (minutes === 0) return `En ${hours} hora${hours > 1 ? 's' : ''}`;
+  return `En ${hours}h ${minutes}min`;
+};
+
+const getEventColor = (event: CalendarEvent): string => {
+  // Determinar color según tipo de evento (puede extenderse)
+  const title = event.title?.toLowerCase() || '';
+  if (title.includes('trabajo') || title.includes('work') || title.includes('reunión')) {
+    return '#4dabf7'; // Azul para trabajo
+  }
+  if (title.includes('personal') || title.includes('familia')) {
+    return '#51cf66'; // Verde para personal
+  }
+  if (title.includes('importante') || title.includes('urgente')) {
+    return '#ff6b6b'; // Rojo para importante
+  }
+  return '#4ec9ff'; // Color por defecto (acento)
+};
+
 export const CalendarCard = ({ events, timezone }: CalendarCardProps): JSX.Element => {
-  const normalized = events.slice(0, 10);
+  const normalized = events.slice(0, 3); // Máximo 3 eventos visibles
   const repeatedEvents = normalized.length > 0 ? repeatItems(normalized) : [];
   
   // Determinar si un evento está ocurriendo ahora
@@ -71,10 +101,10 @@ export const CalendarCard = ({ events, timezone }: CalendarCardProps): JSX.Eleme
   };
 
   return (
-    <div className="card calendar-card">
+    <div className="card calendar-card calendar-card-enhanced">
       <div className="calendar-card__header">
         <CalendarIconImage size={48} className="card-icon" />
-        <h2>Agenda</h2>
+        <h2>Próximos Eventos</h2>
       </div>
       {normalized.length === 0 ? (
         <p className="calendar-card__empty">No hay eventos próximos</p>
@@ -83,54 +113,31 @@ export const CalendarCard = ({ events, timezone }: CalendarCardProps): JSX.Eleme
           <ul className="calendar-card__list">
             {repeatedEvents.map((event, index) => {
               const label = event.title || "Evento";
-              const startDate = event.start
-                ? dayjs(event.start).tz(timezone).format("ddd D MMM, HH:mm")
+              const startTime = event.start
+                ? dayjs(event.start).tz(timezone).format("HH:mm")
                 : null;
-              const endDate = event.end
-                ? dayjs(event.end).tz(timezone).format("HH:mm")
-                : null;
-              const dateRange = startDate && endDate
-                ? `${startDate} - ${endDate}`
-                : startDate || null;
               const location = event.location || null;
-              const { isNow, minutesUntil } = getEventStatus(event);
+              const countdown = getCountdown(event.start, timezone);
+              const eventColor = getEventColor(event);
               // Usar índice completo para garantizar keys únicos (incluso después de duplicar)
               const uniqueKey = `calendar-${index}`;
               return (
-                <li key={uniqueKey}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span className="calendar-card__event-title">{label}</span>
-                    {isNow && (
-                      <span
-                        style={{
-                          backgroundColor: "#FF6B6B",
-                          color: "#FFFFFF",
-                          padding: "2px 8px",
-                          borderRadius: "12px",
-                          fontSize: "0.75em",
-                          fontWeight: "bold",
-                        }}
-                      >
-                        Ahora
-                      </span>
+                <li key={uniqueKey} className="calendar-event" style={{ borderLeftColor: eventColor }}>
+                  {startTime && (
+                    <div className="event-time">{startTime}</div>
+                  )}
+                  <div className="event-details">
+                    <h3 className="event-title">{label}</h3>
+                    {location && (
+                      <div className="event-location">
+                        <span>📍</span>
+                        <span>{location}</span>
+                      </div>
                     )}
-                    {!isNow && minutesUntil !== null && minutesUntil > 0 && minutesUntil < 60 && (
-                      <span
-                        style={{
-                          backgroundColor: "#4ECDC4",
-                          color: "#FFFFFF",
-                          padding: "2px 8px",
-                          borderRadius: "12px",
-                          fontSize: "0.75em",
-                          fontWeight: "bold",
-                        }}
-                      >
-                        en {minutesUntil} min
-                      </span>
+                    {countdown && (
+                      <div className="event-countdown">{countdown}</div>
                     )}
                   </div>
-                  {dateRange ? <span className="calendar-card__event-date">{dateRange}</span> : null}
-                  {location ? <span className="calendar-card__event-location">{location}</span> : null}
                 </li>
               );
             })}

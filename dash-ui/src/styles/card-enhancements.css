@@ -1,0 +1,666 @@
+/* ============================================
+   MEJORAS VISUALES PARA CARDS
+   Estilos específicos para cada panel mejorado
+   ============================================ */
+
+/* ============================================
+   TIMECARD ENHANCED
+   ============================================ */
+.time-card-enhanced {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: var(--space-lg);
+  align-items: center;
+  justify-items: center;
+}
+
+.time-card__greeting {
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-semibold);
+  color: var(--theme-text-secondary);
+  text-transform: capitalize;
+  margin: 0;
+  text-align: center;
+}
+
+.time-card__time-display {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  line-height: 1;
+  justify-content: center;
+}
+
+.time-card__hours,
+.time-card__minutes {
+  font-size: var(--font-size-display);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--theme-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.time-card__separator {
+  font-size: var(--font-size-display);
+  font-weight: var(--font-weight-bold);
+  color: var(--theme-accent);
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0.3;
+  }
+}
+
+.time-card__seconds {
+  font-size: clamp(2rem, 3vw, 3rem);
+  font-weight: var(--font-weight-semibold);
+  color: var(--theme-text-muted);
+  opacity: 0.7;
+  margin-top: var(--space-xs);
+}
+
+.time-card__date-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+}
+
+.time-card__day-name {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--theme-text-primary);
+  text-transform: capitalize;
+}
+
+.time-card__date-full {
+  font-size: var(--font-size-body);
+  color: var(--theme-text-secondary);
+  text-transform: capitalize;
+}
+
+/* ============================================
+   WEATHERCARD ENHANCED
+   ============================================ */
+.weather-card-enhanced {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: var(--space-lg);
+}
+
+.weather-card__main {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-md);
+  align-items: center;
+}
+
+.weather-card__temp-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.weather-card__temperature-display {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.weather-card__temp-value {
+  font-size: clamp(4rem, 6vw, 5rem);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+  color: var(--theme-text-primary);
+}
+
+.weather-card__temp-unit {
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-normal);
+  color: var(--theme-text-muted);
+  vertical-align: baseline;
+}
+
+/* ============================================
+   FORECAST CARD ENHANCED
+   ============================================ */
+.weather-forecast-card-enhanced {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: var(--space-md);
+}
+
+.forecast-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--space-sm);
+  width: 100%;
+}
+
+.forecast-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm);
+  border-radius: var(--radius-md);
+  background: var(--theme-card-bg);
+  border: var(--border-width-thin) solid var(--theme-border);
+}
+
+.forecast-day__name {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+  color: var(--theme-text-primary);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+}
+
+.temp-bars {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  height: 120px;
+  justify-content: flex-end;
+  position: relative;
+}
+
+.temp-bar {
+  width: 100%;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 4px;
+  transition: height var(--transition-slow) var(--ease-out);
+  position: relative;
+}
+
+.temp-bar.max {
+  background: linear-gradient(180deg, #ff6b6b, #ff8787);
+}
+
+.temp-bar.min {
+  background: linear-gradient(180deg, #4dabf7, #74c0fc);
+}
+
+.temp-label {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  color: var(--theme-text-primary);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.precipitation {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.precip-bar {
+  width: 100%;
+  height: 4px;
+  background: var(--theme-bg-tertiary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  position: relative;
+}
+
+.precip-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4dabf7, #339af0);
+  border-radius: var(--radius-full);
+  transition: width var(--transition-slow) var(--ease-out);
+}
+
+/* ============================================
+   HARVEST CARD ENHANCED
+   ============================================ */
+.harvest-card-enhanced .harvest-card__item {
+  animation: growIn var(--transition-normal) var(--ease-out);
+  animation-fill-mode: both;
+}
+
+@keyframes growIn {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.harvest-card__scroller::before,
+.harvest-card__scroller::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 40px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.harvest-card__scroller::before {
+  top: 0;
+  background: linear-gradient(to bottom, var(--theme-card-bg), transparent);
+}
+
+.harvest-card__scroller::after {
+  bottom: 0;
+  background: linear-gradient(to top, var(--theme-card-bg), transparent);
+}
+
+.harvest-card__list li img {
+  width: 48px !important;
+  height: 48px !important;
+}
+
+/* Colores según temporada */
+[data-theme="day"] .harvest-card__item {
+  /* Primavera/Verano: colores cálidos */
+}
+
+[data-theme="night"] .harvest-card__item {
+  /* Otoño/Invierno: colores fríos */
+}
+
+/* ============================================
+   NEWS CARD ENHANCED
+   ============================================ */
+.news-card-enhanced {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: var(--space-md);
+}
+
+.news-item {
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--theme-card-bg);
+  border-left: var(--border-width-thick) solid var(--theme-accent);
+  margin-bottom: var(--space-md);
+  transition: all var(--transition-normal) var(--ease-in-out);
+}
+
+.news-item:hover {
+  transform: translateX(4px);
+  border-left-color: var(--theme-accent-secondary);
+}
+
+.news-source {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+  color: var(--theme-accent);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  margin-bottom: var(--space-xs);
+}
+
+.news-title {
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-bold);
+  color: var(--theme-text-primary);
+  margin: 0 0 var(--space-xs) 0;
+  line-height: var(--line-height-normal);
+}
+
+.news-summary {
+  font-size: var(--font-size-body);
+  color: var(--theme-text-secondary);
+  line-height: var(--line-height-normal);
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ============================================
+   CALENDAR CARD ENHANCED
+   ============================================ */
+.calendar-card-enhanced {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: var(--space-md);
+}
+
+.calendar-event {
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--theme-card-bg);
+  border-left: var(--border-width-thick) solid var(--theme-accent);
+  margin-bottom: var(--space-md);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-md);
+  align-items: start;
+}
+
+.calendar-event--work {
+  border-left-color: #4dabf7;
+}
+
+.calendar-event--personal {
+  border-left-color: #51cf66;
+}
+
+.calendar-event--important {
+  border-left-color: #ff6b6b;
+}
+
+.event-time {
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-bold);
+  color: var(--theme-text-primary);
+  white-space: nowrap;
+}
+
+.event-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  flex: 1;
+}
+
+.event-title {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--theme-text-primary);
+  margin: 0;
+}
+
+.event-location {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--font-size-caption);
+  color: var(--theme-text-muted);
+}
+
+.event-countdown {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+  color: var(--theme-accent);
+  margin-top: var(--space-xs);
+}
+
+/* ============================================
+   EPHEMERIDES CARD ENHANCED
+   ============================================ */
+.ephemerides-card-enhanced {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: var(--space-md);
+}
+
+.moon-phase {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  border-radius: var(--radius-md);
+  background: var(--theme-card-bg);
+  border: var(--border-width-thin) solid var(--theme-border);
+}
+
+.moon-phase-visual {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #f0f0f0, #c0c0c0);
+  box-shadow: 
+    inset -40px 0 0 rgba(0, 0, 0, 0.3),
+    0 0 20px rgba(0, 0, 0, 0.2);
+  position: relative;
+}
+
+.moon-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  text-align: center;
+}
+
+.phase-name {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--theme-text-primary);
+}
+
+.illumination {
+  font-size: var(--font-size-caption);
+  color: var(--theme-text-muted);
+}
+
+.sun-timeline {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--theme-card-bg);
+}
+
+.sun-event {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  text-align: center;
+}
+
+.sun-event .label {
+  font-size: var(--font-size-caption);
+  color: var(--theme-text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+}
+
+.sun-event .time {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--theme-text-primary);
+}
+
+.astro-events {
+  margin-top: var(--space-md);
+}
+
+.astro-events h3 {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--theme-text-primary);
+  margin: 0 0 var(--space-sm) 0;
+}
+
+.astro-events ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.astro-events li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--font-size-body);
+  color: var(--theme-text-secondary);
+  padding: var(--space-xs);
+  border-radius: var(--radius-sm);
+  background: var(--theme-bg-secondary);
+}
+
+/* ============================================
+   HISTORICAL EVENTS CARD ENHANCED
+   ============================================ */
+.historical-events-card-enhanced {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: var(--space-md);
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  position: relative;
+  padding-left: var(--space-lg);
+}
+
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--theme-border);
+}
+
+.timeline-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-md);
+  align-items: start;
+  position: relative;
+}
+
+.timeline-marker {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 3px solid var(--theme-bg-primary);
+  position: absolute;
+  left: -24px;
+  top: 4px;
+  z-index: 1;
+}
+
+.timeline-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--theme-card-bg);
+  border: var(--border-width-thin) solid var(--theme-border);
+}
+
+.event-year {
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-bold);
+  color: var(--theme-accent);
+}
+
+.event-text {
+  font-size: var(--font-size-body);
+  color: var(--theme-text-primary);
+  margin: 0;
+  line-height: var(--line-height-normal);
+}
+
+.event-category {
+  font-size: var(--font-size-caption);
+  color: var(--theme-text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  margin-top: var(--space-xs);
+}
+
+.timeline-marker--science {
+  background: #4dabf7;
+}
+
+.timeline-marker--politics {
+  background: #ff6b6b;
+}
+
+.timeline-marker--culture {
+  background: #51cf66;
+}
+
+.timeline-marker--other {
+  background: #868e96;
+}
+
+/* ============================================
+   SAINTS CARD ENHANCED
+   ============================================ */
+.saints-card-enhanced {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: var(--space-md);
+}
+
+.saints-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.saint-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--theme-card-bg);
+  border-bottom: var(--border-width-thin) solid var(--theme-border);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: var(--font-size-body);
+  color: var(--theme-text-primary);
+}
+
+.saint-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--theme-accent-secondary);
+  opacity: 0.7;
+}
+
+.saint-name {
+  flex: 1;
+  font-weight: var(--font-weight-normal);
+}
+
+.saints-card__scroller::before,
+.saints-card__scroller::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 40px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.saints-card__scroller::before {
+  top: 0;
+  background: linear-gradient(to bottom, var(--theme-card-bg), transparent);
+}
+
+.saints-card__scroller::after {
+  bottom: 0;
+  background: linear-gradient(to top, var(--theme-card-bg), transparent);
+}
+

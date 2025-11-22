@@ -51,7 +51,7 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
   const list = items.length > 0 ? items : [{ title: "Sin titulares disponibles" }];
 
   return (
-    <div className="card news-card">
+    <div className="card news-card news-card-enhanced">
       <div className="news-card__header">
         <NewsIconImage size={48} className="card-icon" />
         <h2>Noticias del día</h2>
@@ -60,10 +60,14 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
         <div className="news-card__list">
           {repeatItems(list).map((item, index) => (
             // Usar índice completo para garantizar keys únicas (incluso después de duplicar)
-            <article key={`news-${index}`} className="news-card__item">
-              <h3>{item.title}</h3>
-              {item.summary ? <p>{item.summary}</p> : null}
-              {item.source ? <span className="news-card__source">{item.source}</span> : null}
+            <article key={`news-${index}`} className="news-item">
+              {item.source && (
+                <div className="news-source">{item.source}</div>
+              )}
+              <h3 className="news-title">{item.title}</h3>
+              {item.summary && (
+                <p className="news-summary">{item.summary}</p>
+              )}
             </article>
           ))}
         </div>
