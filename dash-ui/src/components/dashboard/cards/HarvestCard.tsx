@@ -307,6 +307,11 @@ const getHarvestIcon = (itemName: string): string => {
   return "/icons/harvest/pumpkin.svg";  // Icono genérico de fallback (calabaza)
 };
 
+// Caché de iconos fallidos para evitar intentos repetidos y mensajes duplicados
+const failedIconsCache = new Set<string>();
+const failedFallbackCache = new Set<string>();
+let fallbackErrorLogged = false;
+
 export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
   const entries = items.length > 0 ? items : [{ name: "Sin datos de cultivo" }];
   const repeatedEntries = repeatItems(entries);
@@ -321,26 +326,59 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
         <ul className="harvest-card__list">
           {repeatedEntries.map((entry, index) => {
             const iconPath = getHarvestIcon(entry.name);
+            const isFallback = iconPath.includes("/pumpkin.svg");
+            
+            // Si ya sabemos que este icono falla, usar fallback directamente
+            const shouldUseFallback = failedIconsCache.has(iconPath) && !isFallback;
+            const finalIconPath = shouldUseFallback ? "/icons/harvest/pumpkin.svg" : iconPath;
+            
+            // Si el fallback también ha fallado antes, ocultar el icono desde el inicio
+            const shouldHideIcon = isFallback && failedFallbackCache.has("pumpkin");
+            
             return (
               // Usar índice completo para garantizar keys únicas (incluso después de duplicar)
               <li key={`harvest-${index}`} style={{ animationDelay: `${index * 0.1}s` }}>
-                <img 
-                  src={iconPath} 
-                  alt={entry.name}
-                  className="harvest-icon"
-                  style={{ marginRight: "8px", verticalAlign: "middle", width: "36px", height: "36px", display: "inline-block", flexShrink: 0 }}
-                  onError={(e) => {
-                    // Si falla la carga, intentar con el fallback si no es ya el fallback
-                    const target = e.target as HTMLImageElement;
-                    if (target.src.includes("/pumpkin.svg")) {
-                      console.error(`[HarvestCard] Fallback icon also failed to load para "${entry.name}", ocultando`);
-                      target.style.display = "none";
-                    } else {
-                      console.warn(`[HarvestCard] Error al cargar icono: ${iconPath} para "${entry.name}", intentando fallback`);
-                      target.src = "/icons/harvest/pumpkin.svg";
-                    }
-                  }}
-                />
+                {!shouldHideIcon && (
+                  <img 
+                    src={finalIconPath} 
+                    alt={entry.name}
+                    className="harvest-icon"
+                    style={{ 
+                      marginRight: "8px", 
+                      verticalAlign: "middle", 
+                      width: "36px", 
+                      height: "36px", 
+                      display: "inline-block", 
+                      flexShrink: 0 
+                    }}
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      const currentSrc = target.src;
+                      const isPumpkinFallback = currentSrc.includes("/pumpkin.svg");
+                      
+                      if (isPumpkinFallback) {
+                        // El fallback también falló
+                        if (!failedFallbackCache.has("pumpkin")) {
+                          failedFallbackCache.add("pumpkin");
+                          // Solo registrar el error una vez globalmente
+                          if (!fallbackErrorLogged) {
+                            fallbackErrorLogged = true;
+                            console.error(`[HarvestCard] Fallback icon (pumpkin.svg) failed to load. Verifica que los iconos estén disponibles en /icons/harvest/. Esto puede indicar un problema con la ruta base o que los archivos no se copiaron durante el build.`);
+                          }
+                        }
+                        target.style.display = "none";
+                      } else {
+                        // El icono principal falló, intentar fallback
+                        if (!failedIconsCache.has(iconPath)) {
+                          failedIconsCache.add(iconPath);
+                          // Solo registrar el warning una vez por icono (sin el nombre del item para evitar duplicados)
+                          console.warn(`[HarvestCard] Error al cargar icono: ${iconPath}, usando fallback`);
+                        }
+                        target.src = "/icons/harvest/pumpkin.svg";
+                      }
+                    }}
+                  />
+                )}
                 <span className="harvest-card__item">{entry.name}</span>
                 {entry.status ? <span className="harvest-card__status">{entry.status}</span> : null}
               </li>
