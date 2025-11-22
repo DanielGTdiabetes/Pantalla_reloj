@@ -35,7 +35,7 @@ export const TimeCard = ({ timezone }: TimeCardProps): JSX.Element => {
   const day = localized.format("D");
   const month = localized.format("MMMM");
   const year = localized.format("YYYY");
-  const hour = localized.hour();
+  const hour = parseInt(localized.format("H"), 10);
   const greeting = useMemo(() => getGreeting(hour), [hour]);
 
   return (

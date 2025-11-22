@@ -50,11 +50,13 @@ const CalendarIconImage: React.FC<{ size?: number; className?: string }> = ({ si
   );
 };
 
-const getCountdown = (startTime: string | null, timezone: string): string | null => {
+const getCountdown = (startTime: string | null | undefined, timezone: string): string | null => {
   if (!startTime) return null;
   const now = dayjs().tz(timezone);
   const start = dayjs(startTime).tz(timezone);
-  const diff = start.diff(now, 'minute');
+  // Calcular diferencia en minutos usando valueOf()
+  const diffMs = start.valueOf() - now.valueOf();
+  const diff = Math.round(diffMs / (60 * 1000));
   
   if (diff < 0) return null; // Ya pasó
   if (diff < 60) return `En ${diff} min`;

@@ -66,13 +66,14 @@ export const debounce = <T extends (...args: any[]) => any>(
  * @param callback Función a ejecutar en cada frame
  */
 export const useAnimationFrame = (callback: (deltaTime: number) => void) => {
-  const requestRef = useRef<number>();
-  const previousTimeRef = useRef<number>();
+  const requestRef = useRef<number | null>(null);
+  const previousTimeRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const animate = (time: number) => {
-      if (previousTimeRef.current !== undefined) {
-        const deltaTime = time - previousTimeRef.current;
+      const prevTime = previousTimeRef.current;
+      if (prevTime !== undefined) {
+        const deltaTime = time - prevTime;
         callback(deltaTime);
       }
       previousTimeRef.current = time;

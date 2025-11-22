@@ -56,11 +56,12 @@ export const SnowEffect: React.FC<SnowEffectProps> = ({
       wind: (windSpeed / 10) * (Math.random() * 0.5 + 0.5)
     }));
 
-    // Función de animación
-    const animate = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Función de animación
+      const animate = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      snowflakesRef.current.forEach((flake) => {
+        if (snowflakesRef.current) {
+          snowflakesRef.current.forEach((flake) => {
         // Actualizar posición
         flake.y += flake.speed;
         flake.x += flake.wind;
@@ -88,13 +89,14 @@ export const SnowEffect: React.FC<SnowEffectProps> = ({
         ctx.beginPath();
         ctx.moveTo(flake.x, flake.y - flake.size);
         ctx.lineTo(flake.x, flake.y + flake.size);
-        ctx.moveTo(flake.x - flake.size, flake.y);
-        ctx.lineTo(flake.x + flake.size, flake.y);
-        ctx.stroke();
-      });
+            ctx.moveTo(flake.x - flake.size, flake.y);
+            ctx.lineTo(flake.x + flake.size, flake.y);
+            ctx.stroke();
+          });
+        }
 
-      animationFrameRef.current = requestAnimationFrame(animate);
-    };
+        animationFrameRef.current = requestAnimationFrame(animate);
+      };
 
     animate();
 

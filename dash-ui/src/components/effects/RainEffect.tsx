@@ -36,7 +36,7 @@ export const RainEffect: React.FC<RainEffectProps> = ({
   className = ""
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationFrameRef = useRef<number>();
+  const animationFrameRef = useRef<number | null>(null);
   const raindropsRef = useRef<RainDrop[]>([]);
   const splashesRef = useRef<Splash[]>([]);
 
@@ -71,20 +71,21 @@ export const RainEffect: React.FC<RainEffectProps> = ({
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       // Dibujar y actualizar gotas
-      raindropsRef.current.forEach((drop) => {
-        // Actualizar posición
-        drop.y += drop.speed;
-        drop.x += drop.wind;
+      if (raindropsRef.current) {
+        raindropsRef.current.forEach((drop) => {
+          // Actualizar posición
+          drop.y += drop.speed;
+          drop.x += drop.wind;
 
-        // Crear splash al tocar el suelo
-        if (showSplash && drop.y > canvas.height - 20 && Math.random() < 0.1) {
-          splashesRef.current.push({
-            x: drop.x,
-            y: canvas.height,
-            life: 0,
-            maxLife: 20
-          });
-        }
+          // Crear splash al tocar el suelo
+          if (showSplash && drop.y > canvas.height - 20 && Math.random() < 0.1 && splashesRef.current) {
+            splashesRef.current.push({
+              x: drop.x,
+              y: canvas.height,
+              life: 0,
+              maxLife: 20
+            });
+          }
 
         // Reiniciar si sale de la pantalla
         if (drop.y > canvas.height) {
@@ -103,11 +104,12 @@ export const RainEffect: React.FC<RainEffectProps> = ({
         ctx.lineTo(drop.x + drop.wind, drop.y + drop.length);
         ctx.strokeStyle = `rgba(173, 216, 230, ${drop.opacity})`;
         ctx.lineWidth = 1.5;
-        ctx.stroke();
-      });
+          ctx.stroke();
+        });
+      }
 
       // Dibujar y actualizar splashes
-      if (showSplash) {
+      if (showSplash && splashesRef.current) {
         splashesRef.current = splashesRef.current.filter((splash) => {
           splash.life++;
           const progress = splash.life / splash.maxLife;

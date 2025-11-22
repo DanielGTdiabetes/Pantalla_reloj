@@ -36,7 +36,7 @@ export const StarField: React.FC<StarFieldProps> = ({
   className = ""
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationFrameRef = useRef<number>();
+  const animationFrameRef = useRef<number | null>(null);
   const starsRef = useRef<Star[]>([]);
   const shootingStarRef = useRef<ShootingStar | null>(null);
   const [time, setTime] = useState(0);
@@ -73,16 +73,18 @@ export const StarField: React.FC<StarFieldProps> = ({
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       // Dibujar estrellas
-      starsRef.current.forEach((star) => {
+      if (starsRef.current) {
+        starsRef.current.forEach((star) => {
         // Efecto de parpadeo
         const twinkle = Math.sin(currentTime * star.twinkleSpeed + star.twinkleOffset) * 0.3 + 0.7;
         const currentOpacity = star.opacity * twinkle;
 
         ctx.beginPath();
         ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${currentOpacity})`;
-        ctx.fill();
-      });
+          ctx.fillStyle = `rgba(255, 255, 255, ${currentOpacity})`;
+          ctx.fill();
+        });
+      }
 
       // Crear estrella fugaz ocasionalmente
       if (showShootingStars && !shootingStarRef.current && Math.random() < 0.001) {

@@ -39,7 +39,7 @@ export const useRotationProgress = (
     }
 
     const now = Date.now();
-    const elapsed = now - startTimeRef.current - pausedTimeRef.current;
+    const elapsed = now - (startTimeRef.current ?? now) - (pausedTimeRef.current ?? 0);
     const newProgress = Math.min((elapsed / duration) * 100, 100);
     
     setProgress(newProgress);
@@ -70,9 +70,10 @@ export const useRotationProgress = (
   }, []);
 
   const pause = useCallback(() => {
-    if (!isPaused && startTimeRef.current) {
+    if (!isPaused && startTimeRef.current !== null) {
       setIsPaused(true);
-      pausedTimeRef.current += Date.now() - (startTimeRef.current + pausedTimeRef.current);
+      const currentPaused = pausedTimeRef.current ?? 0;
+      pausedTimeRef.current = currentPaused + Date.now() - (startTimeRef.current + currentPaused);
       if (animationFrameRef.current !== null) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
