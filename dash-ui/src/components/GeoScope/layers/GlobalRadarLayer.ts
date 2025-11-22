@@ -218,7 +218,15 @@ export default class GlobalRadarLayer implements Layer {
 
       // Paso 3: Obtener frames disponibles (con cache)
       const framesInfo = await this.fetchFramesOnce();
-      if (!framesInfo || !framesInfo.hasFrames) {
+      if (!framesInfo) {
+        if (!warnedNoFrames) {
+          console.warn("[GlobalRadarLayer] no frames available, skipping layer creation");
+          warnedNoFrames = true;
+        }
+        layerDiagnostics.recordError(layerId, new Error("No RainViewer frames available"), { provider });
+        return;
+      }
+      if (!framesInfo.hasFrames) {
         if (!warnedNoFrames) {
           console.warn("[GlobalRadarLayer] no frames available, skipping layer creation");
           warnedNoFrames = true;
@@ -227,13 +235,10 @@ export default class GlobalRadarLayer implements Layer {
         return;
       }
 
-      // TypeScript: después del return anterior, framesInfo no puede ser null y hasFrames es true
-      // Usamos aserción de tipo no-null porque sabemos que framesInfo es válido aquí
-      const validFramesInfo = framesInfo as FramesInfo;
-
+      // TypeScript: después de las verificaciones anteriores, framesInfo no puede ser null y hasFrames es true
       // Paso 4: Crear source y layer
-      await this.ensureSource(validFramesInfo);
-      await this.ensureLayer(validFramesInfo);
+      await this.ensureSource(framesInfo);
+      await this.ensureLayer(framesInfo);
 
       this.registeredInRegistry = true;
 
@@ -241,7 +246,7 @@ export default class GlobalRadarLayer implements Layer {
       warnedStyleNotReady = false;
       warnedNoFrames = false;
       layerDiagnostics.setState(layerId, "ready", { provider });
-      layerDiagnostics.recordDataUpdate(layerId, validFramesInfo.frames.length);
+      layerDiagnostics.recordDataUpdate(layerId, framesInfo.frames.length);
     } catch (error) {
       console.warn("[GlobalRadarLayer] error during add():", error);
       layerDiagnostics.recordError(layerId, error as Error, { provider });
@@ -446,16 +451,16 @@ export default class GlobalRadarLayer implements Layer {
       }
 
       const framesInfo = await this.fetchFramesOnce();
-      if (!framesInfo || !framesInfo.hasFrames) {
+      if (!framesInfo) {
+        return;
+      }
+      if (!framesInfo.hasFrames) {
         return;
       }
 
-      // TypeScript: después del return anterior, framesInfo no puede ser null y hasFrames es true
-      // Usamos aserción de tipo porque sabemos que framesInfo es válido aquí
-      const validFramesInfo = framesInfo as FramesInfo;
-
-      await this.ensureSource(validFramesInfo);
-      await this.ensureLayer(validFramesInfo);
+      // TypeScript: después de las verificaciones anteriores, framesInfo no puede ser null y hasFrames es true
+      await this.ensureSource(framesInfo);
+      await this.ensureLayer(framesInfo);
     } catch (error) {
       console.warn("[GlobalRadarLayer] error during reinitialize():", error);
     }
