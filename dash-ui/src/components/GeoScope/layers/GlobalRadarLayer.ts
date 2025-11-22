@@ -92,10 +92,19 @@ export default class GlobalRadarLayer implements Layer {
 
     const layerId: LayerId = "radar";
     const enabled = this.enabled;
-    const provider = this.provider ?? "rainviewer";
+    const providerRaw = this.provider ?? "rainviewer";
 
     console.log("[GlobalRadarLayer] useEffect enter, checking radar configuration");
-    console.log("[GlobalRadarLayer] provider from config =", provider, "enabled =", enabled);
+    console.log("[GlobalRadarLayer] provider from config =", providerRaw, "enabled =", enabled);
+
+    // Fuerza MapTiler Weather mientras RainViewer está deprecado
+    let provider = providerRaw;
+    if (provider === "rainviewer") {
+      console.log("[GlobalRadarLayer] Forcing radar provider to maptiler_weather in init (RainViewer deprecated)");
+      provider = "maptiler_weather";
+    }
+
+    console.log("[GlobalRadarLayer] Using provider:", provider);
 
     layerDiagnostics.setEnabled(layerId, enabled);
     layerDiagnostics.updatePreconditions(layerId, {
@@ -111,9 +120,15 @@ export default class GlobalRadarLayer implements Layer {
       return;
     }
 
+    // Legacy RainViewer (desactivado por ahora)
     if (provider === "rainviewer") {
-      console.log("[GlobalRadarLayer] Using provider: rainviewer");
+      console.log("[GlobalRadarLayer] RainViewer init path disabled (legacy)");
       layerDiagnostics.recordInitializationAttempt(layerId);
+      layerDiagnostics.setState(layerId, "disabled", {
+        provider: "rainviewer",
+        reason: "RainViewer deprecated",
+      });
+      return;
     } else if (provider === "maptiler_weather") {
       console.log("[GlobalRadarLayer] Using provider: maptiler_weather");
       layerDiagnostics.recordInitializationAttempt(layerId);
@@ -285,9 +300,27 @@ export default class GlobalRadarLayer implements Layer {
       this.applyVisibility();
 
       // Si la capa no existe, reinicializar
-      if (this.map && !this.map.getLayer(this.id)) {
-        // Reinicializar de forma asíncrona
-        void this.reinitialize();
+      if (this.map) {
+        // Verificar provider efectivo
+        const providerRaw = this.provider ?? "rainviewer";
+        let provider = providerRaw;
+        if (provider === "rainviewer") {
+          provider = "maptiler_weather";
+        }
+
+        // Para MapTiler Weather, verificar si existe la capa de MapTiler
+        const maptilerLayerExists = this.map.getLayer(this.maptilerLayerId);
+        const legacyLayerExists = this.map.getLayer(this.id);
+
+        if (!maptilerLayerExists && !legacyLayerExists) {
+          if (provider === "maptiler_weather") {
+            // Para MapTiler Weather, llamar a add() para reinicializar correctamente
+            void this.add(this.map);
+          } else {
+            // Para RainViewer legacy, usar reinitialize()
+            void this.reinitialize();
+          }
+        }
       }
       return;
     }
@@ -374,10 +407,28 @@ export default class GlobalRadarLayer implements Layer {
   /**
    * Reinicializa la capa cuando se detecta que no existe
    * (útil después de cambios de estilo base)
+   * 
+   * ⚠️ LEGACY: Solo funciona para RainViewer. Para MapTiler Weather, la reinicialización
+   * se maneja automáticamente por el sistema de capas.
    */
   private async reinitialize(): Promise<void> {
     if (!this.map) return;
 
+    // Verificar provider efectivo (forzado si era rainviewer)
+    const providerRaw = this.provider ?? "rainviewer";
+    let provider = providerRaw;
+    if (provider === "rainviewer") {
+      provider = "maptiler_weather";
+    }
+
+    // Si el provider es maptiler_weather, no ejecutar código legacy de RainViewer
+    if (provider === "maptiler_weather") {
+      console.log("[GlobalRadarLayer] reinitialize: MapTiler Weather provider, skipping legacy RainViewer reinit");
+      // Para MapTiler Weather, la reinicialización se maneja en add() si es necesario
+      return;
+    }
+
+    // Código legacy de RainViewer (no debería ejecutarse nunca ahora)
     try {
       await waitForMapReady(this.map);
 
