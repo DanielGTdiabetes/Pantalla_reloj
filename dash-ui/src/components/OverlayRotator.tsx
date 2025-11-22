@@ -773,6 +773,13 @@ export const OverlayRotator: React.FC = () => {
       render: () => <CalendarCard events={calendarEvents} timezone={timezone} />
     });
 
+    // harvest (HarvestCard)
+    map.set("harvest", {
+      id: "harvest",
+      duration: (durations.harvest ?? 10) * 1000,
+      render: () => <HarvestCard items={harvestItems} />
+    });
+
     // news (NewsCard)
     map.set("news", {
       id: "news",
