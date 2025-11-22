@@ -8,6 +8,7 @@ import { getExistingPopup, isGeoJSONSource } from "./layerUtils";
 import { registerPlaneIcon } from "../utils/planeIcon";
 import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
 import { withSafeMapStyle, safeHasImage } from "../../../lib/map/utils/safeMapOperations";
+import { layerDiagnostics, type LayerId } from "./LayerDiagnostics";
 
 type EffectiveRenderMode = "symbol" | "symbol_custom" | "circle";
 
@@ -161,36 +162,101 @@ export default class AircraftLayer implements Layer {
    * Completamente idempotente: puede ser llamado múltiples veces sin efectos secundarios.
    */
   async ensureFlightsLayer(): Promise<void> {
+    const layerId: LayerId = "flights";
+    
     if (!this.map || !this.enabled) {
-      return;
-    }
-
-    // Intentar registrar el icono custom si es necesario
-    if (this.renderMode === "symbol_custom" || (this.renderMode === "auto" && !this.spriteAvailable)) {
-      const registered = await registerPlaneIcon(this.map);
-      if (registered) {
-        this.planeIconRegistered = true;
+      if (!this.map) {
+        layerDiagnostics.recordError(layerId, new Error("Map not available"), {
+          phase: "ensureFlightsLayer",
+        });
       }
-    }
-
-    // Asegurar que el source existe (idempotente)
-    this.ensureSource();
-
-    // Verificar que el source existe antes de crear capas
-    // Esto evita errores de MapLibre tipo "source not found"
-    if (!this.map.getSource(this.sourceId)) {
-      console.warn("[AircraftLayer] Source still missing after ensureSource, skipping ensureLayersAsync");
       return;
     }
 
-    // Asegurar que las capas existen (idempotente)
-    await this.ensureLayersAsync();
+    try {
+      // Intentar registrar el icono custom si es necesario
+      if (this.renderMode === "symbol_custom" || (this.renderMode === "auto" && !this.spriteAvailable)) {
+        try {
+          const registered = await registerPlaneIcon(this.map);
+          if (registered) {
+            this.planeIconRegistered = true;
+            layerDiagnostics.updatePreconditions(layerId, {
+              apiKeysConfigured: true, // Asumimos que si el icono se registró, las keys están bien
+            });
+          }
+        } catch (iconError) {
+          const error = iconError instanceof Error ? iconError : new Error(String(iconError));
+          layerDiagnostics.recordError(layerId, error, {
+            phase: "icon_registration",
+          });
+          console.warn("[AircraftLayer] Failed to register plane icon:", iconError);
+        }
+      }
 
-    // Asegurar que las capas están en el orden correcto
-    this.ensureLayerOrder();
+      // Asegurar que el source existe (idempotente)
+      try {
+        this.ensureSource();
+      } catch (sourceError) {
+        const error = sourceError instanceof Error ? sourceError : new Error(String(sourceError));
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "ensure_source",
+        });
+        throw error;
+      }
 
-    // Asegurar visibilidad según render_mode
-    this.applyVisibilityByMode();
+      // Verificar que el source existe antes de crear capas
+      // Esto evita errores de MapLibre tipo "source not found"
+      if (!this.map.getSource(this.sourceId)) {
+        const error = new Error("Source still missing after ensureSource");
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "source_verification",
+        });
+        console.warn("[AircraftLayer] Source still missing after ensureSource, skipping ensureLayersAsync");
+        return;
+      }
+
+      // Asegurar que las capas existen (idempotente)
+      try {
+        await this.ensureLayersAsync();
+      } catch (layersError) {
+        const error = layersError instanceof Error ? layersError : new Error(String(layersError));
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "ensure_layers",
+        });
+        throw error;
+      }
+
+      // Asegurar que las capas están en el orden correcto
+      try {
+        this.ensureLayerOrder();
+      } catch (orderError) {
+        const error = orderError instanceof Error ? orderError : new Error(String(orderError));
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "ensure_layer_order",
+        });
+        console.warn("[AircraftLayer] Error ensuring layer order:", orderError);
+      }
+
+      // Asegurar visibilidad según render_mode
+      try {
+        this.applyVisibilityByMode();
+      } catch (visibilityError) {
+        const error = visibilityError instanceof Error ? visibilityError : new Error(String(visibilityError));
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "apply_visibility",
+        });
+        console.warn("[AircraftLayer] Error applying visibility:", visibilityError);
+      }
+
+      // Marcar como listo si llegamos aquí
+      layerDiagnostics.setState(layerId, "ready");
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      layerDiagnostics.recordError(layerId, err, {
+        phase: "ensureFlightsLayer",
+      });
+      throw error;
+    }
   }
 
   remove(map: maplibregl.Map): void {
@@ -278,41 +344,95 @@ export default class AircraftLayer implements Layer {
   }
 
   updateData(data: FeatureCollection): void {
-    const now = Math.floor(Date.now() / 1000);
-    const featuresWithAge = {
-      ...data,
-      features: data.features
-        .map((feature) => {
-          const props = feature.properties || {};
-          const timestamp = props.timestamp || now;
-          const ageSeconds = Math.max(0, now - timestamp);
-          const inFocus = Boolean(props.in_focus);
-          const isStale = props.stale === true;
+    const layerId: LayerId = "flights";
+    
+    try {
+      // Validar que los datos sean un FeatureCollection válido
+      if (!data || typeof data !== "object" || data.type !== "FeatureCollection") {
+        const error = new Error(`Invalid FeatureCollection: ${JSON.stringify(data).substring(0, 100)}`);
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "updateData_validation",
+        });
+        console.error("[AircraftLayer] Invalid data format:", data);
+        return;
+      }
 
-          if (this.cineFocus?.enabled && this.cineFocus.hardHideOutside && !inFocus) {
-            return null;
-          }
+      if (!Array.isArray(data.features)) {
+        const error = new Error("Features array is missing or invalid");
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "updateData_validation",
+        });
+        console.error("[AircraftLayer] Features array is missing or invalid");
+        return;
+      }
 
-          return {
-            ...feature,
-            properties: {
-              ...props,
-              age_seconds: ageSeconds,
-              in_focus: inFocus,
-              stale: isStale ? true : undefined,
-            },
-          };
-        })
-        .filter((f): f is NonNullable<typeof f> => f !== null),
-    };
+      const now = Math.floor(Date.now() / 1000);
+      const featuresWithAge = {
+        ...data,
+        features: data.features
+          .map((feature) => {
+            try {
+              const props = feature.properties || {};
+              const timestamp = props.timestamp || now;
+              const ageSeconds = Math.max(0, now - timestamp);
+              const inFocus = Boolean(props.in_focus);
+              const isStale = props.stale === true;
 
-    this.lastData = featuresWithAge;
+              if (this.cineFocus?.enabled && this.cineFocus.hardHideOutside && !inFocus) {
+                return null;
+              }
 
-    if (!this.map) return;
+              return {
+                ...feature,
+                properties: {
+                  ...props,
+                  age_seconds: ageSeconds,
+                  in_focus: inFocus,
+                  stale: isStale ? true : undefined,
+                },
+              };
+            } catch (featureError) {
+              console.warn("[AircraftLayer] Error processing feature:", featureError);
+              return null;
+            }
+          })
+          .filter((f): f is NonNullable<typeof f> => f !== null),
+      };
 
-    const source = this.map.getSource(this.sourceId);
-    if (isGeoJSONSource(source)) {
-      source.setData(this.lastData);
+      this.lastData = featuresWithAge;
+
+      if (!this.map) {
+        console.warn("[AircraftLayer] Map not available for updateData");
+        return;
+      }
+
+      const source = this.map.getSource(this.sourceId);
+      if (isGeoJSONSource(source)) {
+        try {
+          source.setData(this.lastData);
+          // Registrar actualización exitosa
+          layerDiagnostics.recordDataUpdate(layerId, featuresWithAge.features.length);
+        } catch (setDataError) {
+          const error = setDataError instanceof Error ? setDataError : new Error(String(setDataError));
+          layerDiagnostics.recordError(layerId, error, {
+            phase: "updateData_setData",
+            featureCount: featuresWithAge.features.length,
+          });
+          console.error("[AircraftLayer] Error setting data to source:", setDataError);
+        }
+      } else {
+        const error = new Error(`Source ${this.sourceId} is not a GeoJSON source`);
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "updateData_source_check",
+        });
+        console.warn("[AircraftLayer] Source is not a GeoJSON source:", source);
+      }
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      layerDiagnostics.recordError(layerId, err, {
+        phase: "updateData",
+      });
+      console.error("[AircraftLayer] Error in updateData:", error);
     }
   }
 

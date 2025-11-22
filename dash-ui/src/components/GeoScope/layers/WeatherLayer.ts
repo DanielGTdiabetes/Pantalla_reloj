@@ -4,6 +4,7 @@ import type { FeatureCollection } from "geojson";
 import type { Layer } from "./LayerRegistry";
 import { isGeoJSONSource } from "./layerUtils";
 import { withSafeMapStyle } from "../../../lib/map/utils/safeMapOperations";
+import { layerDiagnostics, type LayerId } from "./LayerDiagnostics";
 
 interface WeatherLayerOptions {
   enabled?: boolean;
@@ -32,56 +33,73 @@ export default class WeatherLayer implements Layer {
   }
 
   add(map: maplibregl.Map): void {
+    const layerId: LayerId = "weather";
     this.map = map;
     
-    // Añadir source de forma segura
-    const sourceAdded = withSafeMapStyle(
-      map,
-      () => {
-        if (!map.getSource(this.sourceId)) {
-          map.addSource(this.sourceId, {
-            type: "geojson",
-            data: this.lastData,
-            generateId: true
-          });
-        }
-      },
-      "WeatherLayer"
-    );
+    try {
+      // Añadir source de forma segura
+      const sourceAdded = withSafeMapStyle(
+        map,
+        () => {
+          if (!map.getSource(this.sourceId)) {
+            map.addSource(this.sourceId, {
+              type: "geojson",
+              data: this.lastData,
+              generateId: true
+            });
+          }
+        },
+        "WeatherLayer"
+      );
 
-    if (!sourceAdded) {
-      console.warn("[WeatherLayer] Could not add source, style not ready");
-      return;
+      if (!sourceAdded) {
+        layerDiagnostics.setState(layerId, "waiting_style", {
+          reason: "source_not_added",
+        });
+        console.warn("[WeatherLayer] Could not add source, style not ready");
+        return;
+      }
+
+      // Añadir capa de forma segura
+      const layerAdded = withSafeMapStyle(
+        map,
+        () => {
+          if (!map.getLayer(this.id)) {
+            map.addLayer({
+              id: this.id,
+              type: "fill",
+              source: this.sourceId,
+              paint: {
+                "fill-color": "#60a5fa",
+                "fill-opacity": this.opacity
+              }
+            });
+          }
+        },
+        "WeatherLayer"
+      );
+
+      if (!layerAdded) {
+        layerDiagnostics.setState(layerId, "waiting_style", {
+          reason: "layer_not_added",
+        });
+        console.warn("[WeatherLayer] Could not add layer, style not ready");
+        return;
+      }
+
+      // Iniciar refresco periódico
+      this.startRefresh();
+
+      this.applyVisibility();
+      
+      layerDiagnostics.setState(layerId, "ready");
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      layerDiagnostics.recordError(layerId, err, {
+        phase: "add",
+      });
+      console.error("[WeatherLayer] Error in add:", error);
     }
-
-    // Añadir capa de forma segura
-    const layerAdded = withSafeMapStyle(
-      map,
-      () => {
-        if (!map.getLayer(this.id)) {
-          map.addLayer({
-            id: this.id,
-            type: "fill",
-            source: this.sourceId,
-            paint: {
-              "fill-color": "#60a5fa",
-              "fill-opacity": this.opacity
-            }
-          });
-        }
-      },
-      "WeatherLayer"
-    );
-
-    if (!layerAdded) {
-      console.warn("[WeatherLayer] Could not add layer, style not ready");
-      return;
-    }
-
-    // Iniciar refresco periódico
-    this.startRefresh();
-
-    this.applyVisibility();
   }
 
   remove(map: maplibregl.Map): void {
@@ -113,15 +131,62 @@ export default class WeatherLayer implements Layer {
   }
 
   updateData(data: FeatureCollection): void {
-    this.lastData = data;
+    const layerId: LayerId = "weather";
+    
+    try {
+      // Validar que los datos sean un FeatureCollection válido
+      if (!data || typeof data !== "object" || data.type !== "FeatureCollection") {
+        const error = new Error(`Invalid FeatureCollection: ${JSON.stringify(data).substring(0, 100)}`);
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "updateData_validation",
+        });
+        console.error("[WeatherLayer] Invalid data format:", data);
+        return;
+      }
 
-    if (!this.map) {
-      return;
-    }
+      if (!Array.isArray(data.features)) {
+        const error = new Error("Features array is missing or invalid");
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "updateData_validation",
+        });
+        console.error("[WeatherLayer] Features array is missing or invalid");
+        return;
+      }
 
-    const source = this.map.getSource(this.sourceId);
-    if (isGeoJSONSource(source)) {
-      source.setData(this.lastData);
+      this.lastData = data;
+
+      if (!this.map) {
+        console.warn("[WeatherLayer] Map not available for updateData");
+        return;
+      }
+
+      const source = this.map.getSource(this.sourceId);
+      if (isGeoJSONSource(source)) {
+        try {
+          source.setData(this.lastData);
+          // Registrar actualización exitosa
+          layerDiagnostics.recordDataUpdate(layerId, data.features.length);
+        } catch (error) {
+          const err = error instanceof Error ? error : new Error(String(error));
+          layerDiagnostics.recordError(layerId, err, {
+            phase: "updateData_setData",
+            featureCount: data.features.length,
+          });
+          console.error("[WeatherLayer] Error setting data to source:", error);
+        }
+      } else {
+        const error = new Error(`Source ${this.sourceId} is not a GeoJSON source`);
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "updateData_source_check",
+        });
+        console.warn("[WeatherLayer] Source is not a GeoJSON source:", source);
+      }
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      layerDiagnostics.recordError(layerId, err, {
+        phase: "updateData",
+      });
+      console.error("[WeatherLayer] Error in updateData:", error);
     }
   }
 
@@ -150,9 +215,16 @@ export default class WeatherLayer implements Layer {
   }
 
   private async fetchWeatherData(): Promise<void> {
+    const layerId: LayerId = "weather";
+    
     try {
       const response = await fetch("/api/aemet/warnings");
       if (!response.ok) {
+        const error = new Error(`HTTP ${response.status}: ${response.statusText}`);
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "fetchWeatherData",
+          httpStatus: response.status,
+        });
         console.warn("[WeatherLayer] Failed to fetch weather data:", response.status);
         return;
       }
@@ -160,6 +232,10 @@ export default class WeatherLayer implements Layer {
       const data = await response.json() as FeatureCollection;
       this.updateData(data);
     } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      layerDiagnostics.recordError(layerId, err, {
+        phase: "fetchWeatherData",
+      });
       console.error("[WeatherLayer] Error fetching weather data:", error);
     }
   }

@@ -8,6 +8,7 @@ import { getExistingPopup, isGeoJSONSource } from "./layerUtils";
 import { registerShipIcon } from "../utils/shipIcon";
 import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
 import { withSafeMapStyle, safeHasImage } from "../../../lib/map/utils/safeMapOperations";
+import { layerDiagnostics, type LayerId } from "./LayerDiagnostics";
 
 type EffectiveRenderMode = "symbol" | "symbol_custom" | "circle";
 
@@ -139,36 +140,101 @@ export default class ShipsLayer implements Layer {
    * Completamente idempotente: puede ser llamado múltiples veces sin efectos secundarios.
    */
   async ensureShipsLayer(): Promise<void> {
+    const layerId: LayerId = "ships";
+    
     if (!this.map || !this.enabled) {
-      return;
-    }
-
-    // Intentar registrar el icono custom si es necesario
-    if (this.renderMode === "symbol_custom" || (this.renderMode === "auto" && !this.spriteAvailable)) {
-      const registered = await registerShipIcon(this.map);
-      if (registered) {
-        this.shipIconRegistered = true;
+      if (!this.map) {
+        layerDiagnostics.recordError(layerId, new Error("Map not available"), {
+          phase: "ensureShipsLayer",
+        });
       }
-    }
-
-    // Asegurar que el source existe (idempotente)
-    this.ensureSource();
-
-    // Verificar que el source existe antes de crear capas
-    // Esto evita errores de MapLibre tipo "source not found"
-    if (!this.map.getSource(this.sourceId)) {
-      console.warn("[ShipsLayer] Source still missing after ensureSource, skipping ensureLayersAsync");
       return;
     }
 
-    // Asegurar que las capas existen (idempotente)
-    await this.ensureLayersAsync();
+    try {
+      // Intentar registrar el icono custom si es necesario
+      if (this.renderMode === "symbol_custom" || (this.renderMode === "auto" && !this.spriteAvailable)) {
+        try {
+          const registered = await registerShipIcon(this.map);
+          if (registered) {
+            this.shipIconRegistered = true;
+            layerDiagnostics.updatePreconditions(layerId, {
+              apiKeysConfigured: true,
+            });
+          }
+        } catch (iconError) {
+          const error = iconError instanceof Error ? iconError : new Error(String(iconError));
+          layerDiagnostics.recordError(layerId, error, {
+            phase: "icon_registration",
+          });
+          console.warn("[ShipsLayer] Failed to register ship icon:", iconError);
+        }
+      }
 
-    // Asegurar que las capas están en el orden correcto
-    this.ensureLayerOrder();
+      // Asegurar que el source existe (idempotente)
+      try {
+        this.ensureSource();
+      } catch (sourceError) {
+        const error = sourceError instanceof Error ? sourceError : new Error(String(sourceError));
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "ensure_source",
+        });
+        throw error;
+      }
 
-    // Asegurar visibilidad según render_mode
-    this.applyVisibilityByMode();
+      // Verificar que el source existe antes de crear capas
+      // Esto evita errores de MapLibre tipo "source not found"
+      if (!this.map.getSource(this.sourceId)) {
+        const error = new Error("Source still missing after ensureSource");
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "source_verification",
+        });
+        console.warn("[ShipsLayer] Source still missing after ensureSource, skipping ensureLayersAsync");
+        return;
+      }
+
+      // Asegurar que las capas existen (idempotente)
+      try {
+        await this.ensureLayersAsync();
+      } catch (layersError) {
+        const error = layersError instanceof Error ? layersError : new Error(String(layersError));
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "ensure_layers",
+        });
+        throw error;
+      }
+
+      // Asegurar que las capas están en el orden correcto
+      try {
+        this.ensureLayerOrder();
+      } catch (orderError) {
+        const error = orderError instanceof Error ? orderError : new Error(String(orderError));
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "ensure_layer_order",
+        });
+        console.warn("[ShipsLayer] Error ensuring layer order:", orderError);
+      }
+
+      // Asegurar visibilidad según render_mode
+      try {
+        this.applyVisibilityByMode();
+      } catch (visibilityError) {
+        const error = visibilityError instanceof Error ? visibilityError : new Error(String(visibilityError));
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "apply_visibility",
+        });
+        console.warn("[ShipsLayer] Error applying visibility:", visibilityError);
+      }
+
+      // Marcar como listo si llegamos aquí
+      layerDiagnostics.setState(layerId, "ready");
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      layerDiagnostics.recordError(layerId, err, {
+        phase: "ensureShipsLayer",
+      });
+      throw error;
+    }
   }
 
   remove(map: maplibregl.Map): void {
@@ -248,58 +314,124 @@ export default class ShipsLayer implements Layer {
   }
 
   updateData(data: FeatureCollection): void {
-    // Resiliente: si no hay datos o features está vacío, usar EMPTY
-    if (!data || !Array.isArray(data.features)) {
-      this.lastData = EMPTY;
-      if (this.map) {
-        const source = this.map.getSource(this.sourceId);
-        if (isGeoJSONSource(source)) {
-          source.setData(EMPTY);
-        }
-      }
-      return;
-    }
-
-    const now = Math.floor(Date.now() / 1000);
-    const featuresWithAge = {
-      ...data,
-      features: data.features
-        .map((feature) => {
-          const props = feature.properties || {};
-          const timestamp = props.timestamp || now;
-          const ageSeconds = Math.max(0, now - timestamp);
-          const inFocus = Boolean(props.in_focus);
-          const isStale = props.stale === true;
-
-          if (this.cineFocus?.enabled && this.cineFocus.hardHideOutside && !inFocus) {
-            return null;
+    const layerId: LayerId = "ships";
+    
+    try {
+      // Validar que los datos sean un FeatureCollection válido
+      if (!data || typeof data !== "object" || data.type !== "FeatureCollection") {
+        const error = new Error(`Invalid FeatureCollection: ${JSON.stringify(data).substring(0, 100)}`);
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "updateData_validation",
+        });
+        console.error("[ShipsLayer] Invalid data format:", data);
+        // Resiliente: si no hay datos o features está vacío, usar EMPTY
+        this.lastData = EMPTY;
+        if (this.map) {
+          const source = this.map.getSource(this.sourceId);
+          if (isGeoJSONSource(source)) {
+            try {
+              source.setData(EMPTY);
+            } catch (setDataError) {
+              const err = setDataError instanceof Error ? setDataError : new Error(String(setDataError));
+              layerDiagnostics.recordError(layerId, err, {
+                phase: "updateData_setEmpty",
+              });
+            }
           }
-
-          return {
-            ...feature,
-            properties: {
-              ...props,
-              age_seconds: ageSeconds,
-              in_focus: inFocus,
-              stale: isStale ? true : undefined,
-            },
-          };
-        })
-        .filter((f): f is NonNullable<typeof f> => f !== null),
-    };
-
-    this.lastData = featuresWithAge;
-
-    if (!this.map) return;
-
-    const source = this.map.getSource(this.sourceId);
-    if (isGeoJSONSource(source)) {
-      try {
-        source.setData(this.lastData);
-      } catch (error) {
-        // Resiliente: si falla, no romper nada
-        console.warn("[ShipsLayer] Error updating data:", error);
+        }
+        return;
       }
+
+      if (!Array.isArray(data.features)) {
+        const error = new Error("Features array is missing or invalid");
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "updateData_validation",
+        });
+        console.error("[ShipsLayer] Features array is missing or invalid");
+        this.lastData = EMPTY;
+        if (this.map) {
+          const source = this.map.getSource(this.sourceId);
+          if (isGeoJSONSource(source)) {
+            try {
+              source.setData(EMPTY);
+            } catch (setDataError) {
+              const err = setDataError instanceof Error ? setDataError : new Error(String(setDataError));
+              layerDiagnostics.recordError(layerId, err, {
+                phase: "updateData_setEmpty",
+              });
+            }
+          }
+        }
+        return;
+      }
+
+      const now = Math.floor(Date.now() / 1000);
+      const featuresWithAge = {
+        ...data,
+        features: data.features
+          .map((feature) => {
+            try {
+              const props = feature.properties || {};
+              const timestamp = props.timestamp || now;
+              const ageSeconds = Math.max(0, now - timestamp);
+              const inFocus = Boolean(props.in_focus);
+              const isStale = props.stale === true;
+
+              if (this.cineFocus?.enabled && this.cineFocus.hardHideOutside && !inFocus) {
+                return null;
+              }
+
+              return {
+                ...feature,
+                properties: {
+                  ...props,
+                  age_seconds: ageSeconds,
+                  in_focus: inFocus,
+                  stale: isStale ? true : undefined,
+                },
+              };
+            } catch (featureError) {
+              console.warn("[ShipsLayer] Error processing feature:", featureError);
+              return null;
+            }
+          })
+          .filter((f): f is NonNullable<typeof f> => f !== null),
+      };
+
+      this.lastData = featuresWithAge;
+
+      if (!this.map) {
+        console.warn("[ShipsLayer] Map not available for updateData");
+        return;
+      }
+
+      const source = this.map.getSource(this.sourceId);
+      if (isGeoJSONSource(source)) {
+        try {
+          source.setData(this.lastData);
+          // Registrar actualización exitosa
+          layerDiagnostics.recordDataUpdate(layerId, featuresWithAge.features.length);
+        } catch (error) {
+          const err = error instanceof Error ? error : new Error(String(error));
+          layerDiagnostics.recordError(layerId, err, {
+            phase: "updateData_setData",
+            featureCount: featuresWithAge.features.length,
+          });
+          console.warn("[ShipsLayer] Error updating data:", error);
+        }
+      } else {
+        const error = new Error(`Source ${this.sourceId} is not a GeoJSON source`);
+        layerDiagnostics.recordError(layerId, error, {
+          phase: "updateData_source_check",
+        });
+        console.warn("[ShipsLayer] Source is not a GeoJSON source:", source);
+      }
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      layerDiagnostics.recordError(layerId, err, {
+        phase: "updateData",
+      });
+      console.error("[ShipsLayer] Error in updateData:", error);
     }
   }
 

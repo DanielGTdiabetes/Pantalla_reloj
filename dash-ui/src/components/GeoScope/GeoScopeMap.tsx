@@ -2269,47 +2269,88 @@ export default function GeoScopeMap({
             const aemetConfigInit = configAsV2Init.version === 2
               ? configAsV2Init.aemet
               : mergedConfig.aemet;
-            if (aemetConfigInit?.enabled && aemetConfigInit?.cap_enabled) {
-              // Verificar que el estilo esté listo antes de crear capas AEMET
-              const style = getSafeMapStyle(map);
-              if (!style) {
-                console.warn("[GeoScopeMap] Style not ready for AEMET layers, skipping initialization");
-              } else {
-                try {
-                  console.log("[GeoScopeMap] Initializing WeatherLayer");
-                  const weatherLayer = new WeatherLayer({
-                    enabled: true,
-                    opacity: 0.3,
-                    refreshSeconds: (aemetConfigInit.cache_minutes ?? 15) * 60,
-                  });
-                  layerRegistry.add(weatherLayer);
-                  weatherLayerRef.current = weatherLayer;
-                  console.log("[GeoScopeMap] WeatherLayer initialized successfully");
-                } catch (weatherError) {
-                  console.error("[GeoScopeMap] WeatherLayer failed:", weatherError);
-                  console.trace("[GeoScopeMap] WeatherLayer trace");
-                  // Continuar sin la capa de clima
-                }
+            const isAemetEnabled = aemetConfigInit?.enabled && aemetConfigInit?.cap_enabled;
+            const weatherLayerId: LayerId = "weather";
+            const aemetWarningsLayerId: LayerId = "aemet-warnings";
+            
+            layerDiagnostics.setEnabled(weatherLayerId, isAemetEnabled);
+            layerDiagnostics.setEnabled(aemetWarningsLayerId, isAemetEnabled);
+            layerDiagnostics.updatePreconditions(weatherLayerId, {
+              configEnabled: isAemetEnabled,
+            });
+            layerDiagnostics.updatePreconditions(aemetWarningsLayerId, {
+              configEnabled: isAemetEnabled,
+            });
 
-                // AEMET Warnings Layer (z-index 15, entre radar y vuelos)
-                try {
-                  console.log("[GeoScopeMap] Initializing AEMETWarningsLayer");
-                  const aemetWarningsLayer = new AEMETWarningsLayer({
-                    enabled: true,
-                    opacity: 0.6,
-                    minSeverity: "moderate",
-                    refreshSeconds: (aemetConfigInit.cache_minutes ?? 15) * 60,
-                  });
-                  layerRegistry.add(aemetWarningsLayer);
-                  aemetWarningsLayerRef.current = aemetWarningsLayer;
-                  console.log("[GeoScopeMap] AEMETWarningsLayer initialized successfully");
-                } catch (aemetError) {
-                  console.error("[GeoScopeMap] AEMETWarningsLayer failed:", aemetError);
-                  console.trace("[GeoScopeMap] AEMETWarningsLayer trace");
-                  // Continuar sin la capa de avisos AEMET
+            if (isAemetEnabled) {
+              // Verificar precondiciones
+              const preconditions = verifyLayerPreconditions(weatherLayerId);
+              if (!preconditions.canInitialize) {
+                layerDiagnostics.setState(weatherLayerId, "waiting_style", {
+                  missingPreconditions: preconditions.missingPreconditions,
+                });
+                layerDiagnostics.setState(aemetWarningsLayerId, "waiting_style", {
+                  missingPreconditions: preconditions.missingPreconditions,
+                });
+                console.warn(`[GeoScopeMap] AEMET layers preconditions not met: ${preconditions.missingPreconditions.join(", ")}`);
+              } else {
+                // Verificar que el estilo esté listo antes de crear capas AEMET
+                const style = getSafeMapStyle(map);
+                if (!style) {
+                  layerDiagnostics.setState(weatherLayerId, "waiting_style");
+                  layerDiagnostics.setState(aemetWarningsLayerId, "waiting_style");
+                  console.warn("[GeoScopeMap] Style not ready for AEMET layers, skipping initialization");
+                } else {
+                  try {
+                    layerDiagnostics.recordInitializationAttempt(weatherLayerId);
+                    console.log("[GeoScopeMap] Initializing WeatherLayer");
+                    const weatherLayer = new WeatherLayer({
+                      enabled: true,
+                      opacity: 0.3,
+                      refreshSeconds: (aemetConfigInit.cache_minutes ?? 15) * 60,
+                    });
+                    layerRegistry.add(weatherLayer);
+                    weatherLayerRef.current = weatherLayer;
+                    layerDiagnostics.setState(weatherLayerId, "ready");
+                    console.log("[GeoScopeMap] WeatherLayer initialized successfully");
+                  } catch (weatherError) {
+                    const error = weatherError instanceof Error ? weatherError : new Error(String(weatherError));
+                    layerDiagnostics.recordError(weatherLayerId, error, {
+                      phase: "initialization",
+                    });
+                    console.error("[GeoScopeMap] WeatherLayer failed:", weatherError);
+                    console.trace("[GeoScopeMap] WeatherLayer trace");
+                    // Continuar sin la capa de clima
+                  }
+
+                  // AEMET Warnings Layer (z-index 15, entre radar y vuelos)
+                  try {
+                    layerDiagnostics.recordInitializationAttempt(aemetWarningsLayerId);
+                    console.log("[GeoScopeMap] Initializing AEMETWarningsLayer");
+                    const aemetWarningsLayer = new AEMETWarningsLayer({
+                      enabled: true,
+                      opacity: 0.6,
+                      minSeverity: "moderate",
+                      refreshSeconds: (aemetConfigInit.cache_minutes ?? 15) * 60,
+                    });
+                    layerRegistry.add(aemetWarningsLayer);
+                    aemetWarningsLayerRef.current = aemetWarningsLayer;
+                    layerDiagnostics.setState(aemetWarningsLayerId, "ready");
+                    console.log("[GeoScopeMap] AEMETWarningsLayer initialized successfully");
+                  } catch (aemetError) {
+                    const error = aemetError instanceof Error ? aemetError : new Error(String(aemetError));
+                    layerDiagnostics.recordError(aemetWarningsLayerId, error, {
+                      phase: "initialization",
+                    });
+                    console.error("[GeoScopeMap] AEMETWarningsLayer failed:", aemetError);
+                    console.trace("[GeoScopeMap] AEMETWarningsLayer trace");
+                    // Continuar sin la capa de avisos AEMET
+                  }
                 }
               }
             } else {
+              layerDiagnostics.setState(weatherLayerId, "disabled");
+              layerDiagnostics.setState(aemetWarningsLayerId, "disabled");
               console.log("[GeoScopeMap] AEMET layers disabled in config, skipping initialization");
             }
           } catch (aemetInitError) {
@@ -2328,12 +2369,33 @@ export default function GeoScopeMap({
               : mergedConfig.opensky;
 
             // Solo inicializar si está habilitada
-            if (flightsConfig.enabled) {
+            const layerId: LayerId = "flights";
+            const isEnabled = flightsConfig.enabled && openskyConfig.enabled;
+            
+            layerDiagnostics.setEnabled(layerId, isEnabled);
+            layerDiagnostics.updatePreconditions(layerId, {
+              configEnabled: isEnabled,
+            });
+
+            if (isEnabled) {
               const initializeAircraftLayer = async () => {
                 try {
+                  layerDiagnostics.recordInitializationAttempt(layerId);
+                  
+                  // Verificar precondiciones
+                  const preconditions = verifyLayerPreconditions(layerId);
+                  if (!preconditions.canInitialize) {
+                    layerDiagnostics.setState(layerId, "waiting_style", {
+                      missingPreconditions: preconditions.missingPreconditions,
+                    });
+                    console.warn(`[GeoScopeMap] AircraftLayer preconditions not met: ${preconditions.missingPreconditions.join(", ")}`);
+                    return;
+                  }
+
                   // Verificar que el estilo esté listo antes de crear AircraftLayer
                   const style = getSafeMapStyle(map);
                   if (!style) {
+                    layerDiagnostics.setState(layerId, "waiting_style");
                     console.warn("[GeoScopeMap] Style not ready for AircraftLayer, skipping initialization");
                     return;
                   }
@@ -2343,10 +2405,18 @@ export default function GeoScopeMap({
                   try {
                     spriteAvailable = await hasSprite(style);
                   } catch (spriteError) {
+                    const error = spriteError instanceof Error ? spriteError : new Error(String(spriteError));
+                    layerDiagnostics.recordError(layerId, error, {
+                      phase: "sprite_check",
+                    });
                     console.warn("[GeoScopeMap] Error checking sprite availability:", spriteError);
                     spriteAvailable = false;
                   }
+                  
                   if (destroyed || !mapRef.current) {
+                    layerDiagnostics.setState(layerId, "error", {
+                      reason: "map_destroyed",
+                    });
                     console.warn("[GeoScopeMap] Map destroyed/unavailable during AircraftLayer init");
                     return;
                   }
@@ -2367,8 +2437,15 @@ export default function GeoScopeMap({
 
                   // Asegurar que la capa se inicialice correctamente
                   void aircraftLayer.ensureFlightsLayer();
+                  layerDiagnostics.setState(layerId, "ready", {
+                    spriteAvailable,
+                  });
                   console.log("[GeoScopeMap] AircraftLayer initialized successfully");
                 } catch (aircraftError) {
+                  const error = aircraftError instanceof Error ? aircraftError : new Error(String(aircraftError));
+                  layerDiagnostics.recordError(layerId, error, {
+                    phase: "initialization",
+                  });
                   console.error("[GeoScopeMap] AircraftLayer failed:", aircraftError);
                   console.trace("[GeoScopeMap] AircraftLayer trace");
                   // Continuar sin la capa de aviones
@@ -2377,6 +2454,7 @@ export default function GeoScopeMap({
 
               void initializeAircraftLayer();
             } else {
+              layerDiagnostics.setState(layerId, "disabled");
               console.log("[GeoScopeMap] AircraftLayer disabled in config, skipping initialization");
             }
           } catch (aircraftInitError) {
@@ -2396,42 +2474,81 @@ export default function GeoScopeMap({
               : mergedConfig.layers.ships;
 
             // Solo inicializar si está habilitada
-            if (shipsConfig.enabled) {
-              // Verificar que el estilo esté listo antes de crear ShipsLayer
-              const style = getSafeMapStyle(map);
-              if (!style) {
-                console.warn("[GeoScopeMap] Style not ready for ShipsLayer, skipping initialization");
-              } else {
-                console.log("[GeoScopeMap] Initializing ShipsLayer");
-                let spriteAvailableShips = false;
-                try {
-                  spriteAvailableShips = await hasSprite(style);
-                } catch (spriteError) {
-                  console.warn("[GeoScopeMap] Error checking sprite availability for ShipsLayer:", spriteError);
-                  spriteAvailableShips = false;
-                }
-                if (!destroyed && mapRef.current) {
-                  const shipsLayer = new ShipsLayer({
-                    enabled: shipsConfig.enabled,
-                    opacity: shipsConfig.opacity,
-                    maxAgeSeconds: shipsConfig.max_age_seconds,
-                    styleScale: shipsConfig.styleScale,
-                    renderMode: shipsConfig.render_mode,
-                    circle: shipsConfig.circle,
-                    symbol: shipsConfig.symbol,
-                    spriteAvailable: spriteAvailableShips,
-                  });
-                  layerRegistry.add(shipsLayer);
-                  shipsLayerRef.current = shipsLayer;
+            const shipsLayerId: LayerId = "ships";
+            layerDiagnostics.setEnabled(shipsLayerId, shipsConfig.enabled);
+            layerDiagnostics.updatePreconditions(shipsLayerId, {
+              configEnabled: shipsConfig.enabled,
+            });
 
-                  // Asegurar que la capa se inicialice correctamente
-                  void shipsLayer.ensureShipsLayer();
-                  console.log("[GeoScopeMap] ShipsLayer initialized successfully");
-                } else {
-                  console.warn("[GeoScopeMap] Map destroyed/unavailable during ShipsLayer init");
+            if (shipsConfig.enabled) {
+              // Verificar precondiciones
+              const preconditions = verifyLayerPreconditions(shipsLayerId);
+              if (!preconditions.canInitialize) {
+                layerDiagnostics.setState(shipsLayerId, "waiting_style", {
+                  missingPreconditions: preconditions.missingPreconditions,
+                });
+                console.warn(`[GeoScopeMap] ShipsLayer preconditions not met: ${preconditions.missingPreconditions.join(", ")}`);
+              } else {
+                try {
+                  layerDiagnostics.recordInitializationAttempt(shipsLayerId);
+                  
+                  // Verificar que el estilo esté listo antes de crear ShipsLayer
+                  const style = getSafeMapStyle(map);
+                  if (!style) {
+                    layerDiagnostics.setState(shipsLayerId, "waiting_style");
+                    console.warn("[GeoScopeMap] Style not ready for ShipsLayer, skipping initialization");
+                  } else {
+                    console.log("[GeoScopeMap] Initializing ShipsLayer");
+                    let spriteAvailableShips = false;
+                    try {
+                      spriteAvailableShips = await hasSprite(style);
+                    } catch (spriteError) {
+                      const error = spriteError instanceof Error ? spriteError : new Error(String(spriteError));
+                      layerDiagnostics.recordError(shipsLayerId, error, {
+                        phase: "sprite_check",
+                      });
+                      console.warn("[GeoScopeMap] Error checking sprite availability for ShipsLayer:", spriteError);
+                      spriteAvailableShips = false;
+                    }
+                    
+                    if (!destroyed && mapRef.current) {
+                      const shipsLayer = new ShipsLayer({
+                        enabled: shipsConfig.enabled,
+                        opacity: shipsConfig.opacity,
+                        maxAgeSeconds: shipsConfig.max_age_seconds,
+                        styleScale: shipsConfig.styleScale,
+                        renderMode: shipsConfig.render_mode,
+                        circle: shipsConfig.circle,
+                        symbol: shipsConfig.symbol,
+                        spriteAvailable: spriteAvailableShips,
+                      });
+                      layerRegistry.add(shipsLayer);
+                      shipsLayerRef.current = shipsLayer;
+
+                      // Asegurar que la capa se inicialice correctamente
+                      void shipsLayer.ensureShipsLayer();
+                      layerDiagnostics.setState(shipsLayerId, "ready", {
+                        spriteAvailable: spriteAvailableShips,
+                      });
+                      console.log("[GeoScopeMap] ShipsLayer initialized successfully");
+                    } else {
+                      layerDiagnostics.setState(shipsLayerId, "error", {
+                        reason: "map_destroyed",
+                      });
+                      console.warn("[GeoScopeMap] Map destroyed/unavailable during ShipsLayer init");
+                    }
+                  }
+                } catch (shipsError) {
+                  const error = shipsError instanceof Error ? shipsError : new Error(String(shipsError));
+                  layerDiagnostics.recordError(shipsLayerId, error, {
+                    phase: "initialization",
+                  });
+                  console.error("[GeoScopeMap] ShipsLayer failed:", shipsError);
+                  console.trace("[GeoScopeMap] ShipsLayer trace");
                 }
               }
             } else {
+              layerDiagnostics.setState(shipsLayerId, "disabled");
               console.log("[GeoScopeMap] ShipsLayer disabled in config, skipping initialization");
             }
           } catch (shipsError) {
@@ -2441,10 +2558,25 @@ export default function GeoScopeMap({
           }
 
           console.log("[GeoScopeMap] All layers initialization completed");
+          
+          // Log resumen de diagnóstico
+          console.log(layerDiagnostics.getSummary());
         } catch (layerInitError) {
           // Capturar cualquier error no manejado durante la inicialización de capas
+          const error = layerInitError instanceof Error ? layerInitError : new Error(String(layerInitError));
           console.error("[GeoScopeMap] Fatal error during layer initialization:", layerInitError);
           console.trace("[GeoScopeMap] Fatal layer init trace");
+          
+          // Registrar error en diagnóstico para todas las capas afectadas
+          for (const layerId of ["flights", "ships", "weather", "radar", "lightning", "aemet-warnings"] as LayerId[]) {
+            const diagnostic = layerDiagnostics.getDiagnostic(layerId);
+            if (diagnostic && diagnostic.state === "initializing") {
+              layerDiagnostics.recordError(layerId, error, {
+                phase: "fatal_initialization",
+              });
+            }
+          }
+          
           // No lanzar el error - permitir que el mapa continúe funcionando sin algunas capas
         }
       });
@@ -3871,26 +4003,63 @@ export default function GeoScopeMap({
     };
   }, [config]);
   
+  // Helper para retry con backoff exponencial
+  const retryWithBackoff = async <T,>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelayMs: number = 1000,
+    layerId: LayerId,
+    context: string
+  ): Promise<T | null> => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        layerDiagnostics.recordError(layerId, err, {
+          phase: context,
+          attempt,
+          maxRetries,
+        });
+
+        if (attempt === maxRetries) {
+          console.error(`[GeoScopeMap] ${context} failed after ${maxRetries} attempts:`, error);
+          return null;
+        }
+
+        const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
+        console.warn(`[GeoScopeMap] ${context} attempt ${attempt}/${maxRetries} failed, retrying in ${delayMs}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+    return null;
+  };
+
   // useEffect para cargar datos de flights periódicamente
   useEffect(() => {
     if (!config || !mapRef.current || !aircraftLayerRef.current) {
       return;
     }
-  
+
     const merged = withConfigDefaults(config);
     const flightsConfig = merged.layers.flights;
     const openskyConfig = merged.opensky;
-  
+
     if (!flightsConfig.enabled || !openskyConfig.enabled) {
+      layerDiagnostics.setEnabled("flights", false);
       return;
     }
-  
-    const loadFlightsData = async () => {
+
+    const layerId: LayerId = "flights";
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+
+    const loadFlightsData = async (): Promise<void> => {
       try {
         // Calcular bbox del mapa actual
         const map = mapRef.current;
         let bbox: string | undefined;
-  
+
         if (map && map.isStyleLoaded()) {
           const bounds = map.getBounds();
           const sw = bounds.getSouthWest();
@@ -3901,7 +4070,7 @@ export default function GeoScopeMap({
           const lomax = Math.max(sw.lng, ne.lng);
           bbox = `${lamin},${lamax},${lomin},${lomax}`;
         }
-  
+
         // Construir URL con parámetros
         let url = "/api/layers/flights";
         const params = new URLSearchParams();
@@ -3911,29 +4080,81 @@ export default function GeoScopeMap({
         if (params.toString()) {
           url += `?${params.toString()}`;
         }
-  
-        const response = await apiGet<FlightsApiResponse | undefined>(url);
-  
+
+        // Validar respuesta del backend con retry
+        const response = await retryWithBackoff(
+          async () => {
+            const resp = await apiGet<FlightsApiResponse | undefined>(url);
+            
+            // Validar estructura de respuesta
+            if (!resp) {
+              throw new Error("Empty response from backend");
+            }
+            
+            if (resp.disabled) {
+              layerDiagnostics.setState(layerId, "disabled", {
+                reason: "backend_disabled",
+              });
+              return resp;
+            }
+
+            // Validar que la respuesta tenga la estructura esperada
+            if (typeof resp !== "object") {
+              throw new Error(`Invalid response type: ${typeof resp}`);
+            }
+
+            return resp;
+          },
+          MAX_RETRIES,
+          1000,
+          layerId,
+          "loadFlightsData"
+        );
+
+        if (!response) {
+          layerDiagnostics.updatePreconditions(layerId, {
+            backendAvailable: false,
+          });
+          return;
+        }
+
+        layerDiagnostics.updatePreconditions(layerId, {
+          backendAvailable: true,
+        });
+
         const aircraftLayer = aircraftLayerRef.current;
-        if (aircraftLayer && response && !response.disabled) {
-          const featureCollection = flightsResponseToGeoJSON(response);
-          aircraftLayer.updateData(featureCollection);
+        if (aircraftLayer && !response.disabled) {
+          try {
+            const featureCollection = flightsResponseToGeoJSON(response);
+            aircraftLayer.updateData(featureCollection);
+            retryCount = 0; // Reset retry count on success
+          } catch (conversionError) {
+            const error = conversionError instanceof Error ? conversionError : new Error(String(conversionError));
+            layerDiagnostics.recordError(layerId, error, {
+              phase: "flightsResponseToGeoJSON",
+            });
+            console.error("[GeoScopeMap] Error converting flights response:", conversionError);
+          }
         }
       } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        layerDiagnostics.recordError(layerId, err, {
+          phase: "loadFlightsData",
+        });
         console.error("[GeoScopeMap] Failed to load flights data:", error);
       }
     };
-  
+
     // Cargar inmediatamente
     void loadFlightsData();
-  
+
     // Cargar periódicamente según refresh_seconds
     const intervalSeconds = Math.max(5, openskyConfig.poll_seconds);
     const intervalMs = intervalSeconds * 1000;
     const intervalId = setInterval(() => {
       void loadFlightsData();
     }, intervalMs);
-  
+
     return () => {
       clearInterval(intervalId);
     };
@@ -3944,15 +4165,19 @@ export default function GeoScopeMap({
     if (!config || !mapRef.current || !shipsLayerRef.current) {
       return;
     }
-  
+
     const merged = withConfigDefaults(config);
     const shipsConfig = merged.layers.ships;
-  
+
     if (!shipsConfig.enabled) {
+      layerDiagnostics.setEnabled("ships", false);
       return;
     }
-  
-    const loadShipsData = async () => {
+
+    const layerId: LayerId = "ships";
+    const MAX_RETRIES = 3;
+
+    const loadShipsData = async (): Promise<void> => {
       try {
         // Calcular bbox del mapa actual
         const map = mapRef.current;
@@ -3980,20 +4205,56 @@ export default function GeoScopeMap({
           url += `?${params.toString()}`;
         }
         
-        const response = await apiGet<unknown>(url);
-  
+        // Validar respuesta del backend con retry
+        const response = await retryWithBackoff(
+          async () => {
+            const resp = await apiGet<unknown>(url);
+            
+            // Validar estructura de respuesta
+            if (!resp) {
+              throw new Error("Empty response from backend");
+            }
+
+            // Validar que sea un FeatureCollection válido
+            if (!isFeatureCollection<Point, ShipFeatureProperties>(resp)) {
+              throw new Error(`Invalid FeatureCollection: ${JSON.stringify(resp).substring(0, 100)}`);
+            }
+
+            return resp;
+          },
+          MAX_RETRIES,
+          1000,
+          layerId,
+          "loadShipsData"
+        );
+
+        if (!response) {
+          layerDiagnostics.updatePreconditions(layerId, {
+            backendAvailable: false,
+          });
+          return;
+        }
+
+        layerDiagnostics.updatePreconditions(layerId, {
+          backendAvailable: true,
+        });
+
         const shipsLayer = shipsLayerRef.current;
         if (shipsLayer && isFeatureCollection<Point, ShipFeatureProperties>(response)) {
           shipsLayer.updateData(response);
         }
       } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        layerDiagnostics.recordError(layerId, err, {
+          phase: "loadShipsData",
+        });
         console.error("[GeoScopeMap] Failed to load ships data:", error);
       }
     };
-  
+
     // Cargar inmediatamente
     void loadShipsData();
-  
+
     // Cargar periódicamente según refresh_seconds
     const intervalSeconds =
       typeof shipsConfig.update_interval === "number" && shipsConfig.update_interval > 0
@@ -4003,9 +4264,92 @@ export default function GeoScopeMap({
     const intervalId = setInterval(() => {
       void loadShipsData();
     }, intervalMs);
-  
+
     return () => {
       clearInterval(intervalId);
+    };
+  }, [config]);
+
+  // Sistema de recuperación automática para capas
+  useEffect(() => {
+    if (!mapRef.current || !layerRegistryRef.current) {
+      return;
+    }
+
+    const RECOVERY_CHECK_INTERVAL = 30000; // Verificar cada 30 segundos
+    const MAX_ERROR_COUNT = 5; // Máximo de errores antes de deshabilitar temporalmente
+    const RECOVERY_BACKOFF_BASE = 5000; // 5 segundos base para backoff
+
+    const checkAndRecoverLayers = () => {
+      const diagnostics = layerDiagnostics.getAllDiagnostics();
+      
+      for (const [layerId, diagnostic] of diagnostics.entries()) {
+        // Solo intentar recuperar capas que están en error y están habilitadas
+        if (diagnostic.state === "error" && diagnostic.enabled) {
+          // Si hay demasiados errores, esperar más tiempo antes de reintentar
+          if (diagnostic.errorCount >= MAX_ERROR_COUNT) {
+            const backoffMs = RECOVERY_BACKOFF_BASE * Math.pow(2, Math.min(diagnostic.errorCount - MAX_ERROR_COUNT, 3));
+            const timeSinceLastError = diagnostic.lastErrorTime ? Date.now() - diagnostic.lastErrorTime : Infinity;
+            
+            if (timeSinceLastError < backoffMs) {
+              // Aún en período de backoff
+              continue;
+            }
+          }
+
+          console.log(`[GeoScopeMap] Attempting to recover layer: ${layerId}`);
+          layerDiagnostics.reset(layerId);
+          layerDiagnostics.setState(layerId, "initializing", {
+            reason: "auto_recovery",
+          });
+
+          // Intentar reinicializar según el tipo de capa
+          try {
+            if (layerId === "flights" && aircraftLayerRef.current) {
+              const merged = withConfigDefaults(config);
+              const flightsConfig = merged.layers.flights;
+              const openskyConfig = merged.opensky;
+              
+              if (flightsConfig.enabled && openskyConfig.enabled) {
+                void aircraftLayerRef.current.ensureFlightsLayer();
+              }
+            } else if (layerId === "ships" && shipsLayerRef.current) {
+              const merged = withConfigDefaults(config);
+              const shipsConfig = merged.layers.ships;
+              
+              if (shipsConfig.enabled) {
+                void shipsLayerRef.current.ensureShipsLayer();
+              }
+            } else if (layerId === "weather" && weatherLayerRef.current) {
+              const merged = withConfigDefaults(config);
+              const configAsV2 = config as unknown as { version?: number; aemet?: { enabled?: boolean; cap_enabled?: boolean } };
+              const aemetConfig = configAsV2.version === 2 
+                ? configAsV2.aemet 
+                : merged.aemet;
+              
+              if (aemetConfig?.enabled && aemetConfig?.cap_enabled) {
+                weatherLayerRef.current.setEnabled(true);
+              }
+            }
+          } catch (recoveryError) {
+            const error = recoveryError instanceof Error ? recoveryError : new Error(String(recoveryError));
+            layerDiagnostics.recordError(layerId, error, {
+              phase: "auto_recovery",
+            });
+            console.error(`[GeoScopeMap] Failed to recover layer ${layerId}:`, recoveryError);
+          }
+        }
+      }
+    };
+
+    // Verificar inmediatamente
+    checkAndRecoverLayers();
+
+    // Verificar periódicamente
+    const recoveryInterval = setInterval(checkAndRecoverLayers, RECOVERY_CHECK_INTERVAL);
+
+    return () => {
+      clearInterval(recoveryInterval);
     };
   }, [config]);
   
