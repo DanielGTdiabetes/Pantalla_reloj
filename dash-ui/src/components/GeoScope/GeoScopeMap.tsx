@@ -1051,7 +1051,7 @@ export default function GeoScopeMap({
     return configV2?.ui_map?.maptiler?.api_key ?? extractApiKeyFromUrl(baseStyleUrl ?? undefined) ?? null;
   }, [configV2?.ui_map?.maptiler?.api_key, baseStyleUrl]);
 
-  // Satellite y hybrid desactivados: siempre usar solo el estilo base streets-v4
+  // Usar siempre el estilo base streets-v4 firmado; las capas satélite/hybrid se añaden como overlays
   const runtimeBaseStyleUrl = baseStyleUrl;
 
   const mapFillRef = useRef<HTMLDivElement | null>(null);
@@ -1064,8 +1064,6 @@ export default function GeoScopeMap({
   const [globalSatelliteReady, setGlobalSatelliteReady] = useState(false);
   const [layerRegistryReady, setLayerRegistryReady] = useState(false);
 
-  // TEMPORALMENTE DESACTIVADO: Todas las capas globales (GIBS, radar global) están deshabilitadas
-  // para dejar solo el mapa base MapTiler (streets-v4) funcionando de forma estable.
   // Leer configuración de capas globales (satélite y radar)
   const globalLayersSettings = useMemo(() => {
     const defaults = {
@@ -1256,7 +1254,7 @@ export default function GeoScopeMap({
     layer.setApiKey(maptilerKey);
   }, [maptilerKey]);
 
-  // Satellite y labels overlay desactivados: no hay efectos que ejecutar
+  // Actualizar API key de la capa satélite/hybrid cuando cambie la configuración
 
 
   const updateMapView = (map: maplibregl.Map) => {
@@ -2885,37 +2883,17 @@ export default function GeoScopeMap({
     };
   }, [loading, mapStyleVersion]);
 
-  // TEMPORALMENTE DESACTIVADO: useEffect que gestiona GlobalSatelliteLayer
-  // Todas las capas globales están deshabilitadas temporalmente para dejar solo el mapa base.
-  // TODO: Re-activar en una segunda iteración controlada cuando GIBS esté completamente probado.
   useEffect(() => {
     const map = mapRef.current;
     const layerRegistry = layerRegistryRef.current;
     const satelliteSettings = globalLayersSettings.satellite;
 
-    // FORZADO: GlobalSatelliteLayer siempre deshabilitado temporalmente
-    // Limpiar cualquier capa existente y salir inmediatamente
-    if (map && layerRegistry && layerRegistryReady) {
-      const existingLayer = globalSatelliteLayerRef.current;
-      if (existingLayer) {
-        // Limpiar completamente: quitar capa, source y referencias
-        layerRegistry.removeById(existingLayer.id);
-        globalSatelliteLayerRef.current = null;
-        if (globalSatelliteReady) {
-          setGlobalSatelliteReady(false);
-        }
-        console.info("[GlobalSatelliteLayer] removed (temporarily disabled - base map only mode)");
-      }
-    }
-    return; // Salir inmediatamente, no crear ni gestionar la capa
-
-    /* CÓDIGO DESACTIVADO TEMPORALMENTE
     if (!map || !layerRegistry || !layerRegistryReady) {
       return;
     }
-  
+
     const existingLayer = globalSatelliteLayerRef.current;
-  
+
     // PRIMERO: Verificar si el satélite está desactivado - hacer cleanup y salir
     if (!satelliteSettings.isEnabled) {
       if (existingLayer) {
@@ -3170,13 +3148,13 @@ export default function GeoScopeMap({
         // Convertir a MapConfigV2 para loadMapStyle
         // Calcular checksum para cache-buster (usar mapStyleVersion o timestamp)
         const configChecksum = mapStyleVersion || Date.now();
-        
+
         // Obtener API key actualizada desde la configuración
         const currentApiKey =
           maptilerConfigV2?.api_key ??
           mapSettings.maptiler?.apiKey ??
           mapSettings.maptiler?.key ??
-          mapSettings.maptiler?.api_key ??
+          (mapSettings.maptiler as any)?.api_key ??
           maptilerKey ??
           null;
         
@@ -4306,7 +4284,7 @@ export default function GeoScopeMap({
           // Intentar reinicializar según el tipo de capa
           try {
             if (layerId === "flights" && aircraftLayerRef.current) {
-              const merged = withConfigDefaults(config);
+              const merged = withConfigDefaults(config ?? undefined);
               const flightsConfig = merged.layers.flights;
               const openskyConfig = merged.opensky;
               
@@ -4314,14 +4292,14 @@ export default function GeoScopeMap({
                 void aircraftLayerRef.current.ensureFlightsLayer();
               }
             } else if (layerId === "ships" && shipsLayerRef.current) {
-              const merged = withConfigDefaults(config);
+              const merged = withConfigDefaults(config ?? undefined);
               const shipsConfig = merged.layers.ships;
               
               if (shipsConfig.enabled) {
                 void shipsLayerRef.current.ensureShipsLayer();
               }
             } else if (layerId === "weather" && weatherLayerRef.current) {
-              const merged = withConfigDefaults(config);
+              const merged = withConfigDefaults(config ?? undefined);
               const configAsV2 = config as unknown as { version?: number; aemet?: { enabled?: boolean; cap_enabled?: boolean } };
               const aemetConfig = configAsV2.version === 2 
                 ? configAsV2.aemet 
@@ -4627,8 +4605,8 @@ export default function GeoScopeMap({
       window.clearInterval(refreshTimer);
     };
   }, [config]);
-    
-    /* CÓDIGO DESACTIVADO TEMPORALMENTE
+
+  useEffect(() => {
     if (!mapRef.current) {
       return;
     }
@@ -4929,7 +4907,6 @@ export default function GeoScopeMap({
       stopAnimation();
       window.clearInterval(refreshTimer);
     };
-    */
   }, [
     globalLayersSettings,
     globalSatelliteReady,
