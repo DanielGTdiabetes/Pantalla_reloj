@@ -865,7 +865,8 @@ export const OverlayRotator: React.FC = () => {
             const eventsPerDisplay = 2;
             
             // Usar el contador ref que se incrementa cada vez que se muestra este panel
-            const displayIndex = historicalEventsCounterRef.current % Math.max(1, Math.ceil(totalEvents / eventsPerDisplay));
+            const currentCounter = historicalEventsCounterRef.current ?? 0;
+            const displayIndex = currentCounter % Math.max(1, Math.ceil(totalEvents / eventsPerDisplay));
             const startIndex = (displayIndex * eventsPerDisplay) % totalEvents;
             
             // Tomar los eventos para esta rotación
@@ -880,7 +881,7 @@ export const OverlayRotator: React.FC = () => {
             }
             
             // Incrementar contador para la próxima vez que se muestre este panel
-            historicalEventsCounterRef.current = (historicalEventsCounterRef.current + 1) % Math.max(1, Math.ceil(totalEvents / eventsPerDisplay));
+            historicalEventsCounterRef.current = (currentCounter + 1) % Math.max(1, Math.ceil(totalEvents / eventsPerDisplay));
             
             // Asegurar que siempre mostramos exactamente 2 eventos o menos
             const finalEvents = alternatingEvents.slice(0, eventsPerDisplay);

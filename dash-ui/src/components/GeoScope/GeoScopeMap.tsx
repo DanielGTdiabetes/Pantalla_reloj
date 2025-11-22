@@ -23,6 +23,7 @@ import SatelliteHybridLayer, { type SatelliteLabelsStyle } from "./layers/Satell
 import ShipsLayer from "./layers/ShipsLayer";
 import MapSpinner from "../MapSpinner";
 import { hasSprite } from "./utils/styleSprite";
+import { layerDiagnostics, type LayerId } from "./layers/LayerDiagnostics";
 import {
   createDefaultMapPreferences,
   createDefaultMapSettings,
@@ -2009,14 +2010,58 @@ export default function GeoScopeMap({
 
           // Satellite layer desactivado: solo usar estilo base streets-v4
 
+          // Helper para verificar precondiciones de capas
+          const verifyLayerPreconditions = (layerId: LayerId): {
+            canInitialize: boolean;
+            missingPreconditions: string[];
+          } => {
+            const missing: string[] = [];
+            const style = getSafeMapStyle(map);
+            
+            if (!style) {
+              missing.push("style not loaded");
+            }
+            if (!config) {
+              missing.push("config not available");
+            }
+            
+            layerDiagnostics.updatePreconditions(layerId, {
+              styleLoaded: !!style,
+              configAvailable: !!config,
+            });
+            
+            return {
+              canInitialize: missing.length === 0,
+              missingPreconditions: missing,
+            };
+          };
+
           // Inicializar LightningLayer (siempre habilitado si hay datos)
           try {
-            console.log("[GeoScopeMap] Initializing LightningLayer");
-            const lightningLayer = new LightningLayer({ enabled: true });
-            layerRegistry.add(lightningLayer);
-            lightningLayerRef.current = lightningLayer;
-            console.log("[GeoScopeMap] LightningLayer initialized successfully");
+            const layerId: LayerId = "lightning";
+            layerDiagnostics.recordInitializationAttempt(layerId);
+            layerDiagnostics.setEnabled(layerId, true);
+            
+            const preconditions = verifyLayerPreconditions(layerId);
+            if (!preconditions.canInitialize) {
+              layerDiagnostics.setState(layerId, "waiting_style", {
+                missingPreconditions: preconditions.missingPreconditions,
+              });
+              console.warn(`[GeoScopeMap] LightningLayer preconditions not met: ${preconditions.missingPreconditions.join(", ")}`);
+              // Continuar - la capa se puede inicializar más tarde
+            } else {
+              console.log("[GeoScopeMap] Initializing LightningLayer");
+              const lightningLayer = new LightningLayer({ enabled: true });
+              layerRegistry.add(lightningLayer);
+              lightningLayerRef.current = lightningLayer;
+              layerDiagnostics.setState(layerId, "ready");
+              console.log("[GeoScopeMap] LightningLayer initialized successfully");
+            }
           } catch (lightningError) {
+            const error = lightningError instanceof Error ? lightningError : new Error(String(lightningError));
+            layerDiagnostics.recordError("lightning", error, {
+              phase: "initialization",
+            });
             console.error("[GeoScopeMap] LightningLayer failed:", lightningError);
             console.trace("[GeoScopeMap] LightningLayer trace");
             // Continuar sin la capa de rayos

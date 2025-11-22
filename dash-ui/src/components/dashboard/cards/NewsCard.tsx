@@ -124,7 +124,7 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
     // Filtrar noticias no leídas
     const unread = items.filter(item => {
       const id = getNewsId(item);
-      return !readIds.has(id);
+      return !readIds?.has(id);
     });
     
     // Si todas están leídas o no hay noticias no leídas, mostrar todas
