@@ -1,4 +1,5 @@
 import maplibregl from "maplibre-gl";
+import type { StyleSpecification } from "maplibre-gl";
 import { config as maptilerSdkConfig } from "@maptiler/sdk";
 
 import type { Layer } from "./LayerRegistry";
@@ -551,7 +552,7 @@ export default class GlobalRadarLayer implements Layer {
   /**
    * Intenta extraer la API key de MapTiler desde el estilo actual.
    */
-  private extractMaptilerKey(style: maplibregl.StyleSpecification | null): string | null {
+  private extractMaptilerKey(style: StyleSpecification | null): string | null {
     if (!style) {
       return null;
     }
