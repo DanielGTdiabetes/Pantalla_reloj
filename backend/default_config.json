@@ -249,8 +249,8 @@
         }
       },
       "radar": {
-        "enabled": false,
-        "provider": "rainviewer",
+        "enabled": true,
+        "provider": "maptiler_weather",
         "refresh_minutes": 5,
         "history_minutes": 90,
         "frame_step": 5,

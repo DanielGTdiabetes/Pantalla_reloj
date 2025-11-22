@@ -19,6 +19,7 @@ import GlobalSatelliteLayer from "./layers/GlobalSatelliteLayer";
 import AEMETWarningsLayer from "./layers/AEMETWarningsLayer";
 import LightningLayer from "./layers/LightningLayer";
 import WeatherLayer from "./layers/WeatherLayer";
+import WeatherRadarLayer from "./layers/WeatherRadarLayer";
 import { LayerRegistry } from "./layers/LayerRegistry";
 import SatelliteHybridLayer, { type SatelliteLabelsStyle } from "./layers/SatelliteHybridLayer";
 import ShipsLayer from "./layers/ShipsLayer";
@@ -4964,12 +4965,34 @@ export default function GeoScopeMap({
     );
   }
 
+  // Determine radar configuration for WeatherRadarLayer
+  const configV2ForRadar = config as unknown as AppConfigV2 | null;
+  const radarConfig = 
+    configV2ForRadar?.layers?.global_?.radar ?? 
+    configV2ForRadar?.ui_global?.weather_layers?.radar ?? 
+    configV2ForRadar?.ui_global?.radar;
+  
+  const radarProvider = radarConfig?.provider ?? "maptiler_weather";
+  const radarEnabled = radarConfig?.enabled ?? false;
+  const radarOpacity = radarConfig?.opacity ?? 0.7;
+
   return (
     <div className="map-host">
       <div ref={mapFillRef} className="map-fill" />
       {styleChangeInProgress ? <MapSpinner /> : null}
       {tintColor ? (
         <div className="map-tint" style={{ background: tintColor }} aria-hidden="true" />
+      ) : null}
+      {/* Weather radar via MapTiler Weather JS (replaces RainViewer legacy tiles) */}
+      {mapRef.current && radarProvider === "maptiler_weather" ? (
+        <WeatherRadarLayer
+          enabled={radarEnabled}
+          opacity={radarOpacity}
+          animationSpeed={1}
+          map={mapRef.current}
+          config={configV2ForRadar}
+          health={health}
+        />
       ) : null}
       {/* MapHybrid desactivado: solo usar estilo base streets-v4 */}
     </div>

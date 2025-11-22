@@ -103,7 +103,7 @@ export type SatelliteConfig = {
 
 export type RadarConfig = {
   enabled: boolean;
-  provider: "rainviewer" | "aemet";
+  provider: "rainviewer" | "aemet" | "maptiler_weather";
 };
 
 export type RotatorDurationsConfig = {
@@ -256,7 +256,7 @@ export type ShipsLayerConfigV2 = {
 
 export type GlobalRadarLayerConfigV2 = {
   enabled: boolean;
-  provider: "rainviewer";
+  provider: "rainviewer" | "maptiler_weather";
   opacity: number;
   layer_type: string;
   refresh_minutes?: number;

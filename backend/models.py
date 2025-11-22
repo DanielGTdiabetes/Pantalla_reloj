@@ -419,7 +419,7 @@ class GlobalRadarLayer(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = True
-    provider: Literal["rainviewer", "openweathermap"] = Field(default="rainviewer")
+    provider: Literal["rainviewer", "openweathermap", "maptiler_weather"] = Field(default="maptiler_weather")
     # Solo aplica cuando provider == "openweathermap"
     layer_type: Literal["precipitation_new", "precipitation", "temp_new", "clouds", "rain", "wind", "pressure"] = Field(
         default="precipitation_new",

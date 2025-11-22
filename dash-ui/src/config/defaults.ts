@@ -164,7 +164,7 @@ const sanitizeRadarProvider = (
 ): GlobalRadarLayerConfig["provider"] => {
   if (typeof value === "string") {
     const normalized = value.trim().toLowerCase();
-    if (normalized === "rainviewer" || normalized === "openweathermap") {
+    if (normalized === "rainviewer" || normalized === "openweathermap" || normalized === "maptiler_weather") {
       return normalized as GlobalRadarLayerConfig["provider"];
     }
   }
@@ -281,7 +281,7 @@ export const createDefaultGlobalSatelliteLayer = (): GlobalSatelliteLayerConfig 
 
 export const createDefaultGlobalRadarLayer = (): GlobalRadarLayerConfig => ({
   enabled: true,
-  provider: "rainviewer",
+  provider: "maptiler_weather",
   layer_type: "precipitation_new",
   refresh_minutes: 5,
   history_minutes: 90,
