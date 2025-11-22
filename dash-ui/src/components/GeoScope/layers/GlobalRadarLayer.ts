@@ -2,7 +2,8 @@ import maplibregl from "maplibre-gl";
 
 import type { Layer } from "./LayerRegistry";
 import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
-import { withSafeMapStyle } from "../../../lib/map/utils/safeMapOperations";
+import { waitForMapReady } from "../../../lib/map/utils/waitForMapReady";
+import { getRainViewerFrames } from "../../../lib/api";
 
 interface GlobalRadarLayerOptions {
   enabled?: boolean;
@@ -11,6 +12,40 @@ interface GlobalRadarLayerOptions {
   baseUrl?: string;
 }
 
+interface FramesInfo {
+  frames: number[];
+  activeTimestamp: number;
+  hasFrames: boolean;
+}
+
+/**
+ * Cache global para frames de RainViewer (evita llamadas duplicadas)
+ */
+let framesCache: {
+  frames: number[];
+  timestamp: number;
+  expiresAt: number;
+} | null = null;
+
+const CACHE_TTL_MS = 60000; // 1 minuto de cache
+
+/**
+ * Flags estáticos para evitar spam de logs
+ */
+let warnedStyleNotReady = false;
+let warnedNoFrames = false;
+let warnedSourceError = false;
+let warnedLayerError = false;
+
+/**
+ * Capa de radar global que muestra datos de RainViewer sobre el mapa base.
+ * 
+ * Características:
+ * - Fetch centralizado de frames con cache en memoria
+ * - Inicialización robusta con waitForMapReady
+ * - Source y layer idempotentes y seguros
+ * - Reacciona bien a cambios de config y estilo base
+ */
 export default class GlobalRadarLayer implements Layer {
   public readonly id = "geoscope-global-radar";
   public readonly zIndex = 10; // Debajo de AEMET (15), por encima del mapa base (0)
@@ -21,6 +56,7 @@ export default class GlobalRadarLayer implements Layer {
   private baseUrl: string;
   private map?: maplibregl.Map;
   private readonly sourceId = "geoscope-global-radar-source";
+  private registeredInRegistry: boolean = false;
 
   constructor(options: GlobalRadarLayerOptions = {}) {
     this.enabled = options.enabled ?? false;
@@ -29,107 +65,364 @@ export default class GlobalRadarLayer implements Layer {
     this.baseUrl = options.baseUrl ?? "/api/rainviewer/tiles";
   }
 
-  add(map: maplibregl.Map): void {
+  /**
+   * Añade la capa al mapa siguiendo una secuencia limpia:
+   * 1. Espera a que el mapa esté listo (waitForMapReady)
+   * 2. Verifica que el estilo esté cargado
+   * 3. Obtiene frames disponibles
+   * 4. Crea source y layer si hay frames
+   */
+  async add(map: maplibregl.Map): Promise<void> {
     this.map = map;
-    this.ensureLayer();
-    this.applyVisibility();
-    this.applyOpacity();
+    this.enabled = this.enabled ?? true; // Respetar enabled inicial
+
+    try {
+      // Paso 1: Esperar a que el mapa esté completamente listo
+      await waitForMapReady(map);
+
+      // Paso 2: Verificar que el estilo esté listo
+      const style = getSafeMapStyle(map);
+      if (!style) {
+        if (!warnedStyleNotReady) {
+          console.warn("[GlobalRadarLayer] style not ready after waitForMapReady, aborting init");
+          warnedStyleNotReady = true;
+        }
+        return;
+      }
+
+      // Paso 3: Obtener frames disponibles (con cache)
+      const framesInfo = await this.fetchFramesOnce();
+      if (!framesInfo || !framesInfo.hasFrames) {
+        if (!warnedNoFrames) {
+          console.warn("[GlobalRadarLayer] no frames available, skipping layer creation");
+          warnedNoFrames = true;
+        }
+        return;
+      }
+
+      // Paso 4: Crear source y layer
+      await this.ensureSource(framesInfo);
+      await this.ensureLayer(framesInfo);
+      
+      this.registeredInRegistry = true;
+      
+      // Reset flags de warning después de éxito
+      warnedStyleNotReady = false;
+      warnedNoFrames = false;
+    } catch (error) {
+      console.warn("[GlobalRadarLayer] error during add():", error);
+    }
   }
 
   remove(map: maplibregl.Map): void {
-    if (map.getLayer(this.id)) {
-      map.removeLayer(this.id);
-    }
-    if (map.getSource(this.sourceId)) {
-      map.removeSource(this.sourceId);
+    try {
+      if (map.getLayer(this.id)) {
+        map.removeLayer(this.id);
+      }
+      if (map.getSource(this.sourceId)) {
+        map.removeSource(this.sourceId);
+      }
+      this.registeredInRegistry = false;
+    } catch (error) {
+      console.warn("[GlobalRadarLayer] error during remove():", error);
     }
   }
 
+  /**
+   * Actualiza la configuración de la capa.
+   * 
+   * Comportamiento:
+   * - Si enabled pasa a false: oculta la capa (visibility: none)
+   * - Si enabled pasa a true: muestra la capa (visibility: visible)
+   * - Si la capa no existe y enabled=true: reinicializa (add())
+   */
   update(opts: Partial<GlobalRadarLayerOptions>): void {
+    const wasEnabled = this.enabled;
+
     if (opts.enabled !== undefined) {
       this.enabled = opts.enabled;
-      this.ensureLayer();
-      this.applyVisibility();
     }
     if (opts.opacity !== undefined) {
       this.opacity = opts.opacity;
-      this.applyOpacity();
     }
     if (opts.currentTimestamp !== undefined && opts.currentTimestamp !== this.currentTimestamp) {
-      this.updateTimestamp(opts.currentTimestamp);
+      this.currentTimestamp = opts.currentTimestamp;
+    }
+
+    // Si se desactivó, simplemente ocultar (no borrar)
+    if (wasEnabled && !this.enabled) {
+      this.applyVisibility();
+      return;
+    }
+
+    // Si se activó después de estar desactivado, mostrar
+    if (!wasEnabled && this.enabled) {
+      this.applyVisibility();
+      
+      // Si la capa no existe, reinicializar
+      if (this.map && !this.map.getLayer(this.id)) {
+        // Reinicializar de forma asíncrona
+        void this.reinitialize();
+      }
+      return;
+    }
+
+    // Actualizar opacidad si cambió
+    if (opts.opacity !== undefined) {
+      this.applyOpacity();
+    }
+
+    // Actualizar timestamp si cambió
+    if (opts.currentTimestamp !== undefined && opts.currentTimestamp !== this.currentTimestamp) {
+      void this.updateTimestamp(opts.currentTimestamp);
     }
   }
 
-  private updateTimestamp(timestamp: number): void {
+  /**
+   * Establece el estado enabled de la capa
+   */
+  setEnabled(enabled: boolean): void {
+    this.update({ enabled });
+  }
+
+  /**
+   * Establece la opacidad de la capa
+   */
+  setOpacity(opacity: number): void {
+    this.update({ opacity });
+  }
+
+  /**
+   * Fetch centralizado de frames con cache en memoria.
+   * Evita llamadas duplicadas si hay varios intentos de inicialización.
+   */
+  private async fetchFramesOnce(): Promise<FramesInfo | null> {
+    try {
+      // Verificar cache
+      if (framesCache && Date.now() < framesCache.expiresAt) {
+        const activeTimestamp = framesCache.frames[framesCache.frames.length - 1] || 0;
+        return {
+          frames: framesCache.frames,
+          activeTimestamp,
+          hasFrames: framesCache.frames.length > 0
+        };
+      }
+
+      // Verificar health endpoint primero
+      const healthResponse = await fetch("/api/health/full", { cache: "no-store" });
+      const healthData = await healthResponse.json().catch(() => null);
+      const globalRadar = healthData?.global_radar;
+      const hasFrames = globalRadar?.status === "ok" && (globalRadar?.frames_count ?? 0) > 0;
+
+      if (!hasFrames) {
+        return null;
+      }
+
+      // Obtener frames (usar valores por defecto si no se especifican)
+      const frames = await getRainViewerFrames(90, 5);
+
+      if (!frames || frames.length === 0) {
+        return null;
+      }
+
+      // Actualizar cache
+      framesCache = {
+        frames,
+        timestamp: Date.now(),
+        expiresAt: Date.now() + CACHE_TTL_MS
+      };
+
+      // Usar el último frame (más reciente)
+      const activeTimestamp = frames[frames.length - 1];
+
+      return {
+        frames,
+        activeTimestamp,
+        hasFrames: true
+      };
+    } catch (error) {
+      console.warn("[GlobalRadarLayer] error fetching frames:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Reinicializa la capa cuando se detecta que no existe
+   * (útil después de cambios de estilo base)
+   */
+  private async reinitialize(): Promise<void> {
     if (!this.map) return;
-    
-    this.currentTimestamp = timestamp;
-    if (!this.enabled) {
+
+    try {
+      await waitForMapReady(this.map);
+      
+      const style = getSafeMapStyle(this.map);
+      if (!style) {
+        console.warn("[GlobalRadarLayer] style not ready during reinitialize, will retry on styledata");
+        this.map.once('styledata', () => {
+          void this.reinitialize();
+        });
+        return;
+      }
+
+      const framesInfo = await this.fetchFramesOnce();
+      if (!framesInfo || !framesInfo.hasFrames) {
+        return;
+      }
+
+      await this.ensureSource(framesInfo);
+      await this.ensureLayer(framesInfo);
+    } catch (error) {
+      console.warn("[GlobalRadarLayer] error during reinitialize():", error);
+    }
+  }
+
+  /**
+   * Asegura que el source existe. Idempotente y seguro.
+   * 
+   * - No ejecuta si !this.map o !getSafeMapStyle(this.map)
+   * - Si ya existe, solo actualiza tiles/url si cambió el timestamp activo
+   */
+  private async ensureSource(framesInfo: FramesInfo): Promise<void> {
+    if (!this.map) return;
+
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      if (!warnedStyleNotReady) {
+        console.warn("[GlobalRadarLayer] ensureSource: style not ready, skipping");
+        warnedStyleNotReady = true;
+      }
       return;
     }
+
+    try {
+      const existing = this.map.getSource(this.sourceId) as maplibregl.RasterSource | undefined;
+      const tileUrlTemplate = `${this.baseUrl}/${framesInfo.activeTimestamp}/{z}/{x}/{y}.png`;
+
+      if (existing) {
+        // Si ya existe, verificar si necesita actualización
+        // En raster sources, no podemos actualizar tiles directamente
+        // Si el timestamp cambió, necesitamos recrear (pero esto se maneja en updateTimestamp)
+        return;
+      }
+
+      // Crear source si no existe
+      this.map.addSource(this.sourceId, {
+        type: "raster",
+        tiles: [tileUrlTemplate],
+        tileSize: 256,
+      });
+
+      // Guardar timestamp actual para futuras comparaciones
+      this.currentTimestamp = framesInfo.activeTimestamp;
+
+      // Reset warning flag después de éxito
+      warnedStyleNotReady = false;
+      warnedSourceError = false;
+    } catch (error) {
+      if (!warnedSourceError) {
+        console.warn("[GlobalRadarLayer] ensureSource: error adding source:", error);
+        warnedSourceError = true;
+      }
+    }
+  }
+
+  /**
+   * Asegura que el layer existe. Idempotente y seguro.
+   * 
+   * - Solo se ejecuta si getSafeMapStyle(map) es válido
+   * - Crea la capa si no existe, con beforeId opcional
+   * - Si ya existe, actualiza solo raster-opacity si cambió
+   */
+  private async ensureLayer(framesInfo: FramesInfo): Promise<void> {
+    if (!this.map) return;
+
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      if (!warnedStyleNotReady) {
+        console.warn("[GlobalRadarLayer] ensureLayer: style not ready, skipping");
+        warnedStyleNotReady = true;
+      }
+      return;
+    }
+
+    try {
+      const existing = this.map.getLayer(this.id);
+
+      if (!existing) {
+        // Crear layer si no existe
+        const beforeId = this.findBeforeId();
+
+        this.map.addLayer({
+          id: this.id,
+          type: "raster",
+          source: this.sourceId,
+          paint: {
+            "raster-opacity": this.opacity
+          },
+          layout: {
+            visibility: this.enabled ? "visible" : "none"
+          },
+          minzoom: 0,
+          maxzoom: 18
+        }, beforeId);
+
+        // Reset warning flag después de éxito
+        warnedStyleNotReady = false;
+        warnedLayerError = false;
+      } else {
+        // Si ya existe, solo actualizar propiedades si cambiaron
+        // La opacidad se actualiza en applyOpacity()
+        // La visibilidad se actualiza en applyVisibility()
+      }
+    } catch (error) {
+      if (!warnedLayerError) {
+        console.warn("[GlobalRadarLayer] ensureLayer: error adding layer:", error);
+        warnedLayerError = true;
+      }
+    }
+  }
+
+  /**
+   * Actualiza el timestamp activo del radar
+   */
+  private async updateTimestamp(timestamp: number): Promise<void> {
+    if (!this.map || !this.enabled) return;
     
-    // Verificar que el mapa esté completamente cargado
-    if (!this.map.isStyleLoaded()) {
-      // Si el estilo no está cargado, esperar a que se cargue
+    this.currentTimestamp = timestamp;
+
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      // Esperar a que el estilo esté listo
       this.map.once('styledata', () => {
-        this.updateTimestamp(timestamp);
+        void this.updateTimestamp(timestamp);
       });
       return;
     }
-    
-    // Actualizar la fuente con nuevo timestamp
-    const source = this.map.getSource(this.sourceId);
-    if (!source) {
-      // Si no existe la fuente, crearla
-      this.ensureLayer();
-      this.applyVisibility();
-      this.applyOpacity();
-      return;
-    }
 
-    if (source.type === "raster") {
-      // Eliminar y recrear la fuente con el nuevo timestamp de forma segura
-      const updated = withSafeMapStyle(
-        this.map,
-        () => {
-          if (this.map!.getLayer(this.id)) {
-            this.map!.removeLayer(this.id);
-          }
-          this.map!.removeSource(this.sourceId);
-          
-          // Recrear con nuevo timestamp
-          this.map!.addSource(this.sourceId, {
-            type: "raster",
-            tiles: [
-              `${this.baseUrl}/${timestamp}/{z}/{x}/{y}.png`
-            ],
-            tileSize: 256
-          });
-          
-          const beforeId = this.findBeforeId();
-          this.map!.addLayer({
-            id: this.id,
-            type: "raster",
-            source: this.sourceId,
-            paint: {
-              "raster-opacity": this.opacity
-            },
-            minzoom: 0,
-            maxzoom: 18
-          }, beforeId);
-        },
-        "GlobalRadarLayer"
-      );
+    // Para actualizar el timestamp, necesitamos recrear el source
+    // ya que las raster sources no permiten actualizar tiles directamente
+    try {
+      const existingLayer = this.map.getLayer(this.id);
+      const existingSource = this.map.getSource(this.sourceId);
 
-      if (!updated) {
-        console.warn("[GlobalRadarLayer] Could not update timestamp, will retry on styledata");
-        // Reintentar cuando el mapa esté listo
-        if (this.map) {
-          this.map.once('styledata', () => {
-            this.updateTimestamp(timestamp);
-          });
-        }
+      if (existingLayer && existingSource) {
+        // Remover layer y source
+        this.map.removeLayer(this.id);
+        this.map.removeSource(this.sourceId);
+
+        // Recrear con nuevo timestamp
+        const framesInfo: FramesInfo = {
+          frames: [],
+          activeTimestamp: timestamp,
+          hasFrames: true
+        };
+
+        await this.ensureSource(framesInfo);
+        await this.ensureLayer(framesInfo);
       }
+    } catch (error) {
+      console.warn("[GlobalRadarLayer] error updating timestamp:", error);
     }
   }
 
@@ -142,21 +435,22 @@ export default class GlobalRadarLayer implements Layer {
       return undefined;
     }
 
-    // Usar getSafeMapStyle para evitar crashes si style es null
     const style = getSafeMapStyle(this.map);
-    if (!style || !style.layers) {
+    if (!style || !style.layers || !Array.isArray(style.layers)) {
       return undefined;
     }
 
-    // Verificar que layers es un array antes de iterar
-    const layers = style.layers;
-    if (!Array.isArray(layers)) {
-      return undefined;
-    }
-
-    for (const layer of layers) {
+    for (const layer of style.layers) {
       // Buscar capas de aviones (geoscope-aircraft) o barcos (geoscope-ships)
       if (layer.id === "geoscope-aircraft" || layer.id === "geoscope-ships") {
+        return layer.id;
+      }
+    }
+
+    // Si no hay aviones/barcos, añadir encima de todo (antes de etiquetas)
+    // Buscar primera capa de símbolo (etiquetas)
+    for (const layer of style.layers) {
+      if (layer.type === "symbol") {
         return layer.id;
       }
     }
@@ -164,104 +458,15 @@ export default class GlobalRadarLayer implements Layer {
     return undefined;
   }
 
-  private ensureLayer(): void {
-    if (!this.map || !this.enabled || !this.currentTimestamp) {
-      console.debug("[GlobalRadarLayer] ensureLayer skipped", {
-        hasMap: !!this.map,
-        enabled: this.enabled,
-        hasTimestamp: !!this.currentTimestamp
-      });
-      return;
-    }
-    
-    // Verificar que el mapa esté completamente cargado
-    if (!this.map.isStyleLoaded()) {
-      console.debug("[GlobalRadarLayer] Map style not loaded, waiting for styledata");
-      // Esperar a que el estilo se cargue antes de añadir la capa
-      this.map.once('styledata', () => {
-        this.ensureLayer();
-      });
-      return;
-    }
-
-    // Verificar que el estilo esté completamente cargado antes de acceder a sources/layers
-    const style = getSafeMapStyle(this.map);
-    if (!style) {
-      console.warn("[GlobalRadarLayer] Style not ready, waiting for styledata");
-      this.map.once('styledata', () => {
-        this.ensureLayer();
-      });
-      return;
-    }
-
-    // Añadir source de forma segura
-    if (!this.map.getSource(this.sourceId)) {
-      const tileUrlTemplate = `${this.baseUrl}/${this.currentTimestamp}/{z}/{x}/{y}.png`;
-      console.log("[GlobalRadarLayer] Adding RainViewer raster source", {
-        sourceId: this.sourceId,
-        tileUrlTemplate,
-        timestamp: this.currentTimestamp
-      });
-      
-      const sourceAdded = withSafeMapStyle(
-        this.map,
-        () => {
-          this.map!.addSource(this.sourceId, {
-            type: "raster",
-            tiles: [tileUrlTemplate],
-            tileSize: 256
-          });
-        },
-        "GlobalRadarLayer"
-      );
-
-      if (!sourceAdded) {
-        console.error("[GlobalRadarLayer] Could not add source, style not ready");
-        return;
-      }
-      console.log("[GlobalRadarLayer] Source added successfully");
-    }
-
-    // Añadir layer de forma segura
-    if (!this.map.getLayer(this.id)) {
-      const beforeId = this.findBeforeId();
-      console.log("[GlobalRadarLayer] Adding RainViewer raster layer", {
-        layerId: this.id,
-        sourceId: this.sourceId,
-        opacity: this.opacity,
-        beforeId
-      });
-      
-      const layerAdded = withSafeMapStyle(
-        this.map,
-        () => {
-          this.map!.addLayer({
-            id: this.id,
-            type: "raster",
-            source: this.sourceId,
-            paint: {
-              "raster-opacity": this.opacity
-            },
-            minzoom: 0,
-            maxzoom: 18
-          }, beforeId);
-        },
-        "GlobalRadarLayer"
-      );
-
-      if (!layerAdded) {
-        console.error("[GlobalRadarLayer] Could not add layer, style not ready");
-        return;
-      }
-      console.log("[GlobalRadarLayer] Layer added successfully");
-    }
-  }
-
+  /**
+   * Aplica la visibilidad de la capa según el estado enabled.
+   * No borra la capa, solo cambia visibility a "none" o "visible".
+   */
   private applyVisibility(): void {
     if (!this.map || !this.map.getLayer(this.id)) return;
+
     const style = getSafeMapStyle(this.map);
     if (!style) {
-      console.warn("[GlobalRadarLayer] Style not ready, skipping");
       return;
     }
     
@@ -272,23 +477,25 @@ export default class GlobalRadarLayer implements Layer {
         this.map.setLayoutProperty(this.id, "visibility", "none");
       }
     } catch (e) {
-      console.warn("[GlobalRadarLayer] layout skipped:", e);
+      console.warn("[GlobalRadarLayer] error applying visibility:", e);
     }
   }
 
+  /**
+   * Aplica la opacidad de la capa
+   */
   private applyOpacity(): void {
     if (!this.map || !this.map.getLayer(this.id)) return;
+
     const style = getSafeMapStyle(this.map);
     if (!style) {
-      console.warn("[GlobalRadarLayer] Style not ready, skipping");
       return;
     }
     
     try {
       this.map.setPaintProperty(this.id, "raster-opacity", this.opacity);
     } catch (e) {
-      console.warn("[GlobalRadarLayer] paint skipped:", e);
+      console.warn("[GlobalRadarLayer] error applying opacity:", e);
     }
   }
 }
-

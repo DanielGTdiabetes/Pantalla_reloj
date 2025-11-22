@@ -4,7 +4,7 @@ import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
 export interface Layer {
   id: string;
   zIndex: number;
-  add(map: maplibregl.Map): void;
+  add(map: maplibregl.Map): void | Promise<void>;
   remove(map: maplibregl.Map): void;
   setEnabled?(on: boolean): void;
   destroy?(): void;
@@ -40,9 +40,15 @@ export class LayerRegistry {
     this.layers.push(layer);
     this.layers.sort((a, b) => a.zIndex - b.zIndex);
 
-    // Intentar añadir la capa al mapa
+    // Intentar añadir la capa al mapa (puede ser síncrono o async)
     try {
-      layer.add(this.map);
+      const result = layer.add(this.map);
+      // Si es una Promise, manejarla de forma asíncrona (no bloquear)
+      if (result && typeof result === "object" && "then" in result) {
+        result.catch((err) => {
+          console.warn(`[LayerRegistry] Failed to add layer ${layer.id} (async)`, err);
+        });
+      }
       return true;
     } catch (err) {
       console.warn(`[LayerRegistry] Failed to add layer ${layer.id}`, err);
