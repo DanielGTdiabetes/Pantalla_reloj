@@ -33,6 +33,8 @@ import {
   testShips,
   testXyz,
   updateAemetApiKey,
+  updateOpenWeatherMapApiKey,
+  getOpenWeatherMapApiKeyMeta,
   updateSecrets,
   uploadCalendarICS,
   reloadConfig,
@@ -145,6 +147,8 @@ export const ConfigPage: React.FC = () => {
   const [aemetTestResult, setAemetTestResult] = useState<{ ok: boolean; reason?: string } | null>(null);
   const [aemetTesting, setAemetTesting] = useState(false);
   const [aemetApiKey, setAemetApiKey] = useState<string>("");
+  const [openWeatherMapApiKey, setOpenWeatherMapApiKey] = useState<string>("");
+  const [openWeatherMapApiKeyMeta, setOpenWeatherMapApiKeyMeta] = useState<{ has_api_key: boolean; api_key_last4?: string } | null>(null);
   const [openskyStatus, setOpenskyStatus] = useState<any>(null);
   
   // Flights test
@@ -472,6 +476,14 @@ export const ConfigPage: React.FC = () => {
         // Cargar API key de AEMET desde secrets (no se expone en config, pero podemos intentar leerla)
         // La API key se guarda en secrets, no en config pública, así que no la podemos leer directamente
         // El usuario tendrá que escribirla de nuevo o usar el botón de test que usa GET /api/aemet/test
+        
+        // Cargar metadata de OpenWeatherMap API key
+        try {
+          const owmMeta = await getOpenWeatherMapApiKeyMeta();
+          setOpenWeatherMapApiKeyMeta(owmMeta);
+        } catch (error) {
+          console.error("Error loading OpenWeatherMap API key meta:", error);
+        }
         
         // Cargar estado WiFi
         const status = await wifiStatus();
@@ -4602,6 +4614,83 @@ export const ConfigPage: React.FC = () => {
             </button>
           </div>
         </div>
+        </div>
+
+        {/* ============================================
+            BLOQUE 2.5: OpenWeatherMap API Key
+            ============================================ */}
+        <div style={{ marginBottom: "32px" }}>
+          <h2 style={{ fontSize: "1.8rem", marginBottom: "20px", borderBottom: "2px solid rgba(104, 162, 255, 0.3)", paddingBottom: "8px" }}>
+            OpenWeatherMap
+          </h2>
+          
+          <div className="config-card">
+            <h2>API Key de OpenWeatherMap</h2>
+            <div className="config-form-fields">
+              <div className="config-field">
+                <label>API Key</label>
+                <input
+                  type="password"
+                  value={openWeatherMapApiKey}
+                  onChange={(e) => setOpenWeatherMapApiKey(e.target.value)}
+                  placeholder={openWeatherMapApiKeyMeta?.has_api_key ? `••••${openWeatherMapApiKeyMeta.api_key_last4 || ""}` : "Introduce tu API key de OpenWeatherMap"}
+                />
+                <div className="config-field__hint">
+                  Necesaria para obtener datos de pronóstico del tiempo y precipitación. 
+                  Obtén tu API key gratuita en <a href="https://openweathermap.org/api" target="_blank" rel="noopener noreferrer">openweathermap.org</a>
+                </div>
+              </div>
+              
+              {openWeatherMapApiKeyMeta && (
+                <div className="config-field">
+                  <div className={`config-field__hint ${openWeatherMapApiKeyMeta.has_api_key ? "config-field__hint--success" : "config-field__hint--error"}`}>
+                    {openWeatherMapApiKeyMeta.has_api_key ? (
+                      <>✓ API key configurada{openWeatherMapApiKeyMeta.api_key_last4 && ` (últimos 4: ${openWeatherMapApiKeyMeta.api_key_last4})`}</>
+                    ) : (
+                      "✗ No hay API key configurada"
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              <div className="config-field__actions">
+                <button
+                  className="config-button primary"
+                  onClick={async () => {
+                    try {
+                      await updateOpenWeatherMapApiKey(openWeatherMapApiKey || null);
+                      const meta = await getOpenWeatherMapApiKeyMeta();
+                      setOpenWeatherMapApiKeyMeta(meta);
+                      setOpenWeatherMapApiKey("");
+                      alert("API key de OpenWeatherMap guardada correctamente");
+                    } catch (error) {
+                      console.error("Error updating OpenWeatherMap API key:", error);
+                      alert("Error al guardar la API key");
+                    }
+                  }}
+                >
+                  Guardar API Key
+                </button>
+                <button
+                  className="config-button"
+                  onClick={async () => {
+                    try {
+                      await updateOpenWeatherMapApiKey(null);
+                      const meta = await getOpenWeatherMapApiKeyMeta();
+                      setOpenWeatherMapApiKeyMeta(meta);
+                      setOpenWeatherMapApiKey("");
+                      alert("API key de OpenWeatherMap eliminada");
+                    } catch (error) {
+                      console.error("Error deleting OpenWeatherMap API key:", error);
+                      alert("Error al eliminar la API key");
+                    }
+                  }}
+                >
+                  Eliminar API Key
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* ============================================
