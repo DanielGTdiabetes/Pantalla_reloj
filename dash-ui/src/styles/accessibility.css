@@ -1,0 +1,120 @@
+/* ============================================
+   MEJORAS DE ACCESIBILIDAD
+   Asegurar que todo sea accesible y respete preferencias
+   ============================================ */
+
+/* Respetar preferencias de movimiento reducido */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Desactivar efectos ambientales si hay movimiento reducido */
+  .snow-effect,
+  .rain-effect,
+  .star-field {
+    display: none !important;
+  }
+}
+
+/* Asegurar contraste mínimo */
+:root {
+  --contrast-ratio-min: 4.5;
+}
+
+/* Focus visible para navegación por teclado */
+:focus-visible {
+  outline: 2px solid var(--theme-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Ocultar visualmente pero mantener accesible */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Mejorar contraste de texto en modo día */
+[data-theme="day"] {
+  --text-primary: #1a1a1a;
+  --text-secondary: #4a5568;
+  --text-muted: #718096;
+}
+
+/* Mejorar contraste de texto en modo noche */
+[data-theme="night"] {
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+}
+
+/* Asegurar que los elementos interactivos sean accesibles */
+button,
+a,
+[role="button"],
+[tabindex="0"] {
+  cursor: pointer;
+}
+
+button:disabled,
+a:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Mejorar visibilidad de estados de hover/focus */
+.interactive:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--theme-accent);
+  outline-offset: 2px;
+}
+
+/* Asegurar que las imágenes tengan alt text */
+img:not([alt]) {
+  border: 2px dashed var(--theme-accent);
+}
+
+/* Mejorar legibilidad de texto sobre fondos */
+.text-overlay {
+  background: rgba(0, 0, 0, 0.5);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  backdrop-filter: blur(4px);
+}
+
+/* Respetar preferencias de alto contraste */
+@media (prefers-contrast: high) {
+  :root {
+    --border-width-thin: 2px;
+    --border-width-medium: 3px;
+  }
+
+  .card {
+    border-width: 2px;
+  }
+}
+
+/* Respetar preferencias de color */
+@media (prefers-color-scheme: dark) {
+  /* Ya manejado por data-theme, pero asegurar compatibilidad */
+}
+
+@media (prefers-color-scheme: light) {
+  /* Ya manejado por data-theme, pero asegurar compatibilidad */
+}
+

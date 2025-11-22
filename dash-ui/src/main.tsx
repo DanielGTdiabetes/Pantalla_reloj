@@ -8,6 +8,9 @@ import "./styles/themes.css";
 import "./styles/typography.css";
 import "./styles/animations.css";
 import "./styles/card-enhancements.css";
+import "./styles/shadows.css";
+import "./styles/effects.css";
+import "./styles/accessibility.css";
 import "./styles/global.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

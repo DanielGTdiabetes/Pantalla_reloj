@@ -1,0 +1,85 @@
+/* ============================================
+   SISTEMA DE SOMBRAS
+   Sombras consistentes para profundidad visual
+   ============================================ */
+
+/* Elevaciones estándar */
+.elevation-1 {
+  box-shadow: var(--shadow-sm);
+}
+
+.elevation-2 {
+  box-shadow: var(--shadow-md);
+}
+
+.elevation-3 {
+  box-shadow: var(--shadow-lg);
+}
+
+.elevation-4 {
+  box-shadow: var(--shadow-xl);
+}
+
+/* Sombras para cards */
+.card {
+  box-shadow: var(--shadow-md);
+  transition: box-shadow var(--transition-normal) var(--ease-in-out);
+}
+
+.card:hover {
+  box-shadow: var(--shadow-lg);
+}
+
+.rotating-card {
+  box-shadow: var(--shadow-lg);
+}
+
+/* Sombras de texto para legibilidad */
+.text-shadow-sm {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.text-shadow-md {
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.text-shadow-lg {
+  text-shadow: 0 3px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* Sombras según tema */
+[data-theme="day"] .text-shadow-sm,
+[data-theme="day"] .text-shadow-md,
+[data-theme="day"] .text-shadow-lg {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="night"] .text-shadow-sm,
+[data-theme="night"] .text-shadow-md,
+[data-theme="night"] .text-shadow-lg {
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+/* Sombras internas para profundidad */
+.shadow-inner {
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Sombras de elevación para botones e interactivos */
+.interactive {
+  box-shadow: var(--shadow-sm);
+  transition: 
+    transform var(--transition-fast) var(--ease-in-out),
+    box-shadow var(--transition-fast) var(--ease-in-out);
+}
+
+.interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.interactive:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+

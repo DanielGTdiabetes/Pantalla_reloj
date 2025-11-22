@@ -378,6 +378,89 @@
 }
 
 /* ============================================
+   MICRO-ANIMACIONES
+   ============================================ */
+
+/* Hover en elementos interactivos */
+.interactive {
+  transition: transform var(--transition-fast) var(--ease-in-out);
+  cursor: pointer;
+}
+
+.interactive:hover {
+  transform: translateY(-2px);
+}
+
+.interactive:active {
+  transform: translateY(0);
+}
+
+/* Pulso para indicadores en vivo (ya existe, pero mejorado) */
+.pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Parpadeo para separador de hora (ya existe, pero mejorado) */
+.blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* Respiración para iconos (ya existe, pero mejorado) */
+.breathe {
+  animation: breathe 3s ease-in-out infinite;
+}
+
+.breathe-effect {
+  animation: breathe 3s ease-in-out infinite;
+}
+
+/* Efecto de escala al aparecer */
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.scale-in {
+  animation: scaleIn var(--transition-normal) var(--ease-out);
+}
+
+/* Efecto de deslizamiento suave */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.slide-in {
+  animation: slideIn var(--transition-normal) var(--ease-out);
+}
+
+/* Efecto de rotación suave */
+@keyframes rotateSlow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.rotate-slow {
+  animation: rotateSlow 20s linear infinite;
+}
+
+/* ============================================
    ANIMACIONES DE SCROLL
    ============================================ */
 

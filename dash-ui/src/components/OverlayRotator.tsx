@@ -11,6 +11,9 @@ import { safeGetTimezone } from "../utils/timezone";
 import type { RotatingCardItem } from "./RotatingCard";
 import { RotatingCard } from "./RotatingCard";
 import { RotationProgress } from "./dashboard/RotationProgress";
+import { BackgroundGradient } from "./effects/BackgroundGradient";
+import { WeatherAmbience } from "./effects/WeatherAmbience";
+import { SkeletonLoader } from "./common/SkeletonLoader";
 import { CalendarCard } from "./dashboard/cards/CalendarCard";
 import { EphemeridesCard } from "./dashboard/cards/EphemeridesCard";
 import { HarvestCard } from "./dashboard/cards/HarvestCard";
@@ -22,6 +25,7 @@ import { TimeCard } from "./dashboard/cards/TimeCard";
 import { WeatherCard } from "./dashboard/cards/WeatherCard";
 import { WeatherForecastCard } from "./dashboard/cards/WeatherForecastCard";
 import { useRotationProgress } from "../hooks/useRotationProgress";
+import { useDayNightMode } from "../hooks/useDayNightMode";
 
 type DashboardPayload = {
   weather?: Record<string, unknown>;
@@ -274,6 +278,9 @@ export const OverlayRotator: React.FC = () => {
     const tz = safeGetTimezone(config as Record<string, unknown>);
     return tz;
   }, [config]);
+  
+  // Detectar modo día/noche
+  const isNight = useDayNightMode(timezone) === "night";
 
   // Leer configuración de rotación desde ui_global.overlay.rotator (v2) o ui.rotation (v1 legacy)
   const rotationConfig = useMemo(() => {
@@ -1124,13 +1131,36 @@ export const OverlayRotator: React.FC = () => {
     currentPanel !== null && rotationConfig.enabled
   );
 
+  // Obtener condición meteorológica para efectos ambientales
+  const weatherCondition = useMemo(() => {
+    const weather = (payload.weather ?? {}) as Record<string, unknown>;
+    return sanitizeRichText(weather.summary) || sanitizeRichText(weather.condition) || null;
+  }, [payload.weather]);
+
+  // Obtener velocidad del viento
+  const windSpeed = useMemo(() => {
+    const weather = (payload.weather ?? {}) as Record<string, unknown>;
+    const wind = typeof weather.wind_speed === "number" ? weather.wind_speed
+      : typeof weather.wind === "number" ? weather.wind
+        : typeof weather.windSpeed === "number" ? weather.windSpeed
+          : typeof weather.ws === "number" ? weather.ws
+            : 0;
+    // Normalizar velocidad del viento para efectos (-10 a 10)
+    return Math.max(-10, Math.min(10, (wind / 10) * 2));
+  }, [payload.weather]);
+
   if (!currentPanel) {
     return (
       <section className="overlay-rotator" role="complementary" aria-live="polite">
+        <BackgroundGradient />
         <div className="overlay-rotator__content">
-          <div className="overlay-rotator__fallback" role="status">
-            <p>Datos no disponibles</p>
-          </div>
+          {loading ? (
+            <SkeletonLoader variant="card" width="100%" height="400px" />
+          ) : (
+            <div className="overlay-rotator__fallback" role="status">
+              <p>Datos no disponibles</p>
+            </div>
+          )}
           <p className="overlay-rotator__status">{statusLabel}</p>
         </div>
       </section>
@@ -1139,22 +1169,35 @@ export const OverlayRotator: React.FC = () => {
 
   return (
     <section className="overlay-rotator" role="complementary" aria-live="polite">
+      <BackgroundGradient />
+      <WeatherAmbience 
+        condition={weatherCondition}
+        isNight={isNight}
+        windSpeed={windSpeed}
+        intensity="moderate"
+      />
       <div className="overlay-rotator__content">
-        <div className="rotating-card-wrapper">
-          <RotatingCard cards={[currentPanel]} />
-          {rotationConfig.enabled && currentPanel.duration > 0 && (
-            <RotationProgress progress={rotationProgress} />
-          )}
-        </div>
-        <div className="overlay-rotator__status-container">
-          {lastUpdatedAt && (
-            <span className="overlay-rotator__live-indicator pulse-effect" aria-label="Datos en vivo">
-              <span className="overlay-rotator__live-dot"></span>
-              <span className="overlay-rotator__live-text">En vivo</span>
-            </span>
-          )}
-          <p className="overlay-rotator__status">{statusLabel}</p>
-        </div>
+        {loading && !lastUpdatedAt ? (
+          <SkeletonLoader variant="card" width="100%" height="100%" />
+        ) : (
+          <>
+            <div className="rotating-card-wrapper">
+              <RotatingCard cards={[currentPanel]} />
+              {rotationConfig.enabled && currentPanel.duration > 0 && (
+                <RotationProgress progress={rotationProgress} />
+              )}
+            </div>
+            <div className="overlay-rotator__status-container">
+              {lastUpdatedAt && (
+                <span className="overlay-rotator__live-indicator pulse-effect" aria-label="Datos en vivo">
+                  <span className="overlay-rotator__live-dot"></span>
+                  <span className="overlay-rotator__live-text">En vivo</span>
+                </span>
+              )}
+              <p className="overlay-rotator__status">{statusLabel}</p>
+            </div>
+          </>
+        )}
       </div>
     </section>
   );
