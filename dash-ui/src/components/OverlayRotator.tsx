@@ -607,6 +607,11 @@ export const OverlayRotator: React.FC = () => {
       : typeof weather.windSpeed === "number" ? (weather.windSpeed as number)
         : typeof weather.ws === "number" ? (weather.ws as number)
           : null;
+  // Extraer datos de precipitación (lluvia en mm)
+  const rain = typeof weather.rain === "number" ? (weather.rain as number)
+    : typeof weather.precipitation === "number" ? (weather.precipitation as number)
+      : typeof weather.rainfall === "number" ? (weather.rainfall as number)
+        : null;
   const condition = sanitizeRichText(weather.summary) || sanitizeRichText(weather.condition) || null;
   const sunrise = sanitizeRichText(astronomy.sunrise) || null;
   const sunset = sanitizeRichText(astronomy.sunset) || null;
@@ -748,6 +753,7 @@ export const OverlayRotator: React.FC = () => {
           condition={condition}
           humidity={humidity}
           wind={wind}
+          rain={rain}
           unit={temperature.unit}
           timezone={timezone}
         />
@@ -850,6 +856,7 @@ export const OverlayRotator: React.FC = () => {
     condition,
     humidity,
     wind,
+    rain,
     forecastDays,
     calendarEvents,
     moonPhase,

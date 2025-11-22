@@ -5948,6 +5948,23 @@ async def get_weather_weekly(
         
         daily = []
         for day in data.get("daily", [])[:7]:
+            # Extraer datos de precipitación (lluvia y nieve)
+            rain = day.get("rain")
+            snow = day.get("snow")
+            # rain puede ser un número (mm) o un objeto con "1h" o "3h"
+            rain_mm = None
+            if isinstance(rain, (int, float)):
+                rain_mm = rain
+            elif isinstance(rain, dict):
+                rain_mm = rain.get("1h") or rain.get("3h") or rain.get("24h")
+            
+            # snow puede ser un número (mm) o un objeto con "1h" o "3h"
+            snow_mm = None
+            if isinstance(snow, (int, float)):
+                snow_mm = snow
+            elif isinstance(snow, dict):
+                snow_mm = snow.get("1h") or snow.get("3h") or snow.get("24h")
+            
             daily.append({
                 "date": datetime.fromtimestamp(day.get("dt", 0), tz=timezone.utc).isoformat(),
                 "temp_max": day.get("temp", {}).get("max"),
@@ -5956,6 +5973,9 @@ async def get_weather_weekly(
                 "icon": day.get("weather", [{}])[0].get("icon", ""),
                 "humidity": day.get("humidity"),
                 "wind_speed": day.get("wind_speed"),
+                "rain": rain_mm,  # mm de lluvia acumulada
+                "snow": snow_mm,  # mm de nieve acumulada
+                "precipitation": rain_mm or snow_mm,  # Precipitación total (lluvia o nieve)
             })
         
         logger.info("[weather/weekly] Successfully fetched %d days of forecast", len(daily))

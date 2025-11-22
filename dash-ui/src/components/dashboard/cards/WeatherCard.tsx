@@ -8,6 +8,7 @@ type WeatherCardProps = {
   condition: string | null;
   humidity: number | null;
   wind: number | null;
+  rain: number | null; // mm de lluvia acumulada
   unit: string;
   timezone?: string;
 };
@@ -25,6 +26,7 @@ export const WeatherCard = ({
   condition,
   humidity,
   wind,
+  rain,
   unit,
   timezone = "Europe/Madrid"
 }: WeatherCardProps): JSX.Element => {
@@ -84,6 +86,16 @@ export const WeatherCard = ({
             )}
           </div>
         </div>
+        {rain !== null && rain > 0 && (
+          <div className="weather-card__metric weather-card__metric--rain">
+            <DropletsIcon className="weather-card__metric-icon breathe-effect" aria-hidden="true" />
+            <div className="weather-card__metric-content">
+              <span className="weather-card__metric-label">Lluvia</span>
+              <span className="weather-card__metric-value">{formatMetric(rain, " mm")}</span>
+              <span className="weather-card__metric-hint">({rain.toFixed(1)} L/m²)</span>
+            </div>
+          </div>
+        )}
         <div className="weather-card__metric">
           <WindIcon className="weather-card__metric-icon breathe-effect" aria-hidden="true" />
           <div className="weather-card__metric-content">

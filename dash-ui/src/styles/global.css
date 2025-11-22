@@ -782,6 +782,19 @@ main {
   box-shadow: 0 0 8px rgba(78, 201, 255, 0.4);
 }
 
+.weather-card__metric--rain {
+  border-left: 3px solid #4dabf7;
+  background: rgba(77, 171, 247, 0.1);
+}
+
+.weather-card__metric-hint {
+  font-size: clamp(0.75rem, 1.5vw, 0.9rem);
+  color: var(--theme-text-muted);
+  opacity: 0.8;
+  margin-top: 2px;
+  font-style: italic;
+}
+
 .news-card {
   align-items: flex-start;
   text-align: left;
