@@ -49,7 +49,8 @@ import type {
 import type {
   AppConfigV2,
   MapConfigV2,
-  SatelliteLabelsOverlay
+  SatelliteLabelsOverlay,
+  GlobalRadarLayerConfigV2
 } from "../../types/config_v2";
 import {
   loadMapStyle,

@@ -62,10 +62,17 @@ export default function WeatherRadarLayer({
     }
 
     // Check provider - only initialize if provider is maptiler_weather
-    const radarConfig: GlobalRadarLayerConfigV2 | undefined = 
-      config.layers?.global_?.radar ?? 
-      config.layers?.global?.radar ??
-      config.ui_global?.radar;
+    const radarConfigFromLayers = config.layers?.global_?.radar ?? config.layers?.global?.radar;
+    const radarConfigFromUI = config.ui_global?.radar;
+    
+    // Merge configs: layers.global.radar takes precedence, fallback to ui_global.radar
+    const radarConfig: GlobalRadarLayerConfigV2 | undefined = radarConfigFromLayers ?? 
+      (radarConfigFromUI ? {
+        enabled: radarConfigFromUI.enabled ?? false,
+        provider: (radarConfigFromUI as any).provider ?? "maptiler_weather",
+        opacity: radarConfigFromUI.opacity ?? 0.7,
+        animation_speed: (radarConfigFromUI as any).animation_speed ?? 1.0,
+      } : undefined);
     
     const provider = radarConfig?.provider ?? "maptiler_weather";
     if (provider !== "maptiler_weather") {
