@@ -2185,6 +2185,7 @@ export default function GeoScopeMap({
                           const globalRadarLayer = new GlobalRadarLayer({
                             enabled: true,
                             opacity: radarOpacityInit,
+                            provider: radarProviderInit,
                           });
                           layerRegistry.add(globalRadarLayer);
                           globalRadarLayerRef.current = globalRadarLayer;
@@ -2211,6 +2212,7 @@ export default function GeoScopeMap({
                     const globalRadarLayer = new GlobalRadarLayer({
                       enabled: true,
                       opacity: radarOpacityInit,
+                      provider: radarProviderInit,
                     });
                     const added = layerRegistry.add(globalRadarLayer);
                     if (added) {
@@ -2249,6 +2251,7 @@ export default function GeoScopeMap({
                         const globalRadarLayer = new GlobalRadarLayer({
                           enabled: true,
                           opacity: radarOpacityInit,
+                          provider: radarProviderInit,
                         });
                         const added = layerRegistry.add(globalRadarLayer);
                         if (added) {
@@ -4416,12 +4419,25 @@ export default function GeoScopeMap({
       "maptiler_weather";
   
     // Prioridad: weather_layers.radar > ui_global.radar > layers.global*.radar
-    const isRadarEnabled = 
-      weatherLayersRadar?.enabled ?? 
-      uiGlobalRadar?.enabled ?? 
-      globalRadarConfig?.enabled ?? 
+    const isRadarEnabled =
+      weatherLayersRadar?.enabled ??
+      uiGlobalRadar?.enabled ??
+      globalRadarConfig?.enabled ??
       false;
-  
+
+    const radarDiagnostic = layerDiagnostics.getDiagnostic("radar");
+    const apiKeysConfigured = radarProvider === "maptiler_weather"
+      ? true
+      : radarDiagnostic?.preconditions.apiKeysConfigured ?? true;
+
+    layerDiagnostics.setEnabled("radar", isRadarEnabled);
+    layerDiagnostics.updatePreconditions("radar", {
+      configAvailable: true,
+      configEnabled: isRadarEnabled,
+      backendAvailable: true,
+      apiKeysConfigured,
+    });
+
     console.log("[GlobalRadarLayer] useEffect cfg=", {
       globalRadarConfig,
       weatherLayersRadar,
@@ -4430,11 +4446,21 @@ export default function GeoScopeMap({
       isEnabled: isRadarEnabled,
       provider: radarProvider
     });
-  
+
     // Solo gestionar frames de RainViewer si el provider es "rainviewer"
     // Si el provider es "maptiler_weather", WeatherRadarLayer se encarga del radar
     if (radarProvider !== "rainviewer") {
-      console.log(`[GlobalRadarLayer] Provider is "${radarProvider}", skipping RainViewer frame management (WeatherRadarLayer handles it)`);
+      console.log(`[GlobalRadarLayer] Using provider: ${radarProvider} (MapTiler branch)`);
+      if (isRadarEnabled) {
+        layerDiagnostics.recordInitializationAttempt("radar");
+        layerDiagnostics.setState("radar", "initializing", { provider: radarProvider });
+        console.log("[GlobalRadarLayer] Initializing MapTiler Weather radar layer");
+        layerDiagnostics.setState("radar", "ready", { provider: radarProvider });
+        layerDiagnostics.recordDataUpdate("radar");
+      } else {
+        layerDiagnostics.setState("radar", "disabled", { provider: radarProvider });
+      }
+
       // Limpiar la capa legacy si existe
       const globalRadarLayer = globalRadarLayerRef.current;
       if (globalRadarLayer) {
@@ -4443,7 +4469,7 @@ export default function GeoScopeMap({
       }
       return;
     }
-  
+
     if (!isRadarEnabled) {
       // Si el radar está desactivado, limpiar la capa si existe
       const globalRadarLayer = globalRadarLayerRef.current;
@@ -4453,6 +4479,7 @@ export default function GeoScopeMap({
       } else {
         console.log("[GlobalRadarLayer] Radar disabled in config, no layer to clean");
       }
+      layerDiagnostics.setState("radar", "disabled", { provider: radarProvider });
       return;
     }
     
@@ -4466,12 +4493,15 @@ export default function GeoScopeMap({
     const historyMinutes = globalRadarConfig?.history_minutes ?? 90;
     const frameStep = globalRadarConfig?.frame_step ?? 5;
     const refreshMinutes = globalRadarConfig?.refresh_minutes ?? 5;
-    const radarOpacityValue = 
-      weatherLayersRadar?.opacity ?? 
-      uiGlobalRadar?.opacity ?? 
-      globalRadarConfig?.opacity ?? 
+    const radarOpacityValue =
+      weatherLayersRadar?.opacity ??
+      uiGlobalRadar?.opacity ??
+      globalRadarConfig?.opacity ??
       0.7;
-  
+
+    layerDiagnostics.recordInitializationAttempt("radar");
+    layerDiagnostics.setState("radar", "initializing", { provider: radarProvider });
+
     let radarFrames: number[] = [];
     let radarFrameIndex = 0;
     let animationTimer: number | null = null;
@@ -4480,7 +4510,7 @@ export default function GeoScopeMap({
       console.log("[GlobalRadarLayer] fetchRadarFrames enter");
       try {
         console.log("[GlobalRadarLayer] Fetching frames from /api/rainviewer/frames");
-        
+
         // Primero verificar health endpoint para confirmar que hay frames disponibles
         const healthResponse = await fetch("/api/health/full", { cache: "no-store" });
         const healthData = await healthResponse.json().catch(() => null);
@@ -4496,6 +4526,10 @@ export default function GeoScopeMap({
         if (!hasFrames) {
           console.warn("[GlobalRadarLayer] Radar not started: status=", globalRadar?.status, "frames=", globalRadar?.frames_count);
           radarFrames = [];
+          layerDiagnostics.recordError("radar", new Error("No RainViewer frames available"), {
+            provider: radarProvider,
+            status: globalRadar?.status,
+          });
           return;
         }
         
@@ -4532,14 +4566,17 @@ export default function GeoScopeMap({
                 enabled: true,
                 opacity: radarOpacityValue,
                 currentTimestamp: radarFrames[radarFrameIndex],
+                provider: radarProvider,
               });
               layerRegistryRef.current.add(newRadarLayer);
               globalRadarLayerRef.current = newRadarLayer;
               console.log("[GlobalRadarLayer] Layer created and added to registry");
+              layerDiagnostics.setState("radar", "ready", { provider: radarProvider });
+              layerDiagnostics.recordDataUpdate("radar", radarFrames.length);
               return;
             }
           }
-          
+
           if (globalRadarLayer && radarFrames.length > 0) {
             const activeTimestamp = radarFrames[radarFrameIndex];
             console.log("[GlobalRadarLayer] Updating layer with frames", {
@@ -4553,17 +4590,19 @@ export default function GeoScopeMap({
             if (map && map.isStyleLoaded()) {
               const style = getSafeMapStyle(map);
               if (style) {
-                globalRadarLayer.update({ 
+                globalRadarLayer.update({
                   enabled: true,
                   currentTimestamp: activeTimestamp,
                   opacity: radarOpacityValue
                 });
                 console.log("[GlobalRadarLayer] Layer updated successfully");
+                layerDiagnostics.setState("radar", "ready", { provider: radarProvider });
+                layerDiagnostics.recordDataUpdate("radar", radarFrames.length);
               } else {
                 console.warn("[GlobalRadarLayer] Map style not ready, waiting for styledata");
                 map.once('styledata', () => {
                   if (globalRadarLayerRef.current && mapRef.current?.isStyleLoaded()) {
-                    globalRadarLayerRef.current.update({ 
+                    globalRadarLayerRef.current.update({
                       enabled: true,
                       currentTimestamp: activeTimestamp,
                       opacity: radarOpacityValue
@@ -4586,7 +4625,7 @@ export default function GeoScopeMap({
             } else {
               // Si no hay mapa aún, intentar actualizar de todas formas
               // La capa manejará el caso cuando se añada al mapa
-              globalRadarLayer.update({ 
+              globalRadarLayer.update({
                 enabled: true,
                 currentTimestamp: activeTimestamp,
                 opacity: radarOpacityValue
@@ -4596,10 +4635,12 @@ export default function GeoScopeMap({
         } else {
           console.warn("[GlobalRadarLayer] No frames returned from API");
           radarFrames = [];
+          layerDiagnostics.recordError("radar", new Error("No RainViewer frames returned"), { provider: radarProvider });
         }
       } catch (err) {
         console.error("[GlobalRadarLayer] Failed to fetch frames:", err);
         radarFrames = [];
+        layerDiagnostics.recordError("radar", err as Error, { provider: radarProvider });
       }
     };
   

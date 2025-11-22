@@ -10,6 +10,7 @@ interface GlobalRadarLayerOptions {
   opacity?: number;
   currentTimestamp?: number;
   baseUrl?: string;
+  provider?: "rainviewer" | "maptiler_weather" | string;
 }
 
 interface FramesInfo {
@@ -61,6 +62,7 @@ export default class GlobalRadarLayer implements Layer {
   private opacity: number;
   private currentTimestamp?: number;
   private baseUrl: string;
+  private provider: "rainviewer" | "maptiler_weather" | string;
   private map?: maplibregl.Map;
   private readonly sourceId = "geoscope-global-radar-source";
   private registeredInRegistry: boolean = false;
@@ -71,6 +73,7 @@ export default class GlobalRadarLayer implements Layer {
     this.opacity = options.opacity ?? 0.7;
     this.currentTimestamp = options.currentTimestamp;
     this.baseUrl = options.baseUrl ?? "/api/rainviewer/tiles";
+    this.provider = options.provider ?? "rainviewer";
   }
 
   /**
@@ -83,6 +86,14 @@ export default class GlobalRadarLayer implements Layer {
    */
   async add(map: maplibregl.Map): Promise<void> {
     this.map = map;
+
+    console.log(`[GlobalRadarLayer] Using provider: ${this.provider}`);
+
+    // Rama MapTiler Weather: no depende de RainViewer
+    if (this.provider === "maptiler_weather") {
+      console.log("[GlobalRadarLayer] Initializing MapTiler Weather radar layer (handled externally)");
+      return;
+    }
 
     // Si está deshabilitado, no hacer nada
     if (!this.enabled) {
