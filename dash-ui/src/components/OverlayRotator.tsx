@@ -88,6 +88,7 @@ const DEFAULT_FALLBACK_PANEL = "clock";
 const DEFAULT_DURATIONS_SEC = {
   clock: 10,
   weather: 12,
+  forecast: 15,
   astronomy: 10,
   santoral: 8,
   calendar: 12,
@@ -99,6 +100,7 @@ const DEFAULT_DURATIONS_SEC = {
 const ROTATION_DEFAULT_ORDER = [
   "clock",
   "weather",
+  "forecast",
   "astronomy",
   "santoral",
   "calendar",
@@ -113,6 +115,7 @@ const LEGACY_ROTATION_PANEL_MAP: Record<string, string> = {
   // Nombres canónicos v2
   clock: "clock",
   weather: "weather",
+  forecast: "forecast",
   astronomy: "astronomy",
   santoral: "santoral",
   calendar: "calendar",
@@ -122,7 +125,6 @@ const LEGACY_ROTATION_PANEL_MAP: Record<string, string> = {
 
   // Mapeos legacy v1 → v2 (solo para conversión automática)
   time: "clock",
-  forecast: "weather",  // forecast ahora se incluye en weather
   ephemerides: "astronomy",
   moon: "astronomy",  // moon ahora se incluye en astronomy
   saints: "santoral",
@@ -748,6 +750,18 @@ export const OverlayRotator: React.FC = () => {
           wind={wind}
           unit={temperature.unit}
           timezone={timezone}
+        />
+      )
+    });
+
+    // forecast (WeatherForecastCard - pronóstico semanal)
+    map.set("forecast", {
+      id: "forecast",
+      duration: (durations.forecast ?? 15) * 1000,
+      render: () => (
+        <WeatherForecastCard
+          forecast={forecastDays}
+          unit={temperature.unit}
         />
       )
     });
