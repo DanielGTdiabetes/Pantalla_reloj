@@ -325,13 +325,23 @@ export default class AircraftLayer implements Layer {
 
   setSymbolOptions(symbol: FlightsLayerSymbolConfig | undefined): void {
     this.symbolOptions = symbol;
-    if (this.map && this.currentRenderMode === "symbol_custom" && this.map.getLayer(this.id)) {
+    if (!this.map || this.currentRenderMode !== "symbol_custom" || !this.map.getLayer(this.id)) {
+      return;
+    }
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[AircraftLayer] Style not ready, skipping");
+      return;
+    }
+    try {
       this.map.setLayoutProperty(this.id, "icon-size", this.getCustomSymbolSizeExpression());
       this.map.setLayoutProperty(
         this.id,
         "icon-allow-overlap",
         symbol?.allow_overlap ?? true,
       );
+    } catch (e) {
+      console.warn("[AircraftLayer] layout skipped:", e);
     }
   }
 
@@ -829,6 +839,11 @@ export default class AircraftLayer implements Layer {
       } else if (modeChanged) {
         // Si cambió el modo, actualizar propiedades de la capa existente
         // Solo si la capa realmente existe y está lista
+        const style = getSafeMapStyle(map);
+        if (!style) {
+          console.warn("[AircraftLayer] Style not ready, skipping");
+          return;
+        }
         if (map.getLayer(this.id)) {
           try {
             const iconImage = this.currentRenderMode === "symbol_custom" ? "plane" : this.iconImage;
@@ -841,7 +856,7 @@ export default class AircraftLayer implements Layer {
               map.setLayoutProperty(this.id, "icon-allow-overlap", true);
             }
           } catch (error) {
-            console.warn("[AircraftLayer] Error al actualizar symbol layer:", error);
+            console.warn("[AircraftLayer] layout skipped:", error);
           }
         }
       }
@@ -872,6 +887,11 @@ export default class AircraftLayer implements Layer {
       } else if (modeChanged) {
         // Si cambió el modo, actualizar propiedades de la capa existente
         // Solo si la capa realmente existe y está lista
+        const style = getSafeMapStyle(map);
+        if (!style) {
+          console.warn("[AircraftLayer] Style not ready, skipping");
+          return;
+        }
         if (map.getLayer(this.id)) {
           try {
             map.setPaintProperty(this.id, "circle-radius", this.getCircleRadiusExpression());
@@ -879,7 +899,7 @@ export default class AircraftLayer implements Layer {
             map.setPaintProperty(this.id, "circle-stroke-color", this.circleOptions.strokeColor);
             map.setPaintProperty(this.id, "circle-stroke-width", this.circleOptions.strokeWidth);
           } catch (error) {
-            console.warn("[AircraftLayer] Error al actualizar circle layer:", error);
+            console.warn("[AircraftLayer] paint skipped:", error);
           }
         }
       }
@@ -1068,6 +1088,11 @@ export default class AircraftLayer implements Layer {
 
   private applyOpacity(): void {
     if (!this.map || !this.map.getLayer(this.id)) return;
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[AircraftLayer] Style not ready, skipping");
+      return;
+    }
     
     try {
       const baseOpacity = (this.currentRenderMode === "symbol" || this.currentRenderMode === "symbol_custom")
@@ -1086,13 +1111,17 @@ export default class AircraftLayer implements Layer {
         this.map.setPaintProperty(this.clusterCountLayerId, "text-opacity", this.opacity);
       }
     } catch (error) {
-      // La capa puede no estar completamente inicializada aún
-      console.warn("[AircraftLayer] Error applying opacity, layer may not be ready:", error);
+      console.warn("[AircraftLayer] paint skipped:", error);
     }
   }
 
   private applyCirclePaintProperties(): void {
     if (!this.map || this.currentRenderMode !== "circle" || !this.map.getLayer(this.id)) {
+      return;
+    }
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[AircraftLayer] Style not ready, skipping");
       return;
     }
     try {
@@ -1101,8 +1130,7 @@ export default class AircraftLayer implements Layer {
       this.map.setPaintProperty(this.id, "circle-stroke-color", this.circleOptions.strokeColor);
       this.map.setPaintProperty(this.id, "circle-stroke-width", this.circleOptions.strokeWidth);
     } catch (error) {
-      // La capa puede no estar completamente inicializada aún
-      console.warn("[AircraftLayer] Error applying circle paint properties, layer may not be ready:", error);
+      console.warn("[AircraftLayer] paint skipped:", error);
     }
   }
 
@@ -1175,6 +1203,11 @@ export default class AircraftLayer implements Layer {
     if (!this.map || (this.currentRenderMode !== "symbol" && this.currentRenderMode !== "symbol_custom")) {
       return;
     }
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[AircraftLayer] Style not ready, skipping");
+      return;
+    }
     if (this.map.getLayer(this.id)) {
       try {
         if (this.currentRenderMode === "symbol_custom") {
@@ -1183,8 +1216,7 @@ export default class AircraftLayer implements Layer {
           this.map.setLayoutProperty(this.id, "icon-size", this.getIconSizeExpression());
         }
       } catch (error) {
-        // La capa puede no estar completamente inicializada aún
-        console.warn("[AircraftLayer] Error applying style scale, layer may not be ready:", error);
+        console.warn("[AircraftLayer] layout skipped:", error);
       }
     }
   }
@@ -1197,20 +1229,29 @@ export default class AircraftLayer implements Layer {
     if (!this.map) {
       return;
     }
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[AircraftLayer] Style not ready, skipping");
+      return;
+    }
     const map = this.map;
     const baseVisibility = this.enabled ? "visible" : "none";
 
-    // Asegurar que la capa principal esté visible según el modo
-    if (map.getLayer(this.id)) {
-      map.setLayoutProperty(this.id, "visibility", baseVisibility);
-    }
+    try {
+      // Asegurar que la capa principal esté visible según el modo
+      if (map.getLayer(this.id)) {
+        map.setLayoutProperty(this.id, "visibility", baseVisibility);
+      }
 
-    // Capas de cluster
-    if (map.getLayer(this.clusterLayerId)) {
-      map.setLayoutProperty(this.clusterLayerId, "visibility", baseVisibility);
-    }
-    if (map.getLayer(this.clusterCountLayerId)) {
-      map.setLayoutProperty(this.clusterCountLayerId, "visibility", baseVisibility);
+      // Capas de cluster
+      if (map.getLayer(this.clusterLayerId)) {
+        map.setLayoutProperty(this.clusterLayerId, "visibility", baseVisibility);
+      }
+      if (map.getLayer(this.clusterCountLayerId)) {
+        map.setLayoutProperty(this.clusterCountLayerId, "visibility", baseVisibility);
+      }
+    } catch (e) {
+      console.warn("[AircraftLayer] layout skipped:", e);
     }
   }
 

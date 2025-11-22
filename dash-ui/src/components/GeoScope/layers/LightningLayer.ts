@@ -165,9 +165,18 @@ export default class LightningLayer implements Layer {
 
   private applyVisibility() {
     if (!this.map) return;
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[LightningLayer] Style not ready, skipping");
+      return;
+    }
     const visibility = this.enabled ? "visible" : "none";
     if (this.map.getLayer(this.id)) {
-      this.map.setLayoutProperty(this.id, "visibility", visibility);
+      try {
+        this.map.setLayoutProperty(this.id, "visibility", visibility);
+      } catch (e) {
+        console.warn("[LightningLayer] layout skipped:", e);
+      }
     }
   }
 }

@@ -259,18 +259,36 @@ export default class GlobalRadarLayer implements Layer {
 
   private applyVisibility(): void {
     if (!this.map || !this.map.getLayer(this.id)) return;
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[GlobalRadarLayer] Style not ready, skipping");
+      return;
+    }
     
-    if (this.enabled && this.currentTimestamp) {
-      this.map.setLayoutProperty(this.id, "visibility", "visible");
-    } else {
-      this.map.setLayoutProperty(this.id, "visibility", "none");
+    try {
+      if (this.enabled && this.currentTimestamp) {
+        this.map.setLayoutProperty(this.id, "visibility", "visible");
+      } else {
+        this.map.setLayoutProperty(this.id, "visibility", "none");
+      }
+    } catch (e) {
+      console.warn("[GlobalRadarLayer] layout skipped:", e);
     }
   }
 
   private applyOpacity(): void {
     if (!this.map || !this.map.getLayer(this.id)) return;
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[GlobalRadarLayer] Style not ready, skipping");
+      return;
+    }
     
-    this.map.setPaintProperty(this.id, "raster-opacity", this.opacity);
+    try {
+      this.map.setPaintProperty(this.id, "raster-opacity", this.opacity);
+    } catch (e) {
+      console.warn("[GlobalRadarLayer] paint skipped:", e);
+    }
   }
 }
 

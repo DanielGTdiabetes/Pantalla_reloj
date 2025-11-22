@@ -332,15 +332,24 @@ export default class AEMETWarningsLayer implements Layer {
     if (!this.map) {
       return;
     }
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[AEMETWarningsLayer] Style not ready, skipping");
+      return;
+    }
 
     const visibility = this.enabled ? "visible" : "none";
     
-    if (this.map.getLayer(this.id)) {
-      this.map.setLayoutProperty(this.id, "visibility", visibility);
-    }
-    
-    if (this.map.getLayer(`${this.id}-outline`)) {
-      this.map.setLayoutProperty(`${this.id}-outline`, "visibility", visibility);
+    try {
+      if (this.map.getLayer(this.id)) {
+        this.map.setLayoutProperty(this.id, "visibility", visibility);
+      }
+      
+      if (this.map.getLayer(`${this.id}-outline`)) {
+        this.map.setLayoutProperty(`${this.id}-outline`, "visibility", visibility);
+      }
+    } catch (e) {
+      console.warn("[AEMETWarningsLayer] layout skipped:", e);
     }
   }
 
@@ -348,13 +357,22 @@ export default class AEMETWarningsLayer implements Layer {
     if (!this.map) {
       return;
     }
-
-    if (this.map.getLayer(this.id)) {
-      this.map.setPaintProperty(this.id, "fill-opacity", this.opacity * 0.4);
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[AEMETWarningsLayer] Style not ready, skipping");
+      return;
     }
 
-    if (this.map.getLayer(`${this.id}-outline`)) {
-      this.map.setPaintProperty(`${this.id}-outline`, "line-opacity", this.opacity);
+    try {
+      if (this.map.getLayer(this.id)) {
+        this.map.setPaintProperty(this.id, "fill-opacity", this.opacity * 0.4);
+      }
+
+      if (this.map.getLayer(`${this.id}-outline`)) {
+        this.map.setPaintProperty(`${this.id}-outline`, "line-opacity", this.opacity);
+      }
+    } catch (e) {
+      console.warn("[AEMETWarningsLayer] paint skipped:", e);
     }
   }
 

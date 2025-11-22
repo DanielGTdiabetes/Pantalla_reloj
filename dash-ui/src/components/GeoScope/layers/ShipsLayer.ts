@@ -295,13 +295,23 @@ export default class ShipsLayer implements Layer {
 
   setSymbolOptions(symbol: ShipsLayerSymbolConfig | undefined): void {
     this.symbolOptions = symbol;
-    if (this.map && this.currentRenderMode === "symbol_custom" && this.map.getLayer(this.id)) {
+    if (!this.map || this.currentRenderMode !== "symbol_custom" || !this.map.getLayer(this.id)) {
+      return;
+    }
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[ShipsLayer] Style not ready, skipping");
+      return;
+    }
+    try {
       this.map.setLayoutProperty(this.id, "icon-size", this.getCustomSymbolSizeExpression());
       this.map.setLayoutProperty(
         this.id,
         "icon-allow-overlap",
         symbol?.allow_overlap ?? true,
       );
+    } catch (e) {
+      console.warn("[ShipsLayer] layout skipped:", e);
     }
   }
 
@@ -830,33 +840,38 @@ export default class ShipsLayer implements Layer {
           "ShipsLayer-circle"
         );
       }
-    } else if (modeChanged) {
-      // Si cambió el modo, actualizar propiedades de la capa existente
-      try {
-        if (this.currentRenderMode === "symbol" || this.currentRenderMode === "symbol_custom") {
-          const iconImage = this.currentRenderMode === "symbol_custom" ? "ship" : this.iconImage;
-          map.setLayoutProperty(this.id, "icon-image", iconImage);
-          map.setLayoutProperty(
-            this.id,
-            "icon-size",
-            this.currentRenderMode === "symbol_custom"
-              ? this.getCustomSymbolSizeExpression()
-              : this.getIconSizeExpression()
-          );
-          map.setLayoutProperty(this.id, "icon-allow-overlap", this.symbolOptions?.allow_overlap ?? true);
-          map.setPaintProperty(this.id, "icon-color", this.circleOptions.color);
-          map.setPaintProperty(this.id, "icon-halo-color", this.circleOptions.strokeColor);
-          map.setPaintProperty(this.id, "icon-halo-width", 0.4);
-        } else {
-          map.setPaintProperty(this.id, "circle-radius", this.getCircleRadiusExpression());
-          map.setPaintProperty(this.id, "circle-color", this.circleOptions.color);
-          map.setPaintProperty(this.id, "circle-stroke-color", this.circleOptions.strokeColor);
-          map.setPaintProperty(this.id, "circle-stroke-width", this.circleOptions.strokeWidth);
+      } else if (modeChanged) {
+        // Si cambió el modo, actualizar propiedades de la capa existente
+        const style = getSafeMapStyle(map);
+        if (!style) {
+          console.warn("[ShipsLayer] Style not ready, skipping");
+          return;
         }
-      } catch (error) {
-        console.warn("[ShipsLayer] Error al actualizar capa:", error);
+        try {
+          if (this.currentRenderMode === "symbol" || this.currentRenderMode === "symbol_custom") {
+            const iconImage = this.currentRenderMode === "symbol_custom" ? "ship" : this.iconImage;
+            map.setLayoutProperty(this.id, "icon-image", iconImage);
+            map.setLayoutProperty(
+              this.id,
+              "icon-size",
+              this.currentRenderMode === "symbol_custom"
+                ? this.getCustomSymbolSizeExpression()
+                : this.getIconSizeExpression()
+            );
+            map.setLayoutProperty(this.id, "icon-allow-overlap", this.symbolOptions?.allow_overlap ?? true);
+            map.setPaintProperty(this.id, "icon-color", this.circleOptions.color);
+            map.setPaintProperty(this.id, "icon-halo-color", this.circleOptions.strokeColor);
+            map.setPaintProperty(this.id, "icon-halo-width", 0.4);
+          } else {
+            map.setPaintProperty(this.id, "circle-radius", this.getCircleRadiusExpression());
+            map.setPaintProperty(this.id, "circle-color", this.circleOptions.color);
+            map.setPaintProperty(this.id, "circle-stroke-color", this.circleOptions.strokeColor);
+            map.setPaintProperty(this.id, "circle-stroke-width", this.circleOptions.strokeWidth);
+          }
+        } catch (error) {
+          console.warn("[ShipsLayer] paint/layout skipped:", error);
+        }
       }
-    }
 
     // Aplicar propiedades comunes
     this.applyCirclePaintProperties();
@@ -907,11 +922,20 @@ export default class ShipsLayer implements Layer {
     if (!this.map || (this.currentRenderMode !== "symbol" && this.currentRenderMode !== "symbol_custom")) {
       return;
     }
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[ShipsLayer] Style not ready, skipping");
+      return;
+    }
     if (this.map.getLayer(this.id)) {
-      if (this.currentRenderMode === "symbol_custom") {
-        this.map.setLayoutProperty(this.id, "icon-size", this.getCustomSymbolSizeExpression());
-      } else {
-        this.map.setLayoutProperty(this.id, "icon-size", this.getIconSizeExpression());
+      try {
+        if (this.currentRenderMode === "symbol_custom") {
+          this.map.setLayoutProperty(this.id, "icon-size", this.getCustomSymbolSizeExpression());
+        } else {
+          this.map.setLayoutProperty(this.id, "icon-size", this.getIconSizeExpression());
+        }
+      } catch (e) {
+        console.warn("[ShipsLayer] layout skipped:", e);
       }
     }
   }
@@ -924,12 +948,21 @@ export default class ShipsLayer implements Layer {
     if (!this.map) {
       return;
     }
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[ShipsLayer] Style not ready, skipping");
+      return;
+    }
     const map = this.map;
     const baseVisibility = this.enabled ? "visible" : "none";
 
     // Asegurar que la capa principal esté visible según el modo
     if (map.getLayer(this.id)) {
-      map.setLayoutProperty(this.id, "visibility", baseVisibility);
+      try {
+        map.setLayoutProperty(this.id, "visibility", baseVisibility);
+      } catch (e) {
+        console.warn("[ShipsLayer] layout skipped:", e);
+      }
     }
   }
 
@@ -937,9 +970,18 @@ export default class ShipsLayer implements Layer {
     if (!this.map) {
       return;
     }
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[ShipsLayer] Style not ready, skipping");
+      return;
+    }
     const visibility = this.enabled ? "visible" : "none";
     if (this.map.getLayer(this.id)) {
-      this.map.setLayoutProperty(this.id, "visibility", visibility);
+      try {
+        this.map.setLayoutProperty(this.id, "visibility", visibility);
+      } catch (e) {
+        console.warn("[ShipsLayer] layout skipped:", e);
+      }
     }
   }
 
@@ -958,13 +1000,22 @@ export default class ShipsLayer implements Layer {
     if (!this.map || this.currentRenderMode !== "circle") {
       return;
     }
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[ShipsLayer] Style not ready, skipping");
+      return;
+    }
     if (!this.map.getLayer(this.id)) {
       return;
     }
-    this.map.setPaintProperty(this.id, "circle-radius", this.getCircleRadiusExpression());
-    this.map.setPaintProperty(this.id, "circle-color", this.circleOptions.color);
-    this.map.setPaintProperty(this.id, "circle-stroke-color", this.circleOptions.strokeColor);
-    this.map.setPaintProperty(this.id, "circle-stroke-width", this.circleOptions.strokeWidth);
+    try {
+      this.map.setPaintProperty(this.id, "circle-radius", this.getCircleRadiusExpression());
+      this.map.setPaintProperty(this.id, "circle-color", this.circleOptions.color);
+      this.map.setPaintProperty(this.id, "circle-stroke-color", this.circleOptions.strokeColor);
+      this.map.setPaintProperty(this.id, "circle-stroke-width", this.circleOptions.strokeWidth);
+    } catch (e) {
+      console.warn("[ShipsLayer] paint skipped:", e);
+    }
   }
 
   private registerEvents(map: maplibregl.Map) {

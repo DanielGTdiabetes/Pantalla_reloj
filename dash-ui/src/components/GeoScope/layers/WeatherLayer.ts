@@ -4,6 +4,7 @@ import type { FeatureCollection } from "geojson";
 import type { Layer } from "./LayerRegistry";
 import { isGeoJSONSource } from "./layerUtils";
 import { withSafeMapStyle } from "../../../lib/map/utils/safeMapOperations";
+import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
 import { layerDiagnostics, type LayerId } from "./LayerDiagnostics";
 
 interface WeatherLayerOptions {
@@ -201,16 +202,34 @@ export default class WeatherLayer implements Layer {
 
   private applyVisibility() {
     if (!this.map) return;
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[WeatherLayer] Style not ready, skipping");
+      return;
+    }
     const visibility = this.enabled ? "visible" : "none";
     if (this.map.getLayer(this.id)) {
-      this.map.setLayoutProperty(this.id, "visibility", visibility);
+      try {
+        this.map.setLayoutProperty(this.id, "visibility", visibility);
+      } catch (e) {
+        console.warn("[WeatherLayer] layout skipped:", e);
+      }
     }
   }
 
   private applyOpacity(): void {
     if (!this.map) return;
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn("[WeatherLayer] Style not ready, skipping");
+      return;
+    }
     if (this.map.getLayer(this.id)) {
-      this.map.setPaintProperty(this.id, "fill-opacity", this.opacity);
+      try {
+        this.map.setPaintProperty(this.id, "fill-opacity", this.opacity);
+      } catch (e) {
+        console.warn("[WeatherLayer] paint skipped:", e);
+      }
     }
   }
 
