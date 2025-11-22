@@ -12,6 +12,7 @@ import { removeLabelsOverlay, updateLabelsOpacity } from "../../lib/map/overlays
 import { normalizeLabelsOverlay } from "../../lib/map/labelsOverlay";
 import { signMapTilerUrl } from "../../lib/map/utils/maptilerHelpers";
 import { getSafeMapStyle } from "../../lib/map/utils/safeMapStyle";
+import { waitForMapReady } from "../../lib/map/utils/waitForMapReady";
 import AircraftLayer from "./layers/AircraftLayer";
 import GlobalRadarLayer from "./layers/GlobalRadarLayer";
 import GlobalSatelliteLayer from "./layers/GlobalSatelliteLayer";
@@ -1926,80 +1927,37 @@ export default function GeoScopeMap({
         console.log("[GeoScopeMap] initLayers enter, event=load");
         if (destroyed || !mapRef.current) return;
 
-        // Esperar a que el estilo esté completamente cargado
-        // Verificar que getStyle() devuelva un objeto válido con version
-        let styleReady = false;
-        let retries = 0;
-        const maxRetries = 10;
+        try {
+          // Esperar a que el mapa esté completamente listo
+          await waitForMapReady(map);
+          console.log("[GeoScopeMap] Map is ready (load + idle + style valid)");
 
-        while (!styleReady && retries < maxRetries && !destroyed && mapRef.current) {
-          try {
-            const style = getSafeMapStyle(map);
-            if (style && typeof (style as { version?: unknown }).version === "number") {
-              styleReady = true;
-              console.log("[GeoScopeMap] Map style ready with version", (style as { version: number }).version);
-            } else {
-              retries++;
-              if (retries < maxRetries) {
-                // Esperar un poco antes de reintentar
-                await new Promise(resolve => setTimeout(resolve, 100));
-              }
-            }
-          } catch (e) {
-            console.warn("[GeoScopeMap] Error checking style readiness:", e);
-            retries++;
-            if (retries < maxRetries) {
-              await new Promise(resolve => setTimeout(resolve, 100));
-            }
-          }
+          if (destroyed || !mapRef.current) return;
+
+          // Inicializar capas de forma segura
+          await initLayersSafe();
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          console.error("[GeoScopeMap] Failed to wait for map ready or initialize layers:", errorMsg);
+          // No abortar completamente - el mapa puede seguir funcionando sin algunas capas
+        }
+      });
+
+      // Función segura para inicializar capas
+      const initLayersSafe = async (): Promise<void> => {
+        if (destroyed || !mapRef.current) {
+          console.warn("[GeoScopeMap] initLayersSafe: map destroyed or not available");
+          return;
         }
 
-        if (!styleReady) {
-          console.warn("[GeoScopeMap] Style not ready after retries, proceeding anyway");
-          // Verificar una vez más antes de continuar
-          const finalStyle = getSafeMapStyle(map);
-          if (!finalStyle) {
-            console.error("[GeoScopeMap] Style still not ready after retries, aborting layer initialization");
-            return;
-          }
+        // Verificación final antes de crear LayerRegistry
+        const finalStyleCheck = getSafeMapStyle(map);
+        if (!finalStyleCheck) {
+          console.error("[GeoScopeMap] Style check failed before LayerRegistry creation, aborting");
+          return;
         }
-
-        if (destroyed || !mapRef.current) return;
-
-        // Esperar al evento 'idle' para garantizar que MapLibre ha terminado
-        // completamente de procesar el estilo y está listo para operaciones
-        console.log("[GeoScopeMap] Waiting for map idle state...");
-        await new Promise<void>((resolve) => {
-          const checkIdle = () => {
-            if (destroyed || !mapRef.current) {
-              resolve();
-              return;
-            }
-            // Verificar que el mapa esté idle y el estilo listo
-            if (map.isStyleLoaded()) {
-              const style = getSafeMapStyle(map);
-              if (style) {
-                console.log("[GeoScopeMap] Map is idle and style is ready");
-                resolve();
-                return;
-              }
-            }
-            // Si no está listo, esperar al próximo idle
-            map.once('idle', checkIdle);
-          };
-          // Iniciar comprobación
-          map.once('idle', checkIdle);
-        });
-
-        if (destroyed || !mapRef.current) return;
 
         try {
-          // Verificar estilo una vez más antes de crear LayerRegistry
-          const finalStyleCheck = getSafeMapStyle(map);
-          if (!finalStyleCheck) {
-            console.error("[GeoScopeMap] Style check failed before LayerRegistry creation, aborting");
-            return;
-          }
 
           const layerRegistry = new LayerRegistry(map);
           layerRegistryRef.current = layerRegistry;
@@ -2034,8 +1992,11 @@ export default function GeoScopeMap({
             };
           };
 
-          // Inicializar LightningLayer (siempre habilitado si hay datos)
+          // 1. Inicializar LightningLayer (siempre habilitado si hay datos)
           try {
+            await waitForMapReady(map);
+            if (destroyed || !mapRef.current) return;
+
             const layerId: LayerId = "lightning";
             layerDiagnostics.recordInitializationAttempt(layerId);
             layerDiagnostics.setEnabled(layerId, true);
@@ -2046,14 +2007,23 @@ export default function GeoScopeMap({
                 missingPreconditions: preconditions.missingPreconditions,
               });
               console.warn(`[GeoScopeMap] LightningLayer preconditions not met: ${preconditions.missingPreconditions.join(", ")}`);
-              // Continuar - la capa se puede inicializar más tarde
             } else {
-              console.log("[GeoScopeMap] Initializing LightningLayer");
-              const lightningLayer = new LightningLayer({ enabled: true });
-              layerRegistry.add(lightningLayer);
-              lightningLayerRef.current = lightningLayer;
-              layerDiagnostics.setState(layerId, "ready");
-              console.log("[GeoScopeMap] LightningLayer initialized successfully");
+              const style = getSafeMapStyle(map);
+              if (!style) {
+                console.warn("[GeoScopeMap] Style not ready for LightningLayer, skipping");
+                layerDiagnostics.setState(layerId, "waiting_style");
+              } else {
+                console.log("[GeoScopeMap] Initializing LightningLayer");
+                const lightningLayer = new LightningLayer({ enabled: true });
+                const added = layerRegistry.add(lightningLayer);
+                if (added) {
+                  lightningLayerRef.current = lightningLayer;
+                  layerDiagnostics.setState(layerId, "ready");
+                  console.log("[GeoScopeMap] LightningLayer initialized successfully");
+                } else {
+                  console.warn("[GeoScopeMap] LightningLayer failed to add to registry");
+                }
+              }
             }
           } catch (lightningError) {
             const error = lightningError instanceof Error ? lightningError : new Error(String(lightningError));
@@ -2061,7 +2031,6 @@ export default function GeoScopeMap({
               phase: "initialization",
             });
             console.error("[GeoScopeMap] LightningLayer failed:", lightningError);
-            console.trace("[GeoScopeMap] LightningLayer trace");
             // Continuar sin la capa de rayos
           }
 
@@ -2127,10 +2096,26 @@ export default function GeoScopeMap({
 
             if (isRadarEnabledInit) {
               // Función helper para inicializar la capa con retry logic
-              const initializeRadarLayer = (attempt: number = 1, maxAttempts: number = 3): void => {
+              const initializeRadarLayer = async (attempt: number = 1, maxAttempts: number = 3): Promise<void> => {
                 const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 4000); // 1s, 2s, 4s
 
                 console.log(`[GlobalRadarLayer] Initialization attempt ${attempt}/${maxAttempts}`);
+
+                // Esperar a que el mapa esté completamente listo antes de inicializar
+                try {
+                  await waitForMapReady(map);
+                  if (destroyed || !mapRef.current) return;
+                } catch (waitError) {
+                  console.warn(`[GlobalRadarLayer] waitForMapReady failed (attempt ${attempt}/${maxAttempts}):`, waitError);
+                  if (attempt < maxAttempts) {
+                    setTimeout(() => {
+                      if (!destroyed && mapRef.current) {
+                        void initializeRadarLayer(attempt + 1, maxAttempts);
+                      }
+                    }, backoffMs);
+                  }
+                  return;
+                }
 
                 // Verificar health endpoint con timeout
                 const healthController = new AbortController();
@@ -2144,7 +2129,7 @@ export default function GeoScopeMap({
                     clearTimeout(healthTimeout);
                     return r.json();
                   })
-                  .then((health: { global_radar?: { status?: string; frames_count?: number } }) => {
+                  .then(async (health: { global_radar?: { status?: string; frames_count?: number } }) => {
                     const globalRadar = health?.global_radar;
                     const hasFrames = globalRadar?.status === "ok" && (globalRadar?.frames_count ?? 0) > 0;
 
@@ -2163,7 +2148,7 @@ export default function GeoScopeMap({
                         console.log(`[GlobalRadarLayer] Retrying in ${backoffMs}ms...`);
                         setTimeout(() => {
                           if (!destroyed && mapRef.current && !globalRadarLayerRef.current) {
-                            initializeRadarLayer(attempt + 1, maxAttempts);
+                            void initializeRadarLayer(attempt + 1, maxAttempts);
                           }
                         }, backoffMs);
                       } else {
@@ -2204,13 +2189,24 @@ export default function GeoScopeMap({
                       attempt
                     });
 
+                    // Verificar estilo una vez más antes de crear la capa
+                    const finalStyle = getSafeMapStyle(map);
+                    if (!finalStyle) {
+                      console.warn("[GlobalRadarLayer] Style not ready, skipping layer creation");
+                      return;
+                    }
+
                     const globalRadarLayer = new GlobalRadarLayer({
                       enabled: true,
                       opacity: radarOpacityInit,
                     });
-                    layerRegistry.add(globalRadarLayer);
-                    globalRadarLayerRef.current = globalRadarLayer;
-                    console.log("[GlobalRadarLayer] ✓ Layer successfully initialized and added to registry");
+                    const added = layerRegistry.add(globalRadarLayer);
+                    if (added) {
+                      globalRadarLayerRef.current = globalRadarLayer;
+                      console.log("[GlobalRadarLayer] ✓ Layer successfully initialized and added to registry");
+                    } else {
+                      console.warn("[GlobalRadarLayer] Failed to add layer to registry");
+                    }
                   })
                   .catch((healthError) => {
                     clearTimeout(healthTimeout);
@@ -2224,7 +2220,7 @@ export default function GeoScopeMap({
                       console.log(`[GlobalRadarLayer] Retrying in ${backoffMs}ms...`);
                       setTimeout(() => {
                         if (!destroyed && mapRef.current && !globalRadarLayerRef.current) {
-                          initializeRadarLayer(attempt + 1, maxAttempts);
+                          void initializeRadarLayer(attempt + 1, maxAttempts);
                         }
                       }, backoffMs);
                     } else {
@@ -2242,16 +2238,18 @@ export default function GeoScopeMap({
                           enabled: true,
                           opacity: radarOpacityInit,
                         });
-                        layerRegistry.add(globalRadarLayer);
-                        globalRadarLayerRef.current = globalRadarLayer;
-                        console.log("[GlobalRadarLayer] Layer initialized as fallback after all retries failed");
+                        const added = layerRegistry.add(globalRadarLayer);
+                        if (added) {
+                          globalRadarLayerRef.current = globalRadarLayer;
+                          console.log("[GlobalRadarLayer] Layer initialized as fallback after all retries failed");
+                        }
                       }
                     }
                   });
               };
 
               // Iniciar proceso de inicialización con retry logic
-              initializeRadarLayer(1, 3);
+              void initializeRadarLayer(1, 3);
             } else {
               console.log("[GlobalRadarLayer] Radar disabled in config, skipping initialization");
             }
@@ -2430,8 +2428,13 @@ export default function GeoScopeMap({
                     symbol: flightsConfig.symbol,
                     spriteAvailable,
                   });
-                  layerRegistry.add(aircraftLayer);
-                  aircraftLayerRef.current = aircraftLayer;
+                  const added = layerRegistry.add(aircraftLayer);
+                  if (added) {
+                    aircraftLayerRef.current = aircraftLayer;
+                  } else {
+                    console.warn("[GeoScopeMap] AircraftLayer failed to add to registry");
+                    return;
+                  }
 
                   // Asegurar que la capa se inicialice correctamente
                   void aircraftLayer.ensureFlightsLayer();
@@ -2520,8 +2523,13 @@ export default function GeoScopeMap({
                         symbol: shipsConfig.symbol,
                         spriteAvailable: spriteAvailableShips,
                       });
-                      layerRegistry.add(shipsLayer);
-                      shipsLayerRef.current = shipsLayer;
+                      const added = layerRegistry.add(shipsLayer);
+                      if (added) {
+                        shipsLayerRef.current = shipsLayer;
+                      } else {
+                        console.warn("[GeoScopeMap] ShipsLayer failed to add to registry");
+                        return;
+                      }
 
                       // Asegurar que la capa se inicialice correctamente
                       void shipsLayer.ensureShipsLayer();
@@ -3009,28 +3017,42 @@ export default function GeoScopeMap({
     layerRegistryReady,
   ]);
   
-  // Escuchar eventos de cambio de configuración para forzar actualización
+  // Escuchar eventos de cambio de configuración para forzar actualización (con debounce)
   useEffect(() => {
+    let configChangeTimeout: ReturnType<typeof setTimeout> | null = null;
+    
     const handleConfigSaved = async () => {
       console.log("[GeoScopeMap] Config saved event received");
-      // Recargar configuración para detectar cambios
-      await reloadConfig();
-      // Forzar recarga adicional después de un breve delay para asegurar que el backend procesó el cambio
-      setTimeout(async () => {
-        console.log("[GeoScopeMap] Forcing additional config reload after save");
+      if (configChangeTimeout) {
+        clearTimeout(configChangeTimeout);
+      }
+      configChangeTimeout = setTimeout(async () => {
+        // Recargar configuración para detectar cambios
         await reloadConfig();
-      }, 1000);
+        // Forzar recarga adicional después de un breve delay para asegurar que el backend procesó el cambio
+        setTimeout(async () => {
+          console.log("[GeoScopeMap] Forcing additional config reload after save");
+          await reloadConfig();
+        }, 1000);
+        configChangeTimeout = null;
+      }, 400);
     };
-  
+
     const handleMapStyleChanged = async () => {
       console.log("[GeoScopeMap] Map style changed event received, forcing style reload");
-      // Recargar configuración para que mapStyleVersion se actualice
-      await reloadConfig();
-      // Forzar recarga adicional después de un breve delay
-      setTimeout(async () => {
-        console.log("[GeoScopeMap] Forcing additional config reload after style change");
+      if (configChangeTimeout) {
+        clearTimeout(configChangeTimeout);
+      }
+      configChangeTimeout = setTimeout(async () => {
+        // Recargar configuración para que mapStyleVersion se actualice
         await reloadConfig();
-      }, 1000);
+        // Forzar recarga adicional después de un breve delay
+        setTimeout(async () => {
+          console.log("[GeoScopeMap] Forcing additional config reload after style change");
+          await reloadConfig();
+        }, 1000);
+        configChangeTimeout = null;
+      }, 500);
     };
   
     window.addEventListener("pantalla:config:saved", handleConfigSaved);
@@ -3038,6 +3060,9 @@ export default function GeoScopeMap({
     window.addEventListener("map:style:changed", handleMapStyleChanged);
   
     return () => {
+      if (configChangeTimeout) {
+        clearTimeout(configChangeTimeout);
+      }
       window.removeEventListener("pantalla:config:saved", handleConfigSaved);
       window.removeEventListener("config-changed", handleConfigSaved);
       window.removeEventListener("map:style:changed", handleMapStyleChanged);

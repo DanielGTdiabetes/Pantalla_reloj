@@ -5930,7 +5930,9 @@ async def get_weather_weekly(
         }
     
     try:
-        url = "https://api.openweathermap.org/data/3.0/onecall"
+        # Usar API 2.5 (One Call API 2.5) que es gratuita, en lugar de 3.0 que requiere suscripción
+        # Nota: One Call API 2.5 está disponible hasta abril 2025, después de esa fecha se requiere suscripción
+        url = "https://api.openweathermap.org/data/2.5/onecall"
         params = {
             "lat": lat,
             "lon": lon,
@@ -5985,11 +5987,19 @@ async def get_weather_weekly(
             "location": {"lat": lat, "lon": lon}
         }
     except httpx.HTTPStatusError as e:
-        logger.error("[weather/weekly] HTTP error fetching forecast: %s", e)
+        error_msg = str(e)
+        status_code = e.response.status_code if e.response else None
+        try:
+            error_body = e.response.json() if e.response else {}
+            error_msg = error_body.get("message", error_msg) if error_body else error_msg
+        except:
+            pass
+        logger.error("[weather/weekly] HTTP error fetching forecast: status=%s, error=%s", status_code, error_msg)
         return {
             "ok": False,
             "reason": "api_http_error",
-            "error": str(e),
+            "error": error_msg,
+            "status_code": status_code,
             "daily": [],
             "location": {"lat": lat, "lon": lon}
         }

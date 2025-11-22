@@ -18,20 +18,35 @@ export class LayerRegistry {
     this.map = map;
   }
 
-  add(layer: Layer) {
+  add(layer: Layer): boolean {
+    // Validaciones estrictas antes de añadir
+    if (!this.map) {
+      console.warn(`[LayerRegistry] Map is null, skipping add for ${layer.id}`);
+      return false;
+    }
+
+    if (!this.map.isStyleLoaded()) {
+      console.warn(`[LayerRegistry] Map style not loaded, skipping add for ${layer.id}`);
+      return false;
+    }
+
+    const style = getSafeMapStyle(this.map);
+    if (!style) {
+      console.warn(`[LayerRegistry] Style not ready (getSafeMapStyle returned null), skipping add for ${layer.id}`);
+      return false;
+    }
+
+    // Añadir a la lista y ordenar
     this.layers.push(layer);
     this.layers.sort((a, b) => a.zIndex - b.zIndex);
 
-    // Check if style is ready before adding
-    const style = getSafeMapStyle(this.map);
-    if (style) {
-      try {
-        layer.add(this.map);
-      } catch (err) {
-        console.warn(`[LayerRegistry] Failed to add layer ${layer.id}`, err);
-      }
-    } else {
-      console.warn(`[LayerRegistry] Style not ready, skipping add for ${layer.id} (will be added on styledata)`);
+    // Intentar añadir la capa al mapa
+    try {
+      layer.add(this.map);
+      return true;
+    } catch (err) {
+      console.warn(`[LayerRegistry] Failed to add layer ${layer.id}`, err);
+      return false;
     }
   }
 
