@@ -2448,6 +2448,34 @@ async def test_xyz(request: XyzTestRequest) -> Dict[str, Any]:
         }
 
 
+@app.get("/api/maps")
+def get_maps_status() -> Dict[str, Any]:
+    """
+    Devuelve el estado de mapas para el frontend.
+
+    Reutiliza el payload de /api/health/full pero limitado
+    a la parte de mapas y radar global, que es lo que usa la UI.
+    """
+    # Importante: usamos el mismo helper que /api/health/full
+    health = _health_payload_full_helper()
+
+    maps = health.get("maps") or {}
+    global_radar = health.get("global_radar") or {}
+    global_satellite = health.get("global_satellite") or {}
+
+    providers = health.get("providers") or {}
+    rainviewer = providers.get("rainviewer") or {}
+    gibs = providers.get("gibs") or {}
+
+    return {
+        "maps": maps,
+        "global_radar": global_radar,
+        "global_satellite": global_satellite,
+        "rainviewer": rainviewer,
+        "gibs": gibs,
+    }
+
+
 @app.get("/api/map/satellite/test")
 async def test_satellite_layer() -> Dict[str, Any]:
     """Verifica acceso al tile de satélite de MapTiler."""
