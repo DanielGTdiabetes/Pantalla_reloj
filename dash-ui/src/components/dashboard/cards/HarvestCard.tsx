@@ -352,29 +352,50 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
                       flexShrink: 0 
                     }}
                     onError={(e) => {
-                      const target = e.target as HTMLImageElement;
-                      const currentSrc = target.src;
-                      const isPumpkinFallback = currentSrc.includes("/pumpkin.svg");
-                      
-                      if (isPumpkinFallback) {
-                        // El fallback también falló
-                        if (!failedFallbackCache.has("pumpkin")) {
-                          failedFallbackCache.add("pumpkin");
-                          // Solo registrar el error una vez globalmente
-                          if (!fallbackErrorLogged) {
-                            fallbackErrorLogged = true;
-                            console.error(`[HarvestCard] Fallback icon (pumpkin.svg) failed to load. Verifica que los iconos estén disponibles en /icons/harvest/. Esto puede indicar un problema con la ruta base o que los archivos no se copiaron durante el build.`);
+                      try {
+                        const target = e.target as HTMLImageElement;
+                        if (!target) return;
+                        
+                        const currentSrc = target.src;
+                        const isPumpkinFallback = currentSrc.includes("/pumpkin.svg");
+                        
+                        if (isPumpkinFallback) {
+                          // El fallback también falló
+                          if (!failedFallbackCache.has("pumpkin")) {
+                            failedFallbackCache.add("pumpkin");
+                            // Solo registrar el error una vez globalmente
+                            if (!fallbackErrorLogged) {
+                              fallbackErrorLogged = true;
+                              console.error(`[HarvestCard] Fallback icon (pumpkin.svg) failed to load. Verifica que los iconos estén disponibles en /icons/harvest/. Esto puede indicar un problema con la ruta base o que los archivos no se copiaron durante el build.`);
+                            }
                           }
+                          // Usar requestAnimationFrame para evitar errores durante el render
+                          requestAnimationFrame(() => {
+                            try {
+                              target.style.display = "none";
+                            } catch (err) {
+                              // Silenciar errores de estilo
+                            }
+                          });
+                        } else {
+                          // El icono principal falló, intentar fallback
+                          if (!failedIconsCache.has(iconPath)) {
+                            failedIconsCache.add(iconPath);
+                            // Solo registrar el warning una vez por icono (sin el nombre del item para evitar duplicados)
+                            console.warn(`[HarvestCard] Error al cargar icono: ${iconPath}, usando fallback`);
+                          }
+                          // Usar requestAnimationFrame para evitar errores durante el render
+                          requestAnimationFrame(() => {
+                            try {
+                              target.src = "/icons/harvest/pumpkin.svg";
+                            } catch (err) {
+                              // Silenciar errores de asignación de src
+                            }
+                          });
                         }
-                        target.style.display = "none";
-                      } else {
-                        // El icono principal falló, intentar fallback
-                        if (!failedIconsCache.has(iconPath)) {
-                          failedIconsCache.add(iconPath);
-                          // Solo registrar el warning una vez por icono (sin el nombre del item para evitar duplicados)
-                          console.warn(`[HarvestCard] Error al cargar icono: ${iconPath}, usando fallback`);
-                        }
-                        target.src = "/icons/harvest/pumpkin.svg";
+                      } catch (error) {
+                        // Prevenir que los errores se propaguen a React
+                        console.warn(`[HarvestCard] Error en manejador onError:`, error);
                       }
                     }}
                   />

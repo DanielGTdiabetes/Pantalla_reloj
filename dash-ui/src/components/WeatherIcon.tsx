@@ -81,8 +81,13 @@ export const WeatherIcon: React.FC<WeatherIconProps> = ({
       }}
       onLoad={() => setIconLoaded(true)}
       onError={() => {
-        setIconError(true);
-        setIconLoaded(false);
+        try {
+          setIconError(true);
+          setIconLoaded(false);
+        } catch (error) {
+          // Prevenir que los errores se propaguen a React
+          console.warn(`[WeatherIcon] Error en manejador onError:`, error);
+        }
       }}
       loading="lazy"
     />

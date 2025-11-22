@@ -48,8 +48,23 @@ export const MoonCard = ({ moonPhase, illumination }: MoonCardProps): JSX.Elemen
           className="h-16 w-16"
           style={{ margin: "0 auto", display: "block", width: "64px", height: "64px" }}
           onError={(e) => {
-            console.warn(`[MoonCard] Error al cargar icono: ${moonIconPath}`);
-            (e.target as HTMLImageElement).style.display = "none";
+            try {
+              console.warn(`[MoonCard] Error al cargar icono: ${moonIconPath}`);
+              const target = e.target as HTMLImageElement;
+              if (target) {
+                // Usar requestAnimationFrame para evitar errores durante el render
+                requestAnimationFrame(() => {
+                  try {
+                    target.style.display = "none";
+                  } catch (err) {
+                    // Silenciar errores de estilo
+                  }
+                });
+              }
+            } catch (error) {
+              // Prevenir que los errores se propaguen a React
+              console.warn(`[MoonCard] Error en manejador onError:`, error);
+            }
           }}
         />
         <p className="moon-card__phase">{moonPhase ?? "Sin datos"}</p>

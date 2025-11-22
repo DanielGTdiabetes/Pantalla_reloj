@@ -83,8 +83,13 @@ export const MoonIcon: React.FC<MoonIconProps> = ({
       }}
       onLoad={() => setIconLoaded(true)}
       onError={() => {
-        setIconError(true);
-        setIconLoaded(false);
+        try {
+          setIconError(true);
+          setIconLoaded(false);
+        } catch (error) {
+          // Prevenir que los errores se propaguen a React
+          console.warn(`[MoonIcon] Error en manejador onError:`, error);
+        }
       }}
       loading="lazy"
     />
