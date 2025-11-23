@@ -649,28 +649,31 @@ export const ConfigPage: React.FC = () => {
   // El backend solo acepta estos campos, no poll_seconds, oauth2, secrets, etc.
   const buildOpenSkyPatchPayload = (): { enabled: boolean; mode: "bbox" | "global" | "oauth2"; bbox: { lamin: number; lamax: number; lomin: number; lomax: number } | null } => {
     const current = (config?.opensky ?? DEFAULT_OPENSKY_CONFIG) as OpenSkyConfigV2;
-    const mode = current.mode ?? "bbox";
+    // El backend acepta "bbox" | "global" | "oauth2", aunque el tipo TypeScript solo tiene "bbox" | "global"
+    // Obtener el valor del mode como string para permitir valores que vengan del backend
+    const currentMode = current.mode ?? "bbox";
+    const modeStr = String(currentMode);
     
-    // Si mode es "global" o "oauth2", bbox debe ser null
-    if (mode === "global" || mode === "oauth2") {
+    // Si mode es "bbox", incluir bbox con valores
+    if (currentMode === "bbox") {
+      const currentBbox = current.bbox ?? DEFAULT_OPENSKY_CONFIG.bbox;
       return {
         enabled: current.enabled ?? false,
-        mode: mode as "global" | "oauth2",
-        bbox: null,
+        mode: "bbox",
+        bbox: {
+          lamin: currentBbox.lamin ?? DEFAULT_OPENSKY_CONFIG.bbox.lamin,
+          lamax: currentBbox.lamax ?? DEFAULT_OPENSKY_CONFIG.bbox.lamax,
+          lomin: currentBbox.lomin ?? DEFAULT_OPENSKY_CONFIG.bbox.lomin,
+          lomax: currentBbox.lomax ?? DEFAULT_OPENSKY_CONFIG.bbox.lomax,
+        },
       };
     }
     
-    // Si mode es "bbox", incluir bbox con valores
-    const currentBbox = current.bbox ?? DEFAULT_OPENSKY_CONFIG.bbox;
+    // Para "global" o "oauth2" (o cualquier otro valor), bbox debe ser null
     return {
       enabled: current.enabled ?? false,
-      mode: "bbox",
-      bbox: {
-        lamin: currentBbox.lamin ?? DEFAULT_OPENSKY_CONFIG.bbox.lamin,
-        lamax: currentBbox.lamax ?? DEFAULT_OPENSKY_CONFIG.bbox.lamax,
-        lomin: currentBbox.lomin ?? DEFAULT_OPENSKY_CONFIG.bbox.lomin,
-        lomax: currentBbox.lomax ?? DEFAULT_OPENSKY_CONFIG.bbox.lomax,
-      },
+      mode: modeStr as "global" | "oauth2",
+      bbox: null,
     };
   };
 
