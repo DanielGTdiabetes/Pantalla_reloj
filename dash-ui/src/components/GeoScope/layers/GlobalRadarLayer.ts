@@ -306,8 +306,22 @@ export default class GlobalRadarLayer implements Layer {
     }
 
     // Actualizar timestamp si cambió
+    // Solo para RainViewer legacy; MapTiler Weather maneja el timestamp automáticamente
     if (opts.currentTimestamp !== undefined && opts.currentTimestamp !== this.currentTimestamp) {
-      void this.updateTimestamp(opts.currentTimestamp);
+      // Verificar provider efectivo antes de actualizar timestamp
+      const providerRaw = this.provider ?? "rainviewer";
+      let provider = providerRaw;
+      if (provider === "rainviewer") {
+        provider = "maptiler_weather";
+      }
+      
+      // Solo actualizar timestamp para RainViewer legacy
+      if (provider !== "maptiler_weather") {
+        void this.updateTimestamp(opts.currentTimestamp);
+      } else {
+        // Para MapTiler Weather, solo actualizar la referencia interna
+        this.currentTimestamp = opts.currentTimestamp;
+      }
     }
   }
 
@@ -328,6 +342,10 @@ export default class GlobalRadarLayer implements Layer {
   /**
    * Fetch centralizado de frames con cache en memoria.
    * Evita llamadas duplicadas si hay varios intentos de inicialización.
+   * 
+   * ⚠️ LEGACY: Solo para RainViewer. NUNCA se debe llamar cuando provider === "maptiler_weather".
+   * Esta función hace fetch a /api/health/full y /api/rainviewer/frames, que NO son necesarios
+   * para MapTiler Weather.
    */
   private async fetchFramesOnce(): Promise<FramesInfo | null> {
     try {
@@ -441,6 +459,8 @@ export default class GlobalRadarLayer implements Layer {
    *
    * - No ejecuta si !this.map o !getSafeMapStyle(this.map)
    * - Si ya existe, solo actualiza tiles/url si cambió el timestamp activo
+   * 
+   * ⚠️ LEGACY: Solo para RainViewer. NUNCA se debe llamar cuando provider === "maptiler_weather".
    */
   private async ensureSource(framesInfo: FramesInfo): Promise<void> {
     if (!this.map) return;
@@ -492,6 +512,8 @@ export default class GlobalRadarLayer implements Layer {
    * - Solo se ejecuta si getSafeMapStyle(map) es válido
    * - Crea la capa si no existe, con beforeId opcional
    * - Si ya existe, actualiza solo raster-opacity si cambió
+   * 
+   * ⚠️ LEGACY: Solo para RainViewer. NUNCA se debe llamar cuando provider === "maptiler_weather".
    */
   private async ensureLayer(framesInfo: FramesInfo): Promise<void> {
     if (!this.map) return;
@@ -547,9 +569,27 @@ export default class GlobalRadarLayer implements Layer {
 
   /**
    * Actualiza el timestamp activo del radar
+   * 
+   * ⚠️ LEGACY: Solo funciona para RainViewer. Para MapTiler Weather, el timestamp
+   * se maneja automáticamente por el SDK y no requiere actualización manual.
    */
   private async updateTimestamp(timestamp: number): Promise<void> {
     if (!this.map || !this.enabled) return;
+
+    // Verificar provider efectivo (forzado si era rainviewer)
+    const providerRaw = this.provider ?? "rainviewer";
+    let provider = providerRaw;
+    if (provider === "rainviewer") {
+      provider = "maptiler_weather";
+    }
+
+    // Si el provider es maptiler_weather, NO ejecutar código legacy de RainViewer
+    if (provider === "maptiler_weather") {
+      // Para MapTiler Weather, el SDK maneja el timestamp automáticamente
+      // Solo actualizamos la referencia interna si es necesario
+      this.currentTimestamp = timestamp;
+      return;
+    }
 
     this.currentTimestamp = timestamp;
 
