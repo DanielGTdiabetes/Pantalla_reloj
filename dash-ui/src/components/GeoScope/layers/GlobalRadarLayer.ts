@@ -1,5 +1,4 @@
 import maplibregl, { type StyleSpecification } from "maplibre-gl";
-import { RadarLayer } from "@maptiler/weather";
 import { config as maptilerConfig } from "@maptiler/sdk";
 
 import type { Layer } from "./LayerRegistry";
@@ -42,20 +41,17 @@ let warnedSourceError = false;
 let warnedLayerError = false;
 
 /**
- * Capa de radar global que muestra datos de RainViewer sobre el mapa base.
+ * Capa de radar global que muestra datos de precipitación sobre el mapa base.
  *
- * ⚠️ LEGACY: Esta capa está marcada como legacy y solo se usa cuando el provider es "rainviewer".
- * El proyecto ahora usa MapTiler Weather (@maptiler/weather) como fuente principal de radar
- * mediante WeatherRadarLayer.tsx, que usa RadarLayer de @maptiler/weather.
- *
- * Esta capa solo se inicializa cuando config.layers.global.radar.provider === "rainviewer".
- * Para usar MapTiler Weather, configurar provider === "maptiler_weather" (default).
+ * Soporta dos proveedores:
+ * - "maptiler_weather": Usa tiles raster de MapTiler Weather API (recomendado, default)
+ * - "rainviewer": Legacy, deprecated (se fuerza automáticamente a maptiler_weather)
  *
  * Características:
- * - Fetch centralizado de frames con cache en memoria
  * - Inicialización robusta con waitForMapReady
- * - Source y layer idempotentes y seguros
+ * - Source y layer raster idempotentes y seguros
  * - Reacciona bien a cambios de config y estilo base
+ * - Detección automática de API key de MapTiler con múltiples fallbacks
  */
 export default class GlobalRadarLayer implements Layer {
   public readonly id = "geoscope-global-radar";
@@ -70,7 +66,6 @@ export default class GlobalRadarLayer implements Layer {
   private readonly sourceId = "geoscope-global-radar-source";
   private readonly maptilerSourceId = "radar-maptiler-source";
   private readonly maptilerLayerId = "global-radar-maptiler";
-  private radarLayerInstance: RadarLayer | null = null;
   private registeredInRegistry: boolean = false;
   private static warnedDisabled = false;
 
@@ -272,16 +267,6 @@ export default class GlobalRadarLayer implements Layer {
 
   remove(map: maplibregl.Map): void {
     try {
-      // Limpiar RadarLayer de MapTiler Weather si existe
-      if (this.radarLayerInstance) {
-        try {
-          this.radarLayerInstance.animate(0); // Detener animación
-        } catch (e) {
-          // Ignorar errores al detener animación
-        }
-        this.radarLayerInstance = null;
-      }
-
       const existingMaptilerLayer = map.getLayer(this.maptilerLayerId);
       const existingLegacyLayer = map.getLayer(this.id);
 
@@ -333,21 +318,13 @@ export default class GlobalRadarLayer implements Layer {
     // Si se desactivó, limpiar la capa si existe
     if (wasEnabled && !this.enabled) {
       if (this.map) {
-        // Limpiar RadarLayer de MapTiler Weather si existe
-        if (this.radarLayerInstance) {
-          try {
-            this.radarLayerInstance.animate(0); // Detener animación
-            if (this.map.getLayer(this.maptilerLayerId)) {
-              this.map.removeLayer(this.maptilerLayerId);
-            }
-            const source = this.map.getSource(this.maptilerLayerId);
-            if (source) {
-              this.map.removeSource(this.maptilerLayerId);
-            }
-          } catch (e) {
-            console.warn("[GlobalRadarLayer] Error cleaning up radar layer:", e);
-          }
-          this.radarLayerInstance = null;
+        // Limpiar capa de MapTiler Weather si existe
+        if (this.map.getLayer(this.maptilerLayerId)) {
+          this.map.removeLayer(this.maptilerLayerId);
+        }
+        const source = this.map.getSource(this.maptilerLayerId);
+        if (source) {
+          this.map.removeSource(this.maptilerLayerId);
         }
         // También limpiar capa legacy si existe
         const existingLegacyLayer = this.map.getLayer(this.id);
@@ -394,14 +371,6 @@ export default class GlobalRadarLayer implements Layer {
     // Actualizar opacidad si cambió
     if (opts.opacity !== undefined) {
       this.applyOpacity();
-      // Si es RadarLayer de MapTiler Weather, actualizar opacidad directamente
-      if (this.radarLayerInstance) {
-        try {
-          this.radarLayerInstance.setOpacity(this.opacity);
-        } catch (e) {
-          console.warn("[GlobalRadarLayer] Error updating RadarLayer opacity:", e);
-        }
-      }
     }
 
     // Actualizar timestamp si cambió
@@ -754,17 +723,7 @@ export default class GlobalRadarLayer implements Layer {
   private applyOpacity(): void {
     if (!this.map) return;
 
-    // Si es RadarLayer de MapTiler Weather, usar su método setOpacity
-    if (this.radarLayerInstance) {
-      try {
-        this.radarLayerInstance.setOpacity(this.opacity);
-        return;
-      } catch (e) {
-        console.warn("[GlobalRadarLayer] error applying opacity via RadarLayer:", e);
-      }
-    }
-
-    // Fallback para capa legacy
+    // Determinar qué capa usar (maptiler_weather o legacy)
     const targetLayerId = this.map.getLayer(this.maptilerLayerId)
       ? this.maptilerLayerId
       : this.id;
@@ -777,6 +736,7 @@ export default class GlobalRadarLayer implements Layer {
     }
 
     try {
+      // Actualizar opacidad de la capa raster
       this.map.setPaintProperty(targetLayerId, "raster-opacity", this.opacity);
     } catch (e) {
       console.warn("[GlobalRadarLayer] error applying opacity:", e);
@@ -875,115 +835,151 @@ export default class GlobalRadarLayer implements Layer {
   }
 
   private async initializeMaptilerWeatherLayer(map: maplibregl.Map, apiKey: string): Promise<void> {
+    const sourceId = this.maptilerLayerId; // Usar el mismo ID para source y layer
     const layerId = this.maptilerLayerId;
     const opacity = this.opacity ?? 0.7;
 
     // Logs de diagnóstico antes de la inicialización
     console.log("[GlobalRadarLayer] MapTiler Weather - using API key:", this.sanitizeApiKey(apiKey));
-    console.log("[GlobalRadarLayer] MapTiler Weather - layerId:", layerId);
+    console.log("[GlobalRadarLayer] MapTiler Weather - sourceId:", sourceId, "layerId:", layerId);
 
-    // Limpiar capa existente si existe
-    if (this.radarLayerInstance) {
-      try {
-        this.radarLayerInstance.animate(0);
-        if (map.getLayer(layerId)) {
-          map.removeLayer(layerId);
-        }
-        const source = map.getSource(layerId);
-        if (source) {
-          map.removeSource(layerId);
-        }
-      } catch (e) {
-        console.warn("[GlobalRadarLayer] Error cleaning up existing radar layer:", e);
-      }
-      this.radarLayerInstance = null;
+    // Verificar que el mapa y el estilo estén listos
+    const style = getSafeMapStyle(map);
+    if (!style) {
+      console.error("[GlobalRadarLayer] MapTiler Weather: map style not ready");
+      throw new Error("MapTiler Weather: map style not ready");
     }
 
-    // Buscar capa de agua para insertar el radar debajo
-    const style = getSafeMapStyle(map);
-    const styleLayers = Array.isArray(style?.layers) ? style!.layers : [];
-    let anchorLayerId: string | undefined;
+    // Limpiar source y layer existentes si existen
+    try {
+      if (map.getLayer(layerId)) {
+        map.removeLayer(layerId);
+      }
+      if (map.getSource(sourceId)) {
+        map.removeSource(sourceId);
+      }
+    } catch (e) {
+      console.warn("[GlobalRadarLayer] Error cleaning up existing radar source/layer:", e);
+    }
 
-    // Buscar capa de agua por IDs comunes
+    // Construir URL de tiles de MapTiler Weather (precipitación)
+    const tilesUrlTemplate = `https://api.maptiler.com/weather/tiles/v2/precipitation/{z}/{x}/{y}.png?key=${encodeURIComponent(apiKey)}`;
+
+    // Crear source raster
+    try {
+      map.addSource(sourceId, {
+        type: "raster",
+        tiles: [tilesUrlTemplate],
+        tileSize: 256,
+        minzoom: 0,
+        maxzoom: 12,
+      });
+      console.log("[GlobalRadarLayer] MapTiler Weather - source added successfully");
+    } catch (error) {
+      console.error("[GlobalRadarLayer] MapTiler Weather - failed to add source:", error);
+      const diagnosticLayerId: LayerId = "radar";
+      layerDiagnostics.recordError(
+        diagnosticLayerId,
+        new Error(`MapTiler Weather failed to add source: ${String(error)}`),
+        {
+          provider: "maptiler_weather",
+          sourceId,
+        },
+      );
+      throw error;
+    }
+
+    // Buscar capa de referencia para insertar el radar debajo (etiquetas, agua, etc.)
+    const styleLayers = Array.isArray(style?.layers) ? style!.layers : [];
+    let insertBeforeLayerId: string | undefined;
+
+    // Buscar primera capa de símbolo (etiquetas) para insertar el radar debajo
     for (const layer of styleLayers) {
-      const id = layer.id?.toLowerCase() || "";
-      if (id.includes("water") || id.includes("ocean") || id.includes("sea")) {
-        anchorLayerId = layer.id;
+      if (layer.type === "symbol") {
+        insertBeforeLayerId = layer.id;
         break;
       }
     }
 
-    // Si no se encuentra capa de agua, usar primera capa fill como fallback
-    if (!anchorLayerId) {
+    // Si no hay capa de símbolo, buscar capa de agua
+    if (!insertBeforeLayerId) {
       for (const layer of styleLayers) {
-        if (layer.type === "fill") {
-          anchorLayerId = layer.id;
+        const id = layer.id?.toLowerCase() || "";
+        if (id.includes("water") || id.includes("ocean") || id.includes("sea")) {
+          insertBeforeLayerId = layer.id;
           break;
         }
       }
     }
 
-    // Si aún no hay anchor, usar "Water" como último recurso (puede no existir)
-    if (!anchorLayerId) {
-      anchorLayerId = "Water";
-      console.log("[GlobalRadarLayer] No water layer found, using 'Water' as anchor (may not exist)");
-    }
-
-    // Crear instancia de RadarLayer
+    // Crear layer raster
     try {
-      const radarLayer = new RadarLayer({
+      const layerSpec: maplibregl.RasterLayerSpecification = {
         id: layerId,
-        opacity: opacity,
-      });
+        type: "raster",
+        source: sourceId,
+        paint: {
+          "raster-opacity": opacity,
+        },
+      };
 
-      // Añadir la capa al mapa debajo de la capa de agua (o anchor equivalente)
-      // Type assertion necesaria porque RadarLayer es compatible pero los tipos no coinciden exactamente
-      map.addLayer(radarLayer as any, anchorLayerId);
-
-      console.log("[GlobalRadarLayer] MapTiler Weather RadarLayer initialized", {
-        layerId,
-        opacity,
-        anchorLayerId,
-      });
-
-      // Guardar referencia a la instancia
-      this.radarLayerInstance = radarLayer;
+      if (insertBeforeLayerId) {
+        map.addLayer(layerSpec, insertBeforeLayerId);
+        console.log("[GlobalRadarLayer] MapTiler Weather - layer added successfully before", insertBeforeLayerId);
+      } else {
+        map.addLayer(layerSpec);
+        console.log("[GlobalRadarLayer] MapTiler Weather - layer added successfully (no anchor layer found)");
+      }
 
       // Verificación final del estado de la capa
+      const hasSource = !!map.getSource(sourceId);
       const hasLayer = !!map.getLayer(layerId);
 
-      console.log("[GlobalRadarLayer] MapTiler Weather RadarLayer final state", {
+      console.log("[GlobalRadarLayer] MapTiler Weather radar initialized successfully", {
+        sourceId,
         layerId,
+        hasSource,
         hasLayer,
         opacity,
+        insertBeforeLayerId: insertBeforeLayerId || "none",
       });
 
       // Si la capa no se adjuntó correctamente, marcar como error en diagnósticos
-      if (!hasLayer) {
+      if (!hasSource || !hasLayer) {
         const diagnosticLayerId: LayerId = "radar";
         layerDiagnostics.recordError(
           diagnosticLayerId,
-          new Error("MapTiler Weather RadarLayer not attached to map"),
+          new Error("MapTiler Weather layer not attached to map"),
           {
             provider: "maptiler_weather",
+            sourceId,
             layerId,
+            hasSource,
             hasLayer,
           },
         );
-        throw new Error(`MapTiler Weather RadarLayer not attached: hasLayer=${hasLayer}`);
+        throw new Error(`MapTiler Weather layer not attached: hasSource=${hasSource}, hasLayer=${hasLayer}`);
       }
     } catch (error) {
-      console.error("[GlobalRadarLayer] MapTiler Weather - addLayer failed:", error);
+      console.error("[GlobalRadarLayer] MapTiler Weather - failed to add layer:", error);
+      // Limpiar source si la layer falló
+      try {
+        if (map.getSource(sourceId)) {
+          map.removeSource(sourceId);
+        }
+      } catch (cleanupError) {
+        console.warn("[GlobalRadarLayer] Error cleaning up source after layer failure:", cleanupError);
+      }
       const diagnosticLayerId: LayerId = "radar";
       layerDiagnostics.recordError(
         diagnosticLayerId,
-        new Error(`MapTiler Weather RadarLayer addLayer failed: ${String(error)}`),
+        new Error(`MapTiler Weather failed to add layer: ${String(error)}`),
         {
           provider: "maptiler_weather",
           layerId,
         },
       );
-      throw error; // Re-lanzar para que el catch superior lo maneje
+      throw error;
     }
   }
 }

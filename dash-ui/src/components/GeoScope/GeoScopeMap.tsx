@@ -2087,13 +2087,15 @@ export default function GeoScopeMap({
               uiGlobalRadarInit?.opacity ??
               globalRadarConfigInit?.opacity ??
               0.7;
-            // Verificar provider: GlobalRadarLayer solo soporta "rainviewer" (legacy)
-            // Si el provider es "maptiler_weather", usar WeatherRadarLayer en su lugar
-            const radarProviderInit =
+            // Determinar provider efectivo: forzar maptiler_weather si es rainviewer (deprecated)
+            const radarProviderRaw =
               weatherLayersRadarInit?.provider ??
               (uiGlobalRadarInit as any)?.provider ??
               globalRadarConfigInit?.provider ??
               "maptiler_weather";
+            
+            // Forzar maptiler_weather si viene rainviewer (deprecated)
+            const radarProviderInit = radarProviderRaw === "rainviewer" ? "maptiler_weather" : radarProviderRaw;
 
             console.log("[GlobalRadarLayer] enter init, cfg=", {
               globalRadarConfig: globalRadarConfigInit,
@@ -2101,12 +2103,12 @@ export default function GeoScopeMap({
               uiGlobalRadar: uiGlobalRadarInit,
               isEnabled: isRadarEnabledInit,
               opacity: radarOpacityInit,
-              provider: radarProviderInit
+              providerRaw: radarProviderRaw,
+              providerEffective: radarProviderInit
             });
 
-            // Solo inicializar GlobalRadarLayer si está habilitado Y el provider es "rainviewer" (legacy)
-            // Si el provider es "maptiler_weather", WeatherRadarLayer se encargará del radar
-            if (isRadarEnabledInit && radarProviderInit === "rainviewer") {
+            // Inicializar GlobalRadarLayer si está habilitado (soporta rainviewer legacy y maptiler_weather)
+            if (isRadarEnabledInit) {
               // Función helper para inicializar la capa con retry logic
               const initializeRadarLayer = async (attempt: number = 1, maxAttempts: number = 3): Promise<void> => {
                 const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 4000); // 1s, 2s, 4s
@@ -2266,11 +2268,7 @@ export default function GeoScopeMap({
               // Iniciar proceso de inicialización con retry logic
               void initializeRadarLayer(1, 3);
             } else {
-              if (radarProviderInit === "maptiler_weather") {
-                console.log("[GlobalRadarLayer] Provider is maptiler_weather, using WeatherRadarLayer instead (skipping GlobalRadarLayer)");
-              } else {
-                console.log("[GlobalRadarLayer] Radar disabled in config or provider not rainviewer, skipping initialization");
-              }
+              console.log("[GlobalRadarLayer] Radar disabled in config, skipping initialization");
             }
           } catch (radarError) {
             console.error("[GeoScopeMap] RadarLayer failed:", radarError);
@@ -4377,7 +4375,7 @@ export default function GeoScopeMap({
   
   // useEffect para gestionar la configuración del radar
   // RainViewer está deprecado: si el provider es "rainviewer", se fuerza a "maptiler_weather"
-  // MapTiler Weather se gestiona mediante WeatherRadarLayer.tsx
+  // MapTiler Weather se gestiona directamente mediante GlobalRadarLayer cuando provider === "maptiler_weather"
   useEffect(() => {
     console.log("[GlobalRadarLayer] useEffect enter, checking radar configuration");
     
@@ -4465,7 +4463,7 @@ export default function GeoScopeMap({
       // El provider efectivo ahora es maptiler_weather, así que continuamos con la rama MapTiler
     }
 
-    // Si el provider efectivo es "maptiler_weather", WeatherRadarLayer se encarga del radar
+    // Si el provider efectivo es "maptiler_weather", GlobalRadarLayer se encarga del radar directamente
     if (radarProvider === "maptiler_weather") {
       console.log("[GlobalRadarLayer] MapTiler Weather selected in effect; skipping RainViewer prefetch");
       if (isRadarEnabled) {
