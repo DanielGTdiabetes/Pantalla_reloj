@@ -1,3 +1,4 @@
+import * as maptilersdk from "@maptiler/sdk";
 import { Map as MaptilerMap } from "@maptiler/sdk";
 import type { MapLibreEvent, StyleSpecification } from "maplibre-gl";
 import type { Feature, FeatureCollection, GeoJsonProperties, Geometry, Point } from "geojson";
@@ -31,6 +32,7 @@ import {
   withConfigDefaults
 } from "../../config/defaults";
 import { hasMaptilerKey, containsApiKey, buildFinalMaptilerStyleUrl } from "../../lib/map/maptilerRuntime";
+import { extractMaptilerApiKeyFromUrl } from "../../lib/map/maptilerApiKey";
 import { DEFAULT_OPENSKY_CONFIG } from "../../config/defaults_v2";
 import { withStyleCacheBuster } from "../../lib/map/utils/styleCacheBuster";
 import type {
@@ -1756,6 +1758,26 @@ export default function GeoScopeMap({
         return;
       }
 
+      // Extraer y configurar la API key de MapTiler
+      const apiKeyFromEnv = (import.meta as any).env?.VITE_MAPTILER_KEY as string | undefined;
+      const styleUrlFinal = typeof initialStyle === "string" ? initialStyle : null;
+      const apiKeyFromStyle = extractMaptilerApiKeyFromUrl(styleUrlFinal);
+      const maptilerApiKey = apiKeyFromEnv || apiKeyFromStyle || null;
+
+      if (!maptilerApiKey) {
+        console.error(
+          "[GeoScopeMap] MapTiler API key not found. " +
+          "Checked VITE_MAPTILER_KEY and styleUrlFinal. " +
+          "Map may not load correctly."
+        );
+      } else {
+        console.log("[GeoScopeMap] Using MapTiler API key from",
+          apiKeyFromEnv ? "VITE_MAPTILER_KEY" : "style URL"
+        );
+        // Configuración global del SDK
+        maptilersdk.config.apiKey = maptilerApiKey;
+      }
+
       let map: MaptilerMap;
       try {
         // Prefetch del style.json para validar que contiene 'version' y evitar estados internos inconsistentes.
@@ -1783,6 +1805,8 @@ export default function GeoScopeMap({
         map = new MaptilerMap({
           container: host,
           style: styleForMap,
+          // importante: pasar la key si la tenemos
+          apiKey: maptilerApiKey || undefined,
           center: viewState ? [viewState.lng, viewState.lat] : [0, 0],
           zoom: viewState?.zoom ?? 2.6,
           minZoom: viewMode === "fixed" ? (mapSettings?.fixed?.zoom ?? 9.0) - 2 : 0,
