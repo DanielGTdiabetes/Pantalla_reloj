@@ -18,21 +18,75 @@ export class LayerRegistry {
     this.map = map;
   }
 
+  /**
+   * Espera a que el estilo del mapa esté disponible.
+   * Si ya está disponible, resuelve inmediatamente.
+   * Si no, espera al evento 'styledata' una vez.
+   */
+  private async ensureMapStyleLoaded(): Promise<void> {
+    const style = getSafeMapStyle(this.map);
+    if (style) {
+      return;
+    }
+
+    // Espera a styledata una sola vez, sin bloquear la app
+    return new Promise<void>((resolve) => {
+      const onStyleData = () => {
+        this.map.off("styledata", onStyleData);
+        resolve();
+      };
+
+      this.map.once("styledata", onStyleData);
+    });
+  }
+
+  /**
+   * Añade una capa al registro y al mapa.
+   * Si el estilo no está disponible, espera a que esté disponible antes de añadir.
+   * 
+   * @param layer - La capa a añadir
+   * @returns true si la capa se añadió (o se está añadiendo de forma asíncrona), false si hay un error crítico
+   */
   add(layer: Layer): boolean {
-    // Validaciones estrictas antes de añadir
+    // Validaciones básicas
     if (!this.map) {
       console.warn(`[LayerRegistry] Map is null, skipping add for ${layer.id}`);
       return false;
     }
 
-    if (!this.map.isStyleLoaded()) {
-      console.warn(`[LayerRegistry] Map style not loaded, skipping add for ${layer.id}`);
-      return false;
+    // Verificar si el estilo ya está disponible
+    const style = getSafeMapStyle(this.map);
+    const styleLoaded = !!style;
+
+    if (!styleLoaded) {
+      // El estilo no está disponible, pero NO hacemos return false.
+      // En su lugar, esperamos al estilo de forma asíncrona y luego añadimos la capa.
+      console.log(`[LayerRegistry] Map style not yet available, waiting for styledata before adding ${layer.id}`);
+      
+      // Iniciar el proceso de espera y añadido de forma asíncrona
+      void this.ensureMapStyleLoaded().then(() => {
+        // Una vez que el estilo está disponible, añadir la capa
+        this.addLayerToMap(layer);
+      }).catch((err) => {
+        console.warn(`[LayerRegistry] Failed to wait for style for layer ${layer.id}:`, err);
+      });
+
+      // Retornar true porque hemos iniciado el proceso de añadido
+      return true;
     }
 
-    const style = getSafeMapStyle(this.map);
-    if (!style) {
-      console.warn(`[LayerRegistry] Style not ready (getSafeMapStyle returned null), skipping add for ${layer.id}`);
+    // El estilo está disponible, añadir inmediatamente
+    return this.addLayerToMap(layer);
+  }
+
+  /**
+   * Añade la capa al registro y al mapa (asume que el estilo ya está disponible).
+   * Este método es llamado internamente después de asegurar que el estilo está cargado.
+   */
+  private addLayerToMap(layer: Layer): boolean {
+    // Verificar que la capa no esté ya en el registro
+    if (this.layers.some((l) => l.id === layer.id)) {
+      console.warn(`[LayerRegistry] Layer ${layer.id} already exists in registry, skipping add`);
       return false;
     }
 
@@ -45,13 +99,24 @@ export class LayerRegistry {
       const result = layer.add(this.map);
       // Si es una Promise, manejarla de forma asíncrona (no bloquear)
       if (result && typeof result === "object" && "then" in result) {
-        result.catch((err) => {
-          console.warn(`[LayerRegistry] Failed to add layer ${layer.id} (async)`, err);
-        });
+        result
+          .then(() => {
+            console.log(`[LayerRegistry] Added layer ${layer.id} successfully`);
+          })
+          .catch((err) => {
+            console.warn(`[LayerRegistry] Failed to add layer ${layer.id} (async)`, err);
+          });
+      } else {
+        console.log(`[LayerRegistry] Added layer ${layer.id} successfully`);
       }
       return true;
     } catch (err) {
       console.warn(`[LayerRegistry] Failed to add layer ${layer.id}`, err);
+      // Remover de la lista si falló
+      const index = this.layers.findIndex((l) => l.id === layer.id);
+      if (index !== -1) {
+        this.layers.splice(index, 1);
+      }
       return false;
     }
   }
