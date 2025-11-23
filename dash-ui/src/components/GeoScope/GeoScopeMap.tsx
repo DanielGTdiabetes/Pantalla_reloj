@@ -4239,29 +4239,35 @@ export default function GeoScopeMap({
     const flightsConfig = merged.layers.flights;
     const openskyConfig = merged.opensky;
 
-    // En config v2, opensky.enabled no existe, así que lo consideramos true por defecto
-    // Esto mantiene compatibilidad con v1 donde opensky.enabled puede estar explícitamente definido
-    const openskyEnabled = openskyConfig.enabled ?? true;
-    
-    // Verificar que hay credenciales OAuth2 configuradas
-    const openskyHasCredentials = openskyConfig.oauth2?.has_credentials === true;
-
-    if (!flightsConfig.enabled || !openskyEnabled || !openskyHasCredentials) {
-      layerDiagnostics.setEnabled("flights", false);
-      console.log("[GeoScopeMap] Flights data loading disabled:", {
-        flightsEnabled: flightsConfig.enabled,
-        openskyEnabled,
-        openskyHasCredentials,
-      });
-      return;
-    }
-
     const layerId: LayerId = "flights";
     let retryCount = 0;
     const MAX_RETRIES = 3;
 
+    // En config v2, opensky.enabled no existe, así que lo consideramos true por defecto
+    // Esto mantiene compatibilidad con v1 donde opensky.enabled puede estar explícitamente definido
+    const openskyEnabled = openskyConfig?.enabled ?? true;
+    const flightsEnabled = Boolean(flightsConfig?.enabled);
+
+    console.log("[GeoScopeMap] Flights polling effect mounted:", {
+      flightsEnabled,
+      openskyEnabled,
+      provider: flightsConfig?.provider,
+      version: (merged as any).version,
+    });
+
+    // Actualiza diagnóstico pero NO salgas del efecto
+    layerDiagnostics.setEnabled(layerId, Boolean(flightsEnabled && openskyEnabled));
+
     const loadFlightsData = async (): Promise<void> => {
       try {
+        if (!flightsEnabled || !openskyEnabled) {
+          console.log("[GeoScopeMap] Skipping flights poll, flags disabled:", {
+            flightsEnabled,
+            openskyEnabled,
+          });
+          return;
+        }
+
         // Calcular bbox del mapa actual
         const map = mapRef.current;
         let bbox: string | undefined;
@@ -4287,7 +4293,11 @@ export default function GeoScopeMap({
           url += `?${params.toString()}`;
         }
 
-        console.log("[GeoScopeMap] Loading flights data from:", url);
+        console.log("[GeoScopeMap] Loading flights data from URL:", {
+          url,
+          flightsEnabled,
+          openskyEnabled,
+        });
 
         // Validar respuesta del backend con retry
         const response = await retryWithBackoff(
@@ -4334,14 +4344,11 @@ export default function GeoScopeMap({
         if (aircraftLayer && !response.disabled) {
           try {
             const featureCollection = flightsResponseToGeoJSON(response);
-            const featuresCount = featureCollection.features?.length ?? 0;
-            console.log("[GeoScopeMap] Flights data loaded successfully:", {
-              featuresCount,
-              itemsCount: response.count,
-              provider: flightsConfig.provider,
-            });
             aircraftLayer.updateData(featureCollection);
             retryCount = 0; // Reset retry count on success
+            console.log("[GeoScopeMap] Flights data applied to AircraftLayer:", {
+              featuresCount: featureCollection.features?.length ?? 0,
+            });
           } catch (conversionError) {
             const error = conversionError instanceof Error ? conversionError : new Error(String(conversionError));
             layerDiagnostics.recordError(layerId, error, {
@@ -4355,7 +4362,7 @@ export default function GeoScopeMap({
         layerDiagnostics.recordError(layerId, err, {
           phase: "loadFlightsData",
         });
-        console.error("[GeoScopeMap] Failed to load flights data:", error);
+        console.error("[GeoScopeMap] Flights: Failed to load flights data:", error);
       }
     };
 
