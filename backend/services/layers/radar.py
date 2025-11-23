@@ -57,6 +57,8 @@ async def test() -> Dict[str, Any]:
 
     if provider == "rainviewer":
         probe_result, probe_error = await _probe_rainviewer()
+        # RainViewer no requiere API key
+        status["has_api_key"] = None
     elif provider == "openweathermap":
         api_key = _get_openweather_key(main)
         if not api_key:
@@ -71,6 +73,25 @@ async def test() -> Dict[str, Any]:
             return status
         probe_result, probe_error = await _probe_openweather(api_key, radar_cfg.layer_type)
         status["has_api_key"] = True
+    elif provider == "maptiler_weather":
+        # Para MapTiler Weather, verificar API key de MapTiler
+        maptiler_key = _get_maptiler_key(main)
+        if not maptiler_key:
+            status.update(
+                {
+                    "ok": False,
+                    "probe": {"ok": False, "reason": "missing_api_key"},
+                    "probe_error": "missing_api_key",
+                    "has_api_key": False,
+                }
+            )
+            return status
+        # MapTiler Weather no requiere probe específico (usa RadarLayer de @maptiler/weather)
+        # Marcar como ok si hay API key
+        status["has_api_key"] = True
+        status["ok"] = True
+        probe_result = {"ok": True, "reason": "maptiler_weather_provider"}
+        probe_error = None
     else:
         status.update(
             {
@@ -152,6 +173,28 @@ def _get_openweather_key(main_module) -> Optional[str]:
         value = main_module.secret_store.get_secret("openweathermap_api_key")
         if value:
             return value.strip()
+        return None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _get_maptiler_key(main_module) -> Optional[str]:
+    """Obtiene la API key de MapTiler desde secrets o configuración."""
+    try:
+        # Intentar desde secrets primero
+        value = main_module.secret_store.get_secret("maptiler_api_key")
+        if value:
+            return value.strip()
+        
+        # Fallback: intentar desde ui_map.maptiler.api_key
+        config = main_module.config_manager.read()
+        if hasattr(config, "ui") and hasattr(config.ui, "map") and hasattr(config.ui.map, "maptiler"):
+            maptiler_config = config.ui.map.maptiler
+            if isinstance(maptiler_config, dict) and maptiler_config.get("api_key"):
+                api_key = maptiler_config["api_key"]
+                if isinstance(api_key, str) and api_key.strip():
+                    return api_key.strip()
+        
         return None
     except Exception:  # noqa: BLE001
         return None

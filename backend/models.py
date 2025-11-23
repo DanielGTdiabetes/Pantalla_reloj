@@ -418,17 +418,24 @@ class GlobalRadarLayer(BaseModel):
     """Configuración de capa global de radar."""
     model_config = ConfigDict(extra="ignore")
 
-    enabled: bool = True
-    provider: Literal["rainviewer", "openweathermap", "maptiler_weather"] = Field(default="maptiler_weather")
+    enabled: bool = False  # Cambiado a False por defecto para requerir activación explícita
+    provider: Literal["rainviewer", "openweathermap", "maptiler_weather"] = Field(
+        default="maptiler_weather",
+        description="Proveedor de datos de radar. 'rainviewer' está deprecated, usar 'maptiler_weather'"
+    )
     # Solo aplica cuando provider == "openweathermap"
     layer_type: Literal["precipitation_new", "precipitation", "temp_new", "clouds", "rain", "wind", "pressure"] = Field(
         default="precipitation_new",
         description="Tipo de capa OpenWeatherMap (solo para proveedor openweathermap)"
     )
-    refresh_minutes: int = Field(default=5, ge=1, le=1440)
-    history_minutes: int = Field(default=90, ge=1, le=1440)
-    frame_step: int = Field(default=5, ge=1, le=1440)
+    # Campos legacy reservados para animación futura con MapTiler Weather
+    # Actualmente no se usan directamente con RadarLayer de @maptiler/weather
+    refresh_minutes: int = Field(default=5, ge=1, le=1440, description="Reservado para animación futura")
+    history_minutes: int = Field(default=90, ge=1, le=1440, description="Reservado para animación futura")
+    frame_step: int = Field(default=5, ge=1, le=1440, description="Reservado para animación futura")
     opacity: float = Field(default=0.7, ge=0.0, le=1.0)
+    # Indica si hay API key de MapTiler configurada (calculado automáticamente, no se guarda en config)
+    has_api_key: Optional[bool] = Field(default=None, description="Calculado automáticamente, no se persiste")
 
 
 class GlobalLayers(BaseModel):

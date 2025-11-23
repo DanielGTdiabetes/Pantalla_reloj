@@ -1258,13 +1258,34 @@ def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
         payload["secrets"] = secrets_public
 
     # Inyectar estado de secretos en capas (para compatibilidad con frontend y tests)
-    # Global Radar (OpenWeatherMap)
+    # Global Radar (OpenWeatherMap o MapTiler Weather)
     if "layers" in payload and "global" in payload["layers"]:
         radar = payload["layers"]["global"].get("radar", {})
-        stored_owm = secret_store.get_secret("openweathermap_api_key")
-        radar["has_api_key"] = bool(stored_owm)
-        if stored_owm and len(stored_owm) >= 4:
-            radar["api_key_last4"] = stored_owm[-4:]
+        provider = radar.get("provider", "maptiler_weather")
+        
+        if provider == "maptiler_weather":
+            # Para MapTiler Weather, verificar API key de MapTiler
+            maptiler_key = secret_store.get_secret("maptiler_api_key")
+            # También intentar extraer de URLs de estilo si no está en secrets
+            if not maptiler_key:
+                ui_map = payload.get("ui_map", {})
+                maptiler_config = ui_map.get("maptiler", {})
+                style_url = maptiler_config.get("styleUrl") or maptiler_config.get("style_url")
+                if style_url:
+                    maptiler_key = _extract_maptiler_key_from_url(style_url)
+            radar["has_api_key"] = bool(maptiler_key)
+            if maptiler_key and len(maptiler_key) >= 4:
+                radar["api_key_last4"] = maptiler_key[-4:]
+        elif provider == "openweathermap":
+            # Para OpenWeatherMap, usar la API key de OpenWeatherMap
+            stored_owm = secret_store.get_secret("openweathermap_api_key")
+            radar["has_api_key"] = bool(stored_owm)
+            if stored_owm and len(stored_owm) >= 4:
+                radar["api_key_last4"] = stored_owm[-4:]
+        else:
+            # Para rainviewer u otros providers, no requiere API key
+            radar["has_api_key"] = None
+        
         payload["layers"]["global"]["radar"] = radar
 
     # Ships AISStream

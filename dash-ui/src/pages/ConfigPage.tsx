@@ -1661,11 +1661,25 @@ export const ConfigPage: React.FC = () => {
               <>
                 <div className="config-field">
                   <label>Proveedor</label>
-                  <select value="maptiler_weather" disabled>
-                    <option value="maptiler_weather">MapTiler Weather</option>
-                  </select>
+                  <div style={{ padding: "8px", backgroundColor: "#f0f0f0", borderRadius: "4px", marginBottom: "8px" }}>
+                    <strong>MapTiler Weather</strong> (recomendado)
+                  </div>
                   <div className="config-field__hint">
-                    MapTiler Weather proporciona datos de radar/precipitación globales con animación
+                    MapTiler Weather proporciona datos de radar/precipitación globales con animación.
+                    {config.layers?.global?.radar?.has_api_key === false && (
+                      <span style={{ color: "#d32f2f", fontWeight: "bold", display: "block", marginTop: "4px" }}>
+                        ⚠️ API key de MapTiler no configurada. El radar no funcionará sin una API key válida.
+                      </span>
+                    )}
+                    {config.layers?.global?.radar?.has_api_key === true && (
+                      <span style={{ color: "#2e7d32", fontWeight: "bold", display: "block", marginTop: "4px" }}>
+                        ✓ API key de MapTiler configurada correctamente
+                      </span>
+                    )}
+                  </div>
+                  <div className="config-field__hint" style={{ marginTop: "8px", fontSize: "0.85em", color: "#666" }}>
+                    <strong>Nota:</strong> RainViewer está deprecated y no se usará aunque se seleccione en la configuración.
+                    El sistema fuerza automáticamente el uso de MapTiler Weather.
                   </div>
                 </div>
                 

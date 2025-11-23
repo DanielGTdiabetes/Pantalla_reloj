@@ -390,9 +390,12 @@ class SatelliteConfig(BaseModel):
 class RadarConfig(BaseModel):
     """Configuración de radar global."""
     enabled: bool = False
-    provider: Literal["rainviewer"] = "rainviewer"
+    provider: Literal["rainviewer", "maptiler_weather"] = Field(
+        default="maptiler_weather",
+        description="Proveedor de datos de radar. 'rainviewer' está deprecated, usar 'maptiler_weather'"
+    )
     opacity: float = Field(default=0.7, ge=0.0, le=1.0)
-    layer_type: Optional[str] = Field(default="precipitation_new", max_length=64)
+    layer_type: Optional[str] = Field(default="precipitation", max_length=64)
 
 
 class RotatorDurationsConfig(BaseModel):
