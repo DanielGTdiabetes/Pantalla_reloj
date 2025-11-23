@@ -1815,7 +1815,12 @@ export default function GeoScopeMap({
           interactive: false,
           attributionControl: false,
           renderWorldCopies: runtime.renderWorldCopies,
-          trackResize: false
+          trackResize: false,
+          // Deshabilitar todos los controles en modo kiosk (pantalla no táctil)
+          navigationControl: false,
+          geolocateControl: false,
+          fullscreenControl: false,
+          scaleControl: false
         });
         console.log("[MapInit] final style used for MaptilerMap", { styleUrlFinal: typeof initialStyle === "string" ? initialStyle : "[object]" });
       } catch (error) {
@@ -1827,6 +1832,27 @@ export default function GeoScopeMap({
 
       try {
         mapRef.current = map;
+        
+        // Eliminar cualquier control de navegación que se haya añadido por defecto
+        // Modo kiosk: pantalla no táctil, sin controles visibles
+        try {
+          // Intentar eliminar controles comunes si existen
+          const controls = (map as any).controls;
+          if (controls && Array.isArray(controls)) {
+            controls.forEach((control: any) => {
+              try {
+                if (control && typeof control.remove === "function") {
+                  control.remove();
+                }
+              } catch (e) {
+                // Ignorar errores al eliminar controles
+              }
+            });
+          }
+        } catch (e) {
+          // Ignorar errores al acceder a controles
+        }
+        
         // Configurar minZoom según viewMode
         if (viewMode === "fixed") {
           const fixedZoom = mapSettings?.fixed?.zoom ?? 9.0;

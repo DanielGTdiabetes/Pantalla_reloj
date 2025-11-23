@@ -620,8 +620,9 @@ export default class GlobalRadarLayer implements Layer {
    * Esto asegura que el radar se añada debajo de las etiquetas pero por encima del mapa base.
    * 
    * Prioridad:
-   * 1. Primera capa de tipo "symbol" (etiquetas)
-   * 2. Si no hay símbolos, retorna undefined (se añade al final)
+   * 1. Primera capa de tipo "symbol" que contenga "label" en el id (etiquetas de ciudades/poblaciones)
+   * 2. Primera capa de tipo "symbol" (cualquier etiqueta)
+   * 3. Si no hay símbolos, retorna undefined (se añade al final)
    */
   private findBeforeId(): string | undefined {
     if (!this.map) {
@@ -633,7 +634,17 @@ export default class GlobalRadarLayer implements Layer {
       return undefined;
     }
 
-    // Buscar primera capa de símbolo (etiquetas) para insertar el radar debajo
+    // Buscar primera capa de símbolo que contenga "label" en el id (prioridad alta)
+    for (const layer of style.layers) {
+      if (layer.type === "symbol" && layer.id && typeof layer.id === "string") {
+        const layerId = layer.id.toLowerCase();
+        if (layerId.includes("label") || layerId.includes("place") || layerId.includes("city")) {
+          return layer.id;
+        }
+      }
+    }
+
+    // Si no se encuentra una capa con "label", buscar cualquier capa de símbolo
     for (const layer of style.layers) {
       if (layer.type === "symbol") {
         return layer.id;
@@ -824,6 +835,12 @@ export default class GlobalRadarLayer implements Layer {
 
       // Buscar capa de referencia para insertar el radar debajo de las etiquetas (symbol layers)
       const beforeId = this.findBeforeId();
+
+      if (beforeId) {
+        console.log(`[GlobalRadarLayer] Adding radar layer with beforeId = ${beforeId}`);
+      } else {
+        console.warn("[GlobalRadarLayer] No suitable label layer found, adding radar layer on top of style");
+      }
 
       // Añadir la capa al mapa usando el método del SDK
       // @ts-ignore - El SDK de MapTiler tiene compatibilidad con capas personalizadas
