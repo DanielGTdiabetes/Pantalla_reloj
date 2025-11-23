@@ -644,6 +644,36 @@ export const ConfigPage: React.FC = () => {
     };
   };
 
+  // Función específica para construir el payload del PATCH a /api/config/group/opensky
+  // Solo incluye los campos válidos: enabled, mode, bbox
+  // El backend solo acepta estos campos, no poll_seconds, oauth2, secrets, etc.
+  const buildOpenSkyPatchPayload = (): { enabled: boolean; mode: "bbox" | "global" | "oauth2"; bbox: { lamin: number; lamax: number; lomin: number; lomax: number } | null } => {
+    const current = (config?.opensky ?? DEFAULT_OPENSKY_CONFIG) as OpenSkyConfigV2;
+    const mode = current.mode ?? "bbox";
+    
+    // Si mode es "global" o "oauth2", bbox debe ser null
+    if (mode === "global" || mode === "oauth2") {
+      return {
+        enabled: current.enabled ?? false,
+        mode: mode as "global" | "oauth2",
+        bbox: null,
+      };
+    }
+    
+    // Si mode es "bbox", incluir bbox con valores
+    const currentBbox = current.bbox ?? DEFAULT_OPENSKY_CONFIG.bbox;
+    return {
+      enabled: current.enabled ?? false,
+      mode: "bbox",
+      bbox: {
+        lamin: currentBbox.lamin ?? DEFAULT_OPENSKY_CONFIG.bbox.lamin,
+        lamax: currentBbox.lamax ?? DEFAULT_OPENSKY_CONFIG.bbox.lamax,
+        lomin: currentBbox.lomin ?? DEFAULT_OPENSKY_CONFIG.bbox.lomin,
+        lomax: currentBbox.lomax ?? DEFAULT_OPENSKY_CONFIG.bbox.lomax,
+      },
+    };
+  };
+
   const buildShipsConfig = (updates?: Partial<ShipsLayerConfigV2>): ShipsLayerConfigV2 => {
     const current = config?.layers?.ships;
     return {
@@ -862,7 +892,8 @@ export const ConfigPage: React.FC = () => {
 
     setOpenskySaving(true);
     try {
-      const payload = buildOpenSkyConfig();
+      const payload = buildOpenSkyPatchPayload();
+      console.log("[OpenSky PATCH payload]", payload);
       await saveConfigGroup("opensky", payload);
       await reloadConfig();
       alert("Configuración de OpenSky guardada. La pantalla se reiniciará en unos segundos.");
