@@ -67,9 +67,9 @@
         "time_value": "default"
       }
     },
-    "radar": { "enabled": false, "provider": "rainviewer", "opacity": 0.7, "layer_type": "precipitation_new" },
+    "radar": { "enabled": false, "provider": "maptiler_weather", "opacity": 0.7, "layer_type": "precipitation" },
     "weather_layers": {
-      "radar": { "enabled": true, "provider": "rainviewer", "opacity": 0.7 },
+      "radar": { "enabled": true, "provider": "maptiler_weather", "opacity": 0.7 },
       "satellite": { "enabled": false, "provider": "gibs", "opacity": 0.8 },
       "alerts": { "enabled": true, "provider": "cap_aemet", "opacity": 0.6 }
     },
@@ -110,7 +110,9 @@
       },
       "radar": {
         "enabled": false,
-        "provider": "rainviewer",
+        "provider": "maptiler_weather",
+        "opacity": 0.7,
+        "layer_type": "precipitation",
         "refresh_minutes": 5,
         "history_minutes": 90,
         "frame_step": 5

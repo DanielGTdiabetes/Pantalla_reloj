@@ -151,13 +151,20 @@ export default class GlobalRadarLayer implements Layer {
 
         const maptilerKey = this.extractMaptilerApiKey(style);
         if (!maptilerKey) {
-          console.log("[GlobalRadarLayer] MapTiler Weather: missing API key, aborting radar init");
+          console.error(
+            "[GlobalRadarLayer] ❌ MapTiler Weather: Falta API key de MapTiler para la capa de Radar. " +
+            "La capa no se inicializará. " +
+            "Configura VITE_MAPTILER_KEY en .env o asegúrate de que el mapa base use MapTiler con API key."
+          );
           layerDiagnostics.updatePreconditions(layerId, { apiKeysConfigured: false });
-          layerDiagnostics.recordError(layerId, "MapTiler Weather: missing API key", {
+          layerDiagnostics.recordError(layerId, new Error("MapTiler Weather: missing API key"), {
             provider: "maptiler_weather",
+            hint: "Configure VITE_MAPTILER_KEY environment variable or ensure map base uses MapTiler with API key",
           });
           return;
         }
+        
+        console.log("[GlobalRadarLayer] ✓ MapTiler API key encontrada, procediendo con inicialización del radar");
 
         layerDiagnostics.updatePreconditions(layerId, { apiKeysConfigured: true });
 
@@ -791,45 +798,68 @@ export default class GlobalRadarLayer implements Layer {
       return null;
     };
 
-    if (!style) {
-      return null;
-    }
-
+    // Estrategia 1: Variable de entorno (más confiable)
     const envKey = (import.meta.env as Record<string, string | undefined>).VITE_MAPTILER_KEY;
     if (envKey?.trim()) {
+      console.log("[GlobalRadarLayer] MapTiler API key found from VITE_MAPTILER_KEY environment variable");
       return envKey.trim();
     }
 
-    const candidates: (string | null)[] = [];
-    if (typeof style.sprite === "string") {
-      candidates.push(style.sprite);
-    }
-    if (typeof style.glyphs === "string") {
-      candidates.push(style.glyphs);
-    }
+    // Estrategia 2: Extraer del estilo del mapa (sprite, glyphs, sources)
+    if (style) {
+      const candidates: (string | null)[] = [];
+      if (typeof style.sprite === "string") {
+        candidates.push(style.sprite);
+      }
+      if (typeof style.glyphs === "string") {
+        candidates.push(style.glyphs);
+      }
 
-    if (style.sources && typeof style.sources === "object") {
-      for (const source of Object.values(style.sources)) {
-        if (!source || typeof source !== "object") continue;
-        const typedSource = source as { url?: unknown; tiles?: unknown };
-        if (typedSource.url) {
-          candidates.push(typeof typedSource.url === "string" ? typedSource.url : null);
-        }
-        if (Array.isArray(typedSource.tiles)) {
-          for (const tile of typedSource.tiles) {
-            candidates.push(typeof tile === "string" ? tile : null);
+      if (style.sources && typeof style.sources === "object") {
+        for (const source of Object.values(style.sources)) {
+          if (!source || typeof source !== "object") continue;
+          const typedSource = source as { url?: unknown; tiles?: unknown };
+          if (typedSource.url) {
+            candidates.push(typeof typedSource.url === "string" ? typedSource.url : null);
+          }
+          if (Array.isArray(typedSource.tiles)) {
+            for (const tile of typedSource.tiles) {
+              candidates.push(typeof tile === "string" ? tile : null);
+            }
           }
         }
       }
-    }
 
-    for (const candidate of candidates) {
-      const key = extractFromUrl(candidate);
-      if (key) {
-        return key;
+      for (const candidate of candidates) {
+        const key = extractFromUrl(candidate);
+        if (key) {
+          console.log("[GlobalRadarLayer] MapTiler API key extracted from map style URLs");
+          return key;
+        }
       }
     }
 
+    // Estrategia 3: Intentar leer desde window.__MAP_CONFIG__ si está disponible (inyectado por el backend)
+    try {
+      const windowConfig = (window as any).__MAP_CONFIG__;
+      if (windowConfig?.ui_map?.maptiler?.api_key) {
+        const configKey = windowConfig.ui_map.maptiler.api_key;
+        if (typeof configKey === "string" && configKey.trim()) {
+          console.log("[GlobalRadarLayer] MapTiler API key found from window.__MAP_CONFIG__");
+          return configKey.trim();
+        }
+      }
+    } catch (e) {
+      // Ignorar errores al acceder a window.__MAP_CONFIG__
+    }
+
+    // Si no se encontró ninguna key, loguear claramente pero no fallar todavía
+    console.warn(
+      "[GlobalRadarLayer] ⚠️ MapTiler API key no encontrada. " +
+      "La capa de radar no funcionará sin una API key válida. " +
+      "Configura VITE_MAPTILER_KEY en .env o asegúrate de que el mapa base use MapTiler con API key."
+    );
+    
     return null;
   }
 
