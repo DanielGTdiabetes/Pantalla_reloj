@@ -19,7 +19,6 @@ import GlobalSatelliteLayer from "./layers/GlobalSatelliteLayer";
 import AEMETWarningsLayer from "./layers/AEMETWarningsLayer";
 import LightningLayer from "./layers/LightningLayer";
 import WeatherLayer from "./layers/WeatherLayer";
-import WeatherRadarLayer from "./layers/WeatherRadarLayer";
 import { LayerRegistry } from "./layers/LayerRegistry";
 import SatelliteHybridLayer, { type SatelliteLabelsStyle } from "./layers/SatelliteHybridLayer";
 import ShipsLayer from "./layers/ShipsLayer";
@@ -4817,46 +4816,12 @@ export default function GeoScopeMap({
     );
   }
 
-  // Determine radar configuration for WeatherRadarLayer
-  // WeatherRadarLayer solo se usa cuando provider === "maptiler_weather"
-  const configV2ForRadar = config as unknown as AppConfigV2 | null;
-  const radarConfigFromLayers = configV2ForRadar?.layers?.global_?.radar ?? configV2ForRadar?.layers?.global?.radar;
-  const radarConfigFromUI = configV2ForRadar?.ui_global?.radar;
-  
-  // Merge configs: layers.global.radar takes precedence, fallback to ui_global.radar with defaults
-  // Solo aceptar "maptiler_weather" desde ui_global.radar (RainViewer se maneja con GlobalRadarLayer)
-  // RadarConfig no tiene opacity, así que usamos un cast seguro o valor por defecto
-  const radarConfig: GlobalRadarLayerConfigV2 | undefined = radarConfigFromLayers ?? 
-    (radarConfigFromUI && radarConfigFromUI.provider === "maptiler_weather" ? {
-      enabled: radarConfigFromUI.enabled ?? false,
-      provider: "maptiler_weather" as const,
-      opacity: (radarConfigFromUI as any).opacity ?? 0.7,
-      animation_speed: 1.0, // Default animation speed
-    } : undefined);
-  
-  // Default a maptiler_weather si no hay configuración
-  const radarProvider = radarConfig?.provider ?? "maptiler_weather";
-  const radarEnabled = radarConfig?.enabled ?? false;
-  const radarOpacityValue = radarConfig?.opacity ?? 0.7;
-  const radarAnimationSpeed = radarConfig?.animation_speed ?? 1.0;
-
   return (
     <div className="map-host">
       <div ref={mapFillRef} className="map-fill" />
       {styleChangeInProgress ? <MapSpinner /> : null}
       {tintColor ? (
         <div className="map-tint" style={{ background: tintColor }} aria-hidden="true" />
-      ) : null}
-      {/* Weather radar via MapTiler Weather JS (replaces RainViewer legacy tiles) */}
-      {mapRef.current && radarProvider === "maptiler_weather" ? (
-        <WeatherRadarLayer
-          enabled={radarEnabled}
-          opacity={radarOpacityValue}
-          animationSpeed={radarAnimationSpeed}
-          map={mapRef.current}
-          config={configV2ForRadar}
-          health={health}
-        />
       ) : null}
       {/* MapHybrid desactivado: solo usar estilo base streets-v4 */}
     </div>
