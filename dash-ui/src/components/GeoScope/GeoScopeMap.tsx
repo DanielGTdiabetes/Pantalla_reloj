@@ -84,6 +84,36 @@ const cloneTheme = (theme?: MapThemeConfig | null): MapThemeConfig => ({
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
+/**
+ * Obtiene un bbox expandido del mapa actual con un factor de expansión.
+ * @param map - Instancia del mapa de MapTiler
+ * @param expandFactor - Factor de expansión (por defecto 1.5, expande 50% en cada dirección)
+ * @returns Objeto con lamin, lamax, lomin, lomax
+ */
+function getExpandedBbox(map: MaptilerMap, expandFactor: number = 1.5): {
+  lamin: number;
+  lamax: number;
+  lomin: number;
+  lomax: number;
+} {
+  const bounds = map.getBounds();
+  const sw = bounds.getSouthWest();
+  const ne = bounds.getNorthEast();
+  
+  const latSpan = ne.lat - sw.lat;
+  const lonSpan = ne.lng - sw.lng;
+  
+  const latExpansion = latSpan * (expandFactor - 1);
+  const lonExpansion = lonSpan * (expandFactor - 1);
+  
+  return {
+    lamin: sw.lat - latExpansion,
+    lamax: ne.lat + latExpansion,
+    lomin: sw.lng - lonExpansion,
+    lomax: ne.lng + lonExpansion,
+  };
+}
+
 const setPaintProperty = (
   map: MaptilerMap,
   layerId: string,
@@ -4283,6 +4313,13 @@ export default function GeoScopeMap({
     const layerId: LayerId = "flights";
     let retryCount = 0;
     const MAX_RETRIES = 3;
+    
+    // Log cuando el config cambia
+    console.log("[Flights] Config actualizada:", {
+      enabled: flightsConfig?.enabled,
+      refresh_seconds: flightsConfig?.refresh_seconds,
+      provider: flightsConfig?.provider,
+    });
 
     if (!flightsConfig) {
       layerDiagnostics.setEnabled(layerId, false);
@@ -4316,19 +4353,22 @@ export default function GeoScopeMap({
           return;
         }
 
-        // Calcular bbox del mapa actual
+        // Calcular bbox del mapa actual expandido
         const map = mapRef.current;
         let bbox: string | undefined;
 
         if (map && map.isStyleLoaded()) {
-          const bounds = map.getBounds();
-          const sw = bounds.getSouthWest();
-          const ne = bounds.getNorthEast();
-          const lamin = Math.min(sw.lat, ne.lat);
-          const lamax = Math.max(sw.lat, ne.lat);
-          const lomin = Math.min(sw.lng, ne.lng);
-          const lomax = Math.max(sw.lng, ne.lng);
-          bbox = `${lamin},${lamax},${lomin},${lomax}`;
+          const expandedBbox = getExpandedBbox(map, 1.5);
+          bbox = `${expandedBbox.lamin},${expandedBbox.lamax},${expandedBbox.lomin},${expandedBbox.lomax}`;
+          
+          // Log del bbox usado
+          console.log(
+            "[Flights] BBOX usado:",
+            expandedBbox.lamin.toFixed(4),
+            expandedBbox.lamax.toFixed(4),
+            expandedBbox.lomin.toFixed(4),
+            expandedBbox.lomax.toFixed(4)
+          );
         }
 
         // Construir URL con parámetros
