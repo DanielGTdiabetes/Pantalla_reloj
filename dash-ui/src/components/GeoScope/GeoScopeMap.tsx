@@ -2513,19 +2513,28 @@ export default function GeoScopeMap({
             const flightsConfig = configAsV2Init.version === 2 && configAsV2Init.layers?.flights
               ? configAsV2Init.layers.flights
               : mergedConfig.layers.flights;
-            const openskyConfig = configAsV2Init.version === 2 && configAsV2Init.opensky
-              ? configAsV2Init.opensky
-              : mergedConfig.opensky;
+            
+            // Merge de opensky: usar mergedConfig como base y sobreescribir con v2 si existe
+            const openskyConfigMerged = mergedConfig.opensky;
+            const openskyConfigV2 = configAsV2Init.version === 2 && configAsV2Init.opensky
+              ? { ...openskyConfigMerged, ...configAsV2Init.opensky }
+              : openskyConfigMerged;
+            const openskyConfig = openskyConfigV2;
 
-            // Interpretar enabled = true cuando no esté definido (config v2)
-            const openskyEnabled =
-              typeof (openskyConfig as any)?.enabled === "boolean"
-                ? (openskyConfig as any).enabled
-                : true;
+            // En config v2, opensky.enabled no existe, así que lo consideramos true por defecto
+            // Esto mantiene compatibilidad con v1 donde opensky.enabled puede estar explícitamente definido
+            const openskyEnabled = openskyConfig.enabled ?? true;
 
             // Solo inicializar si está habilitada
             const layerId: LayerId = "flights";
-            const isEnabled = flightsConfig.enabled && openskyEnabled;
+            const isEnabled = Boolean(flightsConfig.enabled && openskyEnabled);
+            
+            console.log("[GeoScopeMap] Flights layer config:", {
+              flightsEnabled: flightsConfig.enabled,
+              openskyEnabled,
+              provider: flightsConfig.provider,
+              configVersion: configAsV2Init.version,
+            });
             
             layerDiagnostics.setEnabled(layerId, isEnabled);
             layerDiagnostics.updatePreconditions(layerId, {
@@ -2555,7 +2564,12 @@ export default function GeoScopeMap({
                     return;
                   }
 
-                  console.log("[GeoScopeMap] Initializing AircraftLayer");
+                  console.log("[GeoScopeMap] Initializing AircraftLayer with config", {
+                    flightsEnabled: flightsConfig.enabled,
+                    openskyEnabled,
+                    renderMode: flightsConfig.render_mode,
+                    provider: flightsConfig.provider,
+                  });
                   let spriteAvailable = false;
                   try {
                     spriteAvailable = await hasSprite(style);
@@ -3968,6 +3982,9 @@ export default function GeoScopeMap({
     const openskyConfig = configAsV2Update.version === 2 && configAsV2Update.opensky
       ? configAsV2Update.opensky
       : merged.opensky;
+    
+    // En config v2, opensky.enabled no existe, así que lo consideramos true por defecto
+    const openskyEnabled = openskyConfig.enabled ?? true;
   
     // Actualizar AircraftLayer
     const aircraftLayer = aircraftLayerRef.current;
@@ -3975,14 +3992,14 @@ export default function GeoScopeMap({
       aircraftLayer.setRenderMode(flightsConfig.render_mode ?? "auto");
       aircraftLayer.setCircleOptions(flightsConfig.circle);
       aircraftLayer.setSymbolOptions(flightsConfig.symbol);
-      aircraftLayer.setEnabled(flightsConfig.enabled && openskyConfig.enabled);
+      aircraftLayer.setEnabled(flightsConfig.enabled && openskyEnabled);
       aircraftLayer.setOpacity(flightsConfig.opacity);
       aircraftLayer.setMaxAgeSeconds(flightsConfig.max_age_seconds);
       aircraftLayer.setCluster(openskyConfig.cluster);
       aircraftLayer.setStyleScale(flightsConfig.styleScale ?? 1);
       
       // Reinicializar capa si está habilitada para asegurar que use nueva configuración
-      if (flightsConfig.enabled && openskyConfig.enabled) {
+      if (flightsConfig.enabled && openskyEnabled) {
         console.log("[GeoScopeMap] Reinitializing AircraftLayer due to config change");
         void aircraftLayer.ensureFlightsLayer();
       }
@@ -4123,7 +4140,10 @@ export default function GeoScopeMap({
           ? configAsV2Update.opensky
           : merged.opensky;
         
-        if (flightsConfig.enabled && openskyConfig.enabled) {
+        // En config v2, opensky.enabled no existe, así que lo consideramos true por defecto
+        const openskyEnabled = openskyConfig.enabled ?? true;
+        
+        if (flightsConfig.enabled && openskyEnabled) {
           console.log("[GeoScopeMap] Forcing AircraftLayer reinitialization after secrets update");
           // Forzar recarga inmediata de datos
           void aircraftLayerRef.current.ensureFlightsLayer();
@@ -4207,13 +4227,16 @@ export default function GeoScopeMap({
     const flightsConfig = merged.layers.flights;
     const openskyConfig = merged.opensky;
 
-    const openskyEnabled =
-      typeof (openskyConfig as any)?.enabled === "boolean"
-        ? (openskyConfig as any).enabled
-        : true;
+    // En config v2, opensky.enabled no existe, así que lo consideramos true por defecto
+    // Esto mantiene compatibilidad con v1 donde opensky.enabled puede estar explícitamente definido
+    const openskyEnabled = openskyConfig.enabled ?? true;
 
     if (!flightsConfig.enabled || !openskyEnabled) {
       layerDiagnostics.setEnabled("flights", false);
+      console.log("[GeoScopeMap] Flights data loading disabled:", {
+        flightsEnabled: flightsConfig.enabled,
+        openskyEnabled,
+      });
       return;
     }
 
@@ -4247,6 +4270,8 @@ export default function GeoScopeMap({
         if (params.toString()) {
           url += `?${params.toString()}`;
         }
+
+        console.log("[GeoScopeMap] Loading flights data from:", url);
 
         // Validar respuesta del backend con retry
         const response = await retryWithBackoff(
@@ -4293,6 +4318,12 @@ export default function GeoScopeMap({
         if (aircraftLayer && !response.disabled) {
           try {
             const featureCollection = flightsResponseToGeoJSON(response);
+            const featuresCount = featureCollection.features?.length ?? 0;
+            console.log("[GeoScopeMap] Flights data loaded successfully:", {
+              featuresCount,
+              itemsCount: response.count,
+              provider: flightsConfig.provider,
+            });
             aircraftLayer.updateData(featureCollection);
             retryCount = 0; // Reset retry count on success
           } catch (conversionError) {
@@ -4338,6 +4369,7 @@ export default function GeoScopeMap({
 
     if (!shipsConfig.enabled) {
       layerDiagnostics.setEnabled("ships", false);
+      console.log("[GeoScopeMap] Ships data loading disabled: shipsConfig.enabled = false");
       return;
     }
 
@@ -4371,6 +4403,8 @@ export default function GeoScopeMap({
         if (params.toString()) {
           url += `?${params.toString()}`;
         }
+        
+        console.log("[GeoScopeMap] Loading ships data from:", url);
         
         // Validar respuesta del backend con retry
         const response = await retryWithBackoff(
@@ -4408,6 +4442,11 @@ export default function GeoScopeMap({
 
         const shipsLayer = shipsLayerRef.current;
         if (shipsLayer && isFeatureCollection<Point, ShipFeatureProperties>(response)) {
+          const featuresCount = response.features?.length ?? 0;
+          console.log("[GeoScopeMap] Ships data loaded successfully:", {
+            featuresCount,
+            provider: shipsConfig.provider,
+          });
           shipsLayer.updateData(response);
         }
       } catch (error) {
@@ -4477,7 +4516,10 @@ export default function GeoScopeMap({
               const flightsConfig = merged.layers.flights;
               const openskyConfig = merged.opensky;
               
-              if (flightsConfig.enabled && openskyConfig.enabled) {
+              // En config v2, opensky.enabled no existe, así que lo consideramos true por defecto
+              const openskyEnabled = openskyConfig.enabled ?? true;
+              
+              if (flightsConfig.enabled && openskyEnabled) {
                 void aircraftLayerRef.current.ensureFlightsLayer();
               }
             } else if (layerId === "ships" && shipsLayerRef.current) {
