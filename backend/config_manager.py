@@ -415,23 +415,28 @@ class ConfigManager:
     def _merge_missing_dict_keys(
         self, source: Any, defaults: Any
     ) -> Tuple[Any, bool]:
+        """Merge solo añade claves faltantes, nunca sobrescribe valores existentes."""
         if not isinstance(source, dict) or not isinstance(defaults, dict):
             return source, False
         changed = False
         merged: Dict[str, Any] = dict(source)
         for key, default_value in defaults.items():
             if key not in merged:
+                # Solo añadir si la clave no existe
                 merged[key] = default_value
                 changed = True
                 continue
             existing_value = merged[key]
+            # Solo hacer merge recursivo si ambos son dicts y el existente no está vacío
             if isinstance(existing_value, dict) and isinstance(default_value, dict):
+                # Si el valor existente tiene contenido, preservarlo y solo añadir claves faltantes
                 merged_child, child_changed = self._merge_missing_dict_keys(
                     existing_value, default_value
                 )
                 if child_changed:
                     merged[key] = merged_child
                     changed = True
+            # Si existe un valor no-dict, preservarlo (no sobrescribir con default)
         return merged, changed
 
     def _purge_cinema_keys(self, data: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:

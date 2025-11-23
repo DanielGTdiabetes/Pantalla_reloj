@@ -2524,14 +2524,18 @@ export default function GeoScopeMap({
             // En config v2, opensky.enabled no existe, así que lo consideramos true por defecto
             // Esto mantiene compatibilidad con v1 donde opensky.enabled puede estar explícitamente definido
             const openskyEnabled = openskyConfig.enabled ?? true;
+            
+            // Verificar que hay credenciales OAuth2 configuradas
+            const openskyHasCredentials = openskyConfig.oauth2?.has_credentials === true;
 
-            // Solo inicializar si está habilitada
+            // Solo inicializar si está habilitada y hay credenciales
             const layerId: LayerId = "flights";
-            const isEnabled = Boolean(flightsConfig.enabled && openskyEnabled);
+            const isEnabled = Boolean(flightsConfig.enabled && openskyEnabled && openskyHasCredentials);
             
             console.log("[GeoScopeMap] Flights layer config:", {
               flightsEnabled: flightsConfig.enabled,
               openskyEnabled,
+              openskyHasCredentials,
               provider: flightsConfig.provider,
               configVersion: configAsV2Init.version,
             });
@@ -2567,6 +2571,7 @@ export default function GeoScopeMap({
                   console.log("[GeoScopeMap] Initializing AircraftLayer with config", {
                     flightsEnabled: flightsConfig.enabled,
                     openskyEnabled,
+                    openskyHasCredentials,
                     renderMode: flightsConfig.render_mode,
                     provider: flightsConfig.provider,
                   });
@@ -2604,6 +2609,11 @@ export default function GeoScopeMap({
                   const added = layerRegistry.add(aircraftLayer);
                   if (added) {
                     aircraftLayerRef.current = aircraftLayer;
+                    
+                    // Exponer referencia de debug
+                    (window as any).__pantallaDebug = (window as any).__pantallaDebug || {};
+                    (window as any).__pantallaDebug.aircraftLayer = aircraftLayer;
+                    console.log("[GeoScopeMap] __pantallaDebug.aircraftLayer disponible para inspección");
                   } else {
                     console.warn("[GeoScopeMap] AircraftLayer failed to add to registry");
                     return;
@@ -3985,6 +3995,7 @@ export default function GeoScopeMap({
     
     // En config v2, opensky.enabled no existe, así que lo consideramos true por defecto
     const openskyEnabled = openskyConfig.enabled ?? true;
+    const openskyHasCredentials = openskyConfig.oauth2?.has_credentials === true;
   
     // Actualizar AircraftLayer
     const aircraftLayer = aircraftLayerRef.current;
@@ -3992,14 +4003,14 @@ export default function GeoScopeMap({
       aircraftLayer.setRenderMode(flightsConfig.render_mode ?? "auto");
       aircraftLayer.setCircleOptions(flightsConfig.circle);
       aircraftLayer.setSymbolOptions(flightsConfig.symbol);
-      aircraftLayer.setEnabled(flightsConfig.enabled && openskyEnabled);
+      aircraftLayer.setEnabled(flightsConfig.enabled && openskyEnabled && openskyHasCredentials);
       aircraftLayer.setOpacity(flightsConfig.opacity);
       aircraftLayer.setMaxAgeSeconds(flightsConfig.max_age_seconds);
       aircraftLayer.setCluster(openskyConfig.cluster);
       aircraftLayer.setStyleScale(flightsConfig.styleScale ?? 1);
       
       // Reinicializar capa si está habilitada para asegurar que use nueva configuración
-      if (flightsConfig.enabled && openskyEnabled) {
+      if (flightsConfig.enabled && openskyEnabled && openskyHasCredentials) {
         console.log("[GeoScopeMap] Reinitializing AircraftLayer due to config change");
         void aircraftLayer.ensureFlightsLayer();
       }
@@ -4142,8 +4153,9 @@ export default function GeoScopeMap({
         
         // En config v2, opensky.enabled no existe, así que lo consideramos true por defecto
         const openskyEnabled = openskyConfig.enabled ?? true;
+        const openskyHasCredentials = openskyConfig.oauth2?.has_credentials === true;
         
-        if (flightsConfig.enabled && openskyEnabled) {
+        if (flightsConfig.enabled && openskyEnabled && openskyHasCredentials) {
           console.log("[GeoScopeMap] Forcing AircraftLayer reinitialization after secrets update");
           // Forzar recarga inmediata de datos
           void aircraftLayerRef.current.ensureFlightsLayer();
@@ -4230,12 +4242,16 @@ export default function GeoScopeMap({
     // En config v2, opensky.enabled no existe, así que lo consideramos true por defecto
     // Esto mantiene compatibilidad con v1 donde opensky.enabled puede estar explícitamente definido
     const openskyEnabled = openskyConfig.enabled ?? true;
+    
+    // Verificar que hay credenciales OAuth2 configuradas
+    const openskyHasCredentials = openskyConfig.oauth2?.has_credentials === true;
 
-    if (!flightsConfig.enabled || !openskyEnabled) {
+    if (!flightsConfig.enabled || !openskyEnabled || !openskyHasCredentials) {
       layerDiagnostics.setEnabled("flights", false);
       console.log("[GeoScopeMap] Flights data loading disabled:", {
         flightsEnabled: flightsConfig.enabled,
         openskyEnabled,
+        openskyHasCredentials,
       });
       return;
     }
@@ -4518,8 +4534,9 @@ export default function GeoScopeMap({
               
               // En config v2, opensky.enabled no existe, así que lo consideramos true por defecto
               const openskyEnabled = openskyConfig.enabled ?? true;
+              const openskyHasCredentials = openskyConfig.oauth2?.has_credentials === true;
               
-              if (flightsConfig.enabled && openskyEnabled) {
+              if (flightsConfig.enabled && openskyEnabled && openskyHasCredentials) {
                 void aircraftLayerRef.current.ensureFlightsLayer();
               }
             } else if (layerId === "ships" && shipsLayerRef.current) {

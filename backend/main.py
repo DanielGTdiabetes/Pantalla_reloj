@@ -1032,14 +1032,21 @@ def _read_config_v2() -> Tuple[AppConfigV2, bool]:
         return config_v2, False
 
 
+# Flag para evitar logs repetitivos de migración
+_maps_defaults_applied = False
+_radar_migration_applied = False
+
 def _ensure_maps_defaults(config_dict: Dict[str, Any]) -> Dict[str, Any]:
     """Asegura que el bloque 'maps' existe y tiene valores válidos.
     
     Si maps es null o no existe, crea un bloque por defecto usando la API key de MapTiler
     desde secrets o config.
     """
+    global _maps_defaults_applied
     if "maps" not in config_dict or config_dict["maps"] is None:
-        logger.info("[Config] maps was null or missing; applying defaults")
+        if not _maps_defaults_applied:
+            logger.info("[Config] maps was null or missing; applying defaults")
+            _maps_defaults_applied = True
         config_dict["maps"] = {}
     
     maps = config_dict["maps"]
@@ -1118,14 +1125,17 @@ def _ensure_layers_global_defaults(config_dict: Dict[str, Any]) -> Dict[str, Any
         layers["global"] = layers_global
     
     # Asegurar que radar existe en layers.global
+    global _radar_migration_applied
     if "radar" not in layers_global or layers_global["radar"] is None:
         # Intentar migrar desde ui_global.radar si existe
         ui_global = config_dict.get("ui_global", {})
         if isinstance(ui_global, dict):
             ui_radar = ui_global.get("radar")
             if isinstance(ui_radar, dict) and ui_radar:
-                # Migrar desde ui_global.radar
-                logger.info("[Config] Migrating radar config from ui_global.radar to layers.global.radar")
+                # Migrar desde ui_global.radar (solo loguear una vez)
+                if not _radar_migration_applied:
+                    logger.info("[Config] Migrating radar config from ui_global.radar to layers.global.radar")
+                    _radar_migration_applied = True
                 layers_global["radar"] = {
                     "enabled": ui_radar.get("enabled", False),
                     "provider": ui_radar.get("provider", "rainviewer"),
