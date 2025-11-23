@@ -18,6 +18,23 @@ export class LayerRegistry {
     this.map = map;
   }
 
+  get(layerId: string): Layer | undefined {
+    return this.layers.find((layer) => layer.id === layerId);
+  }
+
+  register(layerId: string, layer: Layer): boolean {
+    if (layer.id !== layerId) {
+      console.warn(`[LayerRegistry] Layer id mismatch (expected ${layerId}, got ${layer.id}), continuing with provided id`);
+    }
+
+    if (this.get(layerId)) {
+      console.warn(`[LayerRegistry] Layer ${layerId} already exists in registry, skipping register`);
+      return false;
+    }
+
+    return this.add(layer);
+  }
+
   /**
    * Espera a que el estilo del mapa esté disponible.
    * Si ya está disponible, resuelve inmediatamente.
