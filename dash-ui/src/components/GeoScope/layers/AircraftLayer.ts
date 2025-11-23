@@ -166,7 +166,9 @@ export default class AircraftLayer implements Layer {
    */
   async ensureFlightsLayer(): Promise<void> {
     const layerId: LayerId = "flights";
-    
+
+    console.log("[AircraftLayer] ensureFlightsLayer() called");
+
     if (!this.map || !this.enabled) {
       if (!this.map) {
         layerDiagnostics.recordError(layerId, new Error("Map not available"), {
@@ -358,7 +360,11 @@ export default class AircraftLayer implements Layer {
 
   updateData(data: FeatureCollection): void {
     const layerId: LayerId = "flights";
-    
+
+    console.log("[AircraftLayer] updateData called with features:", Array.isArray((data as any)?.features)
+      ? (data as any).features.length
+      : 0);
+
     try {
       // Validar que los datos sean un FeatureCollection válido
       if (!data || typeof data !== "object" || data.type !== "FeatureCollection") {
