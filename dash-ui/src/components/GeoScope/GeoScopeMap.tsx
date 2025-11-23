@@ -2132,53 +2132,206 @@ export default function GeoScopeMap({
 
             // Inicializar GlobalRadarLayer si está habilitado (soporta rainviewer legacy y maptiler_weather)
             if (isRadarEnabledInit) {
-              // Función helper para inicializar la capa con retry logic
-              const initializeRadarLayer = async (attempt: number = 1, maxAttempts: number = 3): Promise<void> => {
-                const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 4000); // 1s, 2s, 4s
-
-                console.log(`[GlobalRadarLayer] Initialization attempt ${attempt}/${maxAttempts}`);
-
-                // Esperar a que el mapa esté completamente listo antes de inicializar
+              // === RAMA ESPECÍFICA PARA MAPTILER WEATHER ===
+              // NO ejecuta health/frames ni reintentos - solo inicializa la capa directamente
+              if (radarProviderInit === "maptiler_weather") {
+                console.log("[GeoScopeMap] Initializing radar with MapTiler Weather (no RainViewer health/frames)");
+                
+                const layerId: LayerId = "radar";
+                layerDiagnostics.recordInitializationAttempt(layerId);
+                layerDiagnostics.setEnabled(layerId, true);
+                
                 try {
+                  // Esperar a que el mapa esté listo (sin reintentos complejos)
                   await waitForMapReady(map);
-                  if (destroyed || !mapRef.current) return;
-                } catch (waitError) {
-                  console.warn(`[GlobalRadarLayer] waitForMapReady failed (attempt ${attempt}/${maxAttempts}):`, waitError);
-                  if (attempt < maxAttempts) {
-                    setTimeout(() => {
-                      if (!destroyed && mapRef.current) {
-                        void initializeRadarLayer(attempt + 1, maxAttempts);
-                      }
-                    }, backoffMs);
+                  if (destroyed || !mapRef.current) {
+                    console.warn("[GeoScopeMap] Map destroyed or not available, aborting MapTiler Weather radar initialization");
+                    return;
                   }
-                  return;
-                }
 
-                // Verificar health endpoint con timeout
-                const healthController = new AbortController();
-                const healthTimeout = setTimeout(() => healthController.abort(), 10000); // 10s timeout
-
-                fetch("/api/health/full", {
-                  cache: "no-store",
-                  signal: healthController.signal
-                })
-                  .then((r) => {
-                    clearTimeout(healthTimeout);
-                    return r.json();
-                  })
-                  .then(async (health: { global_radar?: { status?: string; frames_count?: number } }) => {
-                    const globalRadar = health?.global_radar;
-                    const hasFrames = globalRadar?.status === "ok" && (globalRadar?.frames_count ?? 0) > 0;
-
-                    console.log("[GlobalRadarLayer] health check result=", {
-                      status: globalRadar?.status,
-                      framesCount: globalRadar?.frames_count,
-                      hasFrames,
-                      attempt
+                  // Verificar que el estilo esté cargado
+                  const style = getSafeMapStyle(map);
+                  if (!style) {
+                    console.warn("[GeoScopeMap] Style not ready for MapTiler Weather radar, waiting for styledata event");
+                    layerDiagnostics.updatePreconditions(layerId, { styleLoaded: false });
+                    map.once('styledata', () => {
+                      if (!destroyed && mapRef.current && !globalRadarLayerRef.current) {
+                        console.log("[GeoScopeMap] Style loaded, initializing MapTiler Weather radar layer");
+                        const globalRadarLayer = new GlobalRadarLayer({
+                          enabled: true,
+                          opacity: radarOpacityInit,
+                          provider: "maptiler_weather",
+                        });
+                        const added = layerRegistry.add(globalRadarLayer);
+                        if (added) {
+                          globalRadarLayerRef.current = globalRadarLayer;
+                          layerDiagnostics.updatePreconditions(layerId, { styleLoaded: true });
+                          layerDiagnostics.setState(layerId, "ready", { provider: "maptiler_weather" });
+                          console.log("[GeoScopeMap] MapTiler Weather radar initialized successfully");
+                        } else {
+                          layerDiagnostics.recordError(layerId, new Error("Failed to add MapTiler Weather radar to registry"), {
+                            provider: "maptiler_weather",
+                          });
+                        }
+                      }
                     });
+                    return;
+                  }
 
-                    if (!hasFrames) {
-                      console.warn(`[GlobalRadarLayer] No frames available (attempt ${attempt}/${maxAttempts}): status=${globalRadar?.status}, frames=${globalRadar?.frames_count}`);
+                  layerDiagnostics.updatePreconditions(layerId, { styleLoaded: true });
+
+                  // Inicializar la capa directamente - GlobalRadarLayer se encarga de todo
+                  const globalRadarLayer = new GlobalRadarLayer({
+                    enabled: true,
+                    opacity: radarOpacityInit,
+                    provider: "maptiler_weather",
+                  });
+                  const added = layerRegistry.add(globalRadarLayer);
+                  if (added) {
+                    globalRadarLayerRef.current = globalRadarLayer;
+                    layerDiagnostics.setState(layerId, "ready", { provider: "maptiler_weather" });
+                    console.log("[GeoScopeMap] MapTiler Weather radar initialized successfully");
+                  } else {
+                    console.warn("[GeoScopeMap] Failed to add MapTiler Weather radar to registry");
+                    layerDiagnostics.recordError(layerId, new Error("Failed to add MapTiler Weather radar to registry"), {
+                      provider: "maptiler_weather",
+                    });
+                  }
+                } catch (error) {
+                  console.error("[GeoScopeMap] Failed to initialize MapTiler Weather radar:", error);
+                  layerDiagnostics.recordError(layerId, new Error(`MapTiler Weather radar init failed: ${String(error)}`), {
+                    provider: "maptiler_weather",
+                  });
+                }
+                
+                // IMPORTANTE: return aquí para NO entrar en la rama legacy de RainViewer
+                return;
+              }
+
+              // === RAMA LEGACY PARA RAINVIEWER ===
+              // Solo se ejecuta si radarProviderInit === "rainviewer" (aunque esto ya no debería pasar porque se fuerza a maptiler_weather)
+              if (radarProviderInit === "rainviewer") {
+                // Función helper para inicializar la capa con retry logic y health/frames
+                const initializeRadarLayer = async (attempt: number = 1, maxAttempts: number = 3): Promise<void> => {
+                  const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 4000); // 1s, 2s, 4s
+
+                  console.log(`[GlobalRadarLayer] RainViewer initialization attempt ${attempt}/${maxAttempts}`);
+
+                  // Esperar a que el mapa esté completamente listo antes de inicializar
+                  try {
+                    await waitForMapReady(map);
+                    if (destroyed || !mapRef.current) return;
+                  } catch (waitError) {
+                    console.warn(`[GlobalRadarLayer] waitForMapReady failed (attempt ${attempt}/${maxAttempts}):`, waitError);
+                    if (attempt < maxAttempts) {
+                      setTimeout(() => {
+                        if (!destroyed && mapRef.current) {
+                          void initializeRadarLayer(attempt + 1, maxAttempts);
+                        }
+                      }, backoffMs);
+                    }
+                    return;
+                  }
+
+                  // Verificar health endpoint con timeout (SOLO para RainViewer)
+                  const healthController = new AbortController();
+                  const healthTimeout = setTimeout(() => healthController.abort(), 10000); // 10s timeout
+
+                  fetch("/api/health/full", {
+                    cache: "no-store",
+                    signal: healthController.signal
+                  })
+                    .then((r) => {
+                      clearTimeout(healthTimeout);
+                      return r.json();
+                    })
+                    .then(async (health: { global_radar?: { status?: string; frames_count?: number } }) => {
+                      const globalRadar = health?.global_radar;
+                      const hasFrames = globalRadar?.status === "ok" && (globalRadar?.frames_count ?? 0) > 0;
+
+                      console.log("[GlobalRadarLayer] RainViewer health check result=", {
+                        status: globalRadar?.status,
+                        framesCount: globalRadar?.frames_count,
+                        hasFrames,
+                        attempt
+                      });
+
+                      if (!hasFrames) {
+                        console.warn(`[GlobalRadarLayer] No RainViewer frames available (attempt ${attempt}/${maxAttempts}): status=${globalRadar?.status}, frames=${globalRadar?.frames_count}`);
+
+                        // Retry si no es el último intento
+                        if (attempt < maxAttempts) {
+                          console.log(`[GlobalRadarLayer] Retrying in ${backoffMs}ms...`);
+                          setTimeout(() => {
+                            if (!destroyed && mapRef.current && !globalRadarLayerRef.current) {
+                              void initializeRadarLayer(attempt + 1, maxAttempts);
+                            }
+                          }, backoffMs);
+                        } else {
+                          console.error("[GlobalRadarLayer] Max retry attempts reached, giving up");
+                        }
+                        return;
+                      }
+
+                      if (destroyed || !mapRef.current) {
+                        console.warn("[GlobalRadarLayer] Map destroyed or not available, aborting initialization");
+                        return;
+                      }
+
+                      // Verificar estilo antes de crear la capa
+                      const style = getSafeMapStyle(map);
+                      if (!style) {
+                        console.warn("[GlobalRadarLayer] Style not ready, waiting for styledata event");
+                        // Esperar al styledata para intentar de nuevo
+                        map.once('styledata', () => {
+                          if (!destroyed && mapRef.current && globalRadarLayerRef.current === null) {
+                            console.log("[GlobalRadarLayer] Style loaded, initializing layer");
+                            const globalRadarLayer = new GlobalRadarLayer({
+                              enabled: true,
+                              opacity: radarOpacityInit,
+                              provider: "rainviewer",
+                            });
+                            layerRegistry.add(globalRadarLayer);
+                            globalRadarLayerRef.current = globalRadarLayer;
+                            console.log("[GlobalRadarLayer] Layer initialized after styledata event");
+                          }
+                        });
+                        return;
+                      }
+
+                      console.log("[GlobalRadarLayer] Initializing RainViewer layer with radar data", {
+                        status: globalRadar?.status,
+                        framesCount: globalRadar?.frames_count,
+                        opacity: radarOpacityInit,
+                        attempt
+                      });
+
+                      // Verificar estilo una vez más antes de crear la capa
+                      const finalStyle = getSafeMapStyle(map);
+                      if (!finalStyle) {
+                        console.warn("[GlobalRadarLayer] Style not ready, skipping layer creation");
+                        return;
+                      }
+
+                      const globalRadarLayer = new GlobalRadarLayer({
+                        enabled: true,
+                        opacity: radarOpacityInit,
+                        provider: "rainviewer",
+                      });
+                      const added = layerRegistry.add(globalRadarLayer);
+                      if (added) {
+                        globalRadarLayerRef.current = globalRadarLayer;
+                        console.log("[GlobalRadarLayer] ✓ RainViewer layer successfully initialized and added to registry");
+                      } else {
+                        console.warn("[GlobalRadarLayer] Failed to add RainViewer layer to registry");
+                      }
+                    })
+                    .catch((healthError) => {
+                      clearTimeout(healthTimeout);
+
+                      const isTimeout = healthError.name === 'AbortError';
+                      console.warn(`[GlobalRadarLayer] RainViewer health check failed (attempt ${attempt}/${maxAttempts}):`,
+                        isTimeout ? 'Timeout after 10s' : healthError.message);
 
                       // Retry si no es el último intento
                       if (attempt < maxAttempts) {
@@ -2189,107 +2342,41 @@ export default function GeoScopeMap({
                           }
                         }, backoffMs);
                       } else {
-                        console.error("[GlobalRadarLayer] Max retry attempts reached, giving up");
-                      }
-                      return;
-                    }
+                        console.warn("[GlobalRadarLayer] Max retry attempts reached, initializing RainViewer without health check");
 
-                    if (destroyed || !mapRef.current) {
-                      console.warn("[GlobalRadarLayer] Map destroyed or not available, aborting initialization");
-                      return;
-                    }
+                        // Último intento: inicializar de todas formas
+                        const style = getSafeMapStyle(map);
+                        if (!style) {
+                          console.error("[GlobalRadarLayer] Style not ready and max retries reached, giving up");
+                          return;
+                        }
 
-                    // Verificar estilo antes de crear la capa
-                    const style = getSafeMapStyle(map);
-                    if (!style) {
-                      console.warn("[GlobalRadarLayer] Style not ready, waiting for styledata event");
-                      // Esperar al styledata para intentar de nuevo
-                      map.once('styledata', () => {
-                        if (!destroyed && mapRef.current && globalRadarLayerRef.current === null) {
-                          console.log("[GlobalRadarLayer] Style loaded, initializing layer");
+                        if (!destroyed && mapRef.current) {
                           const globalRadarLayer = new GlobalRadarLayer({
                             enabled: true,
                             opacity: radarOpacityInit,
-                            provider: radarProviderInit,
+                            provider: "rainviewer",
                           });
-                          layerRegistry.add(globalRadarLayer);
-                          globalRadarLayerRef.current = globalRadarLayer;
-                          console.log("[GlobalRadarLayer] Layer initialized after styledata event");
-                        }
-                      });
-                      return;
-                    }
-
-                    console.log("[GlobalRadarLayer] Initializing layer with radar data", {
-                      status: globalRadar?.status,
-                      framesCount: globalRadar?.frames_count,
-                      opacity: radarOpacityInit,
-                      attempt
-                    });
-
-                    // Verificar estilo una vez más antes de crear la capa
-                    const finalStyle = getSafeMapStyle(map);
-                    if (!finalStyle) {
-                      console.warn("[GlobalRadarLayer] Style not ready, skipping layer creation");
-                      return;
-                    }
-
-                    const globalRadarLayer = new GlobalRadarLayer({
-                      enabled: true,
-                      opacity: radarOpacityInit,
-                      provider: radarProviderInit,
-                    });
-                    const added = layerRegistry.add(globalRadarLayer);
-                    if (added) {
-                      globalRadarLayerRef.current = globalRadarLayer;
-                      console.log("[GlobalRadarLayer] ✓ Layer successfully initialized and added to registry");
-                    } else {
-                      console.warn("[GlobalRadarLayer] Failed to add layer to registry");
-                    }
-                  })
-                  .catch((healthError) => {
-                    clearTimeout(healthTimeout);
-
-                    const isTimeout = healthError.name === 'AbortError';
-                    console.warn(`[GlobalRadarLayer] Health check failed (attempt ${attempt}/${maxAttempts}):`,
-                      isTimeout ? 'Timeout after 10s' : healthError.message);
-
-                    // Retry si no es el último intento
-                    if (attempt < maxAttempts) {
-                      console.log(`[GlobalRadarLayer] Retrying in ${backoffMs}ms...`);
-                      setTimeout(() => {
-                        if (!destroyed && mapRef.current && !globalRadarLayerRef.current) {
-                          void initializeRadarLayer(attempt + 1, maxAttempts);
-                        }
-                      }, backoffMs);
-                    } else {
-                      console.warn("[GlobalRadarLayer] Max retry attempts reached, initializing without health check");
-
-                      // Último intento: inicializar de todas formas
-                      const style = getSafeMapStyle(map);
-                      if (!style) {
-                        console.error("[GlobalRadarLayer] Style not ready and max retries reached, giving up");
-                        return;
-                      }
-
-                      if (!destroyed && mapRef.current) {
-                        const globalRadarLayer = new GlobalRadarLayer({
-                          enabled: true,
-                          opacity: radarOpacityInit,
-                          provider: radarProviderInit,
-                        });
-                        const added = layerRegistry.add(globalRadarLayer);
-                        if (added) {
-                          globalRadarLayerRef.current = globalRadarLayer;
-                          console.log("[GlobalRadarLayer] Layer initialized as fallback after all retries failed");
+                          const added = layerRegistry.add(globalRadarLayer);
+                          if (added) {
+                            globalRadarLayerRef.current = globalRadarLayer;
+                            console.log("[GlobalRadarLayer] RainViewer layer initialized as fallback after all retries failed");
+                          }
                         }
                       }
-                    }
-                  });
-              };
+                    });
+                };
 
-              // Iniciar proceso de inicialización con retry logic
-              void initializeRadarLayer(1, 3);
+                // Iniciar proceso de inicialización con retry logic (SOLO para RainViewer)
+                void initializeRadarLayer(1, 3);
+              } else {
+                // Provider desconocido
+                console.warn(`[GeoScopeMap] Unknown radar provider: ${radarProviderInit}, skipping initialization`);
+                const layerId: LayerId = "radar";
+                layerDiagnostics.recordError(layerId, new Error(`Unknown radar provider: ${radarProviderInit}`), {
+                  provider: radarProviderInit,
+                });
+              }
             } else {
               console.log("[GlobalRadarLayer] Radar disabled in config, skipping initialization");
             }
