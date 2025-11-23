@@ -263,6 +263,9 @@ export type GlobalRadarLayerConfigV2 = {
   history_minutes?: number;
   frame_step?: number;
   animation_speed?: number;
+  // Campos calculados automáticamente por el backend (no se persisten)
+  has_api_key?: boolean;
+  api_key_last4?: string | null;
 };
 
 export type GlobalSatelliteLayerConfigV2 = {
