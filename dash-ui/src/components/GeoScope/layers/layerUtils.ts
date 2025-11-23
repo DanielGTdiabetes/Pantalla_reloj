@@ -1,5 +1,4 @@
-import type maplibregl from "maplibre-gl";
-import type { GeoJSONSource, Popup } from "maplibre-gl";
+import type { Map as MaptilerMap, GeoJSONSource, Popup } from "@maptiler/sdk";
 
 const isFunction = (value: unknown): value is (...args: unknown[]) => unknown =>
   typeof value === "function";
@@ -27,8 +26,8 @@ type PopupWithMethods = Popup & {
   setLngLat(lngLat: { lng: number; lat: number }): PopupWithMethods;
 };
 
-export const getExistingPopup = (map: maplibregl.Map): PopupWithMethods | undefined => {
-  const candidate = (map as maplibregl.Map & { getPopup?: () => Popup | null }).getPopup;
+export const getExistingPopup = (map: MaptilerMap): PopupWithMethods | undefined => {
+  const candidate = (map as MaptilerMap & { getPopup?: () => Popup | null }).getPopup;
   if (!isFunction(candidate)) {
     return undefined;
   }

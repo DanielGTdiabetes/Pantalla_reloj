@@ -1,20 +1,20 @@
-import maplibregl from "maplibre-gl";
+import { Map as MaptilerMap } from "@maptiler/sdk";
 import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
 
 export interface Layer {
   id: string;
   zIndex: number;
-  add(map: maplibregl.Map): void | Promise<void>;
-  remove(map: maplibregl.Map): void;
+  add(map: MaptilerMap): void | Promise<void>;
+  remove(map: MaptilerMap): void;
   setEnabled?(on: boolean): void;
   destroy?(): void;
 }
 
 export class LayerRegistry {
-  private map: maplibregl.Map;
+  private map: MaptilerMap;
   private layers: Layer[] = [];
 
-  constructor(map: maplibregl.Map) {
+  constructor(map: MaptilerMap) {
     this.map = map;
   }
 

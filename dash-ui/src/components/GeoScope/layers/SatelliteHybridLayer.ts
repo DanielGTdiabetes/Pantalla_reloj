@@ -1,4 +1,4 @@
-import maplibregl from "maplibre-gl";
+import { Map as MaptilerMap } from "@maptiler/sdk";
 import type {
   LayerSpecification,
   SymbolLayerSpecification,
@@ -60,7 +60,7 @@ export default class SatelliteHybridLayer implements Layer {
   private labelsEnabled: boolean;
   private labelsStyleUrl: string | null;
   private layerFilter: string | null;
-  private map?: maplibregl.Map;
+  private map?: MaptilerMap;
   private warnedMissingKey = false;
   private readonly rasterSourceId = `${this.id}-raster-source`;
   private readonly rasterLayerId = `${this.id}-raster-layer`;
@@ -84,12 +84,12 @@ export default class SatelliteHybridLayer implements Layer {
     this.zIndex = options.zIndex ?? 5;
   }
 
-  add(map: maplibregl.Map): void {
+  add(map: MaptilerMap): void {
     this.map = map;
     this.syncState();
   }
 
-  remove(map: maplibregl.Map): void {
+  remove(map: MaptilerMap): void {
     this.removeLabelLayers(map);
     this.removeRaster(map);
   }
@@ -215,7 +215,7 @@ export default class SatelliteHybridLayer implements Layer {
     }
   }
 
-  private ensureRasterLayer(map: maplibregl.Map): void {
+  private ensureRasterLayer(map: MaptilerMap): void {
     const expectedTileUrl = `${SATELLITE_TILE_URL}${this.apiKey}`;
     const existingSource = map.getSource(this.rasterSourceId) as maplibregl.Source | undefined;
 
@@ -261,7 +261,7 @@ export default class SatelliteHybridLayer implements Layer {
     }
   }
 
-  private ensureLabelLayersFromUrl(map: maplibregl.Map): void {
+  private ensureLabelLayersFromUrl(map: MaptilerMap): void {
     if (this.labelsLoaded && this.labelLayerIds.length > 0) {
       // Ya están cargadas
       return;
@@ -426,7 +426,7 @@ export default class SatelliteHybridLayer implements Layer {
     }
   }
 
-  private ensureLabelLayers(map: maplibregl.Map): void {
+  private ensureLabelLayers(map: MaptilerMap): void {
     // Eliminar referencias a capas que ya no existen (p.ej. tras reload del estilo)
     this.labelLayerIds = this.labelLayerIds.filter((layerId) => map.getLayer(layerId));
 
@@ -465,7 +465,7 @@ export default class SatelliteHybridLayer implements Layer {
     }
   }
 
-  private removeRaster(map: maplibregl.Map): void {
+  private removeRaster(map: MaptilerMap): void {
     if (map.getLayer(this.rasterLayerId)) {
       try {
         map.removeLayer(this.rasterLayerId);
@@ -482,7 +482,7 @@ export default class SatelliteHybridLayer implements Layer {
     }
   }
 
-  private removeLabelLayers(map: maplibregl.Map): void {
+  private removeLabelLayers(map: MaptilerMap): void {
     for (const layerId of this.labelLayerIds) {
       if (!map.getLayer(layerId)) {
         continue;
@@ -544,7 +544,7 @@ export default class SatelliteHybridLayer implements Layer {
     return hasTextField || looksLikeLabel;
   }
 
-  private findOverlayBeforeId(map: maplibregl.Map): string | undefined {
+  private findOverlayBeforeId(map: MaptilerMap): string | undefined {
     for (const layerId of OVERLAY_LAYER_PREFERENCE) {
       if (map.getLayer(layerId)) {
         return layerId;

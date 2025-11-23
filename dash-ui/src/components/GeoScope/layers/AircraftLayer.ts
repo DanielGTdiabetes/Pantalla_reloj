@@ -1,5 +1,8 @@
-import maplibregl from "maplibre-gl";
+import { Map as MaptilerMap, Popup } from "@maptiler/sdk";
 import type { MapLayerMouseEvent } from "maplibre-gl";
+
+// @ts-expect-error - MapGeoJSONFeature exists but has export issues
+type GeoJSONFeature = import("maplibre-gl").MapGeoJSONFeature;
 import type { FeatureCollection } from "geojson";
 
 import type { FlightsLayerCircleConfig, FlightsLayerRenderMode, FlightsLayerSymbolConfig } from "../../../types/config";
@@ -113,7 +116,7 @@ export default class AircraftLayer implements Layer {
   private opacity: number;
   private maxAgeSeconds: number;
   private cineFocus?: AircraftLayerOptions["cineFocus"];
-  private map?: maplibregl.Map;
+  private map?: MaptilerMap;
   private readonly sourceId = "geoscope-aircraft-source";
   private lastData: FeatureCollection = EMPTY;
   private clusterEnabled: boolean;
@@ -150,7 +153,7 @@ export default class AircraftLayer implements Layer {
     this.currentRenderMode = this.determineRenderMode(false);
   }
 
-  add(map: maplibregl.Map): void {
+  add(map: MaptilerMap): void {
     this.map = map;
     this.updateRenderState(true);
     this.registerEvents(map);
@@ -259,7 +262,7 @@ export default class AircraftLayer implements Layer {
     }
   }
 
-  remove(map: maplibregl.Map): void {
+  remove(map: MaptilerMap): void {
     this.unregisterEvents(map);
     this.removeLayers(map);
     if (map.getSource(this.sourceId)) {
@@ -630,7 +633,7 @@ export default class AircraftLayer implements Layer {
    * Encuentra el ID de la primera capa de símbolos de etiquetas para colocar nuestras capas antes de ella.
    * Retorna undefined si no se encuentra.
    */
-  private findBeforeId(map: maplibregl.Map): string | undefined {
+  private findBeforeId(map: MaptilerMap): string | undefined {
     const style = getSafeMapStyle(map);
     if (!style || !Array.isArray(style.layers)) {
       return undefined;
@@ -1044,7 +1047,7 @@ export default class AircraftLayer implements Layer {
     this.applyStyleScale();
   }
 
-  private removeLayers(map: maplibregl.Map): void {
+  private removeLayers(map: MaptilerMap): void {
     if (map.getLayer(this.id)) {
       map.removeLayer(this.id);
     }
@@ -1262,7 +1265,7 @@ export default class AircraftLayer implements Layer {
     this.applyVisibilityByMode();
   }
 
-  private registerEvents(map: maplibregl.Map) {
+  private registerEvents(map: MaptilerMap) {
     if (this.eventsRegistered) {
       return;
     }
@@ -1296,10 +1299,10 @@ export default class AircraftLayer implements Layer {
 
       if (!getExistingPopup(map)) {
         if (event.lngLat && typeof event.lngLat === "object" && "lng" in event.lngLat && "lat" in event.lngLat) {
-          new maplibregl.Popup({ closeOnClick: false, closeButton: true })
-            .setLngLat(event.lngLat as { lng: number; lat: number })
-            .setHTML(content)
-            .addTo(map);
+          const popup = new Popup();
+          popup.setLngLat(event.lngLat as { lng: number; lat: number });
+          popup.setHTML(content);
+          popup.addTo(map);
         }
       }
     };
@@ -1324,24 +1327,24 @@ export default class AircraftLayer implements Layer {
       }
     };
 
-    map.on("mouseenter", this.id, this.onMouseEnter as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
-    map.on("mouseleave", this.id, this.onMouseLeave as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
-    map.on("mousemove", this.id, this.onMouseMove as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
+    map.on("mouseenter", this.id, this.onMouseEnter as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
+    map.on("mouseleave", this.id, this.onMouseLeave as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
+    map.on("mousemove", this.id, this.onMouseMove as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
     this.eventsRegistered = true;
   }
 
-  private unregisterEvents(map: maplibregl.Map) {
+  private unregisterEvents(map: MaptilerMap) {
     if (!this.eventsRegistered) {
       return;
     }
     if (this.onMouseEnter) {
-      map.off("mouseenter", this.id, this.onMouseEnter as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
+      map.off("mouseenter", this.id, this.onMouseEnter as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
     }
     if (this.onMouseLeave) {
-      map.off("mouseleave", this.id, this.onMouseLeave as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
+      map.off("mouseleave", this.id, this.onMouseLeave as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
     }
     if (this.onMouseMove) {
-      map.off("mousemove", this.id, this.onMouseMove as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
+      map.off("mousemove", this.id, this.onMouseMove as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
     }
     map.getCanvas().style.cursor = "";
     const popup = getExistingPopup(map);

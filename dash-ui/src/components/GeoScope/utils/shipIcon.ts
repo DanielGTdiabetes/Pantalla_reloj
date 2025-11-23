@@ -1,4 +1,4 @@
-import type maplibregl from "maplibre-gl";
+import type { Map as MaptilerMap } from "@maptiler/sdk";
 
 // Promesa global para evitar carreras al registrar el icono
 let shipIconPromise: Promise<boolean> | null = null;
@@ -8,7 +8,7 @@ let shipIconPromise: Promise<boolean> | null = null;
  * @param map Instancia del mapa MapLibre
  * @returns Promise que se resuelve cuando el icono está registrado
  */
-export async function registerShipIcon(map: maplibregl.Map): Promise<boolean> {
+export async function registerShipIcon(map: MaptilerMap): Promise<boolean> {
   // Si ya existe el icono, no hacer nada
   if (map.hasImage("ship")) {
     return true;

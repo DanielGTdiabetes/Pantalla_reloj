@@ -1,4 +1,9 @@
-import type maplibregl from "maplibre-gl";
+import type { Map as MaptilerMap, StyleSpecification } from "@maptiler/sdk";
+
+// @ts-expect-error - These types exist but have export issues
+type SourceSpecification = import("maplibre-gl").SourceSpecification;
+// @ts-expect-error - These types exist but have export issues
+type LayerSpecification = import("maplibre-gl").LayerSpecification;
 import { getSafeMapStyle } from "./safeMapStyle";
 
 /**
@@ -11,7 +16,7 @@ import { getSafeMapStyle } from "./safeMapStyle";
  * @returns true si la operación se ejecutó correctamente, false si se saltó o falló
  */
 export const withSafeMapStyle = (
-  map: maplibregl.Map | undefined | null,
+  map: MaptilerMap | undefined | null,
   operation: () => void,
   layerName: string
 ): boolean => {
@@ -66,9 +71,9 @@ export const withSafeMapStyle = (
  * @returns true si se añadió correctamente
  */
 export const safeAddSource = (
-  map: maplibregl.Map | undefined | null,
+  map: MaptilerMap | undefined | null,
   sourceId: string,
-  sourceSpec: maplibregl.SourceSpecification,
+  sourceSpec: SourceSpecification,
   layerName: string
 ): boolean => {
   return withSafeMapStyle(
@@ -92,8 +97,8 @@ export const safeAddSource = (
  * @returns true si se añadió correctamente
  */
 export const safeAddLayer = (
-  map: maplibregl.Map | undefined | null,
-  layerSpec: maplibregl.LayerSpecification,
+  map: MaptilerMap | undefined | null,
+  layerSpec: LayerSpecification,
   beforeId: string | undefined,
   layerName: string
 ): boolean => {
@@ -116,7 +121,7 @@ export const safeAddLayer = (
  * @returns true if the image exists, false otherwise (including if style is not ready)
  */
 export const safeHasImage = (
-  map: maplibregl.Map | undefined | null,
+  map: MaptilerMap | undefined | null,
   imageId: string
 ): boolean => {
   if (!map) {

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import type { Map as MapLibreMap } from "maplibre-gl";
+import type { Map as MapLibreMap } from "@maptiler/sdk";
 import { getSatelliteTileUrl } from "../../../lib/map/utils/maptilerHelpers";
 import { ensureLabelsOverlay, removeLabelsOverlay } from "../../../lib/map/overlays/vectorLabels";
 import type { NormalizedLabelsOverlay } from "../../../lib/map/labelsOverlay";

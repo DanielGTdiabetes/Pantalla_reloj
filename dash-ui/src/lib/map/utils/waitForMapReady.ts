@@ -1,4 +1,4 @@
-import type maplibregl from "maplibre-gl";
+import type { Map as MaptilerMap } from "@maptiler/sdk";
 import { getSafeMapStyle } from "./safeMapStyle";
 
 /**
@@ -8,12 +8,12 @@ import { getSafeMapStyle } from "./safeMapStyle";
  * 2. El mapa está en estado "idle"
  * 3. El estilo está cargado y es válido (getSafeMapStyle devuelve un objeto válido)
  * 
- * @param map - Instancia del mapa de MapLibre
+ * @param map - Instancia del mapa de MapTiler SDK
  * @param timeoutMs - Timeout máximo en milisegundos (default: 10000)
  * @throws Error si el mapa no está listo después del timeout
  */
 export async function waitForMapReady(
-  map: maplibregl.Map,
+  map: MaptilerMap,
   timeoutMs: number = 10000
 ): Promise<void> {
   const startTime = Date.now();

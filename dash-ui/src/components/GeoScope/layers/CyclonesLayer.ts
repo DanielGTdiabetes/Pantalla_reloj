@@ -1,4 +1,4 @@
-import maplibregl from "maplibre-gl";
+import { Map as MaptilerMap } from "@maptiler/sdk";
 import type { FeatureCollection } from "geojson";
 
 import type { Layer } from "./LayerRegistry";
@@ -16,14 +16,14 @@ export default class CyclonesLayer implements Layer {
   public readonly zIndex = 20;
 
   private enabled: boolean;
-  private map?: maplibregl.Map;
+  private map?: MaptilerMap;
   private readonly sourceId = "geoscope-cyclones-source";
 
   constructor(options: CyclonesLayerOptions = {}) {
     this.enabled = options.enabled ?? false;
   }
 
-  add(map: maplibregl.Map): void {
+  add(map: MaptilerMap): void {
     this.map = map;
     
     // Añadir source de forma segura
@@ -73,7 +73,7 @@ export default class CyclonesLayer implements Layer {
     this.applyVisibility();
   }
 
-  remove(map: maplibregl.Map): void {
+  remove(map: MaptilerMap): void {
     if (map.getLayer(this.id)) {
       map.removeLayer(this.id);
     }

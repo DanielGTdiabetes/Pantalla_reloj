@@ -1,5 +1,8 @@
-import maplibregl from "maplibre-gl";
+import { Map as MaptilerMap, Popup } from "@maptiler/sdk";
 import type { MapLayerMouseEvent } from "maplibre-gl";
+
+// @ts-expect-error - MapGeoJSONFeature exists but has export issues
+type GeoJSONFeature = import("maplibre-gl").MapGeoJSONFeature;
 import type { FeatureCollection } from "geojson";
 
 import type { Layer } from "./LayerRegistry";
@@ -48,7 +51,7 @@ export default class AEMETWarningsLayer implements Layer {
   private opacity: number;
   private minSeverity: AEMETWarningsLayerOptions["minSeverity"];
   private refreshSeconds: number;
-  private map?: maplibregl.Map;
+  private map?: MaptilerMap;
   private readonly sourceId = "geoscope-aemet-warnings-source";
   private lastData: FeatureCollection = EMPTY;
   private refreshTimer?: number;
@@ -65,7 +68,7 @@ export default class AEMETWarningsLayer implements Layer {
     this.refreshSeconds = options.refreshSeconds ?? 900; // 15 minutos por defecto
   }
 
-  add(map: maplibregl.Map): void {
+  add(map: MaptilerMap): void {
     this.map = map;
     
     // Asegurar source
@@ -84,7 +87,7 @@ export default class AEMETWarningsLayer implements Layer {
     this.applyVisibility();
   }
 
-  remove(map: maplibregl.Map): void {
+  remove(map: MaptilerMap): void {
     this.stopRefresh();
     this.unregisterEvents(map);
     
@@ -414,7 +417,7 @@ export default class AEMETWarningsLayer implements Layer {
     }
   }
 
-  private registerEvents(map: maplibregl.Map): void {
+  private registerEvents(map: MaptilerMap): void {
     if (this.eventsRegistered) {
       return;
     }
@@ -443,10 +446,10 @@ export default class AEMETWarningsLayer implements Layer {
 
       if (!getExistingPopup(map)) {
         if (event.lngLat && typeof event.lngLat === "object" && "lng" in event.lngLat && "lat" in event.lngLat) {
-          new maplibregl.Popup({ closeOnClick: false, closeButton: true })
-            .setLngLat(event.lngLat as { lng: number; lat: number })
-            .setHTML(content)
-            .addTo(map);
+          const popup = new Popup();
+          popup.setLngLat(event.lngLat as { lng: number; lat: number });
+          popup.setHTML(content);
+          popup.addTo(map);
         }
       }
     };
@@ -472,35 +475,35 @@ export default class AEMETWarningsLayer implements Layer {
       }
     };
 
-    map.on("mouseenter", this.id, this.onMouseEnter as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
-    map.on("mouseleave", this.id, this.onMouseLeave as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
-    map.on("mousemove", this.id, this.onMouseMove as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
+    map.on("mouseenter", this.id, this.onMouseEnter as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
+    map.on("mouseleave", this.id, this.onMouseLeave as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
+    map.on("mousemove", this.id, this.onMouseMove as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
     
-    map.on("mouseenter", `${this.id}-outline`, this.onMouseEnter as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
-    map.on("mouseleave", `${this.id}-outline`, this.onMouseLeave as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
-    map.on("mousemove", `${this.id}-outline`, this.onMouseMove as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
+    map.on("mouseenter", `${this.id}-outline`, this.onMouseEnter as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
+    map.on("mouseleave", `${this.id}-outline`, this.onMouseLeave as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
+    map.on("mousemove", `${this.id}-outline`, this.onMouseMove as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
     
     this.eventsRegistered = true;
   }
 
-  private unregisterEvents(map: maplibregl.Map): void {
+  private unregisterEvents(map: MaptilerMap): void {
     if (!this.eventsRegistered) {
       return;
     }
 
     if (this.onMouseEnter) {
-      map.off("mouseenter", this.id, this.onMouseEnter as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
-      map.off("mouseenter", `${this.id}-outline`, this.onMouseEnter as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
+      map.off("mouseenter", this.id, this.onMouseEnter as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
+      map.off("mouseenter", `${this.id}-outline`, this.onMouseEnter as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
     }
 
     if (this.onMouseLeave) {
-      map.off("mouseleave", this.id, this.onMouseLeave as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
-      map.off("mouseleave", `${this.id}-outline`, this.onMouseLeave as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
+      map.off("mouseleave", this.id, this.onMouseLeave as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
+      map.off("mouseleave", `${this.id}-outline`, this.onMouseLeave as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
     }
 
     if (this.onMouseMove) {
-      map.off("mousemove", this.id, this.onMouseMove as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
-      map.off("mousemove", `${this.id}-outline`, this.onMouseMove as unknown as (ev: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => void);
+      map.off("mousemove", this.id, this.onMouseMove as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
+      map.off("mousemove", `${this.id}-outline`, this.onMouseMove as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
     }
 
     const popup = getExistingPopup(map);

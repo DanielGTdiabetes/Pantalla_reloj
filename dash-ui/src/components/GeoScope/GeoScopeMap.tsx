@@ -1,10 +1,10 @@
-import maplibregl from "maplibre-gl";
+import { Map as MaptilerMap } from "@maptiler/sdk";
 import type { MapLibreEvent, StyleSpecification } from "maplibre-gl";
 import type { Feature, FeatureCollection, GeoJsonProperties, Geometry, Point } from "geojson";
-import "maplibre-gl/dist/maplibre-gl.css";
+import "@maptiler/sdk/dist/maptiler-sdk.css";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 
-import { apiGet, apiPost, saveConfig, getRainViewerFrames } from "../../lib/api";
+import { apiGet, apiPost, saveConfig } from "../../lib/api";
 import { useConfig } from "../../lib/useConfig";
 import { applyMapStyle, computeStyleUrlFromConfig } from "../../kiosk/mapStyle";
 import { kioskRuntime } from "../../lib/runtimeFlags";
@@ -83,7 +83,7 @@ const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
 const setPaintProperty = (
-  map: maplibregl.Map,
+  map: MaptilerMap,
   layerId: string,
   property: string,
   value: unknown
@@ -216,7 +216,7 @@ const flightsResponseToGeoJSON = (payload: FlightsApiResponse): FeatureCollectio
   };
 };
 
-const applyVectorTheme = (map: maplibregl.Map, theme: MapThemeConfig) => {
+const applyVectorTheme = (map: MaptilerMap, theme: MapThemeConfig) => {
   const style = getSafeMapStyle(map);
   const layers = (Array.isArray(style?.layers) ? style!.layers : []) as Array<{ id?: string; type?: string }>;
   if (!layers.length) {
@@ -276,7 +276,7 @@ const applyVectorTheme = (map: maplibregl.Map, theme: MapThemeConfig) => {
   }
 };
 
-const applyRasterTheme = (map: maplibregl.Map, theme: MapThemeConfig) => {
+const applyRasterTheme = (map: MaptilerMap, theme: MapThemeConfig) => {
   const contrast = typeof theme.contrast === "number" ? theme.contrast : 0;
   const saturationBoost = clamp(0.25 + contrast * 0.25, -1, 1);
   const contrastBoost = clamp(0.12 + contrast * 0.2, -1, 1);
@@ -293,7 +293,7 @@ const applyRasterTheme = (map: maplibregl.Map, theme: MapThemeConfig) => {
 };
 
 const applyThemeToMap = (
-  map: maplibregl.Map,
+  map: MaptilerMap,
   styleType: MapStyleDefinition["type"],
   theme: MapThemeConfig
 ) => {
@@ -1207,7 +1207,7 @@ export default function GeoScopeMap({
   }, []);
 
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
+  const mapRef = useRef<MaptilerMap | null>(null);
   const dprMediaRef = useRef<MediaQueryList | null>(null);
   const viewStateRef = useRef({ ...DEFAULT_VIEW });
   const currentMinZoomRef = useRef(DEFAULT_MIN_ZOOM);
@@ -1259,7 +1259,7 @@ export default function GeoScopeMap({
   // Actualizar API key de la capa satélite/hybrid cuando cambie la configuración
 
 
-  const updateMapView = (map: maplibregl.Map) => {
+  const updateMapView = (map: MaptilerMap) => {
     const viewState = viewStateRef.current;
     if (!viewState) {
       return;
@@ -1339,7 +1339,7 @@ export default function GeoScopeMap({
       }
     };
 
-    const attachStateMachine = (map: maplibregl.Map, reason: string) => {
+    const attachStateMachine = (map: MaptilerMap, reason: string) => {
       mapStateMachineRef.current?.reset("reinitialize");
       const machine = createMapStateMachine({
         isStyleLoaded: () => Boolean(mapRef.current?.isStyleLoaded()),
@@ -1670,7 +1670,7 @@ export default function GeoScopeMap({
         hasMaptilerKey((config as unknown) as any, health as any) ||
         containsApiKey(baseStyleUrlFinal);
 
-      console.info("[MapInit] runtime options before maplibregl.Map", {
+      console.info("[MapInit] runtime options before MaptilerMap", {
         provider: providerForLog,
         base_style_url: maskMaptilerUrl(baseStyleUrlFinal),
         maptiler_key_present: keyPresentForLog,
@@ -1756,7 +1756,7 @@ export default function GeoScopeMap({
         return;
       }
 
-      let map: maplibregl.Map;
+      let map: MaptilerMap;
       try {
         // Prefetch del style.json para validar que contiene 'version' y evitar estados internos inconsistentes.
         let styleForMap: string | StyleSpecification = initialStyle;
@@ -1780,7 +1780,7 @@ export default function GeoScopeMap({
           }
         }
 
-        map = new maplibregl.Map({
+        map = new MaptilerMap({
           container: host,
           style: styleForMap,
           center: viewState ? [viewState.lng, viewState.lat] : [0, 0],
@@ -1793,7 +1793,7 @@ export default function GeoScopeMap({
           renderWorldCopies: runtime.renderWorldCopies,
           trackResize: false
         });
-        console.log("[MapInit] final style used for maplibre", { styleUrlFinal: typeof initialStyle === "string" ? initialStyle : "[object]" });
+        console.log("[MapInit] final style used for MaptilerMap", { styleUrlFinal: typeof initialStyle === "string" ? initialStyle : "[object]" });
       } catch (error) {
         console.error("[GeoScopeMap] Failed to create map:", error);
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -2621,7 +2621,7 @@ export default function GeoScopeMap({
       let lastChecksum: string | null = null;
       let lastMapStyleDescriptor: string | null = null;
 
-      async function pollHealthAndReact(map: maplibregl.Map) {
+      async function pollHealthAndReact(map: MaptilerMap) {
         // Habilitado: detectar cambios de configuración y recargar mapa/estilo si es necesario
         try {
           const h = await fetch("/api/health/full", { cache: "no-store" }).then((r) => r.json());
@@ -2934,7 +2934,7 @@ export default function GeoScopeMap({
   
     // SEGUNDO: Si el satélite está activado, verificar que el estilo esté cargado
     // Función interna para adjuntar la capa cuando el estilo esté listo
-    const attachGlobalSatelliteLayer = (targetMap: maplibregl.Map) => {
+    const attachGlobalSatelliteLayer = (targetMap: MaptilerMap) => {
       // Verificar que el mapa y el estilo estén completamente cargados
       // Proteger contra "Cannot read properties of null (reading 'version')"
       try {
@@ -3333,7 +3333,7 @@ export default function GeoScopeMap({
           setTintColor(null);
         }
   
-        const mapWithCopies = map as maplibregl.Map & {
+        const mapWithCopies = map as MaptilerMap & {
           setRenderWorldCopies?: (value: boolean) => void;
         };
         try {
@@ -3483,7 +3483,7 @@ export default function GeoScopeMap({
         };
         
         try {
-          map.setStyle(styleResult.resolved.style as maplibregl.StyleSpecification, { diff: false });
+          map.setStyle(styleResult.resolved.style as StyleSpecification, { diff: false });
         } catch (error) {
           // Limpiar listeners si falla inmediatamente
           map.off("style.load", handleStyleLoad);

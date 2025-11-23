@@ -1,8 +1,8 @@
-import type maplibregl from "maplibre-gl";
+import type { Map as MaptilerMap } from "@maptiler/sdk";
 import type { StyleSpecification } from "maplibre-gl";
 
 export const getSafeMapStyle = (
-  map?: maplibregl.Map | null
+  map?: MaptilerMap | null
 ): StyleSpecification | null => {
   if (!map) {
     return null;

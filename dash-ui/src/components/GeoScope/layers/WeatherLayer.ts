@@ -1,4 +1,4 @@
-import maplibregl from "maplibre-gl";
+import { Map as MaptilerMap } from "@maptiler/sdk";
 import type { FeatureCollection } from "geojson";
 
 import type { Layer } from "./LayerRegistry";
@@ -22,7 +22,7 @@ export default class WeatherLayer implements Layer {
   private enabled: boolean;
   private opacity: number;
   private refreshSeconds: number;
-  private map?: maplibregl.Map;
+  private map?: MaptilerMap;
   private readonly sourceId = "geoscope-weather-source";
   private lastData: FeatureCollection = EMPTY;
   private refreshTimer?: number;
@@ -33,7 +33,7 @@ export default class WeatherLayer implements Layer {
     this.refreshSeconds = options.refreshSeconds ?? 900; // 15 minutos por defecto
   }
 
-  add(map: maplibregl.Map): void {
+  add(map: MaptilerMap): void {
     const layerId: LayerId = "weather";
     this.map = map;
     
@@ -103,7 +103,7 @@ export default class WeatherLayer implements Layer {
     }
   }
 
-  remove(map: maplibregl.Map): void {
+  remove(map: MaptilerMap): void {
     this.stopRefresh();
     
     if (map.getLayer(this.id)) {

@@ -1,5 +1,5 @@
-import maplibregl from "maplibre-gl";
-import type { MapLibreEvent } from "maplibre-gl";
+import { Map as MaptilerMap } from "@maptiler/sdk";
+import type { MapLibreEvent as MaptilerMapLibreEvent } from "@maptiler/sdk";
 
 import type { Layer } from "./LayerRegistry";
 import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
@@ -24,7 +24,7 @@ export default class GlobalSatelliteLayer implements Layer {
   private tileUrl?: string; // URL template actual del frame
   private minZoom: number; // minzoom para la source (default: 1)
   private maxZoom: number; // maxzoom para la source (default: 9)
-  private map?: maplibregl.Map;
+  private map?: MaptilerMap;
   private readonly sourceId = "geoscope-global-satellite-source";
   private errorCount: number = 0; // Contador de errores 400 consecutivos
   private readonly MAX_ERRORS = 10; // Máximo de errores antes de deshabilitar temporalmente
@@ -48,7 +48,7 @@ export default class GlobalSatelliteLayer implements Layer {
     }
   }
 
-  add(map: maplibregl.Map): void {
+  add(map: MaptilerMap): void {
     this.map = map;
     this.setupErrorHandlers();
     this.ensureLayer();
@@ -56,7 +56,7 @@ export default class GlobalSatelliteLayer implements Layer {
     this.applyOpacity();
   }
 
-  private errorHandler: ((e: maplibregl.MapLibreEvent & { error?: unknown }) => void) | null = null;
+  private errorHandler: ((e: MaptilerMapLibreEvent & { error?: unknown }) => void) | null = null;
 
   private setupErrorHandlers(): void {
     if (!this.map) return;
@@ -68,7 +68,7 @@ export default class GlobalSatelliteLayer implements Layer {
     }
 
     // Crear nuevo handler que solo capture errores específicos de GIBS
-    this.errorHandler = (e: maplibregl.MapLibreEvent & { error?: unknown }) => {
+    this.errorHandler = (e: MaptilerMapLibreEvent & { error?: unknown }) => {
       const error = e.error as { status?: number; message?: string; url?: string; source?: { id?: string } } | undefined;
       
       // Verificar que el error sea específicamente de la source de GIBS
@@ -109,7 +109,7 @@ export default class GlobalSatelliteLayer implements Layer {
     this.map.on("error", this.errorHandler);
   }
 
-  remove(map: maplibregl.Map): void {
+  remove(map: MaptilerMap): void {
     // Limpiar error handler primero
     if (this.map && this.errorHandler) {
       this.map.off("error", this.errorHandler);
