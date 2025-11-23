@@ -117,7 +117,7 @@ export default class GlobalRadarLayer implements Layer {
       return;
     }
 
-    // Si el provider es "rainviewer", forzar a "maptiler_weather" (RainViewer está deprecado)
+    // Inicializar radar de MapTiler Weather (provider maptiler_weather)
     // NUNCA ejecutar código legacy de RainViewer si el provider es maptiler_weather
     if (provider === "maptiler_weather") {
       layerDiagnostics.recordInitializationAttempt(layerId);
