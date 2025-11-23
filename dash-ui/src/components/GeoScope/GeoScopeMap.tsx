@@ -2142,14 +2142,14 @@ export default function GeoScopeMap({
                 layerDiagnostics.setEnabled(layerId, true);
                 
                 try {
-                  // Esperar a que el mapa esté listo (sin reintentos complejos)
-                  await waitForMapReady(map);
                   if (destroyed || !mapRef.current) {
                     console.warn("[GeoScopeMap] Map destroyed or not available, aborting MapTiler Weather radar initialization");
                     return;
                   }
 
                   // Verificar que el estilo esté cargado
+                  // initLayersSafe se ejecuta después del evento "load", así que el mapa debería estar listo
+                  // GlobalRadarLayer.add() ya tiene su propia lógica de waitForMapReady si es necesario
                   const style = getSafeMapStyle(map);
                   if (!style) {
                     console.warn("[GeoScopeMap] Style not ready for MapTiler Weather radar, waiting for styledata event");
@@ -2180,7 +2180,7 @@ export default function GeoScopeMap({
 
                   layerDiagnostics.updatePreconditions(layerId, { styleLoaded: true });
 
-                  // Inicializar la capa directamente - GlobalRadarLayer se encarga de todo
+                  // Inicializar la capa directamente - GlobalRadarLayer.add() se encarga de waitForMapReady si es necesario
                   const globalRadarLayer = new GlobalRadarLayer({
                     enabled: true,
                     opacity: radarOpacityInit,
