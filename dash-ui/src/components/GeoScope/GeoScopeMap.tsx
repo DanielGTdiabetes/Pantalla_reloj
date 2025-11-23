@@ -2517,9 +2517,15 @@ export default function GeoScopeMap({
               ? configAsV2Init.opensky
               : mergedConfig.opensky;
 
+            // Interpretar enabled = true cuando no esté definido (config v2)
+            const openskyEnabled =
+              typeof (openskyConfig as any)?.enabled === "boolean"
+                ? (openskyConfig as any).enabled
+                : true;
+
             // Solo inicializar si está habilitada
             const layerId: LayerId = "flights";
-            const isEnabled = flightsConfig.enabled && openskyConfig.enabled;
+            const isEnabled = flightsConfig.enabled && openskyEnabled;
             
             layerDiagnostics.setEnabled(layerId, isEnabled);
             layerDiagnostics.updatePreconditions(layerId, {
@@ -4201,7 +4207,12 @@ export default function GeoScopeMap({
     const flightsConfig = merged.layers.flights;
     const openskyConfig = merged.opensky;
 
-    if (!flightsConfig.enabled || !openskyConfig.enabled) {
+    const openskyEnabled =
+      typeof (openskyConfig as any)?.enabled === "boolean"
+        ? (openskyConfig as any).enabled
+        : true;
+
+    if (!flightsConfig.enabled || !openskyEnabled) {
       layerDiagnostics.setEnabled("flights", false);
       return;
     }
