@@ -177,7 +177,17 @@ const isFeatureCollection = <G extends Geometry, P extends GeoJsonProperties = G
   return candidate.type === "FeatureCollection" && Array.isArray(candidate.features);
 };
 
-const flightsResponseToGeoJSON = (payload: FlightsApiResponse): FeatureCollection<Point, FlightFeatureProperties> => {
+const flightsResponseToGeoJSON = (
+  payload: FlightsApiResponse | FeatureCollection<Point, FlightFeatureProperties>
+): FeatureCollection<Point, FlightFeatureProperties> => {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Invalid flights payload: expected object");
+  }
+
+  if (isFeatureCollection<Point, FlightFeatureProperties>(payload)) {
+    return payload;
+  }
+
   const timestampFallback = typeof payload.ts === "number" ? payload.ts : Math.floor(Date.now() / 1000);
   const features: Array<Feature<Point, FlightFeatureProperties>> = [];
 
@@ -1233,6 +1243,7 @@ export default function GeoScopeMap({
   const stormModeActiveRef = useRef(false);
   const respectDefaultRef = useRef(false);
   const [tintColor, setTintColor] = useState<string | null>(null);
+  const [mapReady, setMapReady] = useState(false);
   const mapStateMachineRef = useRef<MapStateMachine | null>(null);
   const runtimeRef = useRef<RuntimePreferences | null>(null);
   const shouldApplyTheme = (): boolean => {
@@ -1273,6 +1284,12 @@ export default function GeoScopeMap({
       pitch: viewState.pitch,
       bearing: 0
     });
+  };
+
+  const updateMapReadyState = (): boolean => {
+    const ready = Boolean(mapRef.current && mapRef.current.isStyleLoaded());
+    setMapReady(ready);
+    return ready;
   };
 
   useEffect(() => {
@@ -1451,6 +1468,7 @@ export default function GeoScopeMap({
           applyThemeToMap(map, styleType, theme);
         }
       }
+      updateMapReadyState();
       safeFit();
       mapStateMachineRef.current?.notifyStyleData("load");
       mapStateMachineRef.current?.notifyIdle("load");
@@ -1475,6 +1493,7 @@ export default function GeoScopeMap({
           applyThemeToMap(map, styleType, theme);
         }
       }
+      updateMapReadyState();
       safeFit();
       mapStateMachineRef.current?.notifyStyleData();
     };
@@ -1864,6 +1883,13 @@ export default function GeoScopeMap({
         refreshRuntimePolicy(runtime.respectReducedMotion);
 
         attachStateMachine(map, "initial-style");
+
+        void waitForMapReady(map).then(() => {
+          if (!destroyed) {
+            const ready = updateMapReadyState();
+            console.log("[GeoScopeMap] Map ready state after waitForMapReady:", ready);
+          }
+        });
       } catch (error) {
         console.error("[GeoScopeMap] Error configurando mapa después de creación:", error);
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -2524,7 +2550,7 @@ export default function GeoScopeMap({
             const openskyEnabled = (openskyConfig.enabled ?? true) && (openskyConfig.oauth2?.has_credentials ?? true);
             const isEnabled = flightsEnabled && openskyEnabled;
 
-            console.log("[GeoScopeMap] Flights layer config:", {
+            console.log("[GeoScopeMap] init flights layer - config:", {
               flightsEnabled,
               openskyEnabled,
               provider: flightsConfig.provider,
@@ -2535,12 +2561,6 @@ export default function GeoScopeMap({
             layerDiagnostics.updatePreconditions(layerId, {
               configEnabled: isEnabled,
             });
-
-            const mapReady = mapRef.current && mapRef.current.isStyleLoaded();
-            if (!mapReady) {
-              console.warn("[GeoScopeMap] AircraftLayer init skipped: map not ready or style not loaded");
-              return;
-            }
 
             if (!isEnabled) {
               layerDiagnostics.setState(layerId, "disabled");
@@ -2641,6 +2661,23 @@ export default function GeoScopeMap({
                 // Continuar sin la capa de aviones
               }
             };
+
+            const map = mapRef.current;
+            if (!map) {
+              console.warn("[GeoScopeMap] AircraftLayer init skipped: map not available");
+              return;
+            }
+
+            if (!map.isStyleLoaded()) {
+              console.warn("[GeoScopeMap] AircraftLayer init waiting for map/style to be ready");
+              void waitForMapReady(map).then(() => {
+                if (!destroyed) {
+                  updateMapReadyState();
+                  void initializeAircraftLayer();
+                }
+              });
+              return;
+            }
 
             void initializeAircraftLayer();
           } catch (aircraftInitError) {
@@ -3051,6 +3088,7 @@ export default function GeoScopeMap({
       lightningLayerRef.current = null;
       weatherLayerRef.current = null;
       shipsLayerRef.current = null;
+      setMapReady(false);
 
       const map = mapRef.current;
       if (map) {
@@ -4233,7 +4271,9 @@ export default function GeoScopeMap({
 
   // useEffect para cargar datos de flights periódicamente
   useEffect(() => {
-    if (!config || !mapRef.current) {
+    console.log("[GeoScopeMap] flights useEffect mounted");
+
+    if (!config || !mapRef.current || !mapReady) {
       return;
     }
 
@@ -4259,7 +4299,7 @@ export default function GeoScopeMap({
       return;
     }
 
-    console.log("[GeoScopeMap] Flights polling effect mounted:", {
+    console.log("[GeoScopeMap] flights polling config:", {
       flightsEnabled,
       openskyEnabled,
       provider: flightsConfig.provider,
@@ -4300,19 +4340,19 @@ export default function GeoScopeMap({
         if (params.toString()) {
           url += `?${params.toString()}`;
         }
-        console.log("[GeoScopeMap] Loading flights data from:", url);
+        console.log("[GeoScopeMap] requesting /api/layers/flights with URL:", url);
 
         // Validar respuesta del backend con retry
         const response = await retryWithBackoff(
           async () => {
-            const resp = await apiGet<FlightsApiResponse | undefined>(url);
+            const resp = await apiGet<FlightsApiResponse | FeatureCollection<Point, FlightFeatureProperties> | undefined>(url);
 
             // Validar estructura de respuesta
             if (!resp) {
               throw new Error("Empty response from backend");
             }
 
-            if (resp.disabled) {
+            if (!isFeatureCollection<Point, FlightFeatureProperties>(resp) && resp.disabled) {
               layerDiagnostics.setState(layerId, "disabled", {
                 reason: "backend_disabled",
               });
@@ -4349,7 +4389,9 @@ export default function GeoScopeMap({
           return;
         }
 
-        if (!response.disabled) {
+        const responseDisabled = !isFeatureCollection<Point, FlightFeatureProperties>(response) && response.disabled;
+
+        if (!responseDisabled) {
           try {
             const featureCollection = flightsResponseToGeoJSON(response);
             aircraftLayer.updateData(featureCollection);
@@ -4387,7 +4429,7 @@ export default function GeoScopeMap({
     return () => {
       clearInterval(intervalId);
     };
-  }, [config]);
+  }, [config, mapReady]);
   
   // useEffect para cargar datos de ships periódicamente
   useEffect(() => {

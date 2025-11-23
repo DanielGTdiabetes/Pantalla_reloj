@@ -193,16 +193,18 @@ export default class AircraftLayer implements Layer {
           const error = iconError instanceof Error ? iconError : new Error(String(iconError));
           layerDiagnostics.recordError(layerId, error, {
             phase: "icon_registration",
-          });
-          console.warn("[AircraftLayer] Failed to register plane icon:", iconError);
-        }
+        });
+        console.warn("[AircraftLayer] Failed to register plane icon:", iconError);
       }
+    }
 
-      // Asegurar que el source existe (idempotente)
-      try {
-        this.ensureSource();
-      } catch (sourceError) {
-        const error = sourceError instanceof Error ? sourceError : new Error(String(sourceError));
+    console.log("[AircraftLayer] ensureFlightsLayer - creating/updating source+layers");
+
+    // Asegurar que el source existe (idempotente)
+    try {
+      this.ensureSource();
+    } catch (sourceError) {
+      const error = sourceError instanceof Error ? sourceError : new Error(String(sourceError));
         layerDiagnostics.recordError(layerId, error, {
           phase: "ensure_source",
         });
@@ -361,7 +363,7 @@ export default class AircraftLayer implements Layer {
   updateData(data: FeatureCollection): void {
     const layerId: LayerId = "flights";
 
-    console.log("[AircraftLayer] updateData called with features:", Array.isArray((data as any)?.features)
+    console.log("[AircraftLayer] updateData called, features:", Array.isArray((data as any)?.features)
       ? (data as any).features.length
       : 0);
 
