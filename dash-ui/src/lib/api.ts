@@ -32,15 +32,37 @@ const withBase = (path: string) => {
 };
 
 const readJson = async (response: Response): Promise<unknown> => {
-  const text = await response.text();
+  let text: string;
+  try {
+    text = await response.text();
+  } catch (textError) {
+    // Si ni siquiera podemos leer el texto, lanzar error
+    const error = new Error(`Failed to read response text: ${textError instanceof Error ? textError.message : String(textError)}`);
+    console.warn("Failed to read response text", {
+      status: response.status,
+      statusText: response.statusText,
+      error: textError,
+    });
+    throw error;
+  }
+  
   if (!text) {
     return undefined;
   }
+  
   try {
     return JSON.parse(text) as unknown;
   } catch (error) {
-    console.warn("Failed to parse API response as JSON", error);
-    return undefined;
+    // Si falla el parseo, lanzar error con información útil
+    const parseError = error as Error;
+    const errorMessage = `JSON parse failed: ${parseError.message}. Response preview: ${text.substring(0, 200)}`;
+    console.warn("Failed to parse API response as JSON", {
+      status: response.status,
+      statusText: response.statusText,
+      textPreview: text.substring(0, 200),
+      error: parseError.message,
+    });
+    throw new Error(errorMessage);
   }
 };
 
@@ -77,11 +99,40 @@ const apiRequest = async <T>(path: string, init?: RequestInit): Promise<T> => {
     headers,
     cache: isConfigEndpoint ? "no-store" : initCache ?? "default",
   });
+  
+  // Intentar leer JSON siempre, incluso si response.ok es false
+  let body: unknown;
+  try {
+    body = await readJson(response);
+  } catch (parseError) {
+    // Si falla el parseo, construir un objeto de error razonable
+    const errorMessage = parseError instanceof Error ? parseError.message : String(parseError);
+    body = {
+      error: "Failed to parse response as JSON",
+      status: response.status,
+      statusText: response.statusText,
+      parseError: errorMessage,
+    };
+  }
+  
   if (!response.ok) {
-    const body = await readJson(response);
     throw new ApiError(response.status, body);
   }
-  return (await readJson(response)) as T;
+  
+  // Si el body es undefined o null, intentar construir un fallback según el endpoint
+  if (body === undefined || body === null) {
+    // Para endpoints específicos, devolver un objeto de error estructurado
+    if (path.includes("/opensky/status")) {
+      body = {
+        enabled: false,
+        reachable: false,
+        error: "Failed to parse OpenSky status response",
+        details: {},
+      };
+    }
+  }
+  
+  return body as T;
 };
 
 export const API_ORIGIN = BASE;

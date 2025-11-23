@@ -5673,26 +5673,120 @@ def migrate_config_endpoint(to: int = 2, backup: bool = True) -> Dict[str, Any]:
 
 
 @app.get("/api/opensky/status")
-def get_opensky_status() -> Dict[str, Any]:
-    config = config_manager.read()
-    status = opensky_service.get_status(config)
-    now = time.time()
-    last_fetch_ts = status.get("last_fetch_ts")
-    status["last_fetch_age"] = int(now - last_fetch_ts) if last_fetch_ts else None
-    auth_details = status.get("auth")
-    if isinstance(auth_details, dict):
-        status["has_credentials"] = bool(auth_details.get("has_credentials"))
-        status["token_cached"] = bool(auth_details.get("token_cached"))
-        status["expires_in_sec"] = auth_details.get("expires_in_sec")
-    else:
-        status["has_credentials"] = bool(status.get("has_credentials"))
-        status["token_cached"] = bool(status.get("token_cached"))
-    status["bbox"] = config.opensky.bbox.model_dump()
-    status["extended"] = int(config.opensky.extended)
-    status["cluster"] = bool(config.opensky.cluster)
-    if not status.get("has_credentials") and status.get("effective_poll", 0) < 10:
-        status["poll_warning"] = "anonymous_minimum_enforced"
-    return status
+def get_opensky_status() -> JSONResponse:
+    """
+    Devuelve el estado de OpenSky siempre en formato JSON válido, incluso en caso de error.
+    """
+    try:
+        config = config_manager.read()
+        
+        # Verificar si OpenSky está desactivado en la configuración
+        opensky_cfg = getattr(config, "opensky", None)
+        layers = getattr(config, "layers", None)
+        flights_layer = getattr(layers, "flights", None) if layers else None
+        
+        enabled_in_config = bool(
+            (flights_layer.enabled if flights_layer else False)
+            and (getattr(opensky_cfg, "enabled", True) if opensky_cfg else True)
+        )
+        
+        if not enabled_in_config:
+            return JSONResponse(
+                content={
+                    "enabled": False,
+                    "reachable": False,
+                    "error": "OpenSky integration is disabled in configuration",
+                    "details": {},
+                },
+                status_code=200,
+            )
+        
+        # Intentar obtener el estado real
+        status = opensky_service.get_status(config)
+        now = time.time()
+        last_fetch_ts = status.get("last_fetch_ts")
+        status["last_fetch_age"] = int(now - last_fetch_ts) if last_fetch_ts else None
+        auth_details = status.get("auth")
+        if isinstance(auth_details, dict):
+            status["has_credentials"] = bool(auth_details.get("has_credentials"))
+            status["token_cached"] = bool(auth_details.get("token_cached"))
+            status["expires_in_sec"] = auth_details.get("expires_in_sec")
+        else:
+            status["has_credentials"] = bool(status.get("has_credentials"))
+            status["token_cached"] = bool(status.get("token_cached"))
+        
+        # Añadir campos bbox, extended, cluster si están disponibles
+        try:
+            status["bbox"] = config.opensky.bbox.model_dump()
+            status["extended"] = int(config.opensky.extended)
+            status["cluster"] = bool(config.opensky.cluster)
+        except Exception:
+            # Si falla, usar valores por defecto
+            status["bbox"] = {"lamin": 39.5, "lamax": 41.0, "lomin": -1.0, "lomax": 1.5}
+            status["extended"] = 0
+            status["cluster"] = False
+        
+        if not status.get("has_credentials") and status.get("effective_poll", 0) < 10:
+            status["poll_warning"] = "anonymous_minimum_enforced"
+        
+        # Normalizar respuesta al formato esperado
+        response = {
+            "enabled": bool(status.get("enabled", True)),
+            "reachable": status.get("status") == "ok",
+            "error": status.get("last_error") if status.get("status") != "ok" else None,
+            "details": {
+                "status": status.get("status", "unknown"),
+                "mode": status.get("mode", "bbox"),
+                "has_credentials": status.get("has_credentials", False),
+                "last_fetch_ok": status.get("last_fetch_ok"),
+                "last_error": status.get("last_error"),
+            },
+            # Mantener campos adicionales para compatibilidad
+            **{k: v for k, v in status.items() if k not in ["enabled", "reachable", "error", "details"]},
+        }
+        
+        return JSONResponse(content=response, status_code=200)
+        
+    except Exception as exc:  # noqa: BLE001
+        # Capturar cualquier excepción y devolver JSON de error válido
+        logger.warning("OpenSky status check failed", exc_info=exc)
+        
+        # Determinar si está habilitado en config (intentar leerlo aunque haya fallado antes)
+        enabled = True
+        try:
+            config = config_manager.read()
+            opensky_cfg = getattr(config, "opensky", None)
+            layers = getattr(config, "layers", None)
+            flights_layer = getattr(layers, "flights", None) if layers else None
+            enabled = bool(
+                (flights_layer.enabled if flights_layer else False)
+                and (getattr(opensky_cfg, "enabled", True) if opensky_cfg else True)
+            )
+        except Exception:
+            # Si ni siquiera podemos leer la config, asumir habilitado
+            enabled = True
+        
+        # Construir mensaje de error legible
+        error_message = "OpenSky status check failed"
+        exception_type = type(exc).__name__
+        exception_msg = str(exc)
+        
+        # Recortar mensaje si es muy largo
+        if len(exception_msg) > 200:
+            exception_msg = exception_msg[:197] + "..."
+        
+        return JSONResponse(
+            content={
+                "enabled": enabled,
+                "reachable": False,
+                "error": error_message,
+                "details": {
+                    "exception": exception_type,
+                    "message": exception_msg,
+                },
+            },
+            status_code=200,  # Siempre 200 OK, el error está en el JSON
+        )
 
 
 _opensky_last_error: Optional[str] = None

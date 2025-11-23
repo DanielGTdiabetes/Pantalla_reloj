@@ -10,6 +10,7 @@ import {
   withConfigDefaultsV2,
 } from "../config/defaults_v2";
 import {
+  ApiError,
   getCalendarPreview,
   getConfigV2,
   getLightningStatus,
@@ -491,7 +492,21 @@ export const ConfigPage: React.FC = () => {
           const opensky = await getOpenSkyStatus();
           setOpenskyStatus(opensky);
         } catch (error) {
-          console.error("Error loading OpenSky status:", error);
+          // Manejar error de forma limpia sin bloquear la página
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.warn("[Config/OpenSky] Failed to load status", {
+            error: errorMessage,
+            status: error instanceof ApiError ? error.status : undefined,
+          });
+          // Establecer un estado de error estructurado
+          setOpenskyStatus({
+            enabled: false,
+            reachable: false,
+            error: "Failed to load OpenSky status",
+            details: {
+              error: errorMessage,
+            },
+          } as any);
         }
       } catch (error) {
         console.error("Error loading initial data:", error);
