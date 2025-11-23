@@ -2598,98 +2598,108 @@ export default function GeoScopeMap({
               return;
             }
 
-            const initializeAircraftLayer = async () => {
-              try {
-                layerDiagnostics.recordInitializationAttempt(layerId);
+            const ensureAircraftLayer = async (): Promise<AircraftLayer | null> => {
+              const map = mapRef.current;
+              const layerRegistryCurrent = layerRegistryRef.current;
 
-                // Verificar precondiciones
-                const preconditions = verifyLayerPreconditions(layerId);
-                if (!preconditions.canInitialize) {
-                  layerDiagnostics.setState(layerId, "waiting_style", {
-                    missingPreconditions: preconditions.missingPreconditions,
-                  });
-                  console.warn(`[GeoScopeMap] AircraftLayer preconditions not met: ${preconditions.missingPreconditions.join(", ")}`);
-                  return;
-                }
+              console.log("[GeoScopeMap] Initializing AircraftLayer with config:", {
+                flightsEnabled,
+                openskyEnabled,
+                provider: flightsConfig.provider,
+                mapReady,
+              });
 
-                // Verificar que el estilo esté listo antes de crear AircraftLayer
-                const style = getSafeMapStyle(map);
-                if (!style) {
-                  layerDiagnostics.setState(layerId, "waiting_style");
-                  console.warn("[GeoScopeMap] Style not ready for AircraftLayer, skipping initialization");
-                  return;
-                }
-
-                console.log("[GeoScopeMap] Initializing AircraftLayer with config", {
-                  flightsEnabled,
-                  openskyEnabled,
-                  renderMode: flightsConfig.render_mode,
-                  provider: flightsConfig.provider,
-                });
-                let spriteAvailable = false;
-                try {
-                  spriteAvailable = await hasSprite(style);
-                } catch (spriteError) {
-                  const error = spriteError instanceof Error ? spriteError : new Error(String(spriteError));
-                  layerDiagnostics.recordError(layerId, error, {
-                    phase: "sprite_check",
-                  });
-                  console.warn("[GeoScopeMap] Error checking sprite availability:", spriteError);
-                  spriteAvailable = false;
-                }
-
-                if (destroyed || !mapRef.current) {
-                  layerDiagnostics.setState(layerId, "error", {
-                    reason: "map_destroyed",
-                  });
-                  console.warn("[GeoScopeMap] Map destroyed/unavailable during AircraftLayer init");
-                  return;
-                }
-
-                if (aircraftLayerRef.current) {
-                  aircraftLayerRef.current.destroy?.();
-                  aircraftLayerRef.current = null;
-                }
-
-                const aircraftLayer = new AircraftLayer({
-                  enabled: flightsConfig.enabled,
-                  opacity: flightsConfig.opacity,
-                  maxAgeSeconds: flightsConfig.max_age_seconds,
-                  cluster: openskyConfig.cluster,
-                  styleScale: flightsConfig.styleScale ?? 1,
-                  renderMode: flightsConfig.render_mode ?? "auto",
-                  circle: flightsConfig.circle,
-                  symbol: flightsConfig.symbol,
-                  spriteAvailable,
-                });
-                const added = layerRegistry.add(aircraftLayer);
-                if (added) {
-                  aircraftLayerRef.current = aircraftLayer;
-
-                  // Exponer referencia de debug
-                  (window as any).__pantallaDebug = (window as any).__pantallaDebug || {};
-                  (window as any).__pantallaDebug.aircraftLayer = aircraftLayer;
-                  console.log("[GeoScopeMap] __pantallaDebug.aircraftLayer disponible para inspección");
-                } else {
-                  console.warn("[GeoScopeMap] AircraftLayer failed to add to registry");
-                  return;
-                }
-
-                // Asegurar que la capa se inicialice correctamente
-                void aircraftLayer.ensureFlightsLayer();
-                layerDiagnostics.setState(layerId, "ready", {
-                  spriteAvailable,
-                });
-                console.log("[GeoScopeMap] AircraftLayer initialized successfully");
-              } catch (aircraftError) {
-                const error = aircraftError instanceof Error ? aircraftError : new Error(String(aircraftError));
-                layerDiagnostics.recordError(layerId, error, {
-                  phase: "initialization",
-                });
-                console.error("[GeoScopeMap] AircraftLayer failed:", aircraftError);
-                console.trace("[GeoScopeMap] AircraftLayer trace");
-                // Continuar sin la capa de aviones
+              if (!map) {
+                console.warn("[GeoScopeMap] AircraftLayer init skipped: map not available");
+                return null;
               }
+
+              if (!mapReady || !map.isStyleLoaded()) {
+                console.warn("[GeoScopeMap] AircraftLayer init waiting for map/style to be ready");
+                return null;
+              }
+
+              if (!layerRegistryCurrent) {
+                console.warn("[GeoScopeMap] AircraftLayer failed to add to LayerRegistry because registry is not ready");
+                return null;
+              }
+
+              if (aircraftLayerRef.current) {
+                console.log("[GeoScopeMap] AircraftLayer already exists, reusing current instance");
+                return aircraftLayerRef.current;
+              }
+
+              layerDiagnostics.recordInitializationAttempt(layerId);
+
+              // Verificar precondiciones
+              const preconditions = verifyLayerPreconditions(layerId);
+              if (!preconditions.canInitialize) {
+                layerDiagnostics.setState(layerId, "waiting_style", {
+                  missingPreconditions: preconditions.missingPreconditions,
+                });
+                console.warn(`[GeoScopeMap] AircraftLayer preconditions not met: ${preconditions.missingPreconditions.join(", ")}`);
+                return null;
+              }
+
+              // Verificar que el estilo esté listo antes de crear AircraftLayer
+              const style = getSafeMapStyle(map);
+              if (!style) {
+                layerDiagnostics.setState(layerId, "waiting_style");
+                console.warn("[GeoScopeMap] Style not ready for AircraftLayer, skipping initialization");
+                return null;
+              }
+
+              let spriteAvailable = false;
+              try {
+                spriteAvailable = await hasSprite(style);
+              } catch (spriteError) {
+                const error = spriteError instanceof Error ? spriteError : new Error(String(spriteError));
+                layerDiagnostics.recordError(layerId, error, {
+                  phase: "sprite_check",
+                });
+                console.warn("[GeoScopeMap] Error checking sprite availability:", spriteError);
+                spriteAvailable = false;
+              }
+
+              if (destroyed || !mapRef.current) {
+                layerDiagnostics.setState(layerId, "error", {
+                  reason: "map_destroyed",
+                });
+                console.warn("[GeoScopeMap] Map destroyed/unavailable during AircraftLayer init");
+                return null;
+              }
+
+              const aircraftLayer = new AircraftLayer({
+                enabled: flightsConfig.enabled,
+                opacity: flightsConfig.opacity,
+                maxAgeSeconds: flightsConfig.max_age_seconds,
+                cluster: openskyConfig.cluster,
+                styleScale: flightsConfig.styleScale ?? 1,
+                renderMode: flightsConfig.render_mode ?? "auto",
+                circle: flightsConfig.circle,
+                symbol: flightsConfig.symbol,
+                spriteAvailable,
+              });
+              const added = layerRegistryCurrent.add(aircraftLayer);
+              if (added) {
+                aircraftLayerRef.current = aircraftLayer;
+
+                // Exponer referencia de debug
+                (window as any).__pantallaDebug = (window as any).__pantallaDebug || {};
+                (window as any).__pantallaDebug.aircraftLayer = aircraftLayer;
+                console.log("[GeoScopeMap] __pantallaDebug.aircraftLayer disponible para inspección");
+              } else {
+                console.warn("[GeoScopeMap] AircraftLayer failed to add to LayerRegistry");
+                return null;
+              }
+
+              // Asegurar que la capa se inicialice correctamente
+              void aircraftLayer.ensureFlightsLayer();
+              layerDiagnostics.setState(layerId, "ready", {
+                spriteAvailable,
+              });
+              console.log("[GeoScopeMap] AircraftLayer initialized and registered in LayerRegistry");
+              return aircraftLayer;
             };
 
             const map = mapRef.current;
@@ -2703,13 +2713,13 @@ export default function GeoScopeMap({
               void waitForMapReady(map).then(() => {
                 if (!destroyed) {
                   updateMapReadyState();
-                  void initializeAircraftLayer();
+                  void ensureAircraftLayer();
                 }
               });
               return;
             }
 
-            void initializeAircraftLayer();
+            void ensureAircraftLayer();
           } catch (aircraftInitError) {
             console.error("[GeoScopeMap] AircraftLayer initialization setup failed:", aircraftInitError);
             console.trace("[GeoScopeMap] AircraftLayer setup trace");
@@ -4336,6 +4346,11 @@ export default function GeoScopeMap({
       return;
     }
 
+    if (!aircraftLayerRef.current) {
+      console.log("[GeoScopeMap] Flights polling waiting for AircraftLayer to be ready");
+      return;
+    }
+
     console.log("[GeoScopeMap] flights polling config:", {
       flightsEnabled,
       openskyEnabled,
@@ -4425,7 +4440,10 @@ export default function GeoScopeMap({
 
         const aircraftLayer = aircraftLayerRef.current;
         if (!aircraftLayer) {
-          console.warn("[GeoScopeMap] Flights data received but AircraftLayer is not initialized");
+          console.warn("[GeoScopeMap] Flights data received but AircraftLayer is not initialized", {
+            count: (response as any)?.count,
+            features: (response as any)?.features?.length,
+          });
           return;
         }
 
@@ -4434,6 +4452,14 @@ export default function GeoScopeMap({
         if (!responseDisabled) {
           try {
             const featureCollection = flightsResponseToGeoJSON(response);
+            if (featureCollection.features?.length) {
+              console.log("[GeoScopeMap] Flights FeatureCollection received:", {
+                count: (response as any)?.count,
+                features: featureCollection.features.length,
+                bbox: (response as any)?.meta?.bbox,
+              });
+            }
+            console.log("[GeoScopeMap] AircraftLayer.updateData called with features:", featureCollection.features?.length);
             aircraftLayer.updateData(featureCollection);
             retryCount = 0; // Reset retry count on success
             console.log("[GeoScopeMap] Flights data loaded successfully:", {
