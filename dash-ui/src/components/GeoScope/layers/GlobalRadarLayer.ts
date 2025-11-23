@@ -1,5 +1,4 @@
 import maplibregl, { type StyleSpecification } from "maplibre-gl";
-import { config as maptilerConfig } from "@maptiler/sdk";
 
 import type { Layer } from "./LayerRegistry";
 import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
@@ -118,16 +117,9 @@ export default class GlobalRadarLayer implements Layer {
       return;
     }
 
-    // Legacy RainViewer (desactivado por ahora)
-    if (provider === "rainviewer") {
-      console.log("[GlobalRadarLayer] RainViewer init path disabled (legacy)");
-      layerDiagnostics.recordInitializationAttempt(layerId);
-      layerDiagnostics.setState(layerId, "disabled", {
-        provider: "rainviewer",
-        reason: "RainViewer deprecated",
-      });
-      return;
-    } else if (provider === "maptiler_weather") {
+    // Si el provider es "rainviewer", forzar a "maptiler_weather" (RainViewer está deprecado)
+    // NUNCA ejecutar código legacy de RainViewer si el provider es maptiler_weather
+    if (provider === "maptiler_weather") {
       layerDiagnostics.recordInitializationAttempt(layerId);
 
       try {
@@ -163,9 +155,6 @@ export default class GlobalRadarLayer implements Layer {
 
         layerDiagnostics.updatePreconditions(layerId, { apiKeysConfigured: true });
 
-        // Configurar MapTiler SDK globalmente con la API key
-        maptilerConfig.apiKey = maptilerKey;
-
         console.log("[GlobalRadarLayer] Initializing MapTiler Weather radar layer");
         await this.initializeMaptilerWeatherLayer(map, maptilerKey);
 
@@ -194,74 +183,11 @@ export default class GlobalRadarLayer implements Layer {
       }
       return;
     } else {
+      // Provider desconocido o legacy RainViewer (que ya fue forzado a maptiler_weather arriba)
       console.log("[GlobalRadarLayer] Unknown radar provider:", provider, "→ skipping");
       layerDiagnostics.recordError(layerId, new Error("Unknown radar provider"), { provider });
       layerDiagnostics.setEnabled(layerId, false);
       return;
-    }
-
-    // Si está deshabilitado, no hacer nada
-    if (!this.enabled) {
-      if (!GlobalRadarLayer.warnedDisabled) {
-        console.log("[GlobalRadarLayer] Radar disabled or unsupported provider, skipping initialization");
-        GlobalRadarLayer.warnedDisabled = true;
-      }
-      return;
-    }
-
-    try {
-      // Paso 1: Esperar a que el mapa esté completamente listo
-      await waitForMapReady(map);
-
-      // Paso 2: Verificar que el estilo esté listo
-      const style = getSafeMapStyle(map);
-      if (!style) {
-        if (!warnedStyleNotReady) {
-          console.warn("[GlobalRadarLayer] style not ready after waitForMapReady, aborting init");
-          warnedStyleNotReady = true;
-        }
-        layerDiagnostics.recordError(layerId, new Error("Map style not ready"), { provider });
-        return;
-      }
-
-      // Paso 3: Obtener frames disponibles (con cache)
-      const framesInfoRaw = await this.fetchFramesOnce();
-      if (!framesInfoRaw) {
-        if (!warnedNoFrames) {
-          console.warn("[GlobalRadarLayer] no frames available, skipping layer creation");
-          warnedNoFrames = true;
-        }
-        layerDiagnostics.recordError(layerId, new Error("No RainViewer frames available"), { provider });
-        return;
-      }
-      // TypeScript: después del return anterior, framesInfoRaw no puede ser null
-      if (!framesInfoRaw!.hasFrames) {
-        if (!warnedNoFrames) {
-          console.warn("[GlobalRadarLayer] no frames available, skipping layer creation");
-          warnedNoFrames = true;
-        }
-        layerDiagnostics.recordError(layerId, new Error("No RainViewer frames available"), { provider });
-        return;
-      }
-
-      // TypeScript: después de las verificaciones anteriores, framesInfoRaw no puede ser null y hasFrames es true
-      // Usamos aserción de tipo no-null porque sabemos que framesInfoRaw es válido aquí
-      const framesInfo = framesInfoRaw as FramesInfo;
-
-      // Paso 4: Crear source y layer
-      await this.ensureSource(framesInfo);
-      await this.ensureLayer(framesInfo);
-
-      this.registeredInRegistry = true;
-
-      // Reset flags de warning después de éxito
-      warnedStyleNotReady = false;
-      warnedNoFrames = false;
-      layerDiagnostics.setState(layerId, "ready", { provider });
-      layerDiagnostics.recordDataUpdate(layerId, framesInfo.frames.length);
-    } catch (error) {
-      console.warn("[GlobalRadarLayer] error during add():", error);
-      layerDiagnostics.recordError(layerId, error as Error, { provider });
     }
   }
 
@@ -278,10 +204,6 @@ export default class GlobalRadarLayer implements Layer {
       }
 
       // Remover source solo si pertenece al radar (no borrar sources compartidas)
-      const maptilerSource = map.getSource(this.maptilerLayerId);
-      if (maptilerSource) {
-        map.removeSource(this.maptilerLayerId);
-      }
       if (map.getSource(this.maptilerSourceId)) {
         map.removeSource(this.maptilerSourceId);
       }
@@ -322,9 +244,8 @@ export default class GlobalRadarLayer implements Layer {
         if (this.map.getLayer(this.maptilerLayerId)) {
           this.map.removeLayer(this.maptilerLayerId);
         }
-        const source = this.map.getSource(this.maptilerLayerId);
-        if (source) {
-          this.map.removeSource(this.maptilerLayerId);
+        if (this.map.getSource(this.maptilerSourceId)) {
+          this.map.removeSource(this.maptilerSourceId);
         }
         // También limpiar capa legacy si existe
         const existingLegacyLayer = this.map.getLayer(this.id);
@@ -464,14 +385,14 @@ export default class GlobalRadarLayer implements Layer {
       provider = "maptiler_weather";
     }
 
-    // Si el provider es maptiler_weather, no ejecutar código legacy de RainViewer
+    // Si el provider es maptiler_weather, NUNCA ejecutar código legacy de RainViewer
     if (provider === "maptiler_weather") {
       console.log("[GlobalRadarLayer] reinitialize: MapTiler Weather provider, skipping legacy RainViewer reinit");
       // Para MapTiler Weather, la reinicialización se maneja en add() si es necesario
       return;
     }
 
-    // Código legacy de RainViewer (no debería ejecutarse nunca ahora)
+    // Código legacy de RainViewer (solo se ejecuta si provider !== "maptiler_weather")
     try {
       await waitForMapReady(this.map);
 
@@ -657,8 +578,12 @@ export default class GlobalRadarLayer implements Layer {
   }
 
   /**
-   * Encuentra el ID de la primera capa de aviones o barcos para usar como beforeId.
-   * Esto asegura que el radar se añada por debajo de aviones/barcos pero por encima del mapa base.
+   * Encuentra el ID de la primera capa de símbolo (etiquetas) para usar como beforeId.
+   * Esto asegura que el radar se añada debajo de las etiquetas pero por encima del mapa base.
+   * 
+   * Prioridad:
+   * 1. Primera capa de tipo "symbol" (etiquetas)
+   * 2. Si no hay símbolos, retorna undefined (se añade al final)
    */
   private findBeforeId(): string | undefined {
     if (!this.map) {
@@ -670,21 +595,14 @@ export default class GlobalRadarLayer implements Layer {
       return undefined;
     }
 
-    for (const layer of style.layers) {
-      // Buscar capas de aviones (geoscope-aircraft) o barcos (geoscope-ships)
-      if (layer.id === "geoscope-aircraft" || layer.id === "geoscope-ships") {
-        return layer.id;
-      }
-    }
-
-    // Si no hay aviones/barcos, añadir encima de todo (antes de etiquetas)
-    // Buscar primera capa de símbolo (etiquetas)
+    // Buscar primera capa de símbolo (etiquetas) para insertar el radar debajo
     for (const layer of style.layers) {
       if (layer.type === "symbol") {
         return layer.id;
       }
     }
 
+    // Si no hay capas de símbolo, retornar undefined (se añade al final)
     return undefined;
   }
 
@@ -743,6 +661,14 @@ export default class GlobalRadarLayer implements Layer {
     }
   }
 
+  /**
+   * Extrae la API key de MapTiler siguiendo un orden de prioridad:
+   * 1. VITE_MAPTILER_KEY (prioridad máxima)
+   * 2. URLs del estilo del mapa (sprite, glyphs, sources)
+   * 
+   * Si no encuentra la key, retorna null y registra un error claro en consola
+   * pero no rompe la aplicación.
+   */
   private extractMaptilerApiKey(style: StyleSpecification | null | undefined): string | null {
     const extractFromUrl = (url: unknown): string | null => {
       if (!url || typeof url !== "string") return null;
@@ -758,23 +684,28 @@ export default class GlobalRadarLayer implements Layer {
       return null;
     };
 
-    // Estrategia 1: Variable de entorno (más confiable)
+    // Prioridad 1: Variable de entorno VITE_MAPTILER_KEY (prioridad máxima)
     const envKey = (import.meta.env as Record<string, string | undefined>).VITE_MAPTILER_KEY;
     if (envKey?.trim()) {
       console.log("[GlobalRadarLayer] MapTiler API key found from VITE_MAPTILER_KEY environment variable");
       return envKey.trim();
     }
 
-    // Estrategia 2: Extraer del estilo del mapa (sprite, glyphs, sources)
+    // Prioridad 2: Extraer del estilo del mapa (sprite, glyphs, sources)
     if (style) {
       const candidates: (string | null)[] = [];
+      
+      // Buscar en sprite
       if (typeof style.sprite === "string") {
         candidates.push(style.sprite);
       }
+      
+      // Buscar en glyphs
       if (typeof style.glyphs === "string") {
         candidates.push(style.glyphs);
       }
 
+      // Buscar en sources (url y tiles)
       if (style.sources && typeof style.sources === "object") {
         for (const source of Object.values(style.sources)) {
           if (!source || typeof source !== "object") continue;
@@ -790,6 +721,7 @@ export default class GlobalRadarLayer implements Layer {
         }
       }
 
+      // Intentar extraer key de cada candidato
       for (const candidate of candidates) {
         const key = extractFromUrl(candidate);
         if (key) {
@@ -799,24 +731,10 @@ export default class GlobalRadarLayer implements Layer {
       }
     }
 
-    // Estrategia 3: Intentar leer desde window.__MAP_CONFIG__ si está disponible (inyectado por el backend)
-    try {
-      const windowConfig = (window as any).__MAP_CONFIG__;
-      if (windowConfig?.ui_map?.maptiler?.api_key) {
-        const configKey = windowConfig.ui_map.maptiler.api_key;
-        if (typeof configKey === "string" && configKey.trim()) {
-          console.log("[GlobalRadarLayer] MapTiler API key found from window.__MAP_CONFIG__");
-          return configKey.trim();
-        }
-      }
-    } catch (e) {
-      // Ignorar errores al acceder a window.__MAP_CONFIG__
-    }
-
-    // Si no se encontró ninguna key, loguear claramente pero no fallar todavía
-    console.warn(
-      "[GlobalRadarLayer] ⚠️ MapTiler API key no encontrada. " +
-      "La capa de radar no funcionará sin una API key válida. " +
+    // Si no se encontró ninguna key, abortar con error claro pero no romper la app
+    console.error(
+      "[GlobalRadarLayer] ❌ MapTiler API key no encontrada. " +
+      "La capa de radar no se inicializará. " +
       "Configura VITE_MAPTILER_KEY en .env o asegúrate de que el mapa base use MapTiler con API key."
     );
     
@@ -834,8 +752,14 @@ export default class GlobalRadarLayer implements Layer {
     return `${prefix}**** (len=${apiKey.length})`;
   }
 
+  /**
+   * Inicializa la capa de radar de MapTiler Weather usando carga directa de tiles raster.
+   * 
+   * Crea manualmente un Source y una Layer de tipo raster sin usar el SDK @maptiler/weather.
+   * La capa se inserta debajo de las etiquetas (symbol layers) para mantener el orden correcto.
+   */
   private async initializeMaptilerWeatherLayer(map: maplibregl.Map, apiKey: string): Promise<void> {
-    const sourceId = this.maptilerLayerId; // Usar el mismo ID para source y layer
+    const sourceId = this.maptilerSourceId;
     const layerId = this.maptilerLayerId;
     const opacity = this.opacity ?? 0.7;
 
@@ -862,10 +786,10 @@ export default class GlobalRadarLayer implements Layer {
       console.warn("[GlobalRadarLayer] Error cleaning up existing radar source/layer:", e);
     }
 
-    // Construir URL de tiles de MapTiler Weather (precipitación)
+    // Construir URL de tiles de MapTiler Weather (precipitación) - carga directa sin SDK
     const tilesUrlTemplate = `https://api.maptiler.com/weather/tiles/v2/precipitation/{z}/{x}/{y}.png?key=${encodeURIComponent(apiKey)}`;
 
-    // Crear source raster
+    // Crear source raster manualmente
     try {
       map.addSource(sourceId, {
         type: "raster",
@@ -874,7 +798,7 @@ export default class GlobalRadarLayer implements Layer {
         minzoom: 0,
         maxzoom: 12,
       });
-      console.log("[GlobalRadarLayer] MapTiler Weather - source added successfully");
+      console.log("[GlobalRadarLayer] MapTiler Weather - source added successfully with URL:", tilesUrlTemplate);
     } catch (error) {
       console.error("[GlobalRadarLayer] MapTiler Weather - failed to add source:", error);
       const diagnosticLayerId: LayerId = "radar";
@@ -889,30 +813,10 @@ export default class GlobalRadarLayer implements Layer {
       throw error;
     }
 
-    // Buscar capa de referencia para insertar el radar debajo (etiquetas, agua, etc.)
-    const styleLayers = Array.isArray(style?.layers) ? style!.layers : [];
-    let insertBeforeLayerId: string | undefined;
+    // Buscar capa de referencia para insertar el radar debajo de las etiquetas (symbol layers)
+    const beforeId = this.findBeforeId();
 
-    // Buscar primera capa de símbolo (etiquetas) para insertar el radar debajo
-    for (const layer of styleLayers) {
-      if (layer.type === "symbol") {
-        insertBeforeLayerId = layer.id;
-        break;
-      }
-    }
-
-    // Si no hay capa de símbolo, buscar capa de agua
-    if (!insertBeforeLayerId) {
-      for (const layer of styleLayers) {
-        const id = layer.id?.toLowerCase() || "";
-        if (id.includes("water") || id.includes("ocean") || id.includes("sea")) {
-          insertBeforeLayerId = layer.id;
-          break;
-        }
-      }
-    }
-
-    // Crear layer raster
+    // Crear layer raster manualmente
     try {
       const layerSpec: maplibregl.RasterLayerSpecification = {
         id: layerId,
@@ -921,11 +825,14 @@ export default class GlobalRadarLayer implements Layer {
         paint: {
           "raster-opacity": opacity,
         },
+        layout: {
+          visibility: this.enabled ? "visible" : "none",
+        },
       };
 
-      if (insertBeforeLayerId) {
-        map.addLayer(layerSpec, insertBeforeLayerId);
-        console.log("[GlobalRadarLayer] MapTiler Weather - layer added successfully before", insertBeforeLayerId);
+      if (beforeId) {
+        map.addLayer(layerSpec, beforeId);
+        console.log("[GlobalRadarLayer] MapTiler Weather - layer added successfully before", beforeId);
       } else {
         map.addLayer(layerSpec);
         console.log("[GlobalRadarLayer] MapTiler Weather - layer added successfully (no anchor layer found)");
@@ -941,7 +848,8 @@ export default class GlobalRadarLayer implements Layer {
         hasSource,
         hasLayer,
         opacity,
-        insertBeforeLayerId: insertBeforeLayerId || "none",
+        beforeId: beforeId || "none",
+        tilesUrl: tilesUrlTemplate,
       });
 
       // Si la capa no se adjuntó correctamente, marcar como error en diagnósticos
