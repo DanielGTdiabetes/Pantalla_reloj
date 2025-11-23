@@ -39,7 +39,12 @@ async def get_status() -> Dict[str, Any]:
     opensky_cfg = config.opensky
 
     provider = flights_cfg.provider
-    enabled = bool(flights_cfg.enabled and opensky_cfg.enabled)
+    # Si layers.flights está habilitado con provider opensky, habilitar aunque opensky.enabled sea False
+    # opensky.enabled solo deshabilita si está explícitamente en False Y flights no está habilitado con provider opensky
+    enabled = bool(
+        flights_cfg.enabled and 
+        (opensky_cfg.enabled is not False or flights_cfg.provider == "opensky")
+    )
 
     bbox_dict = _model_to_dict(getattr(opensky_cfg, "bbox", None))
 

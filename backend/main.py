@@ -3845,7 +3845,25 @@ def get_config(request: Request) -> JSONResponse:
 
     stored_opensky_id = secret_store.get_secret("opensky_client_id")
     stored_opensky_secret = secret_store.get_secret("opensky_client_secret")
+    
+    # Determinar si OpenSky está efectivamente habilitado
+    # Si layers.flights está habilitado con provider opensky, considerar OpenSky habilitado
+    # incluso si opensky.enabled es False o undefined
+    layers = getattr(config_v2, "layers", None)
+    flights_config = getattr(layers, "flights", None) if layers else None
+    flights_enabled_with_opensky = (
+        flights_config and 
+        flights_config.enabled and 
+        flights_config.provider == "opensky"
+    )
+    opensky_cfg = getattr(config_v2, "opensky", None)
+    opensky_enabled_effective = (
+        getattr(opensky_cfg, "enabled", False) is not False or 
+        flights_enabled_with_opensky
+    )
+    
     public_config["opensky"] = {
+        "enabled": opensky_enabled_effective,
         "oauth2": {
             "has_credentials": bool(stored_opensky_id and stored_opensky_secret),
             "client_id_last4": (
@@ -10377,8 +10395,15 @@ async def get_ships_preview(limit: int = 20) -> Dict[str, Any]:
 def get_flights(request: Request, bbox: Optional[str] = None, extended: Optional[int] = None) -> JSONResponse:
     config = config_manager.read()
     opensky_cfg = config.opensky
-
-    if not opensky_cfg.enabled:
+    
+    # Verificar si la capa de vuelos está habilitada y usa OpenSky
+    layers = getattr(config, "layers", None)
+    flights_config = getattr(layers, "flights", None) if layers else None
+    flights_enabled = flights_config and flights_config.enabled and flights_config.provider == "opensky"
+    
+    # Si opensky.enabled está explícitamente en False, deshabilitar
+    # Pero si layers.flights está habilitado con provider opensky, permitir que funcione
+    if opensky_cfg.enabled is False and not flights_enabled:
         return JSONResponse({"count": 0, "disabled": True})
 
     bbox_override = _parse_bbox_param(bbox)
