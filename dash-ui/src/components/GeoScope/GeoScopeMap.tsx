@@ -2645,6 +2645,8 @@ export default function GeoScopeMap({
               openskyEnabled,
               provider: flightsConfig.provider,
               configVersion: (config as any)?.version ?? (mergedConfigWithDefaults as any)?.version,
+              flightsConfigRaw: flightsConfig,
+              openskyConfigRaw: openskyConfig
             });
 
             layerDiagnostics.setEnabled(layerId, isEnabled);
@@ -2654,7 +2656,12 @@ export default function GeoScopeMap({
 
             if (!isEnabled) {
               layerDiagnostics.setState(layerId, "disabled");
-              console.log("[GeoScopeMap] AircraftLayer disabled in config, skipping initialization");
+              console.log("[GeoScopeMap] AircraftLayer disabled in config, skipping initialization. Reasons:", {
+                flightsEnabled,
+                openskyEnabled,
+                openskyConfigEnabled: openskyConfig.enabled,
+                hasCredentials: openskyConfig.oauth2?.has_credentials
+              });
               return;
             }
 
@@ -2668,12 +2675,21 @@ export default function GeoScopeMap({
               return;
             }
 
+            console.log("[GeoScopeMap] Calling ensureAircraftLayer with:", {
+              mapAvailable: !!mapRef.current,
+              registryAvailable: !!layerRegistryRef.current,
+              flightsConfig,
+              openskyConfig
+            });
+
             const aircraftLayer = await ensureAircraftLayer(
               mapRef.current,
               layerRegistryRef.current,
               flightsConfig,
               openskyConfig
             );
+            
+            console.log("[GeoScopeMap] ensureAircraftLayer returned:", aircraftLayer ? "Instance" : "null");
 
             if (!aircraftLayer) {
               console.warn("[GeoScopeMap] AircraftLayer not created during initLayers");
