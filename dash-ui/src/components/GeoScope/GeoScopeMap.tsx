@@ -23,6 +23,7 @@ import WeatherLayer from "./layers/WeatherLayer";
 import { LayerRegistry } from "./layers/LayerRegistry";
 import SatelliteHybridLayer, { type SatelliteLabelsStyle } from "./layers/SatelliteHybridLayer";
 import ShipsLayer from "./layers/ShipsLayer";
+import AircraftMapLayer from "./layers/AircraftMapLayer";
 import MapSpinner from "../MapSpinner";
 import { hasSprite } from "./utils/styleSprite";
 import { layerDiagnostics, type LayerId } from "./layers/LayerDiagnostics";
@@ -99,13 +100,13 @@ function getExpandedBbox(map: MaptilerMap, expandFactor: number = 1.5): {
   const bounds = map.getBounds();
   const sw = bounds.getSouthWest();
   const ne = bounds.getNorthEast();
-  
+
   const latSpan = ne.lat - sw.lat;
   const lonSpan = ne.lng - sw.lng;
-  
+
   const latExpansion = latSpan * (expandFactor - 1);
   const lonExpansion = lonSpan * (expandFactor - 1);
-  
+
   return {
     lamin: sw.lat - latExpansion,
     lamax: ne.lat + latExpansion,
@@ -1941,7 +1942,7 @@ export default function GeoScopeMap({
 
       try {
         mapRef.current = map;
-        
+
         // Eliminar cualquier control de navegación que se haya añadido por defecto
         // Modo kiosk: pantalla no táctil, sin controles visibles
         try {
@@ -1961,7 +1962,7 @@ export default function GeoScopeMap({
         } catch (e) {
           // Ignorar errores al acceder a controles
         }
-        
+
         // Configurar minZoom según viewMode
         if (viewMode === "fixed") {
           const fixedZoom = mapSettings?.fixed?.zoom ?? 9.0;
@@ -2140,19 +2141,19 @@ export default function GeoScopeMap({
           } => {
             const missing: string[] = [];
             const style = getSafeMapStyle(map);
-            
+
             if (!style) {
               missing.push("style not loaded");
             }
             if (!config) {
               missing.push("config not available");
             }
-            
+
             layerDiagnostics.updatePreconditions(layerId, {
               styleLoaded: !!style,
               configAvailable: !!config,
             });
-            
+
             return {
               canInitialize: missing.length === 0,
               missingPreconditions: missing,
@@ -2167,7 +2168,7 @@ export default function GeoScopeMap({
             const layerId: LayerId = "lightning";
             layerDiagnostics.recordInitializationAttempt(layerId);
             layerDiagnostics.setEnabled(layerId, true);
-            
+
             const preconditions = verifyLayerPreconditions(layerId);
             if (!preconditions.canInitialize) {
               layerDiagnostics.setState(layerId, "waiting_style", {
@@ -2258,7 +2259,7 @@ export default function GeoScopeMap({
               (uiGlobalRadarInit as any)?.provider ??
               globalRadarConfigInit?.provider ??
               "maptiler_weather";
-            
+
             // Forzar maptiler_weather si viene rainviewer (deprecated)
             const radarProviderInit = radarProviderRaw === "rainviewer" ? "maptiler_weather" : radarProviderRaw;
 
@@ -2278,11 +2279,11 @@ export default function GeoScopeMap({
               // NO ejecuta health/frames ni reintentos - solo inicializa la capa directamente
               if (radarProviderInit === "maptiler_weather") {
                 console.log("[GeoScopeMap] Initializing radar with MapTiler Weather (no RainViewer health/frames)");
-                
+
                 const layerId: LayerId = "radar";
                 layerDiagnostics.recordInitializationAttempt(layerId);
                 layerDiagnostics.setEnabled(layerId, true);
-                
+
                 try {
                   if (destroyed || !mapRef.current) {
                     console.warn("[GeoScopeMap] Map destroyed or not available, aborting MapTiler Weather radar initialization");
@@ -2345,7 +2346,7 @@ export default function GeoScopeMap({
                     provider: "maptiler_weather",
                   });
                 }
-                
+
                 // IMPORTANTE: return aquí para NO entrar en la rama legacy de RainViewer
                 return;
               }
@@ -2537,7 +2538,7 @@ export default function GeoScopeMap({
             const isAemetEnabled = !!(aemetConfigInit?.enabled && aemetConfigInit?.cap_enabled);
             const weatherLayerId: LayerId = "weather";
             const aemetWarningsLayerId: LayerId = "aemet-warnings";
-            
+
             layerDiagnostics.setEnabled(weatherLayerId, isAemetEnabled);
             layerDiagnostics.setEnabled(aemetWarningsLayerId, isAemetEnabled);
             layerDiagnostics.updatePreconditions(weatherLayerId, {
@@ -2688,7 +2689,7 @@ export default function GeoScopeMap({
               flightsConfig,
               openskyConfig
             );
-            
+
             console.log("[GeoScopeMap] ensureAircraftLayer returned:", aircraftLayer ? "Instance" : "null");
 
             if (!aircraftLayer) {
@@ -2741,7 +2742,7 @@ export default function GeoScopeMap({
               } else {
                 try {
                   layerDiagnostics.recordInitializationAttempt(shipsLayerId);
-                  
+
                   // Verificar que el estilo esté listo antes de crear ShipsLayer
                   const style = getSafeMapStyle(map);
                   if (!style) {
@@ -2760,7 +2761,7 @@ export default function GeoScopeMap({
                       console.warn("[GeoScopeMap] Error checking sprite availability for ShipsLayer:", spriteError);
                       spriteAvailableShips = false;
                     }
-                    
+
                     if (!destroyed && mapRef.current) {
                       const shipsLayer = new ShipsLayer({
                         enabled: shipsConfig.enabled,
@@ -2813,7 +2814,7 @@ export default function GeoScopeMap({
           }
 
           console.log("[GeoScopeMap] All layers initialization completed");
-          
+
           // Log resumen de diagnóstico
           console.log(layerDiagnostics.getSummary());
         } catch (layerInitError) {
@@ -2821,7 +2822,7 @@ export default function GeoScopeMap({
           const error = layerInitError instanceof Error ? layerInitError : new Error(String(layerInitError));
           console.error("[GeoScopeMap] Fatal error during layer initialization:", layerInitError);
           console.trace("[GeoScopeMap] Fatal layer init trace");
-          
+
           // Registrar error en diagnóstico para todas las capas afectadas
           for (const layerId of ["flights", "ships", "weather", "radar", "lightning", "aemet-warnings"] as LayerId[]) {
             const diagnostic = layerDiagnostics.getDiagnostic(layerId);
@@ -2831,7 +2832,7 @@ export default function GeoScopeMap({
               });
             }
           }
-          
+
           // No lanzar el error - permitir que el mapa continúe funcionando sin algunas capas
         }
       };
@@ -3165,7 +3166,7 @@ export default function GeoScopeMap({
       }
       return;
     }
-  
+
     // SEGUNDO: Si el satélite está activado, verificar que el estilo esté cargado
     // Función interna para adjuntar la capa cuando el estilo esté listo
     const attachGlobalSatelliteLayer = (targetMap: MaptilerMap) => {
@@ -3176,27 +3177,27 @@ export default function GeoScopeMap({
           // El estilo aún no está listo
           return;
         }
-        
+
         const style = getSafeMapStyle(targetMap);
         if (!style) {
           // El estilo es null, aún no está listo
           return;
         }
-        
+
         // style es válido aquí (ya verificado en getSafeMapStyle)
       } catch (error) {
         // Si hay un error accediendo al estilo, esperar
         console.debug("[GlobalSatelliteLayer] Style not ready yet, waiting:", error);
         return;
       }
-  
+
       // Verificar que el satélite siga habilitado (puede haber cambiado mientras esperábamos)
       if (!satelliteSettings.isEnabled) {
         return;
       }
-  
+
       const opacity = satelliteSettings.opacity ?? 1;
-  
+
       if (!existingLayer) {
         const globalSatelliteLayer = new GlobalSatelliteLayer({
           enabled: true,
@@ -3220,7 +3221,7 @@ export default function GeoScopeMap({
         }
       }
     };
-  
+
     // Verificar si el estilo ya está cargado (con protección contra null)
     try {
       if (map.isStyleLoaded()) {
@@ -3235,22 +3236,22 @@ export default function GeoScopeMap({
       // Si hay un error accediendo al estilo, esperar al evento
       console.debug("[GlobalSatelliteLayer] Error checking style, waiting for load event:", error);
     }
-  
+
     // El estilo aún no está listo, esperar al evento 'styledata' o 'load'
     let styleDataHandler: (() => void) | null = null;
     let loadHandler: (() => void) | null = null;
-  
+
     styleDataHandler = () => {
       attachGlobalSatelliteLayer(map);
     };
-  
+
     loadHandler = () => {
       attachGlobalSatelliteLayer(map);
     };
-  
+
     map.once("styledata", styleDataHandler);
     map.once("load", loadHandler);
-  
+
     // Cleanup: remover listeners si el efecto se desmonta o cambia
     return () => {
       if (styleDataHandler) {
@@ -3266,11 +3267,11 @@ export default function GeoScopeMap({
     globalSatelliteReady,
     layerRegistryReady,
   ]);
-  
+
   // Escuchar eventos de cambio de configuración para forzar actualización (con debounce)
   useEffect(() => {
     let configChangeTimeout: ReturnType<typeof setTimeout> | null = null;
-    
+
     const handleConfigSaved = async () => {
       console.log("[GeoScopeMap] Config saved event received");
       if (configChangeTimeout) {
@@ -3304,11 +3305,11 @@ export default function GeoScopeMap({
         configChangeTimeout = null;
       }, 500);
     };
-  
+
     window.addEventListener("pantalla:config:saved", handleConfigSaved);
     window.addEventListener("config-changed", handleConfigSaved);
     window.addEventListener("map:style:changed", handleMapStyleChanged);
-  
+
     return () => {
       if (configChangeTimeout) {
         clearTimeout(configChangeTimeout);
@@ -3318,7 +3319,7 @@ export default function GeoScopeMap({
       window.removeEventListener("map:style:changed", handleMapStyleChanged);
     };
   }, [reloadConfig, webglError]);
-  
+
   useEffect(() => {
     if (!config) {
       return;
@@ -3334,18 +3335,18 @@ export default function GeoScopeMap({
     if (webglError && mapStyleVersion > 0) {
       console.log("[GeoScopeMap] mapStyleVersion > 0 and there's an error, attempting to apply style to recover");
     }
-    
+
     // Permitir mapStyleVersion === 0 solo si es la primera carga y el mapa ya está inicializado
     // Si mapStyleVersion > 0, significa que hubo un cambio de configuración y DEBEMOS aplicar el estilo
     if (mapStyleVersion === 0 && !webglError) {
       // Solo retornar si el mapa ya está inicializado y no hay errores
       return;
     }
-    
+
     // Si mapStyleVersion > 0, siempre intentar aplicar el estilo (incluso si hay error previo)
     if (mapStyleVersion > 0) {
-      console.log("[GeoScopeMap] mapStyleVersion > 0, applying style change", { 
-        mapStyleVersion, 
+      console.log("[GeoScopeMap] mapStyleVersion > 0, applying style change", {
+        mapStyleVersion,
         hasError: !!webglError,
         hasMap: !!mapRef.current,
         configProvider: (config as any)?.ui_map?.provider,
@@ -3353,19 +3354,19 @@ export default function GeoScopeMap({
         configStyleUrl: (config as any)?.ui_map?.maptiler?.styleUrl ? "***" : null,
         styleChangeInProgress
       });
-      
+
       // Si ya hay un cambio en progreso, esperar a que termine antes de iniciar otro
       if (styleChangeInProgress) {
         console.log("[GeoScopeMap] Style change already in progress, skipping duplicate");
         return;
       }
     }
-  
+
     // Reactivado: cambiar el estilo del mapa cuando cambia la configuración
-  
+
     let cancelled = false;
     const map = mapRef.current;
-    
+
     // Si el mapa está en estado de error y tenemos un cambio de configuración, intentar reiniciar
     if (webglError && mapStyleVersion > 0 && map) {
       console.log("[GeoScopeMap] Map has error but config changed, attempting to recover by applying new style");
@@ -3374,7 +3375,7 @@ export default function GeoScopeMap({
     }
     let cleanup: (() => void) | null = null;
     let styleLoadTimeout: ReturnType<typeof setTimeout> | null = null;
-  
+
     // Función para loguear errores al backend
     const logError = async (error: Error | string) => {
       try {
@@ -3391,12 +3392,12 @@ export default function GeoScopeMap({
         console.warn("[GeoScopeMap] Failed to log error to backend", logError);
       }
     };
-  
+
     const applyStyleChange = async () => {
       if (!map) {
         return;
       }
-  
+
       setStyleChangeInProgress(true);
       mapStateMachineRef.current?.notifyStyleLoading("config-style-change");
       // Limpiar error previo al intentar aplicar un nuevo estilo
@@ -3404,22 +3405,22 @@ export default function GeoScopeMap({
         console.log("[GeoScopeMap] Attempting to apply new style, clearing previous error");
         setWebglError(null);
       }
-  
+
       const currentCenter = map.getCenter();
       const currentZoom = map.getZoom();
       const currentBearing = map.getBearing();
       const currentPitch = map.getPitch();
       const previousMinZoom = map.getMinZoom();
-  
+
       try {
         const merged = withConfigDefaults(config);
         const mapSettings = merged.ui.map;
         const mapPreferences = merged.map ?? createDefaultMapPreferences();
-  
+
         // Obtener configuración V2 directamente si está disponible
         const configV2ForStyle = config as unknown as AppConfigV2 | null;
         const maptilerConfigV2 = configV2ForStyle?.ui_map?.maptiler;
-  
+
         // Convertir a MapConfigV2 para loadMapStyle
         // Calcular checksum para cache-buster (usar mapStyleVersion o timestamp)
         const configChecksum = mapStyleVersion || Date.now();
@@ -3432,7 +3433,7 @@ export default function GeoScopeMap({
           (mapSettings.maptiler as any)?.api_key ??
           maptilerKey ??
           null;
-        
+
         // Obtener styleUrl desde configuración V2 o desde mapSettings
         let styleUrlFromConfig =
           maptilerConfigV2?.styleUrl ||
@@ -3441,7 +3442,7 @@ export default function GeoScopeMap({
           mapSettings.maptiler?.styleUrlLight ||
           mapSettings.maptiler?.styleUrlBright ||
           null;
-        
+
         // Asegurar que el styleUrl esté firmado con el API key actual
         // Si la URL no tiene key o tiene un key diferente, reemplazarlo
         let styleUrlWithCacheBuster: string | null = null;
@@ -3468,10 +3469,10 @@ export default function GeoScopeMap({
             }
           }
         }
-        
+
         // Determinar el estilo desde la configuración V2 o desde mapSettings
         const styleFromConfig = maptilerConfigV2?.style || mapSettings.style || "streets-v4";
-        
+
         const ui_map: MapConfigV2 = {
           engine: "maplibre",
           provider: mapSettings.provider === "maptiler" ? "maptiler_vector" : "local_raster_xyz",
@@ -3485,46 +3486,46 @@ export default function GeoScopeMap({
           },
           maptiler: mapSettings.maptiler
             ? (() => {
-                const legacyMaptiler = mapSettings.maptiler as typeof mapSettings.maptiler & {
-                  api_key?: string | null;
-                  urls?: Record<string, string | null>;
-                };
-                const resolvedKey =
-                  maptilerConfigV2?.api_key ??
-                  legacyMaptiler.apiKey ??
-                  legacyMaptiler.key ??
-                  legacyMaptiler.api_key ??
-                  maptilerKey ??
-                  null;
-  
-                // Asegurar que styleUrl esté firmado con el API key actual
-                let finalStyleUrl = styleUrlWithCacheBuster;
-                if (finalStyleUrl && resolvedKey) {
-                  try {
-                    const url = new URL(finalStyleUrl);
-                    url.searchParams.set("key", resolvedKey);
-                    finalStyleUrl = url.toString();
-                  } catch {
-                    // Si falla, intentar añadir key manualmente
-                    const sep = finalStyleUrl.includes("?") ? "&" : "?";
-                    const keyPattern = new RegExp("[?&]key=[^&]*");
-                    const urlWithoutKey = finalStyleUrl.replace(keyPattern, "");
-                    finalStyleUrl = `${urlWithoutKey}${sep}key=${encodeURIComponent(resolvedKey)}`;
-                  }
+              const legacyMaptiler = mapSettings.maptiler as typeof mapSettings.maptiler & {
+                api_key?: string | null;
+                urls?: Record<string, string | null>;
+              };
+              const resolvedKey =
+                maptilerConfigV2?.api_key ??
+                legacyMaptiler.apiKey ??
+                legacyMaptiler.key ??
+                legacyMaptiler.api_key ??
+                maptilerKey ??
+                null;
+
+              // Asegurar que styleUrl esté firmado con el API key actual
+              let finalStyleUrl = styleUrlWithCacheBuster;
+              if (finalStyleUrl && resolvedKey) {
+                try {
+                  const url = new URL(finalStyleUrl);
+                  url.searchParams.set("key", resolvedKey);
+                  finalStyleUrl = url.toString();
+                } catch {
+                  // Si falla, intentar añadir key manualmente
+                  const sep = finalStyleUrl.includes("?") ? "&" : "?";
+                  const keyPattern = new RegExp("[?&]key=[^&]*");
+                  const urlWithoutKey = finalStyleUrl.replace(keyPattern, "");
+                  finalStyleUrl = `${urlWithoutKey}${sep}key=${encodeURIComponent(resolvedKey)}`;
                 }
-                
-                return {
-                  api_key: resolvedKey,
-                  apiKey: resolvedKey,
-                  key: legacyMaptiler.key ?? resolvedKey,
-                  style: styleFromConfig,
-                  styleUrl: finalStyleUrl,
-                  styleUrlDark: legacyMaptiler.styleUrlDark ?? null,
-                  styleUrlLight: legacyMaptiler.styleUrlLight ?? null,
-                  styleUrlBright: legacyMaptiler.styleUrlBright ?? null,
-                  ...(legacyMaptiler.urls ? { urls: legacyMaptiler.urls } : {}),
-                };
-              })()
+              }
+
+              return {
+                api_key: resolvedKey,
+                apiKey: resolvedKey,
+                key: legacyMaptiler.key ?? resolvedKey,
+                style: styleFromConfig,
+                styleUrl: finalStyleUrl,
+                styleUrlDark: legacyMaptiler.styleUrlDark ?? null,
+                styleUrlLight: legacyMaptiler.styleUrlLight ?? null,
+                styleUrlBright: legacyMaptiler.styleUrlBright ?? null,
+                ...(legacyMaptiler.urls ? { urls: legacyMaptiler.urls } : {}),
+              };
+            })()
             : undefined,
           customXyz: undefined,
           viewMode: mapSettings.viewMode || "fixed",
@@ -3536,26 +3537,26 @@ export default function GeoScopeMap({
         if (cancelled || !mapRef.current) {
           return;
         }
-  
+
         runtimeRef.current = runtimeRef.current
           ? {
-              ...runtimeRef.current,
-              style: styleResult.resolved,
-              fallbackStyle: styleResult.fallback,
-              styleWasFallback: styleResult.usedFallback,
-              theme: cloneTheme(mapSettings.theme),
-              renderWorldCopies:
-                typeof mapSettings.renderWorldCopies === "boolean"
-                  ? mapSettings.renderWorldCopies
-                  : runtimeRef.current.renderWorldCopies,
-            }
+            ...runtimeRef.current,
+            style: styleResult.resolved,
+            fallbackStyle: styleResult.fallback,
+            styleWasFallback: styleResult.usedFallback,
+            theme: cloneTheme(mapSettings.theme),
+            renderWorldCopies:
+              typeof mapSettings.renderWorldCopies === "boolean"
+                ? mapSettings.renderWorldCopies
+                : runtimeRef.current.renderWorldCopies,
+          }
           : runtimeRef.current;
-  
+
         themeRef.current = cloneTheme(mapSettings.theme);
         styleTypeRef.current = styleResult.resolved.type;
         // Fallback desactivado: solo usar streets-v4
         fallbackAppliedRef.current = false;
-  
+
         const cfgV2ForTint = config as unknown as AppConfigV2 | null;
         const baseStyleName = cfgV2ForTint?.ui_map?.maptiler?.style || "streets-v4";
         const tintCandidate = mapSettings.theme?.tint ?? null;
@@ -3566,7 +3567,7 @@ export default function GeoScopeMap({
         } else {
           setTintColor(null);
         }
-  
+
         const mapWithCopies = map as MaptilerMap & {
           setRenderWorldCopies?: (value: boolean) => void;
         };
@@ -3575,19 +3576,19 @@ export default function GeoScopeMap({
         } catch {
           // Ignorar si el motor no soporta esta API.
         }
-  
+
         const handleStyleLoad = async () => {
           if (cancelled || !mapRef.current) {
             return;
           }
           map.off("style.load", handleStyleLoad);
-          
+
           // Limpiar timeout si existe
           if (styleLoadTimeout) {
             clearTimeout(styleLoadTimeout);
             styleLoadTimeout = null;
           }
-  
+
           let spriteAvailable = false;
           try {
             const style = getSafeMapStyle(map);
@@ -3595,13 +3596,13 @@ export default function GeoScopeMap({
           } catch {
             spriteAvailable = false;
           }
-  
+
           if (cancelled || !mapRef.current) {
             return;
           }
-  
+
           aircraftLayerRef.current?.setSpriteAvailability(spriteAvailable);
-  
+
           map.setMinZoom(currentMinZoomRef.current ?? previousMinZoom);
           map.jumpTo({
             center: currentCenter,
@@ -3614,11 +3615,11 @@ export default function GeoScopeMap({
           if (styleType && theme && shouldApplyTheme()) {
             applyThemeToMap(map, styleType, theme);
           }
-          
+
           // Reinyectar capas después de style.load
           // Esto reinyecta todas las capas registradas: radar AEMET, avisos, barcos, aviones, rayos
           layerRegistryRef.current?.reapply();
-          
+
           // Reinyectar capas específicas que tienen métodos ensure*
           const merged = withConfigDefaults(config);
           const configAsV2 = config as unknown as {
@@ -3627,7 +3628,7 @@ export default function GeoScopeMap({
             layers?: { flights?: typeof merged.layers.flights; ships?: typeof merged.layers.ships };
             opensky?: typeof merged.opensky;
           };
-          
+
           // Reinyectar radar AEMET (avisos)
           if (configAsV2.aemet?.enabled && configAsV2.aemet?.cap_enabled) {
             const aemetWarningsLayer = aemetWarningsLayerRef.current;
@@ -3635,24 +3636,24 @@ export default function GeoScopeMap({
               await aemetWarningsLayer.ensureWarningsLayer();
             }
           }
-          
+
           // Reinyectar barcos (esto re-registra los iconos)
           const shipsLayer = shipsLayerRef.current;
           if (shipsLayer) {
             await shipsLayer.ensureShipsLayer();
           }
-          
+
           // Reinyectar aviones (esto re-registra los iconos)
           const aircraftLayer = aircraftLayerRef.current;
           if (aircraftLayer) {
             await aircraftLayer.ensureFlightsLayer();
           }
-          
+
           // Disparar evento personalizado para notificar que el estilo se cargó
           if (typeof window !== "undefined") {
             window.dispatchEvent(new CustomEvent("map:style:loaded"));
           }
-          
+
           mapStateMachineRef.current?.notifyStyleData("config-style-change");
           setStyleChangeInProgress(false);
           // Limpiar error previo si el estilo se cargó correctamente
@@ -3661,7 +3662,7 @@ export default function GeoScopeMap({
             setWebglError(null);
           }
         };
-  
+
         // Timeout de 8s: si no llega style.load, recargar la página
         styleLoadTimeout = setTimeout(() => {
           if (!cancelled) {
@@ -3669,26 +3670,26 @@ export default function GeoScopeMap({
             window.location.reload();
           }
         }, 8000);
-  
+
         // Manejar errores de carga de estilo
         const handleStyleError = (event: MapLibreEvent & { error?: unknown }) => {
           if (cancelled || !mapRef.current) {
             return;
           }
           map.off("error", handleStyleError);
-          
+
           const error = event.error as { status?: number; message?: string } | undefined;
           const status = error?.status;
           const message = error?.message || String(error);
-          
+
           console.error("[GeoScopeMap] Error loading style:", error);
-          
+
           // Limpiar timeout si existe
           if (styleLoadTimeout) {
             clearTimeout(styleLoadTimeout);
             styleLoadTimeout = null;
           }
-          
+
           // Mostrar error específico según el código HTTP
           if (status === 401 || status === 403) {
             setWebglError("Error: API key de MapTiler inválida o sin permisos. Por favor, verifica tu API key en la configuración.");
@@ -3699,14 +3700,14 @@ export default function GeoScopeMap({
           } else {
             setWebglError(`Error al cargar el estilo del mapa: ${message}. Verifica que el API key y la URL sean correctos.`);
           }
-          
+
           setStyleChangeInProgress(false);
           mapStateMachineRef.current?.notifyStyleData("config-style-change-error");
         };
-        
+
         map.once("style.load", handleStyleLoad);
         map.once("error", handleStyleError);
-        
+
         cleanup = () => {
           map.off("style.load", handleStyleLoad);
           map.off("error", handleStyleError);
@@ -3715,14 +3716,14 @@ export default function GeoScopeMap({
             styleLoadTimeout = null;
           }
         };
-        
+
         try {
           map.setStyle(styleResult.resolved.style as StyleSpecification, { diff: false });
         } catch (error) {
           // Limpiar listeners si falla inmediatamente
           map.off("style.load", handleStyleLoad);
           map.off("error", handleStyleError);
-          
+
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.error("[GeoScopeMap] Error setting style:", error);
           setWebglError(`Error al aplicar el estilo del mapa: ${errorMessage}. Verifica que el API key y la URL sean correctos.`);
@@ -3740,74 +3741,74 @@ export default function GeoScopeMap({
         }
       }
     };
-  
+
     void applyStyleChange();
-  
+
     return () => {
       cancelled = true;
       cleanup?.();
       setStyleChangeInProgress(false);
     };
   }, [config, mapStyleVersion]);
-  
-  
+
+
   // useEffect para actualizar vista cuando cambia ui_map.fixed (zoom/centro)
   useEffect(() => {
     if (!config || !mapRef.current || stormModeActiveRef.current) {
       // No actualizar si storm mode está activo (tiene prioridad)
       return;
     }
-  
+
     const merged = withConfigDefaults(config);
     const mapConfig = merged.ui?.map;
     const fixedConfig = mapConfig?.fixed;
-    
+
     // Soporte para v2: leer desde ui_map
     const v2Config = config as unknown as { ui_map?: { fixed?: { center?: { lat?: number; lon?: number }; zoom?: number; bearing?: number; pitch?: number } } };
     const v2Fixed = v2Config.ui_map?.fixed ?? fixedConfig;
-    
+
     if (!v2Fixed || !v2Fixed.center || typeof v2Fixed.zoom !== "number") {
       return;
     }
-  
+
     const centerLat = v2Fixed.center.lat ?? 39.98;
     const centerLng = v2Fixed.center.lon ?? 0.20;
     const zoom = v2Fixed.zoom ?? 9.0;
     const bearing = v2Fixed.bearing ?? 0;
     const pitch = v2Fixed.pitch ?? 0;
-  
+
     const map = mapRef.current;
     if (!map) {
       return;
     }
-  
+
     // Actualizar estado de vista
     const viewState = viewStateRef.current;
     if (!viewState) {
       return;
     }
-  
+
     // Solo actualizar si realmente cambió
     const currentCenter = map.getCenter();
     const currentZoom = map.getZoom();
     const distanceThreshold = 0.001; // ~100m
     const zoomThreshold = 0.01;
-    
-    const centerChanged = 
+
+    const centerChanged =
       Math.abs(currentCenter.lat - centerLat) > distanceThreshold ||
       Math.abs(currentCenter.lng - centerLng) > distanceThreshold;
     const zoomChanged = Math.abs(currentZoom - zoom) > zoomThreshold;
-  
+
     if (!centerChanged && !zoomChanged) {
       return;
     }
-  
+
     viewState.lat = centerLat;
     viewState.lng = centerLng;
     viewState.zoom = zoom;
     viewState.bearing = bearing;
     viewState.pitch = pitch;
-  
+
     // Aplicar cambios al mapa con animación suave
     if (map.isStyleLoaded()) {
       map.easeTo({
@@ -3829,30 +3830,30 @@ export default function GeoScopeMap({
       });
     }
   }, [config]);
-  
+
   // useEffect para manejar cambios en Storm Mode
   useEffect(() => {
     if (!config || !mapRef.current) {
       return;
     }
-  
+
     const merged = withConfigDefaults(config);
     const stormConfig = merged.storm;
     const stormEnabled = Boolean(stormConfig?.enabled);
     const prevStormActive = stormModeActiveRef.current;
-  
+
     // Si cambió el estado de storm mode
     if (stormEnabled !== prevStormActive) {
       stormModeActiveRef.current = stormEnabled;
       const map = mapRef.current;
       const lightningLayer = lightningLayerRef.current;
-  
+
       if (stormEnabled) {
         // Zoom a Castellón/Vila-real según configuración
         const centerLat = Number.isFinite(stormConfig.center_lat) ? stormConfig.center_lat : 39.986;
         const centerLng = Number.isFinite(stormConfig.center_lng) ? stormConfig.center_lng : -0.051;
         const zoom = Number.isFinite(stormConfig.zoom) ? stormConfig.zoom : 9.0;
-  
+
         // Actualizar estado de vista
         const viewState = viewStateRef.current;
         if (!viewState) {
@@ -3863,7 +3864,7 @@ export default function GeoScopeMap({
         viewState.zoom = zoom;
         viewState.bearing = 0;
         viewState.pitch = 0;
-  
+
         // Aplicar zoom al mapa con animación suave
         if (map.isStyleLoaded()) {
           map.easeTo({
@@ -3884,7 +3885,7 @@ export default function GeoScopeMap({
             });
           });
         }
-  
+
         // Actualizar estado en backend (opcional, para persistencia)
         apiGet<{ enabled: boolean }>("/api/storm_mode").then((stormMode) => {
           if (!stormMode.enabled) {
@@ -3905,11 +3906,11 @@ export default function GeoScopeMap({
         const merged = withConfigDefaults(config);
         const mapConfig = merged.ui?.map;
         const fixedConfig = mapConfig?.fixed;
-        
+
         const centerLat = fixedConfig?.center?.lat ?? 39.98;
         const centerLng = fixedConfig?.center?.lon ?? 0.20;
         const zoom = fixedConfig?.zoom ?? 9.0;
-  
+
         const viewState = viewStateRef.current;
         if (!viewState) {
           return;
@@ -3919,7 +3920,7 @@ export default function GeoScopeMap({
         viewState.zoom = zoom;
         viewState.bearing = 0;
         viewState.pitch = 0;
-  
+
         if (map.isStyleLoaded()) {
           map.easeTo({
             center: [centerLng, centerLat],
@@ -3932,55 +3933,55 @@ export default function GeoScopeMap({
       }
     }
   }, [config]);
-  
+
   // Función auxiliar para calcular distancia entre dos puntos en km (Haversine)
   const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
     const R = 6371; // Radio de la Tierra en km
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = 
+    const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
       Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
       Math.sin(dLng / 2) * Math.sin(dLng / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   };
-  
+
   // useEffect para cargar y actualizar datos de rayos siempre (en todo el mapa)
   useEffect(() => {
     if (!config || !mapRef.current || !lightningLayerRef.current) {
       return;
     }
-  
+
     const merged = withConfigDefaults(config);
     const blitzortungEnabled = Boolean(merged.blitzortung?.enabled);
-  
+
     // Solo cargar si Blitzortung está habilitado (aunque aún no tenga datos)
     if (!blitzortungEnabled) {
       return;
     }
-  
+
     // Cargar datos de rayos periódicamente
     const loadLightningData = async () => {
       try {
         const response = await apiGet<unknown>("/api/lightning");
-  
+
         const lightningLayer = lightningLayerRef.current;
         if (lightningLayer && isFeatureCollection<Point, LightningFeatureProperties>(response)) {
           lightningLayer.updateData(response);
-  
+
           // Verificar auto-activación del modo tormenta
           const stormConfig = merged.storm;
           const stormEnabled = Boolean(stormConfig?.enabled);
           const autoEnable = Boolean(stormConfig?.auto_enable);
-  
+
           // Si auto-enable está activo pero el modo tormenta no está activo
           if (autoEnable && !stormEnabled && response.features.length > 0) {
             // Verificar si hay rayos cerca de Castellón/Vila-real
             const centerLat = Number.isFinite(stormConfig.center_lat) ? stormConfig.center_lat : 39.986;
             const centerLng = Number.isFinite(stormConfig.center_lng) ? stormConfig.center_lng : -0.051;
             const maxDistance = 50; // Radio de 50 km
-  
+
             const hasNearbyLightning = response.features.some((feature) => {
               if (!feature.geometry || feature.geometry.type !== "Point") {
                 return false;
@@ -3992,9 +3993,9 @@ export default function GeoScopeMap({
               const distance = calculateDistance(centerLat, centerLng, lat, lng);
               return distance <= maxDistance;
             });
-  
+
             if (hasNearbyLightning) {
-  
+
               // Activar modo tormenta actualizando la configuración
               const updatedConfig = {
                 ...merged,
@@ -4003,7 +4004,7 @@ export default function GeoScopeMap({
                   enabled: true
                 }
               };
-  
+
               // Guardar configuración para activar el modo tormenta
               saveConfig(updatedConfig).then(() => {
                 // Recargar configuración para que el useEffect de storm mode reaccione
@@ -4018,38 +4019,38 @@ export default function GeoScopeMap({
         console.error("[GeoScopeMap] Failed to load lightning data:", error);
       }
     };
-  
+
     // Cargar inmediatamente
     void loadLightningData();
-  
+
     // Cargar cada 5 segundos
     const intervalId = setInterval(() => {
       void loadLightningData();
     }, 5000);
-  
+
     return () => {
       clearInterval(intervalId);
     };
   }, [config, reloadConfig]);
-  
+
   // useEffect para actualizar configuración de layers (enabled, opacity)
   useEffect(() => {
     if (!config || !mapRef.current) {
       return;
     }
-  
+
     const merged = withConfigDefaults(config);
-    
+
     // Leer configuración desde v2 o v1
-    const configAsV2Update = config as unknown as { 
-      version?: number; 
-      layers?: { 
+    const configAsV2Update = config as unknown as {
+      version?: number;
+      layers?: {
         flights?: typeof merged.layers.flights;
         ships?: typeof merged.layers.ships;
-      }; 
+      };
       opensky?: typeof merged.opensky;
     };
-    
+
     const flightsConfig = configAsV2Update.version === 2 && configAsV2Update.layers?.flights
       ? configAsV2Update.layers.flights
       : merged.layers.flights;
@@ -4059,11 +4060,11 @@ export default function GeoScopeMap({
     const openskyConfig = configAsV2Update.version === 2 && configAsV2Update.opensky
       ? configAsV2Update.opensky
       : merged.opensky;
-    
+
     // En config v2, opensky.enabled no existe, así que lo consideramos true por defecto
     const openskyEnabled = openskyConfig.enabled ?? true;
     const openskyHasCredentials = openskyConfig.oauth2?.has_credentials === true;
-  
+
     // Actualizar AircraftLayer
     const aircraftLayer = aircraftLayerRef.current;
     if (aircraftLayer) {
@@ -4075,14 +4076,14 @@ export default function GeoScopeMap({
       aircraftLayer.setMaxAgeSeconds(flightsConfig.max_age_seconds);
       aircraftLayer.setCluster(openskyConfig.cluster);
       aircraftLayer.setStyleScale(flightsConfig.styleScale ?? 1);
-      
+
       // Reinicializar capa si está habilitada para asegurar que use nueva configuración
       if (flightsConfig.enabled && openskyEnabled && openskyHasCredentials) {
         console.log("[GeoScopeMap] Reinitializing AircraftLayer due to config change");
         void aircraftLayer.ensureFlightsLayer();
       }
     }
-  
+
     // Actualizar ShipsLayer
     const shipsLayer = shipsLayerRef.current;
     if (shipsLayer) {
@@ -4093,21 +4094,21 @@ export default function GeoScopeMap({
       shipsLayer.setRenderMode(shipsConfig.render_mode);
       shipsLayer.setCircleOptions(shipsConfig.circle);
       shipsLayer.setSymbolOptions(shipsConfig.symbol);
-      
+
       // Reinicializar capa si está habilitada para asegurar que use nueva configuración
       if (shipsConfig.enabled) {
         console.log("[GeoScopeMap] Reinitializing ShipsLayer due to config change");
         void shipsLayer.ensureShipsLayer();
       }
     }
-  
+
     // Actualizar Weather Layer y AEMET Warnings Layer
     // Leer configuración AEMET desde v2 o v1
     const configAsV2 = config as unknown as { version?: number; aemet?: { enabled?: boolean; cap_enabled?: boolean; cache_minutes?: number } };
-    const aemetConfig = configAsV2.version === 2 
-      ? configAsV2.aemet 
+    const aemetConfig = configAsV2.version === 2
+      ? configAsV2.aemet
       : merged.aemet;
-    
+
     const weatherLayer = weatherLayerRef.current;
     if (weatherLayer && aemetConfig?.enabled && aemetConfig?.cap_enabled) {
       weatherLayer.setEnabled(true);
@@ -4116,7 +4117,7 @@ export default function GeoScopeMap({
     } else if (weatherLayer) {
       weatherLayer.setEnabled(false);
     }
-  
+
     // Actualizar AEMET Warnings Layer
     const aemetLayer = aemetWarningsLayerRef.current;
     if (aemetLayer && aemetConfig?.enabled && aemetConfig?.cap_enabled) {
@@ -4127,19 +4128,19 @@ export default function GeoScopeMap({
       aemetLayer.setEnabled(false);
     }
   }, [config]);
-  
+
   // useEffect para escuchar eventos de actualización de MapTiler config
   useEffect(() => {
     const handleMaptilerConfigUpdated = async (event: Event) => {
       const customEvent = event as CustomEvent<{ styleUrl?: string; provider?: string }>;
-      
+
       console.log("[GeoScopeMap] MapTiler config updated event received", customEvent.detail);
-      
+
       if (!mapRef.current) {
         console.warn("[GeoScopeMap] Cannot update map: map not available");
         return;
       }
-      
+
       try {
         // Recargar configuración y health del backend
         console.log("[GeoScopeMap] Fetching fresh config and health data...");
@@ -4147,68 +4148,68 @@ export default function GeoScopeMap({
           fetch("/api/config", { cache: "no-store" }).then((r) => r.json()),
           fetch("/api/health/full", { cache: "no-store" }).then((r) => r.json())
         ]);
-        
+
         // Construir nueva URL de estilo
         const configV2 = freshConfig as AppConfigV2;
         const styleUrlFromHealth = freshHealth?.maptiler?.styleUrl ?? null;
         const styleUrlFromConfig = configV2?.ui_map?.maptiler?.styleUrl ?? null;
         const newStyleUrl = styleUrlFromHealth || styleUrlFromConfig || customEvent.detail?.styleUrl;
-        
+
         if (!newStyleUrl) {
           console.warn("[GeoScopeMap] No new style URL available, skipping update");
           return;
         }
-        
+
         console.log("[GeoScopeMap] Updating map style to:", newStyleUrl.substring(0, 60) + "...");
-        
+
         // Actualizar estilo del mapa
         const map = mapRef.current;
         map.setStyle(newStyleUrl);
-        
+
         // Esperar a que el estilo se cargue y reinicializar capas
         map.once('styledata', () => {
           console.log("[GeoScopeMap] New style loaded, reinitializing layers...");
-          
+
           // Disparar evento de cambio de estilo para que las capas se reinicialicen
           window.dispatchEvent(new CustomEvent('map:style:changed'));
         });
-        
+
         console.log("[GeoScopeMap] ✓ Map style update initiated successfully");
       } catch (error) {
         console.error("[GeoScopeMap] Error updating map style:", error);
       }
     };
-    
+
     window.addEventListener('maptiler:config:updated', handleMaptilerConfigUpdated);
-    
+
     return () => {
       window.removeEventListener('maptiler:config:updated', handleMaptilerConfigUpdated);
     };
   }, []);
-  
+
   // useEffect para escuchar eventos de actualización de secrets (API keys)
   useEffect(() => {
     const handleSecretsUpdated = (event: Event) => {
       const customEvent = event as CustomEvent<{ layer?: string }>;
       const affectedLayer = customEvent.detail?.layer;
-      
+
       console.log("[GeoScopeMap] Secrets updated event received", { affectedLayer });
-      
+
       if (!config || !mapRef.current) {
         console.warn("[GeoScopeMap] Cannot reinitialize layers: config or map not available");
         return;
       }
-      
+
       const merged = withConfigDefaults(config);
-      const configAsV2Update = config as unknown as { 
-        version?: number; 
-        layers?: { 
+      const configAsV2Update = config as unknown as {
+        version?: number;
+        layers?: {
           flights?: typeof merged.layers.flights;
           ships?: typeof merged.layers.ships;
-        }; 
+        };
         opensky?: typeof merged.opensky;
       };
-      
+
       // Reinicializar capa de aviones si afecta a flights
       if ((!affectedLayer || affectedLayer === 'flights') && aircraftLayerRef.current) {
         const flightsConfig = configAsV2Update.version === 2 && configAsV2Update.layers?.flights
@@ -4217,11 +4218,11 @@ export default function GeoScopeMap({
         const openskyConfig = configAsV2Update.version === 2 && configAsV2Update.opensky
           ? configAsV2Update.opensky
           : merged.opensky;
-        
+
         // En config v2, opensky.enabled no existe, así que lo consideramos true por defecto
         const openskyEnabled = openskyConfig.enabled ?? true;
         const openskyHasCredentials = openskyConfig.oauth2?.has_credentials === true;
-        
+
         if (flightsConfig.enabled && openskyEnabled && openskyHasCredentials) {
           console.log("[GeoScopeMap] Forcing AircraftLayer reinitialization after secrets update");
           // Forzar recarga inmediata de datos
@@ -4235,13 +4236,13 @@ export default function GeoScopeMap({
           }, 100);
         }
       }
-      
+
       // Reinicializar capa de barcos si afecta a ships
       if ((!affectedLayer || affectedLayer === 'ships') && shipsLayerRef.current) {
         const shipsConfig = configAsV2Update.version === 2 && configAsV2Update.layers?.ships
           ? configAsV2Update.layers.ships
           : merged.layers.ships;
-        
+
         if (shipsConfig.enabled) {
           console.log("[GeoScopeMap] Forcing ShipsLayer reinitialization after secrets update");
           // Forzar recarga inmediata de datos
@@ -4256,14 +4257,14 @@ export default function GeoScopeMap({
         }
       }
     };
-    
+
     window.addEventListener('layers:secrets:updated', handleSecretsUpdated);
-    
+
     return () => {
       window.removeEventListener('layers:secrets:updated', handleSecretsUpdated);
     };
   }, [config]);
-  
+
   // Helper para retry con backoff exponencial
   const retryWithBackoff = async <T,>(
     fn: () => Promise<T>,
@@ -4297,194 +4298,8 @@ export default function GeoScopeMap({
   };
 
   // useEffect para cargar datos de flights periódicamente
-  useEffect(() => {
-    console.log("[GeoScopeMap] flights useEffect mounted");
+  // Polling de vuelos movido a AircraftMapLayer.tsx
 
-    if (!config || !mapRef.current || !mapReady || !layerRegistryRef.current) {
-      return;
-    }
-
-    const merged = withConfigDefaults(config);
-    const flightsConfig = merged.layers?.flights;
-    const openskyConfig = merged.opensky ?? { enabled: true };
-    const layerId: LayerId = "flights";
-    let retryCount = 0;
-    const MAX_RETRIES = 3;
-
-    // Log cuando el config cambia
-    console.log("[Flights] Config actualizada:", {
-      enabled: flightsConfig?.enabled,
-      refresh_seconds: flightsConfig?.refresh_seconds,
-      provider: flightsConfig?.provider,
-    });
-
-    if (!flightsConfig) {
-      layerDiagnostics.setEnabled(layerId, false);
-      console.warn("[GeoScopeMap] flightsConfig is undefined after withConfigDefaults, skipping flights polling");
-      return;
-    }
-
-    const flightsEnabled = flightsConfig.enabled ?? false;
-    const openskyEnabled = (openskyConfig.enabled ?? true) && (openskyConfig.oauth2?.has_credentials ?? true);
-
-    if (!flightsEnabled || !openskyEnabled) {
-      layerDiagnostics.setEnabled(layerId, false);
-      console.log("[GeoScopeMap] Flights data loading disabled:", { flightsEnabled, openskyEnabled });
-      return;
-    }
-
-    const registry = layerRegistryRef.current;
-    const aircraftLayer = registry?.get("geoscope-aircraft") as AircraftLayer | undefined;
-    if (!registry || !aircraftLayer) {
-      console.warn("[GeoScopeMap] Flights polling waiting for AircraftLayer to be ready");
-      return;
-    }
-
-    aircraftLayerRef.current = aircraftLayer;
-
-    console.log("[GeoScopeMap] flights polling config:", {
-      flightsEnabled,
-      openskyEnabled,
-      provider: flightsConfig.provider,
-      version: (merged as any).version,
-    });
-
-    console.log("[GeoScopeMap] Flights polling starting (AircraftLayer is ready)");
-    layerDiagnostics.setEnabled(layerId, true);
-
-    const loadFlightsData = async (): Promise<void> => {
-      try {
-        if (!flightsEnabled || !openskyEnabled) {
-          layerDiagnostics.setEnabled(layerId, false);
-          console.log("[GeoScopeMap] Flights data loading disabled:", { flightsEnabled, openskyEnabled });
-          return;
-        }
-
-        // Calcular bbox del mapa actual expandido
-        const map = mapRef.current;
-        let bbox: string | undefined;
-
-        if (map && map.isStyleLoaded()) {
-          const expandedBbox = getExpandedBbox(map, 1.5);
-          bbox = `${expandedBbox.lamin},${expandedBbox.lamax},${expandedBbox.lomin},${expandedBbox.lomax}`;
-
-          // Log del bbox usado
-          console.log(
-            "[Flights] BBOX usado:",
-            expandedBbox.lamin.toFixed(4),
-            expandedBbox.lamax.toFixed(4),
-            expandedBbox.lomin.toFixed(4),
-            expandedBbox.lomax.toFixed(4)
-          );
-        }
-
-        // Construir URL con parámetros
-        let url = "/api/layers/flights";
-        const params = new URLSearchParams();
-        if (bbox) {
-          params.append("bbox", bbox);
-        }
-        if (params.toString()) {
-          url += `?${params.toString()}`;
-        }
-        console.log("[GeoScopeMap] requesting /api/layers/flights with URL:", url);
-
-        // Validar respuesta del backend con retry
-        const response = await retryWithBackoff(
-          async () => {
-            const resp = await apiGet<FlightsApiResponse | FeatureCollection<Point, FlightFeatureProperties> | undefined>(url);
-
-            // Validar estructura de respuesta
-            if (!resp) {
-              throw new Error("Empty response from backend");
-            }
-
-            if (!isFeatureCollection<Point, FlightFeatureProperties>(resp) && resp.disabled) {
-              layerDiagnostics.setState(layerId, "disabled", {
-                reason: "backend_disabled",
-              });
-              return resp;
-            }
-
-            // Validar que la respuesta tenga la estructura esperada
-            if (typeof resp !== "object") {
-              throw new Error(`Invalid response type: ${typeof resp}`);
-            }
-
-            return resp;
-          },
-          MAX_RETRIES,
-          1000,
-          layerId,
-          "loadFlightsData"
-        );
-
-        if (!response) {
-          layerDiagnostics.updatePreconditions(layerId, {
-            backendAvailable: false,
-          });
-          return;
-        }
-
-        layerDiagnostics.updatePreconditions(layerId, {
-          backendAvailable: true,
-        });
-
-        const responseDisabled = !isFeatureCollection<Point, FlightFeatureProperties>(response) && response.disabled;
-
-        if (!responseDisabled) {
-          try {
-            const featureCollection = flightsResponseToGeoJSON(response);
-            console.log("[GeoScopeMap] Flights FeatureCollection received:", {
-              count: featureCollection.features?.length ?? 0,
-              bbox,
-            });
-
-            const registryCurrent = layerRegistryRef.current;
-            const aircraftLayerCurrent = registryCurrent?.get("geoscope-aircraft") as AircraftLayer | undefined;
-            if (!aircraftLayerCurrent) {
-              console.warn("[GeoScopeMap] Flights data received but AircraftLayer does not exist yet");
-              return;
-            }
-
-            aircraftLayerCurrent.updateData(featureCollection);
-            console.log("[GeoScopeMap] AircraftLayer.updateData called with features:", featureCollection.features?.length ?? 0);
-            retryCount = 0; // Reset retry count on success
-            console.log("[GeoScopeMap] Flights data loaded successfully:", {
-              featuresCount: featureCollection.features?.length ?? 0,
-            });
-          } catch (conversionError) {
-            const error = conversionError instanceof Error ? conversionError : new Error(String(conversionError));
-            layerDiagnostics.recordError(layerId, error, {
-              phase: "flightsResponseToGeoJSON",
-            });
-            console.error("[GeoScopeMap] Error converting flights response:", conversionError);
-          }
-        }
-      } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error));
-        layerDiagnostics.recordError(layerId, err, {
-          phase: "loadFlightsData",
-        });
-        console.error("[GeoScopeMap] Flights: Failed to load flights data:", error);
-      }
-    };
-
-    // Cargar inmediatamente
-    void loadFlightsData();
-
-    // Cargar periódicamente según refresh_seconds
-    const intervalSeconds = Math.max(5, flightsConfig.refresh_seconds ?? 10);
-    const intervalMs = intervalSeconds * 1000;
-    const intervalId = setInterval(() => {
-      void loadFlightsData();
-    }, intervalMs);
-
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, [config, layerRegistryReady, mapReady, aircraftLayerReady]);
-  
   // useEffect para cargar datos de ships periódicamente
   useEffect(() => {
     if (!config || !mapRef.current || !shipsLayerRef.current) {
@@ -4509,7 +4324,7 @@ export default function GeoScopeMap({
         const map = mapRef.current;
         let bbox: string | undefined;
         let maxItemsView: number | undefined;
-        
+
         if (map && map.isStyleLoaded()) {
           const bounds = map.getBounds();
           const sw = bounds.getSouthWest();
@@ -4517,7 +4332,7 @@ export default function GeoScopeMap({
           bbox = `${sw.lng},${sw.lat},${ne.lng},${ne.lat}`;
           maxItemsView = shipsConfig.max_items_view;
         }
-        
+
         // Construir URL con parámetros
         let url = "/api/layers/ships";
         const params = new URLSearchParams();
@@ -4530,14 +4345,14 @@ export default function GeoScopeMap({
         if (params.toString()) {
           url += `?${params.toString()}`;
         }
-        
+
         console.log("[GeoScopeMap] Loading ships data from:", url);
-        
+
         // Validar respuesta del backend con retry
         const response = await retryWithBackoff(
           async () => {
             const resp = await apiGet<unknown>(url);
-            
+
             // Validar estructura de respuesta
             if (!resp) {
               throw new Error("Empty response from backend");
@@ -4615,7 +4430,7 @@ export default function GeoScopeMap({
 
     const checkAndRecoverLayers = () => {
       const diagnostics = layerDiagnostics.getAllDiagnostics();
-      
+
       for (const [layerId, diagnostic] of diagnostics.entries()) {
         // Solo intentar recuperar capas que están en error y están habilitadas
         if (diagnostic.state === "error" && diagnostic.enabled) {
@@ -4623,7 +4438,7 @@ export default function GeoScopeMap({
           if (diagnostic.errorCount >= MAX_ERROR_COUNT) {
             const backoffMs = RECOVERY_BACKOFF_BASE * Math.pow(2, Math.min(diagnostic.errorCount - MAX_ERROR_COUNT, 3));
             const timeSinceLastError = diagnostic.lastErrorTime ? Date.now() - diagnostic.lastErrorTime : Infinity;
-            
+
             if (timeSinceLastError < backoffMs) {
               // Aún en período de backoff
               continue;
@@ -4642,28 +4457,28 @@ export default function GeoScopeMap({
               const merged = withConfigDefaults(config ?? undefined);
               const flightsConfig = merged.layers.flights;
               const openskyConfig = merged.opensky;
-              
+
               // En config v2, opensky.enabled no existe, así que lo consideramos true por defecto
               const openskyEnabled = openskyConfig.enabled ?? true;
               const openskyHasCredentials = openskyConfig.oauth2?.has_credentials === true;
-              
+
               if (flightsConfig.enabled && openskyEnabled && openskyHasCredentials) {
                 void aircraftLayerRef.current.ensureFlightsLayer();
               }
             } else if (layerId === "ships" && shipsLayerRef.current) {
               const merged = withConfigDefaults(config ?? undefined);
               const shipsConfig = merged.layers.ships;
-              
+
               if (shipsConfig.enabled) {
                 void shipsLayerRef.current.ensureShipsLayer();
               }
             } else if (layerId === "weather" && weatherLayerRef.current) {
               const merged = withConfigDefaults(config ?? undefined);
               const configAsV2 = config as unknown as { version?: number; aemet?: { enabled?: boolean; cap_enabled?: boolean } };
-              const aemetConfig = configAsV2.version === 2 
-                ? configAsV2.aemet 
+              const aemetConfig = configAsV2.version === 2
+                ? configAsV2.aemet
                 : merged.aemet;
-              
+
               if (aemetConfig?.enabled && aemetConfig?.cap_enabled) {
                 weatherLayerRef.current.setEnabled(true);
               }
@@ -4689,18 +4504,18 @@ export default function GeoScopeMap({
       clearInterval(recoveryInterval);
     };
   }, [config]);
-  
+
   // useEffect para gestionar la configuración del radar
   // RainViewer está deprecado: si el provider es "rainviewer", se fuerza a "maptiler_weather"
   // MapTiler Weather se gestiona directamente mediante GlobalRadarLayer cuando provider === "maptiler_weather"
   useEffect(() => {
     console.log("[GlobalRadarLayer] useEffect enter, checking radar configuration");
-    
+
     if (!config) {
       console.log("[GlobalRadarLayer] No config available, skipping");
       return;
     }
-    
+
     // Leer configuración del radar
     const configAsV2Radar = config as unknown as {
       version?: number;
@@ -4719,15 +4534,15 @@ export default function GeoScopeMap({
         };
       };
     };
-  
+
     // Leer configuración desde layers.global.radar + ui_global.weather_layers.radar
     const globalRadarConfig = configAsV2Radar.version === 2 && configAsV2Radar.layers?.global_?.radar
       ? configAsV2Radar.layers.global_.radar
       : (config ? withConfigDefaults(config) : withConfigDefaults()).layers.global?.radar;
-  
+
     const weatherLayersRadar = configAsV2Radar.version === 2 ? configAsV2Radar.ui_global?.weather_layers?.radar : undefined;
     const uiGlobalRadar = configAsV2Radar.version === 2 ? configAsV2Radar.ui_global?.radar : undefined;
-  
+
     // Determinar el provider: prioridad weather_layers > ui_global > layers.global
     let providerRaw =
       weatherLayersRadar?.provider ??
@@ -4813,18 +4628,18 @@ export default function GeoScopeMap({
     if (!mapRef.current) {
       return;
     }
-  
+
     const satelliteSettings = globalLayersSettings.satellite;
     const radarSettings = globalLayersSettings.radar;
-  
+
     const isSatelliteEnabled = satelliteSettings.isEnabled;
     const isRadarEnabled = radarSettings.isEnabled;
-  
+
     // Si el satélite está desactivado, NO hacer nada relacionado con GIBS
     if (!isSatelliteEnabled && !isRadarEnabled) {
       return;
     }
-  
+
     // Si solo el radar está activado, no procesar frames de satélite
     if (!isSatelliteEnabled) {
       // Solo procesar radar si está activado
@@ -4834,7 +4649,7 @@ export default function GeoScopeMap({
         return;
       }
     }
-  
+
     if (
       isRadarEnabled &&
       typeof radarSettings.opacity === "number" &&
@@ -4842,7 +4657,7 @@ export default function GeoScopeMap({
     ) {
       setRadarOpacity(radarSettings.opacity);
     }
-  
+
     type SatelliteFrame = {
       timestamp: number;
       iso?: string;
@@ -4853,28 +4668,28 @@ export default function GeoScopeMap({
       tile_matrix_set?: string;
     };
     type RadarFrame = { timestamp: number; iso?: string };
-  
+
     let satelliteFrameIndex = 0;
     let radarFrameIndex = 0;
     let satelliteFrames: SatelliteFrame[] = [];
     let radarFrames: RadarFrame[] = [];
     let animationTimer: number | null = null;
     let notifiedWaitingForSatellite = false;
-  
+
     const canRenderSatellite = () =>
       Boolean(
         isSatelliteEnabled &&
-          globalSatelliteReady &&
-          globalSatelliteLayerRef.current &&
-          mapRef.current
+        globalSatelliteReady &&
+        globalSatelliteLayerRef.current &&
+        mapRef.current
       );
-  
+
     const applySatelliteFrame = (frame: SatelliteFrame, source?: "fetch" | "animation") => {
       const layer = globalSatelliteLayerRef.current;
       if (!layer) {
         return;
       }
-  
+
       // Preparar opciones de actualización
       const updateOpts: {
         tileUrl?: string;
@@ -4882,13 +4697,13 @@ export default function GeoScopeMap({
         minZoom?: number;
         maxZoom?: number;
       } = {};
-  
+
       if (frame.tile_url) {
         updateOpts.tileUrl = frame.tile_url;
       } else if (frame.timestamp) {
         updateOpts.currentTimestamp = frame.timestamp;
       }
-  
+
       // Añadir min_zoom y max_zoom si están disponibles
       // Asegurar que max_zoom nunca exceda 9 para GoogleMapsCompatible_Level9
       if (frame.min_zoom !== undefined) {
@@ -4903,12 +4718,12 @@ export default function GeoScopeMap({
           updateOpts.maxZoom = frame.max_zoom;
         }
       }
-  
+
       // Actualizar la capa con todas las opciones
       if (Object.keys(updateOpts).length > 0) {
         layer.update(updateOpts);
       }
-  
+
       if (source === "fetch") {
         console.info("[GlobalSatelliteLayer] update frame", {
           ts: frame.timestamp,
@@ -4919,7 +4734,7 @@ export default function GeoScopeMap({
         });
       }
     };
-  
+
     const fetchFrames = async () => {
       try {
         // Verificar nuevamente que el satélite esté habilitado antes de hacer fetch
@@ -4927,7 +4742,7 @@ export default function GeoScopeMap({
           satelliteFrames = [];
           return;
         }
-  
+
         if (isSatelliteEnabled) {
           if (!canRenderSatellite()) {
             if (!notifiedWaitingForSatellite) {
@@ -4944,7 +4759,7 @@ export default function GeoScopeMap({
               provider: string;
               error: string | null;
             }>("/api/global/satellite/frames");
-  
+
             // Validación robusta de frames
             if (
               !satResponse ||
@@ -4960,18 +4775,18 @@ export default function GeoScopeMap({
               satelliteFrames = [];
               return;
             }
-  
+
             // Filtrar frames que tengan al menos tile_url o timestamp válido
             const validFrames = satResponse.frames.filter(
               (frame) => frame && (frame.tile_url || frame.timestamp)
             );
-  
+
             if (validFrames.length === 0) {
               console.warn("[GeoScopeMap] GIBS frames: no hay frames válidos con tile_url o timestamp");
               satelliteFrames = [];
               return;
             }
-  
+
             notifiedWaitingForSatellite = false;
             satelliteFrames = validFrames;
             satelliteFrameIndex = satelliteFrames.length - 1;
@@ -4984,14 +4799,14 @@ export default function GeoScopeMap({
         } else {
           satelliteFrames = [];
         }
-  
+
         if (isRadarEnabled) {
           const radarResponse = await apiGet<{
             frames: RadarFrame[];
             count: number;
             provider: string;
           }>("/api/global/radar/frames");
-  
+
           if (radarResponse?.frames && radarResponse.frames.length > 0) {
             radarFrames = radarResponse.frames;
             radarFrameIndex = 0;
@@ -5007,12 +4822,12 @@ export default function GeoScopeMap({
         console.error("[GeoScopeMap] Failed to fetch global frames:", err);
       }
     };
-  
+
     const advanceFrames = () => {
       if (!radarPlaying) {
         return;
       }
-  
+
       if (canRenderSatellite() && satelliteFrames.length > 0) {
         satelliteFrameIndex = (satelliteFrameIndex + 1) % satelliteFrames.length;
         const currentFrame = satelliteFrames[satelliteFrameIndex];
@@ -5020,7 +4835,7 @@ export default function GeoScopeMap({
           applySatelliteFrame(currentFrame, "animation");
         }
       }
-  
+
       if (isRadarEnabled && radarFrames.length > 0) {
         radarFrameIndex = (radarFrameIndex + 1) % radarFrames.length;
         const globalRadarLayer = globalRadarLayerRef.current;
@@ -5029,12 +4844,12 @@ export default function GeoScopeMap({
         }
       }
     };
-  
+
     const startAnimation = () => {
       if (animationTimer !== null) {
         return;
       }
-  
+
       const frameSteps: number[] = [];
       if (canRenderSatellite()) {
         frameSteps.push(satelliteSettings.config?.frame_step ?? 10);
@@ -5042,35 +4857,35 @@ export default function GeoScopeMap({
       if (isRadarEnabled) {
         frameSteps.push(radarSettings.config?.frame_step ?? 5);
       }
-  
+
       const baseMinutes = frameSteps.length > 0 ? Math.min(...frameSteps) : 5;
       const intervalMs =
         (baseMinutes * 60 * 1000) / Math.max(0.25, radarPlaybackSpeed ?? 1);
-  
+
       const animate = () => {
         advanceFrames();
         animationTimer = window.setTimeout(animate, intervalMs);
       };
-  
+
       animate();
     };
-  
+
     const stopAnimation = () => {
       if (animationTimer !== null) {
         window.clearTimeout(animationTimer);
         animationTimer = null;
       }
     };
-  
+
     const restartAnimation = () => {
       stopAnimation();
       if (radarPlaying && (canRenderSatellite() || isRadarEnabled)) {
         startAnimation();
       }
     };
-  
+
     void fetchFrames();
-  
+
     const satelliteRefresh = satelliteSettings.config?.refresh_minutes ?? 10;
     const radarRefresh = radarSettings.config?.refresh_minutes ?? 5;
     const refreshSources: number[] = [];
@@ -5082,11 +4897,11 @@ export default function GeoScopeMap({
     }
     const refreshIntervalMs =
       (refreshSources.length > 0 ? Math.min(...refreshSources) : 5) * 60 * 1000;
-  
+
     const refreshTimer = window.setInterval(() => {
       void fetchFrames();
     }, refreshIntervalMs);
-  
+
     const updateLayersState = () => {
       const map = mapRef.current;
       const globalSatLayer = globalSatelliteLayerRef.current;
@@ -5096,16 +4911,16 @@ export default function GeoScopeMap({
           enabled: true,
         });
       }
-  
+
       const globalRadarLayer = globalRadarLayerRef.current;
       if (globalRadarLayer && isRadarEnabled) {
         globalRadarLayer.update({ opacity: radarOpacity });
       }
     };
-  
+
     updateLayersState();
     restartAnimation();
-  
+
     return () => {
       stopAnimation();
       window.clearInterval(refreshTimer);
@@ -5142,6 +4957,15 @@ export default function GeoScopeMap({
         <div className="map-tint" style={{ background: tintColor }} aria-hidden="true" />
       ) : null}
       {/* MapHybrid desactivado: solo usar estilo base streets-v4 */}
+      {/* Renderizar AircraftMapLayer cuando el mapa esté listo y flights esté habilitado */}
+      {mapRef.current && mapReady && layerRegistryRef.current ? (
+        <AircraftMapLayer
+          mapRef={mapRef}
+          layerRegistry={layerRegistryRef.current}
+          config={config}
+          mapReady={mapReady}
+        />
+      ) : null}
     </div>
   );
 }
