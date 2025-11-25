@@ -2349,8 +2349,7 @@ export default function GeoScopeMap({
                   });
                 }
 
-                // IMPORTANTE: return aquí para NO entrar en la rama legacy de RainViewer
-                return;
+
               }
 
               // === RAMA LEGACY PARA RAINVIEWER ===
