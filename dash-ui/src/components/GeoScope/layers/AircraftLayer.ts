@@ -193,18 +193,18 @@ export default class AircraftLayer implements Layer {
           const error = iconError instanceof Error ? iconError : new Error(String(iconError));
           layerDiagnostics.recordError(layerId, error, {
             phase: "icon_registration",
-        });
-        console.warn("[AircraftLayer] Failed to register plane icon:", iconError);
+          });
+          console.warn("[AircraftLayer] Failed to register plane icon:", iconError);
+        }
       }
-    }
 
-    console.log("[AircraftLayer] ensureFlightsLayer - creating/updating source+layers");
+      console.log("[AircraftLayer] ensureFlightsLayer - creating/updating source+layers");
 
-    // Asegurar que el source existe (idempotente)
-    try {
-      this.ensureSource();
-    } catch (sourceError) {
-      const error = sourceError instanceof Error ? sourceError : new Error(String(sourceError));
+      // Asegurar que el source existe (idempotente)
+      try {
+        this.ensureSource();
+      } catch (sourceError) {
+        const error = sourceError instanceof Error ? sourceError : new Error(String(sourceError));
         layerDiagnostics.recordError(layerId, error, {
           phase: "ensure_source",
         });
@@ -833,7 +833,7 @@ export default class AircraftLayer implements Layer {
                 "icon-image": iconImage,
                 "icon-size": sizeExpression,
                 "icon-allow-overlap": allowOverlap,
-                "icon-rotate": ["coalesce", ["get", "track"], 0],
+                "icon-rotate": ["coalesce", ["get", "track"], ["get", "true_track"], ["get", "heading"], 0],
                 "icon-rotation-alignment": "map",
                 visibility: this.enabled ? "visible" : "none",
               },
@@ -1018,7 +1018,7 @@ export default class AircraftLayer implements Layer {
             "icon-image": iconImage,
             "icon-size": sizeExpression,
             "icon-allow-overlap": allowOverlap,
-            "icon-rotate": ["coalesce", ["get", "track"], 0],
+            "icon-rotate": ["coalesce", ["get", "track"], ["get", "true_track"], ["get", "heading"], 0],
             "icon-rotation-alignment": "map",
             visibility: this.enabled ? "visible" : "none",
           },
@@ -1075,7 +1075,7 @@ export default class AircraftLayer implements Layer {
     return [
       "interpolate",
       ["linear"],
-      ["get", "age_seconds"],
+      ["coalesce", ["get", "age_seconds"], 0],
       0,
       [
         "case",
@@ -1104,7 +1104,7 @@ export default class AircraftLayer implements Layer {
       console.warn("[AircraftLayer] Style not ready, skipping");
       return;
     }
-    
+
     try {
       const baseOpacity = (this.currentRenderMode === "symbol" || this.currentRenderMode === "symbol_custom")
         ? this.opacity
