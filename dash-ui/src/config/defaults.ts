@@ -253,8 +253,8 @@ export const createDefaultMapSettings = (): MapConfig => ({
   xyz: { ...DEFAULT_XYZ },
   viewMode: "fixed",
   fixed: {
-    center: { lat: 39.98, lon: 0.20 }, // Castellón por defecto
-    zoom: 7.8,
+    center: { lat: 40.0, lon: -3.5 }, // Centro península por defecto
+    zoom: 5.8,
     bearing: 0,
     pitch: 0,
   },
