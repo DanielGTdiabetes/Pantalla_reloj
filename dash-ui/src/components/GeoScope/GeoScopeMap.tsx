@@ -284,16 +284,18 @@ const ensureAircraftLayer = async (
   console.log("[GeoScopeMap] Initializing AircraftLayer with config:", { flightsCfg, openskyCfg });
 
   const style = getSafeMapStyle(map);
-  if (!style) {
-    console.warn("[GeoScopeMap] AircraftLayer init skipped because map style is not ready");
-    return null;
-  }
+  // if (!style) {
+  //   console.warn("[GeoScopeMap] AircraftLayer init skipped because map style is not ready");
+  //   return null;
+  // }
 
   let spriteAvailable = false;
-  try {
-    spriteAvailable = await hasSprite(style);
-  } catch (spriteError) {
-    console.warn("[GeoScopeMap] Error checking sprite availability for AircraftLayer:", spriteError);
+  if (style) {
+    try {
+      spriteAvailable = await hasSprite(style);
+    } catch (spriteError) {
+      console.warn("[GeoScopeMap] Error checking sprite availability for AircraftLayer:", spriteError);
+    }
   }
 
   const aircraftLayerInstance = new AircraftLayer({
