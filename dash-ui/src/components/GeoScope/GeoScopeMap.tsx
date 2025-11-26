@@ -59,11 +59,11 @@ import {
   type MapStyleDefinition,
   type MapStyleResult
 } from "./mapStyle";
-// Vista fija por defecto (Castellón)
+// Vista fija por defecto (España)
 const DEFAULT_VIEW = {
-  lng: 0.20,
-  lat: 39.98,
-  zoom: 9.0,
+  lng: -3.7492,
+  lat: 40.4637,
+  zoom: 5.5,
   bearing: 0,
   pitch: 0
 };
@@ -870,8 +870,8 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
         customXyz: undefined,
         viewMode: "fixed",
         fixed: {
-          center: { lat: 39.98, lon: 0.20 },
-          zoom: 9.0,
+          center: { lat: 40.4637, lon: -3.7492 },
+          zoom: 5.5,
           bearing: 0,
           pitch: 0,
         },
@@ -989,8 +989,8 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
         customXyz: undefined,
         viewMode: "fixed",
         fixed: {
-          center: { lat: 39.98, lon: 0.20 },
-          zoom: 9.0,
+          center: { lat: 40.4637, lon: -3.7492 },
+          zoom: 5.5,
           bearing: 0,
           pitch: 0,
         },
@@ -1065,8 +1065,8 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
       customXyz: { tileUrl: null, minzoom: 0, maxzoom: 19 },
       viewMode: "fixed",
       fixed: {
-        center: { lat: 39.98, lon: 0.20 },
-        zoom: 9.0,
+        center: { lat: 40.4637, lon: -3.7492 },
+        zoom: 5.5,
         bearing: 0,
         pitch: 0,
       },
@@ -1717,10 +1717,10 @@ export default function GeoScopeMap({
           viewState.bearing = fixedView.bearing ?? 0;
           viewState.pitch = fixedView.pitch ?? 0;
         } else {
-          // Defaults de Castellón si no hay fixed config
-          viewState.lat = 39.98;
-          viewState.lng = 0.20;
-          viewState.zoom = 9.0;
+          // Defaults de España si no hay fixed config
+          viewState.lat = 40.4637;
+          viewState.lng = -3.7492;
+          viewState.zoom = 5.5;
           viewState.bearing = 0;
           viewState.pitch = 0;
         }
@@ -3772,9 +3772,9 @@ export default function GeoScopeMap({
       return;
     }
 
-    const centerLat = v2Fixed.center.lat ?? 39.98;
-    const centerLng = v2Fixed.center.lon ?? 0.20;
-    const zoom = v2Fixed.zoom ?? 9.0;
+    const centerLat = v2Fixed.center.lat ?? 40.4637;
+    const centerLng = v2Fixed.center.lon ?? -3.7492;
+    const zoom = v2Fixed.zoom ?? 5.5;
     const bearing = v2Fixed.bearing ?? 0;
     const pitch = v2Fixed.pitch ?? 0;
 
@@ -3850,10 +3850,10 @@ export default function GeoScopeMap({
       const lightningLayer = lightningLayerRef.current;
 
       if (stormEnabled) {
-        // Zoom a Castellón/Vila-real según configuración
-        const centerLat = Number.isFinite(stormConfig.center_lat) ? stormConfig.center_lat : 39.986;
-        const centerLng = Number.isFinite(stormConfig.center_lng) ? stormConfig.center_lng : -0.051;
-        const zoom = Number.isFinite(stormConfig.zoom) ? stormConfig.zoom : 9.0;
+        // Zoom a España según configuración
+        const centerLat = Number.isFinite(stormConfig.center_lat) ? stormConfig.center_lat : 40.4637;
+        const centerLng = Number.isFinite(stormConfig.center_lng) ? stormConfig.center_lng : -3.7492;
+        const zoom = Number.isFinite(stormConfig.zoom) ? stormConfig.zoom : 5.5;
 
         // Actualizar estado de vista
         const viewState = viewStateRef.current;
@@ -3908,9 +3908,9 @@ export default function GeoScopeMap({
         const mapConfig = merged.ui?.map;
         const fixedConfig = mapConfig?.fixed;
 
-        const centerLat = fixedConfig?.center?.lat ?? 39.98;
-        const centerLng = fixedConfig?.center?.lon ?? 0.20;
-        const zoom = fixedConfig?.zoom ?? 9.0;
+        const centerLat = fixedConfig?.center?.lat ?? 40.4637;
+        const centerLng = fixedConfig?.center?.lon ?? -3.7492;
+        const zoom = fixedConfig?.zoom ?? 5.5;
 
         const viewState = viewStateRef.current;
         if (!viewState) {
@@ -3978,9 +3978,9 @@ export default function GeoScopeMap({
 
           // Si auto-enable está activo pero el modo tormenta no está activo
           if (autoEnable && !stormEnabled && response.features.length > 0) {
-            // Verificar si hay rayos cerca de Castellón/Vila-real
-            const centerLat = Number.isFinite(stormConfig.center_lat) ? stormConfig.center_lat : 39.986;
-            const centerLng = Number.isFinite(stormConfig.center_lng) ? stormConfig.center_lng : -0.051;
+            // Verificar si hay rayos cerca de España
+            const centerLat = Number.isFinite(stormConfig.center_lat) ? stormConfig.center_lat : 40.4637;
+            const centerLng = Number.isFinite(stormConfig.center_lng) ? stormConfig.center_lng : -3.7492;
             const maxDistance = 50; // Radio de 50 km
 
             const hasNearbyLightning = response.features.some((feature) => {

@@ -19,10 +19,10 @@ import {
   normalizeLabelsOverlay,
 } from "../lib/map/labelsOverlay";
 
-// Coordenadas por defecto: Castellón
+// Coordenadas por defecto: España
 export const DEFAULT_MAP_CENTER = {
-  lat: 39.98,
-  lon: 0.20,
+  lat: 40.4637,
+  lon: -3.7492,
 };
 
 export const DEFAULT_LOCAL_RASTER_CONFIG = {
@@ -63,12 +63,12 @@ export const DEFAULT_MAP_CONFIG: MapConfigV2 = {
   viewMode: "fixed",
   fixed: {
     center: DEFAULT_MAP_CENTER,
-    zoom: 7.8,
+    zoom: 5.5,
     bearing: 0,
     pitch: 0,
   },
   region: {
-    postalCode: "12001",
+    postalCode: undefined,
   },
 };
 

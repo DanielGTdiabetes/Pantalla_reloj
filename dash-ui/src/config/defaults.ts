@@ -253,13 +253,13 @@ export const createDefaultMapSettings = (): MapConfig => ({
   xyz: { ...DEFAULT_XYZ },
   viewMode: "fixed",
   fixed: {
-    center: { lat: 40.0, lon: -3.5 }, // Centro península por defecto
-    zoom: 5.8,
+    center: { lat: 40.4637, lon: -3.7492 }, // España
+    zoom: 5.5,
     bearing: 0,
     pitch: 0,
   },
   region: {
-    postalCode: "12001", // Castellón por defecto
+    postalCode: undefined,
   },
   renderWorldCopies: true,
   interactive: false,
