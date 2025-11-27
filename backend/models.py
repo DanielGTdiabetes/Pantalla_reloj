@@ -138,9 +138,9 @@ class StormMode(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = False
-    center_lat: float = Field(default=39.986, ge=-90, le=90)
-    center_lng: float = Field(default=-0.051, ge=-180, le=180)
-    zoom: float = Field(default=9.0, ge=1, le=20)
+    center_lat: float = Field(default=40.0, ge=-90, le=90)
+    center_lng: float = Field(default=-3.5, ge=-180, le=180)
+    zoom: float = Field(default=5.8, ge=1, le=20)
     auto_enable: bool = False
     radius_km: float = Field(default=30, ge=1, le=500)
     auto_disable_after_minutes: int = Field(default=60, ge=5, le=1440)
@@ -198,18 +198,18 @@ class Ephemerides(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = True
-    latitude: float = Field(default=39.986, ge=-90, le=90)  # Castellón
-    longitude: float = Field(default=-0.051, ge=-180, le=180)  # Vila-real
+    latitude: float = Field(default=40.0, ge=-90, le=90)  # Centro Península
+    longitude: float = Field(default=-3.5, ge=-180, le=180)  # Centro Península
     timezone: str = Field(default="Europe/Madrid", min_length=1)
 
 
 class OpenSkyBBox(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    lamin: float = Field(default=39.5, ge=-90.0, le=90.0)
-    lamax: float = Field(default=41.0, ge=-90.0, le=90.0)
-    lomin: float = Field(default=-1.0, ge=-180.0, le=180.0)
-    lomax: float = Field(default=1.5, ge=-180.0, le=180.0)
+    lamin: float = Field(default=36.0, ge=-90.0, le=90.0)
+    lamax: float = Field(default=44.0, ge=-90.0, le=90.0)
+    lomin: float = Field(default=-10.0, ge=-180.0, le=180.0)
+    lomax: float = Field(default=5.0, ge=-180.0, le=180.0)
 
     @model_validator(mode="after")
     def validate_bounds(cls, values: "OpenSkyBBox") -> "OpenSkyBBox":  # type: ignore[override]

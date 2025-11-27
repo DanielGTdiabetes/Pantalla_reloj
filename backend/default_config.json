@@ -56,7 +56,15 @@
     "rotation": {
       "enabled": true,
       "duration_sec": 10,
-      "panels": ["clock", "weather", "astronomy", "santoral", "calendar", "news", "historicalEvents"]
+      "panels": [
+        "clock",
+        "weather",
+        "astronomy",
+        "santoral",
+        "calendar",
+        "news",
+        "historicalEvents"
+      ]
     }
   },
   "ai": {
@@ -64,9 +72,9 @@
   },
   "storm": {
     "enabled": false,
-    "center_lat": 39.986,
-    "center_lng": -0.051,
-    "zoom": 9.0,
+    "center_lat": 40.0,
+    "center_lng": -3.5,
+    "zoom": 5.8,
     "auto_enable": false,
     "radius_km": 30,
     "auto_disable_after_minutes": 60
@@ -106,18 +114,18 @@
   },
   "ephemerides": {
     "enabled": true,
-    "latitude": 39.986,
-    "longitude": -0.051,
+    "latitude": 40.0,
+    "longitude": -3.5,
     "timezone": "Europe/Madrid"
   },
   "opensky": {
     "enabled": false,
     "mode": "bbox",
     "bbox": {
-      "lamin": 39.5,
-      "lamax": 41.0,
-      "lomin": -1.0,
-      "lomax": 1.5
+      "lamin": 36.0,
+      "lamax": 44.0,
+      "lomin": -10.0,
+      "lomax": 5.0
     },
     "poll_seconds": 10,
     "extended": 0,
@@ -143,10 +151,10 @@
   },
   "layers": {
     "flights": {
-        "custom": {
-            "api_url": null,
-            "api_key": null
-        },
+      "custom": {
+        "api_url": null,
+        "api_key": null
+      },
       "enabled": true,
       "opacity": 0.9,
       "provider": "opensky",

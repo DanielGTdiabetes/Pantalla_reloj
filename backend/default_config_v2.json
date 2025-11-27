@@ -39,12 +39,17 @@
     },
     "viewMode": "fixed",
     "fixed": {
-      "center": { "lat": 39.98, "lon": 0.20 },
-      "zoom": 8.0,
+      "center": {
+        "lat": 40.0,
+        "lon": -3.5
+      },
+      "zoom": 5.8,
       "bearing": 0,
       "pitch": 0
     },
-    "region": { "postalCode": "12540" }
+    "region": {
+      "postalCode": "12540"
+    }
   },
   "ui_global": {
     "satellite": {
@@ -67,16 +72,36 @@
         "time_value": "default"
       }
     },
-    "radar": { "enabled": false, "provider": "maptiler_weather", "opacity": 0.7, "layer_type": "precipitation" },
+    "radar": {
+      "enabled": false,
+      "provider": "maptiler_weather",
+      "opacity": 0.7,
+      "layer_type": "precipitation"
+    },
     "weather_layers": {
-      "radar": { "enabled": true, "provider": "maptiler_weather", "opacity": 0.7 },
-      "satellite": { "enabled": false, "provider": "gibs", "opacity": 0.8 },
-      "alerts": { "enabled": true, "provider": "cap_aemet", "opacity": 0.6 }
+      "radar": {
+        "enabled": true,
+        "provider": "maptiler_weather",
+        "opacity": 0.7
+      },
+      "satellite": {
+        "enabled": false,
+        "provider": "gibs",
+        "opacity": 0.8
+      },
+      "alerts": {
+        "enabled": true,
+        "provider": "cap_aemet",
+        "opacity": 0.6
+      }
     },
     "overlay": {
       "rotator": {
         "enabled": true,
-        "order": ["clock", "santoral"],
+        "order": [
+          "clock",
+          "santoral"
+        ],
         "durations_sec": {
           "clock": 10,
           "santoral": 10
@@ -146,10 +171,10 @@
       "opensky": {
         "mode": "oauth2",
         "bbox": {
-          "lamin": 39.5,
-          "lamax": 41.0,
-          "lomin": -1.0,
-          "lomax": 1.5
+          "lamin": 36.0,
+          "lamax": 44.0,
+          "lomin": -10.0,
+          "lomax": 5.0
         },
         "extended": 0
       },
@@ -189,11 +214,28 @@
     }
   },
   "panels": {
-    "weatherWeekly": { "enabled": true },
-    "weather": { "enabled": true, "latitude": 39.98, "longitude": 0.20 },
-    "ephemerides": { "enabled": true },
-    "news": { "enabled": true, "feeds": [], "max_items_per_feed": 10, "refresh_minutes": 30 },
-    "calendar": { "enabled": true, "provider": "google", "days_ahead": 14 },
+    "weatherWeekly": {
+      "enabled": true
+    },
+    "weather": {
+      "enabled": true,
+      "latitude": 40.0,
+      "longitude": -3.5
+    },
+    "ephemerides": {
+      "enabled": true
+    },
+    "news": {
+      "enabled": true,
+      "feeds": [],
+      "max_items_per_feed": 10,
+      "refresh_minutes": 30
+    },
+    "calendar": {
+      "enabled": true,
+      "provider": "google",
+      "days_ahead": 14
+    },
     "harvest": {
       "enabled": true
     },
@@ -215,9 +257,9 @@
   },
   "storm": {
     "enabled": true,
-    "center_lat": 39.986,
-    "center_lng": -0.051,
-    "zoom": 9.0,
+    "center_lat": 40.0,
+    "center_lng": -3.5,
+    "zoom": 5.8,
     "auto_enable": true,
     "auto_disable_after_minutes": 60
   },
@@ -239,8 +281,8 @@
     "rss_feeds": []
   },
   "ephemerides": {
-    "latitude": 39.986,
-    "longitude": -0.051,
+    "latitude": 40.0,
+    "longitude": -3.5,
     "timezone": "Europe/Madrid"
   },
   "calendar": {
@@ -257,16 +299,16 @@
     "enabled": false,
     "mode": "bbox",
     "bbox": {
-      "lamin": 39.5,
-      "lamax": 41.0,
-      "lomin": -1.0,
-      "lomax": 1.5
+      "lamin": 36.0,
+      "lamax": 44.0,
+      "lomin": -10.0,
+      "lomax": 5.0
     },
     "poll_seconds": 10,
     "oauth2": {
       "client_id": null,
-        "client_secret": null,
-        "token_url": "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
+      "client_secret": null,
+      "token_url": "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
       "scope": null
     }
   },
@@ -275,38 +317,38 @@
     "provider": "aisstream",
     "ws_url": "wss://stream.aisstream.io/v0/stream"
   },
-    "secrets": {
-      "maptiler": {
-        "api_key": null
+  "secrets": {
+    "maptiler": {
+      "api_key": null
+    },
+    "opensky": {
+      "oauth2": {
+        "client_id": null,
+        "client_secret": null,
+        "token_url": "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
+        "scope": null
       },
-      "opensky": {
-        "oauth2": {
-          "client_id": null,
-          "client_secret": null,
-          "token_url": "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
-          "scope": null
-        },
-        "basic": {
-          "username": null,
-          "password": null
-        }
-      },
-      "google": {
-        "api_key": null,
-        "calendar_id": null
-      },
-      "aviationstack": {
-        "api_key": null
-      },
-      "aisstream": {
-        "api_key": null
-      },
-      "aishub": {
-        "api_key": null
-      },
-      "calendar_ics": {
-        "url": null,
-        "path": null
+      "basic": {
+        "username": null,
+        "password": null
       }
+    },
+    "google": {
+      "api_key": null,
+      "calendar_id": null
+    },
+    "aviationstack": {
+      "api_key": null
+    },
+    "aisstream": {
+      "api_key": null
+    },
+    "aishub": {
+      "api_key": null
+    },
+    "calendar_ics": {
+      "url": null,
+      "path": null
     }
+  }
 }
