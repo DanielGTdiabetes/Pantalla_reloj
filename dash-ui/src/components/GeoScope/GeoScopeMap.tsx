@@ -34,7 +34,7 @@ import {
 } from "../../config/defaults";
 import { hasMaptilerKey, containsApiKey, buildFinalMaptilerStyleUrl } from "../../lib/map/maptilerRuntime";
 import { extractMaptilerApiKeyFromUrl } from "../../lib/map/maptilerApiKey";
-import { DEFAULT_OPENSKY_CONFIG } from "../../config/defaults_v2";
+import { DEFAULT_OPENSKY_CONFIG } from "../../config/defaults";
 import { withStyleCacheBuster } from "../../lib/map/utils/styleCacheBuster";
 import type {
   AppConfig,
@@ -53,7 +53,7 @@ import type {
   MapConfigV2,
   SatelliteLabelsOverlay,
   GlobalRadarLayerConfigV2
-} from "../../types/config_v2";
+} from "../../types/config";
 import {
   loadMapStyle,
   type MapStyleDefinition,
@@ -774,7 +774,7 @@ const loadRuntimePreferences = async (): Promise<RuntimePreferences> => {
     let rotationSettings: RotationConfig | undefined;
     try {
       const { getConfigV2 } = await import("../../lib/api");
-      const { withConfigDefaultsV2 } = await import("../../config/defaults_v2");
+      const { withConfigDefaultsV2 } = await import("../../config/defaults");
       const v2Config = await getConfigV2();
       if (v2Config && v2Config.version === 2 && v2Config.ui_map) {
         mapConfigV2 = withConfigDefaultsV2(v2Config);

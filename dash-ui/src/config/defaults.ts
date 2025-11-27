@@ -42,9 +42,7 @@ import type {
   ShipsLayerConfig,
   StormModeConfig,
   UIConfig,
-} from "../types/config";
-
-import type {
+  // V2 Types
   AppConfigV2,
   MapConfigV2,
   UIGlobalConfigV2,
@@ -53,9 +51,9 @@ import type {
   ShipsLayerConfigV2,
   GlobalRadarLayerConfigV2,
   PanelsConfigV2,
-  CalendarConfig as CalendarConfigV2,
+  CalendarConfigV2,
   UIRotationConfigV2,
-} from "../types/config_v2";
+} from "../types/config";
 import {
   DEFAULT_LABELS_STYLE_URL,
   DEFAULT_NORMALIZED_LABELS_OVERLAY,

@@ -1,4 +1,4 @@
-import type { SatelliteLabelsOverlay } from "../../types/config_v2";
+import type { SatelliteLabelsOverlay } from "../../types/config";
 
 export type NormalizedLabelsOverlay = {
   enabled: boolean;
@@ -55,8 +55,8 @@ export const normalizeLabelsOverlay = (
   const sourceOverlay = isSatelliteLabelsOverlay(rawOverlay)
     ? rawOverlay
     : typeof rawOverlay === "boolean"
-    ? { enabled: rawOverlay }
-    : {};
+      ? { enabled: rawOverlay }
+      : {};
 
   const enabled =
     typeof (sourceOverlay as { enabled?: unknown })?.enabled === "boolean"

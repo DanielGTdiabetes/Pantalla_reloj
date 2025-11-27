@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { withConfigDefaults } from "../config/defaults";
 import { withConfigDefaultsV2 } from "../config/defaults";
 import type { AppConfig } from "../types/config";
-import type { AppConfigV2 } from "../types/config_v2";
+import type { AppConfigV2 } from "../types/config";
 import { API_ORIGIN, getConfig, getConfigMeta, getConfigV2 } from "./api";
 
 const API_UNREACHABLE = `No se pudo conectar con el backend en ${API_ORIGIN}`;

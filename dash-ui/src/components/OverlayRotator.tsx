@@ -4,7 +4,7 @@ import { withConfigDefaults } from "../config/defaults";
 import { apiGet, apiPost, getConfigMeta, getSantoralToday } from "../lib/api";
 import { useConfig } from "../lib/useConfig";
 import { fetchWikipediaEvents } from "../lib/services/wikipedia";
-import type { AppConfigV2 } from "../types/config_v2";
+import type { AppConfigV2 } from "../types/config";
 import { dayjs } from "../utils/dayjs";
 import { ensurePlainText, sanitizeRichText } from "../utils/sanitize";
 import { safeGetTimezone } from "../utils/timezone";
@@ -281,7 +281,7 @@ export const OverlayRotator: React.FC = () => {
     const tz = safeGetTimezone(config as Record<string, unknown>);
     return tz;
   }, [config]);
-  
+
   // Detectar modo día/noche
   const isNight = useDayNightMode(timezone) === "night";
 
@@ -770,7 +770,7 @@ export const OverlayRotator: React.FC = () => {
       )
     });
 
-        // forecast (WeatherForecastCard - pronóstico semanal)
+    // forecast (WeatherForecastCard - pronóstico semanal)
     // Solo mostrar si hay datos de pronóstico disponibles
     if (forecastDays.length > 0) {
       map.set("forecast", {
@@ -850,45 +850,45 @@ export const OverlayRotator: React.FC = () => {
       : [];
     const v2ConfigForDuration = config as unknown as { panels?: { historicalEvents?: { rotation_seconds?: number } } };
     const rotationSeconds = v2ConfigForDuration.panels?.historicalEvents?.rotation_seconds ?? 6;
-    
+
     // Alternar eventos históricos - mostrar diferentes eventos en cada rotación
-        map.set("historicalEvents", {
-          id: "historicalEvents",
-          duration: (durations.historicalEvents ?? 6) * 1000,
-          render: () => {
-            const totalEvents = historicalEventsItemsForCard.length;
-            if (totalEvents === 0) {
-              return <HistoricalEventsCard items={["No hay efemérides para este día."]} rotationSeconds={rotationSeconds} />;
-            }
-            
-            // Limitar a 2 eventos máximo para evitar desbordes en pantalla
-            const eventsPerDisplay = 2;
-            
-            // Usar el contador ref que se incrementa cada vez que se muestra este panel
-            const currentCounter = historicalEventsCounterRef.current ?? 0;
-            const displayIndex = currentCounter % Math.max(1, Math.ceil(totalEvents / eventsPerDisplay));
-            const startIndex = (displayIndex * eventsPerDisplay) % totalEvents;
-            
-            // Tomar los eventos para esta rotación
-            let alternatingEvents: string[] = [];
-            if (startIndex + eventsPerDisplay <= totalEvents) {
-              alternatingEvents = historicalEventsItemsForCard.slice(startIndex, startIndex + eventsPerDisplay);
-            } else {
-              // Si se cruza el final del array, tomar desde startIndex hasta el final y completar desde el principio
-              const fromStart = historicalEventsItemsForCard.slice(startIndex);
-              const fromBeginning = historicalEventsItemsForCard.slice(0, eventsPerDisplay - fromStart.length);
-              alternatingEvents = [...fromStart, ...fromBeginning];
-            }
-            
-            // Incrementar contador para la próxima vez que se muestre este panel
-            historicalEventsCounterRef.current = (currentCounter + 1) % Math.max(1, Math.ceil(totalEvents / eventsPerDisplay));
-            
-            // Asegurar que siempre mostramos exactamente 2 eventos o menos
-            const finalEvents = alternatingEvents.slice(0, eventsPerDisplay);
-            
-            return <HistoricalEventsCard items={finalEvents} rotationSeconds={rotationSeconds} />;
-          }
-        });
+    map.set("historicalEvents", {
+      id: "historicalEvents",
+      duration: (durations.historicalEvents ?? 6) * 1000,
+      render: () => {
+        const totalEvents = historicalEventsItemsForCard.length;
+        if (totalEvents === 0) {
+          return <HistoricalEventsCard items={["No hay efemérides para este día."]} rotationSeconds={rotationSeconds} />;
+        }
+
+        // Limitar a 2 eventos máximo para evitar desbordes en pantalla
+        const eventsPerDisplay = 2;
+
+        // Usar el contador ref que se incrementa cada vez que se muestra este panel
+        const currentCounter = historicalEventsCounterRef.current ?? 0;
+        const displayIndex = currentCounter % Math.max(1, Math.ceil(totalEvents / eventsPerDisplay));
+        const startIndex = (displayIndex * eventsPerDisplay) % totalEvents;
+
+        // Tomar los eventos para esta rotación
+        let alternatingEvents: string[] = [];
+        if (startIndex + eventsPerDisplay <= totalEvents) {
+          alternatingEvents = historicalEventsItemsForCard.slice(startIndex, startIndex + eventsPerDisplay);
+        } else {
+          // Si se cruza el final del array, tomar desde startIndex hasta el final y completar desde el principio
+          const fromStart = historicalEventsItemsForCard.slice(startIndex);
+          const fromBeginning = historicalEventsItemsForCard.slice(0, eventsPerDisplay - fromStart.length);
+          alternatingEvents = [...fromStart, ...fromBeginning];
+        }
+
+        // Incrementar contador para la próxima vez que se muestre este panel
+        historicalEventsCounterRef.current = (currentCounter + 1) % Math.max(1, Math.ceil(totalEvents / eventsPerDisplay));
+
+        // Asegurar que siempre mostramos exactamente 2 eventos o menos
+        const finalEvents = alternatingEvents.slice(0, eventsPerDisplay);
+
+        return <HistoricalEventsCard items={finalEvents} rotationSeconds={rotationSeconds} />;
+      }
+    });
 
     // NOTA: Paneles legacy v1 eliminados. Ahora solo se soportan nombres v2.
     // Los mapeos legacy se mantienen en LEGACY_ROTATION_PANEL_MAP para conversión automática.
@@ -1240,7 +1240,7 @@ export const OverlayRotator: React.FC = () => {
   return (
     <section className="overlay-rotator" role="complementary" aria-live="polite">
       <BackgroundGradient />
-      <WeatherAmbience 
+      <WeatherAmbience
         condition={weatherCondition}
         isNight={isNight}
         windSpeed={windSpeed}

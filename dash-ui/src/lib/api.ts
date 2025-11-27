@@ -1,5 +1,8 @@
-import type { AppConfig } from "../types/config";
-import type { AppConfigV2, CalendarConfig } from "../types/config_v2";
+import type {
+  AppConfig,
+  AppConfigV2,
+  CalendarConfigV2 as CalendarConfig,
+} from "../types/config";
 
 export type SaveConfigResponse = {
   ok: boolean;
@@ -45,11 +48,11 @@ const readJson = async (response: Response): Promise<unknown> => {
     });
     throw error;
   }
-  
+
   if (!text) {
     return undefined;
   }
-  
+
   try {
     return JSON.parse(text) as unknown;
   } catch (error) {
@@ -82,9 +85,9 @@ const apiRequest = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const isConfigEndpoint = path.includes("/api/config");
   const cacheHeaders = isConfigEndpoint
     ? {
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        Pragma: "no-cache",
-      }
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      Pragma: "no-cache",
+    }
     : {};
 
   const { headers: initHeaders, cache: initCache, ...restInit } = init ?? {};
@@ -99,7 +102,7 @@ const apiRequest = async <T>(path: string, init?: RequestInit): Promise<T> => {
     headers,
     cache: isConfigEndpoint ? "no-store" : initCache ?? "default",
   });
-  
+
   // Intentar leer JSON siempre, incluso si response.ok es false
   let body: unknown;
   try {
@@ -114,11 +117,11 @@ const apiRequest = async <T>(path: string, init?: RequestInit): Promise<T> => {
       parseError: errorMessage,
     };
   }
-  
+
   if (!response.ok) {
     throw new ApiError(response.status, body);
   }
-  
+
   // Si el body es undefined o null, intentar construir un fallback según el endpoint
   if (body === undefined || body === null) {
     // Para endpoints específicos, devolver un objeto de error estructurado
@@ -131,7 +134,7 @@ const apiRequest = async <T>(path: string, init?: RequestInit): Promise<T> => {
       };
     }
   }
-  
+
   return body as T;
 };
 
@@ -176,7 +179,7 @@ export async function saveConfig(data: AppConfig) {
 // V2 API functions
 export async function getConfigV2(): Promise<AppConfigV2> {
   const config = await apiGet<AppConfigV2>("/api/config");
-  
+
   return config;
 }
 
@@ -185,7 +188,7 @@ export async function saveConfigV2(config: AppConfigV2): Promise<SaveConfigRespo
   if (config.version !== 2) {
     throw new ApiError(400, { error: "Only v2 config allowed", version: config.version });
   }
-  
+
   return apiPost<SaveConfigResponse>("/api/config", config);
 }
 
@@ -250,7 +253,7 @@ export async function testCalendarConnection(apiKey?: string, calendarId?: strin
       return { ok: false, reason: "connection_error", message: String(error) };
     }
   }
-  
+
   const body: Record<string, unknown> = {};
   if (apiKey && apiKey.trim().length > 0) {
     body.api_key = apiKey.trim();
@@ -339,17 +342,17 @@ export async function uploadCalendarICS(file: File): Promise<CalendarICSUploadRe
   try {
     const formData = new FormData();
     formData.append("file", file);
-    
+
     const response = await fetch(`${window.location.origin}/api/calendar/ics/upload`, {
       method: "POST",
       body: formData,
     });
-    
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: "unknown_error" }));
       return { ok: false, error: error.error || "upload_error", detail: error.detail };
     }
-    
+
     return await response.json();
   } catch (error) {
     return { ok: false, error: "connection_error", detail: String(error) };
@@ -740,17 +743,17 @@ export async function uploadIcsFile(file: File, filename?: string): Promise<IcsU
   if (filename) {
     formData.append("filename", filename);
   }
-  
+
   const response = await fetch(withBase("/api/config/upload/ics"), {
     method: "POST",
     body: formData,
   });
-  
+
   if (!response.ok) {
     const body = await readJson(response);
     throw new ApiError(response.status, body);
   }
-  
+
   return (await readJson(response)) as IcsUploadResponse;
 }
 
@@ -908,8 +911,8 @@ export async function testRainViewer(
     });
     return response;
   } catch (error) {
-    return { 
-      ok: false, 
+    return {
+      ok: false,
       status: 0,
       error: "connection_error",
       message: error instanceof Error ? error.message : "Error de conexión"
@@ -960,27 +963,27 @@ export async function testGIBS(): Promise<GIBSTestResponse> {
       provider: string;
       error: string | null;
     }>("/api/global/satellite/frames");
-    
+
     if (!framesResponse || framesResponse.error !== null) {
       return { ok: false, reason: "backend_error" };
     }
-    
+
     if (!framesResponse.frames || framesResponse.frames.length === 0) {
       return { ok: false, reason: "tile_not_available" };
     }
-    
+
     // Usar el último frame disponible
     const lastFrame = framesResponse.frames[framesResponse.frames.length - 1];
     const timestamp = lastFrame.timestamp;
-    
+
     // Probar un tile con el timestamp del frame
     const tileUrl = `${BASE}/api/global/satellite/tiles/${timestamp}/0/0/0.png`;
     const tileResponse = await fetch(tileUrl);
-    
+
     if (tileResponse.ok && tileResponse.headers.get("content-type")?.includes("image")) {
       return { ok: true };
     }
-    
+
     return { ok: false, reason: "tile_not_available" };
   } catch (error) {
     return { ok: false, reason: "connection_error" };

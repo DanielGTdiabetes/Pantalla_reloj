@@ -38,6 +38,7 @@ import {
   uploadCalendarICS,
   reloadConfig,
   type CalendarPreviewItem,
+  type MaskedSecretMeta,
   type NewsFeedTestResult,
   type WiFiNetwork,
   wifiConnect,
@@ -45,21 +46,21 @@ import {
   wifiNetworks,
   wifiScan,
   wifiStatus,
-  type MaskedSecretMeta,
+
   type MapTilerTestResponse,
   type XyzTestResponse,
 } from "../lib/api";
 
 import type {
   AppConfigV2,
-  CalendarConfig,
+  CalendarConfigV2 as CalendarConfig,
   FlightsLayerConfigV2,
   GlobalRadarLayerConfigV2,
   OpenSkyConfigV2,
   PanelsConfigV2,
   ShipsLayerConfigV2,
   UIRotationConfigV2,
-} from "../types/config_v2";
+} from "../types/config";
 
 const DEFAULT_AISSTREAM_WS_URL = "wss://stream.aisstream.io/v0/stream";
 const DEFAULT_STREETS_STYLE_URL = "https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A";
@@ -140,7 +141,7 @@ export const ConfigPage: React.FC = () => {
   const [xyzTesting, setXyzTesting] = useState(false);
   const [mapSaving, setMapSaving] = useState(false);
   const [openWeatherMapApiKey, setOpenWeatherMapApiKey] = useState("");
-  const [openWeatherMapApiKeyMeta, setOpenWeatherMapApiKeyMeta] = useState<{ plan?: string; active?: boolean } | null>(null);
+  const [openWeatherMapApiKeyMeta, setOpenWeatherMapApiKeyMeta] = useState<MaskedSecretMeta | null>(null);
 
   // AEMET
   const [aemetApiKey, setAemetApiKey] = useState("");

@@ -1,6 +1,6 @@
 import type { StyleSpecification } from "maplibre-gl";
 
-import type { MapConfigV2 } from "../../types/config_v2";
+import type { MapConfigV2 } from "../../types/config";
 import { signMapTilerUrl } from "../../lib/map/utils/maptilerHelpers";
 
 const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
@@ -118,7 +118,7 @@ export const loadMapStyle = async (
     const localConfig = mapConfig.local;
     const tileUrl = localConfig?.tileUrl || OSM_TILES;
     const attribution = OSM_ATTRIBUTION;
-    
+
     resolvedStyle = {
       type: "raster",
       style: createRasterStyle(
@@ -137,7 +137,7 @@ export const loadMapStyle = async (
   else if (provider === "maptiler_vector") {
     const maptilerConfig = mapConfig.maptiler;
     let styleUrl = sanitizeOptionalString(maptilerConfig?.styleUrl);
-    
+
     // Normalizar api_key (aceptar api_key o apiKey legacy)
     const apiKey = sanitizeApiKey(
       maptilerConfig?.api_key || maptilerConfig?.apiKey || maptilerConfig?.key
@@ -154,13 +154,13 @@ export const loadMapStyle = async (
       // Fallback: construir desde style si no hay styleUrl
       // IMPORTANTE: Si el estilo es "hybrid" o "satellite", usar streets-v4 como base
       // porque MapHybrid añadirá la capa satelital encima
-      const styleSlug = maptilerConfig.style === "hybrid" ? "streets-v4" : 
-                       maptilerConfig.style === "satellite" ? "streets-v4" :
-                       maptilerConfig.style === "vector-bright" ? "streets-v4" :
-                       maptilerConfig.style === "vector-dark" ? "basic-dark" :
-                       maptilerConfig.style === "vector-light" ? "basic-light" :
-                       maptilerConfig.style === "streets-v4" ? "streets-v4" :
-                       "streets-v4";
+      const styleSlug = maptilerConfig.style === "hybrid" ? "streets-v4" :
+        maptilerConfig.style === "satellite" ? "streets-v4" :
+          maptilerConfig.style === "vector-bright" ? "streets-v4" :
+            maptilerConfig.style === "vector-dark" ? "basic-dark" :
+              maptilerConfig.style === "vector-light" ? "basic-light" :
+                maptilerConfig.style === "streets-v4" ? "streets-v4" :
+                  "streets-v4";
       const signedUrl = signMapTilerUrl(`https://api.maptiler.com/maps/${styleSlug}/style.json`, apiKey);
       if (signedUrl) {
         styleUrl = signedUrl;
@@ -173,10 +173,10 @@ export const loadMapStyle = async (
     // Solo usar estilo raster si el styleUrl explícitamente apunta a satellite/hybrid
     // y NO hay configuración de satellite.enabled (modo legacy - no recomendado)
     const styleUrlLower = styleUrl?.toLowerCase() || "";
-    const isExplicitHybridStyle = styleUrlLower.includes("/maps/satellite/") || 
-                                  styleUrlLower.includes("/maps/hybrid/");
+    const isExplicitHybridStyle = styleUrlLower.includes("/maps/satellite/") ||
+      styleUrlLower.includes("/maps/hybrid/");
     const hasSatelliteConfig = mapConfig.satellite?.enabled === true;
-    
+
     // Solo usar estilo raster si es explícito Y no hay configuración de satellite
     const isHybrid = isExplicitHybridStyle && !hasSatelliteConfig;
 
@@ -193,12 +193,12 @@ export const loadMapStyle = async (
       } catch {
         // Ignorar errores de parsing de URL
       }
-      
+
       // Construir URL de tiles raster
       const tileUrl = styleUrl.includes("/maps/satellite/")
         ? `https://api.maptiler.com/tiles/satellite/{z}/{x}/{y}.jpg${effectiveApiKey ? `?key=${effectiveApiKey}` : ''}`
         : `https://api.maptiler.com/tiles/hybrid/{z}/{x}/{y}.jpg${effectiveApiKey ? `?key=${effectiveApiKey}` : ''}`;
-      
+
       resolvedStyle = {
         type: "raster",
         style: createRasterStyle(
@@ -252,7 +252,7 @@ export const loadMapStyle = async (
         }
 
         const styleText = await response.text();
-        
+
         // Verificar que el body es >= 1 KB
         if (styleText.length < 1024) {
           throw new Error(`Style body too small: ${styleText.length} bytes`);
@@ -271,7 +271,7 @@ export const loadMapStyle = async (
         // Cambiar a fallback de MapLibre
         const fallbackUrl = "https://demotiles.maplibre.org/style.json";
         usedFallback = true;
-        
+
         try {
           const fallbackResponse = await fetch(fallbackUrl, {
             cache: "no-store",
