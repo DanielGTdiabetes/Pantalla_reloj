@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { withConfigDefaults } from "../config/defaults";
-import { withConfigDefaultsV2 } from "../config/defaults_v2";
+import { withConfigDefaultsV2 } from "../config/defaults";
 import type { AppConfig } from "../types/config";
 import type { AppConfigV2 } from "../types/config_v2";
 import { API_ORIGIN, getConfig, getConfigMeta, getConfigV2 } from "./api";
@@ -37,10 +37,10 @@ const extractMapHotSwapDescriptor = (config: AppConfig | null): MapHotSwapDescri
     } else if (v2Config.ui_map.provider === "maptiler_vector") {
       style = v2Config.ui_map.maptiler?.styleUrl ?? null;
       // Incluir API key para detectar cambios
-      api_key = v2Config.ui_map.maptiler?.api_key ?? 
-                v2Config.ui_map.maptiler?.apiKey ?? 
-                v2Config.ui_map.maptiler?.key ?? 
-                null;
+      api_key = v2Config.ui_map.maptiler?.api_key ??
+        v2Config.ui_map.maptiler?.apiKey ??
+        v2Config.ui_map.maptiler?.key ??
+        null;
     }
     return {
       provider,
@@ -75,10 +75,10 @@ const extractMapHotSwapDescriptor = (config: AppConfig | null): MapHotSwapDescri
     : null;
 
   // Extraer API key para v1 legacy
-  const api_key = (uiMap?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.apiKey ?? 
-                  (uiMap?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.key ??
-                  (uiMap?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.api_key ??
-                  null;
+  const api_key = (uiMap?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.apiKey ??
+    (uiMap?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.key ??
+    (uiMap?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.api_key ??
+    null;
 
   return {
     provider: provider ?? null,
@@ -89,10 +89,10 @@ const extractMapHotSwapDescriptor = (config: AppConfig | null): MapHotSwapDescri
 };
 
 const descriptorsEqual = (a: MapHotSwapDescriptor, b: MapHotSwapDescriptor) => {
-  return a.provider === b.provider && 
-         a.style === b.style && 
-         a.model === b.model &&
-         a.api_key === b.api_key;
+  return a.provider === b.provider &&
+    a.style === b.style &&
+    a.model === b.model &&
+    a.api_key === b.api_key;
 };
 
 export function useConfig() {
@@ -120,7 +120,7 @@ export function useConfig() {
       if (healthResponse.ok) {
         const healthData = await healthResponse.json().catch(() => null);
         currentChecksum = healthData?.config_checksum ?? null;
-        
+
         // Si el checksum no ha cambiado y no es una recarga forzada, no hacer nada
         if (!forceReload && currentChecksum && configChecksumRef.current === currentChecksum) {
           console.debug("[useConfig] Config checksum unchanged, skipping reload");
@@ -149,9 +149,9 @@ export function useConfig() {
         // Si falla v2, intentar v1
         cfg = await getConfig();
       }
-      
+
       let processedData: AppConfig;
-      
+
       if (isV2 && cfg) {
         // Procesar v2 preservando la estructura completa
         const v2Config = withConfigDefaultsV2(cfg as unknown as AppConfigV2);
@@ -187,7 +187,7 @@ export function useConfig() {
       } else {
         processedData = withConfigDefaults((cfg ?? {}) as AppConfig);
       }
-      
+
       let wasUpdated = false;
       setData((prev) => {
         const newData = processedData;
@@ -200,13 +200,13 @@ export function useConfig() {
         // Para v2, usar ui_map; para v1, usar ui.map
         const prevAsV2 = prev as unknown as AppConfigV2;
         const newAsV2 = newData as unknown as AppConfigV2;
-        
+
         const isPrevV2 = prevAsV2.version === 2 && prevAsV2.ui_map;
         const isNewV2 = newAsV2.version === 2 && newAsV2.ui_map;
-        
+
         let prevMapConfig: Record<string, unknown>;
         let newMapConfig: Record<string, unknown>;
-        
+
         if (isPrevV2 && isNewV2) {
           // Comparar v2 - incluir api_key para detectar cambios en la clave de MapTiler
           prevMapConfig = {
@@ -231,9 +231,9 @@ export function useConfig() {
             provider: prev.ui?.map?.provider,
             style: prev.ui?.map?.style,
             xyz: prev.ui?.map?.xyz,
-            api_key: (prev.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.apiKey || 
-                    (prev.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.key ||
-                    (prev.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.api_key,
+            api_key: (prev.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.apiKey ||
+              (prev.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.key ||
+              (prev.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.api_key,
             fixed: prev.ui?.map?.fixed,
             viewMode: prev.ui?.map?.viewMode,
           };
@@ -241,9 +241,9 @@ export function useConfig() {
             provider: newData.ui?.map?.provider,
             style: newData.ui?.map?.style,
             xyz: newData.ui?.map?.xyz,
-            api_key: (newData.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.apiKey || 
-                    (newData.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.key ||
-                    (newData.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.api_key,
+            api_key: (newData.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.apiKey ||
+              (newData.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.key ||
+              (newData.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.api_key,
             fixed: newData.ui?.map?.fixed,
             viewMode: newData.ui?.map?.viewMode,
           };
@@ -281,9 +281,9 @@ export function useConfig() {
           // SIEMPRE incrementar cuando hay un cambio
           setMapStyleVersion((value) => {
             const newValue = value + 1;
-            console.log("[useConfig] Incrementing mapStyleVersion", { 
-              from: value, 
-              to: newValue, 
+            console.log("[useConfig] Incrementing mapStyleVersion", {
+              from: value,
+              to: newValue,
               reason: mapConfigChanged ? "mapConfigChanged" : "mapHotSwapChanged",
               mapConfigChanged,
               mapHotSwapChanged
@@ -296,7 +296,7 @@ export function useConfig() {
         wasUpdated = true;
         return newData;
       });
-      
+
       const meta = await getConfigMeta().catch(() => null);
       if (meta && meta.config_loaded_at) {
         metaTimestampRef.current = meta.config_loaded_at;
@@ -321,7 +321,7 @@ export function useConfig() {
       } else {
         isReloadingRef.current = false;
       }
-      
+
       setError(null);
       setLoading(false);
     } catch (e) {
@@ -378,19 +378,19 @@ export function useConfig() {
       // Forzar recarga inmediata cuando se guarda desde /config
       void load(true);
     };
-    
+
     const handleConfigChanged = () => {
       // Si ya estamos recargando, ignorar el evento para evitar bucle infinito
       if (isReloadingRef.current) {
         console.debug("[useConfig] Config changed event ignored (reload in progress)");
         return;
       }
-      
+
       // Usar debounce para evitar múltiples recargas seguidas
       if (reloadDebounceRef.current !== null) {
         window.clearTimeout(reloadDebounceRef.current);
       }
-      
+
       reloadDebounceRef.current = window.setTimeout(async () => {
         console.log("[useConfig] Config changed event received, checking for changes");
         // Verificar checksum antes de recargar
@@ -399,7 +399,7 @@ export function useConfig() {
           if (healthResponse.ok) {
             const healthData = await healthResponse.json().catch(() => null);
             const newChecksum = healthData?.config_checksum ?? null;
-            
+
             // Solo recargar si el checksum cambió
             if (newChecksum && newChecksum !== configChecksumRef.current) {
               console.log("[useConfig] Checksum changed, reloading config");
