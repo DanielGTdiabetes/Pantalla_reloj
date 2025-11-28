@@ -4,6 +4,7 @@ Esquema v2 de configuración - limpio y mínimo para Fase 2.
 from __future__ import annotations
 
 import json
+import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing import Optional, Literal, List, Dict, Any, Union
@@ -21,6 +22,13 @@ from .constants import (
     GIBS_DEFAULT_TIME_MODE,
     GIBS_DEFAULT_TIME_VALUE,
 )
+
+
+class CachedPayload(BaseModel):
+    """Payload genérico para caché."""
+    source: str
+    fetched_at: datetime.datetime
+    payload: Dict[str, Any]
 
 
 class DisplayConfig(BaseModel):
