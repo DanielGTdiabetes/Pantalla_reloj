@@ -3781,6 +3781,7 @@ def get_config(request: Request) -> JSONResponse:
     
     # Construir respuesta desde disco (sin reinyectar defaults)
     # Si es v2, usar _build_public_config_v2, si no, devolver tal cual
+    config_v2 = None
     try:
         config_v2, _ = _read_config_v2()
         # Firmar URLs de MapTiler antes de serializar
@@ -3804,9 +3805,9 @@ def get_config(request: Request) -> JSONResponse:
     public_config["has_timezone"] = config_metadata.get("has_timezone", False)
     
     # Añadir información de calendario (provider y estructura top-level)
-    panels_calendar = (
-        config_v2.panels.calendar if config_v2.panels and config_v2.panels.calendar else None
-    )
+    panels_calendar = None
+    if config_v2 and config_v2.panels and config_v2.panels.calendar:
+        panels_calendar = config_v2.panels.calendar
     top_calendar = getattr(config_v2, "calendar", None)
 
     calendar_enabled = False
