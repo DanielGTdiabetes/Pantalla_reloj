@@ -2776,7 +2776,7 @@ export const ConfigPage: React.FC = () => {
                             render_mode: currentFlights?.render_mode || "circle",
                             opensky: currentFlights?.opensky || {
                               mode: "oauth2",
-                              bbox: { lamin: 39.5, lamax: 41.0, lomin: -1.0, lomax: 1.5 },
+                              bbox: { lamin: 36.0, lamax: 44.0, lomin: -10.0, lomax: 5.0 },
                               extended: 0
                             },
                             aviationstack: currentFlights?.aviationstack || {

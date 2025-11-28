@@ -111,7 +111,7 @@ class OpenSkyService:
                     float(area.lomax),
                 )
             else:
-                bbox_to_use = (39.5, 41.0, -1.0, 1.5)
+                bbox_to_use = (36.0, 44.0, -10.0, 5.0)
         elif mode == "global":
             bbox_to_use = None
         effective_mode = "global" if bbox_to_use is None else "bbox"
@@ -343,7 +343,7 @@ class OpenSkyService:
                     float(area.lomax),
                 )
             else:
-                bbox_to_use = (39.5, 41.0, -1.0, 1.5)
+                bbox_to_use = (36.0, 44.0, -10.0, 5.0)
         else:
             bbox_to_use = None
 

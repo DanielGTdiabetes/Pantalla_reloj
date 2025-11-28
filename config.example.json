@@ -60,7 +60,10 @@
     "overlay": {
       "rotator": {
         "enabled": true,
-        "order": ["clock", "santoral"],
+        "order": [
+          "clock",
+          "santoral"
+        ],
         "durations_sec": {
           "clock": 10,
           "santoral": 10
@@ -78,10 +81,10 @@
     "cluster": true,
     "extended": 0,
     "bbox": {
-      "lamin": 39.5,
-      "lamax": 41.0,
-      "lomin": -1.0,
-      "lomax": 1.5
+      "lamin": 36.0,
+      "lamax": 44.0,
+      "lomin": -10.0,
+      "lomax": 5.0
     }
   },
   "layers": {

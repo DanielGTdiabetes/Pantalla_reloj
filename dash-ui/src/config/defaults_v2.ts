@@ -118,10 +118,10 @@ export const DEFAULT_OPENSKY_CONFIG = {
   cluster: true,
   extended: 0,
   bbox: {
-    lamin: 39.5,
-    lamax: 41.0,
-    lomin: -1.0,
-    lomax: 1.5,
+    lamin: 36.0,
+    lamax: 44.0,
+    lomin: -10.0,
+    lomax: 5.0,
   },
   oauth2: {
     client_id: "danigt-api-client",

@@ -450,10 +450,10 @@ class FlightsLayerSymbolConfig(BaseModel):
 
 class OpenSkyBBoxConfig(BaseModel):
     """Configuración de bounding box para OpenSky."""
-    lamin: float = Field(default=39.5, ge=-90, le=90)
-    lamax: float = Field(default=41.0, ge=-90, le=90)
-    lomin: float = Field(default=-1.0, ge=-180, le=180)
-    lomax: float = Field(default=1.5, ge=-180, le=180)
+    lamin: float = Field(default=36.0, ge=-90, le=90)
+    lamax: float = Field(default=44.0, ge=-90, le=90)
+    lomin: float = Field(default=-10.0, ge=-180, le=180)
+    lomax: float = Field(default=5.0, ge=-180, le=180)
 
 
 class OpenSkyProviderConfig(BaseModel):
@@ -928,10 +928,10 @@ class OpenSkyOAuth2Config(BaseModel):
 
 class OpenSkyBBoxTopLevelConfig(BaseModel):
     """Bounding box top-level para OpenSky."""
-    lamin: float = Field(default=39.5, ge=-90, le=90)
-    lamax: float = Field(default=41.0, ge=-90, le=90)
-    lomin: float = Field(default=-1.0, ge=-180, le=180)
-    lomax: float = Field(default=1.5, ge=-180, le=180)
+    lamin: float = Field(default=36.0, ge=-90, le=90)
+    lamax: float = Field(default=44.0, ge=-90, le=90)
+    lomin: float = Field(default=-10.0, ge=-180, le=180)
+    lomax: float = Field(default=5.0, ge=-180, le=180)
 
 
 class OpenSkyTopLevelConfig(BaseModel):
