@@ -3331,13 +3331,12 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     
     # GIBS Satellite
     try:
-        config_v2, _ = _read_config_v2()
-        if config_v2.layers and config_v2.layers.global_ and config_v2.layers.global_.satellite:
-            gibs_config = config_v2.layers.global_.satellite
+        if config.layers and config.layers.global_ and config.layers.global_.satellite:
+            gibs_config = config.layers.global_.satellite
             gibs_enabled = gibs_config.enabled
             gibs_status = "ok" if gibs_enabled else "down"
-        elif config_v2.ui_global and config_v2.ui_global.satellite:
-            gibs_config = config_v2.ui_global.satellite
+        elif config.ui_global and config.ui_global.satellite:
+            gibs_config = config.ui_global.satellite
             gibs_enabled = gibs_config.enabled
             gibs_status = "ok" if gibs_enabled else "down"
         else:
@@ -3361,12 +3360,12 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     try:
         # Prioridad: weather_layers.radar > ui_global.radar > layers.global_.radar
         radar_enabled = False
-        if config_v2.ui_global and config_v2.ui_global.weather_layers and config_v2.ui_global.weather_layers.radar:
-            radar_enabled = config_v2.ui_global.weather_layers.radar.enabled
-        elif config_v2.ui_global and config_v2.ui_global.radar:
-            radar_enabled = config_v2.ui_global.radar.enabled
-        elif config_v2.layers and config_v2.layers.global_ and config_v2.layers.global_.radar:
-            radar_enabled = config_v2.layers.global_.radar.enabled
+        if config.ui_global and config.ui_global.weather_layers and config.ui_global.weather_layers.radar:
+            radar_enabled = config.ui_global.weather_layers.radar.enabled
+        elif config.ui_global and config.ui_global.radar:
+            radar_enabled = config.ui_global.radar.enabled
+        elif config.layers and config.layers.global_ and config.layers.global_.radar:
+            radar_enabled = config.layers.global_.radar.enabled
         
         radar_status = "ok" if radar_enabled else "down"
         
@@ -3385,13 +3384,13 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     
     # Calendar
     try:
-        if config_v2.calendar:
-            calendar_config = config_v2.calendar
+        if config.calendar:
+            calendar_config = config.calendar
             calendar_enabled = calendar_config.enabled
             calendar_provider = calendar_config.source or "google"
             calendar_status = "ok" if calendar_enabled else "down"
-        elif config_v2.panels and config_v2.panels.calendar:
-            calendar_config = config_v2.panels.calendar
+        elif config.panels and config.panels.calendar:
+            calendar_config = config.panels.calendar
             calendar_enabled = calendar_config.enabled
             calendar_provider = calendar_config.provider or "google"
             calendar_status = "ok" if calendar_enabled else "down"
@@ -3415,8 +3414,8 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     
     # News
     try:
-        if config_v2.panels and config_v2.panels.news:
-            news_config = config_v2.panels.news
+        if config.panels and config.panels.news:
+            news_config = config.panels.news
             news_enabled = news_config.enabled
             news_feeds_count = len(news_config.feeds) if news_config.feeds else 0
             news_status = "ok" if news_enabled and news_feeds_count > 0 else "down"
@@ -3531,14 +3530,14 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     radar_history_minutes = 90
     radar_frame_step = 5
     
-    if config_v2.ui_global and config_v2.ui_global.weather_layers and config_v2.ui_global.weather_layers.radar:
-        radar_config_global = config_v2.ui_global.weather_layers.radar
+    if config.ui_global and config.ui_global.weather_layers and config.ui_global.weather_layers.radar:
+        radar_config_global = config.ui_global.weather_layers.radar
         radar_enabled_global = radar_config_global.enabled
         radar_provider = getattr(radar_config_global, "provider", "rainviewer")
         radar_history_minutes = getattr(radar_config_global, "history_minutes", 90)
         radar_frame_step = getattr(radar_config_global, "frame_step", 5)
-    elif config_v2.ui_global and config_v2.ui_global.radar:
-        radar_config_global = config_v2.ui_global.radar
+    elif config.ui_global and config.ui_global.radar:
+        radar_config_global = config.ui_global.radar
         radar_enabled_global = radar_config_global.enabled
         radar_provider = getattr(radar_config_global, "provider", "rainviewer")
         radar_history_minutes = getattr(radar_config_global, "history_minutes", 90)
@@ -3659,8 +3658,7 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     # Estado del mapa (MapTiler)
     # Información sobre el estilo del mapa para diagnóstico
     try:
-        config_v2, _ = _read_config_v2()
-        ui_map = config_v2.ui_map
+        ui_map = config.ui_map
         maptiler_config = ui_map.maptiler if ui_map else None
         
         map_status = "ok"
@@ -3779,24 +3777,16 @@ def get_config(request: Request) -> JSONResponse:
     if if_none_match == config_etag:
         return Response(status_code=304)  # Not Modified
     
-    # Construir respuesta desde disco (sin reinyectar defaults)
-    # Si es v2, usar _build_public_config_v2, si no, devolver tal cual
-    config_v2 = None
+    # Construir respuesta usando config_manager
+    config = None
     try:
-        config_v2, _ = _read_config_v2()
+        config = config_manager.read()
         # Firmar URLs de MapTiler antes de serializar
-        sign_maptiler_urls(config_v2)
-        public_config = _build_public_config_v2(config_v2)
-        
-        # Asegurar que maps y layers_global nunca sean null
-        public_config = _ensure_maps_defaults(public_config)
-        public_config = _ensure_layers_global_defaults(public_config)
+        sign_maptiler_urls(config)
+        public_config = config.model_dump(mode="json", exclude_none=True)
     except Exception as e:
-        logger.warning("[config] Error building public config v2: %s", e)
-        # Si no es v2 o hay error, devolver tal cual desde disco pero asegurar defaults
+        logger.warning("[config] Error building public config: %s", e)
         public_config = disk_config
-        public_config = _ensure_maps_defaults(public_config)
-        public_config = _ensure_layers_global_defaults(public_config)
     
     # Añadir metadatos de configuración
     config_metadata = config_manager.get_config_metadata()
@@ -3806,9 +3796,9 @@ def get_config(request: Request) -> JSONResponse:
     
     # Añadir información de calendario (provider y estructura top-level)
     panels_calendar = None
-    if config_v2 and config_v2.panels and config_v2.panels.calendar:
-        panels_calendar = config_v2.panels.calendar
-    top_calendar = getattr(config_v2, "calendar", None)
+    if config and config.panels and config.panels.calendar:
+        panels_calendar = config.panels.calendar
+    top_calendar = getattr(config, "calendar", None)
 
     calendar_enabled = False
     calendar_provider = "google"
@@ -3850,14 +3840,14 @@ def get_config(request: Request) -> JSONResponse:
     # Determinar si OpenSky está efectivamente habilitado
     # Si layers.flights está habilitado con provider opensky, considerar OpenSky habilitado
     # incluso si opensky.enabled es False o undefined
-    layers = getattr(config_v2, "layers", None)
+    layers = getattr(config, "layers", None)
     flights_config = getattr(layers, "flights", None) if layers else None
     flights_enabled_with_opensky = (
         flights_config and 
         flights_config.enabled and 
         flights_config.provider == "opensky"
     )
-    opensky_cfg = getattr(config_v2, "opensky", None)
+    opensky_cfg = getattr(config, "opensky", None)
     opensky_enabled_effective = (
         getattr(opensky_cfg, "enabled", False) is not False or 
         flights_enabled_with_opensky
@@ -10822,11 +10812,11 @@ def _resolve_gibs_config() -> Tuple[_EffectiveGIBSConfig, Optional[str]]:
     ui_satellite = None
 
     try:
-        config_v2, _ = _read_config_v2()
-        if config_v2.layers and config_v2.layers.global_ and config_v2.layers.global_.satellite:
-            global_satellite = config_v2.layers.global_.satellite
-        if config_v2.ui_global and config_v2.ui_global.satellite:
-            ui_satellite = config_v2.ui_global.satellite
+        config = config_manager.read()
+        if config.layers and config.layers.global_ and config.layers.global_.satellite:
+            global_satellite = config.layers.global_.satellite
+        if config.ui_global and config.ui_global.satellite:
+            ui_satellite = config.ui_global.satellite
     except Exception as exc:  # noqa: BLE001
         error = "config_read_error"
         logger.warning("Failed to read v2 config for global satellite: %s", exc)
@@ -11184,19 +11174,19 @@ async def get_global_sat_tile(z: int, x: int, y: int, request: Request) -> Respo
 @app.get("/api/global/radar/frames")
 def get_global_radar_frames() -> Dict[str, Any]:
     """Obtiene lista de frames disponibles de radar global."""
-    # Leer configuración V2 si está disponible
+    # Leer configuración
     try:
-        config_v2, _ = _read_config_v2()
-        if config_v2.layers and config_v2.layers.global_ and config_v2.layers.global_.radar:
+        config = config_manager.read()
+        if config.layers and config.layers.global_ and config.layers.global_.radar:
             # V2: leer de layers.global.radar (prioridad)
-            radar_config = config_v2.layers.global_.radar
+            radar_config = config.layers.global_.radar
             enabled = radar_config.enabled
             provider_name = radar_config.provider
             history_minutes = radar_config.history_minutes
             frame_step = radar_config.frame_step
-        elif config_v2.ui_global and config_v2.ui_global.radar:
+        elif config.ui_global and config.ui_global.radar:
             # V2: fallback a ui_global.radar (configuración legacy)
-            radar_config = config_v2.ui_global.radar
+            radar_config = config.ui_global.radar
             enabled = radar_config.enabled if radar_config else False
             provider_name = radar_config.provider if radar_config else "rainviewer"
             history_minutes = 90  # defaults
@@ -11395,17 +11385,17 @@ async def get_global_radar_tile(
     refresh_minutes = 5
     layer_type = "precipitation_new"
     try:
-        config_v2, _ = _read_config_v2()
-        if config_v2.layers and config_v2.layers.global_ and config_v2.layers.global_.radar:
+        config = config_manager.read()
+        if config.layers and config.layers.global_ and config.layers.global_.radar:
             # V2: leer de layers.global.radar (prioridad)
-            radar_config = config_v2.layers.global_.radar
+            radar_config = config.layers.global_.radar
             enabled = radar_config.enabled
             provider_name = radar_config.provider
             refresh_minutes = radar_config.refresh_minutes
             layer_type = radar_config.layer_type or "precipitation_new"
-        elif config_v2.ui_global and config_v2.ui_global.radar:
+        elif config.ui_global and config.ui_global.radar:
             # V2: fallback a ui_global.radar
-            radar_config = config_v2.ui_global.radar
+            radar_config = config.ui_global.radar
             enabled = radar_config.enabled if radar_config else False
             provider_name = radar_config.provider if radar_config else "rainviewer"
             layer_type = radar_config.layer_type or "precipitation_new"
