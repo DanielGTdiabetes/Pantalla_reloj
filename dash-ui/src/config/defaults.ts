@@ -696,6 +696,12 @@ export const DEFAULT_CONFIG: AppConfig = {
         api_key: "38dd87bbfef35a1f4dc6133293bed27f0e2c9ff7",
         has_api_key: true,
         api_key_last4: "9ff7",
+        bbox: {
+          lamin: 36.0,
+          lamax: 44.0,
+          lomin: -10.0,
+          lomax: 5.0,
+        },
       },
       aishub: {
         base_url: "https://www.aishub.net/api",
@@ -1024,6 +1030,12 @@ const mergeShipsLayer = (candidate: unknown): ShipsLayerConfig => {
     api_key: null,
     has_api_key: fallback.aisstream?.has_api_key ?? false,
     api_key_last4: fallback.aisstream?.api_key_last4 ?? null,
+    bbox: fallback.aisstream?.bbox ?? {
+      lamin: 36.0,
+      lamax: 44.0,
+      lomin: -10.0,
+      lomax: 5.0,
+    },
   };
   const aishubSource: Partial<AISHubConfig> = source.aishub ?? {};
   const aishubFallback: Required<AISHubConfig> = {
@@ -1148,6 +1160,12 @@ const mergeShipsLayer = (candidate: unknown): ShipsLayerConfig => {
         aisstreamSource.api_key_last4,
         aisstreamFallback.api_key_last4 ?? null,
       ),
+      bbox: {
+        lamin: toNumber(aisstreamSource.bbox?.lamin, aisstreamFallback.bbox.lamin),
+        lamax: toNumber(aisstreamSource.bbox?.lamax, aisstreamFallback.bbox.lamax),
+        lomin: toNumber(aisstreamSource.bbox?.lomin, aisstreamFallback.bbox.lomin),
+        lomax: toNumber(aisstreamSource.bbox?.lomax, aisstreamFallback.bbox.lomax),
+      },
     },
     aishub: {
       base_url: sanitizeNullableString(aishubSource.base_url, aishubFallback.base_url ?? null),

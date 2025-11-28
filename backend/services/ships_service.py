@@ -54,6 +54,8 @@ class AISStreamService:
         self._ws_connected = False
         self._last_message_ts: Optional[float] = None
         self._last_error: Optional[str] = None
+        # Default BBox (Spain/Iberian Peninsula)
+        self._bbox = [[[36.0, -10.0], [44.0, 5.0]]]
 
     # ------------------------------------------------------------------
     # Public API
@@ -69,6 +71,14 @@ class AISStreamService:
 
             ws_url = (ships_config.aisstream.ws_url or "").strip()
             self._ws_url = ws_url or DEFAULT_STREAM_URL
+
+            # Update BBox from config
+            if ships_config.aisstream and ships_config.aisstream.bbox:
+                bbox = ships_config.aisstream.bbox
+                self._bbox = [[[bbox.lamin, bbox.lomin], [bbox.lamax, bbox.lomax]]]
+            else:
+                # Fallback to Spain defaults
+                self._bbox = [[[36.0, -10.0], [44.0, 5.0]]]
 
             if not self._provider_enabled:
                 self._stop_thread_locked()
@@ -229,9 +239,11 @@ class AISStreamService:
         api_key: str,
         stop_event: threading.Event,
     ) -> None:
+        # Use configured BBox
+        bbox_to_use = self._bbox
         subscription = {
             "APIKey": api_key,
-            "BoundingBoxes": [[[-90.0, -180.0], [90.0, 180.0]]],
+            "BoundingBoxes": bbox_to_use,
             "FilterShipTypes": [],
             "FilterMessageTypes": ["PositionReport"],
         }

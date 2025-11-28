@@ -275,6 +275,7 @@ export type AISStreamConfig = {
   api_key?: string | null;
   has_api_key?: boolean;
   api_key_last4?: string | null;
+  bbox?: OpenSkyBBoxConfig;
 };
 
 export type AISHubConfig = {
@@ -605,6 +606,7 @@ export type FlightsLayerConfigV2 = {
 
 export type AISStreamProviderConfig = {
   ws_url: string;
+  bbox?: OpenSkyBBoxConfig;
 };
 
 export type AISHubProviderConfig = {

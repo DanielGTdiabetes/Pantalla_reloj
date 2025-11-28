@@ -223,7 +223,13 @@
       },
       "aisstream": {
         "ws_url": "wss://stream.aisstream.io/v0/stream",
-        "api_key": null
+        "api_key": null,
+        "bbox": {
+          "lamin": 36.0,
+          "lamax": 44.0,
+          "lomin": -10.0,
+          "lomax": 5.0
+        }
       },
       "aishub": {
         "base_url": "https://www.aishub.net/api",

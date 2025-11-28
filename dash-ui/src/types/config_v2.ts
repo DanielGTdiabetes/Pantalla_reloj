@@ -222,6 +222,7 @@ export type FlightsLayerConfigV2 = {
 
 export type AISStreamProviderConfig = {
   ws_url: string;
+  bbox?: OpenSkyBBoxConfig;
 };
 
 export type AISHubProviderConfig = {

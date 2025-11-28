@@ -499,11 +499,21 @@ class FlightsLayerConfig(BaseModel):
 DEFAULT_AISSTREAM_WS_URL = "wss://stream.aisstream.io/v0/stream"
 
 
+
+class ShipsBBoxConfig(BaseModel):
+    """Configuración de bounding box para Barcos."""
+    lamin: float = Field(default=36.0, ge=-90, le=90)
+    lamax: float = Field(default=44.0, ge=-90, le=90)
+    lomin: float = Field(default=-10.0, ge=-180, le=180)
+    lomax: float = Field(default=5.0, ge=-180, le=180)
+
+
 class AISStreamProviderConfig(BaseModel):
     """Configuración específica del proveedor AISStream."""
     model_config = ConfigDict(extra="ignore")
 
     ws_url: Optional[str] = Field(default=DEFAULT_AISSTREAM_WS_URL, max_length=512)
+    bbox: Optional[ShipsBBoxConfig] = Field(default_factory=ShipsBBoxConfig)
 
     @field_validator("ws_url", mode="before")
     @classmethod

@@ -262,12 +262,22 @@ class AviationStackConfig(BaseModel):
     api_key: Optional[str] = Field(default=None, max_length=256)
 
 
+
+class ShipsBBoxConfig(BaseModel):
+    """Configuración de bounding box para Barcos."""
+    lamin: float = Field(default=36.0, ge=-90, le=90)
+    lamax: float = Field(default=44.0, ge=-90, le=90)
+    lomin: float = Field(default=-10.0, ge=-180, le=180)
+    lomax: float = Field(default=5.0, ge=-180, le=180)
+
+
 class AISStreamConfig(BaseModel):
     """Configuración de AISStream API."""
     model_config = ConfigDict(extra="ignore")
 
     ws_url: Optional[str] = Field(default=None, max_length=256)
     api_key: Optional[str] = Field(default=None, max_length=256)
+    bbox: Optional[ShipsBBoxConfig] = Field(default_factory=ShipsBBoxConfig)
 
 
 class AISHubConfig(BaseModel):

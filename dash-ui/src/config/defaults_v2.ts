@@ -143,6 +143,15 @@ export const DEFAULT_SHIPS_LAYER_CONFIG: ShipsLayerConfigV2 = {
   decimate: "grid",
   grid_px: 24,
   styleScale: 1.4,
+  aisstream: {
+    ws_url: "wss://stream.aisstream.io/v0/stream",
+    bbox: {
+      lamin: 36.0,
+      lamax: 44.0,
+      lomin: -10.0,
+      lomax: 5.0,
+    },
+  },
 };
 
 export const DEFAULT_GLOBAL_RADAR_CONFIG: GlobalRadarLayerConfigV2 = {

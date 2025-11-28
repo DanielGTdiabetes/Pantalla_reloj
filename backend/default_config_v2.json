@@ -199,7 +199,13 @@
       "styleScale": 1.4,
       "render_mode": "symbol_custom",
       "aisstream": {
-        "ws_url": "wss://stream.aisstream.io/v0/stream"
+        "ws_url": "wss://stream.aisstream.io/v0/stream",
+        "bbox": {
+          "lamin": 36.0,
+          "lamax": 44.0,
+          "lomin": -10.0,
+          "lomax": 5.0
+        }
       },
       "aishub": {
         "base_url": "https://www.aishub.net/api"
