@@ -1,0 +1,179 @@
+dash-ui/src/components/AutoScrollText.tsx(10,15): error TS2305: Module '"../types/config"' has no exported member 'UIScrollSpeed'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(31,3): error TS2305: Module '"../../config/defaults"' has no exported member 'createDefaultMapPreferences'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(32,3): error TS2305: Module '"../../config/defaults"' has no exported member 'createDefaultMapSettings'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(42,3): error TS2305: Module '"../../types/config"' has no exported member 'MapPreferences'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(43,3): error TS2305: Module '"../../types/config"' has no exported member 'MapThemeConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(44,3): error TS2724: '"../../types/config"' has no exported member named 'RotationConfig'. Did you mean 'UIRotationConfig'?
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(49,3): error TS2305: Module '"../../types/config"' has no exported member 'AEMETConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(52,3): error TS2724: '"../../types/config"' has no exported member named 'AppConfigV2'. Did you mean 'AppConfig'?
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(53,3): error TS2724: '"../../types/config"' has no exported member named 'MapConfigV2'. Did you mean 'MapConfig'?
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(55,3): error TS2724: '"../../types/config"' has no exported member named 'GlobalRadarLayerConfigV2'. Did you mean 'GlobalRadarLayerConfig'?
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(303,25): error TS2339: Property 'opacity' does not exist on type 'FlightsLayerConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(760,30): error TS2339: Property 'theme' does not exist on type 'MapConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(762,21): error TS2339: Property 'respectReducedMotion' does not exist on type 'MapConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(763,18): error TS2339: Property 'respectReducedMotion' does not exist on type 'MapConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(777,15): error TS2339: Property 'withConfigDefaultsV2' does not exist on type 'typeof import("D:/pantalla_reloj/Pantalla_reloj/dash-ui/src/config/defaults")'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(786,29): error TS18048: 'merged.ui' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(786,39): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(787,28): error TS18048: 'merged.ui' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(855,27): error TS18048: 'merged.ui' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(855,37): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(856,26): error TS18048: 'merged.ui' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(1022,43): error TS2339: Property 'style' does not exist on type 'MapConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(1076,30): error TS2532: Object is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(1216,11): error TS18048: 'merged.layers' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(1226,11): error TS18048: 'merged.layers' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(1349,27): error TS2367: This comparison appears to be unintentional because the types '"local_raster_xyz" | "maptiler_vector" | "custom_xyz" | undefined' and '"maptiler"' have no overlap.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2229,30): error TS2532: Object is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2242,17): error TS18048: 'mergedConfig.layers' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2538,30): error TS2339: Property 'aemet' does not exist on type 'AppConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2642,94): error TS2339: Property 'has_credentials' does not exist on type 'OpenSkyOAuthConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2665,55): error TS2339: Property 'has_credentials' does not exist on type 'OpenSkyOAuthConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2722,41): error TS2532: Object is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2726,17): error TS18048: 'mergedConfig.layers' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2730,55): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2732,30): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2735,17): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2768,34): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2769,34): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2769,46): error TS2339: Property 'opacity' does not exist on type 'ShipsLayerConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2770,40): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2771,37): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2772,37): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2772,49): error TS2339: Property 'render_mode' does not exist on type 'ShipsLayerConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2773,33): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2773,45): error TS2339: Property 'circle' does not exist on type 'ShipsLayerConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2774,33): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2774,45): error TS2339: Property 'symbol' does not exist on type 'ShipsLayerConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2893,40): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2927,45): error TS2532: Object is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2927,83): error TS2532: Object is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(2995,42): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(3041,39): error TS2532: Object is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(3041,77): error TS2532: Object is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(3418,29): error TS18048: 'merged.ui' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(3418,39): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(3419,39): error TS2339: Property 'map' does not exist on type 'AppConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(3629,41): error TS2532: Object is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(3629,79): error TS2532: Object is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(3764,34): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(3842,32): error TS2339: Property 'storm' does not exist on type 'AppConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(3908,38): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(3958,47): error TS2339: Property 'blitzortung' does not exist on type 'AppConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(3975,38): error TS2339: Property 'storm' does not exist on type 'AppConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4049,26): error TS2532: Object is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4050,24): error TS2532: Object is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4057,9): error TS18048: 'merged.layers' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4060,9): error TS18048: 'merged.layers' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4067,57): error TS2339: Property 'has_credentials' does not exist on type 'OpenSkyOAuthConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4072,35): error TS18048: 'flightsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4073,38): error TS18048: 'flightsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4074,38): error TS18048: 'flightsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4075,32): error TS18048: 'flightsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4076,32): error TS18048: 'flightsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4076,46): error TS2339: Property 'opacity' does not exist on type 'FlightsLayerConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4077,38): error TS18048: 'flightsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4079,35): error TS18048: 'flightsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4082,11): error TS18048: 'flightsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4091,29): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4092,29): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4092,41): error TS2339: Property 'opacity' does not exist on type 'ShipsLayerConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4093,35): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4094,32): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4095,32): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4095,44): error TS2339: Property 'render_mode' does not exist on type 'ShipsLayerConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4096,35): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4096,47): error TS2339: Property 'circle' does not exist on type 'ShipsLayerConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4097,35): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4097,47): error TS2339: Property 'symbol' does not exist on type 'ShipsLayerConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4100,11): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4111,16): error TS2339: Property 'aemet' does not exist on type 'AppConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4208,28): error TS2532: Object is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4209,26): error TS2532: Object is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4218,13): error TS18048: 'merged.layers' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4225,61): error TS2339: Property 'has_credentials' does not exist on type 'OpenSkyOAuthConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4227,13): error TS18048: 'flightsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4245,13): error TS18048: 'merged.layers' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4247,13): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4311,25): error TS18048: 'merged.layers' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4313,10): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4334,26): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4391,23): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4409,14): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4409,26): error TS2339: Property 'update_interval' does not exist on type 'ShipsLayerConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4409,58): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4409,70): error TS2339: Property 'update_interval' does not exist on type 'ShipsLayerConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4410,11): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4410,23): error TS2339: Property 'update_interval' does not exist on type 'ShipsLayerConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4411,11): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4459,37): error TS18048: 'merged.layers' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4464,67): error TS2339: Property 'has_credentials' does not exist on type 'OpenSkyOAuthConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4466,19): error TS18048: 'flightsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4471,35): error TS18048: 'merged.layers' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4473,19): error TS18048: 'shipsConfig' is possibly 'undefined'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4481,26): error TS2339: Property 'aemet' does not exist on type 'AppConfig'.
+dash-ui/src/components/GeoScope/GeoScopeMap.tsx(4542,9): error TS2532: Object is possibly 'undefined'.
+dash-ui/src/components/GeoScope/layers/AircraftLayer.ts(8,41): error TS2305: Module '"../../../types/config"' has no exported member 'FlightsLayerRenderMode'.
+dash-ui/src/components/GeoScope/layers/AircraftMapLayer.tsx(233,90): error TS2339: Property 'has_credentials' does not exist on type 'OpenSkyOAuthConfig'.
+dash-ui/src/components/GeoScope/layers/ShipsLayer.ts(4,15): error TS2724: '"../../../types/config"' has no exported member named 'ShipsLayerCircleConfig'. Did you mean 'ShipsLayerConfig'?
+dash-ui/src/components/GeoScope/layers/ShipsLayer.ts(4,39): error TS2305: Module '"../../../types/config"' has no exported member 'ShipsLayerRenderMode'.
+dash-ui/src/components/GeoScope/layers/ShipsLayer.ts(4,61): error TS2724: '"../../../types/config"' has no exported member named 'ShipsLayerSymbolConfig'. Did you mean 'ShipsLayerConfig'?
+dash-ui/src/components/GeoScope/mapStyle.ts(3,15): error TS2724: '"../../types/config"' has no exported member named 'MapConfigV2'. Did you mean 'MapConfig'?
+dash-ui/src/components/OverlayRotator.tsx(7,15): error TS2724: '"../types/config"' has no exported member named 'AppConfigV2'. Did you mean 'AppConfig'?
+dash-ui/src/components/OverlayRotator.tsx(654,36): error TS2339: Property 'saints' does not exist on type 'AppConfig'.
+dash-ui/src/components/OverlayRotator.tsx(662,50): error TS2339: Property 'saints' does not exist on type 'AppConfig'.
+dash-ui/src/config/defaults.ts(388,7): error TS2322: Type '{ lamin?: number | undefined; lamax?: number | undefined; lomin?: number | undefined; lomax?: number | undefined; }' is not assignable to type 'OpenSkyBBoxConfig'.
+  Types of property 'lamin' are incompatible.
+    Type 'number | undefined' is not assignable to type 'number'.
+      Type 'undefined' is not assignable to type 'number'.
+dash-ui/src/hooks/useModuleRotation.ts(3,15): error TS2305: Module '"../types/config"' has no exported member 'DisplayModule'.
+dash-ui/src/lib/api.ts(3,3): error TS2724: '"../types/config"' has no exported member named 'AppConfigV2'. Did you mean 'AppConfig'?
+dash-ui/src/lib/api.ts(4,3): error TS2724: '"../types/config"' has no exported member named 'CalendarConfigV2'. Did you mean 'CalendarConfig'?
+dash-ui/src/lib/config.ts(2,15): error TS2724: '"../types/config"' has no exported member named 'AppConfigV2'. Did you mean 'AppConfig'?
+dash-ui/src/lib/useConfig.ts(4,10): error TS2724: '"../config/defaults"' has no exported member named 'withConfigDefaultsV2'. Did you mean 'withConfigDefaults'?
+dash-ui/src/lib/useConfig.ts(6,15): error TS2724: '"../types/config"' has no exported member named 'AppConfigV2'. Did you mean 'AppConfig'?
+dash-ui/src/lib/useConfig.ts(54,28): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/lib/useConfig.ts(55,24): error TS2339: Property 'map' does not exist on type 'AppConfig'.
+dash-ui/src/lib/useConfig.ts(231,32): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/lib/useConfig.ts(232,29): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/lib/useConfig.ts(233,27): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/lib/useConfig.ts(234,32): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/lib/useConfig.ts(235,25): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/lib/useConfig.ts(236,25): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/lib/useConfig.ts(237,29): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/lib/useConfig.ts(238,32): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/lib/useConfig.ts(241,35): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/lib/useConfig.ts(242,32): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/lib/useConfig.ts(243,30): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/lib/useConfig.ts(244,35): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/lib/useConfig.ts(245,28): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/lib/useConfig.ts(246,28): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/lib/useConfig.ts(247,32): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/lib/useConfig.ts(248,35): error TS2339: Property 'map' does not exist on type 'UIConfig'.
+dash-ui/src/pages/ConfigPage.tsx(7,3): error TS2724: '"../config/defaults"' has no exported member named 'DEFAULT_CONFIG_V2'. Did you mean 'DEFAULT_CONFIG'?
+dash-ui/src/pages/ConfigPage.tsx(10,3): error TS2724: '"../config/defaults"' has no exported member named 'withConfigDefaultsV2'. Did you mean 'withConfigDefaults'?
+dash-ui/src/pages/ConfigPage.tsx(55,3): error TS2724: '"../types/config"' has no exported member named 'AppConfigV2'. Did you mean 'AppConfig'?
+dash-ui/src/pages/ConfigPage.tsx(56,3): error TS2724: '"../types/config"' has no exported member named 'CalendarConfigV2'. Did you mean 'CalendarConfig'?
+dash-ui/src/pages/ConfigPage.tsx(57,3): error TS2724: '"../types/config"' has no exported member named 'FlightsLayerConfigV2'. Did you mean 'FlightsLayerConfig'?
+dash-ui/src/pages/ConfigPage.tsx(58,3): error TS2724: '"../types/config"' has no exported member named 'GlobalRadarLayerConfigV2'. Did you mean 'GlobalRadarLayerConfig'?
+dash-ui/src/pages/ConfigPage.tsx(59,3): error TS2724: '"../types/config"' has no exported member named 'OpenSkyConfigV2'. Did you mean 'OpenSkyConfig'?
+dash-ui/src/pages/ConfigPage.tsx(60,3): error TS2724: '"../types/config"' has no exported member named 'PanelsConfigV2'. Did you mean 'PanelsConfig'?
+dash-ui/src/pages/ConfigPage.tsx(61,3): error TS2724: '"../types/config"' has no exported member named 'ShipsLayerConfigV2'. Did you mean 'ShipsLayerConfig'?
+dash-ui/src/pages/ConfigPage.tsx(62,3): error TS2724: '"../types/config"' has no exported member named 'UIRotationConfigV2'. Did you mean 'UIRotationConfig'?
+dash-ui/src/pages/ConfigPage.tsx(314,36): error TS7006: Parameter 'feed' implicitly has an 'any' type.
+dash-ui/src/pages/ConfigPage.tsx(314,66): error TS7006: Parameter 'feed' implicitly has an 'any' type.
+dash-ui/src/pages/ConfigPage.tsx(379,16): error TS7006: Parameter 'prevConfig' implicitly has an 'any' type.
+dash-ui/src/pages/ConfigPage.tsx(432,72): error TS7006: Parameter 'id' implicitly has an 'any' type.
+dash-ui/src/pages/ConfigPage.tsx(620,55): error TS18048: 'DEFAULT_OPENSKY_CONFIG.bbox' is possibly 'undefined'.
+dash-ui/src/pages/ConfigPage.tsx(621,55): error TS18048: 'DEFAULT_OPENSKY_CONFIG.bbox' is possibly 'undefined'.
+dash-ui/src/pages/ConfigPage.tsx(622,55): error TS18048: 'DEFAULT_OPENSKY_CONFIG.bbox' is possibly 'undefined'.
+dash-ui/src/pages/ConfigPage.tsx(623,55): error TS18048: 'DEFAULT_OPENSKY_CONFIG.bbox' is possibly 'undefined'.
+dash-ui/src/pages/ConfigPage.tsx(640,11): error TS18048: 'DEFAULT_OPENSKY_CONFIG.oauth2' is possibly 'undefined'.
+dash-ui/src/pages/ConfigPage.tsx(663,39): error TS18048: 'DEFAULT_OPENSKY_CONFIG.bbox' is possibly 'undefined'.
+dash-ui/src/pages/ConfigPage.tsx(664,39): error TS18048: 'DEFAULT_OPENSKY_CONFIG.bbox' is possibly 'undefined'.
+dash-ui/src/pages/ConfigPage.tsx(665,39): error TS18048: 'DEFAULT_OPENSKY_CONFIG.bbox' is possibly 'undefined'.
+dash-ui/src/pages/ConfigPage.tsx(666,39): error TS18048: 'DEFAULT_OPENSKY_CONFIG.bbox' is possibly 'undefined'.
+dash-ui/src/pages/ConfigPage.tsx(2867,69): error TS18048: 'DEFAULT_OPENSKY_CONFIG.bbox' is possibly 'undefined'.
+dash-ui/src/pages/ConfigPage.tsx(2887,69): error TS18048: 'DEFAULT_OPENSKY_CONFIG.bbox' is possibly 'undefined'.
+dash-ui/src/pages/ConfigPage.tsx(2907,69): error TS18048: 'DEFAULT_OPENSKY_CONFIG.bbox' is possibly 'undefined'.
+dash-ui/src/pages/ConfigPage.tsx(2927,69): error TS18048: 'DEFAULT_OPENSKY_CONFIG.bbox' is possibly 'undefined'.

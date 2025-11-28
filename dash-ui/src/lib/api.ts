@@ -1,7 +1,7 @@
+
 import type {
   AppConfig,
-  AppConfigV2,
-  CalendarConfigV2 as CalendarConfig,
+  CalendarConfig,
 } from "../types/config";
 
 export type SaveConfigResponse = {
@@ -177,13 +177,13 @@ export async function saveConfig(data: AppConfig) {
 }
 
 // V2 API functions
-export async function getConfigV2(): Promise<AppConfigV2> {
-  const config = await apiGet<AppConfigV2>("/api/config");
+export async function getConfigV2(): Promise<AppConfig> {
+  const config = await apiGet<AppConfig>("/api/config");
 
   return config;
 }
 
-export async function saveConfigV2(config: AppConfigV2): Promise<SaveConfigResponse> {
+export async function saveConfigV2(config: AppConfig): Promise<SaveConfigResponse> {
   // Verificar que es v2
   if (config.version !== 2) {
     throw new ApiError(400, { error: "Only v2 config allowed", version: config.version });
@@ -850,6 +850,7 @@ export type WikimediaTestResponse = {
   count?: number;
 };
 
+
 export async function testWikimedia(): Promise<WikimediaTestResponse> {
   try {
     // Usar el endpoint de efemérides con fecha de hoy para test
@@ -893,7 +894,6 @@ export type RainViewerTestResponse = {
   test_tile?: string;
   error?: string;
   message?: string;
-  // Legacy fields para compatibilidad
   frames_count?: number;
   reason?: string;
 };
@@ -1159,8 +1159,8 @@ export async function getShipsPreview(limit: number = 20): Promise<ShipsPreviewR
 }
 
 // Config group save functions
-export async function saveConfigGroup(groupName: string, config: unknown): Promise<AppConfigV2> {
-  return apiPatch<AppConfigV2>(`/api/config/group/${groupName}`, config);
+export async function saveConfigGroup(groupName: string, config: unknown): Promise<AppConfig> {
+  return apiPatch<AppConfig>(`/api/config/group/${groupName}`, config);
 }
 
 // Secrets update functions

@@ -1,6 +1,6 @@
 import type { StyleSpecification } from "maplibre-gl";
 
-import type { MapConfigV2 } from "../../types/config";
+import type { MapConfig } from "../../types/config";
 import { signMapTilerUrl } from "../../lib/map/utils/maptilerHelpers";
 
 const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
@@ -98,7 +98,7 @@ const injectKeyPlaceholders = (payload: string, key: string): string => {
 };
 
 export const loadMapStyle = async (
-  mapConfig: MapConfigV2
+  mapConfig: MapConfig
 ): Promise<MapStyleResult> => {
   const variant: MapStyleVariant = "dark";
   const fallbackStyle: MapStyleDefinition = {

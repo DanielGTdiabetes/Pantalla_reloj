@@ -24,7 +24,7 @@ def test_config_masks_aemet_secret(app_module: Tuple[object, Path]) -> None:
     module, _ = app_module
     _write_aemet_key(module, "SECRETKEY1234")
 
-    public = module._build_public_config_v2(module.config_manager.read())
+    public = module._build_public_config(module.config_manager.read())
     aemet_info = public["aemet"]
 
     assert "api_key" not in aemet_info
@@ -39,7 +39,7 @@ def test_update_aemet_secret_persists(app_module: Tuple[object, Path]) -> None:
 
     assert module.secret_store.get_secret("aemet_api_key") == "AEMET123456"
 
-    public = module._build_public_config_v2(module.config_manager.read())["aemet"]
+    public = module._build_public_config(module.config_manager.read())["aemet"]
     assert public["has_api_key"] is True
     assert public["api_key_last4"] == "3456"
 
@@ -52,7 +52,7 @@ def test_update_aemet_secret_allows_clearing(app_module: Tuple[object, Path]) ->
 
     assert module.secret_store.get_secret("aemet_api_key") is None
 
-    public = module._build_public_config_v2(module.config_manager.read())["aemet"]
+    public = module._build_public_config(module.config_manager.read())["aemet"]
     assert public["has_api_key"] is False
     assert public["api_key_last4"] is None
 
@@ -137,7 +137,7 @@ def test_cinema_motion_serialization(app_module: Tuple[object, Path]) -> None:
 
     module.config_manager.write(payload)
 
-    public = module._build_public_config_v2(module.config_manager.read())
+    public = module._build_public_config(module.config_manager.read())
     returned_motion = public["ui"]["map"]["cinema"]["motion"]
     assert returned_motion == {
         "speedPreset": "fast",

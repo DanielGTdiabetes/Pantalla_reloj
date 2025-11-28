@@ -23,7 +23,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from pydantic import ValidationError
 
-from .models_v2 import AppConfigV2, MapConfig
+from .models import AppConfig, MapConfig
 from .config_migrator import migrate_v1_to_v2
 
 
@@ -53,7 +53,7 @@ class ConfigManager:
         self.default_config_file = default_config_file or Path(
             os.getenv(
                 "PANTALLA_DEFAULT_CONFIG_FILE",
-                Path(__file__).resolve().parent / "default_config_v2.json",
+                Path(__file__).resolve().parent / "default_config.json",
             )
         )
         
@@ -127,7 +127,7 @@ class ConfigManager:
             if not self.config_file.exists():
                 try:
                     defaults = self._default_config_model().model_dump(mode="json")
-                    self._atomic_write_v2(defaults)
+                    self._atomic_write(defaults)
                     os.chmod(self.config_file, 0o644)
                     self.logger.info("Created config file at %s from default template", self.config_file)
                     self.config_source = "file"
@@ -161,7 +161,7 @@ class ConfigManager:
             except (PermissionError, OSError) as exc:
                 self.logger.warning("Could not adjust permissions for %s: %s", self.config_file, exc)
 
-    def read(self) -> AppConfigV2:
+    def read(self) -> AppConfig:
         """Lee y valida la configuración (solo esquema v2)."""
         config_data: Dict[str, Any]
 
@@ -209,7 +209,7 @@ class ConfigManager:
         config_data, migrated_defaults = self._migrate_missing_keys(config_data)
 
         try:
-            config = AppConfigV2.model_validate(config_data)
+            config = AppConfig.model_validate(config_data)
         except ValidationError as exc:
             self.logger.error(
                 "[config] Invalid configuration in %s: %s; restoring defaults",
@@ -218,21 +218,21 @@ class ConfigManager:
             )
             config = self._default_config_model()
             try:
-                self._atomic_write_v2(config.model_dump(mode="json", exclude_none=True))
+                self._atomic_write(config.model_dump(mode="json", exclude_none=True))
             except (PermissionError, OSError) as write_exc:
                 self.logger.warning("[config] Could not persist default config: %s", write_exc)
             return config
 
         if migrated_v1 or migrated_defaults:
             try:
-                self._atomic_write_v2(config.model_dump(mode="json", exclude_none=True))
+                self._atomic_write(config.model_dump(mode="json", exclude_none=True))
                 self._write_snapshot(config)
             except (PermissionError, OSError) as write_exc:
                 self.logger.warning("[config] Could not persist migrated config: %s", write_exc)
 
         return config
     
-    def reload(self) -> Tuple[AppConfigV2, bool]:
+    def reload(self) -> Tuple[AppConfig, bool]:
         """Recarga configuración desde disco."""
         previous_loaded_at = self.config_loaded_at
         config = self.read()
@@ -306,13 +306,13 @@ class ConfigManager:
             "satellite_overlay_style_url": satellite_overlay_style_url,
         }
 
-    def write(self, payload: Dict[str, Any]) -> AppConfigV2:
-        config = AppConfigV2.model_validate(payload)
-        self._atomic_write_v2(config.model_dump(mode="json", exclude_none=True))
+    def write(self, payload: Dict[str, Any]) -> AppConfig:
+        config = AppConfig.model_validate(payload)
+        self._atomic_write(config.model_dump(mode="json", exclude_none=True))
         self._write_snapshot(config)
         return config
     
-    def _atomic_write_v2(self, config_dict: Dict[str, Any]) -> None:
+    def _atomic_write(self, config_dict: Dict[str, Any]) -> None:
         """Escribe configuración de forma atómica usando tmp + mv.
         
         Args:
@@ -385,7 +385,7 @@ class ConfigManager:
             except OSError:
                 pass
 
-    def _write_snapshot(self, config: AppConfigV2) -> None:
+    def _write_snapshot(self, config: AppConfig) -> None:
         today = datetime.now().strftime("%Y-%m-%d")
         snapshot_file = self.snapshot_dir / f"{today}.json"
         if snapshot_file.exists():
@@ -398,16 +398,16 @@ class ConfigManager:
         except OSError as exc:
             self.logger.warning("Failed to write configuration snapshot %s: %s", snapshot_file, exc)
 
-    def _default_config_model(self) -> AppConfigV2:
+    def _default_config_model(self) -> AppConfig:
         try:
             raw = self.default_config_file.read_text(encoding="utf-8")
             data = json.loads(raw)
-            return AppConfigV2.model_validate(data)
+            return AppConfig.model_validate(data)
         except Exception as exc:  # noqa: BLE001
             self.logger.warning(
-                "Falling back to minimal AppConfigV2 defaults (reason: %s)", exc
+                "Falling back to minimal AppConfig defaults (reason: %s)", exc
             )
-            return AppConfigV2(ui_map=MapConfig())
+            return AppConfig(ui_map=MapConfig())
 
     def _load_default_template(self) -> Dict[str, Any]:
         return self._default_config_model().model_dump(mode="json")

@@ -4,16 +4,16 @@ import json
 from pathlib import Path
 
 from backend.config_manager import ConfigManager
-from backend.models_v2 import AppConfigV2
+from backend.models import AppConfig
 
 
 def test_load_and_persist_v2_schema(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[2]
-    default_path = repo_root / "backend" / "default_config_v2.json"
+    default_path = repo_root / "backend" / "default_config.json"
     config_path = tmp_path / "config.json"
 
     data = json.loads(default_path.read_text(encoding="utf-8"))
-    cfg = AppConfigV2.model_validate(data)
+    cfg = AppConfig.model_validate(data)
     assert cfg.ui_map.provider == "maptiler_vector"
 
     manager = ConfigManager(config_file=config_path, default_config_file=default_path)

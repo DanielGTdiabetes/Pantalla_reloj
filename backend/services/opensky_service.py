@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
-from ..models_v2 import AppConfigV2, OpenSkyProviderConfig
+from ..models import AppConfig, OpenSkyProviderConfig
 from ..secret_store import SecretStore
 from .cache import TTLCache
 from .opensky_auth import DEFAULT_TOKEN_URL, OpenSkyAuthError, OpenSkyAuthenticator
@@ -316,7 +316,7 @@ class OpenSkyService:
             return f"{base}:{exc.status}"
         return str(base)
 
-    def force_refresh(self, config: AppConfigV2) -> Dict[str, Any]:
+    def force_refresh(self, config: AppConfig) -> Dict[str, Any]:
         layers = getattr(config, "layers", None)
         flights_layer = getattr(layers, "flights", None) if layers else None
         if not flights_layer or not flights_layer.enabled or flights_layer.provider != "opensky":

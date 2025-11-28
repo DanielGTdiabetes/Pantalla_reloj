@@ -1,7 +1,7 @@
 """Tests para SatelliteSettings y normalización de labels_overlay."""
 from __future__ import annotations
 
-from backend.models_v2 import SatelliteLabelsOverlay, SatelliteSettings
+from backend.models import SatelliteLabelsOverlay, SatelliteSettings
 
 
 def test_labels_overlay_defaults_to_enabled() -> None:

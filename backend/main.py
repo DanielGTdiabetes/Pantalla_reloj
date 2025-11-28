@@ -133,7 +133,7 @@ from .models_global_satellite import (
     GlobalSatelliteFrame,
     GlobalSatelliteFramesResponse,
 )
-from .models_v2 import AppConfigV2
+from .models import AppConfig
 from .routes.efemerides import (
     get_efemerides_for_date,
     load_efemerides_data,
@@ -196,7 +196,7 @@ def _schedule_kiosk_refresh(reason: str = "config_saved") -> None:
 
 
 def _persist_config(config_data: Dict[str, Any], *, reason: str) -> None:
-    config_manager._atomic_write_v2(config_data)
+    config_manager._atomic_write(config_data)
     _schedule_kiosk_refresh(reason)
 
 # Configuración de ruta
@@ -207,7 +207,7 @@ config_manager = ConfigManager()
 clean_aemet_keys(CONFIG_PATH)
 
 
-def load_effective_config() -> AppConfigV2:
+def load_effective_config() -> AppConfig:
     """Carga la configuración efectiva (siempre en esquema v2)."""
     config = config_manager.read()
     ui_map = config.ui_map
@@ -799,7 +799,7 @@ def _check_v1_keys(payload: Dict[str, Any]) -> List[str]:
     return v1_keys
 
 
-def _read_config_v2() -> Tuple[AppConfigV2, bool]:
+def _read_config() -> Tuple[AppConfig, bool]:
     """
     Lee configuración y devuelve v2. Migra v1→v2 si es necesario.
     
@@ -976,16 +976,16 @@ def _read_config_v2() -> Tuple[AppConfigV2, bool]:
                 config_data["calendar"] = calendar
             
             try:
-                config_v2 = AppConfigV2.model_validate(config_data)
+                config_v2 = AppConfig.model_validate(config_data)
                 return config_v2, False
             except ValidationError:
                 logger.warning("Invalid v2 config, migrating from defaults")
                 # Fallback a defaults
-                default_data = json.loads((Path(__file__).parent / "default_config_v2.json").read_text(encoding="utf-8"))
+                default_data = json.loads((Path(__file__).parent / "default_config.json").read_text(encoding="utf-8"))
                 # Asegurar que maps y layers_global estén presentes en los defaults
                 default_data = _ensure_maps_defaults(default_data)
                 default_data = _ensure_layers_global_defaults(default_data)
-                config_v2 = AppConfigV2.model_validate(default_data)
+                config_v2 = AppConfig.model_validate(default_data)
                 return config_v2, False
         else:
             # Es v1, migrar
@@ -1011,7 +1011,7 @@ def _read_config_v2() -> Tuple[AppConfigV2, bool]:
             config_v2_dict = _ensure_layers_global_defaults(config_v2_dict)
             
             # Validar y guardar v2
-            config_v2 = AppConfigV2.model_validate(config_v2_dict)
+            config_v2 = AppConfig.model_validate(config_v2_dict)
             
             # Crear backup de v1
             backup_path = config_manager.config_file.with_suffix(".json.v1backup")
@@ -1024,11 +1024,11 @@ def _read_config_v2() -> Tuple[AppConfigV2, bool]:
     except Exception as e:
         logger.error("Error reading config: %s", e, exc_info=True)
         # Fallback a defaults v2
-        default_data = json.loads((Path(__file__).parent / "default_config_v2.json").read_text(encoding="utf-8"))
+        default_data = json.loads((Path(__file__).parent / "default_config.json").read_text(encoding="utf-8"))
         # Asegurar que maps y layers_global estén presentes en los defaults
         default_data = _ensure_maps_defaults(default_data)
         default_data = _ensure_layers_global_defaults(default_data)
-        config_v2 = AppConfigV2.model_validate(default_data)
+        config_v2 = AppConfig.model_validate(default_data)
         return config_v2, False
 
 
@@ -1177,7 +1177,7 @@ def _ensure_layers_global_defaults(config_dict: Dict[str, Any]) -> Dict[str, Any
     return config_dict
 
 
-def _build_public_config_v2(config: AppConfigV2) -> Dict[str, Any]:
+def _build_public_config(config: AppConfig) -> Dict[str, Any]:
     """Construye configuración pública v2 (sin secrets ni rutas internas).
     
     Oculta todos los valores sensibles de secrets.* pero mantiene la estructura

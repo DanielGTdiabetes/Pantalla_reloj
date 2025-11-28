@@ -48,7 +48,7 @@ def write_json(path: str | Path, data: Dict[str, Any]) -> None:
     from ..config_manager import ConfigManager
     
     config_manager = ConfigManager(config_file=Path(path))
-    config_manager._atomic_write_v2(data)
+    config_manager._atomic_write(data)
 
 
 def merge_defaults(defaults: Dict[str, Any], disk: Dict[str, Any]) -> Dict[str, Any]:

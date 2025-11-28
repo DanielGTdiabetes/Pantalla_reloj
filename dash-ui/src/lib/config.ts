@@ -1,7 +1,5 @@
 import type { AppConfig } from "../types/config";
-import type { AppConfigV2 } from "../types/config";
-
-type ConfigLike = Partial<AppConfig> | Partial<AppConfigV2> | null | undefined;
+type ConfigLike = Partial<AppConfig> | null | undefined;
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;

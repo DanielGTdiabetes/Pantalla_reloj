@@ -16,7 +16,7 @@ log = logging.getLogger("config_sanitize")
 
 _ALLOWED_RENDER = {"auto", "symbol", "circle", "symbol_custom"}
 
-_DEFAULT_CONFIG_V2_PATH = Path(__file__).resolve().parent.parent / "default_config_v2.json"
+_DEFAULT_CONFIG_V2_PATH = Path(__file__).resolve().parent.parent / "default_config.json"
 try:
     _DEFAULT_CONFIG_V2 = json.loads(_DEFAULT_CONFIG_V2_PATH.read_text(encoding="utf-8"))
 except Exception as exc:  # noqa: BLE001

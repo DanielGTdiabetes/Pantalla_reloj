@@ -4,7 +4,7 @@ import { withConfigDefaults } from "../config/defaults";
 import { apiGet, apiPost, getConfigMeta, getSantoralToday } from "../lib/api";
 import { useConfig } from "../lib/useConfig";
 import { fetchWikipediaEvents } from "../lib/services/wikipedia";
-import type { AppConfigV2 } from "../types/config";
+import type { AppConfig } from "../types/config";
 import { dayjs } from "../utils/dayjs";
 import { ensurePlainText, sanitizeRichText } from "../utils/sanitize";
 import { safeGetTimezone } from "../utils/timezone";
@@ -317,7 +317,7 @@ export const OverlayRotator: React.FC = () => {
       };
     }
 
-    const v2Config = config as unknown as AppConfigV2;
+    const v2Config = config as unknown as AppConfig;
     if (v2Config.version === 2 && v2Config.ui_global?.overlay?.rotator) {
       const rotator = v2Config.ui_global.overlay.rotator;
       const order = Array.isArray(rotator.order) && rotator.order.length > 0

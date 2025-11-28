@@ -4,21 +4,21 @@ import {
   DEFAULT_LOCAL_RASTER_CONFIG,
   DEFAULT_MAP_CONFIG,
   DEFAULT_OPENSKY_CONFIG,
-  DEFAULT_CONFIG_V2,
+  DEFAULT_CONFIG,
   DEFAULT_UI_ROTATION_CONFIG,
   ROTATION_PANEL_IDS,
-  withConfigDefaultsV2,
+  withConfigDefaults,
 } from "../config/defaults";
 
 import {
   ApiError,
   getCalendarPreview,
-  getConfigV2,
+  getConfig,
   getLightningStatus,
   getLightningSample,
   getOpenSkyStatus,
   saveCalendarConfig,
-  saveConfigV2,
+  saveConfig,
   saveConfigGroup,
   setCalendarICSUrl,
   testAemetApiKey,
@@ -52,14 +52,14 @@ import {
 } from "../lib/api";
 
 import type {
-  AppConfigV2,
-  CalendarConfigV2 as CalendarConfig,
-  FlightsLayerConfigV2,
-  GlobalRadarLayerConfigV2,
-  OpenSkyConfigV2,
-  PanelsConfigV2,
-  ShipsLayerConfigV2,
-  UIRotationConfigV2,
+  AppConfig,
+  CalendarConfig,
+  FlightsLayerConfig,
+  GlobalRadarLayerConfig,
+  OpenSkyConfig,
+  PanelsConfig,
+  ShipsLayerConfig,
+  UIRotationConfig,
 } from "../types/config";
 
 const DEFAULT_AISSTREAM_WS_URL = "wss://stream.aisstream.io/v0/stream";
@@ -123,7 +123,7 @@ const sanitizeRotationPanels = (panels: string[]): string[] => {
 
 export const ConfigPage: React.FC = () => {
   // Estado general
-  const [config, setConfig] = useState<AppConfigV2 | null>(null);
+  const [config, setConfig] = useState<AppConfig | null>(null);
   const [loading, setLoading] = useState(true);
 
   // WiFi
@@ -209,7 +209,7 @@ export const ConfigPage: React.FC = () => {
     }
   };
 
-  const sanitizeFlightsPayload = (): Partial<FlightsLayerConfigV2> | undefined => {
+  const sanitizeFlightsPayload = (): Partial<FlightsLayerConfig> | undefined => {
     const flights = config?.layers?.flights;
     if (!flights) {
       return undefined;
@@ -224,7 +224,7 @@ export const ConfigPage: React.FC = () => {
 
     const provider = flights.provider ?? "opensky";
 
-    const payload: Partial<FlightsLayerConfigV2> = {
+    const payload: Partial<FlightsLayerConfig> = {
       enabled: true,
       provider,
       refresh_seconds: flights.refresh_seconds ?? 12,
@@ -253,7 +253,7 @@ export const ConfigPage: React.FC = () => {
     return payload;
   };
 
-  const sanitizeShipsPayload = (): Partial<ShipsLayerConfigV2> | undefined => {
+  const sanitizeShipsPayload = (): Partial<ShipsLayerConfig> | undefined => {
     const ships = config?.layers?.ships;
     if (!ships) {
       return undefined;
@@ -264,7 +264,7 @@ export const ConfigPage: React.FC = () => {
     }
 
     const provider = ships.provider ?? "aisstream";
-    const payload: Partial<ShipsLayerConfigV2> = {
+    const payload: Partial<ShipsLayerConfig> = {
       enabled: true,
       provider,
       refresh_seconds: ships.refresh_seconds ?? 10,
@@ -301,7 +301,7 @@ export const ConfigPage: React.FC = () => {
     return payload;
   };
 
-  const sanitizePanelsPayload = (): PanelsConfigV2 | undefined => {
+  const sanitizePanelsPayload = (): PanelsConfig | undefined => {
     const panels = config?.panels;
     if (!panels) {
       return undefined;
@@ -357,10 +357,10 @@ export const ConfigPage: React.FC = () => {
       };
     }
 
-    return Object.keys(payload).length > 0 ? (payload as PanelsConfigV2) : undefined;
+    return Object.keys(payload).length > 0 ? (payload as PanelsConfig) : undefined;
   };
 
-  const sanitizeRotationPayload = (): UIRotationConfigV2 => {
+  const sanitizeRotationPayload = (): UIRotationConfig => {
     const rotation = config?.ui?.rotation ?? DEFAULT_UI_ROTATION_CONFIG;
     const panels = sanitizeRotationPanels(rotation.panels ?? []);
     const durationCandidate = Number(rotation.duration_sec);
@@ -375,12 +375,12 @@ export const ConfigPage: React.FC = () => {
     };
   };
 
-  const updateRotationState = (updater: (current: UIRotationConfigV2) => UIRotationConfigV2) => {
+  const updateRotationState = (updater: (current: UIRotationConfig) => UIRotationConfig) => {
     setConfig((prevConfig) => {
       if (!prevConfig) {
         return prevConfig;
       }
-      const currentRotation: UIRotationConfigV2 = {
+      const currentRotation: UIRotationConfig = {
         ...DEFAULT_UI_ROTATION_CONFIG,
         ...prevConfig.ui?.rotation,
         panels: sanitizeRotationPanels(prevConfig.ui?.rotation?.panels ?? DEFAULT_UI_ROTATION_CONFIG.panels),
@@ -461,8 +461,8 @@ export const ConfigPage: React.FC = () => {
     const loadInitialData = async () => {
       try {
         setLoading(true);
-        const loadedConfig = await getConfigV2();
-        const configWithDefaults = withConfigDefaultsV2(loadedConfig);
+        const loadedConfig = await getConfig();
+        const configWithDefaults = withConfigDefaults(loadedConfig);
         setConfig(configWithDefaults);
 
         // Cargar API key de AEMET desde secrets (no se expone en config, pero podemos intentar leerla)
@@ -591,7 +591,7 @@ export const ConfigPage: React.FC = () => {
   };
 
   // Helper functions to build complete config objects
-  const buildFlightsConfig = (updates?: Partial<FlightsLayerConfigV2>): FlightsLayerConfigV2 => {
+  const buildFlightsConfig = (updates?: Partial<FlightsLayerConfig>): FlightsLayerConfig => {
     const current = config?.layers?.flights;
     return {
       enabled: updates?.enabled !== undefined ? updates.enabled : (current?.enabled !== undefined ? current.enabled : true),
@@ -612,15 +612,15 @@ export const ConfigPage: React.FC = () => {
     };
   };
 
-  const buildOpenSkyConfig = (updates?: Partial<OpenSkyConfigV2>): OpenSkyConfigV2 => {
-    const current = (config?.opensky ?? DEFAULT_OPENSKY_CONFIG) as OpenSkyConfigV2;
+  const buildOpenSkyConfig = (updates?: Partial<OpenSkyConfig>): OpenSkyConfig => {
+    const current = (config?.opensky ?? DEFAULT_OPENSKY_CONFIG) as OpenSkyConfig;
     const next = updates ?? {};
-    const currentBbox = current.bbox ?? DEFAULT_OPENSKY_CONFIG.bbox;
+    const currentBbox = current.bbox ?? DEFAULT_OPENSKY_CONFIG.bbox!;
     const bbox = {
-      lamin: next.bbox?.lamin ?? currentBbox.lamin ?? DEFAULT_OPENSKY_CONFIG.bbox.lamin,
-      lamax: next.bbox?.lamax ?? currentBbox.lamax ?? DEFAULT_OPENSKY_CONFIG.bbox.lamax,
-      lomin: next.bbox?.lomin ?? currentBbox.lomin ?? DEFAULT_OPENSKY_CONFIG.bbox.lomin,
-      lomax: next.bbox?.lomax ?? currentBbox.lomax ?? DEFAULT_OPENSKY_CONFIG.bbox.lomax,
+      lamin: next.bbox?.lamin ?? currentBbox.lamin ?? DEFAULT_OPENSKY_CONFIG.bbox!.lamin,
+      lamax: next.bbox?.lamax ?? currentBbox.lamax ?? DEFAULT_OPENSKY_CONFIG.bbox!.lamax,
+      lomin: next.bbox?.lomin ?? currentBbox.lomin ?? DEFAULT_OPENSKY_CONFIG.bbox!.lomin,
+      lomax: next.bbox?.lomax ?? currentBbox.lomax ?? DEFAULT_OPENSKY_CONFIG.bbox!.lomax,
     };
     const currentOauth = current.oauth2 ?? DEFAULT_OPENSKY_CONFIG.oauth2;
     return {
@@ -637,7 +637,7 @@ export const ConfigPage: React.FC = () => {
         token_url:
           next.oauth2?.token_url ??
           currentOauth?.token_url ??
-          DEFAULT_OPENSKY_CONFIG.oauth2.token_url,
+          DEFAULT_OPENSKY_CONFIG.oauth2!.token_url,
         scope: next.oauth2?.scope ?? currentOauth?.scope ?? null,
       },
     };
@@ -647,7 +647,7 @@ export const ConfigPage: React.FC = () => {
   // Solo incluye los campos válidos: enabled, mode, bbox
   // El backend solo acepta estos campos, no poll_seconds, oauth2, secrets, etc.
   const buildOpenSkyPatchPayload = (): { enabled: boolean; mode: "bbox" | "global" | "oauth2"; bbox: { lamin: number; lamax: number; lomin: number; lomax: number } | null } => {
-    const current = (config?.opensky ?? DEFAULT_OPENSKY_CONFIG) as OpenSkyConfigV2;
+    const current = (config?.opensky ?? DEFAULT_OPENSKY_CONFIG) as OpenSkyConfig;
     // El backend acepta "bbox" | "global" | "oauth2", aunque el tipo TypeScript solo tiene "bbox" | "global"
     // Obtener el valor del mode como string para permitir valores que vengan del backend
     const currentMode = current.mode ?? "bbox";
@@ -655,15 +655,15 @@ export const ConfigPage: React.FC = () => {
 
     // Si mode es "bbox", incluir bbox con valores
     if (currentMode === "bbox") {
-      const currentBbox = current.bbox ?? DEFAULT_OPENSKY_CONFIG.bbox;
+      const currentBbox = current.bbox ?? DEFAULT_OPENSKY_CONFIG.bbox!;
       return {
         enabled: current.enabled ?? false,
         mode: "bbox",
         bbox: {
-          lamin: currentBbox.lamin ?? DEFAULT_OPENSKY_CONFIG.bbox.lamin,
-          lamax: currentBbox.lamax ?? DEFAULT_OPENSKY_CONFIG.bbox.lamax,
-          lomin: currentBbox.lomin ?? DEFAULT_OPENSKY_CONFIG.bbox.lomin,
-          lomax: currentBbox.lomax ?? DEFAULT_OPENSKY_CONFIG.bbox.lomax,
+          lamin: currentBbox.lamin ?? DEFAULT_OPENSKY_CONFIG.bbox!.lamin,
+          lamax: currentBbox.lamax ?? DEFAULT_OPENSKY_CONFIG.bbox!.lamax,
+          lomin: currentBbox.lomin ?? DEFAULT_OPENSKY_CONFIG.bbox!.lomin,
+          lomax: currentBbox.lomax ?? DEFAULT_OPENSKY_CONFIG.bbox!.lomax,
         },
       };
     }
@@ -676,7 +676,7 @@ export const ConfigPage: React.FC = () => {
     };
   };
 
-  const buildShipsConfig = (updates?: Partial<ShipsLayerConfigV2>): ShipsLayerConfigV2 => {
+  const buildShipsConfig = (updates?: Partial<ShipsLayerConfig>): ShipsLayerConfig => {
     const current = config?.layers?.ships;
     return {
       enabled: updates?.enabled !== undefined ? updates.enabled : (current?.enabled !== undefined ? current.enabled : false),
@@ -876,8 +876,8 @@ export const ConfigPage: React.FC = () => {
       await saveConfigGroup("layers.flights", flightsPayload);
       await reloadConfig();
       alert("Capa de vuelos guardada. La pantalla se reiniciará en unos segundos.");
-      const loadedConfig = await getConfigV2();
-      setConfig(withConfigDefaultsV2(loadedConfig));
+      const loadedConfig = await getConfig();
+      setConfig(withConfigDefaults(loadedConfig));
       dispatchConfigSaved();
     } catch (error) {
       console.error("Error saving flights layer:", error);
@@ -899,8 +899,8 @@ export const ConfigPage: React.FC = () => {
       await saveConfigGroup("opensky", payload);
       await reloadConfig();
       alert("Configuración de OpenSky guardada. La pantalla se reiniciará en unos segundos.");
-      const loadedConfig = await getConfigV2();
-      setConfig(withConfigDefaultsV2(loadedConfig));
+      const loadedConfig = await getConfig();
+      setConfig(withConfigDefaults(loadedConfig));
       dispatchConfigSaved();
     } catch (error) {
       console.error("Error saving OpenSky config:", error);
@@ -1074,8 +1074,8 @@ export const ConfigPage: React.FC = () => {
       await reloadConfig();
       alert("Capa de barcos guardada. La pantalla se reiniciará en unos segundos.");
 
-      const loadedConfig = await getConfigV2();
-      setConfig(withConfigDefaultsV2(loadedConfig));
+      const loadedConfig = await getConfig();
+      setConfig(withConfigDefaults(loadedConfig));
       dispatchConfigSaved();
     } catch (error) {
       console.error("Error saving ships layer:", error);
@@ -1097,8 +1097,8 @@ export const ConfigPage: React.FC = () => {
       const globalPayload = layersPayload.global ?? layersPayload.global_ ?? {};
 
       // Asegurar que el radar tiene todos los campos necesarios
-      const radarConfig = (globalPayload.radar ?? {}) as Partial<GlobalRadarLayerConfigV2>;
-      const sanitizedRadar: GlobalRadarLayerConfigV2 = {
+      const radarConfig = (globalPayload.radar ?? {}) as Partial<GlobalRadarLayerConfig>;
+      const sanitizedRadar: GlobalRadarLayerConfig = {
         enabled: radarConfig.enabled ?? false,
         provider: radarConfig.provider || "maptiler_weather",
         opacity: radarConfig.opacity ?? 0.7,
@@ -1116,7 +1116,7 @@ export const ConfigPage: React.FC = () => {
 
       // Asegurar que layers existe
       if (!config.layers) {
-        await saveConfigV2({
+        await saveConfig({
           ...config,
           layers: {
             global: sanitizedGlobalPayload,
@@ -1135,8 +1135,8 @@ export const ConfigPage: React.FC = () => {
       await reloadConfig();
       alert("Capas globales guardadas. La pantalla se reiniciará en unos segundos.");
 
-      const loadedConfig = await getConfigV2();
-      setConfig(withConfigDefaultsV2(loadedConfig));
+      const loadedConfig = await getConfig();
+      setConfig(withConfigDefaults(loadedConfig));
       dispatchConfigSaved();
     } catch (error) {
       console.error("Error saving global layers:", error);
@@ -1216,7 +1216,7 @@ export const ConfigPage: React.FC = () => {
 
     setLightningSaving(true);
     try {
-      await saveConfigV2(config);
+      await saveConfig(config);
       alert("Configuración de Rayos guardada correctamente");
     } catch (error) {
       console.error("Error saving lightning config:", error);
@@ -1335,8 +1335,8 @@ export const ConfigPage: React.FC = () => {
 
       if (result.ok) {
         // Recargar config para reflejar cambios (preserva configuración anterior)
-        const loadedConfig = await getConfigV2();
-        setConfig(withConfigDefaultsV2(loadedConfig));
+        const loadedConfig = await getConfig();
+        setConfig(withConfigDefaults(loadedConfig));
 
         setCalendarUploadProgress(100);
 
@@ -1392,8 +1392,8 @@ export const ConfigPage: React.FC = () => {
       const result = await setCalendarICSUrl({ url: url.trim() });
       if (result.ok) {
         // Recargar config
-        const loadedConfig = await getConfigV2();
-        setConfig(withConfigDefaultsV2(loadedConfig));
+        const loadedConfig = await getConfig();
+        setConfig(withConfigDefaults(loadedConfig));
 
         setCalendarTestResult({
           ok: true,
@@ -1463,8 +1463,8 @@ export const ConfigPage: React.FC = () => {
       await saveCalendarConfig(calendarToSave);
 
       // Recargar config
-      const loadedConfig = await getConfigV2();
-      setConfig(withConfigDefaultsV2(loadedConfig));
+      const loadedConfig = await getConfig();
+      setConfig(withConfigDefaults(loadedConfig));
       dispatchConfigSaved();
     } catch (error) {
       console.error("Error saving calendar config:", error);
@@ -1489,8 +1489,8 @@ export const ConfigPage: React.FC = () => {
 
       alert("Configuración del Panel Rotativo guardada correctamente");
 
-      const loadedConfig = await getConfigV2();
-      setConfig(withConfigDefaultsV2(loadedConfig));
+      const loadedConfig = await getConfig();
+      setConfig(withConfigDefaults(loadedConfig));
       dispatchConfigSaved();
       dispatchRotationRestart();
     } catch (error) {
@@ -1506,7 +1506,7 @@ export const ConfigPage: React.FC = () => {
     () => sanitizeRotationPanels(rawRotationConfig?.panels ?? DEFAULT_UI_ROTATION_CONFIG.panels),
     [rawRotationConfig?.panels]
   );
-  const rotationConfig: UIRotationConfigV2 = useMemo(
+  const rotationConfig: UIRotationConfig = useMemo(
     () => ({
       ...DEFAULT_UI_ROTATION_CONFIG,
       ...(rawRotationConfig ?? {}),
@@ -1677,7 +1677,7 @@ export const ConfigPage: React.FC = () => {
                     onChange={(e) => {
                       const currentLayers = config.layers ?? {};
                       const currentGlobal = currentLayers.global ?? currentLayers.global_ ?? {};
-                      const currentRadar = (currentGlobal.radar ?? {}) as Partial<GlobalRadarLayerConfigV2>;
+                      const currentRadar = (currentGlobal.radar ?? {}) as Partial<GlobalRadarLayerConfig>;
 
                       setConfig({
                         ...config,
@@ -1691,7 +1691,7 @@ export const ConfigPage: React.FC = () => {
                               provider: currentRadar.provider || "maptiler_weather",
                               opacity: currentRadar.opacity ?? 0.7,
                               animation_speed: currentRadar.animation_speed ?? 1.0,
-                            } as GlobalRadarLayerConfigV2,
+                            } as GlobalRadarLayerConfig,
                           },
                         },
                       });
@@ -1743,7 +1743,7 @@ export const ConfigPage: React.FC = () => {
                       onChange={(e) => {
                         const currentLayers = config.layers ?? {};
                         const currentGlobal = currentLayers.global ?? currentLayers.global_ ?? {};
-                        const currentRadar = (currentGlobal.radar ?? {}) as Partial<GlobalRadarLayerConfigV2>;
+                        const currentRadar = (currentGlobal.radar ?? {}) as Partial<GlobalRadarLayerConfig>;
                         const newOpacity = parseFloat(e.target.value);
 
                         setConfig({
@@ -1758,7 +1758,7 @@ export const ConfigPage: React.FC = () => {
                                 provider: currentRadar.provider || "maptiler_weather",
                                 opacity: newOpacity,
                                 animation_speed: currentRadar.animation_speed ?? 1.0,
-                              } as GlobalRadarLayerConfigV2,
+                              } as GlobalRadarLayerConfig,
                             },
                           },
                         });
@@ -1782,7 +1782,7 @@ export const ConfigPage: React.FC = () => {
                       onChange={(e) => {
                         const currentLayers = config.layers ?? {};
                         const currentGlobal = currentLayers.global ?? currentLayers.global_ ?? {};
-                        const currentRadar = (currentGlobal.radar ?? {}) as Partial<GlobalRadarLayerConfigV2>;
+                        const currentRadar = (currentGlobal.radar ?? {}) as Partial<GlobalRadarLayerConfig>;
                         const newSpeed = parseFloat(e.target.value);
 
                         setConfig({
@@ -1797,7 +1797,7 @@ export const ConfigPage: React.FC = () => {
                                 provider: currentRadar.provider || "maptiler_weather",
                                 opacity: currentRadar.opacity ?? 0.7,
                                 animation_speed: newSpeed,
-                              } as GlobalRadarLayerConfigV2,
+                              } as GlobalRadarLayerConfig,
                             },
                           },
                         });
@@ -1843,10 +1843,10 @@ export const ConfigPage: React.FC = () => {
                           enabled: e.target.checked,
                         } as any,
                       };
-                      setConfig(newConfig as AppConfigV2);
+                      setConfig(newConfig as AppConfig);
                       // Guardar inmediatamente
                       try {
-                        await saveConfigV2(newConfig as AppConfigV2);
+                        await saveConfig(newConfig as AppConfig);
                       } catch (error) {
                         console.error("Error saving AEMET enabled:", error);
                       }
@@ -1914,7 +1914,7 @@ export const ConfigPage: React.FC = () => {
                           ...(config as any).blitzortung,
                           enabled: e.target.checked,
                         } as any,
-                      } as AppConfigV2);
+                      } as AppConfig);
                     }}
                   />
                   Habilitar Rayos
@@ -1936,7 +1936,7 @@ export const ConfigPage: React.FC = () => {
                             ...(config as any).blitzortung,
                             mqtt_host: e.target.value || "127.0.0.1",
                           } as any,
-                        } as AppConfigV2);
+                        } as AppConfig);
                       }}
                       placeholder="127.0.0.1"
                     />
@@ -1956,7 +1956,7 @@ export const ConfigPage: React.FC = () => {
                             ...(config as any).blitzortung,
                             mqtt_port: parseInt(e.target.value) || 1883,
                           } as any,
-                        } as AppConfigV2);
+                        } as AppConfig);
                       }}
                     />
                   </div>
@@ -1973,7 +1973,7 @@ export const ConfigPage: React.FC = () => {
                             ...(config as any).blitzortung,
                             mqtt_topic: e.target.value || "blitzortung/1",
                           } as any,
-                        } as AppConfigV2);
+                        } as AppConfig);
                       }}
                       placeholder="blitzortung/1"
                     />
@@ -2027,7 +2027,7 @@ export const ConfigPage: React.FC = () => {
                               ...(config as any).blitzortung,
                               ws_enabled: e.target.checked,
                             } as any,
-                          } as AppConfigV2);
+                          } as AppConfig);
                         }}
                       />
                       Habilitar WebSocket
@@ -2048,7 +2048,7 @@ export const ConfigPage: React.FC = () => {
                                 ...(config as any).blitzortung,
                                 ws_url: e.target.value || null,
                               } as any,
-                            } as AppConfigV2);
+                            } as AppConfig);
                           }}
                           placeholder="wss://example.com/ws"
                         />
@@ -2092,7 +2092,7 @@ export const ConfigPage: React.FC = () => {
                             ...(config as any).blitzortung,
                             buffer_max: parseInt(e.target.value) || 500,
                           } as any,
-                        } as AppConfigV2);
+                        } as AppConfig);
                       }}
                     />
                     <div className="config-field__hint">Máximo número de eventos en memoria</div>
@@ -2112,7 +2112,7 @@ export const ConfigPage: React.FC = () => {
                             ...(config as any).blitzortung,
                             prune_seconds: parseInt(e.target.value) || 900,
                           } as any,
-                        } as AppConfigV2);
+                        } as AppConfig);
                       }}
                     />
                     <div className="config-field__hint">Tiempo de vida de eventos en segundos (900 = 15 minutos)</div>
@@ -2134,7 +2134,7 @@ export const ConfigPage: React.FC = () => {
                                 ...(config as any).storm,
                                 enabled: e.target.checked,
                               } as any,
-                            } as AppConfigV2);
+                            } as AppConfig);
                           }}
                         />
                         Habilitar Modo Tormenta
@@ -2156,7 +2156,7 @@ export const ConfigPage: React.FC = () => {
                                   ...(config as any).storm,
                                   center_lat: parseFloat(e.target.value) || 39.986,
                                 } as any,
-                              } as AppConfigV2);
+                              } as AppConfig);
                             }}
                           />
                         </div>
@@ -2174,7 +2174,7 @@ export const ConfigPage: React.FC = () => {
                                   ...(config as any).storm,
                                   center_lng: parseFloat(e.target.value) || -0.051,
                                 } as any,
-                              } as AppConfigV2);
+                              } as AppConfig);
                             }}
                           />
                         </div>
@@ -2194,7 +2194,7 @@ export const ConfigPage: React.FC = () => {
                                   ...(config as any).storm,
                                   zoom: parseFloat(e.target.value) || 9.0,
                                 } as any,
-                              } as AppConfigV2);
+                              } as AppConfig);
                             }}
                           />
                         </div>
@@ -2211,7 +2211,7 @@ export const ConfigPage: React.FC = () => {
                                     ...(config as any).storm,
                                     auto_enable: e.target.checked,
                                   } as any,
-                                } as AppConfigV2);
+                                } as AppConfig);
                               }}
                             />
                             Auto-enable cuando hay rayos cerca
@@ -2235,7 +2235,7 @@ export const ConfigPage: React.FC = () => {
                                       ...(config as any).storm,
                                       radius_km: parseFloat(e.target.value) || 30,
                                     } as any,
-                                  } as AppConfigV2);
+                                  } as AppConfig);
                                 }}
                               />
                             </div>
@@ -2255,7 +2255,7 @@ export const ConfigPage: React.FC = () => {
                                       ...(config as any).storm,
                                       auto_disable_after_minutes: parseInt(e.target.value) || 60,
                                     } as any,
-                                  } as AppConfigV2);
+                                  } as AppConfig);
                                 }}
                               />
                             </div>
@@ -2335,7 +2335,7 @@ export const ConfigPage: React.FC = () => {
                     const nextUiMap = {
                       ...config.ui_map,
                       provider: nextProvider,
-                    } as AppConfigV2["ui_map"];
+                    } as AppConfig["ui_map"];
 
                     if (nextProvider === "maptiler_vector") {
                       const resolvedStyleUrl =
@@ -2809,7 +2809,7 @@ export const ConfigPage: React.FC = () => {
                               opensky: {
                                 ...config.opensky,
                                 enabled: e.target.checked,
-                              } as OpenSkyConfigV2,
+                              } as OpenSkyConfig,
                             });
                           }}
                         />
@@ -2826,8 +2826,8 @@ export const ConfigPage: React.FC = () => {
                               ...config,
                               opensky: {
                                 ...config.opensky,
-                                mode: e.target.value as OpenSkyConfigV2["mode"],
-                              } as OpenSkyConfigV2,
+                                mode: e.target.value as OpenSkyConfig["mode"],
+                              } as OpenSkyConfig,
                             });
                           }}
                         >
@@ -2851,7 +2851,7 @@ export const ConfigPage: React.FC = () => {
                               opensky: {
                                 ...config.opensky,
                                 poll_seconds: value,
-                              } as OpenSkyConfigV2,
+                              } as OpenSkyConfig,
                             });
                           }}
                         />
@@ -2864,7 +2864,7 @@ export const ConfigPage: React.FC = () => {
                             <input
                               type="number"
                               step="0.01"
-                              value={config.opensky?.bbox?.lamin ?? DEFAULT_OPENSKY_CONFIG.bbox.lamin}
+                              value={config.opensky?.bbox?.lamin ?? DEFAULT_OPENSKY_CONFIG.bbox!.lamin}
                               onChange={(e) => {
                                 if (!config) return;
                                 const next = {
@@ -2876,7 +2876,7 @@ export const ConfigPage: React.FC = () => {
                                   opensky: {
                                     ...config.opensky,
                                     bbox: next,
-                                  } as OpenSkyConfigV2,
+                                  } as OpenSkyConfig,
                                 });
                               }}
                               placeholder="Latitud mínima"
@@ -2884,7 +2884,7 @@ export const ConfigPage: React.FC = () => {
                             <input
                               type="number"
                               step="0.01"
-                              value={config.opensky?.bbox?.lamax ?? DEFAULT_OPENSKY_CONFIG.bbox.lamax}
+                              value={config.opensky?.bbox?.lamax ?? DEFAULT_OPENSKY_CONFIG.bbox!.lamax}
                               onChange={(e) => {
                                 if (!config) return;
                                 const next = {
@@ -2896,7 +2896,7 @@ export const ConfigPage: React.FC = () => {
                                   opensky: {
                                     ...config.opensky,
                                     bbox: next,
-                                  } as OpenSkyConfigV2,
+                                  } as OpenSkyConfig,
                                 });
                               }}
                               placeholder="Latitud máxima"
@@ -2904,7 +2904,7 @@ export const ConfigPage: React.FC = () => {
                             <input
                               type="number"
                               step="0.01"
-                              value={config.opensky?.bbox?.lomin ?? DEFAULT_OPENSKY_CONFIG.bbox.lomin}
+                              value={config.opensky?.bbox?.lomin ?? DEFAULT_OPENSKY_CONFIG.bbox!.lomin}
                               onChange={(e) => {
                                 if (!config) return;
                                 const next = {
@@ -2916,7 +2916,7 @@ export const ConfigPage: React.FC = () => {
                                   opensky: {
                                     ...config.opensky,
                                     bbox: next,
-                                  } as OpenSkyConfigV2,
+                                  } as OpenSkyConfig,
                                 });
                               }}
                               placeholder="Longitud mínima"
@@ -2924,7 +2924,7 @@ export const ConfigPage: React.FC = () => {
                             <input
                               type="number"
                               step="0.01"
-                              value={config.opensky?.bbox?.lomax ?? DEFAULT_OPENSKY_CONFIG.bbox.lomax}
+                              value={config.opensky?.bbox?.lomax ?? DEFAULT_OPENSKY_CONFIG.bbox!.lomax}
                               onChange={(e) => {
                                 if (!config) return;
                                 const next = {
@@ -2936,7 +2936,7 @@ export const ConfigPage: React.FC = () => {
                                   opensky: {
                                     ...config.opensky,
                                     bbox: next,
-                                  } as OpenSkyConfigV2,
+                                  } as OpenSkyConfig,
                                 });
                               }}
                               placeholder="Longitud máxima"

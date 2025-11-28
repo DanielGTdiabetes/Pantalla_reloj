@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { withConfigDefaults } from "../config/defaults";
-import { withConfigDefaultsV2 } from "../config/defaults";
 import type { AppConfig } from "../types/config";
-import type { AppConfigV2 } from "../types/config";
-import { API_ORIGIN, getConfig, getConfigMeta, getConfigV2 } from "./api";
+import { API_ORIGIN, getConfig, getConfigMeta } from "./api";
 
 const API_UNREACHABLE = `No se pudo conectar con el backend en ${API_ORIGIN}`;
 
@@ -24,7 +22,7 @@ const extractMapHotSwapDescriptor = (config: AppConfig | null): MapHotSwapDescri
   }
 
   // Soporte para v2
-  const v2Config = config as unknown as AppConfigV2;
+  const v2Config = config as unknown as AppConfig;
   if (v2Config.version === 2 && v2Config.ui_map) {
     const provider = v2Config.ui_map.provider ?? null;
     // Para v2, extraer tileUrl según el proveedor
@@ -51,8 +49,9 @@ const extractMapHotSwapDescriptor = (config: AppConfig | null): MapHotSwapDescri
   }
 
   // Soporte para v1 (legacy)
-  const uiMap = config.ui?.map ?? null;
-  const prefs = config.map ?? null;
+  const legacyConfig = config as any;
+  const uiMap = legacyConfig.ui?.map ?? null;
+  const prefs = legacyConfig.map ?? null;
 
   const provider =
     (typeof uiMap?.provider === "string" && uiMap.provider.trim()) ||
@@ -135,10 +134,10 @@ export function useConfig() {
     isReloadingRef.current = true;
     try {
       // Intentar cargar v2 primero
-      let cfg: AppConfig | AppConfigV2 | undefined;
+      let cfg: AppConfig | undefined;
       let isV2 = false;
       try {
-        const v2Cfg = await getConfigV2();
+        const v2Cfg = await getConfig();
         if (v2Cfg && v2Cfg.version === 2 && v2Cfg.ui_map) {
           isV2 = true;
           cfg = v2Cfg as unknown as AppConfig;
@@ -154,7 +153,7 @@ export function useConfig() {
 
       if (isV2 && cfg) {
         // Procesar v2 preservando la estructura completa
-        const v2Config = withConfigDefaultsV2(cfg as unknown as AppConfigV2);
+        const v2Config = withConfigDefaults(cfg as unknown as AppConfig);
         // Preservar ui_map y version en processedData para que las comparaciones funcionen
         processedData = {
           ...(v2Config as unknown as AppConfig),
@@ -183,7 +182,7 @@ export function useConfig() {
               },
             },
           },
-        } as AppConfig & { version: number; ui_map: AppConfigV2["ui_map"]; ui_global: AppConfigV2["ui_global"] };
+        } as AppConfig;
       } else {
         processedData = withConfigDefaults((cfg ?? {}) as AppConfig);
       }
@@ -198,8 +197,8 @@ export function useConfig() {
 
         // Comparar configuración de mapa (v2 o v1)
         // Para v2, usar ui_map; para v1, usar ui.map
-        const prevAsV2 = prev as unknown as AppConfigV2;
-        const newAsV2 = newData as unknown as AppConfigV2;
+        const prevAsV2 = prev as unknown as AppConfig;
+        const newAsV2 = newData as unknown as AppConfig;
 
         const isPrevV2 = prevAsV2.version === 2 && prevAsV2.ui_map;
         const isNewV2 = newAsV2.version === 2 && newAsV2.ui_map;
@@ -227,25 +226,27 @@ export function useConfig() {
           };
         } else {
           // Comparar v1 (legacy) - incluir api_key si está disponible
+          const prevLegacy = prev as any;
+          const newLegacy = newData as any;
           prevMapConfig = {
-            provider: prev.ui?.map?.provider,
-            style: prev.ui?.map?.style,
-            xyz: prev.ui?.map?.xyz,
-            api_key: (prev.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.apiKey ||
-              (prev.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.key ||
-              (prev.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.api_key,
-            fixed: prev.ui?.map?.fixed,
-            viewMode: prev.ui?.map?.viewMode,
+            provider: prevLegacy.ui?.map?.provider,
+            style: prevLegacy.ui?.map?.style,
+            xyz: prevLegacy.ui?.map?.xyz,
+            api_key: (prevLegacy.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.apiKey ||
+              (prevLegacy.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.key ||
+              (prevLegacy.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.api_key,
+            fixed: prevLegacy.ui?.map?.fixed,
+            viewMode: prevLegacy.ui?.map?.viewMode,
           };
           newMapConfig = {
-            provider: newData.ui?.map?.provider,
-            style: newData.ui?.map?.style,
-            xyz: newData.ui?.map?.xyz,
-            api_key: (newData.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.apiKey ||
-              (newData.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.key ||
-              (newData.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.api_key,
-            fixed: newData.ui?.map?.fixed,
-            viewMode: newData.ui?.map?.viewMode,
+            provider: newLegacy.ui?.map?.provider,
+            style: newLegacy.ui?.map?.style,
+            xyz: newLegacy.ui?.map?.xyz,
+            api_key: (newLegacy.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.apiKey ||
+              (newLegacy.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.key ||
+              (newLegacy.ui?.map?.maptiler as { apiKey?: string; key?: string; api_key?: string })?.api_key,
+            fixed: newLegacy.ui?.map?.fixed,
+            viewMode: newLegacy.ui?.map?.viewMode,
           };
         }
 

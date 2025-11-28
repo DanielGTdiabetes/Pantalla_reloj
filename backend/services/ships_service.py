@@ -9,7 +9,7 @@ from copy import deepcopy
 from typing import Any, Dict, Optional
 
 from ..cache import CacheStore
-from ..models_v2 import ShipsLayerConfig
+from ..models import ShipsLayerConfig
 from ..secret_store import SecretStore
 
 try:  # pragma: no cover - optional dependency provided by uvicorn[standard]
