@@ -14,6 +14,7 @@ Environment=GIO_USE_PORTALS=0
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
 EnvironmentFile=-/var/lib/pantalla-reloj/state/kiosk.env
 ExecStartPre=/bin/sh -c 'xset -dpms; xset s off; xset s noblank || true'
+LogsDirectory=pantalla
 # NOTA: El perfil del navegador kiosk (/var/lib/pantalla-reloj/state/chromium-kiosk) se crea
 # exclusivamente en scripts/install.sh. El wrapper pantalla-kiosk solo verifica que existe.
 # Si falta, el wrapper fallará con un mensaje claro indicando que hay que ejecutar install.sh.
