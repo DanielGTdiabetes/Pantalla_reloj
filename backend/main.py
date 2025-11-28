@@ -5007,7 +5007,7 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
     
     # Validar configuración completa (usar sanitized)
     try:
-        config_v2 = AppConfigV2.model_validate(sanitized_config)
+        validated_config = AppConfig.model_validate(sanitized_config)
     except ValidationError as exc:
         relevant_errors = []
 
@@ -5038,10 +5038,10 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
             len(exc.errors()),
             group_name,
         )
-        config_v2 = None
+        validated_config = None
 
-    if config_v2 is not None:
-        provider_final, enabled_final, final_ics_path = _resolve_calendar_settings(config_v2)
+    if validated_config is not None:
+        provider_final, enabled_final, final_ics_path = _resolve_calendar_settings(validated_config)
     else:
         provider_final, enabled_final, final_ics_path = resolve_calendar_provider(
             deepcopy(sanitized_config)
