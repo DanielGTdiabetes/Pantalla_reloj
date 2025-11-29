@@ -40,10 +40,10 @@
     "viewMode": "fixed",
     "fixed": {
       "center": {
-        "lat": 40.0,
-        "lon": -3.5
+        "lat": 40.4637,
+        "lon": -3.7492
       },
-      "zoom": 5.8,
+      "zoom": 5.5,
       "bearing": 0,
       "pitch": 0
     },
@@ -225,8 +225,8 @@
     },
     "weather": {
       "enabled": true,
-      "latitude": 40.0,
-      "longitude": -3.5
+      "latitude": 40.4637,
+      "longitude": -3.7492
     },
     "ephemerides": {
       "enabled": true
@@ -263,9 +263,9 @@
   },
   "storm": {
     "enabled": true,
-    "center_lat": 40.0,
-    "center_lng": -3.5,
-    "zoom": 5.8,
+    "center_lat": 40.4637,
+    "center_lng": -3.7492,
+    "zoom": 5.5,
     "auto_enable": true,
     "auto_disable_after_minutes": 60
   },
@@ -287,8 +287,8 @@
     "rss_feeds": []
   },
   "ephemerides": {
-    "latitude": 40.0,
-    "longitude": -3.5,
+    "latitude": 40.4637,
+    "longitude": -3.7492,
     "timezone": "Europe/Madrid"
   },
   "calendar": {
