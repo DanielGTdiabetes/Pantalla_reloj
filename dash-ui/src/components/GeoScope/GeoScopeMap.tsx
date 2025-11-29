@@ -1171,6 +1171,14 @@ export default function GeoScopeMap({
       return;
     }
 
+    console.log("[GeoScopeMap] Applying fixed view from config:", {
+      center: { lat: centerLat, lng: centerLng },
+      zoom,
+      bearing,
+      pitch,
+      source: "ui_map.fixed",
+    });
+
     viewState.lat = centerLat;
     viewState.lng = centerLng;
     viewState.zoom = zoom;

@@ -20,9 +20,10 @@ import {
 } from "../lib/map/labelsOverlay";
 
 // Coordenadas por defecto: España
-export const DEFAULT_MAP_CENTER = {
-  lat: 40.0,
-  lon: -3.5,
+export // Centro de España (Madrid) - Consistente con DEFAULT_VIEW en GeoScopeMap.tsx
+const DEFAULT_MAP_CENTER = {
+  lat: 40.4637,
+  lon: -3.7492,
 };
 
 export const DEFAULT_LOCAL_RASTER_CONFIG = {
@@ -63,7 +64,7 @@ export const DEFAULT_MAP_CONFIG: MapConfig = {
   viewMode: "fixed",
   fixed: {
     center: DEFAULT_MAP_CENTER,
-    zoom: 4.8,
+    zoom: 5.5, // Zoom para ver toda la península ibérica
     bearing: 0,
     pitch: 0,
   },
