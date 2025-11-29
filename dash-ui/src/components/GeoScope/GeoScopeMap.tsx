@@ -1470,6 +1470,17 @@ export default function GeoScopeMap({
     // Si el provider efectivo es "maptiler_weather", GlobalRadarLayer se encarga del radar directamente
     if (radarProvider === "maptiler_weather") {
       console.log("[GlobalRadarLayer] MapTiler Weather selected in effect; skipping RainViewer prefetch");
+
+      const globalRadarLayer = globalRadarLayerRef.current;
+      if (globalRadarLayer) {
+        // Actualizar la capa con la configuración correcta
+        globalRadarLayer.update({
+          enabled: isRadarEnabled,
+          opacity: radarOpacity,
+          provider: "maptiler_weather"
+        });
+      }
+
       if (isRadarEnabled) {
         layerDiagnostics.recordInitializationAttempt("radar");
         layerDiagnostics.setState("radar", "initializing", { provider: radarProvider });
@@ -1480,12 +1491,6 @@ export default function GeoScopeMap({
         layerDiagnostics.setState("radar", "disabled", { provider: radarProvider });
       }
 
-      // Limpiar la capa legacy si existe
-      const globalRadarLayer = globalRadarLayerRef.current;
-      if (globalRadarLayer) {
-        console.log("[GlobalRadarLayer] Cleaning up legacy RainViewer layer (provider changed)");
-        globalRadarLayer.update({ enabled: false });
-      }
       return;
     }
 
