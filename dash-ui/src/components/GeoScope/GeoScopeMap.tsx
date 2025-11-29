@@ -1127,8 +1127,11 @@ export default function GeoScopeMap({
 
   // useEffect para actualizar vista cuando cambia ui_map.fixed (zoom/centro)
   useEffect(() => {
-    if (!config || !mapRef.current || stormModeActiveRef.current) {
-      // No actualizar si storm mode está activo (tiene prioridad)
+    // En pantallas pequeñas (Mini PC), ignoramos el modo tormenta para forzar la vista fija de la península
+    const isMiniPC = typeof window !== "undefined" && window.innerWidth < 1280;
+
+    if (!config || !mapRef.current || (stormModeActiveRef.current && !isMiniPC)) {
+      // No actualizar si storm mode está activo (tiene prioridad), excepto en Mini PC
       return;
     }
 

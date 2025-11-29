@@ -316,5 +316,6 @@ if (!source) {
 1. Se implementó zoom inicial dinámico en el constructor.
 2. **CRÍTICO**: Se modificó el `useEffect` de configuración (`ui_map.fixed`) para respetar el tamaño de pantalla. Si el ancho es < 1280px, el zoom se limita a **4.6**.
 3. **Iconos**: Se aseguró un tamaño mínimo de 32px para iconos de aviones y barcos en `AircraftLayer.ts` y `ShipsLayer.ts` para evitar que desaparezcan en pantallas pequeñas.
+4. **Vista Fija**: Se forzó la vista fija (ignorando "Storm Mode") en pantallas < 1280px para evitar que el mapa se mueva solo ("va variando diferentes zonas") y mantenga el foco en la península.
 
 ---
