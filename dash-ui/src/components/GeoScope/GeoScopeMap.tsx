@@ -736,6 +736,15 @@ export default function GeoScopeMap({
         lightningLayerRef.current = new LightningLayer();
         weatherLayerRef.current = new WeatherLayer();
 
+        // Registrar capas en el registro para que reciban el mapa y eventos
+        layerRegistryRef.current.register("geoscope-aircraft", aircraftLayerRef.current);
+        layerRegistryRef.current.register("geoscope-ships", shipsLayerRef.current);
+        layerRegistryRef.current.register("geoscope-radar", globalRadarLayerRef.current);
+        layerRegistryRef.current.register("geoscope-satellite", globalSatelliteLayerRef.current);
+        layerRegistryRef.current.register("geoscope-warnings", aemetWarningsLayerRef.current);
+        layerRegistryRef.current.register("geoscope-lightning", lightningLayerRef.current);
+        layerRegistryRef.current.register("geoscope-weather", weatherLayerRef.current);
+
         map.once("load", () => {
           setMapReady(true);
         });
@@ -1337,8 +1346,8 @@ export default function GeoScopeMap({
               }
             } else if (layerId === "weather" && weatherLayerRef.current) {
               const merged = withConfigDefaults(config ?? undefined);
-              const configAsV2 = config as unknown as { version?: number; aemet?: { enabled?: boolean; cap_enabled?: boolean } };
-              const aemetConfig = configAsV2.version === 2
+              const configAsV2 = config ? (config as unknown as { version?: number; aemet?: { enabled?: boolean; cap_enabled?: boolean } }) : null;
+              const aemetConfig = (configAsV2?.version === 2)
                 ? configAsV2.aemet
                 : merged.aemet;
 
