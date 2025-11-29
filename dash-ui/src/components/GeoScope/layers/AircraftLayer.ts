@@ -449,7 +449,32 @@ export default class AircraftLayer implements Layer {
         return;
       }
 
-      const source = this.map.getSource(this.sourceId);
+      // Intentar obtener el source, o crearlo si no existe
+      let source = this.map.getSource(this.sourceId);
+      
+      // Si el source no existe, intentar crearlo
+      if (!source) {
+        try {
+          const expectedCluster = this.shouldUseClusters();
+          const sourceInit: maplibregl.GeoJSONSourceSpecification = {
+            type: "geojson",
+            data: this.lastData,
+            generateId: true,
+          };
+          if (expectedCluster) {
+            sourceInit.cluster = true;
+            sourceInit.clusterRadius = 40;
+            sourceInit.clusterMaxZoom = 10;
+          }
+          this.map.addSource(this.sourceId, sourceInit);
+          source = this.map.getSource(this.sourceId);
+          console.log("[AircraftLayer] Source created in updateData");
+        } catch (e) {
+          // El source puede existir o el estilo no estar listo
+          source = this.map.getSource(this.sourceId);
+        }
+      }
+      
       if (isGeoJSONSource(source)) {
         try {
           source.setData(this.lastData);
@@ -463,6 +488,9 @@ export default class AircraftLayer implements Layer {
           });
           console.error("[AircraftLayer] Error setting data to source:", setDataError);
         }
+      } else if (source === undefined) {
+        // Source aún no creado, los datos se guardan en lastData para cuando se cree
+        console.log("[AircraftLayer] Source not yet available, data saved for later");
       } else {
         const error = new Error(`Source ${this.sourceId} is not a GeoJSON source`);
         layerDiagnostics.recordError(layerId, error, {
@@ -745,6 +773,10 @@ export default class AircraftLayer implements Layer {
   /**
    * Asegura que las capas existen. Completamente idempotente.
    * Verifica que el source exista antes de crear capas para evitar errores de MapLibre.
+   * 
+   * NOTA: Esta función asume que waitForStyleLoaded() ya se llamó en el nivel superior.
+   * Por lo tanto, NO usa withSafeMapStyle() para evitar verificaciones redundantes que pueden fallar
+   * si el estilo está en transición.
    */
   private async ensureLayersAsync(): Promise<void> {
     if (!this.map) {
@@ -760,13 +792,6 @@ export default class AircraftLayer implements Layer {
       return;
     }
 
-    // Verificar que el estilo esté listo antes de manipular layers
-    const style = getSafeMapStyle(map);
-    if (!style) {
-      console.warn("[AircraftLayer] style not ready, skipping ensureLayersAsync");
-      return;
-    }
-
     // Determinar el modo de renderizado actual
     const nextMode = await this.determineRenderModeAsync(false);
     const modeChanged = nextMode !== this.currentRenderMode;
@@ -777,45 +802,41 @@ export default class AircraftLayer implements Layer {
     // Asegurar capas de cluster si es necesario
     if (this.shouldUseClusters()) {
       if (!map.getLayer(this.clusterLayerId)) {
-        withSafeMapStyle(
-          map,
-          () => {
-            map.addLayer({
-              id: this.clusterLayerId,
-              type: "circle",
-              source: this.sourceId,
-              filter: ["has", "point_count"],
-              paint: {
-                "circle-color": "#f97316",
-                "circle-radius": 20,
-              },
-            }, beforeId);
-          },
-          "AircraftLayer-cluster"
-        );
+        try {
+          map.addLayer({
+            id: this.clusterLayerId,
+            type: "circle",
+            source: this.sourceId,
+            filter: ["has", "point_count"],
+            paint: {
+              "circle-color": "#f97316",
+              "circle-radius": 20,
+            },
+          }, beforeId);
+        } catch (e) {
+          console.warn("[AircraftLayer] Could not add cluster layer:", e);
+        }
       }
 
       if (!map.getLayer(this.clusterCountLayerId)) {
-        withSafeMapStyle(
-          map,
-          () => {
-            map.addLayer({
-              id: this.clusterCountLayerId,
-              type: "symbol",
-              source: this.sourceId,
-              filter: ["has", "point_count"],
-              layout: {
-                "text-field": "{point_count_abbreviated}",
-                "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
-                "text-size": 12,
-              },
-              paint: {
-                "text-color": "#ffffff",
-              },
-            }, beforeId);
-          },
-          "AircraftLayer-clusterCount"
-        );
+        try {
+          map.addLayer({
+            id: this.clusterCountLayerId,
+            type: "symbol",
+            source: this.sourceId,
+            filter: ["has", "point_count"],
+            layout: {
+              "text-field": "{point_count_abbreviated}",
+              "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+              "text-size": 12,
+            },
+            paint: {
+              "text-color": "#ffffff",
+            },
+          }, beforeId);
+        } catch (e) {
+          console.warn("[AircraftLayer] Could not add cluster count layer:", e);
+        }
       }
     } else {
       // Eliminar capas de cluster si no se necesitan
@@ -843,40 +864,33 @@ export default class AircraftLayer implements Layer {
           ? this.getCustomSymbolSizeExpression()
           : this.getIconSizeExpression();
 
-        withSafeMapStyle(
-          map,
-          () => {
-            map.addLayer({
-              id: this.id,
-              type: "symbol",
-              source: this.sourceId,
-              filter: ["!", ["has", "point_count"]],
-              layout: {
-                "icon-image": iconImage,
-                "icon-size": sizeExpression,
-                "icon-allow-overlap": allowOverlap,
-                "icon-rotate": ["coalesce", ["get", "track"], ["get", "true_track"], ["get", "heading"], 0],
-                "icon-rotation-alignment": "map",
-                visibility: this.enabled ? "visible" : "none",
-              },
-              paint: {
-                "icon-color": "#f97316",
-                "icon-halo-color": "#111827",
-                "icon-halo-width": 0.25,
-                "icon-opacity": this.opacity,
-              },
-            }, beforeId);
-          },
-          "AircraftLayer-symbol"
-        );
+        try {
+          map.addLayer({
+            id: this.id,
+            type: "symbol",
+            source: this.sourceId,
+            filter: ["!", ["has", "point_count"]],
+            layout: {
+              "icon-image": iconImage,
+              "icon-size": sizeExpression,
+              "icon-allow-overlap": allowOverlap,
+              "icon-rotate": ["coalesce", ["get", "track"], ["get", "true_track"], ["get", "heading"], 0],
+              "icon-rotation-alignment": "map",
+              visibility: this.enabled ? "visible" : "none",
+            },
+            paint: {
+              "icon-color": "#f97316",
+              "icon-halo-color": "#111827",
+              "icon-halo-width": 0.25,
+              "icon-opacity": this.opacity,
+            },
+          }, beforeId);
+          console.log("[AircraftLayer] Symbol layer added successfully");
+        } catch (e) {
+          console.warn("[AircraftLayer] Could not add symbol layer:", e);
+        }
       } else if (modeChanged) {
         // Si cambió el modo, actualizar propiedades de la capa existente
-        // Solo si la capa realmente existe y está lista
-        const style = getSafeMapStyle(map);
-        if (!style) {
-          console.warn("[AircraftLayer] Style not ready, skipping");
-          return;
-        }
         if (map.getLayer(this.id)) {
           try {
             const iconImage = this.currentRenderMode === "symbol_custom" ? "plane" : this.iconImage;
@@ -896,35 +910,28 @@ export default class AircraftLayer implements Layer {
     } else {
       // Capa circle
       if (!map.getLayer(this.id)) {
-        withSafeMapStyle(
-          map,
-          () => {
-            map.addLayer({
-              id: this.id,
-              type: "circle",
-              source: this.sourceId,
-              filter: ["!", ["has", "point_count"]],
-              layout: {
-                visibility: this.enabled ? "visible" : "none",
-              },
-              paint: {
-                "circle-radius": this.getCircleRadiusExpression(),
-                "circle-color": this.circleOptions.color,
-                "circle-stroke-color": this.circleOptions.strokeColor,
-                "circle-stroke-width": this.circleOptions.strokeWidth,
-              },
-            }, beforeId);
-          },
-          "AircraftLayer-circle"
-        );
+        try {
+          map.addLayer({
+            id: this.id,
+            type: "circle",
+            source: this.sourceId,
+            filter: ["!", ["has", "point_count"]],
+            layout: {
+              visibility: this.enabled ? "visible" : "none",
+            },
+            paint: {
+              "circle-radius": this.getCircleRadiusExpression(),
+              "circle-color": this.circleOptions.color,
+              "circle-stroke-color": this.circleOptions.strokeColor,
+              "circle-stroke-width": this.circleOptions.strokeWidth,
+            },
+          }, beforeId);
+          console.log("[AircraftLayer] Circle layer added successfully");
+        } catch (e) {
+          console.warn("[AircraftLayer] Could not add circle layer:", e);
+        }
       } else if (modeChanged) {
         // Si cambió el modo, actualizar propiedades de la capa existente
-        // Solo si la capa realmente existe y está lista
-        const style = getSafeMapStyle(map);
-        if (!style) {
-          console.warn("[AircraftLayer] Style not ready, skipping");
-          return;
-        }
         if (map.getLayer(this.id)) {
           try {
             map.setPaintProperty(this.id, "circle-radius", this.getCircleRadiusExpression());
@@ -939,7 +946,6 @@ export default class AircraftLayer implements Layer {
     }
 
     // Aplicar propiedades comunes solo si la capa existe
-    // Esto evita errores cuando withSafeMapStyle falla silenciosamente
     if (map.getLayer(this.id)) {
       this.applyCirclePaintProperties();
       this.applyOpacity();

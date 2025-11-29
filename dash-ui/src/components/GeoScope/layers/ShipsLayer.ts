@@ -429,7 +429,25 @@ export default class ShipsLayer implements Layer {
         return;
       }
 
-      const source = this.map.getSource(this.sourceId);
+      // Intentar obtener el source, o crearlo si no existe
+      let source = this.map.getSource(this.sourceId);
+      
+      // Si el source no existe, intentar crearlo
+      if (!source) {
+        try {
+          this.map.addSource(this.sourceId, {
+            type: "geojson",
+            data: this.lastData,
+            generateId: true,
+          });
+          source = this.map.getSource(this.sourceId);
+          console.log("[ShipsLayer] Source created in updateData");
+        } catch (e) {
+          // El source puede existir o el estilo no estar listo
+          source = this.map.getSource(this.sourceId);
+        }
+      }
+      
       if (isGeoJSONSource(source)) {
         try {
           source.setData(this.lastData);
@@ -443,6 +461,9 @@ export default class ShipsLayer implements Layer {
           });
           console.warn("[ShipsLayer] Error updating data:", error);
         }
+      } else if (source === undefined) {
+        // Source aún no creado, los datos se guardan en lastData para cuando se cree
+        console.log("[ShipsLayer] Source not yet available, data saved for later");
       } else {
         const error = new Error(`Source ${this.sourceId} is not a GeoJSON source`);
         layerDiagnostics.recordError(layerId, error, {
@@ -699,6 +720,9 @@ export default class ShipsLayer implements Layer {
   /**
    * Asegura que las capas existen. Completamente idempotente.
    * Verifica que el source exista antes de crear capas para evitar errores de MapLibre.
+   * 
+   * NOTA: Esta función asume que waitForStyleLoaded() ya se llamó en el nivel superior.
+   * Por lo tanto, NO usa withSafeMapStyle() para evitar verificaciones redundantes.
    */
   private async ensureLayersAsync(): Promise<void> {
     if (!this.map) {
@@ -707,17 +731,9 @@ export default class ShipsLayer implements Layer {
     const map = this.map;
 
     // No intentar crear capas si el source no existe aún
-    // Esto evita errores de MapLibre tipo "source not found"
     const src = map.getSource(this.sourceId);
     if (!src) {
       console.warn("[ShipsLayer] Source not ready, skipping ensureLayersAsync");
-      return;
-    }
-
-    // Verificar que el estilo esté listo antes de manipular layers
-    const style = getSafeMapStyle(map);
-    if (!style) {
-      console.warn("[ShipsLayer] style not ready, skipping ensureLayersAsync");
       return;
     }
 
@@ -733,7 +749,6 @@ export default class ShipsLayer implements Layer {
       try {
         map.removeLayer(this.id);
       } catch (error) {
-        // Si falla, continuar
         console.warn("[ShipsLayer] Error al remover capa anterior:", error);
       }
     }
@@ -747,150 +762,102 @@ export default class ShipsLayer implements Layer {
           ? this.getCustomSymbolSizeExpression()
           : this.getIconSizeExpression();
 
-        withSafeMapStyle(
-          map,
-          () => {
-            map.addLayer({
-              id: this.id,
-              type: "symbol",
-              source: this.sourceId,
-              layout: {
-                "icon-image": iconImage,
-                "icon-size": sizeExpression,
-                "icon-rotate": ["get", "course"],
-                "icon-rotation-alignment": "map",
-                "icon-allow-overlap": this.symbolOptions?.allow_overlap ?? true,
-                "icon-ignore-placement": false,
-                "visibility": this.enabled ? "visible" : "none",
-              },
-              paint: {
-                "icon-color": this.circleOptions.color,
-                "icon-halo-color": this.circleOptions.strokeColor,
-                "icon-halo-width": 0.4,
-                "icon-opacity": [
-                  "interpolate",
-                  ["linear"],
-                  ["get", "age_seconds"],
-                  0,
-                  [
-                    "case",
-                    ["get", "in_focus"],
-                    this.opacity,
-                    this.cineFocus?.enabled
-                      ? this.opacity * this.cineFocus.outsideDimOpacity
-                      : this.opacity
-                  ],
-                  this.maxAgeSeconds / 2,
-                  [
-                    "case",
-                    ["get", "in_focus"],
-                    this.opacity * 0.5,
-                    this.cineFocus?.enabled
-                      ? this.opacity * this.cineFocus.outsideDimOpacity * 0.5
-                      : this.opacity * 0.5
-                  ],
-                  this.maxAgeSeconds,
-                  0.0
-                ],
-              },
-            }, beforeId);
-
-            // Si se registró el icono custom después de añadir la capa, actualizar tamaño
-            if (this.currentRenderMode === "symbol_custom") {
-              map.setLayoutProperty(this.id, "icon-size", this.getCustomSymbolSizeExpression());
-              map.setLayoutProperty(this.id, "icon-allow-overlap", this.symbolOptions?.allow_overlap ?? true);
-            } else {
-              map.setLayoutProperty(this.id, "icon-size", this.getIconSizeExpression());
-              map.setLayoutProperty(this.id, "icon-allow-overlap", true);
-            }
-          },
-          "ShipsLayer-symbol"
-        );
+        try {
+          map.addLayer({
+            id: this.id,
+            type: "symbol",
+            source: this.sourceId,
+            layout: {
+              "icon-image": iconImage,
+              "icon-size": sizeExpression,
+              "icon-rotate": ["coalesce", ["get", "course"], ["get", "heading"], 0],
+              "icon-rotation-alignment": "map",
+              "icon-allow-overlap": this.symbolOptions?.allow_overlap ?? true,
+              "icon-ignore-placement": false,
+              "visibility": this.enabled ? "visible" : "none",
+            },
+            paint: {
+              "icon-color": this.circleOptions.color,
+              "icon-halo-color": this.circleOptions.strokeColor,
+              "icon-halo-width": 0.4,
+              "icon-opacity": [
+                "interpolate",
+                ["linear"],
+                ["coalesce", ["get", "age_seconds"], 0],
+                0, this.opacity,
+                this.maxAgeSeconds / 2, this.opacity * 0.5,
+                this.maxAgeSeconds, 0.0
+              ],
+            },
+          }, beforeId);
+          console.log("[ShipsLayer] Symbol layer added successfully");
+        } catch (e) {
+          console.warn("[ShipsLayer] Could not add symbol layer:", e);
+        }
       } else {
         // Capa de círculos
-        withSafeMapStyle(
-          map,
-          () => {
-            map.addLayer({
-              id: this.id,
-              type: "circle",
-              source: this.sourceId,
-              layout: {
-                "visibility": this.enabled ? "visible" : "none",
-              },
-              paint: {
-                "circle-radius": this.getCircleRadiusExpression(),
-                "circle-color": this.circleOptions.color,
-                "circle-stroke-color": this.circleOptions.strokeColor,
-                "circle-stroke-width": this.circleOptions.strokeWidth,
-                "circle-opacity": [
-                  "interpolate",
-                  ["linear"],
-                  ["get", "age_seconds"],
-                  0,
-                  [
-                    "case",
-                    ["get", "in_focus"],
-                    this.opacity * this.circleOptions.opacity,
-                    this.cineFocus?.enabled
-                      ? this.opacity * this.circleOptions.opacity * this.cineFocus.outsideDimOpacity
-                      : this.opacity * this.circleOptions.opacity
-                  ],
-                  this.maxAgeSeconds / 2,
-                  [
-                    "case",
-                    ["get", "in_focus"],
-                    this.opacity * this.circleOptions.opacity * 0.5,
-                    this.cineFocus?.enabled
-                      ? this.opacity * this.circleOptions.opacity * this.cineFocus.outsideDimOpacity * 0.5
-                      : this.opacity * this.circleOptions.opacity * 0.5
-                  ],
-                  this.maxAgeSeconds,
-                  0.0
-                ],
-              },
-            }, beforeId);
-          },
-          "ShipsLayer-circle"
-        );
-      }
-      } else if (modeChanged) {
-        // Si cambió el modo, actualizar propiedades de la capa existente
-        const style = getSafeMapStyle(map);
-        if (!style) {
-          console.warn("[ShipsLayer] Style not ready, skipping");
-          return;
-        }
         try {
-          if (this.currentRenderMode === "symbol" || this.currentRenderMode === "symbol_custom") {
-            const iconImage = this.currentRenderMode === "symbol_custom" ? "ship" : this.iconImage;
-            map.setLayoutProperty(this.id, "icon-image", iconImage);
-            map.setLayoutProperty(
-              this.id,
-              "icon-size",
-              this.currentRenderMode === "symbol_custom"
-                ? this.getCustomSymbolSizeExpression()
-                : this.getIconSizeExpression()
-            );
-            map.setLayoutProperty(this.id, "icon-allow-overlap", this.symbolOptions?.allow_overlap ?? true);
-            map.setPaintProperty(this.id, "icon-color", this.circleOptions.color);
-            map.setPaintProperty(this.id, "icon-halo-color", this.circleOptions.strokeColor);
-            map.setPaintProperty(this.id, "icon-halo-width", 0.4);
-          } else {
-            map.setPaintProperty(this.id, "circle-radius", this.getCircleRadiusExpression());
-            map.setPaintProperty(this.id, "circle-color", this.circleOptions.color);
-            map.setPaintProperty(this.id, "circle-stroke-color", this.circleOptions.strokeColor);
-            map.setPaintProperty(this.id, "circle-stroke-width", this.circleOptions.strokeWidth);
-          }
-        } catch (error) {
-          console.warn("[ShipsLayer] paint/layout skipped:", error);
+          map.addLayer({
+            id: this.id,
+            type: "circle",
+            source: this.sourceId,
+            layout: {
+              "visibility": this.enabled ? "visible" : "none",
+            },
+            paint: {
+              "circle-radius": this.getCircleRadiusExpression(),
+              "circle-color": this.circleOptions.color,
+              "circle-stroke-color": this.circleOptions.strokeColor,
+              "circle-stroke-width": this.circleOptions.strokeWidth,
+              "circle-opacity": [
+                "interpolate",
+                ["linear"],
+                ["coalesce", ["get", "age_seconds"], 0],
+                0, this.opacity * this.circleOptions.opacity,
+                this.maxAgeSeconds / 2, this.opacity * this.circleOptions.opacity * 0.5,
+                this.maxAgeSeconds, 0.0
+              ],
+            },
+          }, beforeId);
+          console.log("[ShipsLayer] Circle layer added successfully");
+        } catch (e) {
+          console.warn("[ShipsLayer] Could not add circle layer:", e);
         }
       }
+    } else if (modeChanged) {
+      // Si cambió el modo, actualizar propiedades de la capa existente
+      try {
+        if (this.currentRenderMode === "symbol" || this.currentRenderMode === "symbol_custom") {
+          const iconImage = this.currentRenderMode === "symbol_custom" ? "ship" : this.iconImage;
+          map.setLayoutProperty(this.id, "icon-image", iconImage);
+          map.setLayoutProperty(
+            this.id,
+            "icon-size",
+            this.currentRenderMode === "symbol_custom"
+              ? this.getCustomSymbolSizeExpression()
+              : this.getIconSizeExpression()
+          );
+          map.setLayoutProperty(this.id, "icon-allow-overlap", this.symbolOptions?.allow_overlap ?? true);
+          map.setPaintProperty(this.id, "icon-color", this.circleOptions.color);
+          map.setPaintProperty(this.id, "icon-halo-color", this.circleOptions.strokeColor);
+          map.setPaintProperty(this.id, "icon-halo-width", 0.4);
+        } else {
+          map.setPaintProperty(this.id, "circle-radius", this.getCircleRadiusExpression());
+          map.setPaintProperty(this.id, "circle-color", this.circleOptions.color);
+          map.setPaintProperty(this.id, "circle-stroke-color", this.circleOptions.strokeColor);
+          map.setPaintProperty(this.id, "circle-stroke-width", this.circleOptions.strokeWidth);
+        }
+      } catch (error) {
+        console.warn("[ShipsLayer] paint/layout skipped:", error);
+      }
+    }
 
     // Aplicar propiedades comunes
-    this.applyCirclePaintProperties();
-    this.applyOpacity();
-    this.applyStyleScale();
+    if (map.getLayer(this.id)) {
+      this.applyCirclePaintProperties();
+      this.applyOpacity();
+      this.applyStyleScale();
+    }
   }
 
   private removeLayers(map: MaptilerMap): void {

@@ -198,12 +198,62 @@ if (!maptilerConfig.apiKey || maptilerConfig.apiKey !== maptilerKey) {
 
 ---
 
+## ✅ CORRECCIONES ADICIONALES (Sesión continuación 2025-11-29)
+
+### Problema: `withSafeMapStyle()` fallaba después de `waitForStyleLoaded()`
+
+**Síntoma**:
+```
+[AircraftLayer] Style is ready, proceeding with layer creation
+[AircraftLayer-symbol] Style not loaded yet, skipping operation
+```
+
+**Causa**: `withSafeMapStyle()` hacía una verificación redundante de `map.isStyleLoaded()` que podía fallar si el estilo entraba en transición.
+
+**Solución**: Modificar `ensureLayersAsync()` en `AircraftLayer.ts` y `ShipsLayer.ts` para usar `try/catch` directo en lugar de `withSafeMapStyle()`, ya que `waitForStyleLoaded()` ya verificó que el estilo está listo.
+
+### Problema: Source no se crea a tiempo
+
+**Síntoma**:
+```
+[ShipsLayer] Source is not a GeoJSON source: undefined
+```
+
+**Causa**: `updateData()` se llamaba antes de que `ensureShipsLayer()` creara el source.
+
+**Solución**: Modificar `updateData()` en `AircraftLayer.ts` y `ShipsLayer.ts` para crear el source si no existe:
+```typescript
+let source = this.map.getSource(this.sourceId);
+if (!source) {
+  try {
+    this.map.addSource(this.sourceId, {
+      type: "geojson",
+      data: this.lastData,
+      generateId: true,
+    });
+    source = this.map.getSource(this.sourceId);
+  } catch (e) {
+    source = this.map.getSource(this.sourceId);
+  }
+}
+```
+
+### Problema: `Expected value to be of type number, but found null`
+
+**Causa**: Expresión `["get", "course"]` sin manejo de `null`.
+
+**Solución**: Usar `coalesce` en `icon-rotate`:
+```typescript
+"icon-rotate": ["coalesce", ["get", "course"], ["get", "heading"], 0],
+```
+
+---
+
 ## 📝 ERRORES SECUNDARIOS (No críticos - Revisar si persisten)
 
 1. **AEMET Warnings 404**: Endpoint `/api/aemet/warnings` puede no estar implementado
 2. **CORS RTL Text**: Error de CORS para textos RTL (no crítico)
 3. **HarvestCard Icons**: Iconos faltantes en `/icons/harvest/`
-4. **MapLibre null values**: `Expected value to be of type number, but found null` (revisar expresiones de estilo)
 
 ---
 
@@ -231,5 +281,5 @@ if (!maptilerConfig.apiKey || maptilerConfig.apiKey !== maptilerKey) {
 
 ---
 
-**Última actualización**: 2025-11-29 (Sesión de corrección de capas)
-**Estado**: Correcciones aplicadas - Pendiente verificación en navegador
+**Última actualización**: 2025-11-29 (Sesión continuación - corrección sources y layers)
+**Estado**: Correcciones aplicadas - Build completado - Listo para probar
