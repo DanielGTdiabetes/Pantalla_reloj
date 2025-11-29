@@ -246,6 +246,9 @@ export default function AircraftMapLayer({
 
         aircraftLayerRef.current = aircraftLayer;
 
+        // Habilitar la capa según la configuración
+        aircraftLayer.setEnabled(true);
+
         console.log("[AircraftMapLayer] Starting polling");
         layerDiagnostics.setEnabled(layerId, true);
 
