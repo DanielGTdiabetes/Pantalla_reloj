@@ -3,6 +3,7 @@ Description=Pantalla_reloj Chrome Kiosk for user %i
 After=pantalla-xorg.service pantalla-openbox@%i.service pantalla-dash-backend@%i.service
 Requires=pantalla-openbox@%i.service pantalla-dash-backend@%i.service
 Wants=pantalla-xorg.service
+StartLimitIntervalSec=0
 
 [Service]
 User=%i
@@ -13,7 +14,7 @@ Environment=GTK_USE_PORTAL=0
 Environment=GIO_USE_PORTALS=0
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
 EnvironmentFile=-/var/lib/pantalla-reloj/state/kiosk.env
-ExecStartPre=/bin/sh -c 'sleep 2; xset -dpms; xset s off; xset s noblank || true'
+ExecStartPre=/bin/sh -c 'sleep 15; xset -dpms; xset s off; xset s noblank || true'
 LogsDirectory=pantalla
 # NOTA: El perfil del navegador kiosk (/var/lib/pantalla-reloj/state/chromium-kiosk) se crea
 # exclusivamente en scripts/install.sh. El wrapper pantalla-kiosk solo verifica que existe.
