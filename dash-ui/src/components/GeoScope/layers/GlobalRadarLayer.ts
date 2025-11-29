@@ -148,7 +148,7 @@ export default class GlobalRadarLayer implements Layer {
 
       // Inicializar la capa de forma síncrona (sin await, sin promises)
       const initResult = this.initializeMaptilerWeatherLayerSync(map, maptilerKey);
-      
+
       if (initResult.success) {
         this.currentTimestamp = this.currentTimestamp ?? Date.now();
         this.registeredInRegistry = true;
@@ -162,7 +162,7 @@ export default class GlobalRadarLayer implements Layer {
           provider: "maptiler_weather",
         });
       }
-      
+
       return; // Retorno inmediato, sin await ni promises
     }
 
@@ -301,7 +301,7 @@ export default class GlobalRadarLayer implements Layer {
       if (provider === "rainviewer") {
         provider = "maptiler_weather";
       }
-      
+
       // Solo actualizar timestamp para RainViewer legacy
       if (provider !== "maptiler_weather") {
         void this.updateTimestamp(opts.currentTimestamp);
@@ -743,12 +743,12 @@ export default class GlobalRadarLayer implements Layer {
     // Prioridad 2: Extraer del estilo del mapa (sprite, glyphs, sources)
     if (style) {
       const candidates: (string | null)[] = [];
-      
+
       // Buscar en sprite
       if (typeof style.sprite === "string") {
         candidates.push(style.sprite);
       }
-      
+
       // Buscar en glyphs
       if (typeof style.glyphs === "string") {
         candidates.push(style.glyphs);
@@ -786,7 +786,7 @@ export default class GlobalRadarLayer implements Layer {
       "La capa de radar no se inicializará. " +
       "Configura VITE_MAPTILER_KEY en .env o asegúrate de que el mapa base use MapTiler con API key."
     );
-    
+
     return null;
   }
 
@@ -851,10 +851,10 @@ export default class GlobalRadarLayer implements Layer {
       // NO lanzar excepción - solo registrar error y retornar fallo
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error("[GlobalRadarLayer] MapTiler Weather - failed to initialize:", errorMessage);
-      
+
       // Limpiar referencias en caso de error
       this.radarLayer = null;
-      
+
       return { success: false, error: errorMessage };
     }
   }
