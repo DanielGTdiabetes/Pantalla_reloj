@@ -283,3 +283,23 @@ if (!source) {
 
 **Última actualización**: 2025-11-29 (Sesión continuación - corrección sources y layers)
 **Estado**: Correcciones aplicadas - Build completado - Listo para probar
+
+### ✅ COMPLETADO EN SESIÓN ACTUAL (2025-11-29) - Parte 2:
+
+## ✈️ PROBLEMA ICONOS GIGANTES ("Rayas Naranjas") RESUELTO
+
+**Síntoma original**:
+- En el navegador, los aviones se ven como "rayas naranjas" o manchas que cubren el mapa.
+- En pantallas pequeñas (Mini PC), el mapa se ve "distorsionado" o con "mucho zoom" (posiblemente debido a que los iconos cubren todo).
+
+**Causa raíz identificada**:
+- `getCustomSymbolSizeExpression` en `AircraftLayer.ts` y `ShipsLayer.ts` calculaba el tamaño en píxeles (ej. 17px) pero lo devolvía directamente como `icon-size`.
+- MapLibre interpreta `icon-size` como un **factor de escala**, no como tamaño en píxeles.
+- Resultado: El icono de 64px se escalaba por 17x -> 1088px de ancho.
+
+**Solución implementada**:
+- Se modificó el cálculo para devolver un factor de escala: `scaleFactor = sizePixels / 64`.
+- Ahora el icono se escala correctamente al tamaño deseado en pantalla.
+- **Confirmado**: El icono usado (`planeIcon.ts`) es un diseño detallado con fuselaje, alas y cola, no un triángulo o círculo simple.
+
+---

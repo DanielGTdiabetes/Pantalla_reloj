@@ -1242,8 +1242,13 @@ export default class AircraftLayer implements Layer {
     const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 480;
     const sizeVh = this.symbolOptions?.size_vh ?? 1.6;
     const sizePixels = (sizeVh / 100) * viewportHeight;
+    
+    // El icono base es de 64x64 (definido en planeIcon.ts)
+    // MapLibre usa icon-size como factor de escala sobre el tamaño original
+    const scaleFactor = sizePixels / 64;
+
     // Retornar como número literal (ExpressionSpecification puede ser un número)
-    return sizePixels as unknown as maplibregl.ExpressionSpecification;
+    return scaleFactor as unknown as maplibregl.ExpressionSpecification;
   }
 
   private applyStyleScale(): void {
