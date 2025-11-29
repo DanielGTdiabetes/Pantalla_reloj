@@ -1757,8 +1757,8 @@ def _health_payload() -> Dict[str, Any]:
     
     # Bloque de MapTiler
     try:
-        config_v2, _ = _read_config_v2()
-        ui_map = config_v2.ui_map
+        # config_v2, _ = _read_config_v2()
+        ui_map = config.ui_map
         
         provider_str = ui_map.provider or "unknown"
         
@@ -2511,15 +2511,15 @@ def get_maps_status() -> Dict[str, Any]:
 async def test_satellite_layer() -> Dict[str, Any]:
     """Verifica acceso al tile de satélite de MapTiler."""
     try:
-        config_v2, _ = _read_config_v2()
+        config = config_manager.read()
         
-        if not config_v2.ui_map.satellite.enabled:
+        if not config.ui_map.satellite.enabled:
             return {"ok": False, "reason": "satellite_disabled"}
         
         # Obtener API key de MapTiler desde secret_store o del objeto config
         api_key = secret_store.get_secret("maptiler_api_key")
-        if not api_key and config_v2.ui_map.maptiler:
-            api_key = config_v2.ui_map.maptiler.api_key
+        if not api_key and config.ui_map.maptiler:
+            api_key = config.ui_map.maptiler.api_key
         
         if not api_key:
             return {"ok": False, "reason": "missing_api_key"}
@@ -10310,8 +10310,8 @@ async def test_ships() -> Dict[str, Any]:
 async def get_flights_sample(limit: int = 20) -> Dict[str, Any]:
     """Obtiene una vista previa de vuelos desde la caché si está activa la capa."""
     try:
-        config_v2, _ = _read_config_v2()
-        flights_config = config_v2.layers.flights if config_v2.layers else None
+        config = config_manager.read()
+        flights_config = config.layers.flights if config.layers else None
         
         if not flights_config or not flights_config.enabled:
             return {"ok": False, "reason": "layer_disabled", "count": 0, "items": []}
@@ -10342,8 +10342,8 @@ async def get_flights_sample(limit: int = 20) -> Dict[str, Any]:
 async def get_ships_preview(limit: int = 20) -> Dict[str, Any]:
     """Obtiene una vista previa de barcos desde la caché si está activa la capa."""
     try:
-        config_v2, _ = _read_config_v2()
-        ships_config = config_v2.layers.ships if config_v2.layers else None
+        config = config_manager.read()
+        ships_config = config.layers.ships if config.layers else None
         
         if not ships_config or not ships_config.enabled:
             return {
