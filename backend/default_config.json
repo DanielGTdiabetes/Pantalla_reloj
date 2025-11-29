@@ -200,6 +200,7 @@
       "render_mode": "symbol_custom",
       "aisstream": {
         "ws_url": "wss://stream.aisstream.io/v0/stream",
+        "api_key": "38dd87bbfef35a1f4dc6133293bed27f0e2c9ff7",
         "bbox": {
           "lamin": 36.0,
           "lamax": 44.0,
