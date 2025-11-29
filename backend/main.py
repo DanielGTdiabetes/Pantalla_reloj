@@ -799,237 +799,6 @@ def _check_v1_keys(payload: Dict[str, Any]) -> List[str]:
     return v1_keys
 
 
-def _read_config() -> Tuple[AppConfig, bool]:
-    """
-    Lee configuración y devuelve v2. Migra v1→v2 si es necesario.
-    
-    Returns:
-        Tuple de (config_v2, was_migrated)
-    """
-    try:
-        # Leer como dict primero para verificar versión
-        config_data = json.loads(config_manager.config_file.read_text(encoding="utf-8"))
-        version = config_data.get("version", 1)
-        
-        if version == 2 and "ui_map" in config_data:
-            # Ya es v2, validar y aplicar defaults si faltan
-            # Aplicar defaults para campos faltantes antes de validar
-            ui_map = config_data.get("ui_map", {})
-            if isinstance(ui_map, dict):
-                provider = ui_map.get("provider")
-                valid_providers = ["maptiler_vector", "local_raster_xyz", "custom_xyz"]
-                if provider not in valid_providers:
-                    # Corrección: Usar el proveedor más seguro por defecto si el valor es inválido o falta.
-                    # El valor por defecto más seguro es 'local_raster_xyz' (OpenStreetMap).
-                    default_provider = "local_raster_xyz"
-                    logger.warning("Invalid provider %s, defaulting to %s", provider, default_provider)
-                    ui_map["provider"] = default_provider
-                    config_data["ui_map"] = ui_map
-            
-            # Asegurar que maps y layers_global no sean null
-            config_data = _ensure_maps_defaults(config_data)
-            config_data = _ensure_layers_global_defaults(config_data)
-            
-            # Asegurar que panels.news.feeds existe
-            panels = config_data.get("panels", {})
-            if isinstance(panels, dict):
-                news = panels.get("news", {})
-                if not isinstance(news, dict):
-                    news = {}
-                    panels["news"] = news
-                if "feeds" not in news or not isinstance(news.get("feeds"), list):
-                    news["feeds"] = []
-                    panels["news"] = news
-                config_data["panels"] = panels
-            
-            # Asegurar que secrets.opensky existe
-            secrets = config_data.get("secrets", {})
-            if isinstance(secrets, dict):
-                # Normalizar secrets.opensky
-                if "opensky" not in secrets or not isinstance(secrets.get("opensky"), dict):
-                    secrets["opensky"] = {
-                        "oauth2": {
-                            "client_id": None,
-                            "client_secret": None,
-                            "token_url": "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
-                            "scope": None,
-                        },
-                        "basic": {"username": None, "password": None}
-                    }
-                else:
-                    opensky_secrets = secrets["opensky"]
-                    if "oauth2" not in opensky_secrets:
-                        opensky_secrets["oauth2"] = {
-                            "client_id": None,
-                            "client_secret": None,
-                            "token_url": "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
-                            "scope": None,
-                        }
-                    if "basic" not in opensky_secrets:
-                        opensky_secrets["basic"] = {"username": None, "password": None}
-                
-                # Migrar campos antiguos de opensky a secrets
-                # Si hay username/password en layers.flights.opensky, moverlos a secrets
-                layers = config_data.get("layers", {})
-                if isinstance(layers, dict):
-                    flights = layers.get("flights", {})
-                    if isinstance(flights, dict):
-                        opensky_cfg = flights.get("opensky", {})
-                        if isinstance(opensky_cfg, dict):
-                            # Migrar username/password a secrets.opensky.basic
-                            if "username" in opensky_cfg or "password" in opensky_cfg:
-                                username = opensky_cfg.pop("username", None)
-                                password = opensky_cfg.pop("password", None)
-                                if username or password:
-                                    if not secrets.get("opensky", {}).get("basic"):
-                                        secrets.setdefault("opensky", {}).setdefault("basic", {})
-                                    secrets["opensky"]["basic"]["username"] = username
-                                    secrets["opensky"]["basic"]["password"] = password
-                                    # Guardar en secret_store también
-                                    if username:
-                                        secret_store.set_secret("opensky_username", username)
-                                    if password:
-                                        secret_store.set_secret("opensky_password", password)
-                                    logger.info("Migrated opensky username/password to secrets")
-                
-                # Añadir nuevos secretos si no existen
-                if "aviationstack" not in secrets:
-                    secrets["aviationstack"] = {"api_key": None}
-                if "aisstream" not in secrets:
-                    secrets["aisstream"] = {"api_key": None}
-                if "aishub" not in secrets:
-                    secrets["aishub"] = {"api_key": None}
-                
-                config_data["secrets"] = secrets
-            
-            # Normalizar layers.flights
-            layers = config_data.get("layers", {})
-            if isinstance(layers, dict):
-                flights = layers.get("flights", {})
-                if isinstance(flights, dict):
-                    # Asegurar bloques de proveedor
-                    if "opensky" not in flights:
-                        flights["opensky"] = {
-                            "mode": "oauth2",
-                            "bbox": {"lamin": 39.5, "lamax": 41.0, "lomin": -1.0, "lomax": 1.5},
-                            "extended": 0
-                        }
-                    if "aviationstack" not in flights:
-                        flights["aviationstack"] = {"base_url": "http://api.aviationstack.com/v1"}
-                    if "custom" not in flights:
-                        flights["custom"] = {"api_url": None, "api_key": None}
-                    layers["flights"] = flights
-                
-                # Normalizar layers.ships
-                ships = layers.get("ships", {})
-                if isinstance(ships, dict):
-                    if "aisstream" not in ships:
-                        ships["aisstream"] = {"ws_url": "wss://stream.aisstream.io/v0/stream"}
-                    if "aishub" not in ships:
-                        ships["aishub"] = {"base_url": "https://www.aishub.net/api"}
-                    if "ais_generic" not in ships:
-                        ships["ais_generic"] = {"api_url": None}
-                    if "custom" not in ships:
-                        ships["custom"] = {"api_url": None, "api_key": None}
-                    if "rate_limit_per_min" not in ships:
-                        ships["rate_limit_per_min"] = 4
-                    layers["ships"] = ships
-                
-                config_data["layers"] = layers
-            
-            # Migrar calendar config si existe
-            calendar = config_data.get("calendar", {})
-            if isinstance(calendar, dict):
-                # Si no tiene source, determinar según credenciales
-                if "source" not in calendar:
-                    google_api_key = calendar.get("google_api_key") or secret_store.get_secret("google_calendar_api_key") or secret_store.get_secret("google_api_key")
-                    google_calendar_id = calendar.get("google_calendar_id") or secret_store.get_secret("google_calendar_id")
-                    
-                    if google_api_key and google_calendar_id:
-                        calendar["source"] = "google"
-                    else:
-                        calendar["source"] = "ics"
-                        if "ics" not in calendar:
-                            calendar["ics"] = {}
-                        calendar["ics"]["mode"] = "upload"
-                        calendar["ics"]["file_path"] = None
-                
-                # Asegurar que ics existe si source es ics
-                if calendar.get("source") == "ics":
-                    if "ics" not in calendar or not isinstance(calendar.get("ics"), dict):
-                        calendar["ics"] = {
-                            "mode": "upload",
-                            "file_path": None,
-                            "url": None,
-                            "last_ok": None,
-                            "last_error": None
-                        }
-                    # Migrar ics_path legacy si existe
-                    if "ics_path" in calendar and calendar["ics_path"] and not calendar["ics"].get("file_path"):
-                        calendar["ics"]["file_path"] = calendar["ics_path"]
-                        calendar["ics"]["mode"] = "upload"
-                
-                # Asegurar days_ahead
-                if "days_ahead" not in calendar:
-                    calendar["days_ahead"] = 14
-                
-                config_data["calendar"] = calendar
-            
-            try:
-                config_v2 = AppConfig.model_validate(config_data)
-                return config_v2, False
-            except ValidationError:
-                logger.warning("Invalid v2 config, migrating from defaults")
-                # Fallback a defaults
-                default_data = json.loads((Path(__file__).parent / "default_config.json").read_text(encoding="utf-8"))
-                # Asegurar que maps y layers_global estén presentes en los defaults
-                default_data = _ensure_maps_defaults(default_data)
-                default_data = _ensure_layers_global_defaults(default_data)
-                config_v2 = AppConfig.model_validate(default_data)
-                return config_v2, False
-        else:
-            # Es v1, migrar
-            logger.info("Migrating v1 config to v2")
-            config_v2_dict, needs_geocoding = migrate_v1_to_v2(config_data)
-            
-            # Geocodificar si es necesario
-            if needs_geocoding:
-                postal_code = config_v2_dict.get("ui_map", {}).get("region", {}).get("postalCode")
-                if postal_code:
-                    try:
-                        # Usar función de geocodificación (definida más adelante)
-                        coords = _geocode_postal_es(str(postal_code))
-                        if coords:
-                            lat, lon = coords
-                            if "fixed" in config_v2_dict.get("ui_map", {}):
-                                config_v2_dict["ui_map"]["fixed"]["center"] = {"lat": lat, "lon": lon}
-                    except Exception as e:
-                        logger.warning("Could not geocode postal code %s: %s", postal_code, e)
-            
-            # Asegurar que maps y layers_global no sean null antes de validar
-            config_v2_dict = _ensure_maps_defaults(config_v2_dict)
-            config_v2_dict = _ensure_layers_global_defaults(config_v2_dict)
-            
-            # Validar y guardar v2
-            config_v2 = AppConfig.model_validate(config_v2_dict)
-            
-            # Crear backup de v1
-            backup_path = config_manager.config_file.with_suffix(".json.v1backup")
-            if not backup_path.exists():
-                backup_path.write_text(json.dumps(config_data, indent=2), encoding="utf-8")
-                logger.info("Created v1 backup at %s", backup_path)
-            
-            logger.info("Migrated v1 config to v2 (in-memory only)")
-            return config_v2, True
-    except Exception as e:
-        logger.error("Error reading config: %s", e, exc_info=True)
-        # Fallback a defaults v2
-        default_data = json.loads((Path(__file__).parent / "default_config.json").read_text(encoding="utf-8"))
-        # Asegurar que maps y layers_global estén presentes en los defaults
-        default_data = _ensure_maps_defaults(default_data)
-        default_data = _ensure_layers_global_defaults(default_data)
-        config_v2 = AppConfig.model_validate(default_data)
-        return config_v2, False
 
 
 # Flag para evitar logs repetitivos de migración
@@ -1924,14 +1693,14 @@ def _health_payload() -> Dict[str, Any]:
     
     # Bloque de efemérides históricas
     try:
-        config_v2, _ = _read_config_v2()
+        config = config_manager.read()
         historical_events_config = None
         enabled = False
         provider = "local"
         data_path = "/var/lib/pantalla-reloj/data/efemerides.json"
         
-        if config_v2.panels and config_v2.panels.historicalEvents:
-            historical_events_config = config_v2.panels.historicalEvents
+        if config.panels and config.panels.historicalEvents:
+            historical_events_config = config.panels.historicalEvents
             enabled = historical_events_config.enabled
             provider = historical_events_config.provider or "local"
             if historical_events_config.local:
@@ -2013,8 +1782,8 @@ def _health_payload() -> Dict[str, Any]:
     try:
         # Intentar leer como v2
         try:
-            config_v2, _ = _read_config_v2()
-            calendar_provider, enabled, ics_path = _resolve_calendar_settings(config_v2)
+            config = config_manager.read()
+            calendar_provider, enabled, ics_path = _resolve_calendar_settings(config)
         except Exception:  # noqa: BLE001
             # Fallback a v1
             calendar_config = config.calendar
@@ -2138,8 +1907,8 @@ def debug_maptiler_style() -> Dict[str, Any]:
     - Estado de validación y URLs firmadas
     """
     try:
-        config_v2, _ = _read_config_v2()
-        ui_map = config_v2.ui_map
+        config = config_manager.read()
+        ui_map = config.ui_map
         
         provider = ui_map.provider or "unknown"
         maptiler_config = ui_map.maptiler
@@ -2223,8 +1992,8 @@ def validate_map_config() -> Dict[str, Any]:
     logger.debug("Map validation requested")
     
     try:
-        config_v2, _ = _read_config_v2()
-        ui_map = config_v2.ui_map
+        config = config_manager.read()
+        ui_map = config.ui_map
         
         # Si el proveedor no es maptiler_vector, devolver ok
         if ui_map.provider != "maptiler_vector":
@@ -2297,9 +2066,9 @@ async def test_maptiler(request: MapTilerTestRequest) -> Dict[str, Any]:
             if not api_key:
                 # Intentar desde config v2
                 try:
-                    config_v2, _ = _read_config_v2()
-                    if config_v2 and config_v2.ui_map and config_v2.ui_map.maptiler:
-                        api_key = config_v2.ui_map.maptiler.api_key
+                    config = config_manager.read()
+                    if config and config.ui_map and config.ui_map.maptiler:
+                        api_key = config.ui_map.maptiler.api_key
                 except Exception:
                     pass
             
@@ -2892,8 +2661,8 @@ async def upload_calendar_ics_file(
     
     # Paso 4: PATCH merge seguro de config
     try:
-        config_v2, _ = _read_config_v2()
-        config_data = config_v2.model_dump(mode="json", exclude_unset=False)
+        config = config_manager.read()
+        config_data = config.model_dump(mode="json", exclude_unset=False)
         
         # Asegurar que calendar existe
         if "calendar" not in config_data:
@@ -3028,10 +2797,10 @@ async def set_calendar_ics_url(request: CalendarICSUrlRequest) -> Dict[str, Any]
         except Exception:
             events_count = 0
         
-        # Actualizar configuración v2
+        # Actualizar configuración
         try:
-            config_v2, _ = _read_config_v2()
-            config_data = config_v2.model_dump(mode="json", exclude_none=True)
+            config = config_manager.read()
+            config_data = config.model_dump(mode="json", exclude_none=True)
             
             # Actualizar calendar config
             if "calendar" not in config_data:
@@ -4104,36 +3873,32 @@ def _normalize_calendar_sections(payload: Dict[str, Any]) -> Tuple[str, bool, Op
     return provider, enabled, ics_path
 
 
-def _resolve_calendar_settings(config_v2: AppConfigV2) -> Tuple[str, bool, Optional[str]]:
+def _resolve_calendar_settings(config: AppConfig) -> Tuple[str, bool, Optional[str]]:
     """Return provider, enabled flag and ICS path for current calendar configuration."""
 
     provider = "google"
     enabled = False
-    ics_path: Optional[str] = None
+    ics_path = None
 
-    if getattr(config_v2, "calendar", None):
-        provider_candidate = (
-            getattr(config_v2.calendar, "source", None)
-            or getattr(config_v2.calendar, "provider", None)
-        )
+    if getattr(config, "calendar", None):
+        provider_candidate = getattr(config.calendar, "source", None)
         if isinstance(provider_candidate, str):
             provider = provider_candidate.strip().lower() or provider
-        enabled = getattr(config_v2.calendar, "enabled", enabled)
-        ics_path = getattr(config_v2.calendar, "ics_path", None)
+        enabled = getattr(config.calendar, "enabled", enabled)
+        ics_path = getattr(config.calendar, "ics_path", None)
 
     panels_calendar = (
-        config_v2.panels.calendar if config_v2.panels and config_v2.panels.calendar else None
+        config.panels.calendar if config.panels and config.panels.calendar else None
     )
-    if not getattr(config_v2, "calendar", None) and panels_calendar:
+    if not getattr(config, "calendar", None) and panels_calendar:
         provider_candidate = (
             getattr(panels_calendar, "source", None)
-            or getattr(panels_calendar, "provider", None)
         )
         if isinstance(provider_candidate, str):
             provider = provider_candidate.strip().lower() or provider
         enabled = getattr(panels_calendar, "enabled", enabled)
         ics_path = getattr(panels_calendar, "ics_path", None)
-    elif getattr(config_v2, "calendar", None) and provider == "ics" and not ics_path and panels_calendar:
+    elif getattr(config, "calendar", None) and provider == "ics" and not ics_path and panels_calendar:
         ics_path = getattr(panels_calendar, "ics_path", None)
 
     if provider == "disabled":
@@ -4537,8 +4302,8 @@ async def save_config(request: Request) -> JSONResponse:
         
         # Validar con Pydantic (usar sanitized)
         try:
-            config_v2 = AppConfigV2.model_validate(sanitized)
-            config_dict = config_v2.model_dump(mode="json", exclude_none=True)
+            config = AppConfig.model_validate(sanitized)
+            config_dict = config.model_dump(mode="json", exclude_none=True)
             
             # Asegurar que maps y layers.global estén presentes después de validar
             # (por si Pydantic los excluyó por ser None)
@@ -4751,9 +4516,9 @@ async def save_config(request: Request) -> JSONResponse:
         else:
             secret_store.set_secret("calendar_ics_path", None)
 
-        if config_v2.layers and config_v2.layers.ships:
+        if config.layers and config.layers.ships:
             try:
-                ships_service.apply_config(config_v2.layers.ships)
+                ships_service.apply_config(config.layers.ships)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("[config] Skipping ships config apply due to error: %s", exc)
 
@@ -5637,26 +5402,29 @@ def migrate_config_endpoint(to: int = 2, backup: bool = True) -> Dict[str, Any]:
             }
         
         # Migrar v1→v2
-        config_v2, needs_geocoding = migrate_v1_to_v2(current_data)
+        config, needs_geocoding = migrate_v1_to_v2(current_data)
         
         # Geocodificar código postal si es necesario
         if needs_geocoding:
-            postal_code = config_v2.get("ui", {}).get("map", {}).get("region", {}).get("postalCode")
+            postal_code = config.get("ui", {}).get("map", {}).get("region", {}).get("postalCode")
             if postal_code:
                 try:
                     from .main import _geocode_postal_es
                     coords = _geocode_postal_es(postal_code)
                     if coords:
                         lat, lon = coords
-                        if "ui" in config_v2 and "map" in config_v2["ui"]:
-                            if "fixed" in config_v2["ui"]["map"]:
-                                config_v2["ui"]["map"]["fixed"]["center"] = {
+                        if "ui" in config and "map" in config["ui"]:
+                            if "fixed" in config["ui"]["map"]:
+                                config["ui"]["map"]["fixed"]["center"] = {
                                     "lat": lat,
-                                    "lon": lon
+                                    "lng": lon,
+                                    "zoom": 9.8,
+                                    "bearing": 0,
+                                    "pitch": 0
                                 }
                             else:
-                                config_v2["ui"]["map"]["fixed"] = {
-                                    "center": {"lat": lat, "lon": lon},
+                                config["ui"]["map"]["fixed"] = {
+                                    "center": {"lat": lat, "lng": lon},
                                     "zoom": 9.8,
                                     "bearing": 0,
                                     "pitch": 0
@@ -5672,8 +5440,9 @@ def migrate_config_endpoint(to: int = 2, backup: bool = True) -> Dict[str, Any]:
             logger.info("Backup creado en %s", backup_path)
         
         # Guardar configuración migrada
+        # La variable `config` aquí es un dict, no un modelo Pydantic, por lo que no necesita .model_dump()
         config_manager.config_file.write_text(
-            json.dumps(config_v2, indent=2),
+            json.dumps(config, indent=2),
             encoding="utf-8"
         )
         
@@ -5683,7 +5452,7 @@ def migrate_config_endpoint(to: int = 2, backup: bool = True) -> Dict[str, Any]:
             "version": 2,
             "migrated": True,
             "message": "Configuración migrada exitosamente a v2",
-            "config": config_v2
+            "config": config
         }
         
     except Exception as e:
@@ -6225,8 +5994,8 @@ def get_efemerides(target_date: Optional[str] = None) -> Dict[str, Any]:
         Diccionario con {"date": "YYYY-MM-DD", "count": N, "items": [...]}
     """
     try:
-        # Leer configuración v2
-        config_v2, _ = _read_config_v2()
+        # Leer configuración
+        config = config_manager.read()
         
         # Obtener configuración del panel
         historical_events_config = None
@@ -6234,8 +6003,8 @@ def get_efemerides(target_date: Optional[str] = None) -> Dict[str, Any]:
         data_path = "/var/lib/pantalla-reloj/data/efemerides.json"
         wikimedia_config = None
         
-        if config_v2.panels and config_v2.panels.historicalEvents:
-            historical_events_config = config_v2.panels.historicalEvents
+        if config.panels and config.panels.historicalEvents:
+            historical_events_config = config.panels.historicalEvents
             provider = historical_events_config.provider or "local"
             
             if provider == "local":
@@ -6273,8 +6042,8 @@ def get_efemerides(target_date: Optional[str] = None) -> Dict[str, Any]:
         
         # Obtener timezone del config
         tz_str = "Europe/Madrid"
-        if hasattr(config_v2, "display") and hasattr(config_v2.display, "timezone"):
-            tz_str = config_v2.display.timezone or "Europe/Madrid"
+        if hasattr(config, "display") and hasattr(config.display, "timezone"):
+            tz_str = config.display.timezone or "Europe/Madrid"
         
         # Obtener efemérides
         result = get_efemerides_for_date(
@@ -6306,15 +6075,15 @@ def get_efemerides_status() -> Dict[str, Any]:
         Diccionario con información de estado
     """
     try:
-        config_v2, _ = _read_config_v2()
+        config = config_manager.read()
         
         historical_events_config = None
         enabled = False
         provider = "local"
         data_path = "/var/lib/pantalla-reloj/data/efemerides.json"
         
-        if config_v2.panels and config_v2.panels.historicalEvents:
-            historical_events_config = config_v2.panels.historicalEvents
+        if config.panels and config.panels.historicalEvents:
+            historical_events_config = config.panels.historicalEvents
             enabled = historical_events_config.enabled
             provider = historical_events_config.provider or "local"
             if historical_events_config.local:
@@ -6410,13 +6179,13 @@ async def upload_efemerides(file: UploadFile = File(...)) -> Dict[str, Any]:
         Diccionario con información del guardado
     """
     try:
-        # Leer configuración v2
-        config_v2, _ = _read_config_v2()
+        # Leer configuración
+        config = config_manager.read()
         
         # Obtener configuración del panel
         historical_events_config = None
-        if config_v2.panels and config_v2.panels.historicalEvents:
-            historical_events_config = config_v2.panels.historicalEvents
+        if config.panels and config.panels.historicalEvents:
+            historical_events_config = config.panels.historicalEvents
         
         # Ruta por defecto si no hay configuración
         data_path = "/var/lib/pantalla-reloj/data/efemerides.json"
@@ -6458,14 +6227,14 @@ async def upload_efemerides(file: UploadFile = File(...)) -> Dict[str, Any]:
 async def get_news() -> Dict[str, Any]:
     """Obtiene noticias de feeds RSS configurados (legacy endpoint)."""
     try:
-        config_v2, _ = _read_config_v2()
+        config = config_manager.read()
     except Exception:
         return {"items": [], "updated_at": datetime.now(timezone.utc).isoformat()}
     
     # Usar feeds de v2 panels.news si existe
     feeds = []
-    if config_v2.panels and config_v2.panels.news and config_v2.panels.news.feeds:
-        feeds = config_v2.panels.news.feeds
+    if config.panels and config.panels.news and config.panels.news.feeds:
+        feeds = config.panels.news.feeds
     
     if not feeds:
         return {"items": [], "updated_at": datetime.now(timezone.utc).isoformat()}
@@ -6551,16 +6320,16 @@ async def get_news_sample(limit: int = 10) -> Dict[str, Any]:
         Diccionario con {"items": [...], "updated_at": "..."}
     """
     try:
-        config_v2, _ = _read_config_v2()
+        config = config_manager.read()
         
         # Usar feeds de v2 panels.news si existe
         feeds = []
-        if config_v2.panels and config_v2.panels.news and config_v2.panels.news.feeds:
-            feeds = config_v2.panels.news.feeds
+        if config.panels and config.panels.news and config.panels.news.feeds:
+            feeds = config.panels.news.feeds
         
         # Fallback a news top-level
-        if not feeds and config_v2.news and config_v2.news.rss_feeds:
-            feeds = config_v2.news.rss_feeds
+        if not feeds and hasattr(config, "news") and config.news and config.news.rss_feeds:
+            feeds = config.news.rss_feeds
         
         if not feeds:
             return {"items": [], "updated_at": datetime.now(timezone.utc).isoformat()}
@@ -6906,7 +6675,7 @@ async def get_calendar_events(
     inspect_mode = inspect == 1 or debug == 1
     
     try:
-        config_v2, _ = _read_config_v2()
+        config = config_manager.read()
     except Exception as exc:
         if inspect_mode:
             return {
@@ -6924,7 +6693,7 @@ async def get_calendar_events(
         return []
     
     # Determinar provider de calendario desde config
-    calendar_provider, enabled, ics_path = _resolve_calendar_settings(config_v2)
+    calendar_provider, enabled, ics_path = _resolve_calendar_settings(config)
 
     # Si provider es "disabled" o enabled es False, retornar inmediatamente
     if calendar_provider == "disabled" or not enabled:
@@ -7170,7 +6939,7 @@ async def get_calendar_events(
 def get_calendar_status() -> Dict[str, Any]:
     """Obtiene el estado del calendario (provider, credenciales, estado)."""
     try:
-        config_v2, _ = _read_config_v2()
+        config = config_manager.read()
     except Exception as exc:
         return {
             "status": "error",
@@ -7179,7 +6948,7 @@ def get_calendar_status() -> Dict[str, Any]:
         }
     
     # Determinar provider de calendario
-    calendar_provider, enabled, ics_path = _resolve_calendar_settings(config_v2)
+    calendar_provider, enabled, ics_path = _resolve_calendar_settings(config)
 
     # Si provider es "disabled" o enabled es False, retornar inmediatamente
     if calendar_provider == "disabled" or not enabled:
@@ -7254,8 +7023,8 @@ async def test_calendar(request: Optional[CalendarTestRequest] = Body(default=No
     Si no se proporciona request body, usa el origen activo de la configuración.
     """
     try:
-        config_v2, _ = _read_config_v2()
-        config_data = config_v2.model_dump(mode="json", exclude_none=True) if hasattr(config_v2, 'model_dump') else config_v2
+        config = config_manager.read()
+        config_data = config.model_dump(mode="json", exclude_none=True)
         
         calendar_config = config_data.get("calendar", {})
         if not calendar_config.get("enabled", False):
@@ -7492,8 +7261,8 @@ async def get_calendar_preview(limit: int = 10) -> Dict[str, Any]:
         Dict con source, count, items (eventos normalizados)
     """
     try:
-        config_v2, _ = _read_config_v2()
-        config_data = config_v2.model_dump(mode="json", exclude_none=True) if hasattr(config_v2, 'model_dump') else config_v2
+        config = config_manager.read()
+        config_data = config.model_dump(mode="json", exclude_none=True)
         
         calendar_config = config_data.get("calendar", {})
         if not calendar_config.get("enabled", False):
@@ -8018,8 +7787,8 @@ def _ensure_blitzortung_service(config: AppConfigV2) -> None:
                 
                 # Auto-enable storm mode si está configurado en blitzortung.auto_storm_mode
                 try:
-                    config_v2, _ = _read_config_v2()
-                    blitz_config = config_v2.blitzortung if config_v2.blitzortung else None
+                    config = config_manager.read()
+                    blitz_config = config.blitzortung if config.blitzortung else None
                     auto_storm_config = blitz_config.auto_storm_mode if blitz_config and blitz_config.auto_storm_mode else None
                     
                     # Fallback a config.storm si auto_storm_mode no está configurado
@@ -8616,8 +8385,8 @@ def get_history(date: Optional[str] = None, lang: str = "es") -> Dict[str, Any]:
         if not target_date:
             target_date = datetime.now(timezone.utc).date()
         
-        # Leer configuración V2
-        config_v2, _ = _read_config_v2()
+        # Leer configuración
+        config = config_manager.read()
         
         # Obtener configuración de efemérides históricas
         historical_events_config = None
@@ -8626,8 +8395,8 @@ def get_history(date: Optional[str] = None, lang: str = "es") -> Dict[str, Any]:
         wikimedia_config = None
         attempt_local_first = False
         
-        if config_v2.panels and config_v2.panels.historicalEvents:
-            historical_events_config = config_v2.panels.historicalEvents
+        if config.panels and config.panels.historicalEvents:
+            historical_events_config = config.panels.historicalEvents
             configured_provider = historical_events_config.provider or "wikimedia"
             
             # Si está configurado como local, intentar local primero pero con fallback garantizado
@@ -9871,8 +9640,8 @@ async def test_flights() -> Dict[str, Any]:
     Lee layers.flights.provider y prueba la conexión según el proveedor.
     """
     try:
-        config_v2, _ = _read_config_v2()
-        flights_config = config_v2.layers.flights if config_v2.layers else None
+        config = config_manager.read()
+        flights_config = config.layers.flights if config.layers else None
         
         if not flights_config or not flights_config.enabled:
             return {
@@ -10142,8 +9911,8 @@ async def test_ships() -> Dict[str, Any]:
     Lee layers.ships.provider y prueba la conexión según el proveedor.
     """
     try:
-        config_v2, _ = _read_config_v2()
-        ships_config = config_v2.layers.ships if config_v2.layers else None
+        config = config_manager.read()
+        ships_config = config.layers.ships if config.layers else None
         
         if not ships_config or not ships_config.enabled:
             return {
