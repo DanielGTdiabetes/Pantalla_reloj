@@ -302,4 +302,18 @@ if (!source) {
 - Ahora el icono se escala correctamente al tamaño deseado en pantalla.
 - **Confirmado**: El icono usado (`planeIcon.ts`) es un diseño detallado con fuselaje, alas y cola, no un triángulo o círculo simple.
 
+## 🚢 PROBLEMA BARCOS INVISIBLES RESUELTO
+
+**Síntoma**: Los barcos no aparecían en ninguna pantalla.
+**Causa probable**: Datos de AIS con latencia > 3 minutos (default `maxAgeSeconds` era 180s).
+**Solución**: Se aumentó `maxAgeSeconds` a 3600s (1 hora) en `ShipsLayer.ts` para tolerar datos más antiguos.
+
+## 🖥️ PROBLEMA ZOOM MINI PC RESUELTO
+
+**Síntoma**: El mapa en el Mini PC se veía con "muchísimo zoom".
+**Causa**: El zoom por defecto (5.5) cubre un área geográfica fija, que en una pantalla pequeña (píxeles físicos) resulta en una vista muy recortada. Además, la configuración del backend sobreescribía el zoom inicial.
+**Solución**: 
+1. Se implementó zoom inicial dinámico en el constructor.
+2. **CRÍTICO**: Se modificó el `useEffect` de configuración (`ui_map.fixed`) para respetar el tamaño de pantalla. Si el ancho es < 800px, el zoom se limita a **4.6** (ideal para ver la península aprovechando el espacio).
+
 ---

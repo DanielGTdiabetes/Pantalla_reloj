@@ -116,7 +116,7 @@ export default class ShipsLayer implements Layer {
   constructor(options: ShipsLayerOptions = {}) {
     this.enabled = options.enabled ?? false;
     this.opacity = options.opacity ?? 1.0;
-    this.maxAgeSeconds = options.maxAgeSeconds ?? 180;
+    this.maxAgeSeconds = options.maxAgeSeconds ?? 3600; // 1 hora por defecto (AIS es lento)
     this.cineFocus = options.cineFocus;
     this.styleScale = options.styleScale ?? 1.0;
     // Default a symbol_custom para usar icono personalizado (más fiable que depender del sprite)

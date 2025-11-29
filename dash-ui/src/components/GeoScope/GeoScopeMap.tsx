@@ -709,7 +709,7 @@ export default function GeoScopeMap({
       (mapSettings.maptiler as any)?.api_key ??
       maptilerKey ??
       null;
-    
+
     if (globalApiKey && (!maptilerConfig.apiKey || maptilerConfig.apiKey !== globalApiKey)) {
       maptilerConfig.apiKey = globalApiKey;
       console.log("[GeoScopeMap] MapTiler API key configured globally for SDK:", globalApiKey.substring(0, 8) + "...");
@@ -733,11 +733,16 @@ export default function GeoScopeMap({
     // Inicializar mapa si no existe
     if (!mapRef.current) {
       try {
+        // Ajustar zoom inicial según el ancho de pantalla
+        const initialZoom = typeof window !== "undefined" && window.innerWidth < 800
+          ? 4.5 // Zoom más alejado para pantallas pequeñas (Mini PC)
+          : DEFAULT_VIEW.zoom;
+
         const map = new MaptilerMap({
           container: mapFillRef.current,
           style: "https://api.maptiler.com/maps/streets-v2/style.json?key=fBZDqPrUD4EwoZLV4L6A", // Placeholder
           center: [DEFAULT_VIEW.lng, DEFAULT_VIEW.lat],
-          zoom: DEFAULT_VIEW.zoom,
+          zoom: initialZoom,
           bearing: DEFAULT_VIEW.bearing,
           pitch: DEFAULT_VIEW.pitch,
           attributionControl: false,
@@ -1141,7 +1146,15 @@ export default function GeoScopeMap({
 
     const centerLat = v2Fixed.center.lat ?? 40.4637;
     const centerLng = v2Fixed.center.lon ?? -3.7492;
-    const zoom = v2Fixed.zoom ?? 5.5;
+    let zoom = v2Fixed.zoom ?? 5.5;
+
+    // Ajuste dinámico para pantallas pequeñas (Mini PC)
+    // Si la pantalla es pequeña, reducimos el zoom para asegurar que se vea la península
+    if (typeof window !== "undefined" && window.innerWidth < 800) {
+      // Usamos 4.6 para que se vea la península entera pero aprovechando el espacio ("un poco recortada")
+      zoom = Math.min(zoom, 4.6);
+    }
+
     const bearing = v2Fixed.bearing ?? 0;
     const pitch = v2Fixed.pitch ?? 0;
 
