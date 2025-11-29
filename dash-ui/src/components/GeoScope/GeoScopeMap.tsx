@@ -1147,19 +1147,21 @@ export default function GeoScopeMap({
       return;
     }
 
-    const centerLat = v2Fixed.center.lat ?? 40.4637;
-    const centerLng = v2Fixed.center.lon ?? -3.7492;
+    let centerLat = v2Fixed.center.lat ?? 40.4637;
+    let centerLng = v2Fixed.center.lon ?? -3.7492;
     let zoom = v2Fixed.zoom ?? 4.8;
-
-    // Ajuste dinámico para pantallas pequeñas (Mini PC)
-    // Si la pantalla es pequeña (incluyendo 1024px o 1280px), reducimos el zoom
-    if (typeof window !== "undefined" && window.innerWidth < 1280) {
-      // Usamos 4.6 para que se vea la península entera pero aprovechando el espacio ("un poco recortada")
-      zoom = Math.min(zoom, 4.6);
-    }
-
     const bearing = v2Fixed.bearing ?? 0;
     const pitch = v2Fixed.pitch ?? 0;
+
+    // Ajuste dinámico para pantallas pequeñas (Mini PC)
+    // Si la pantalla es pequeña (incluyendo 1024px o 1280px), FORZAMOS la vista de la península
+    if (typeof window !== "undefined" && window.innerWidth < 1280) {
+      // Usamos 4.6 para que se vea la península entera
+      zoom = 4.6;
+      // Forzamos el centro a Madrid/España para evitar que el mapa "viaje" a otras ciudades
+      centerLat = 40.4637;
+      centerLng = -3.7492;
+    }
 
     const map = mapRef.current;
     if (!map) {
