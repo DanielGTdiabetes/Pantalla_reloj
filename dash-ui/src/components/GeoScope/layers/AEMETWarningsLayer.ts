@@ -8,7 +8,7 @@ import type { FeatureCollection } from "geojson";
 import type { Layer } from "./LayerRegistry";
 import { getExistingPopup, isGeoJSONSource } from "./layerUtils";
 import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
-import { withSafeMapStyle } from "../../../lib/map/utils/safeMapOperations";
+import { withSafeMapStyle, waitForStyleLoaded } from "../../../lib/map/utils/safeMapOperations";
 
 interface AEMETWarningsLayerOptions {
   enabled?: boolean;
@@ -139,6 +139,14 @@ export default class AEMETWarningsLayer implements Layer {
     if (!this.map || !this.enabled) {
       return;
     }
+
+    // CRÍTICO: Esperar a que el estilo esté completamente cargado antes de continuar
+    const styleReady = await waitForStyleLoaded(this.map, 15000);
+    if (!styleReady) {
+      console.warn("[AEMETWarningsLayer] Timeout waiting for style, will retry on next call");
+      return;
+    }
+    console.log("[AEMETWarningsLayer] Style is ready, proceeding with layer creation");
 
     this.ensureSource();
     this.ensureLayer();

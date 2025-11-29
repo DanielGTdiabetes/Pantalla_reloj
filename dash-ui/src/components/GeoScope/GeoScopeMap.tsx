@@ -1,5 +1,5 @@
 import * as maptilersdk from "@maptiler/sdk";
-import { Map as MaptilerMap } from "@maptiler/sdk";
+import { Map as MaptilerMap, config as maptilerConfig } from "@maptiler/sdk";
 import type { MapLibreEvent, StyleSpecification } from "maplibre-gl";
 import type { Feature, FeatureCollection, GeoJsonProperties, Geometry, Point } from "geojson";
 import "@maptiler/sdk/dist/maptiler-sdk.css";
@@ -711,6 +711,23 @@ export default function GeoScopeMap({
     // Inicializar mapa si no existe
     if (!mapRef.current) {
       try {
+        // Configurar API key de MapTiler globalmente ANTES de crear el mapa
+        // Esto es necesario para que el SDK de MapTiler Weather funcione correctamente
+        const globalApiKey =
+          maptilerConfigV2?.api_key ??
+          mapSettings.maptiler?.apiKey ??
+          mapSettings.maptiler?.key ??
+          (mapSettings.maptiler as any)?.api_key ??
+          maptilerKey ??
+          null;
+        
+        if (globalApiKey) {
+          maptilerConfig.apiKey = globalApiKey;
+          console.log("[GeoScopeMap] MapTiler API key configured globally for SDK");
+        } else {
+          console.warn("[GeoScopeMap] No MapTiler API key found - Weather layers may not work");
+        }
+        
         const map = new MaptilerMap({
           container: mapFillRef.current,
           style: "https://api.maptiler.com/maps/streets-v2/style.json?key=fBZDqPrUD4EwoZLV4L6A", // Placeholder

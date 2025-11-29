@@ -7,6 +7,75 @@ type LayerSpecification = import("maplibre-gl").LayerSpecification;
 import { getSafeMapStyle } from "./safeMapStyle";
 
 /**
+ * Espera a que el estilo del mapa esté completamente cargado.
+ * Si ya está cargado, resuelve inmediatamente.
+ * Si no, espera al evento 'styledata' o 'load'.
+ * 
+ * @param map - Instancia del mapa de MapLibre
+ * @param timeoutMs - Tiempo máximo de espera en milisegundos (default: 10000)
+ * @returns Promise que resuelve true si el estilo se cargó, false si hubo timeout
+ */
+export const waitForStyleLoaded = (
+  map: MaptilerMap | undefined | null,
+  timeoutMs: number = 10000
+): Promise<boolean> => {
+  return new Promise((resolve) => {
+    if (!map) {
+      resolve(false);
+      return;
+    }
+
+    // Si el estilo ya está cargado, resolver inmediatamente
+    if (map.isStyleLoaded() && getSafeMapStyle(map)) {
+      resolve(true);
+      return;
+    }
+
+    let resolved = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      map.off("styledata", onStyleData);
+      map.off("load", onLoad);
+    };
+
+    const onStyleData = () => {
+      if (resolved) return;
+      // Verificar que realmente el estilo esté listo
+      if (map.isStyleLoaded() && getSafeMapStyle(map)) {
+        resolved = true;
+        cleanup();
+        resolve(true);
+      }
+    };
+
+    const onLoad = () => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      resolve(true);
+    };
+
+    // Configurar timeout
+    timeoutId = setTimeout(() => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      console.warn("[waitForStyleLoaded] Timeout waiting for style to load");
+      resolve(false);
+    }, timeoutMs);
+
+    // Escuchar ambos eventos
+    map.on("styledata", onStyleData);
+    map.on("load", onLoad);
+  });
+};
+
+/**
  * Ejecuta una operación en el mapa solo si el estilo está completamente listo.
  * Protege contra errores internos de MapLibre relacionados con style.version.
  * 
@@ -59,6 +128,41 @@ export const withSafeMapStyle = (
     }
     return false;
   }
+};
+
+/**
+ * Versión async de withSafeMapStyle que espera a que el estilo esté listo antes de ejecutar.
+ * 
+ * @param map - Instancia del mapa de MapLibre
+ * @param operation - Función que contiene las operaciones a ejecutar
+ * @param layerName - Nombre de la capa/operación para logs
+ * @param timeoutMs - Tiempo máximo de espera (default: 10000)
+ * @returns Promise que resuelve true si la operación se ejecutó correctamente
+ */
+export const withSafeMapStyleAsync = async (
+  map: MaptilerMap | undefined | null,
+  operation: () => void,
+  layerName: string,
+  timeoutMs: number = 10000
+): Promise<boolean> => {
+  if (!map) {
+    console.warn(`[${layerName}] Map not available, skipping operation`);
+    return false;
+  }
+
+  // Si el estilo no está cargado, esperar
+  if (!map.isStyleLoaded() || !getSafeMapStyle(map)) {
+    console.log(`[${layerName}] Style not ready, waiting...`);
+    const styleLoaded = await waitForStyleLoaded(map, timeoutMs);
+    if (!styleLoaded) {
+      console.warn(`[${layerName}] Timeout waiting for style, skipping operation`);
+      return false;
+    }
+    console.log(`[${layerName}] Style now ready, proceeding with operation`);
+  }
+
+  // Ejecutar la operación de forma síncrona ahora que el estilo está listo
+  return withSafeMapStyle(map, operation, layerName);
 };
 
 /**

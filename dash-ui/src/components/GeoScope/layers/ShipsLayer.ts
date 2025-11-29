@@ -6,7 +6,7 @@ import type { Layer } from "./LayerRegistry";
 import { getExistingPopup, isGeoJSONSource } from "./layerUtils";
 import { registerShipIcon } from "../utils/shipIcon";
 import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
-import { withSafeMapStyle, safeHasImage } from "../../../lib/map/utils/safeMapOperations";
+import { withSafeMapStyle, withSafeMapStyleAsync, safeHasImage, waitForStyleLoaded } from "../../../lib/map/utils/safeMapOperations";
 import { layerDiagnostics, type LayerId } from "./LayerDiagnostics";
 
 type EffectiveRenderMode = "symbol" | "symbol_custom" | "circle";
@@ -149,6 +149,17 @@ export default class ShipsLayer implements Layer {
       }
       return;
     }
+
+    // CRÍTICO: Esperar a que el estilo esté completamente cargado antes de continuar
+    // Esto evita el error "Style not loaded yet, skipping operation"
+    const styleReady = await waitForStyleLoaded(this.map, 15000);
+    if (!styleReady) {
+      console.warn("[ShipsLayer] Timeout waiting for style, will retry on next call");
+      layerDiagnostics.updatePreconditions(layerId, { styleLoaded: false });
+      return;
+    }
+    layerDiagnostics.updatePreconditions(layerId, { styleLoaded: true });
+    console.log("[ShipsLayer] Style is ready, proceeding with layer creation");
 
     try {
       // Intentar registrar el icono custom si es necesario

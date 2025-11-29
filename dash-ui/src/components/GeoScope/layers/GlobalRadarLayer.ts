@@ -1,10 +1,11 @@
-import { Map as MaptilerMap } from "@maptiler/sdk";
+import { Map as MaptilerMap, config as maptilerConfig } from "@maptiler/sdk";
 import { RadarLayer } from "@maptiler/weather";
 import type { StyleSpecification } from "maplibre-gl";
 
 import type { Layer } from "./LayerRegistry";
 import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
 import { waitForMapReady } from "../../../lib/map/utils/waitForMapReady";
+import { waitForStyleLoaded } from "../../../lib/map/utils/safeMapOperations";
 import { getRainViewerFrames } from "../../../lib/api";
 import { layerDiagnostics, type LayerId } from "./LayerDiagnostics";
 
@@ -82,8 +83,7 @@ export default class GlobalRadarLayer implements Layer {
   /**
    * Añade la capa al mapa.
    * 
-   * Para MapTiler Weather: función síncrona y simple que obtiene key, inserta source/layer y retorna.
-   * NO espera eventos, NO usa waitForMapReady, NO hace health checks ni retries.
+   * Para MapTiler Weather: espera al estilo, configura API key y crea la capa.
    * 
    * Para RainViewer legacy: mantiene la lógica original con waitForMapReady y frames.
    */
@@ -113,62 +113,86 @@ export default class GlobalRadarLayer implements Layer {
       return;
     }
 
-    // === RAMA MAPTILER WEATHER: Síncrona y simple ===
+    // === RAMA MAPTILER WEATHER ===
     if (provider === "maptiler_weather") {
-      layerDiagnostics.recordInitializationAttempt(layerId);
-
-      // NO usar waitForMapReady - LayerRegistry ya se encarga de esperar al estilo
-      // NO usar try/catch que pueda lanzar excepciones - solo fallback silencioso
-      const style = getSafeMapStyle(map);
-      if (!style) {
-        // Si el estilo no está disponible, LayerRegistry esperará y volverá a llamar
-        layerDiagnostics.updatePreconditions(layerId, { styleLoaded: false });
-        return;
-      }
-
-      layerDiagnostics.updatePreconditions(layerId, { styleLoaded: true });
-
-      // Obtener API key
-      const maptilerKey = this.extractMaptilerApiKey(style);
-      if (!maptilerKey) {
-        console.error(
-          "[GlobalRadarLayer] ❌ MapTiler Weather: Falta API key de MapTiler para la capa de Radar. " +
-          "La capa no se inicializará. " +
-          "Configura VITE_MAPTILER_KEY en .env o asegúrate de que el mapa base use MapTiler con API key."
-        );
-        layerDiagnostics.updatePreconditions(layerId, { apiKeysConfigured: false });
-        layerDiagnostics.recordError(layerId, new Error("MapTiler Weather: missing API key"), {
-          provider: "maptiler_weather",
-          hint: "Configure VITE_MAPTILER_KEY environment variable or ensure map base uses MapTiler with API key",
-        });
-        return;
-      }
-
-      layerDiagnostics.updatePreconditions(layerId, { apiKeysConfigured: true });
-
-      // Inicializar la capa de forma síncrona (sin await, sin promises)
-      const initResult = this.initializeMaptilerWeatherLayerSync(map, maptilerKey);
-
-      if (initResult.success) {
-        this.currentTimestamp = this.currentTimestamp ?? Date.now();
-        this.registeredInRegistry = true;
-        layerDiagnostics.setState(layerId, "ready", {
-          enabled: true,
-          provider: "maptiler_weather",
-        });
-      } else {
-        // Error registrado en initializeMaptilerWeatherLayerSync, solo actualizar diagnóstico
-        layerDiagnostics.recordError(layerId, new Error(initResult.error || "MapTiler Weather init failed"), {
-          provider: "maptiler_weather",
-        });
-      }
-
-      return; // Retorno inmediato, sin await ni promises
+      // Usar una versión async que espera al estilo
+      return this.addMaptilerWeatherAsync(map, layerId);
     }
 
     // === RAMA RAINVIEWER LEGACY: Mantiene lógica original con waitForMapReady ===
     // Esta rama solo se ejecuta si provider !== "maptiler_weather" (aunque ya no debería pasar)
     return this.addRainViewerLegacy(map, layerId, provider);
+  }
+
+  /**
+   * Añade la capa de radar MapTiler Weather de forma asíncrona,
+   * esperando a que el estilo esté listo.
+   */
+  private async addMaptilerWeatherAsync(map: MaptilerMap, layerId: LayerId): Promise<void> {
+    layerDiagnostics.recordInitializationAttempt(layerId);
+
+    // CRÍTICO: Esperar a que el estilo esté completamente cargado
+    const styleReady = await waitForStyleLoaded(map, 15000);
+    if (!styleReady) {
+      console.warn("[GlobalRadarLayer] Timeout waiting for style, will retry on next call");
+      layerDiagnostics.updatePreconditions(layerId, { styleLoaded: false });
+      return;
+    }
+    
+    layerDiagnostics.updatePreconditions(layerId, { styleLoaded: true });
+    console.log("[GlobalRadarLayer] Style is ready, proceeding with radar layer creation");
+
+    const style = getSafeMapStyle(map);
+    if (!style) {
+      layerDiagnostics.updatePreconditions(layerId, { styleLoaded: false });
+      return;
+    }
+
+    // Obtener API key
+    const maptilerKey = this.extractMaptilerApiKey(style);
+    if (!maptilerKey) {
+      console.error(
+        "[GlobalRadarLayer] ❌ MapTiler Weather: Falta API key de MapTiler para la capa de Radar. " +
+        "La capa no se inicializará. " +
+        "Configura VITE_MAPTILER_KEY en .env o asegúrate de que el mapa base use MapTiler con API key."
+      );
+      layerDiagnostics.updatePreconditions(layerId, { apiKeysConfigured: false });
+      layerDiagnostics.recordError(layerId, new Error("MapTiler Weather: missing API key"), {
+        provider: "maptiler_weather",
+        hint: "Configure VITE_MAPTILER_KEY environment variable or ensure map base uses MapTiler with API key",
+      });
+      return;
+    }
+
+    layerDiagnostics.updatePreconditions(layerId, { apiKeysConfigured: true });
+
+    // CRÍTICO: Configurar la API key globalmente para el SDK de MapTiler Weather
+    // El SDK de @maptiler/weather usa maptilerConfig.apiKey internamente
+    try {
+      if (!maptilerConfig.apiKey || maptilerConfig.apiKey !== maptilerKey) {
+        maptilerConfig.apiKey = maptilerKey;
+        console.log("[GlobalRadarLayer] MapTiler API key configured globally for Weather SDK");
+      }
+    } catch (e) {
+      console.warn("[GlobalRadarLayer] Could not set global MapTiler API key:", e);
+    }
+
+    // Inicializar la capa de forma síncrona
+    const initResult = this.initializeMaptilerWeatherLayerSync(map, maptilerKey);
+
+    if (initResult.success) {
+      this.currentTimestamp = this.currentTimestamp ?? Date.now();
+      this.registeredInRegistry = true;
+      layerDiagnostics.setState(layerId, "ready", {
+        enabled: true,
+        provider: "maptiler_weather",
+      });
+    } else {
+      // Error registrado en initializeMaptilerWeatherLayerSync, solo actualizar diagnóstico
+      layerDiagnostics.recordError(layerId, new Error(initResult.error || "MapTiler Weather init failed"), {
+        provider: "maptiler_weather",
+      });
+    }
   }
 
   /**
