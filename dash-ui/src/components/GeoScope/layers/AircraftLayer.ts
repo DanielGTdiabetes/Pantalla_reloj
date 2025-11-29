@@ -162,7 +162,7 @@ export default class AircraftLayer implements Layer {
 
   add(map: MaptilerMap): void {
     this.map = map;
-    this.updateRenderState(true);
+    // La inicialización de capas se hace en ensureFlightsLayer()
     this.registerEvents(map);
   }
 
