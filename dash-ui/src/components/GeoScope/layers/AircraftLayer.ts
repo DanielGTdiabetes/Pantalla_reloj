@@ -145,15 +145,16 @@ export default class AircraftLayer implements Layer {
     this.clusterLayerId = `${this.id}-clusters`;
     this.clusterCountLayerId = `${this.id}-cluster-count`;
     this.styleScale = options.styleScale ?? 1.0;
-    this.renderMode = options.renderMode ?? "auto";
+    // Default a symbol_custom para usar icono personalizado (más fiable que depender del sprite)
+    this.renderMode = options.renderMode ?? "symbol_custom";
     this.spriteAvailable = options.spriteAvailable ?? false;
     this.circleOptions = normalizeCircleOptions(options.circle, typeof window !== "undefined" ? window.innerHeight : 480);
     this.symbolOptions = options.symbol;
     this.iconImage = options.iconImage ?? DEFAULT_ICON_IMAGE;
     // Determinar modo de renderizado inicial
-    // Si mode es auto y no hay sprite, intentar usar symbol_custom (icono personalizado)
+    // Si mode es symbol_custom o (auto sin sprite), usar symbol_custom
     // El icono se registrará en ensureFlightsLayer()
-    if (this.renderMode === "auto" && !this.spriteAvailable) {
+    if (this.renderMode === "symbol_custom" || (this.renderMode === "auto" && !this.spriteAvailable)) {
       this.currentRenderMode = "symbol_custom";
     } else {
       this.currentRenderMode = this.determineRenderMode(false);
