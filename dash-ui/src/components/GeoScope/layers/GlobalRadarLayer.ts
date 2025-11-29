@@ -780,11 +780,35 @@ export default class GlobalRadarLayer implements Layer {
       }
     }
 
+    // Prioridad 3: Intentar extraer de la configuración global de la aplicación (window.__APP_CONFIG__)
+    try {
+      const globalConfig = (window as any).__APP_CONFIG__;
+      if (globalConfig) {
+        // Intentar v2
+        const apiKey = globalConfig.ui_map?.maptiler?.api_key ||
+          globalConfig.ui_map?.maptiler?.apiKey ||
+          globalConfig.ui_map?.maptiler?.key ||
+          // Intentar v1 legacy
+          globalConfig.ui?.map?.maptiler?.api_key ||
+          globalConfig.ui?.map?.maptiler?.apiKey ||
+          globalConfig.ui?.map?.maptiler?.key ||
+          // Intentar secrets
+          globalConfig.secrets?.maptiler?.api_key;
+
+        if (apiKey?.trim()) {
+          console.log("[GlobalRadarLayer] MapTiler API key found from global config");
+          return apiKey.trim();
+        }
+      }
+    } catch (e) {
+      // Ignorar errores al acceder a window.__APP_CONFIG__
+    }
+
     // Si no se encontró ninguna key, abortar con error claro pero no romper la app
     console.error(
       "[GlobalRadarLayer] ❌ MapTiler API key no encontrada. " +
       "La capa de radar no se inicializará. " +
-      "Configura VITE_MAPTILER_KEY en .env o asegúrate de que el mapa base use MapTiler con API key."
+      "Configura el API key en /config o en VITE_MAPTILER_KEY en .env."
     );
 
     return null;

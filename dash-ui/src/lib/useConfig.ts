@@ -298,6 +298,13 @@ export function useConfig() {
         return newData;
       });
 
+      // Almacenar configuración en window para acceso global (usado por GlobalRadarLayer)
+      try {
+        (window as any).__APP_CONFIG__ = processedData;
+      } catch (e) {
+        // Ignorar errores al escribir en window
+      }
+
       const meta = await getConfigMeta().catch(() => null);
       if (meta && meta.config_loaded_at) {
         metaTimestampRef.current = meta.config_loaded_at;
