@@ -976,7 +976,7 @@ export default function GeoScopeMap({
           };
 
           // Reinyectar radar AEMET (avisos)
-          if (configAsV2.aemet?.enabled && configAsV2.aemet?.cap_enabled) {
+          if (configAsV2 && configAsV2.aemet?.enabled && configAsV2.aemet?.cap_enabled) {
             const aemetWarningsLayer = aemetWarningsLayerRef.current;
             if (aemetWarningsLayer) {
               await aemetWarningsLayer.ensureWarningsLayer();
