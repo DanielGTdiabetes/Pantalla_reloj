@@ -2866,6 +2866,53 @@ async def client_log(request: Request) -> Dict[str, Any]:
         return {"ok": False, "error": str(exc)}
 
 
+@app.post("/api/config/reset-map-view")
+def reset_map_view() -> Dict[str, Any]:
+    """Resetea la vista del mapa a los valores por defecto de España."""
+    logger.info("[config] Reset map view requested via /api/config/reset-map-view")
+    try:
+        config = config_manager.load()
+        
+        # Valores por defecto para España (Madrid centrado, zoom para ver toda la península)
+        default_fixed = {
+            "center": {
+                "lat": 40.4637,
+                "lon": -3.7492
+            },
+            "zoom": 5.5,
+            "bearing": 0,
+            "pitch": 0
+        }
+        
+        # Actualizar ui_map.fixed
+        if hasattr(config, "ui_map") and config.ui_map:
+            if hasattr(config.ui_map, "fixed"):
+                config.ui_map.fixed = default_fixed
+            else:
+                setattr(config.ui_map, "fixed", default_fixed)
+        
+        # Guardar la configuración actualizada
+        config_manager.save(config)
+        
+        # Recargar para aplicar cambios
+        config_manager.reload()
+        
+        global map_reset_counter
+        map_reset_counter += 1
+        
+        return {
+            "success": True,
+            "message": "Map view reset to Spain defaults",
+            "fixed": default_fixed
+        }
+    except Exception as exc:
+        logger.error("[config] Error resetting map view: %s", exc)
+        return {
+            "success": False,
+            "message": f"Error: {exc}"
+        }
+
+
 @app.post("/api/config/reload")
 def reload_config() -> Dict[str, Any]:
     """Recarga la configuración desde el archivo efectivo sin reiniciar el servicio."""
