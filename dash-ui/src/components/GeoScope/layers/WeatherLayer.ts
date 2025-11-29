@@ -3,7 +3,7 @@ import type { FeatureCollection } from "geojson";
 
 import type { Layer } from "./LayerRegistry";
 import { isGeoJSONSource } from "./layerUtils";
-import { withSafeMapStyle } from "../../../lib/map/utils/safeMapOperations";
+import { withSafeMapStyle, waitForStyleLoaded } from "../../../lib/map/utils/safeMapOperations";
 import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
 import { layerDiagnostics, type LayerId } from "./LayerDiagnostics";
 
@@ -33,9 +33,39 @@ export default class WeatherLayer implements Layer {
     this.refreshSeconds = options.refreshSeconds ?? 900; // 15 minutos por defecto
   }
 
-  add(map: MaptilerMap): void {
-    const layerId: LayerId = "weather";
+  add(map: MaptilerMap): void | Promise<void> {
     this.map = map;
+    
+    // Iniciar refresco periódico inmediatamente
+    this.startRefresh();
+    
+    // Inicializar la capa de forma asíncrona si está habilitada
+    if (this.enabled) {
+      return this.ensureWeatherLayer();
+    }
+  }
+
+  /**
+   * Asegura que la capa esté inicializada después de que el estilo esté listo.
+   */
+  async ensureWeatherLayer(): Promise<void> {
+    const layerId: LayerId = "weather";
+    
+    if (!this.map || !this.enabled) {
+      return;
+    }
+
+    // Esperar a que el estilo esté listo
+    const styleReady = await waitForStyleLoaded(this.map, 15000);
+    if (!styleReady) {
+      layerDiagnostics.setState(layerId, "waiting_style", {
+        reason: "timeout",
+      });
+      console.warn("[WeatherLayer] Timeout waiting for style, will retry on next call");
+      return;
+    }
+
+    const map = this.map;
     
     try {
       // Añadir source de forma segura
@@ -87,9 +117,6 @@ export default class WeatherLayer implements Layer {
         console.warn("[WeatherLayer] Could not add layer, style not ready");
         return;
       }
-
-      // Iniciar refresco periódico
-      this.startRefresh();
 
       this.applyVisibility();
       

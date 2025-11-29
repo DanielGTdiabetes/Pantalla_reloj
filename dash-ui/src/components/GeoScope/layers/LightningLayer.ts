@@ -5,7 +5,7 @@ import type { Layer } from "./LayerRegistry";
 import { isGeoJSONSource } from "./layerUtils";
 
 import { getSafeMapStyle } from "../../../lib/map/utils/safeMapStyle";
-import { withSafeMapStyle } from "../../../lib/map/utils/safeMapOperations";
+import { withSafeMapStyle, waitForStyleLoaded } from "../../../lib/map/utils/safeMapOperations";
 
 interface LightningLayerOptions {
   enabled?: boolean;
@@ -26,15 +26,31 @@ export default class LightningLayer implements Layer {
     this.enabled = options.enabled ?? true;
   }
 
-  add(map: MaptilerMap): void {
+  add(map: MaptilerMap): void | Promise<void> {
     this.map = map;
 
-    // Check if style is ready
-    const style = getSafeMapStyle(map);
-    if (!style) {
-      console.warn("[LightningLayer] Style not ready, skipping add");
+    // Inicializar la capa de forma asíncrona
+    if (this.enabled) {
+      return this.ensureLightningLayer();
+    }
+  }
+
+  /**
+   * Asegura que la capa esté inicializada después de que el estilo esté listo.
+   */
+  async ensureLightningLayer(): Promise<void> {
+    if (!this.map || !this.enabled) {
       return;
     }
+
+    // Esperar a que el estilo esté listo
+    const styleReady = await waitForStyleLoaded(this.map, 15000);
+    if (!styleReady) {
+      console.warn("[LightningLayer] Timeout waiting for style, will retry on next call");
+      return;
+    }
+
+    const map = this.map;
 
     withSafeMapStyle(
       map,

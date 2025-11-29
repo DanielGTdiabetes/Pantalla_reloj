@@ -68,23 +68,20 @@ export default class AEMETWarningsLayer implements Layer {
     this.refreshSeconds = options.refreshSeconds ?? 900; // 15 minutos por defecto
   }
 
-  add(map: MaptilerMap): void {
+  add(map: MaptilerMap): void | Promise<void> {
     this.map = map;
     
-    // Asegurar source
-    this.ensureSource();
-    
-    // Asegurar layer
-    this.ensureLayer();
+    // Registrar eventos inmediatamente
+    this.registerEvents(map);
     
     // Iniciar refresco periódico
     this.startRefresh();
     
-    // Registrar eventos
-    this.registerEvents(map);
-    
-    // Aplicar visibilidad
-    this.applyVisibility();
+    // Inicializar la capa de forma asíncrona si está habilitada
+    // ensureWarningsLayer() espera a que el estilo esté listo
+    if (this.enabled) {
+      return this.ensureWarningsLayer();
+    }
   }
 
   remove(map: MaptilerMap): void {

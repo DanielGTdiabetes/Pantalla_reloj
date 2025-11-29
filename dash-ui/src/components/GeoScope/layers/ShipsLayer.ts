@@ -127,10 +127,14 @@ export default class ShipsLayer implements Layer {
     this.currentRenderMode = this.determineRenderMode(false);
   }
 
-  add(map: MaptilerMap): void {
+  add(map: MaptilerMap): void | Promise<void> {
     this.map = map;
-    this.updateRenderState(true);
     this.registerEvents(map);
+    
+    // Inicializar la capa de forma asíncrona si está habilitada
+    if (this.enabled) {
+      return this.ensureShipsLayer();
+    }
   }
 
   /**

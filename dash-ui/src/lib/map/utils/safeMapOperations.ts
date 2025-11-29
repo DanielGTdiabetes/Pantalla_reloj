@@ -9,7 +9,7 @@ import { getSafeMapStyle } from "./safeMapStyle";
 /**
  * Espera a que el estilo del mapa esté completamente cargado.
  * Si ya está cargado, resuelve inmediatamente.
- * Si no, espera al evento 'styledata' o 'load'.
+ * Si no, espera al evento 'styledata' o 'load', con polling de respaldo.
  * 
  * @param map - Instancia del mapa de MapLibre
  * @param timeoutMs - Tiempo máximo de espera en milisegundos (default: 10000)
@@ -25,53 +25,86 @@ export const waitForStyleLoaded = (
       return;
     }
 
+    // Función helper para verificar si el estilo está realmente listo
+    const isStyleReady = (): boolean => {
+      try {
+        return map.isStyleLoaded() && getSafeMapStyle(map) !== null;
+      } catch {
+        return false;
+      }
+    };
+
     // Si el estilo ya está cargado, resolver inmediatamente
-    if (map.isStyleLoaded() && getSafeMapStyle(map)) {
+    if (isStyleReady()) {
       resolve(true);
       return;
     }
 
     let resolved = false;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let pollingId: ReturnType<typeof setInterval> | null = null;
 
     const cleanup = () => {
       if (timeoutId) {
         clearTimeout(timeoutId);
         timeoutId = null;
       }
-      map.off("styledata", onStyleData);
-      map.off("load", onLoad);
-    };
-
-    const onStyleData = () => {
-      if (resolved) return;
-      // Verificar que realmente el estilo esté listo
-      if (map.isStyleLoaded() && getSafeMapStyle(map)) {
-        resolved = true;
-        cleanup();
-        resolve(true);
+      if (pollingId) {
+        clearInterval(pollingId);
+        pollingId = null;
+      }
+      try {
+        map.off("styledata", onStyleData);
+        map.off("load", onLoad);
+        map.off("style.load", onStyleLoad);
+      } catch {
+        // Ignorar errores al remover listeners
       }
     };
 
-    const onLoad = () => {
+    const doResolve = (value: boolean) => {
       if (resolved) return;
       resolved = true;
       cleanup();
-      resolve(true);
+      resolve(value);
     };
+
+    const checkAndResolve = () => {
+      if (resolved) return;
+      if (isStyleReady()) {
+        doResolve(true);
+      }
+    };
+
+    const onStyleData = () => checkAndResolve();
+    const onLoad = () => checkAndResolve();
+    const onStyleLoad = () => checkAndResolve();
 
     // Configurar timeout
     timeoutId = setTimeout(() => {
       if (resolved) return;
-      resolved = true;
-      cleanup();
+      // Último intento antes de reportar timeout
+      if (isStyleReady()) {
+        doResolve(true);
+        return;
+      }
       console.warn("[waitForStyleLoaded] Timeout waiting for style to load");
-      resolve(false);
+      doResolve(false);
     }, timeoutMs);
 
-    // Escuchar ambos eventos
+    // Escuchar todos los eventos relevantes
     map.on("styledata", onStyleData);
     map.on("load", onLoad);
+    map.on("style.load", onStyleLoad);
+
+    // Polling de respaldo cada 200ms en caso de que los eventos no se disparen
+    // Esto es un fallback para casos donde los eventos ya se dispararon
+    pollingId = setInterval(() => {
+      checkAndResolve();
+    }, 200);
+
+    // Verificación inmediata después de registrar listeners (por si el evento ya pasó)
+    setTimeout(() => checkAndResolve(), 0);
   });
 };
 

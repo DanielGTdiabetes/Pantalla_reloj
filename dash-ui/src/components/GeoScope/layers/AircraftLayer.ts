@@ -160,10 +160,14 @@ export default class AircraftLayer implements Layer {
     }
   }
 
-  add(map: MaptilerMap): void {
+  add(map: MaptilerMap): void | Promise<void> {
     this.map = map;
-    // La inicialización de capas se hace en ensureFlightsLayer()
     this.registerEvents(map);
+    
+    // Inicializar la capa de forma asíncrona si está habilitada
+    if (this.enabled) {
+      return this.ensureFlightsLayer();
+    }
   }
 
   /**

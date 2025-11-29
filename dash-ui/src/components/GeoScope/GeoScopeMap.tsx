@@ -694,6 +694,28 @@ export default function GeoScopeMap({
   // Versionado de estilo para forzar recarga
   const [mapStyleVersion, setMapStyleVersion] = useState(0);
 
+  // useEffect para configurar API key de MapTiler cuando config esté disponible
+  // Este useEffect se ejecuta cada vez que config cambia, asegurando que la API key
+  // se configure incluso si el mapa se creó antes de que config estuviera disponible
+  useEffect(() => {
+    if (!config) {
+      return;
+    }
+
+    const globalApiKey =
+      maptilerConfigV2?.api_key ??
+      mapSettings.maptiler?.apiKey ??
+      mapSettings.maptiler?.key ??
+      (mapSettings.maptiler as any)?.api_key ??
+      maptilerKey ??
+      null;
+    
+    if (globalApiKey && (!maptilerConfig.apiKey || maptilerConfig.apiKey !== globalApiKey)) {
+      maptilerConfig.apiKey = globalApiKey;
+      console.log("[GeoScopeMap] MapTiler API key configured globally for SDK:", globalApiKey.substring(0, 8) + "...");
+    }
+  }, [config, maptilerConfigV2, mapSettings, maptilerKey]);
+
   // Inicialización del mapa
   useEffect(() => {
     const error = checkWebGLSupport();
@@ -711,23 +733,6 @@ export default function GeoScopeMap({
     // Inicializar mapa si no existe
     if (!mapRef.current) {
       try {
-        // Configurar API key de MapTiler globalmente ANTES de crear el mapa
-        // Esto es necesario para que el SDK de MapTiler Weather funcione correctamente
-        const globalApiKey =
-          maptilerConfigV2?.api_key ??
-          mapSettings.maptiler?.apiKey ??
-          mapSettings.maptiler?.key ??
-          (mapSettings.maptiler as any)?.api_key ??
-          maptilerKey ??
-          null;
-        
-        if (globalApiKey) {
-          maptilerConfig.apiKey = globalApiKey;
-          console.log("[GeoScopeMap] MapTiler API key configured globally for SDK");
-        } else {
-          console.warn("[GeoScopeMap] No MapTiler API key found - Weather layers may not work");
-        }
-        
         const map = new MaptilerMap({
           container: mapFillRef.current,
           style: "https://api.maptiler.com/maps/streets-v2/style.json?key=fBZDqPrUD4EwoZLV4L6A", // Placeholder
