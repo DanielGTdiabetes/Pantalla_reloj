@@ -1501,6 +1501,56 @@ export default function GeoScopeMap({
     }
   }, [config]);
 
+  // useEffect para gestionar la configuración de AEMET (Avisos)
+  useEffect(() => {
+    if (!config || !aemetWarningsLayerRef.current) return;
+
+    const merged = withConfigDefaults(config);
+    // Soporte para v2 y v1
+    const configAsV2 = config as unknown as {
+      version?: number;
+      aemet?: {
+        enabled?: boolean;
+        cap_enabled?: boolean;
+        opacity?: number;
+        min_severity?: string;
+        refresh_seconds?: number;
+      };
+    };
+
+    const aemetConfig = configAsV2.version === 2
+      ? configAsV2.aemet
+      : merged.aemet;
+
+    const layer = aemetWarningsLayerRef.current;
+
+    // Lógica de habilitación: enabled && cap_enabled (si existe)
+    const isEnabled = Boolean((aemetConfig?.enabled ?? false) && (aemetConfig?.cap_enabled ?? true));
+
+    layer.setEnabled(isEnabled);
+
+    if (isEnabled) {
+      if (typeof aemetConfig?.opacity === "number") {
+        layer.setOpacity(aemetConfig.opacity);
+      }
+      if (aemetConfig?.min_severity) {
+        layer.setMinSeverity(aemetConfig.min_severity as "minor" | "moderate" | "severe" | "extreme");
+      }
+      if (typeof aemetConfig?.refresh_seconds === "number") {
+        layer.setRefreshSeconds(aemetConfig.refresh_seconds);
+      }
+    }
+
+    // Actualizar diagnósticos
+    layerDiagnostics.setEnabled("aemet-warnings", isEnabled);
+    if (isEnabled) {
+      layerDiagnostics.updatePreconditions("aemet-warnings", {
+        configAvailable: true,
+        configEnabled: true,
+      });
+    }
+  }, [config]);
+
   useEffect(() => {
     if (!mapRef.current) {
       return;
