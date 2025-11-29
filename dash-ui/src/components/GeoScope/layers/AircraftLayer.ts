@@ -164,7 +164,7 @@ export default class AircraftLayer implements Layer {
   add(map: MaptilerMap): void | Promise<void> {
     this.map = map;
     this.registerEvents(map);
-    
+
     // Inicializar la capa de forma asíncrona si está habilitada
     if (this.enabled) {
       return this.ensureFlightsLayer();
@@ -459,7 +459,7 @@ export default class AircraftLayer implements Layer {
 
       // Intentar obtener el source, o crearlo si no existe
       let source = this.map.getSource(this.sourceId);
-      
+
       // Si el source no existe, intentar crearlo
       if (!source) {
         try {
@@ -482,7 +482,7 @@ export default class AircraftLayer implements Layer {
           source = this.map.getSource(this.sourceId);
         }
       }
-      
+
       if (isGeoJSONSource(source)) {
         try {
           source.setData(this.lastData);
@@ -1242,10 +1242,13 @@ export default class AircraftLayer implements Layer {
     const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 480;
     const sizeVh = this.symbolOptions?.size_vh ?? 1.6;
     const sizePixels = (sizeVh / 100) * viewportHeight;
-    
+
+    // Asegurar tamaño mínimo para evitar que desaparezcan en pantallas pequeñas
+    const effectiveSizePixels = Math.max(sizePixels, 32);
+
     // El icono base es de 64x64 (definido en planeIcon.ts)
     // MapLibre usa icon-size como factor de escala sobre el tamaño original
-    const scaleFactor = sizePixels / 64;
+    const scaleFactor = effectiveSizePixels / 64;
 
     // Retornar como número literal (ExpressionSpecification puede ser un número)
     return scaleFactor as unknown as maplibregl.ExpressionSpecification;

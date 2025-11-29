@@ -911,9 +911,12 @@ export default class ShipsLayer implements Layer {
     const sizeVh = this.symbolOptions?.size_vh ?? 1.4;
     const sizePixels = (sizeVh / 100) * viewportHeight;
 
+    // Asegurar tamaño mínimo para evitar que desaparezcan en pantallas pequeñas
+    const effectiveSizePixels = Math.max(sizePixels, 32);
+
     // El icono base es de 64x64 (definido en shipIcon.ts)
     // MapLibre usa icon-size como factor de escala sobre el tamaño original
-    const scaleFactor = sizePixels / 64;
+    const scaleFactor = effectiveSizePixels / 64;
 
     // Retornar como número literal (ExpressionSpecification puede ser un número)
     return scaleFactor as unknown as maplibregl.ExpressionSpecification;

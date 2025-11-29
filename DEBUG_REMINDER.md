@@ -314,6 +314,7 @@ if (!source) {
 **Causa**: El zoom por defecto (5.5) cubre un área geográfica fija, que en una pantalla pequeña (píxeles físicos) resulta en una vista muy recortada. Además, la configuración del backend sobreescribía el zoom inicial.
 **Solución**: 
 1. Se implementó zoom inicial dinámico en el constructor.
-2. **CRÍTICO**: Se modificó el `useEffect` de configuración (`ui_map.fixed`) para respetar el tamaño de pantalla. Si el ancho es < 800px, el zoom se limita a **4.6** (ideal para ver la península aprovechando el espacio).
+2. **CRÍTICO**: Se modificó el `useEffect` de configuración (`ui_map.fixed`) para respetar el tamaño de pantalla. Si el ancho es < 1280px, el zoom se limita a **4.6**.
+3. **Iconos**: Se aseguró un tamaño mínimo de 32px para iconos de aviones y barcos en `AircraftLayer.ts` y `ShipsLayer.ts` para evitar que desaparezcan en pantallas pequeñas.
 
 ---

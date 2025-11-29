@@ -55,7 +55,7 @@ import {
 const DEFAULT_VIEW = {
   lng: -3.7492,
   lat: 40.4637,
-  zoom: 5.5,
+  zoom: 4.8, // Zoom un poco más alejado por defecto para ver mejor la península
   bearing: 0,
   pitch: 0
 };
@@ -1146,11 +1146,11 @@ export default function GeoScopeMap({
 
     const centerLat = v2Fixed.center.lat ?? 40.4637;
     const centerLng = v2Fixed.center.lon ?? -3.7492;
-    let zoom = v2Fixed.zoom ?? 5.5;
+    let zoom = v2Fixed.zoom ?? 4.8;
 
     // Ajuste dinámico para pantallas pequeñas (Mini PC)
-    // Si la pantalla es pequeña, reducimos el zoom para asegurar que se vea la península
-    if (typeof window !== "undefined" && window.innerWidth < 800) {
+    // Si la pantalla es pequeña (incluyendo 1024px o 1280px), reducimos el zoom
+    if (typeof window !== "undefined" && window.innerWidth < 1280) {
       // Usamos 4.6 para que se vea la península entera pero aprovechando el espacio ("un poco recortada")
       zoom = Math.min(zoom, 4.6);
     }
