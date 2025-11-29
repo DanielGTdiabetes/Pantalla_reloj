@@ -2871,7 +2871,7 @@ def reset_map_view() -> Dict[str, Any]:
     """Resetea la vista del mapa a los valores por defecto de España."""
     logger.info("[config] Reset map view requested via /api/config/reset-map-view")
     try:
-        config = config_manager.load()
+        config = config_manager.read()
         
         # Valores por defecto para España (Madrid centrado, zoom para ver toda la península)
         default_fixed = {
@@ -2884,15 +2884,18 @@ def reset_map_view() -> Dict[str, Any]:
             "pitch": 0
         }
         
-        # Actualizar ui_map.fixed
-        if hasattr(config, "ui_map") and config.ui_map:
-            if hasattr(config.ui_map, "fixed"):
-                config.ui_map.fixed = default_fixed
-            else:
-                setattr(config.ui_map, "fixed", default_fixed)
+        # Convertir config a dict para modificar
+        config_dict = config.model_dump(mode="json", exclude_none=True)
+        
+        # Asegurar que ui_map existe
+        if "ui_map" not in config_dict:
+            config_dict["ui_map"] = {}
+        
+        # Actualizar fixed
+        config_dict["ui_map"]["fixed"] = default_fixed
         
         # Guardar la configuración actualizada
-        config_manager.save(config)
+        config_manager.write(config_dict)
         
         # Recargar para aplicar cambios
         config_manager.reload()

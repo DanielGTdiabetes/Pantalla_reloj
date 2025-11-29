@@ -172,9 +172,15 @@ export default class ShipsLayer implements Layer {
           const registered = await registerShipIcon(this.map);
           if (registered) {
             this.shipIconRegistered = true;
+            // CRÍTICO: Actualizar el modo a symbol_custom después de registrar el icono
+            this.currentRenderMode = "symbol_custom";
+            console.log("[ShipsLayer] Ship icon registered, using symbol_custom mode");
             layerDiagnostics.updatePreconditions(layerId, {
               apiKeysConfigured: true,
             });
+          } else {
+            console.warn("[ShipsLayer] Failed to register ship icon, falling back to circle");
+            this.currentRenderMode = "circle";
           }
         } catch (iconError) {
           const error = iconError instanceof Error ? iconError : new Error(String(iconError));
@@ -182,6 +188,7 @@ export default class ShipsLayer implements Layer {
             phase: "icon_registration",
           });
           console.warn("[ShipsLayer] Failed to register ship icon:", iconError);
+          this.currentRenderMode = "circle";
         }
       }
 

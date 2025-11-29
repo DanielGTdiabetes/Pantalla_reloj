@@ -207,9 +207,15 @@ export default class AircraftLayer implements Layer {
           const registered = await registerPlaneIcon(this.map);
           if (registered) {
             this.planeIconRegistered = true;
+            // CRÍTICO: Actualizar el modo a symbol_custom después de registrar el icono
+            this.currentRenderMode = "symbol_custom";
+            console.log("[AircraftLayer] Plane icon registered, using symbol_custom mode");
             layerDiagnostics.updatePreconditions(layerId, {
-              apiKeysConfigured: true, // Asumimos que si el icono se registró, las keys están bien
+              apiKeysConfigured: true,
             });
+          } else {
+            console.warn("[AircraftLayer] Failed to register plane icon, falling back to circle");
+            this.currentRenderMode = "circle";
           }
         } catch (iconError) {
           const error = iconError instanceof Error ? iconError : new Error(String(iconError));
@@ -217,6 +223,7 @@ export default class AircraftLayer implements Layer {
             phase: "icon_registration",
           });
           console.warn("[AircraftLayer] Failed to register plane icon:", iconError);
+          this.currentRenderMode = "circle";
         }
       }
 
