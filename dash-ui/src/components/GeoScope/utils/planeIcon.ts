@@ -45,10 +45,10 @@ export async function registerPlaneIcon(map: MaptilerMap): Promise<boolean> {
       // Fondo transparente
       ctx.clearRect(0, 0, size, size);
 
-      // Dibujar icono de avión estilizado (flecha hacia arriba con alas)
+      // Dibujar icono de avión realista (vista desde arriba)
       const centerX = size / 2;
       const centerY = size / 2;
-      const iconSize = size * 0.7; // 70% del tamaño del canvas
+      const iconSize = size * 0.75; // 75% del tamaño del canvas
       const halfSize = iconSize / 2;
 
       ctx.save();
@@ -56,36 +56,70 @@ export async function registerPlaneIcon(map: MaptilerMap): Promise<boolean> {
       // Mover al centro
       ctx.translate(centerX, centerY);
 
-      // Color del avión (#f97316 - naranja)
+      // Color del avión (#f97316 - naranja vibrante)
       ctx.fillStyle = "#f97316";
-      ctx.strokeStyle = "#111827";
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "#1f2937"; // Gris oscuro para mejor contraste
+      ctx.lineWidth = 2;
       ctx.lineJoin = "round";
       ctx.lineCap = "round";
 
-      // Dibujar cuerpo del avión (forma de flecha)
+      // Dibujar el fuselaje del avión (cuerpo principal)
       ctx.beginPath();
-      // Punto superior (nariz)
-      ctx.moveTo(0, -halfSize * 0.8);
-      // Ala izquierda
-      ctx.lineTo(-halfSize * 0.6, halfSize * 0.2);
-      // Ala derecha
-      ctx.lineTo(0, halfSize * 0.4);
-      // Ala derecha (parte inferior)
-      ctx.lineTo(halfSize * 0.6, halfSize * 0.2);
-      // Cerrar al punto superior
+      // Nariz del avión (punta)
+      ctx.moveTo(0, -halfSize * 0.9);
+      // Lado izquierdo del fuselaje
+      ctx.lineTo(-halfSize * 0.15, -halfSize * 0.3);
+      ctx.lineTo(-halfSize * 0.15, halfSize * 0.5);
+      // Cola izquierda
+      ctx.lineTo(-halfSize * 0.25, halfSize * 0.8);
+      ctx.lineTo(-halfSize * 0.15, halfSize * 0.85);
+      ctx.lineTo(0, halfSize * 0.75);
+      // Cola derecha
+      ctx.lineTo(halfSize * 0.15, halfSize * 0.85);
+      ctx.lineTo(halfSize * 0.25, halfSize * 0.8);
+      ctx.lineTo(halfSize * 0.15, halfSize * 0.5);
+      // Lado derecho del fuselaje
+      ctx.lineTo(halfSize * 0.15, -halfSize * 0.3);
       ctx.closePath();
-
       ctx.fill();
       ctx.stroke();
 
-      // Dibujar cola del avión (pequeña)
+      // Dibujar alas principales (más anchas y realistas)
       ctx.beginPath();
-      ctx.moveTo(0, halfSize * 0.4);
-      ctx.lineTo(-halfSize * 0.3, halfSize * 0.7);
-      ctx.lineTo(halfSize * 0.3, halfSize * 0.7);
+      // Ala izquierda
+      ctx.moveTo(-halfSize * 0.15, 0);
+      ctx.lineTo(-halfSize * 0.85, halfSize * 0.25);
+      ctx.lineTo(-halfSize * 0.75, halfSize * 0.35);
+      ctx.lineTo(-halfSize * 0.15, halfSize * 0.15);
       ctx.closePath();
       ctx.fill();
+      ctx.stroke();
+
+      ctx.beginPath();
+      // Ala derecha
+      ctx.moveTo(halfSize * 0.15, 0);
+      ctx.lineTo(halfSize * 0.85, halfSize * 0.25);
+      ctx.lineTo(halfSize * 0.75, halfSize * 0.35);
+      ctx.lineTo(halfSize * 0.15, halfSize * 0.15);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Agregar detalles de ventanas/cabina (línea blanca en la nariz)
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(-halfSize * 0.08, -halfSize * 0.6);
+      ctx.lineTo(0, -halfSize * 0.75);
+      ctx.lineTo(halfSize * 0.08, -halfSize * 0.6);
+      ctx.stroke();
+
+      // Línea central del fuselaje para dar profundidad
+      ctx.strokeStyle = "#ea580c"; // Naranja más oscuro
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, -halfSize * 0.5);
+      ctx.lineTo(0, halfSize * 0.6);
       ctx.stroke();
 
       ctx.restore();

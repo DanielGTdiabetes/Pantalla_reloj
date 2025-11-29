@@ -150,7 +150,14 @@ export default class AircraftLayer implements Layer {
     this.circleOptions = normalizeCircleOptions(options.circle, typeof window !== "undefined" ? window.innerHeight : 480);
     this.symbolOptions = options.symbol;
     this.iconImage = options.iconImage ?? DEFAULT_ICON_IMAGE;
-    this.currentRenderMode = this.determineRenderMode(false);
+    // Determinar modo de renderizado inicial
+    // Si mode es auto y no hay sprite, intentar usar symbol_custom (icono personalizado)
+    // El icono se registrará en ensureFlightsLayer()
+    if (this.renderMode === "auto" && !this.spriteAvailable) {
+      this.currentRenderMode = "symbol_custom";
+    } else {
+      this.currentRenderMode = this.determineRenderMode(false);
+    }
   }
 
   add(map: MaptilerMap): void {
