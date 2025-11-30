@@ -198,6 +198,7 @@ export default function AircraftMapLayer({
 }: AircraftMapLayerProps) {
     const aircraftLayerRef = useRef<AircraftLayer | null>(null);
     const [debugStatus, setDebugStatus] = useState<string>("Initializing...");
+    const liveMarkerRef = useRef<Marker | null>(null);
 
     useEffect(() => {
         console.log("[AircraftMapLayer] Mounted");
@@ -205,7 +206,7 @@ export default function AircraftMapLayer({
         // DEBUG: Add HTML Marker to verify map projection
         if (mapRef.current) {
             try {
-                // @ts-ignore - Ignore TS error for Marker options for now to ensure runtime works
+                // @ts-ignore
                 new Marker({ color: "#FF0000" })
                     .setLngLat([-3.7038, 40.4168]) // Madrid
                     .addTo(mapRef.current);
@@ -252,10 +253,13 @@ export default function AircraftMapLayer({
         layerDiagnostics.setEnabled(layerId, true);
 
         const loadFlightsData = async (): Promise<void> => {
-            setDebugStatus(`Polling... ${new Date().toLocaleTimeString()}`);
+            const map = mapRef.current;
+            const layerExists = map?.getLayer("flights") ? "YES" : "NO";
+            const sourceExists = map?.getSource("flights") ? "YES" : "NO";
+
+            setDebugStatus(`Polling... Layer:${layerExists} Src:${sourceExists}`);
             try {
                 let bbox: string | undefined;
-                const map = mapRef.current;
 
                 if (map && map.isStyleLoaded()) {
                     const expandedBbox = getExpandedBbox(map, 1.5);
@@ -294,8 +298,7 @@ export default function AircraftMapLayer({
                 );
 
                 if (!response) {
-                    setDebugStatus(`Empty response ${new Date().toLocaleTimeString()}`);
-                    // DEBUG: Force updateData even if response is empty
+                    setDebugStatus(`Empty response. L:${layerExists} S:${sourceExists}`);
                     aircraftLayer.updateData({ type: "FeatureCollection", features: [] });
                     return;
                 }
@@ -306,14 +309,29 @@ export default function AircraftMapLayer({
                     try {
                         const featureCollection = flightsResponseToGeoJSON(response);
                         aircraftLayer.updateData(featureCollection);
-                        setDebugStatus(`Updated: ${featureCollection.features?.length ?? 0} planes`);
+
+                        // DEBUG: Update Live Marker (Blue) for the first plane
+                        if (featureCollection.features.length > 0 && map) {
+                            const firstPlane = featureCollection.features[0];
+                            const coords = firstPlane.geometry.coordinates as [number, number];
+
+                            if (!liveMarkerRef.current) {
+                                // @ts-ignore
+                                liveMarkerRef.current = new Marker({ color: "#0000FF" }) // BLUE
+                                    .setLngLat(coords)
+                                    .addTo(map);
+                            } else {
+                                liveMarkerRef.current.setLngLat(coords);
+                            }
+                        }
+
+                        setDebugStatus(`Updated: ${featureCollection.features.length} planes. L:${layerExists} S:${sourceExists}`);
                     } catch (conversionError) {
                         setDebugStatus("Conversion error");
                     }
                 }
             } catch (error) {
                 setDebugStatus(`Error: ${String(error)}`);
-                // DEBUG: Force updateData even on error
                 if (aircraftLayerRef.current) {
                     aircraftLayerRef.current.updateData({ type: "FeatureCollection", features: [] });
                 }
