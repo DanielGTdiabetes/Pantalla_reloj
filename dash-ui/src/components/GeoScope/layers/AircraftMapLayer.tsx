@@ -255,59 +255,6 @@ export default function AircraftMapLayer({
         const loadFlightsData = async (): Promise<void> => {
             const map = mapRef.current;
 
-            // --- TEST WEBGL SIMPLE ---
-            if (map && map.isStyleLoaded()) {
-                const testLayerId = "test-simple-gl-circle";
-                const testSourceId = "test-simple-gl-source";
-
-                if (!map.getSource(testSourceId)) {
-                    try {
-                        map.addSource(testSourceId, {
-                            type: "geojson",
-                            data: {
-                                type: "FeatureCollection",
-                                features: [{
-                                    type: "Feature",
-                                    geometry: { type: "Point", coordinates: [-3.7038, 40.4168] }, // Madrid
-                                    properties: {}
-                                }]
-                            }
-                        });
-                        setDebugStatus("WebGL test source added");
-                    } catch (e) {
-                        console.error("Test source error", e);
-                        setDebugStatus("WebGL test source error");
-                    }
-                }
-
-                if (!map.getLayer(testLayerId)) {
-                    try {
-                        map.addLayer({
-                            id: testLayerId,
-                            type: "circle",
-                            source: testSourceId,
-                            paint: {
-                                "circle-radius": 20,
-                                "circle-color": "#0000FF", // BLUE
-                                "circle-opacity": 1,
-                                "circle-stroke-width": 2,
-                                "circle-stroke-color": "#FFFFFF"
-                            }
-                        });
-                        console.log("Test GL layer added");
-                        setDebugStatus("WebGL test layer added");
-                    } catch (e) {
-                        console.error("Test layer error", e);
-                        setDebugStatus("WebGL test layer error");
-                    }
-                } else {
-                    setDebugStatus("WebGL test layer exists");
-                }
-            } else {
-                setDebugStatus("WebGL test: Map not ready");
-            }
-            // -------------------------
-
             try {
                 let bbox: string | undefined;
 
@@ -316,8 +263,8 @@ export default function AircraftMapLayer({
                     bbox = `${expandedBbox.lamin},${expandedBbox.lamax},${expandedBbox.lomin},${expandedBbox.lomax}`;
                 }
 
-                // FORCE Spain BBox for Mini PC debugging
-                const spainBbox = "34.0,46.0,-12.0,6.0";
+                // FORCE Spain BBox for Mini PC debugging (Tighter zoom on Spain/Portugal)
+                const spainBbox = "35.0,44.0,-10.0,4.5"; // Approx: South of Spain to North of Spain, Portugal to East Spain
                 if (typeof window !== "undefined") {
                     if (window.innerWidth < 2500 || !bbox) {
                         bbox = spainBbox;
@@ -357,73 +304,15 @@ export default function AircraftMapLayer({
                 if (!responseDisabled) {
                     try {
                         const featureCollection = flightsResponseToGeoJSON(response);
-
-                        // 1. Try to update the GL layer (for other devices)
-                        try {
-                            aircraftLayer.updateData(featureCollection);
-                        } catch (e) { /* ignore */ }
-
-                        // 2. HTML MARKER RENDERING (Fallback for Mini PC/WebGL issues)
-                        // Manage markers manually
-                        if (!map) return;
-
-                        const MAX_MARKERS = 50;
-                        const features = featureCollection.features.slice(0, MAX_MARKERS);
-                        const currentIds = new Set<string>();
-
-                        // Initialize marker cache if needed
-                        if (!(window as any)._aircraftMarkers) {
-                            (window as any)._aircraftMarkers = new Map<string, Marker>();
-                        }
-                        const markerMap = (window as any)._aircraftMarkers as Map<string, Marker>;
-
-                        features.forEach(feature => {
-                            const id = String(feature.id || feature.properties.icao24 || Math.random());
-                            currentIds.add(id);
-                            const coords = feature.geometry.coordinates as [number, number];
-                            const track = feature.properties.track ?? 0;
-
-                            let marker = markerMap.get(id);
-
-                            if (!marker) {
-                                // Create new marker
-                                const el = document.createElement('div');
-                                el.className = 'aircraft-marker';
-                                el.style.width = '24px';
-                                el.style.height = '24px';
-                                el.style.backgroundImage = 'url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%23f97316\' stroke=\'%23ffffff\' stroke-width=\'2\'%3E%3Cpath d=\'M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z\'/%3E%3C/svg%3E")';
-                                el.style.backgroundSize = 'contain';
-                                el.style.backgroundRepeat = 'no-repeat';
-                                el.style.cursor = 'pointer';
-
-                                // @ts-ignore
-                                const newMarker = new Marker({ element: el, rotationAlignment: 'map' })
-                                    .setLngLat(coords)
-                                    .setRotation(track)
-                                    .addTo(map);
-
-                                markerMap.set(id, newMarker);
-                            } else {
-                                // Update existing
-                                marker.setLngLat(coords);
-                                marker.setRotation(track);
-                            }
-                        });
-
-                        // Remove stale markers
-                        for (const [id, marker] of markerMap.entries()) {
-                            if (!currentIds.has(id)) {
-                                marker.remove();
-                                markerMap.delete(id);
-                            }
-                        }
-
-                    } catch (conversionError) {
-                        console.warn("Error rendering aircraft markers:", conversionError);
+                        aircraftLayer.updateData(featureCollection);
+                        setDebugStatus(`Updated: ${featureCollection.features.length} aircraft`);
+                    } catch (e) {
+                        console.error("Error updating aircraft data", e);
                     }
                 }
             } catch (error) {
                 console.error("Error loading flights:", error);
+                setDebugStatus("Error loading flights");
                 if (aircraftLayerRef.current) {
                     aircraftLayerRef.current.updateData({ type: "FeatureCollection", features: [] });
                 }

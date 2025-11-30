@@ -585,37 +585,13 @@ export default class AircraftLayer implements Layer {
   }
 
   private async determineRenderModeAsync(shouldLog: boolean): Promise<EffectiveRenderMode> {
-    if (this.renderMode === "circle") {
-      return "circle";
-    }
-
-    // Si está configurado como 'symbol' o 'auto', verificamos si el sprite está disponible
-    const spriteAvailable = this.map ? await safeHasImage(this.map, this.iconImage) : false;
-
-    if (this.renderMode === "symbol" && !spriteAvailable) {
-      if (shouldLog) {
-        console.warn(`[${this.id}] Symbol mode requested but sprite not available. Falling back to circle.`);
-      }
-      return "circle";
-    }
-
-    if (this.renderMode === "auto") {
-      return spriteAvailable ? "symbol" : "circle";
-    }
-
-    return "symbol";
+    // FORCE CIRCLE MODE FOR DEBUGGING
+    return "circle";
   }
 
   private determineRenderMode(shouldLog: boolean): EffectiveRenderMode {
-    if (this.renderMode === "circle") {
-      return "circle";
-    }
-
-    if (this.currentRenderMode) {
-      return this.currentRenderMode;
-    }
-
-    return "circle"; // Fallback seguro inicial
+    // FORCE CIRCLE MODE FOR DEBUGGING
+    return "circle";
   }
   /**
    * Asegura que el source existe. Completamente idempotente.
