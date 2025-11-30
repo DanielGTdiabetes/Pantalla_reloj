@@ -1932,79 +1932,8 @@ export default function GeoScopeMap({
     );
   }
 
-  // DEBUG: On-screen diagnostics for Mini PC
-  const [debugInfo, setDebugInfo] = useState<string>("Initializing debug...");
-  const [lastMapError, setLastMapError] = useState<string>("None");
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (map) {
-      map.on('error', (e: any) => {
-        console.error("Map Error:", e);
-        setLastMapError(e.error?.message || "Unknown error");
-      });
-    }
-
-    const interval = setInterval(() => {
-      const map = mapRef.current;
-      if (!map) {
-        setDebugInfo("Map not ready");
-        return;
-      }
-
-      const center = map.getCenter();
-      const zoom = map.getZoom();
-      const styleLoaded = map.isStyleLoaded();
-
-      const aircraftLayer = map.getLayer("geoscope-aircraft");
-      const aircraftSource = map.getSource("geoscope-aircraft-source") as any; // Cast to access _data or data
-      const aircraftCount = aircraftSource?._data?.features?.length ?? aircraftSource?.data?.features?.length ?? "N/A";
-
-      const shipsLayer = map.getLayer("geoscope-ships");
-      const shipsSource = map.getSource("geoscope-ships-source") as any;
-      const shipsCount = shipsSource?._data?.features?.length ?? shipsSource?.data?.features?.length ?? "N/A";
-
-      const now = new Date();
-      const info = [
-        `Date: ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`,
-        `MapReady: ${mapReady}`,
-        `Style Loaded: ${styleLoaded}`,
-        `Last Error: ${lastMapError}`,
-        `Map: ${center.lng.toFixed(2)}, ${center.lat.toFixed(2)} z${zoom.toFixed(1)}`,
-        `Aircraft Layer: ${aircraftLayer ? "YES" : "NO"}`,
-        `Aircraft Data: ${aircraftCount}`,
-        `Ships Layer: ${shipsLayer ? "YES" : "NO"}`,
-        `Ships Data: ${shipsCount}`,
-        `Window: ${window.innerWidth}x${window.innerHeight}`
-      ].join("\n");
-
-      setDebugInfo(info);
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [mapReady, lastMapError]);
-
   return (
     <div className="relative w-full h-full bg-slate-950 overflow-hidden">
-      {/* DEBUG OVERLAY */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 10,
-          left: 10,
-          zIndex: 9999,
-          backgroundColor: 'rgba(0,0,0,0.7)',
-          color: '#00ff00',
-          padding: '10px',
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          pointerEvents: 'none',
-          whiteSpace: 'pre-wrap'
-        }}
-      >
-        {debugInfo}
-      </div>
-
       {!mapReady && <MapSpinner />}
       <div ref={mapFillRef} className="w-full h-full" />
 
