@@ -13,3 +13,4 @@ pytest
 httpx
 paho-mqtt>=1.6.0
 websocket-client>=1.6.0
+beautifulsoup4

@@ -464,6 +464,40 @@ async def parse_rss_feed(feed_url: str, max_items: int = 10, timeout: int = 10) 
         return []
 
 
+import json
+import os
+import subprocess
+import threading
+
+# ... existing imports ...
+
+HARVEST_JSON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "harvest_season.json")
+SYNC_SCRIPT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts", "sync_harvest.py")
+
+def trigger_harvest_sync():
+    """Ejecuta el script de sincronización en segundo plano."""
+    def run_sync():
+        try:
+            subprocess.run(["python", SYNC_SCRIPT_PATH], check=True)
+        except Exception as e:
+            logger.error(f"Error running harvest sync: {e}")
+            
+    thread = threading.Thread(target=run_sync)
+    thread.start()
+
+def get_harvest_from_json() -> List[Dict[str, Any]]:
+    """Lee los datos de cosecha del archivo JSON."""
+    if not os.path.exists(HARVEST_JSON_PATH):
+        trigger_harvest_sync()
+        return []
+        
+    try:
+        with open(HARVEST_JSON_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error reading harvest json: {e}")
+        return []
+
 def get_harvest_data(
     custom_items: List[Dict[str, str]] = None,
     include_planting: bool = True,
@@ -471,8 +505,8 @@ def get_harvest_data(
 ) -> Dict[str, List[Dict[str, str]]]:
     """Obtiene datos de hortalizas según el mes actual.
     
-    Retorna un diccionario con información de cosecha, siembra y mantenimiento
-    según la configuración solicitada. Mantiene retrocompatibilidad.
+    Retorna un diccionario con información de cosecha, siembra y mantenimiento.
+    Intenta usar datos de soydetemporada.es (JSON) si están disponibles.
     
     Args:
         custom_items: Items personalizados a agregar (solo a harvest)
@@ -485,21 +519,37 @@ def get_harvest_data(
     today = date.today()
     month = today.month
     
-    # Obtener datos estacionales del mes
-    month_data = HARVEST_SEASON_DATA.get(month, {})
+    # Intentar cargar datos del JSON (soydetemporada)
+    json_data = get_harvest_from_json()
     
-    # Extraer datos según estructura (nueva o antigua para compatibilidad)
-    if isinstance(month_data, dict):
-        # Nueva estructura con harvest/planting/maintenance
-        harvest_items = month_data.get("harvest", [])
-        planting_items = month_data.get("planting", [])
-        maintenance_items = month_data.get("maintenance", [])
+    harvest_items = []
+    
+    if json_data:
+        # Filtrar por mes actual
+        for item in json_data:
+            if month in item.get("months", []):
+                harvest_items.append({
+                    "name": item["name"],
+                    "status": "Temporada", # Estado genérico ya que el JSON no tiene detalle por mes
+                    "icon": item.get("icon")
+                })
     else:
-        # Estructura antigua (lista simple) - retrocompatibilidad
-        harvest_items = month_data if isinstance(month_data, list) else []
-        planting_items = []
-        maintenance_items = []
+        # Fallback a datos estáticos
+        month_data = HARVEST_SEASON_DATA.get(month, {})
+        if isinstance(month_data, dict):
+            harvest_items = month_data.get("harvest", [])
+        else:
+            harvest_items = month_data if isinstance(month_data, list) else []
+
+    # Obtener datos de siembra y mantenimiento (solo disponibles en estático por ahora)
+    month_data_static = HARVEST_SEASON_DATA.get(month, {})
+    planting_items = []
+    maintenance_items = []
     
+    if isinstance(month_data_static, dict):
+        planting_items = month_data_static.get("planting", [])
+        maintenance_items = month_data_static.get("maintenance", [])
+
     # Combinar harvest con items personalizados
     all_harvest = list(harvest_items)
     if custom_items:

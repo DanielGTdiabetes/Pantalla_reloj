@@ -1,0 +1,640 @@
+[
+  {
+    "name": "Acelga",
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "icon": "acelga.png"
+  },
+  {
+    "name": "Aguacate",
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      10,
+      11,
+      12
+    ],
+    "icon": "aguacate.png"
+  },
+  {
+    "name": "Ajo",
+    "months": [
+      5,
+      6,
+      7
+    ],
+    "icon": "ajo.png"
+  },
+  {
+    "name": "Albaricoque",
+    "months": [
+      5,
+      6,
+      7,
+      8
+    ],
+    "icon": "albaricoque.png"
+  },
+  {
+    "name": "Alcachofa",
+    "months": [
+      3,
+      4,
+      5,
+      6,
+      10,
+      11,
+      12
+    ],
+    "icon": "alcachofa.png"
+  },
+  {
+    "name": "Apio",
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "icon": "apio.png"
+  },
+  {
+    "name": "Batata",
+    "months": [
+      10,
+      11
+    ],
+    "icon": "batata.png"
+  },
+  {
+    "name": "Berenjena",
+    "months": [
+      7,
+      8,
+      9,
+      10
+    ],
+    "icon": "berenjena.png"
+  },
+  {
+    "name": "Brocoli",
+    "months": [
+      1,
+      2,
+      5,
+      6,
+      10,
+      11,
+      12
+    ],
+    "icon": "brocoli.png"
+  },
+  {
+    "name": "Calabacin",
+    "months": [
+      6,
+      7,
+      8,
+      9
+    ],
+    "icon": "calabacin.png"
+  },
+  {
+    "name": "Calabaza",
+    "months": [
+      7,
+      8,
+      9,
+      10
+    ],
+    "icon": "calabaza.png"
+  },
+  {
+    "name": "Caqui",
+    "months": [
+      10,
+      11,
+      12
+    ],
+    "icon": "caqui.png"
+  },
+  {
+    "name": "Cardo",
+    "months": [
+      1,
+      2,
+      3,
+      11,
+      12
+    ],
+    "icon": "cardo.png"
+  },
+  {
+    "name": "Cebolla",
+    "months": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "icon": "cebolla.png"
+  },
+  {
+    "name": "Cereza",
+    "months": [
+      5,
+      6
+    ],
+    "icon": "cereza.png"
+  },
+  {
+    "name": "Champinon",
+    "months": [
+      5,
+      9,
+      10,
+      11
+    ],
+    "icon": "champinon.png"
+  },
+  {
+    "name": "Col-de-bruselas",
+    "months": [
+      1,
+      2,
+      10,
+      11,
+      12
+    ],
+    "icon": "col-de-bruselas.png"
+  },
+  {
+    "name": "Col",
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "icon": "col.png"
+  },
+  {
+    "name": "Coliflor",
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      10,
+      11,
+      12
+    ],
+    "icon": "coliflor.png"
+  },
+  {
+    "name": "Endibia",
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      9,
+      10,
+      11,
+      12
+    ],
+    "icon": "endibia.png"
+  },
+  {
+    "name": "Esparrago",
+    "months": [
+      3,
+      4,
+      5
+    ],
+    "icon": "esparrago.png"
+  },
+  {
+    "name": "Espinaca",
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "icon": "espinaca.png"
+  },
+  {
+    "name": "Frambuesa",
+    "months": [
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "icon": "frambuesa.png"
+  },
+  {
+    "name": "Fresa",
+    "months": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "icon": "fresa.png"
+  },
+  {
+    "name": "Granada",
+    "months": [
+      9,
+      10
+    ],
+    "icon": "granada.png"
+  },
+  {
+    "name": "Guisante",
+    "months": [
+      3,
+      4,
+      5,
+      6
+    ],
+    "icon": "guisante.png"
+  },
+  {
+    "name": "Haba",
+    "months": [
+      4,
+      5
+    ],
+    "icon": "haba.png"
+  },
+  {
+    "name": "Higo",
+    "months": [
+      7,
+      8,
+      9
+    ],
+    "icon": "higo.png"
+  },
+  {
+    "name": "Judia",
+    "months": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "icon": "judia.png"
+  },
+  {
+    "name": "Kiwi",
+    "months": [
+      1,
+      2,
+      3,
+      10,
+      11,
+      12
+    ],
+    "icon": "kiwi.png"
+  },
+  {
+    "name": "Lechuga",
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "icon": "lechuga.png"
+  },
+  {
+    "name": "Lima",
+    "months": [
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "icon": "lima.png"
+  },
+  {
+    "name": "Limon",
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      10,
+      11,
+      12
+    ],
+    "icon": "limon.png"
+  },
+  {
+    "name": "Maiz",
+    "months": [
+      8,
+      9,
+      10
+    ],
+    "icon": "maiz.png"
+  },
+  {
+    "name": "Mandarina",
+    "months": [
+      1,
+      2,
+      3,
+      11,
+      12
+    ],
+    "icon": "mandarina.png"
+  },
+  {
+    "name": "Manzana",
+    "months": [
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "icon": "manzana.png"
+  },
+  {
+    "name": "Melocoton",
+    "months": [
+      6,
+      7,
+      8,
+      9
+    ],
+    "icon": "melocoton.png"
+  },
+  {
+    "name": "Melon",
+    "months": [
+      7,
+      8,
+      9
+    ],
+    "icon": "melon.png"
+  },
+  {
+    "name": "Mora",
+    "months": [
+      6,
+      7,
+      8,
+      9
+    ],
+    "icon": "mora.png"
+  },
+  {
+    "name": "Nabo",
+    "months": [
+      1,
+      2,
+      9,
+      10,
+      11,
+      12
+    ],
+    "icon": "nabo.png"
+  },
+  {
+    "name": "Naranja",
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      11,
+      12
+    ],
+    "icon": "naranja.png"
+  },
+  {
+    "name": "Nectarina",
+    "months": [
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "icon": "nectarina.png"
+  },
+  {
+    "name": "Patata",
+    "months": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "icon": "patata.png"
+  },
+  {
+    "name": "Pepino",
+    "months": [
+      6,
+      7,
+      8,
+      9
+    ],
+    "icon": "pepino.png"
+  },
+  {
+    "name": "Pera",
+    "months": [
+      7,
+      8,
+      9,
+      10
+    ],
+    "icon": "pera.png"
+  },
+  {
+    "name": "Pimiento",
+    "months": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "icon": "pimiento.png"
+  },
+  {
+    "name": "Pomelo",
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      12
+    ],
+    "icon": "pomelo.png"
+  },
+  {
+    "name": "Puerro",
+    "months": [
+      1,
+      2,
+      3,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "icon": "puerro.png"
+  },
+  {
+    "name": "Rabano",
+    "months": [
+      3,
+      5,
+      6,
+      7,
+      9,
+      10,
+      11
+    ],
+    "icon": "rabano.png"
+  },
+  {
+    "name": "Remolacha",
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "icon": "remolacha.png"
+  },
+  {
+    "name": "Sandia",
+    "months": [
+      6,
+      7,
+      8,
+      9
+    ],
+    "icon": "sandia.png"
+  },
+  {
+    "name": "Tomate",
+    "months": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "icon": "tomate.png"
+  },
+  {
+    "name": "Uva",
+    "months": [
+      8,
+      9,
+      10
+    ],
+    "icon": "uva.png"
+  },
+  {
+    "name": "Zanahoria",
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "icon": "zanahoria.png"
+  }
+]

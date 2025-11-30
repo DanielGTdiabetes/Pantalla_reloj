@@ -74,6 +74,7 @@ from .data_sources import (
     fetch_google_calendar_events,
     get_astronomical_events,
     get_harvest_data,
+    get_harvest_from_json,
     get_saints_today,
     parse_rss_feed,
 )
@@ -5935,6 +5936,11 @@ def _set_opensky_error(message: Optional[str]) -> None:
     global _opensky_last_error
     _opensky_last_error = message
 
+
+@app.get("/api/harvest")
+async def get_harvest_full_list():
+    """Obtiene la lista completa de productos de temporada."""
+    return get_harvest_from_json()
 
 @app.get("/api/weather")
 def get_weather() -> Dict[str, Any]:
