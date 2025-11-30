@@ -336,6 +336,9 @@ export default function AircraftMapLayer({
                     layerDiagnostics.updatePreconditions(layerId, {
                         backendAvailable: false,
                     });
+                    // DEBUG: Force updateData even if response is empty to trigger test point injection
+                    console.warn("[AircraftMapLayer] Response empty, forcing empty updateData to trigger test point");
+                    aircraftLayer.updateData({ type: "FeatureCollection", features: [] });
                     return;
                 }
 
@@ -372,6 +375,12 @@ export default function AircraftMapLayer({
                     phase: "loadFlightsData",
                 });
                 console.error("[AircraftMapLayer] Load error:", error);
+
+                // DEBUG: Force updateData even on error to trigger test point injection
+                if (aircraftLayerRef.current) {
+                    console.warn("[AircraftMapLayer] Error caught, forcing empty updateData to trigger test point");
+                    aircraftLayerRef.current.updateData({ type: "FeatureCollection", features: [] });
+                }
             }
         };
 

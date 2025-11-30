@@ -1092,16 +1092,15 @@ export default class AircraftLayer implements Layer {
           source: this.sourceId,
           filter: ["!", ["has", "point_count"]],
           layout: {
-            visibility: "visible", // FORCE VISIBLE
+            visibility: this.enabled ? "visible" : "none",
           },
           paint: {
-            "circle-radius": 20, // FORCE HUGE RADIUS
-            "circle-color": "#FF0000", // FORCE RED
-            "circle-stroke-color": "#FFFFFF",
-            "circle-stroke-width": 2,
-            "circle-opacity": 1, // FORCE OPACITY
+            "circle-radius": this.getCircleRadiusExpression(),
+            "circle-color": this.circleOptions.color,
+            "circle-stroke-color": this.circleOptions.strokeColor,
+            "circle-stroke-width": this.circleOptions.strokeWidth,
           },
-        }); // REMOVED beforeId to force on top
+        }, beforeId);
       }
     }
 
@@ -1191,12 +1190,10 @@ export default class AircraftLayer implements Layer {
       return;
     }
     try {
-      // FORCE RED DEBUG STYLES
-      this.map.setPaintProperty(this.id, "circle-radius", 20);
-      this.map.setPaintProperty(this.id, "circle-color", "#FF0000");
-      this.map.setPaintProperty(this.id, "circle-stroke-color", "#FFFFFF");
-      this.map.setPaintProperty(this.id, "circle-stroke-width", 2);
-      this.map.setPaintProperty(this.id, "circle-opacity", 1);
+      this.map.setPaintProperty(this.id, "circle-radius", this.getCircleRadiusExpression());
+      this.map.setPaintProperty(this.id, "circle-color", this.circleOptions.color);
+      this.map.setPaintProperty(this.id, "circle-stroke-color", this.circleOptions.strokeColor);
+      this.map.setPaintProperty(this.id, "circle-stroke-width", this.circleOptions.strokeWidth);
     } catch (error) {
       console.warn("[AircraftLayer] paint skipped:", error);
     }
