@@ -905,6 +905,15 @@ class BlitzortungConfig(BaseModel):
     prune_seconds: Optional[int] = None
 
 
+
+class StormModeConfig(BaseModel):
+    """Configuración de modo tormenta (Legacy/Compatibilidad)."""
+    enabled: bool = False
+    center_lat: float = Field(default=40.0, ge=-90, le=90)
+    center_lng: float = Field(default=-3.5, ge=-180, le=180)
+    zoom: float = Field(default=3.6, ge=1, le=20)
+
+
 class NewsTopLevelConfig(BaseModel):
     """Configuración top-level de noticias."""
     rss_feeds: List[str] = Field(default_factory=list)
@@ -974,7 +983,7 @@ class AppConfig(BaseModel):
     ui_global: Optional[UIGlobalConfig] = None
     panels: Optional[PanelsConfig] = None
     layers: Optional[LayersConfig] = Field(default_factory=LayersConfig)
-    # storm removed
+    storm: StormModeConfig = Field(default_factory=StormModeConfig)
     blitzortung: Optional[BlitzortungConfig] = None
     news: Optional[NewsTopLevelConfig] = None
     ephemerides: Optional[EphemeridesTopLevelConfig] = None
