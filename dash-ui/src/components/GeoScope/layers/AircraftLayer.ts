@@ -1092,15 +1092,16 @@ export default class AircraftLayer implements Layer {
           source: this.sourceId,
           filter: ["!", ["has", "point_count"]],
           layout: {
-            visibility: this.enabled ? "visible" : "none",
+            visibility: "visible", // FORCE VISIBLE
           },
           paint: {
-            "circle-radius": this.getCircleRadiusExpression(),
-            "circle-color": this.circleOptions.color,
-            "circle-stroke-color": this.circleOptions.strokeColor,
-            "circle-stroke-width": this.circleOptions.strokeWidth,
+            "circle-radius": 20, // FORCE HUGE RADIUS
+            "circle-color": "#FF0000", // FORCE RED
+            "circle-stroke-color": "#FFFFFF",
+            "circle-stroke-width": 2,
+            "circle-opacity": 1, // FORCE OPACITY
           },
-        }, beforeId);
+        }); // REMOVED beforeId to force on top
       }
     }
 
@@ -1181,6 +1182,8 @@ export default class AircraftLayer implements Layer {
   }
 
   private applyCirclePaintProperties(): void {
+    // DEBUG: Disabled to prevent overriding forced styles
+    /*
     if (!this.map || this.currentRenderMode !== "circle" || !this.map.getLayer(this.id)) {
       return;
     }
@@ -1197,6 +1200,7 @@ export default class AircraftLayer implements Layer {
     } catch (error) {
       console.warn("[AircraftLayer] paint skipped:", error);
     }
+    */
   }
 
   private getIconSizeExpression(): maplibregl.ExpressionSpecification {
