@@ -301,15 +301,63 @@ export default function AircraftMapLayer({
                         const featureCollection = flightsResponseToGeoJSON(response);
 
                         // 1. Try to update the GL layer
-                        aircraftLayer.updateData(featureCollection);
-                        setDebugStatus(`Updated (WebGL): ${featureCollection.features.length} aircraft`);
+                        // aircraftLayer.updateData(featureCollection); // DISABLED: WebGL failing on Mini PC
+                        // setDebugStatus(`Updated (WebGL): ${featureCollection.features.length} aircraft`);
 
-                        // HTML MARKER RENDERING DISABLED (Using WebGL for performance)
-                        if (map && (window as any)._aircraftMarkers) {
+                        // 2. HTML MARKER RENDERING (Restored & Boosted)
+                        if (map) {
+                            const MAX_MARKERS = 500; // Increased limit for user request
+                            const features = featureCollection.features.slice(0, MAX_MARKERS);
+                            const currentIds = new Set<string>();
+
+                            // Initialize marker cache if needed
+                            if (!(window as any)._aircraftMarkers) {
+                                (window as any)._aircraftMarkers = new Map<string, Marker>();
+                            }
                             const markerMap = (window as any)._aircraftMarkers as Map<string, Marker>;
-                            markerMap.forEach(marker => marker.remove());
-                            markerMap.clear();
-                            delete (window as any)._aircraftMarkers;
+
+                            features.forEach(feature => {
+                                const id = String(feature.id || feature.properties.icao24 || Math.random());
+                                currentIds.add(id);
+                                const coords = feature.geometry.coordinates as [number, number];
+                                const track = feature.properties.track ?? 0;
+
+                                let marker = markerMap.get(id);
+
+                                if (!marker) {
+                                    // Create new marker
+                                    const el = document.createElement('div');
+                                    el.className = 'aircraft-marker';
+                                    el.style.width = '24px';
+                                    el.style.height = '24px';
+                                    el.style.backgroundImage = 'url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%23f97316\' stroke=\'%23ffffff\' stroke-width=\'2\'%3E%3Cpath d=\'M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z\'/%3E%3C/svg%3E")';
+                                    el.style.backgroundSize = 'contain';
+                                    el.style.backgroundRepeat = 'no-repeat';
+                                    el.style.cursor = 'pointer';
+                                    el.style.zIndex = '100'; // Ensure on top
+
+                                    // @ts-ignore
+                                    const newMarker = new Marker({ element: el, rotationAlignment: 'map' })
+                                        .setLngLat(coords)
+                                        .setRotation(track)
+                                        .addTo(map);
+
+                                    markerMap.set(id, newMarker);
+                                } else {
+                                    // Update existing
+                                    marker.setLngLat(coords);
+                                    marker.setRotation(track);
+                                }
+                            });
+
+                            // Remove stale markers
+                            for (const [id, marker] of markerMap.entries()) {
+                                if (!currentIds.has(id)) {
+                                    marker.remove();
+                                    markerMap.delete(id);
+                                }
+                            }
+                            setDebugStatus(`Updated (HTML): ${features.length} aircraft`);
                         }
 
                     } catch (e) {
