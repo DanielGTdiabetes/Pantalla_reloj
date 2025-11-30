@@ -1334,10 +1334,6 @@ def _default_payload(endpoint: str) -> Dict[str, Any]:
             "upcoming": [],
             "generated_at": APP_START.isoformat(),
         },
-        "storm_mode": {
-            "enabled": False,
-            "last_triggered": None,
-        },
     }
     return defaults.get(endpoint, {"message": f"No data for {endpoint}"})
 
@@ -1443,12 +1439,6 @@ def _health_payload() -> Dict[str, Any]:
         "config_version": map_reset_counter,
         "timezone": tz_str,
         "now_local_iso": now_local_iso,
-        "storm": {
-            "enabled": config.storm.enabled,
-            "center_lat": config.storm.center_lat,
-            "center_lng": config.storm.center_lng,
-            "zoom": config.storm.zoom,
-        },
     }
     flights_layer = {"items": None, "stale": False}
     ships_layer = {"items": None, "stale": False}
