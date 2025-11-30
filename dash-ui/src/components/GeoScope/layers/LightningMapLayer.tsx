@@ -188,11 +188,13 @@ export default function LightningMapLayer({
                                     // Create new marker
                                     const el = document.createElement('div');
                                     el.className = 'lightning-marker';
-                                    el.style.width = '16px';
-                                    el.style.height = '16px';
-                                    el.style.borderRadius = '50%';
-                                    el.style.backgroundColor = '#fcd34d'; // Yellow-400
-                                    el.style.boxShadow = '0 0 8px 2px rgba(252, 211, 77, 0.6)'; // Glow
+                                    el.style.width = '24px';
+                                    el.style.height = '24px';
+                                    // Lightning bolt icon (yellow with orange stroke)
+                                    el.style.backgroundImage = 'url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%23fcd34d\' stroke=\'%23f59e0b\' stroke-width=\'1.5\'%3E%3Cpath d=\'M13 2L3 14h9l-1 8 10-12h-9l1-8z\'/%3E%3C/svg%3E")';
+                                    el.style.backgroundSize = 'contain';
+                                    el.style.backgroundRepeat = 'no-repeat';
+                                    el.style.filter = 'drop-shadow(0 0 4px rgba(252, 211, 77, 0.6))'; // Glow effect
                                     el.style.opacity = String(opacity);
                                     el.style.zIndex = '80'; // Below ships
 
