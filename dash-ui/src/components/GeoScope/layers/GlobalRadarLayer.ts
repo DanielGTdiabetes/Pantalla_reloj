@@ -138,7 +138,7 @@ export default class GlobalRadarLayer implements Layer {
       layerDiagnostics.updatePreconditions(layerId, { styleLoaded: false });
       return;
     }
-    
+
     layerDiagnostics.updatePreconditions(layerId, { styleLoaded: true });
     console.log("[GlobalRadarLayer] Style is ready, proceeding with radar layer creation");
 
@@ -867,9 +867,24 @@ export default class GlobalRadarLayer implements Layer {
     // Limpiar capa existente si existe (sin try/catch que pueda lanzar)
     if (this.radarLayer) {
       try {
+        // Si tenemos una referencia, intentar removerla del mapa si es posible
+        if (map.getLayer(this.maptilerLayerId)) {
+          map.removeLayer(this.maptilerLayerId);
+        }
         this.radarLayer = null;
       } catch (e) {
         // Ignorar errores de limpieza
+      }
+    }
+
+    // Doble verificación: asegurar que no exista una capa con ese ID en el mapa
+    // Esto cubre el caso donde this.radarLayer es null pero la capa sigue en el mapa
+    if (map.getLayer(this.maptilerLayerId)) {
+      try {
+        console.warn(`[GlobalRadarLayer] Layer ${this.maptilerLayerId} already exists on map, forcing removal.`);
+        map.removeLayer(this.maptilerLayerId);
+      } catch (e) {
+        console.warn(`[GlobalRadarLayer] Failed to remove existing layer ${this.maptilerLayerId}:`, e);
       }
     }
 
