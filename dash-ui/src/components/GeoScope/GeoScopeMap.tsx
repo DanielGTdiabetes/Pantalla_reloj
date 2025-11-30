@@ -1779,178 +1779,236 @@ export default function GeoScopeMap({
               console.info(`[GeoScopeMap] GIBS frames fetched N=${satelliteFrames.length}`);
             }
           }
-        } else {
-          satelliteFrames = [];
         }
-
-        if (isRadarEnabled) {
-          const radarResponse = await apiGet<{
-            frames: RadarFrame[];
-            count: number;
-            provider: string;
-          }>("/api/global/radar/frames");
-
-          if (radarResponse?.frames && radarResponse.frames.length > 0) {
-            radarFrames = radarResponse.frames;
-            radarFrameIndex = 0;
-            const globalRadarLayer = globalRadarLayerRef.current;
-            if (globalRadarLayer) {
-              globalRadarLayer.update({ currentTimestamp: radarFrames[0].timestamp });
-            }
-          }
-        } else {
-          radarFrames = [];
-        }
-      } catch (err) {
-        console.error("[GeoScopeMap] Failed to fetch global frames:", err);
-      }
-    };
-
-    const advanceFrames = () => {
-      if (!radarPlaying) {
-        return;
+      } else {
+        satelliteFrames = [];
       }
 
-      if (canRenderSatellite() && satelliteFrames.length > 0) {
-        satelliteFrameIndex = (satelliteFrameIndex + 1) % satelliteFrames.length;
-        const currentFrame = satelliteFrames[satelliteFrameIndex];
-        if (currentFrame) {
-          applySatelliteFrame(currentFrame, "animation");
-        }
-      }
-
-      if (isRadarEnabled && radarFrames.length > 0) {
-        radarFrameIndex = (radarFrameIndex + 1) % radarFrames.length;
-        const globalRadarLayer = globalRadarLayerRef.current;
-        if (globalRadarLayer) {
-          globalRadarLayer.update({ currentTimestamp: radarFrames[radarFrameIndex].timestamp });
-        }
-      }
-    };
-
-    const startAnimation = () => {
-      if (animationTimer !== null) {
-        return;
-      }
-
-      const frameSteps: number[] = [];
-      if (canRenderSatellite()) {
-        frameSteps.push(satelliteSettings.frame_step ?? 10);
-      }
       if (isRadarEnabled) {
-        frameSteps.push(radarSettings.frame_step ?? 5);
+        const radarResponse = await apiGet<{
+          frames: RadarFrame[];
+          count: number;
+          provider: string;
+        }>("/api/global/radar/frames");
+
+        if (radarResponse?.frames && radarResponse.frames.length > 0) {
+          radarFrames = radarResponse.frames;
+          radarFrameIndex = 0;
+          const globalRadarLayer = globalRadarLayerRef.current;
+          if (globalRadarLayer) {
+            globalRadarLayer.update({ currentTimestamp: radarFrames[0].timestamp });
+          }
+        }
+      } else {
+        radarFrames = [];
       }
+    } catch (err) {
+      console.error("[GeoScopeMap] Failed to fetch global frames:", err);
+    }
+  };
 
-      const baseMinutes = frameSteps.length > 0 ? Math.min(...frameSteps) : 5;
-      const intervalMs =
-        (baseMinutes * 60 * 1000) / Math.max(0.25, radarPlaybackSpeed ?? 1);
+  const advanceFrames = () => {
+    if (!radarPlaying) {
+      return;
+    }
 
-      const animate = () => {
-        advanceFrames();
-        animationTimer = window.setTimeout(animate, intervalMs);
-      };
-
-      animate();
-    };
-
-    const stopAnimation = () => {
-      if (animationTimer !== null) {
-        window.clearTimeout(animationTimer);
-        animationTimer = null;
+    if (canRenderSatellite() && satelliteFrames.length > 0) {
+      satelliteFrameIndex = (satelliteFrameIndex + 1) % satelliteFrames.length;
+      const currentFrame = satelliteFrames[satelliteFrameIndex];
+      if (currentFrame) {
+        applySatelliteFrame(currentFrame, "animation");
       }
-    };
+    }
 
-    const restartAnimation = () => {
-      stopAnimation();
-      if (radarPlaying && (canRenderSatellite() || isRadarEnabled)) {
-        startAnimation();
+    if (isRadarEnabled && radarFrames.length > 0) {
+      radarFrameIndex = (radarFrameIndex + 1) % radarFrames.length;
+      const globalRadarLayer = globalRadarLayerRef.current;
+      if (globalRadarLayer) {
+        globalRadarLayer.update({ currentTimestamp: radarFrames[radarFrameIndex].timestamp });
       }
-    };
+    }
+  };
 
-    void fetchFrames();
+  const startAnimation = () => {
+    if (animationTimer !== null) {
+      return;
+    }
 
-    const satelliteRefresh = satelliteSettings?.refresh_minutes ?? 10;
-    const radarRefresh = radarSettings?.refresh_minutes ?? 5;
-    const refreshSources: number[] = [];
-    if (isSatelliteEnabled) {
-      refreshSources.push(satelliteRefresh);
+    const frameSteps: number[] = [];
+    if (canRenderSatellite()) {
+      frameSteps.push(satelliteSettings.frame_step ?? 10);
     }
     if (isRadarEnabled) {
-      refreshSources.push(radarRefresh);
+      frameSteps.push(radarSettings.frame_step ?? 5);
     }
-    const refreshIntervalMs =
-      (refreshSources.length > 0 ? Math.min(...refreshSources) : 5) * 60 * 1000;
 
-    const refreshTimer = window.setInterval(() => {
-      void fetchFrames();
-    }, refreshIntervalMs);
+    const baseMinutes = frameSteps.length > 0 ? Math.min(...frameSteps) : 5;
+    const intervalMs =
+      (baseMinutes * 60 * 1000) / Math.max(0.25, radarPlaybackSpeed ?? 1);
 
-    const updateLayersState = () => {
-      const map = mapRef.current;
-      const globalSatLayer = globalSatelliteLayerRef.current;
-      if (map && globalSatLayer && canRenderSatellite()) {
-        globalSatLayer.update({
-          opacity: satelliteSettings.opacity ?? 1,
-          enabled: true,
-        });
-      }
-
-      const globalRadarLayer = globalRadarLayerRef.current;
-      if (globalRadarLayer && isRadarEnabled) {
-        globalRadarLayer.update({ opacity: radarOpacity });
-      }
+    const animate = () => {
+      advanceFrames();
+      animationTimer = window.setTimeout(animate, intervalMs);
     };
 
-    updateLayersState();
-    restartAnimation();
+    animate();
+  };
 
-    return () => {
-      stopAnimation();
-      window.clearInterval(refreshTimer);
-    };
-  }, [
-    globalLayersSettings,
-    globalSatelliteReady,
-    radarPlaying,
-    radarPlaybackSpeed,
-    radarOpacity,
-  ]);
+  const stopAnimation = () => {
+    if (animationTimer !== null) {
+      window.clearTimeout(animationTimer);
+      animationTimer = null;
+    }
+  };
 
+  const restartAnimation = () => {
+    stopAnimation();
+    if (radarPlaying && (canRenderSatellite() || isRadarEnabled)) {
+      startAnimation();
+    }
+  };
 
-  // Mostrar error si WebGL no está disponible o el mapa falló
-  if (webglError) {
-    return (
-      <div className="map-host map-error">
-        <div className="map-error-content">
-          <h2>Error de visualización</h2>
-          <p>{webglError}</p>
-          <p className="map-error-hint">
-            Por favor, verifica que tu navegador soporte WebGL y que los controladores gráficos estén actualizados.
-          </p>
-        </div>
-      </div>
-    );
+  void fetchFrames();
+
+  const satelliteRefresh = satelliteSettings?.refresh_minutes ?? 10;
+  const radarRefresh = radarSettings?.refresh_minutes ?? 5;
+  const refreshSources: number[] = [];
+  if (isSatelliteEnabled) {
+    refreshSources.push(satelliteRefresh);
   }
+  if (isRadarEnabled) {
+    refreshSources.push(radarRefresh);
+  }
+  const refreshIntervalMs =
+    (refreshSources.length > 0 ? Math.min(...refreshSources) : 5) * 60 * 1000;
 
+  const refreshTimer = window.setInterval(() => {
+    void fetchFrames();
+  }, refreshIntervalMs);
+
+  const updateLayersState = () => {
+    const map = mapRef.current;
+    const globalSatLayer = globalSatelliteLayerRef.current;
+    if (map && globalSatLayer && canRenderSatellite()) {
+      globalSatLayer.update({
+        opacity: satelliteSettings.opacity ?? 1,
+        enabled: true,
+      });
+    }
+
+    const globalRadarLayer = globalRadarLayerRef.current;
+    if (globalRadarLayer && isRadarEnabled) {
+      globalRadarLayer.update({ opacity: radarOpacity });
+    }
+  };
+
+  updateLayersState();
+  restartAnimation();
+
+  return () => {
+    stopAnimation();
+    window.clearInterval(refreshTimer);
+  };
+}, [
+  globalLayersSettings,
+  globalSatelliteReady,
+  radarPlaying,
+  radarPlaybackSpeed,
+  radarOpacity,
+]);
+
+
+// Mostrar error si WebGL no está disponible o el mapa falló
+if (webglError) {
   return (
-    <div className="map-host">
-      <div ref={mapFillRef} className="map-fill" />
-      {styleChangeInProgress ? <MapSpinner /> : null}
-      {tintColor ? (
-        <div className="map-tint" style={{ background: tintColor }} aria-hidden="true" />
-      ) : null}
-      {/* MapHybrid desactivado: solo usar estilo base streets-v4 */}
-      {/* Renderizar AircraftMapLayer cuando el mapa esté listo y flights esté habilitado */}
-      {
-        mapRef.current && mapReady && layerRegistryRef.current ? (
-          <AircraftMapLayer
-            mapRef={mapRef}
-            layerRegistry={layerRegistryRef.current}
-            config={config}
-            mapReady={mapReady}
-          />
-        ) : null
-      }
-    </div >
+    <div className="map-host map-error">
+      <div className="map-error-content">
+        <h2>Error de visualización</h2>
+        <p>{webglError}</p>
+        <p className="map-error-hint">
+          Por favor, verifica que tu navegador soporte WebGL y que los controladores gráficos estén actualizados.
+        </p>
+      </div>
+    </div>
   );
+}
+
+// DEBUG: On-screen diagnostics for Mini PC
+const [debugInfo, setDebugInfo] = useState<string>("Initializing debug...");
+
+useEffect(() => {
+  const interval = setInterval(() => {
+    const map = mapRef.current;
+    if (!map) {
+      setDebugInfo("Map not ready");
+      return;
+    }
+
+    const center = map.getCenter();
+    const zoom = map.getZoom();
+    const styleLoaded = map.isStyleLoaded();
+
+    const aircraftLayer = map.getLayer("geoscope-aircraft");
+    const aircraftSource = map.getSource("geoscope-aircraft-source") as any; // Cast to access _data or data
+    const aircraftCount = aircraftSource?._data?.features?.length ?? aircraftSource?.data?.features?.length ?? "N/A";
+
+    const shipsLayer = map.getLayer("geoscope-ships");
+    const shipsSource = map.getSource("geoscope-ships-source") as any;
+    const shipsCount = shipsSource?._data?.features?.length ?? shipsSource?.data?.features?.length ?? "N/A";
+
+    const info = [
+      `Time: ${new Date().toLocaleTimeString()}`,
+      `Map: ${center.lng.toFixed(2)}, ${center.lat.toFixed(2)} z${zoom.toFixed(1)}`,
+      `Style Loaded: ${styleLoaded}`,
+      `Aircraft Layer: ${aircraftLayer ? "YES" : "NO"}`,
+      `Aircraft Data: ${aircraftCount}`,
+      `Ships Layer: ${shipsLayer ? "YES" : "NO"}`,
+      `Ships Data: ${shipsCount}`,
+      `Window: ${window.innerWidth}x${window.innerHeight}`
+    ].join("\n");
+
+    setDebugInfo(info);
+  }, 1000);
+
+  return () => clearInterval(interval);
+}, []);
+
+return (
+  <div className="relative w-full h-full bg-slate-950 overflow-hidden">
+    {/* DEBUG OVERLAY */}
+    <div
+      style={{
+        position: 'absolute',
+        top: 10,
+        left: 10,
+        zIndex: 9999,
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        color: '#00ff00',
+        padding: '10px',
+        fontFamily: 'monospace',
+        fontSize: '12px',
+        pointerEvents: 'none',
+        whiteSpace: 'pre-wrap'
+      }}
+    >
+      {debugInfo}
+    </div>
+
+    <MapSpinner visible={!mapReady} />
+    <div ref={mapFillRef} className="w-full h-full" />
+
+    {/* Renderizar capas lógicas */}
+    {mapReady && (
+      <>
+        <AircraftMapLayer
+          mapRef={mapRef}
+          layerRegistry={layerRegistryRef.current}
+          config={config}
+          mapReady={mapReady}
+        />
+        {/* ... other layers ... */}
+      </>
+    )}
+  </div>
+);
 }
