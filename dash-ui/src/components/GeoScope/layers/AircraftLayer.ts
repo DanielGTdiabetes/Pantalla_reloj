@@ -585,37 +585,13 @@ export default class AircraftLayer implements Layer {
   }
 
   private async determineRenderModeAsync(shouldLog: boolean): Promise<EffectiveRenderMode> {
-    if (this.renderMode === "circle") {
-      return "circle";
-    }
-
-    // Si está configurado como 'symbol' o 'auto', verificamos si el sprite está disponible
-    const spriteAvailable = this.map ? await safeHasImage(this.map, this.iconImage) : false;
-
-    if (this.renderMode === "symbol" && !spriteAvailable) {
-      if (shouldLog) {
-        console.warn(`[${this.id}] Symbol mode requested but sprite not available. Falling back to circle.`);
-      }
-      return "circle";
-    }
-
-    if (this.renderMode === "auto") {
-      return spriteAvailable ? "symbol" : "circle";
-    }
-
-    return "symbol";
+    // FORCE CIRCLE MODE for visibility and performance (500+ items)
+    return "circle";
   }
 
   private determineRenderMode(shouldLog: boolean): EffectiveRenderMode {
-    if (this.renderMode === "circle") {
-      return "circle";
-    }
-
-    if (this.currentRenderMode) {
-      return this.currentRenderMode;
-    }
-
-    return "circle"; // Fallback seguro inicial
+    // FORCE CIRCLE MODE for visibility and performance
+    return "circle";
   }
   /**
    * Asegura que el source existe. Completamente idempotente.
@@ -1172,7 +1148,8 @@ export default class AircraftLayer implements Layer {
     // Función helper para calcular radio en un zoom dado
     // Fórmula: radius = radius_base * (1 + (zoom - 5) * scale_factor)
     const radiusAt = (zoom: number): number => {
-      return radiusBase * (1 + (zoom - 5) * scaleFactor);
+      const val = radiusBase * (1 + (zoom - 5) * scaleFactor);
+      return Math.max(4, val * 1.5); // Min size 4px, scaled up 1.5x
     };
 
     // Calcular stops en diferentes niveles de zoom
