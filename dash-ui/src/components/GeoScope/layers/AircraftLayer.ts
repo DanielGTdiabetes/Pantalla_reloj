@@ -751,48 +751,21 @@ export default class AircraftLayer implements Layer {
       return;
     }
     const map = this.map;
-    const beforeId = this.findBeforeId(map);
 
-    // Si se encontró beforeId, las capas ya deberían estar antes (se añadieron con beforeId)
-    // Si no se encontró, mover las capas al tope
-    if (!beforeId) {
-      try {
-        if (map.getLayer(this.id)) {
-          // Mover al tope (sin beforeId)
-          const style = getSafeMapStyle(map);
-          const layers = Array.isArray(style?.layers) ? (style!.layers as Array<{ id?: string }>) : [];
-          if (Array.isArray(layers) && layers.length > 0) {
-            // Intentar mover después de la última capa
-            const lastLayer = layers[layers.length - 1] as { id?: string } | undefined;
-            if (lastLayer && lastLayer.id !== this.id) {
-              map.moveLayer(this.id, lastLayer.id);
-            }
-          }
-        }
-        if (map.getLayer(this.clusterLayerId)) {
-          const style2 = getSafeMapStyle(map);
-          const layers2 = Array.isArray(style2?.layers) ? (style2!.layers as Array<{ id?: string }>) : [];
-          if (Array.isArray(layers2) && layers2.length > 0) {
-            const lastLayer = layers2[layers2.length - 1] as { id?: string } | undefined;
-            if (lastLayer && lastLayer.id !== this.clusterLayerId) {
-              map.moveLayer(this.clusterLayerId, lastLayer.id);
-            }
-          }
-        }
-        if (map.getLayer(this.clusterCountLayerId)) {
-          const style3 = getSafeMapStyle(map);
-          const layers3 = Array.isArray(style3?.layers) ? (style3!.layers as Array<{ id?: string }>) : [];
-          if (Array.isArray(layers3) && layers3.length > 0) {
-            const lastLayer = layers3[layers3.length - 1] as { id?: string } | undefined;
-            if (lastLayer && lastLayer.id !== this.clusterCountLayerId) {
-              map.moveLayer(this.clusterCountLayerId, lastLayer.id);
-            }
-          }
-        }
-      } catch (error) {
-        // Si falla el movimiento, no es crítico
-        console.warn("[AircraftLayer] Error al mover capas al tope:", error);
+    // FORCE MOVE TO TOP (End of layers array)
+    try {
+      if (map.getLayer(this.id)) {
+        map.moveLayer(this.id); // No second arg = move to end
+        console.log("[AircraftLayer] Forced layer to TOP");
       }
+      if (map.getLayer(this.clusterLayerId)) {
+        map.moveLayer(this.clusterLayerId);
+      }
+      if (map.getLayer(this.clusterCountLayerId)) {
+        map.moveLayer(this.clusterCountLayerId);
+      }
+    } catch (error) {
+      console.warn("[AircraftLayer] Error moving layer:", error);
     }
   }
 
@@ -1092,15 +1065,16 @@ export default class AircraftLayer implements Layer {
           source: this.sourceId,
           filter: ["!", ["has", "point_count"]],
           layout: {
-            visibility: this.enabled ? "visible" : "none",
+            visibility: "visible",
           },
           paint: {
-            "circle-radius": this.getCircleRadiusExpression(),
-            "circle-color": this.circleOptions.color,
-            "circle-stroke-color": this.circleOptions.strokeColor,
-            "circle-stroke-width": this.circleOptions.strokeWidth,
+            "circle-radius": 10, // FORCE 10px
+            "circle-color": "#FF0000", // FORCE RED
+            "circle-stroke-color": "#FFFFFF",
+            "circle-stroke-width": 1,
+            "circle-opacity": 1,
           },
-        }, beforeId);
+        }); // NO beforeId -> Top of stack
       }
     }
 
@@ -1181,6 +1155,8 @@ export default class AircraftLayer implements Layer {
   }
 
   private applyCirclePaintProperties(): void {
+    // DEBUG: Disabled to prevent overriding forced RED styles
+    /*
     if (!this.map || this.currentRenderMode !== "circle" || !this.map.getLayer(this.id)) {
       return;
     }
@@ -1197,6 +1173,7 @@ export default class AircraftLayer implements Layer {
     } catch (error) {
       console.warn("[AircraftLayer] paint skipped:", error);
     }
+    */
   }
 
   private getIconSizeExpression(): maplibregl.ExpressionSpecification {
