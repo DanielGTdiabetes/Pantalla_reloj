@@ -2979,7 +2979,12 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     
     config = config_manager.read()
     
+    # Safe OpenSky config access
     opensky_cfg = config.opensky
+    opensky_enabled = opensky_cfg.enabled if opensky_cfg else False
+    opensky_mode = opensky_cfg.mode if opensky_cfg else "bbox"
+    opensky_bbox = opensky_cfg.bbox.model_dump() if opensky_cfg and opensky_cfg.bbox else {}
+
     opensky_status = opensky_service.get_status(config)
     snapshot = opensky_service.get_last_snapshot()
     last_fetch_iso = opensky_status.get("last_fetch_iso")
@@ -3001,8 +3006,8 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     if status_value == "error" and not bool(auth_details.get("has_credentials", False)):
         status_value = "stale"
     opensky_block = {
-        "enabled": opensky_cfg.enabled,
-        "mode": opensky_cfg.mode,
+        "enabled": opensky_enabled,
+        "mode": opensky_mode,
         "effective_poll": opensky_status.get("effective_poll"),
         "configured_poll": opensky_status.get("configured_poll"),
         "has_credentials": auth_details.get("has_credentials"),
@@ -3017,12 +3022,12 @@ def _health_payload_full_helper() -> Dict[str, Any]:
         "backoff_seconds": opensky_status.get("backoff_seconds"),
         "rate_limit_hint": opensky_status.get("rate_limit_hint"),
         "items_count": items_count,
-        "bbox": opensky_cfg.bbox.model_dump(),
+        "bbox": opensky_bbox,
     }
     payload["opensky"] = opensky_block
 
     flights_status = "down"
-    if opensky_cfg.enabled:
+    if opensky_enabled:
         if opensky_status.get("last_fetch_ok"):
             flights_status = "ok"
         elif snapshot:
@@ -3036,14 +3041,17 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     }
     
     # Información de ships
-    ships_config = config.layers.ships
+    ships_config = config.layers.ships if config.layers else None
+    ships_enabled = ships_config.enabled if ships_config else False
+    ships_provider = ships_config.provider if ships_config else "aisstream"
+    
     ships_cached = cache_store.load("ships", max_age_minutes=None)
     ships_status = "down"
     ships_last_fetch = None
     ships_cache_age = None
     ships_items_count = 0
     
-    if ships_config.enabled:
+    if ships_enabled:
         if ships_cached:
             ships_status = "ok"
             ships_last_fetch = ships_cached.fetched_at.isoformat()
@@ -3059,8 +3067,8 @@ def _health_payload_full_helper() -> Dict[str, Any]:
         "last_fetch": ships_last_fetch,
         "cache_age": ships_cache_age,
         "items_count": ships_items_count,
-        "provider": ships_config.provider,
-        "enabled": ships_config.enabled,
+        "provider": ships_provider,
+        "enabled": ships_enabled,
         "runtime": ships_service.get_status(),
     }
 
@@ -3071,7 +3079,10 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     
     # Weather layers integration (RainViewer, GIBS, CAP)
     try:
-        weather_layers = getattr(config.ui_global, "weather_layers", None)
+        weather_layers = None
+        if config.ui_global:
+            weather_layers = getattr(config.ui_global, "weather_layers", None)
+        
         payload["integrations"]["weather_layers"] = {
             "radar": {
                 "enabled": bool(weather_layers and weather_layers.radar and weather_layers.radar.enabled),
@@ -3096,7 +3107,7 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     # OpenSky integration
     opensky_status = opensky_service.get_status(config)
     payload["integrations"]["opensky"] = {
-        "enabled": bool(config.opensky.enabled),
+        "enabled": opensky_enabled,
         "has_credentials": bool(opensky_status.get("has_credentials")),
         "token_cached": bool(opensky_status.get("token_cached")),
         "expires_in_sec": opensky_status.get("expires_in_sec"),
@@ -3107,10 +3118,10 @@ def _health_payload_full_helper() -> Dict[str, Any]:
     
     # Ships integration
     payload["integrations"]["ships"] = {
-        "enabled": bool(ships_config.enabled),
-        "provider": ships_config.provider,
+        "enabled": ships_enabled,
+        "provider": ships_provider,
         "last_fetch_ok": bool(runtime.get("ws_connected") and runtime.get("buffer_size", 0) > 0)
-        if ships_config.provider == "aisstream"
+        if ships_provider == "aisstream"
         else (ships_status == "ok"),
         "last_error": runtime.get("last_error"),
         "items_count": int(ships_items_count),
