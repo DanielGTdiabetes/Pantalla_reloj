@@ -200,186 +200,143 @@ export default function AircraftMapLayer({
     const [debugStatus, setDebugStatus] = useState<string>("Initializing...");
     const liveMarkerRef = useRef<Marker | null>(null);
 
-    if (!config || !mapRef.current || !mapReady || !layerRegistry) {
-        setDebugStatus(`Preconditions failed: Cfg=${!!config} Map=${!!mapRef.current} Ready=${mapReady} Reg=${!!layerRegistry}`);
-        return;
-    }
+    useEffect(() => {
+        console.log("[AircraftMapLayer] Mounted");
 
-    const merged = withConfigDefaults(config);
-    const flightsConfig = merged.layers?.flights;
-    const openskyConfig = merged.opensky ?? { enabled: true };
-    const layerId: LayerId = "flights";
-    const MAX_RETRIES = 3;
+        if (!config || !mapRef.current || !mapReady || !layerRegistry) {
+            setDebugStatus(`Preconditions failed: Cfg=${!!config} Map=${!!mapRef.current} Ready=${mapReady} Reg=${!!layerRegistry}`);
+            return;
+        }
 
-    if (!flightsConfig) {
-        setDebugStatus("No flights config");
-        layerDiagnostics.setEnabled(layerId, false);
-        return;
-    }
+        const merged = withConfigDefaults(config);
+        const flightsConfig = merged.layers?.flights;
+        const openskyConfig = merged.opensky ?? { enabled: true };
+        const layerId: LayerId = "flights";
+        const MAX_RETRIES = 3;
 
-    const flightsEnabled = flightsConfig.enabled ?? false;
-    const openskyEnabled = (openskyConfig.enabled ?? true) && (openskyConfig.oauth2?.has_credentials ?? true);
+        if (!flightsConfig) {
+            setDebugStatus("No flights config");
+            layerDiagnostics.setEnabled(layerId, false);
+            return;
+        }
 
-    if (!flightsEnabled || !openskyEnabled) {
-        setDebugStatus(`Disabled: Flights=${flightsEnabled} OpenSky=${openskyEnabled}`);
-        layerDiagnostics.setEnabled(layerId, false);
-        return;
-    }
+        const flightsEnabled = flightsConfig.enabled ?? false;
+        const openskyEnabled = (openskyConfig.enabled ?? true) && (openskyConfig.oauth2?.has_credentials ?? true);
 
-    const aircraftLayer = layerRegistry.get("geoscope-aircraft") as AircraftLayer | undefined;
-    if (!aircraftLayer) {
-        setDebugStatus("Layer not found in registry");
-        return;
-    }
+        if (!flightsEnabled || !openskyEnabled) {
+            setDebugStatus(`Disabled: Flights=${flightsEnabled} OpenSky=${openskyEnabled}`);
+            layerDiagnostics.setEnabled(layerId, false);
+            return;
+        }
 
-    aircraftLayerRef.current = aircraftLayer;
-    aircraftLayer.setEnabled(true);
-    layerDiagnostics.setEnabled(layerId, true);
+        const aircraftLayer = layerRegistry.get("geoscope-aircraft") as AircraftLayer | undefined;
+        if (!aircraftLayer) {
+            setDebugStatus("Layer not found in registry");
+            return;
+        }
 
-    // FORCE ZOOM/CENTER for Mini PC
-    if (mapRef.current) {
-        mapRef.current.jumpTo({
-            center: [-3.7038, 40.4168], // Madrid
-            zoom: 5.0 // Zoom out slightly to include Cadiz (South)
-        });
-    }
+        aircraftLayerRef.current = aircraftLayer;
+        aircraftLayer.setEnabled(true);
+        layerDiagnostics.setEnabled(layerId, true);
 
-    const loadFlightsData = async (): Promise<void> => {
-        const map = mapRef.current;
+        // FORCE ZOOM/CENTER for Mini PC
+        if (mapRef.current) {
+            mapRef.current.jumpTo({
+                center: [-3.7038, 40.4168], // Madrid
+                zoom: 5.0 // Zoom out slightly to include Cadiz (South)
+            });
+        }
 
-        try {
-            let bbox: string | undefined;
+        const loadFlightsData = async (): Promise<void> => {
+            const map = mapRef.current;
 
-            if (map && map.isStyleLoaded()) {
-                const expandedBbox = getExpandedBbox(map, 1.5);
-                bbox = `${expandedBbox.lamin},${expandedBbox.lamax},${expandedBbox.lomin},${expandedBbox.lomax}`;
-            }
+            try {
+                let bbox: string | undefined;
 
-            // FORCE Spain BBox for Mini PC debugging
-            const spainBbox = "35.0,44.0,-10.0,4.5";
-            if (typeof window !== "undefined") {
-                if (window.innerWidth < 2500 || !bbox) {
+                if (map && map.isStyleLoaded()) {
+                    const expandedBbox = getExpandedBbox(map, 1.5);
+                    bbox = `${expandedBbox.lamin},${expandedBbox.lamax},${expandedBbox.lomin},${expandedBbox.lomax}`;
+                }
+
+                // FORCE Spain BBox for Mini PC debugging
+                const spainBbox = "35.0,44.0,-10.0,4.5";
+                if (typeof window !== "undefined") {
+                    if (window.innerWidth < 2500 || !bbox) {
+                        bbox = spainBbox;
+                    }
+                } else if (!bbox) {
                     bbox = spainBbox;
                 }
-            } else if (!bbox) {
-                bbox = spainBbox;
-            }
 
-            let url = "/api/layers/flights";
-            const params = new URLSearchParams();
-            if (bbox) {
-                params.append("bbox", bbox);
-            }
-            if (params.toString()) {
-                url += `?${params.toString()}`;
-            }
+                let url = "/api/layers/flights";
+                const params = new URLSearchParams();
+                if (bbox) {
+                    params.append("bbox", bbox);
+                }
+                if (params.toString()) {
+                    url += `?${params.toString()}`;
+                }
 
-            const response = await retryWithBackoff(
-                async () => {
-                    const resp = await apiGet<FlightsApiResponse | FeatureCollection<Point, FlightFeatureProperties> | undefined>(url);
-                    if (!resp) throw new Error("Empty response");
-                    return resp;
-                },
-                MAX_RETRIES,
-                1000,
-                layerId,
-                "loadFlightsData"
-            );
+                const response = await retryWithBackoff(
+                    async () => {
+                        const resp = await apiGet<FlightsApiResponse | FeatureCollection<Point, FlightFeatureProperties> | undefined>(url);
+                        if (!resp) throw new Error("Empty response");
+                        return resp;
+                    },
+                    MAX_RETRIES,
+                    1000,
+                    layerId,
+                    "loadFlightsData"
+                );
 
-            if (!response) {
-                aircraftLayer.updateData({ type: "FeatureCollection", features: [] });
-                return;
-            }
+                if (!response) {
+                    aircraftLayer.updateData({ type: "FeatureCollection", features: [] });
+                    return;
+                }
 
-            const responseDisabled = !isFeatureCollection<Point, FlightFeatureProperties>(response) && response.disabled;
+                const responseDisabled = !isFeatureCollection<Point, FlightFeatureProperties>(response) && response.disabled;
 
-            if (!responseDisabled) {
-                try {
-                    const featureCollection = flightsResponseToGeoJSON(response);
+                if (!responseDisabled) {
+                    try {
+                        const featureCollection = flightsResponseToGeoJSON(response);
 
-                    // 1. Try to update the GL layer
-                    // aircraftLayer.updateData(featureCollection); // DISABLED to avoid duplicates
-                    // setDebugStatus(`Updated: ${featureCollection.features.length} aircraft`);
+                        // 1. Try to update the GL layer
+                        aircraftLayer.updateData(featureCollection);
+                        setDebugStatus(`Updated (WebGL): ${featureCollection.features.length} aircraft`);
 
-                    // 2. HTML MARKER RENDERING (Restored Fallback)
-                    if (map) {
-                        const MAX_MARKERS = 50;
-                        const features = featureCollection.features.slice(0, MAX_MARKERS);
-                        const currentIds = new Set<string>();
-
-                        // Initialize marker cache if needed
-                        if (!(window as any)._aircraftMarkers) {
-                            (window as any)._aircraftMarkers = new Map<string, Marker>();
+                        // HTML MARKER RENDERING DISABLED (Using WebGL for performance)
+                        if (map && (window as any)._aircraftMarkers) {
+                            const markerMap = (window as any)._aircraftMarkers as Map<string, Marker>;
+                            markerMap.forEach(marker => marker.remove());
+                            markerMap.clear();
+                            delete (window as any)._aircraftMarkers;
                         }
-                        const markerMap = (window as any)._aircraftMarkers as Map<string, Marker>;
 
-                        features.forEach(feature => {
-                            const id = String(feature.id || feature.properties.icao24 || Math.random());
-                            currentIds.add(id);
-                            const coords = feature.geometry.coordinates as [number, number];
-                            const track = feature.properties.track ?? 0;
-
-                            let marker = markerMap.get(id);
-
-                            if (!marker) {
-                                // Create new marker
-                                const el = document.createElement('div');
-                                el.className = 'aircraft-marker';
-                                el.style.width = '24px';
-                                el.style.height = '24px';
-                                el.style.backgroundImage = 'url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%23f97316\' stroke=\'%23ffffff\' stroke-width=\'2\'%3E%3Cpath d=\'M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z\'/%3E%3C/svg%3E")';
-                                el.style.backgroundSize = 'contain';
-                                el.style.backgroundRepeat = 'no-repeat';
-                                el.style.cursor = 'pointer';
-
-                                // @ts-ignore
-                                const newMarker = new Marker({ element: el, rotationAlignment: 'map' })
-                                    .setLngLat(coords)
-                                    .setRotation(track)
-                                    .addTo(map);
-
-                                markerMap.set(id, newMarker);
-                            } else {
-                                // Update existing
-                                marker.setLngLat(coords);
-                                marker.setRotation(track);
-                            }
-                        });
-
-                        // Remove stale markers
-                        for (const [id, marker] of markerMap.entries()) {
-                            if (!currentIds.has(id)) {
-                                marker.remove();
-                                markerMap.delete(id);
-                            }
-                        }
+                    } catch (e) {
+                        console.error("Error updating aircraft data", e);
                     }
-
-                } catch (e) {
-                    console.error("Error updating aircraft data", e);
+                }
+            } catch (error) {
+                console.error("Error loading flights:", error);
+                setDebugStatus("Error loading flights");
+                if (aircraftLayerRef.current) {
+                    aircraftLayerRef.current.updateData({ type: "FeatureCollection", features: [] });
                 }
             }
-        } catch (error) {
-            console.error("Error loading flights:", error);
-            setDebugStatus("Error loading flights");
-            if (aircraftLayerRef.current) {
-                aircraftLayerRef.current.updateData({ type: "FeatureCollection", features: [] });
-            }
-        }
-    };
+        };
 
-    void loadFlightsData();
-
-    const intervalSeconds = Math.max(5, flightsConfig.refresh_seconds ?? 10);
-    const intervalMs = intervalSeconds * 1000;
-    const intervalId = setInterval(() => {
         void loadFlightsData();
-    }, intervalMs);
 
-    return () => {
-        clearInterval(intervalId);
-    };
-}, [config, layerRegistry, mapReady]);
+        const intervalSeconds = Math.max(5, flightsConfig.refresh_seconds ?? 10);
+        const intervalMs = intervalSeconds * 1000;
+        const intervalId = setInterval(() => {
+            void loadFlightsData();
+        }, intervalMs);
 
-return null;
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, [config, layerRegistry, mapReady]);
+
+    return null;
 }
