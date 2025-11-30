@@ -23,6 +23,7 @@ type MoonIconProps = {
   size?: number | string;
   className?: string;
   alt?: string;
+  style?: React.CSSProperties;
 };
 
 export const MoonIcon: React.FC<MoonIconProps> = ({
@@ -31,6 +32,7 @@ export const MoonIcon: React.FC<MoonIconProps> = ({
   size = 64,
   className = "",
   alt,
+  style,
 }) => {
   const [iconError, setIconError] = useState(false);
   const [iconLoaded, setIconLoaded] = useState(false);
@@ -80,6 +82,7 @@ export const MoonIcon: React.FC<MoonIconProps> = ({
         height: sizeStyle,
         objectFit: "contain",
         display: iconLoaded ? "block" : "none",
+        ...style,
       }}
       onLoad={() => setIconLoaded(true)}
       onError={() => {

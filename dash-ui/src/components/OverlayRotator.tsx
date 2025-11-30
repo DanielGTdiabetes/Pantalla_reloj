@@ -15,6 +15,7 @@ import { BackgroundGradient } from "./effects/BackgroundGradient";
 import { WeatherAmbience } from "./effects/WeatherAmbience";
 import { SkeletonLoader } from "./common/SkeletonLoader";
 import { CalendarCard } from "./dashboard/cards/CalendarCard";
+import { WeatherForecastCard } from "./dashboard/cards/WeatherForecastCard";
 import { EphemeridesCard } from "./dashboard/cards/EphemeridesCard";
 import { HarvestCard } from "./dashboard/cards/HarvestCard";
 import { HistoricalEventsCard } from "./dashboard/cards/HistoricalEventsCard";
@@ -23,7 +24,6 @@ import { NewsCard } from "./dashboard/cards/NewsCard";
 import { SaintsCard } from "./dashboard/cards/SaintsCard";
 import { TimeCard } from "./dashboard/cards/TimeCard";
 import { WeatherCard } from "./dashboard/cards/WeatherCard";
-import { WeatherForecastCard } from "./dashboard/cards/WeatherForecastCard";
 import { useRotationProgress } from "../hooks/useRotationProgress";
 import { useDayNightMode } from "../hooks/useDayNightMode";
 
@@ -37,8 +37,6 @@ type DashboardPayload = {
 };
 
 const REFRESH_INTERVAL_MS = 60_000;
-
-// Detectar si estamos en modo desarrollo
 // Similar a isProduction() en runtimeFlags.ts
 type NodeProcess = { env?: { NODE_ENV?: string } };
 
@@ -786,22 +784,6 @@ export const OverlayRotator: React.FC = () => {
     }
 
     // astronomy (EphemeridesCard - SOLO efemérides astronómicas + fase lunar)
-    // NO incluir efemérides históricas aquí - tienen su propio panel exclusivo
-    map.set("astronomy", {
-      id: "astronomy",
-      duration: (durations.astronomy ?? 10) * 1000,
-      render: () => (
-        <EphemeridesCard
-          sunrise={sunrise}
-          sunset={sunset}
-          moonPhase={moonPhase}
-          illumination={moonIllumination}
-          events={ephemeridesEvents}
-        />
-      )
-    });
-
-    // santoral (SaintsCard)
     map.set("santoral", {
       id: "santoral",
       duration: (durations.santoral ?? 8) * 1000,

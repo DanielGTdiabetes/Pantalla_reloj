@@ -47,6 +47,25 @@ export const SaintsCard = ({ saints }: SaintsCardProps): JSX.Element => {
 
   const displayEntries = entries.length > 0 ? entries : ["—"];
 
+  const formatSaintName = (name: string) => {
+    if (name === "—") return name;
+
+    // Check if it already has a prefix
+    const lower = name.toLowerCase();
+    if (lower.startsWith("san ") || lower.startsWith("santa ") || lower.startsWith("santo ")) {
+      return name;
+    }
+
+    // Simple heuristic for gender (Spanish)
+    // Ends in 'a' -> Santa (exceptions exist, but good enough for simple logic)
+    // Otherwise -> San
+    // Exception: Maria -> Santa Maria
+    if (lower === "maría" || lower === "maria" || name.endsWith("a")) {
+      return `Santa ${name}`;
+    }
+    return `San ${name}`;
+  };
+
   return (
     <div className="card saints-card saints-card-enhanced">
       <div className="saints-card__header">
@@ -58,7 +77,7 @@ export const SaintsCard = ({ saints }: SaintsCardProps): JSX.Element => {
           {displayEntries.map((entry, index) => (
             <div key={`saints-${index}-${entry.substring(0, 10)}`} className="saint-item">
               <span className="saint-icon">✝</span>
-              <span className="saint-name">{entry}</span>
+              <span className="saint-name large-text">{formatSaintName(entry)}</span>
             </div>
           ))}
         </div>

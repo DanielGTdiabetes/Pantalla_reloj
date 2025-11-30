@@ -47,7 +47,7 @@ const parseEvent = (item: string): { year?: number; text: string; category?: str
   // Intentar extraer año del formato "YYYY: texto" o "texto (YYYY)"
   const yearMatch = item.match(/(\d{4})/);
   const year = yearMatch ? parseInt(yearMatch[1], 10) : undefined;
-  
+
   // Determinar categoría por palabras clave
   const text = item.replace(/\d{4}:\s*/, '').trim();
   let category = 'other';
@@ -59,7 +59,7 @@ const parseEvent = (item: string): { year?: number; text: string; category?: str
   } else if (lowerText.includes('cultura') || lowerText.includes('arte') || lowerText.includes('literatura')) {
     category = 'culture';
   }
-  
+
   return { year, text, category };
 };
 
@@ -74,8 +74,9 @@ const getCategoryColor = (category?: string): string => {
 
 export const HistoricalEventsCard = ({ items, rotationSeconds = 6 }: HistoricalEventsCardProps): JSX.Element => {
   const list = items.length > 0 ? items : ["No hay efemérides para este día."];
-  // Limitar a 2 eventos para evitar desbordes en pantalla
-  const visibleEvents = list.slice(0, 2).map(parseEvent);
+  // Parse all events instead of limiting
+  const parsedEvents = list.map(parseEvent);
+  const repeatedEvents = repeatItems(parsedEvents);
 
   return (
     <div className="card historical-events-card historical-events-card-enhanced">
@@ -83,24 +84,26 @@ export const HistoricalEventsCard = ({ items, rotationSeconds = 6 }: HistoricalE
         <HistoricalEventsIconImage size={48} className="card-icon" />
         <h2>Efemérides Históricas</h2>
       </div>
-      <div className="timeline">
-        {visibleEvents.map((event, index) => (
-          <div key={`timeline-${index}`} className="timeline-item">
-            <div 
-              className={`timeline-marker timeline-marker--${event.category}`}
-              style={{ background: getCategoryColor(event.category) }}
-            />
-            <div className="timeline-content">
-              {event.year && (
-                <span className="event-year">{event.year}</span>
-              )}
-              <p className="event-text">{event.text}</p>
-              {event.category && event.category !== 'other' && (
-                <span className="event-category">{event.category}</span>
-              )}
+      <div className="historical-events-scroller vertical-marquee">
+        <div className="timeline marquee-content">
+          {repeatedEvents.map((event, index) => (
+            <div key={`timeline-${index}`} className="timeline-item">
+              <div
+                className={`timeline-marker timeline-marker--${event.category}`}
+                style={{ background: getCategoryColor(event.category) }}
+              />
+              <div className="timeline-content">
+                {event.year && (
+                  <span className="event-year">{event.year}</span>
+                )}
+                <p className="event-text">{event.text}</p>
+                {event.category && event.category !== 'other' && (
+                  <span className="event-category">{event.category}</span>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );

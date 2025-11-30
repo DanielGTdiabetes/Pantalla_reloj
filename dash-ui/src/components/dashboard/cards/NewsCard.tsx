@@ -54,18 +54,18 @@ const markNewsAsRead = (items: NewsItem[]): void => {
     const stored = getReadNewsIds();
     const now = Date.now();
     const readData: Record<string, number> = {};
-    
+
     // Mantener noticias leídas existentes
     stored.forEach(id => {
       readData[id] = now; // Actualizar timestamp
     });
-    
+
     // Marcar todas las noticias actuales como leídas después de mostrarlas
     items.forEach(item => {
       const id = getNewsId(item);
       readData[id] = now;
     });
-    
+
     localStorage.setItem(STORAGE_KEY_READ_NEWS, JSON.stringify(readData));
   } catch (error) {
     console.warn("[NewsCard] Error marking news as read:", error);
@@ -111,22 +111,22 @@ const NewsIconImage: React.FC<{ size?: number; className?: string }> = ({ size =
 export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
   const readNewsIdsRef = useRef<Set<string>>(getReadNewsIds());
   const hasMarkedAsReadRef = useRef(false);
-  
+
   // Filtrar noticias no leídas
   const unreadNews = useMemo(() => {
     if (items.length === 0) {
       return [{ title: "Sin titulares disponibles" }];
     }
-    
+
     // Obtener IDs de noticias leídas
     const readIds = readNewsIdsRef.current;
-    
+
     // Filtrar noticias no leídas
     const unread = items.filter(item => {
       const id = getNewsId(item);
       return !readIds?.has(id);
     });
-    
+
     // Si todas están leídas o no hay noticias no leídas, mostrar todas
     // (para que siempre haya algo que mostrar)
     if (unread.length === 0 && items.length > 0) {
@@ -135,30 +135,30 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
       readNewsIdsRef.current = new Set();
       return items;
     }
-    
+
     return unread.length > 0 ? unread : items;
   }, [items]);
-  
+
   // Marcar noticias como leídas después de un tiempo de visualización
   useEffect(() => {
     if (hasMarkedAsReadRef.current || unreadNews.length === 0 || unreadNews[0].title === "Sin titulares disponibles") {
       return;
     }
-    
+
     // Marcar como leídas después de 15 segundos (tiempo suficiente para leer)
     const timer = window.setTimeout(() => {
       markNewsAsRead(unreadNews);
       hasMarkedAsReadRef.current = true;
       readNewsIdsRef.current = getReadNewsIds();
     }, 15000);
-    
+
     return () => {
       window.clearTimeout(timer);
     };
   }, [unreadNews]);
 
   const list = unreadNews;
-  
+
   // Resetear flag cuando cambian los items
   useEffect(() => {
     hasMarkedAsReadRef.current = false;
@@ -170,10 +170,9 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
         <NewsIconImage size={48} className="card-icon" />
         <h2>Noticias del día</h2>
       </div>
-      <div className="news-card__scroller">
-        <div className="news-card__list">
+      <div className="news-card__scroller vertical-marquee">
+        <div className="news-card__list marquee-content">
           {repeatItems(list).map((item, index) => (
-            // Usar índice completo para garantizar keys únicas (incluso después de duplicar)
             <article key={`news-${index}`} className="news-item">
               {item.source && (
                 <div className="news-source">{item.source}</div>

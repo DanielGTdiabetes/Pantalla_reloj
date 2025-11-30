@@ -47,8 +47,8 @@ export const TimeCard = ({ timezone }: TimeCardProps): JSX.Element => {
           <span className="time-card__hours">{hours}</span>
           <span className="time-card__separator blink">:</span>
           <span className="time-card__minutes">{minutes}</span>
+          <span className="time-card__seconds-inline">{seconds}</span>
         </div>
-        <div className="time-card__seconds">{seconds}</div>
         <div className="time-card__date-display">
           <span className="time-card__day-name">{dayName}</span>
           <span className="time-card__date-full">{day} de {month} de {year}</span>

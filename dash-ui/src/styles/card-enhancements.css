@@ -54,10 +54,14 @@
 }
 
 @keyframes blink {
-  0%, 50% {
+
+  0%,
+  50% {
     opacity: 1;
   }
-  51%, 100% {
+
+  51%,
+  100% {
     opacity: 0.3;
   }
 }
@@ -254,6 +258,7 @@
     opacity: 0;
     transform: scale(0.8);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -288,13 +293,13 @@
 }
 
 /* Colores según temporada */
-[data-theme="day"] .harvest-card__item {
-  /* Primavera/Verano: colores cálidos */
+/* [data-theme="day"] .harvest-card__item {
+  Primavera/Verano: colores cálidos
 }
 
 [data-theme="night"] .harvest-card__item {
-  /* Otoño/Invierno: colores fríos */
-}
+  Otoño/Invierno: colores fríos
+} */
 
 /* ============================================
    NEWS CARD ENHANCED
@@ -343,6 +348,7 @@
   margin: 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -429,20 +435,20 @@
   min-height: 0;
 }
 
-.ephemerides-card-enhanced > .ephemerides-card__header {
+.ephemerides-card-enhanced>.ephemerides-card__header {
   flex-shrink: 0;
 }
 
-.ephemerides-card-enhanced > .moon-phase {
+.ephemerides-card-enhanced>.moon-phase {
   flex-shrink: 0;
 }
 
-.ephemerides-card-enhanced > .sun-timeline {
+.ephemerides-card-enhanced>.sun-timeline {
   margin-top: auto;
   flex-shrink: 0;
 }
 
-.ephemerides-card-enhanced > .astro-events {
+.ephemerides-card-enhanced>.astro-events {
   display: none;
 }
 
@@ -463,7 +469,7 @@
   height: clamp(80px, 12vw, 100px);
   border-radius: 50%;
   background: radial-gradient(circle at 30% 30%, #f0f0f0, #c0c0c0);
-  box-shadow: 
+  box-shadow:
     inset -30px 0 0 rgba(0, 0, 0, 0.3),
     0 0 15px rgba(0, 0, 0, 0.2);
   position: relative;
@@ -704,6 +710,11 @@
   color: var(--theme-text-primary);
 }
 
+.saint-item .large-text {
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
 .saint-icon {
   width: 24px;
   height: 24px;
@@ -737,3 +748,218 @@
   background: linear-gradient(to top, var(--theme-card-bg), transparent);
 }
 
+/* ============================================
+   CAROUSEL & MARQUEE UTILITIES
+   ============================================ */
+
+/* Fade In Animation */
+.fade-in {
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Vertical Marquee */
+.vertical-marquee {
+  overflow: hidden;
+  position: relative;
+  height: 100%;
+}
+
+.marquee-content {
+  display: flex;
+  flex-direction: column;
+  animation: marquee-vertical 20s linear infinite;
+}
+
+.marquee-content:hover {
+  animation-play-state: paused;
+}
+
+@keyframes marquee-vertical {
+  0% {
+    transform: translateY(0);
+  }
+
+  100% {
+    transform: translateY(-50%);
+  }
+}
+
+/* Ephemerides Carousel */
+.ephemerides-carousel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+}
+
+.astro-slide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  text-align: center;
+}
+
+.astro-icon-large {
+  width: 120px;
+  height: 120px;
+  filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.3));
+}
+
+.astro-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.astro-label {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: var(--theme-text-primary);
+}
+
+.astro-time {
+  font-size: 2.5rem;
+  font-weight: bold;
+  color: var(--theme-accent);
+}
+
+.astro-sublabel {
+  font-size: 1.2rem;
+  color: var(--theme-text-secondary);
+}
+
+/* Harvest Carousel */
+.harvest-carousel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+}
+
+.harvest-slide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-lg);
+  text-align: center;
+}
+
+.harvest-icon-large {
+  width: 150px;
+  height: 150px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+}
+
+.harvest-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.harvest-name {
+  font-size: 2rem;
+  font-weight: bold;
+  color: var(--theme-text-primary);
+  text-transform: capitalize;
+}
+
+.harvest-status {
+  font-size: 1.2rem;
+  color: var(--theme-text-secondary);
+  font-style: italic;
+}
+
+/* Weather Forecast Card */
+.weather-forecast-card-enhanced {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: var(--space-md);
+  height: 100%;
+}
+
+.weather-forecast-card__header h2 {
+  text-align: center;
+  margin: 0;
+  font-size: 1.2rem;
+  color: var(--theme-text-secondary);
+}
+
+.forecast-list {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 100%;
+  padding: 0 var(--space-sm);
+}
+
+.forecast-item {
+  display: grid;
+  grid-template-columns: 60px 1fr auto;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--theme-border);
+}
+
+.forecast-item:last-child {
+  border-bottom: none;
+}
+
+.forecast-day-name {
+  font-size: 1.2rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  color: var(--theme-text-primary);
+}
+
+.forecast-icon {
+  display: flex;
+  justify-content: center;
+}
+
+.weather-icon-small {
+  width: 40px;
+  height: 40px;
+}
+
+.forecast-temps {
+  display: flex;
+  gap: var(--space-md);
+  font-size: 1.2rem;
+  font-weight: bold;
+}
+
+.temp-max {
+  color: var(--theme-text-primary);
+}
+
+.temp-min {
+  color: var(--theme-text-muted);
+}
+
+/* Inline Seconds for TimeCard */
+.time-card__seconds-inline {
+  font-size: clamp(2rem, 4vw, 2.5rem);
+  font-weight: var(--font-weight-semibold);
+  color: var(--theme-text-muted);
+  margin-left: 4px;
+  align-self: baseline;
+}

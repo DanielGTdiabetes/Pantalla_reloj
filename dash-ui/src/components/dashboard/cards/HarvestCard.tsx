@@ -27,9 +27,9 @@ const getHarvestIcon = (itemName: string): string => {
     console.warn("[HarvestCard] Item name is empty, using fallback icon");
     return "/icons/harvest/pumpkin.svg";  // Icono genérico de fallback
   }
-  
+
   const nameLower = normalizeText(itemName);
-  
+
   // Mapeo expandido de nombres comunes a archivos SVG disponibles
   // Incluye plurales, acentos y variaciones comunes
   const iconMap: Record<string, string> = {
@@ -44,7 +44,7 @@ const getHarvestIcon = (itemName: string): string => {
     "manzanas": "apple",
     "citrico": "apple",
     "citricos": "apple",
-    
+
     // Frutas de hueso
     "cereza": "cherry",
     "cerezas": "cherry",
@@ -66,7 +66,7 @@ const getHarvestIcon = (itemName: string): string => {
     "paraguayos": "peach",
     "ciruela": "peach",
     "ciruelas": "peach",
-    
+
     // Frutas de pepita
     "pera": "pear",
     "peras": "pear",
@@ -85,13 +85,13 @@ const getHarvestIcon = (itemName: string): string => {
     "castanyes": "pear",  // Variante catalana
     "nispero": "pear",
     "nisperos": "pear",
-    
+
     // Uvas y frutas pequeñas
     "uva": "grapes",
     "uvas": "grapes",
     "higo": "grapes",
     "higos": "grapes",
-    
+
     // Melones y sandías
     "melón": "melon",
     "melon": "melon",
@@ -99,11 +99,11 @@ const getHarvestIcon = (itemName: string): string => {
     "sandía": "watermelon",
     "sandia": "watermelon",
     "sandías": "watermelon",
-    
+
     // Calabazas
     "calabaza": "pumpkin",
     "calabazas": "pumpkin",
-    
+
     // Verduras de hoja
     "lechuga": "lettuce",
     "lechugas": "lettuce",
@@ -117,13 +117,13 @@ const getHarvestIcon = (itemName: string): string => {
     "espinacas": "chard",
     "rúcula": "chard",
     "rucula": "chard",
-    
+
     // Brócoli y coles
     "brócoli": "broccoli",
     "brocoli": "broccoli",
     "brócolis": "broccoli",
     "brocolis": "broccoli",
-    
+
     // Raíces y bulbos
     "zanahoria": "carrot",
     "zanahorias": "carrot",
@@ -133,13 +133,13 @@ const getHarvestIcon = (itemName: string): string => {
     "rabano": "carrot",
     "rábanos": "carrot",
     "rabanos": "carrot",
-    
+
     // Remolachas
     "remolacha": "beet",
     "remolachas": "beet",
     "cebolla": "beet",
     "cebollas": "beet",
-    
+
     // Legumbres
     "guisante": "bean",
     "guisantes": "bean",
@@ -150,7 +150,7 @@ const getHarvestIcon = (itemName: string): string => {
     "habón": "bean",
     "habon": "bean",
     "habones": "bean",
-    
+
     // Solanáceas y cucurbitáceas
     "tomate": "tomato",
     "tomates": "tomato",
@@ -163,7 +163,7 @@ const getHarvestIcon = (itemName: string): string => {
     "calabacines": "zucchini",
     "pepino": "cucumber",
     "pepinos": "cucumber",
-    
+
     // Otros
     "alcachofa": "artichoke",
     "alcachofas": "artichoke",
@@ -188,7 +188,7 @@ const getHarvestIcon = (itemName: string): string => {
     "patatas": "beet",
     "papa": "beet",
     "papas": "beet",
-    
+
     // Más frutas
     "plátano": "apple",
     "platano": "apple",
@@ -208,7 +208,7 @@ const getHarvestIcon = (itemName: string): string => {
     "aguacates": "pear",
     "palta": "pear",
     "paltas": "pear",
-    
+
     // Más verduras y hortalizas
     "repollo": "lettuce",
     "repollos": "lettuce",
@@ -245,7 +245,7 @@ const getHarvestIcon = (itemName: string): string => {
     "tomates pera": "tomato",
     "tomate raf": "tomato",
     "tomates raf": "tomato",
-    
+
     // Legumbres y semillas
     "garbanzo": "bean",
     "garbanzos": "bean",
@@ -261,7 +261,7 @@ const getHarvestIcon = (itemName: string): string => {
     "judias verdes": "bean",
     "habichuela": "bean",
     "habichuelas": "bean",
-    
+
     // Hierbas y especias
     "albahaca": "chard",
     "perejil": "chard",
@@ -272,7 +272,7 @@ const getHarvestIcon = (itemName: string): string => {
     "oregano": "chard",
     "menta": "chard",
     "hierbabuena": "chard",
-    
+
     // Setas y hongos
     "champiñón": "artichoke",
     "champiñon": "artichoke",
@@ -282,14 +282,14 @@ const getHarvestIcon = (itemName: string): string => {
     "hongo": "artichoke",
     "hongos": "artichoke",
   };
-  
+
   // Buscar coincidencia exacta primero
   if (iconMap[nameLower]) {
     const iconPath = `/icons/harvest/${iconMap[nameLower]}.svg`;
     console.debug(`[HarvestCard] Icon found (exact match): "${itemName}" → ${iconPath}`);
     return iconPath;
   }
-  
+
   // Buscar coincidencia parcial (si el nombre contiene alguna clave del mapa)
   // Ordenar por longitud descendente para priorizar coincidencias más largas
   const sortedEntries = Object.entries(iconMap).sort((a, b) => b[0].length - a[0].length);
@@ -300,7 +300,7 @@ const getHarvestIcon = (itemName: string): string => {
       return iconPath;
     }
   }
-  
+
   // FALLBACK GARANTIZADO: Si no se encuentra, usar un icono genérico
   // en vez de devolver null
   console.warn(`[HarvestCard] No se encontró icono específico para: "${itemName}" (normalizado: "${nameLower}"), usando fallback genérico`);
@@ -312,9 +312,24 @@ const failedIconsCache = new Set<string>();
 const failedFallbackCache = new Set<string>();
 let fallbackErrorLogged = false;
 
+import { useState, useEffect } from "react";
+
 export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
   const entries = items.length > 0 ? items : [{ name: "Sin datos de cultivo" }];
-  const repeatedEntries = repeatItems(entries);
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  useEffect(() => {
+    if (entries.length <= 1) return;
+
+    const interval = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % entries.length);
+    }, 5000); // 5 seconds per item
+
+    return () => clearInterval(interval);
+  }, [entries.length]);
+
+  const currentItem = entries[currentIndex];
+  const iconPath = getHarvestIcon(currentItem.name);
 
   return (
     <div className="card harvest-card harvest-card-enhanced">
@@ -322,91 +337,22 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
         <SproutIcon className="card-icon" aria-hidden="true" />
         <h2>Cosechas</h2>
       </div>
-      <div className="harvest-card__scroller">
-        <ul className="harvest-card__list">
-          {repeatedEntries.map((entry, index) => {
-            const iconPath = getHarvestIcon(entry.name);
-            const isFallback = iconPath.includes("/pumpkin.svg");
-            
-            // Si ya sabemos que este icono falla, usar fallback directamente
-            const shouldUseFallback = failedIconsCache.has(iconPath) && !isFallback;
-            const finalIconPath = shouldUseFallback ? "/icons/harvest/pumpkin.svg" : iconPath;
-            
-            // Si el fallback también ha fallado antes, ocultar el icono desde el inicio
-            const shouldHideIcon = isFallback && failedFallbackCache.has("pumpkin");
-            
-            return (
-              // Usar índice completo para garantizar keys únicas (incluso después de duplicar)
-              <li key={`harvest-${index}`} style={{ animationDelay: `${index * 0.1}s` }}>
-                {!shouldHideIcon && (
-                  <img 
-                    src={finalIconPath} 
-                    alt={entry.name}
-                    className="harvest-icon"
-                    style={{ 
-                      marginRight: "8px", 
-                      verticalAlign: "middle", 
-                      width: "36px", 
-                      height: "36px", 
-                      display: "inline-block", 
-                      flexShrink: 0 
-                    }}
-                    onError={(e) => {
-                      try {
-                        const target = e.target as HTMLImageElement;
-                        if (!target) return;
-                        
-                        const currentSrc = target.src;
-                        const isPumpkinFallback = currentSrc.includes("/pumpkin.svg");
-                        
-                        if (isPumpkinFallback) {
-                          // El fallback también falló
-                          if (!failedFallbackCache.has("pumpkin")) {
-                            failedFallbackCache.add("pumpkin");
-                            // Solo registrar el error una vez globalmente
-                            if (!fallbackErrorLogged) {
-                              fallbackErrorLogged = true;
-                              console.error(`[HarvestCard] Fallback icon (pumpkin.svg) failed to load. Verifica que los iconos estén disponibles en /icons/harvest/. Esto puede indicar un problema con la ruta base o que los archivos no se copiaron durante el build.`);
-                            }
-                          }
-                          // Usar requestAnimationFrame para evitar errores durante el render
-                          requestAnimationFrame(() => {
-                            try {
-                              target.style.display = "none";
-                            } catch (err) {
-                              // Silenciar errores de estilo
-                            }
-                          });
-                        } else {
-                          // El icono principal falló, intentar fallback
-                          if (!failedIconsCache.has(iconPath)) {
-                            failedIconsCache.add(iconPath);
-                            // Solo registrar el warning una vez por icono (sin el nombre del item para evitar duplicados)
-                            console.warn(`[HarvestCard] Error al cargar icono: ${iconPath}, usando fallback`);
-                          }
-                          // Usar requestAnimationFrame para evitar errores durante el render
-                          requestAnimationFrame(() => {
-                            try {
-                              target.src = "/icons/harvest/pumpkin.svg";
-                            } catch (err) {
-                              // Silenciar errores de asignación de src
-                            }
-                          });
-                        }
-                      } catch (error) {
-                        // Prevenir que los errores se propaguen a React
-                        console.warn(`[HarvestCard] Error en manejador onError:`, error);
-                      }
-                    }}
-                  />
-                )}
-                <span className="harvest-card__item">{entry.name}</span>
-                {entry.status ? <span className="harvest-card__status">{entry.status}</span> : null}
-              </li>
-            );
-          })}
-        </ul>
-        <div className="harvest-card__gradient" aria-hidden="true" />
+      <div className="harvest-carousel">
+        <div className="harvest-slide fade-in" key={currentIndex}>
+          <img
+            src={iconPath}
+            alt={currentItem.name}
+            className="harvest-icon-large"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.src = "/icons/harvest/pumpkin.svg";
+            }}
+          />
+          <div className="harvest-info">
+            <span className="harvest-name">{currentItem.name}</span>
+            {currentItem.status && <span className="harvest-status">{currentItem.status}</span>}
+          </div>
+        </div>
       </div>
     </div>
   );

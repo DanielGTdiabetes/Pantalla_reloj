@@ -217,7 +217,7 @@ const ROTATION_DEFAULT_ORDER = [...ROTATION_PANEL_IDS];
 
 export const DEFAULT_UI_ROTATION_CONFIG: UIRotationConfig = {
   enabled: true,
-  duration_sec: 10,
+  duration_sec: 60,
   panels: ROTATION_DEFAULT_ORDER,
 };
 
