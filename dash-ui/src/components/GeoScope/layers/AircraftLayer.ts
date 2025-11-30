@@ -450,6 +450,24 @@ export default class AircraftLayer implements Layer {
           .filter((f): f is NonNullable<typeof f> => f !== null),
       };
 
+      // DEBUG: Inject a test feature in Madrid to verify rendering
+      featuresWithAge.features.push({
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [-3.7038, 40.4168], // Madrid
+        },
+        properties: {
+          callsign: "TEST001",
+          true_track: 0,
+          baro_altitude: 1000,
+          on_ground: false,
+          velocity: 100,
+          age_seconds: 0,
+          in_focus: true,
+        } as any,
+      });
+
       this.lastData = featuresWithAge;
 
       if (!this.map) {
