@@ -277,10 +277,13 @@ export default function AircraftMapLayer({
                     // Fallback for Mini PC (small screen) to ensure data availability
                     // The map is fixed to Spain on these devices, so we can safely force the bbox
                     // This prevents issues where map.getBounds() might return invalid values during init
-                    if (typeof window !== "undefined" && window.innerWidth < 1280) {
-                        const spainBbox = "34.0,46.0,-12.0,6.0"; // Generous Spain BBox
-                        console.log("[AircraftMapLayer] Mini PC detected, forcing BBOX:", spainBbox);
-                        bbox = spainBbox;
+                    if (typeof window !== "undefined") {
+                        console.log("[AircraftMapLayer] Window width:", window.innerWidth);
+                        if (window.innerWidth < 1280) {
+                            const spainBbox = "34.0,46.0,-12.0,6.0"; // Generous Spain BBox
+                            console.log("[AircraftMapLayer] Mini PC detected, forcing BBOX:", spainBbox);
+                            bbox = spainBbox;
+                        }
                     }
                 }
 

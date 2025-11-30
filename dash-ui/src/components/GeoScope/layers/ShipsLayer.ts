@@ -119,20 +119,16 @@ export default class ShipsLayer implements Layer {
     this.maxAgeSeconds = options.maxAgeSeconds ?? 3600; // 1 hora por defecto (AIS es lento)
     this.cineFocus = options.cineFocus;
     this.styleScale = options.styleScale ?? 1.0;
-    // Default a symbol_custom para usar icono personalizado (más fiable que depender del sprite)
-    this.renderMode = options.renderMode ?? "symbol_custom";
+    // DEBUG: Force circle mode to rule out icon rendering issues on Mini PC
+    console.log("[ShipsLayer] Forcing renderMode to 'circle' for debugging");
+    this.renderMode = "circle"; // options.renderMode ?? "symbol_custom";
     this.spriteAvailable = options.spriteAvailable ?? false;
     this.circleOptions = normalizeCircleOptions(options.circle, typeof window !== "undefined" ? window.innerHeight : 480);
     this.symbolOptions = options.symbol;
     this.iconImage = options.iconImage ?? DEFAULT_ICON_IMAGE;
-    // Determinar modo de renderizado inicial
-    // Si mode es symbol_custom o (auto sin sprite), usar symbol_custom
-    // El icono se registrará en ensureShipsLayer()
-    if (this.renderMode === "symbol_custom" || (this.renderMode === "auto" && !this.spriteAvailable)) {
-      this.currentRenderMode = "symbol_custom";
-    } else {
-      this.currentRenderMode = this.determineRenderMode(false);
-    }
+
+    // Force circle mode logic
+    this.currentRenderMode = "circle";
   }
 
   add(map: MaptilerMap): void | Promise<void> {

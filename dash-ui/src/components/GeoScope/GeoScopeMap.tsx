@@ -1256,10 +1256,13 @@ export default function GeoScopeMap({
           maxItemsView = shipsConfig.max_items_view;
 
           // Fallback for Mini PC (small screen) to ensure data availability
-          if (typeof window !== "undefined" && window.innerWidth < 1280) {
-            const spainBbox = "-12.0,34.0,6.0,46.0"; // Generous Spain BBox (lomin, lamin, lomax, lamax)
-            console.log("[GeoScopeMap] Mini PC detected, forcing Ships BBOX:", spainBbox);
-            bbox = spainBbox;
+          if (typeof window !== "undefined") {
+            console.log("[GeoScopeMap] Window width:", window.innerWidth);
+            if (window.innerWidth < 1280) {
+              const spainBbox = "-12.0,34.0,6.0,46.0"; // Generous Spain BBox (lomin, lamin, lomax, lamax)
+              console.log("[GeoScopeMap] Mini PC detected, forcing Ships BBOX:", spainBbox);
+              bbox = spainBbox;
+            }
           }
         }
 
