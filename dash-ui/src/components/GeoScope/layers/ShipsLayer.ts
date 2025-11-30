@@ -898,8 +898,10 @@ export default class ShipsLayer implements Layer {
     const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 480;
     const radiusVh = this.circleOptions.radiusVh;
     const radiusPixels = (radiusVh / 100) * viewportHeight;
+    // Asegurar tamaño mínimo de 3px para visibilidad en Mini PC
+    const effectiveRadius = Math.max(3, radiusPixels);
     // Retornar como número literal (ExpressionSpecification puede ser un número)
-    return radiusPixels as unknown as maplibregl.ExpressionSpecification;
+    return effectiveRadius as unknown as maplibregl.ExpressionSpecification;
   }
 
   private getCustomSymbolSizeExpression(): maplibregl.ExpressionSpecification {

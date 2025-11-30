@@ -1219,11 +1219,11 @@ export default class AircraftLayer implements Layer {
     };
 
     // Calcular stops en diferentes niveles de zoom
-    // Asegurar que todos los radios sean >= 1 para evitar errores
-    const r2 = Math.max(1, radiusAt(2));
-    const r6 = Math.max(1, radiusAt(6));
-    const r10 = Math.max(1, radiusAt(10));
-    const r14 = Math.max(1, radiusAt(14));
+    // Asegurar que todos los radios sean >= 3 para evitar errores y visibilidad en Mini PC
+    const r2 = Math.max(3, radiusAt(2));
+    const r6 = Math.max(3, radiusAt(6));
+    const r10 = Math.max(3, radiusAt(10));
+    const r14 = Math.max(3, radiusAt(14));
 
     // Devolver expresión interpolate válida de MapLibre
     return [
