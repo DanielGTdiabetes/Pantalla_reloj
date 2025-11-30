@@ -1,14 +1,3 @@
-import { useEffect, useRef, type MutableRefObject } from "react";
-import type { Map as MaptilerMap } from "@maptiler/sdk";
-import type { FeatureCollection, Point, Feature, Geometry, GeoJsonProperties } from "geojson";
-
-import { apiGet } from "../../../lib/api";
-import { withConfigDefaults } from "../../../config/defaults";
-import { layerDiagnostics, type LayerId } from "./LayerDiagnostics";
-import type { LayerRegistry } from "./LayerRegistry";
-import AircraftLayer from "./AircraftLayer";
-import type { AppConfig } from "../../../types/config";
-
 type FlightFeatureProperties = {
     icao24?: string;
     callsign?: string;
@@ -198,16 +187,13 @@ export default function AircraftMapLayer({
 }: AircraftMapLayerProps) {
     const aircraftLayerRef = useRef<AircraftLayer | null>(null);
 
+    const [debugStatus, setDebugStatus] = useState<string>("Initializing...");
+
     useEffect(() => {
         console.log("[AircraftMapLayer] Mounted");
 
         if (!config || !mapRef.current || !mapReady || !layerRegistry) {
-            console.log("[AircraftMapLayer] Preconditions not met:", {
-                hasConfig: !!config,
-                hasMap: !!mapRef.current,
-                mapReady,
-                hasRegistry: !!layerRegistry,
-            });
+            setDebugStatus(`Preconditions failed: Cfg=${!!config} Map=${!!mapRef.current} Ready=${mapReady} Reg=${!!layerRegistry}`);
             return;
         }
 
@@ -217,15 +203,9 @@ export default function AircraftMapLayer({
         const layerId: LayerId = "flights";
         const MAX_RETRIES = 3;
 
-        console.log("[AircraftMapLayer] Config loaded:", {
-            enabled: flightsConfig?.enabled,
-            refresh_seconds: flightsConfig?.refresh_seconds,
-            provider: flightsConfig?.provider,
-        });
-
         if (!flightsConfig) {
+            setDebugStatus("No flights config");
             layerDiagnostics.setEnabled(layerId, false);
-            console.warn("[AircraftMapLayer] flightsConfig is undefined, skipping polling");
             return;
         }
 
@@ -233,64 +213,39 @@ export default function AircraftMapLayer({
         const openskyEnabled = (openskyConfig.enabled ?? true) && (openskyConfig.oauth2?.has_credentials ?? true);
 
         if (!flightsEnabled || !openskyEnabled) {
+            setDebugStatus(`Disabled: Flights=${flightsEnabled} OpenSky=${openskyEnabled}`);
             layerDiagnostics.setEnabled(layerId, false);
-            console.log("[AircraftMapLayer] Flights disabled:", { flightsEnabled, openskyEnabled });
             return;
         }
 
         const aircraftLayer = layerRegistry.get("geoscope-aircraft") as AircraftLayer | undefined;
         if (!aircraftLayer) {
-            console.warn("[AircraftMapLayer] AircraftLayer not found in registry");
+            setDebugStatus("Layer not found in registry");
             return;
         }
 
         aircraftLayerRef.current = aircraftLayer;
-
-        // Habilitar la capa según la configuración
         aircraftLayer.setEnabled(true);
-
-        console.log("[AircraftMapLayer] Starting polling");
         layerDiagnostics.setEnabled(layerId, true);
 
         const loadFlightsData = async (): Promise<void> => {
+            setDebugStatus(`Polling... ${new Date().toLocaleTimeString()}`);
             try {
-                if (!flightsEnabled || !openskyEnabled) {
-                    layerDiagnostics.setEnabled(layerId, false);
-                    return;
-                }
-
                 let bbox: string | undefined;
                 const map = mapRef.current;
 
-                // Always try to get map bounds first
                 if (map && map.isStyleLoaded()) {
                     const expandedBbox = getExpandedBbox(map, 1.5);
                     bbox = `${expandedBbox.lamin},${expandedBbox.lamax},${expandedBbox.lomin},${expandedBbox.lomax}`;
-
-                    console.log(
-                        "[AircraftMapLayer] Map BBOX:",
-                        expandedBbox.lamin.toFixed(4),
-                        expandedBbox.lamax.toFixed(4),
-                        expandedBbox.lomin.toFixed(4),
-                        expandedBbox.lomax.toFixed(4)
-                    );
-                } else {
-                    console.warn("[AircraftMapLayer] Map style not loaded or map ref missing");
                 }
 
                 // FORCE Spain BBox for Mini PC debugging
-                // We suspect the map bounds are invalid or the screen size check is failing
                 const spainBbox = "34.0,46.0,-12.0,6.0";
-
                 if (typeof window !== "undefined") {
-                    console.log("[AircraftMapLayer] Debug - Window width:", window.innerWidth);
-                    // Relaxed condition: Force if small screen OR if bbox is still undefined (map not ready)
                     if (window.innerWidth < 2500 || !bbox) {
-                        console.log("[AircraftMapLayer] Forcing Spain BBOX (Small screen or Map not ready):", spainBbox);
                         bbox = spainBbox;
                     }
                 } else if (!bbox) {
-                    // Fallback for server-side or weird env
                     bbox = spainBbox;
                 }
 
@@ -303,27 +258,10 @@ export default function AircraftMapLayer({
                     url += `?${params.toString()}`;
                 }
 
-                console.log("[AircraftMapLayer] Fetching:", url);
-
                 const response = await retryWithBackoff(
                     async () => {
                         const resp = await apiGet<FlightsApiResponse | FeatureCollection<Point, FlightFeatureProperties> | undefined>(url);
-
-                        if (!resp) {
-                            throw new Error("Empty response from backend");
-                        }
-
-                        if (!isFeatureCollection<Point, FlightFeatureProperties>(resp) && resp.disabled) {
-                            layerDiagnostics.setState(layerId, "disabled", {
-                                reason: "backend_disabled",
-                            });
-                            return resp;
-                        }
-
-                        if (typeof resp !== "object") {
-                            throw new Error(`Invalid response type: ${typeof resp}`);
-                        }
-
+                        if (!resp) throw new Error("Empty response");
                         return resp;
                     },
                     MAX_RETRIES,
@@ -333,61 +271,34 @@ export default function AircraftMapLayer({
                 );
 
                 if (!response) {
-                    layerDiagnostics.updatePreconditions(layerId, {
-                        backendAvailable: false,
-                    });
-                    // DEBUG: Force updateData even if response is empty to trigger test point injection
-                    console.warn("[AircraftMapLayer] Response empty, forcing empty updateData to trigger test point");
+                    setDebugStatus(`Empty response ${new Date().toLocaleTimeString()}`);
+                    // DEBUG: Force updateData even if response is empty
                     aircraftLayer.updateData({ type: "FeatureCollection", features: [] });
                     return;
                 }
-
-                layerDiagnostics.updatePreconditions(layerId, {
-                    backendAvailable: true,
-                });
 
                 const responseDisabled = !isFeatureCollection<Point, FlightFeatureProperties>(response) && response.disabled;
 
                 if (!responseDisabled) {
                     try {
                         const featureCollection = flightsResponseToGeoJSON(response);
-                        console.log("[AircraftMapLayer] Features received:", featureCollection.features?.length ?? 0);
-
-                        const currentLayer = aircraftLayerRef.current;
-                        if (!currentLayer) {
-                            console.warn("[AircraftMapLayer] AircraftLayer ref is null");
-                            return;
-                        }
-
-                        currentLayer.updateData(featureCollection);
-                        console.log("[AircraftMapLayer] Data updated successfully");
+                        aircraftLayer.updateData(featureCollection);
+                        setDebugStatus(`Updated: ${featureCollection.features?.length ?? 0} planes`);
                     } catch (conversionError) {
-                        const error = conversionError instanceof Error ? conversionError : new Error(String(conversionError));
-                        layerDiagnostics.recordError(layerId, error, {
-                            phase: "flightsResponseToGeoJSON",
-                        });
-                        console.error("[AircraftMapLayer] Conversion error:", conversionError);
+                        setDebugStatus("Conversion error");
                     }
                 }
             } catch (error) {
-                const err = error instanceof Error ? error : new Error(String(error));
-                layerDiagnostics.recordError(layerId, err, {
-                    phase: "loadFlightsData",
-                });
-                console.error("[AircraftMapLayer] Load error:", error);
-
-                // DEBUG: Force updateData even on error to trigger test point injection
+                setDebugStatus(`Error: ${String(error)}`);
+                // DEBUG: Force updateData even on error
                 if (aircraftLayerRef.current) {
-                    console.warn("[AircraftMapLayer] Error caught, forcing empty updateData to trigger test point");
                     aircraftLayerRef.current.updateData({ type: "FeatureCollection", features: [] });
                 }
             }
         };
 
-        // Cargar inmediatamente
         void loadFlightsData();
 
-        // Polling periódico
         const intervalSeconds = Math.max(5, flightsConfig.refresh_seconds ?? 10);
         const intervalMs = intervalSeconds * 1000;
         const intervalId = setInterval(() => {
@@ -395,11 +306,28 @@ export default function AircraftMapLayer({
         }, intervalMs);
 
         return () => {
-            console.log("[AircraftMapLayer] Unmounting, clearing interval");
             clearInterval(intervalId);
         };
     }, [config, layerRegistry, mapReady]);
 
-    // Este componente no renderiza nada visible
-    return null;
+    return (
+        <div style={{
+            position: 'absolute',
+            bottom: 10,
+            left: 10,
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            color: '#00ff00',
+            padding: '8px',
+            borderRadius: '4px',
+            fontFamily: 'monospace',
+            fontSize: '12px',
+            zIndex: 9999,
+            pointerEvents: 'none',
+            maxWidth: '300px',
+            whiteSpace: 'pre-wrap'
+        }}>
+            [Aircraft Debug]<br />
+            {debugStatus}
+        </div>
+    );
 }
