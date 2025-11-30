@@ -1934,8 +1934,17 @@ export default function GeoScopeMap({
 
   // DEBUG: On-screen diagnostics for Mini PC
   const [debugInfo, setDebugInfo] = useState<string>("Initializing debug...");
+  const [lastMapError, setLastMapError] = useState<string>("None");
 
   useEffect(() => {
+    const map = mapRef.current;
+    if (map) {
+      map.on('error', (e: any) => {
+        console.error("Map Error:", e);
+        setLastMapError(e.error?.message || "Unknown error");
+      });
+    }
+
     const interval = setInterval(() => {
       const map = mapRef.current;
       if (!map) {
@@ -1955,10 +1964,13 @@ export default function GeoScopeMap({
       const shipsSource = map.getSource("geoscope-ships-source") as any;
       const shipsCount = shipsSource?._data?.features?.length ?? shipsSource?.data?.features?.length ?? "N/A";
 
+      const now = new Date();
       const info = [
-        `Time: ${new Date().toLocaleTimeString()}`,
-        `Map: ${center.lng.toFixed(2)}, ${center.lat.toFixed(2)} z${zoom.toFixed(1)}`,
+        `Date: ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`,
+        `MapReady: ${mapReady}`,
         `Style Loaded: ${styleLoaded}`,
+        `Last Error: ${lastMapError}`,
+        `Map: ${center.lng.toFixed(2)}, ${center.lat.toFixed(2)} z${zoom.toFixed(1)}`,
         `Aircraft Layer: ${aircraftLayer ? "YES" : "NO"}`,
         `Aircraft Data: ${aircraftCount}`,
         `Ships Layer: ${shipsLayer ? "YES" : "NO"}`,
@@ -1970,7 +1982,7 @@ export default function GeoScopeMap({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [mapReady, lastMapError]);
 
   return (
     <div className="relative w-full h-full bg-slate-950 overflow-hidden">
