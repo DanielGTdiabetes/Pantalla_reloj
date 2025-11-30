@@ -6,7 +6,6 @@ import { apiGet } from "../../../lib/api";
 import { withConfigDefaults } from "../../../config/defaults";
 import { layerDiagnostics, type LayerId } from "./LayerDiagnostics";
 import type { LayerRegistry } from "./LayerRegistry";
-import ShipsLayer from "./ShipsLayer";
 import type { AppConfig } from "../../../types/config";
 
 type ShipFeatureProperties = {
@@ -113,14 +112,13 @@ export default function ShipsMapLayer({
     config,
     mapReady,
 }: ShipsMapLayerProps) {
-    const shipsLayerRef = useRef<ShipsLayer | null>(null);
     const [debugStatus, setDebugStatus] = useState<string>("Initializing...");
 
     useEffect(() => {
-        console.log("[ShipsMapLayer] Mounted");
+        console.log("[ShipsMapLayer] Mounted (HTML Mode)");
 
-        if (!config || !mapRef.current || !mapReady || !layerRegistry) {
-            setDebugStatus(`Preconditions failed: Cfg=${!!config} Map=${!!mapRef.current} Ready=${mapReady} Reg=${!!layerRegistry}`);
+        if (!config || !mapRef.current || !mapReady) {
+            setDebugStatus(`Preconditions failed: Cfg=${!!config} Map=${!!mapRef.current} Ready=${mapReady}`);
             return;
         }
 
@@ -143,14 +141,6 @@ export default function ShipsMapLayer({
             return;
         }
 
-        const shipsLayer = layerRegistry.get("geoscope-ships") as ShipsLayer | undefined;
-        if (!shipsLayer) {
-            setDebugStatus("Layer not found in registry");
-            return;
-        }
-
-        shipsLayerRef.current = shipsLayer;
-        // shipsLayer.setEnabled(true); // ShipsLayer might not have setEnabled exposed in interface but it has it in class
         layerDiagnostics.setEnabled(layerId, true);
 
         const loadShipsData = async (): Promise<void> => {
@@ -196,7 +186,6 @@ export default function ShipsMapLayer({
                 );
 
                 if (!response) {
-                    // shipsLayer.updateData({ type: "FeatureCollection", features: [] }); // ShipsLayer missing updateData in interface?
                     return;
                 }
 
@@ -204,11 +193,7 @@ export default function ShipsMapLayer({
                     try {
                         const featureCollection = response;
 
-                        // 1. Try to update the GL layer (DISABLED for Mini PC)
-                        // shipsLayer.updateData(featureCollection); 
-                        // setDebugStatus(`Updated (WebGL): ${featureCollection.features.length} ships`);
-
-                        // 2. HTML MARKER RENDERING (Enabled for Mini PC)
+                        // HTML MARKER RENDERING
                         if (map) {
                             const MAX_MARKERS = 500;
                             const features = featureCollection.features.slice(0, MAX_MARKERS);
@@ -286,7 +271,7 @@ export default function ShipsMapLayer({
         return () => {
             clearInterval(intervalId);
         };
-    }, [config, layerRegistry, mapReady]);
+    }, [config, mapReady]);
 
     return null;
 }

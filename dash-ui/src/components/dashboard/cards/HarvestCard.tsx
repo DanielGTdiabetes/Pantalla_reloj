@@ -341,7 +341,7 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
       <div className="harvest-carousel">
         <div className="harvest-slide fade-in" key={currentIndex}>
           <img
-            src={`${iconPath}?v=1`}
+            src={iconPath}
             alt={currentItem.name}
             className="harvest-icon-large"
             onError={(e) => {

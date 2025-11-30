@@ -6,7 +6,6 @@ import { apiGet } from "../../../lib/api";
 import { withConfigDefaults } from "../../../config/defaults";
 import { layerDiagnostics, type LayerId } from "./LayerDiagnostics";
 import type { LayerRegistry } from "./LayerRegistry";
-import AircraftLayer from "./AircraftLayer";
 import type { AppConfig } from "../../../types/config";
 
 type FlightFeatureProperties = {
@@ -196,15 +195,13 @@ export default function AircraftMapLayer({
     config,
     mapReady,
 }: AircraftMapLayerProps) {
-    const aircraftLayerRef = useRef<AircraftLayer | null>(null);
     const [debugStatus, setDebugStatus] = useState<string>("Initializing...");
-    const liveMarkerRef = useRef<Marker | null>(null);
 
     useEffect(() => {
-        console.log("[AircraftMapLayer] Mounted");
+        console.log("[AircraftMapLayer] Mounted (HTML Mode)");
 
-        if (!config || !mapRef.current || !mapReady || !layerRegistry) {
-            setDebugStatus(`Preconditions failed: Cfg=${!!config} Map=${!!mapRef.current} Ready=${mapReady} Reg=${!!layerRegistry}`);
+        if (!config || !mapRef.current || !mapReady) {
+            setDebugStatus(`Preconditions failed: Cfg=${!!config} Map=${!!mapRef.current} Ready=${mapReady}`);
             return;
         }
 
@@ -221,30 +218,27 @@ export default function AircraftMapLayer({
         }
 
         const flightsEnabled = flightsConfig.enabled ?? false;
-        const openskyEnabled = (openskyConfig.enabled ?? true) && (openskyConfig.oauth2?.has_credentials ?? true);
+        // Relaxed check: if openskyConfig is missing, assume enabled if flights are enabled
+        const openskyEnabled = (openskyConfig.enabled ?? true);
 
-        if (!flightsEnabled || !openskyEnabled) {
-            setDebugStatus(`Disabled: Flights=${flightsEnabled} OpenSky=${openskyEnabled}`);
+        if (!flightsEnabled) {
+            setDebugStatus(`Disabled: Flights=${flightsEnabled}`);
             layerDiagnostics.setEnabled(layerId, false);
             return;
         }
 
-        const aircraftLayer = layerRegistry.get("geoscope-aircraft") as AircraftLayer | undefined;
-        if (!aircraftLayer) {
-            setDebugStatus("Layer not found in registry");
-            return;
-        }
-
-        aircraftLayerRef.current = aircraftLayer;
-        aircraftLayer.setEnabled(true);
         layerDiagnostics.setEnabled(layerId, true);
 
         // FORCE ZOOM/CENTER for Mini PC
         if (mapRef.current) {
-            mapRef.current.jumpTo({
-                center: [-3.7038, 40.4168], // Madrid
-                zoom: 5.0 // Zoom out slightly to include Cadiz (South)
-            });
+            // Only jump if we are very far away or at 0,0
+            const center = mapRef.current.getCenter();
+            if (center.lng === 0 && center.lat === 0) {
+                mapRef.current.jumpTo({
+                    center: [-3.7038, 40.4168], // Madrid
+                    zoom: 5.0
+                });
+            }
         }
 
         const loadFlightsData = async (): Promise<void> => {
@@ -290,7 +284,6 @@ export default function AircraftMapLayer({
                 );
 
                 if (!response) {
-                    aircraftLayer.updateData({ type: "FeatureCollection", features: [] });
                     return;
                 }
 
@@ -300,11 +293,7 @@ export default function AircraftMapLayer({
                     try {
                         const featureCollection = flightsResponseToGeoJSON(response);
 
-                        // 1. Try to update the GL layer
-                        // aircraftLayer.updateData(featureCollection); // DISABLED: WebGL failing on Mini PC
-                        // setDebugStatus(`Updated (WebGL): ${featureCollection.features.length} aircraft`);
-
-                        // 2. HTML MARKER RENDERING (Restored & Boosted)
+                        // HTML MARKER RENDERING
                         if (map) {
                             const MAX_MARKERS = 500; // Increased limit for user request
                             const features = featureCollection.features.slice(0, MAX_MARKERS);
@@ -367,9 +356,6 @@ export default function AircraftMapLayer({
             } catch (error) {
                 console.error("Error loading flights:", error);
                 setDebugStatus("Error loading flights");
-                if (aircraftLayerRef.current) {
-                    aircraftLayerRef.current.updateData({ type: "FeatureCollection", features: [] });
-                }
             }
         };
 
@@ -384,7 +370,7 @@ export default function AircraftMapLayer({
         return () => {
             clearInterval(intervalId);
         };
-    }, [config, layerRegistry, mapReady]);
+    }, [config, mapReady]);
 
     return null;
 }
