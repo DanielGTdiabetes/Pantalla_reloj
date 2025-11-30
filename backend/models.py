@@ -132,7 +132,7 @@ class CustomXyzConfig(BaseModel):
 class MapFixedView(BaseModel):
     """Vista fija del mapa."""
     center: MapCenter = Field(default_factory=MapCenter)
-    zoom: float = Field(default=4.8, ge=1, le=20)
+    zoom: float = Field(default=3.6, ge=1, le=20)
     bearing: float = Field(default=0, ge=-180, le=180)
     pitch: float = Field(default=0, ge=0, le=60)
 
@@ -886,22 +886,7 @@ class MapTilerSecretsConfig(BaseModel):
     api_key: Optional[str] = Field(default=None, max_length=512)
 
 
-class StormModeConfig(BaseModel):
-    """Configuración de modo tormenta."""
-    enabled: bool = True
-    center_lat: float = Field(default=39.986, ge=-90, le=90)
-    center_lng: float = Field(default=-0.051, ge=-180, le=180)
-    zoom: float = Field(default=9.0, ge=1, le=20)
-    auto_enable: bool = Field(default=True)
-    auto_disable_after_minutes: int = Field(default=60, ge=1, le=1440)
 
-
-class BlitzortungAutoStormConfig(BaseModel):
-    """Configuración de auto-activación de modo tormenta."""
-    enabled: bool = True
-    radius_km: float = Field(default=30, ge=1, le=500)
-    min_events_in_5min: int = Field(default=3, ge=1, le=100)
-    cooldown_minutes: int = Field(default=60, ge=1, le=1440)
 
 
 class BlitzortungConfig(BaseModel):
@@ -910,7 +895,7 @@ class BlitzortungConfig(BaseModel):
     mqtt_host: str = Field(default="127.0.0.1", max_length=256)
     mqtt_port: int = Field(default=1883, ge=1, le=65535)
     mqtt_topic: str = Field(default="blitzortung/1", max_length=256)
-    auto_storm_mode: Optional[BlitzortungAutoStormConfig] = None
+    # auto_storm_mode removed
     retention_minutes: int = Field(default=30, ge=1, le=1440)
     max_points: int = Field(default=1500, ge=1, le=10000)
     # Legacy fields
@@ -989,7 +974,7 @@ class AppConfig(BaseModel):
     ui_global: Optional[UIGlobalConfig] = None
     panels: Optional[PanelsConfig] = None
     layers: Optional[LayersConfig] = Field(default_factory=LayersConfig)
-    storm: Optional[StormModeConfig] = None
+    # storm removed
     blitzortung: Optional[BlitzortungConfig] = None
     news: Optional[NewsTopLevelConfig] = None
     ephemerides: Optional[EphemeridesTopLevelConfig] = None

@@ -40,10 +40,10 @@
     "viewMode": "fixed",
     "fixed": {
       "center": {
-        "lat": 40.4637,
-        "lon": -3.7492
+        "lat": 40.0,
+        "lon": -3.5
       },
-      "zoom": 5.5,
+      "zoom": 3.6,
       "bearing": 0,
       "pitch": 0
     },
@@ -262,25 +262,11 @@
       "cache_hours": 24
     }
   },
-  "storm": {
-    "enabled": true,
-    "center_lat": 40.4637,
-    "center_lng": -3.7492,
-    "zoom": 5.5,
-    "auto_enable": true,
-    "auto_disable_after_minutes": 60
-  },
   "blitzortung": {
     "enabled": true,
     "mqtt_host": "127.0.0.1",
     "mqtt_port": 1883,
     "mqtt_topic": "blitzortung/1",
-    "auto_storm_mode": {
-      "enabled": true,
-      "radius_km": 30,
-      "min_events_in_5min": 3,
-      "cooldown_minutes": 60
-    },
     "retention_minutes": 30,
     "max_points": 1500
   },

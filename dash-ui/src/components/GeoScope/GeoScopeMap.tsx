@@ -53,9 +53,9 @@ import {
 } from "./mapStyle";
 // Vista fija por defecto (España)
 const DEFAULT_VIEW = {
-  lng: -3.7492,
-  lat: 40.4637,
-  zoom: 4.8, // Zoom un poco más alejado por defecto para ver mejor la península
+  lng: -3.5,
+  lat: 40.0,
+  zoom: 3.6, // Zoom para ver toda la península ibérica en pantalla vertical
   bearing: 0,
   pitch: 0
 };
@@ -656,7 +656,7 @@ export default function GeoScopeMap({
   const fallbackAppliedRef = useRef(false);
   const currentMinZoomRef = useRef<number | null>(null);
   const mapStateMachineRef = useRef<any>(null);
-  const stormModeActiveRef = useRef(false);
+
   const viewStateRef = useRef<any>({ ...DEFAULT_VIEW });
 
   // Configuración derivada
@@ -1130,8 +1130,8 @@ export default function GeoScopeMap({
     // En pantallas pequeñas (Mini PC), ignoramos el modo tormenta para forzar la vista fija de la península
     const isMiniPC = typeof window !== "undefined" && window.innerWidth < 1280;
 
-    if (!config || !mapRef.current || (stormModeActiveRef.current && !isMiniPC)) {
-      // No actualizar si storm mode está activo (tiene prioridad), excepto en Mini PC
+    if (!config || !mapRef.current) {
+      // No actualizar si no hay config o mapa
       return;
     }
 
@@ -1156,11 +1156,11 @@ export default function GeoScopeMap({
     // Ajuste dinámico para pantallas pequeñas (Mini PC)
     // Si la pantalla es pequeña (incluyendo 1024px o 1280px), FORZAMOS la vista de la península
     if (typeof window !== "undefined" && window.innerWidth < 1280) {
-      // Usamos 4.6 para que se vea la península entera
-      zoom = 4.6;
-      // Forzamos el centro a Madrid/España para evitar que el mapa "viaje" a otras ciudades
-      centerLat = 40.4637;
-      centerLng = -3.7492;
+      // Usamos 3.6 para que se vea la península entera en vertical
+      zoom = 3.6;
+      // Forzamos el centro a España para evitar que el mapa "viaje" a otras ciudades
+      centerLat = 40.0;
+      centerLng = -3.5;
     }
 
     const map = mapRef.current;
