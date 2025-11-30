@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { SproutIcon } from "../../icons";
 
 type HarvestItem = {
@@ -312,7 +313,7 @@ const failedIconsCache = new Set<string>();
 const failedFallbackCache = new Set<string>();
 let fallbackErrorLogged = false;
 
-import { useState, useEffect } from "react";
+
 
 export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
   const entries = items.length > 0 ? items : [{ name: "Sin datos de cultivo" }];
@@ -340,7 +341,7 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
       <div className="harvest-carousel">
         <div className="harvest-slide fade-in" key={currentIndex}>
           <img
-            src={iconPath}
+            src={`${iconPath}?v=1`}
             alt={currentItem.name}
             className="harvest-icon-large"
             onError={(e) => {

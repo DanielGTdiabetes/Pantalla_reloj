@@ -114,7 +114,7 @@ export const DEFAULT_FLIGHTS_LAYER_CONFIG: FlightsLayerConfig = {
 import { OpenSkyConfig } from "../types/config";
 
 export const DEFAULT_OPENSKY_CONFIG: OpenSkyConfig = {
-  enabled: false,
+  enabled: true,
   mode: "bbox" as const,
   poll_seconds: 10,
   max_aircraft: 400,
