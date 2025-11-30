@@ -252,7 +252,7 @@ class AISStreamService:
             "APIKey": api_key,
             "BoundingBoxes": bbox_to_use,
             "FilterShipTypes": [], # Empty list = all ship types
-            "FilterMessageTypes": ["PositionReport"],
+            "FilterMessageTypes": ["PositionReport", "StandardClassBPositionReport"],
         }
         
         # CRÍTICO: Enviar suscripción INMEDIATAMENTE tras conectar
@@ -309,11 +309,16 @@ class AISStreamService:
             self._logger.debug("AISStream payload missing Message block")
             return
 
+        # Support both Class A and Class B position reports
         position = message.get("PositionReport")
+        if not position:
+            position = message.get("StandardClassBPositionReport")
+
         if not isinstance(position, dict):
-            self._logger.debug("AISStream payload without PositionReport")
+            # self._logger.debug("AISStream payload without PositionReport")
             return
 
+        # PascalCase keys as per AISStream documentation
         lat = _to_float(position.get("Latitude") or position.get("LatitudeDegrees"))
         lon = _to_float(position.get("Longitude") or position.get("LongitudeDegrees"))
         if lat is None or lon is None:
