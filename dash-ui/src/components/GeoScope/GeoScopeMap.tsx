@@ -1254,16 +1254,22 @@ export default function GeoScopeMap({
           const ne = bounds.getNorthEast();
           bbox = `${sw.lng},${sw.lat},${ne.lng},${ne.lat}`;
           maxItemsView = shipsConfig.max_items_view;
+        } else {
+          console.warn("[GeoScopeMap] Map style not loaded or map ref missing for Ships");
+        }
 
-          // Fallback for Mini PC (small screen) to ensure data availability
-          if (typeof window !== "undefined") {
-            console.log("[GeoScopeMap] Window width:", window.innerWidth);
-            if (window.innerWidth < 1280) {
-              const spainBbox = "-12.0,34.0,6.0,46.0"; // Generous Spain BBox (lomin, lamin, lomax, lamax)
-              console.log("[GeoScopeMap] Mini PC detected, forcing Ships BBOX:", spainBbox);
-              bbox = spainBbox;
-            }
+        // FORCE Spain BBox for Mini PC debugging
+        const spainBbox = "-12.0,34.0,6.0,46.0";
+
+        if (typeof window !== "undefined") {
+          console.log("[GeoScopeMap] Debug - Window width:", window.innerWidth);
+          // Relaxed condition: Force if small screen OR if bbox is still undefined
+          if (window.innerWidth < 2500 || !bbox) {
+            console.log("[GeoScopeMap] Forcing Ships BBOX (Small screen or Map not ready):", spainBbox);
+            bbox = spainBbox;
           }
+        } else if (!bbox) {
+          bbox = spainBbox;
         }
 
         // Construir URL con parámetros

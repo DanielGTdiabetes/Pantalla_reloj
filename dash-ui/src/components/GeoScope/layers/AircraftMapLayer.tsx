@@ -259,32 +259,39 @@ export default function AircraftMapLayer({
                     return;
                 }
 
-                const map = mapRef.current;
                 let bbox: string | undefined;
+                const map = mapRef.current;
 
+                // Always try to get map bounds first
                 if (map && map.isStyleLoaded()) {
                     const expandedBbox = getExpandedBbox(map, 1.5);
                     bbox = `${expandedBbox.lamin},${expandedBbox.lamax},${expandedBbox.lomin},${expandedBbox.lomax}`;
 
                     console.log(
-                        "[AircraftMapLayer] BBOX:",
+                        "[AircraftMapLayer] Map BBOX:",
                         expandedBbox.lamin.toFixed(4),
                         expandedBbox.lamax.toFixed(4),
                         expandedBbox.lomin.toFixed(4),
                         expandedBbox.lomax.toFixed(4)
                     );
+                } else {
+                    console.warn("[AircraftMapLayer] Map style not loaded or map ref missing");
+                }
 
-                    // Fallback for Mini PC (small screen) to ensure data availability
-                    // The map is fixed to Spain on these devices, so we can safely force the bbox
-                    // This prevents issues where map.getBounds() might return invalid values during init
-                    if (typeof window !== "undefined") {
-                        console.log("[AircraftMapLayer] Window width:", window.innerWidth);
-                        if (window.innerWidth < 1280) {
-                            const spainBbox = "34.0,46.0,-12.0,6.0"; // Generous Spain BBox
-                            console.log("[AircraftMapLayer] Mini PC detected, forcing BBOX:", spainBbox);
-                            bbox = spainBbox;
-                        }
+                // FORCE Spain BBox for Mini PC debugging
+                // We suspect the map bounds are invalid or the screen size check is failing
+                const spainBbox = "34.0,46.0,-12.0,6.0";
+
+                if (typeof window !== "undefined") {
+                    console.log("[AircraftMapLayer] Debug - Window width:", window.innerWidth);
+                    // Relaxed condition: Force if small screen OR if bbox is still undefined (map not ready)
+                    if (window.innerWidth < 2500 || !bbox) {
+                        console.log("[AircraftMapLayer] Forcing Spain BBOX (Small screen or Map not ready):", spainBbox);
+                        bbox = spainBbox;
                     }
+                } else if (!bbox) {
+                    // Fallback for server-side or weird env
+                    bbox = spainBbox;
                 }
 
                 let url = "/api/layers/flights";
