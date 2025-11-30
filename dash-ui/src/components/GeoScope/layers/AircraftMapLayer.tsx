@@ -252,6 +252,14 @@ export default function AircraftMapLayer({
         aircraftLayer.setEnabled(true);
         layerDiagnostics.setEnabled(layerId, true);
 
+        // FORCE ZOOM/CENTER for Mini PC
+        if (mapRef.current) {
+            mapRef.current.jumpTo({
+                center: [-3.7038, 40.4168], // Madrid
+                zoom: 5.5 // Good zoom for Iberian Peninsula
+            });
+        }
+
         const loadFlightsData = async (): Promise<void> => {
             const map = mapRef.current;
 
@@ -263,8 +271,8 @@ export default function AircraftMapLayer({
                     bbox = `${expandedBbox.lamin},${expandedBbox.lamax},${expandedBbox.lomin},${expandedBbox.lomax}`;
                 }
 
-                // FORCE Spain BBox for Mini PC debugging (Tighter zoom on Spain/Portugal)
-                const spainBbox = "35.0,44.0,-10.0,4.5"; // Approx: South of Spain to North of Spain, Portugal to East Spain
+                // FORCE Spain BBox for Mini PC debugging
+                const spainBbox = "35.0,44.0,-10.0,4.5";
                 if (typeof window !== "undefined") {
                     if (window.innerWidth < 2500 || !bbox) {
                         bbox = spainBbox;
@@ -304,8 +312,65 @@ export default function AircraftMapLayer({
                 if (!responseDisabled) {
                     try {
                         const featureCollection = flightsResponseToGeoJSON(response);
+
+                        // 1. Try to update the GL layer
                         aircraftLayer.updateData(featureCollection);
                         setDebugStatus(`Updated: ${featureCollection.features.length} aircraft`);
+
+                        // 2. HTML MARKER RENDERING (Restored Fallback)
+                        if (map) {
+                            const MAX_MARKERS = 50;
+                            const features = featureCollection.features.slice(0, MAX_MARKERS);
+                            const currentIds = new Set<string>();
+
+                            // Initialize marker cache if needed
+                            if (!(window as any)._aircraftMarkers) {
+                                (window as any)._aircraftMarkers = new Map<string, Marker>();
+                            }
+                            const markerMap = (window as any)._aircraftMarkers as Map<string, Marker>;
+
+                            features.forEach(feature => {
+                                const id = String(feature.id || feature.properties.icao24 || Math.random());
+                                currentIds.add(id);
+                                const coords = feature.geometry.coordinates as [number, number];
+                                const track = feature.properties.track ?? 0;
+
+                                let marker = markerMap.get(id);
+
+                                if (!marker) {
+                                    // Create new marker
+                                    const el = document.createElement('div');
+                                    el.className = 'aircraft-marker';
+                                    el.style.width = '24px';
+                                    el.style.height = '24px';
+                                    el.style.backgroundImage = 'url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%23f97316\' stroke=\'%23ffffff\' stroke-width=\'2\'%3E%3Cpath d=\'M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z\'/%3E%3C/svg%3E")';
+                                    el.style.backgroundSize = 'contain';
+                                    el.style.backgroundRepeat = 'no-repeat';
+                                    el.style.cursor = 'pointer';
+
+                                    // @ts-ignore
+                                    const newMarker = new Marker({ element: el, rotationAlignment: 'map' })
+                                        .setLngLat(coords)
+                                        .setRotation(track)
+                                        .addTo(map);
+
+                                    markerMap.set(id, newMarker);
+                                } else {
+                                    // Update existing
+                                    marker.setLngLat(coords);
+                                    marker.setRotation(track);
+                                }
+                            });
+
+                            // Remove stale markers
+                            for (const [id, marker] of markerMap.entries()) {
+                                if (!currentIds.has(id)) {
+                                    marker.remove();
+                                    markerMap.delete(id);
+                                }
+                            }
+                        }
+
                     } catch (e) {
                         console.error("Error updating aircraft data", e);
                     }
