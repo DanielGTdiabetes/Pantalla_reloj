@@ -25,6 +25,7 @@ import SatelliteHybridLayer, { type SatelliteLabelsStyle } from "./layers/Satell
 import ShipsLayer from "./layers/ShipsLayer";
 import AircraftMapLayer from "./layers/AircraftMapLayer";
 import ShipsMapLayer from "./layers/ShipsMapLayer";
+import LightningMapLayer from "./layers/LightningMapLayer";
 import MapSpinner from "../MapSpinner";
 import { hasSprite } from "./utils/styleSprite";
 import { layerDiagnostics, type LayerId } from "./layers/LayerDiagnostics";
@@ -1948,6 +1949,12 @@ export default function GeoScopeMap({
             mapReady={mapReady}
           />
           <ShipsMapLayer
+            mapRef={mapRef}
+            layerRegistry={layerRegistryRef.current}
+            config={config}
+            mapReady={mapReady}
+          />
+          <LightningMapLayer
             mapRef={mapRef}
             layerRegistry={layerRegistryRef.current}
             config={config}
