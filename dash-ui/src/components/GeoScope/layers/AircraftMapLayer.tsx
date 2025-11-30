@@ -308,26 +308,71 @@ export default function AircraftMapLayer({
                 if (!responseDisabled) {
                     try {
                         const featureCollection = flightsResponseToGeoJSON(response);
-                        aircraftLayer.updateData(featureCollection);
 
-                        // DEBUG: Update Live Marker (Blue) for the first plane
-                        if (featureCollection.features.length > 0 && map) {
-                            const firstPlane = featureCollection.features[0];
-                            const coords = firstPlane.geometry.coordinates as [number, number];
+                        // 1. Try to update the GL layer (for other devices/debugging)
+                        try {
+                            aircraftLayer.updateData(featureCollection);
+                        } catch (e) { /* ignore */ }
 
-                            if (!liveMarkerRef.current) {
+                        // 2. DIRECT MARKER RENDERING (Fallback for Mini PC)
+                        // Manage markers manually
+                        if (!map) return;
+
+                        const MAX_MARKERS = 50;
+                        const features = featureCollection.features.slice(0, MAX_MARKERS);
+                        const currentIds = new Set<string>();
+
+                        // Initialize marker cache if needed
+                        if (!(window as any)._aircraftMarkers) {
+                            (window as any)._aircraftMarkers = new Map<string, Marker>();
+                        }
+                        const markerMap = (window as any)._aircraftMarkers as Map<string, Marker>;
+
+                        features.forEach(feature => {
+                            const id = String(feature.id || feature.properties.icao24 || Math.random());
+                            currentIds.add(id);
+                            const coords = feature.geometry.coordinates as [number, number];
+                            const track = feature.properties.track ?? 0;
+
+                            let marker = markerMap.get(id);
+
+                            if (!marker) {
+                                // Create new marker
+                                const el = document.createElement('div');
+                                el.className = 'aircraft-marker';
+                                el.style.width = '24px';
+                                el.style.height = '24px';
+                                el.style.backgroundImage = 'url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%23f97316\' stroke=\'%23ffffff\' stroke-width=\'2\'%3E%3Cpath d=\'M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z\'/%3E%3C/svg%3E")';
+                                el.style.backgroundSize = 'contain';
+                                el.style.backgroundRepeat = 'no-repeat';
+                                el.style.cursor = 'pointer';
+
                                 // @ts-ignore
-                                liveMarkerRef.current = new Marker({ color: "#0000FF" }) // BLUE
+                                const newMarker = new Marker({ element: el, rotationAlignment: 'map' })
                                     .setLngLat(coords)
+                                    .setRotation(track)
                                     .addTo(map);
+
+                                markerMap.set(id, newMarker);
                             } else {
-                                liveMarkerRef.current.setLngLat(coords);
+                                // Update existing
+                                marker.setLngLat(coords);
+                                marker.setRotation(track);
+                            }
+                        });
+
+                        // Remove stale markers
+                        for (const [id, marker] of markerMap.entries()) {
+                            if (!currentIds.has(id)) {
+                                marker.remove();
+                                markerMap.delete(id);
                             }
                         }
 
-                        setDebugStatus(`Updated: ${featureCollection.features.length} planes. L:${layerExists} S:${sourceExists}`);
+                        setDebugStatus(`Active: ${features.length} markers (GL: L:${layerExists} S:${sourceExists})`);
+
                     } catch (conversionError) {
-                        setDebugStatus("Conversion error");
+                        setDebugStatus(`Render error: ${String(conversionError)}`);
                     }
                 }
             } catch (error) {
