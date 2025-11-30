@@ -1223,6 +1223,201 @@ export const OverlayRotator: React.FC = () => {
     <section className="overlay-rotator" role="complementary" aria-live="polite">
       <BackgroundGradient />
       <WeatherAmbience
+      window.removeEventListener("pantalla:rotation:restart", handleRotationRestart);
+    };
+  }, []);
+
+  // Memoizar IDs de paneles disponibles para usar como dependencia estable
+  const availablePanelIds = useMemo(() => {
+    return availablePanels.map(p => p.id).join(",");
+  }, [availablePanels]);
+
+  // Resetear índice cuando cambie la lista de paneles
+  useEffect(() => {
+    setCurrentPanelIndex(0);
+    currentPanelIndexRef.current = 0;
+    // No resetear el contador de efemérides históricas para mantener la continuidad del alternado
+  }, [availablePanelIds, rotationRestartKey]);
+
+  // Manejo del timer de rotación
+  useEffect(() => {
+    // Limpiar timer anterior si existe
+    if (rotationTimerRef.current !== null) {
+      window.clearTimeout(rotationTimerRef.current);
+      rotationTimerRef.current = null;
+      if (IS_DEV) {
+        console.log("[OverlayRotator] Timer limpiado (dependencias cambiaron)");
+      }
+    }
+
+    // Si rotation está deshabilitado o lista vacía o solo hay un panel, no crear timer
+    if (!rotationConfig.enabled || availablePanels.length <= 1) {
+      if (IS_DEV) {
+        console.log(`[OverlayRotator] Timer no iniciado: enabled=${rotationConfig.enabled}, panels=${availablePanels.length}`);
+      }
+      // Resetear índice cuando se desactiva la rotación
+      if (!rotationConfig.enabled || availablePanels.length <= 1) {
+        setCurrentPanelIndex(0);
+        currentPanelIndexRef.current = 0;
+      }
+      return;
+    }
+
+    // Asegurar que el índice actual sea válido
+    const currentIndexValue = currentPanelIndexRef.current ?? 0;
+    const validIndex = currentIndexValue % availablePanels.length;
+    if (currentIndexValue !== validIndex) {
+      setCurrentPanelIndex(validIndex);
+      currentPanelIndexRef.current = validIndex;
+    }
+
+    // Usar duración del panel actual en lugar de una duración global
+    const getCurrentPanelDuration = () => {
+      const currentPanels = availablePanelsRef.current;
+      if (!currentPanels || currentPanels.length === 0) {
+        return DEFAULT_DURATIONS_SEC.clock * 1000;
+      }
+      // Usar la ref para obtener el índice actual sin causar re-render del efecto
+      const currentIndexValue = currentPanelIndexRef.current ?? 0;
+      const currentIndex = currentIndexValue % currentPanels.length;
+      const currentPanel = currentPanels[currentIndex];
+      return currentPanel?.duration ?? DEFAULT_DURATIONS_SEC.clock * 1000;
+    };
+
+    // Función para avanzar al siguiente panel
+    const advanceToNextPanel = () => {
+      setCurrentPanelIndex((prevIndex) => {
+        const currentPanels = availablePanelsRef.current;
+        if (!currentPanels || currentPanels.length === 0) {
+          currentPanelIndexRef.current = 0;
+          return 0;
+        }
+        const nextIndex = (prevIndex + 1) % currentPanels.length;
+        currentPanelIndexRef.current = nextIndex;
+        if (IS_DEV) {
+          console.log(`[OverlayRotator] Rotando de panel ${prevIndex} a ${nextIndex} (${currentPanels[nextIndex]?.id})`);
+        }
+        return nextIndex;
+      });
+    };
+
+    // Programar el siguiente cambio usando duración del panel actual
+    const scheduleNext = () => {
+      // Verificar que la rotación sigue habilitada antes de programar
+      const currentPanels = availablePanelsRef.current;
+      if (!rotationConfig.enabled || !currentPanels || currentPanels.length <= 1) {
+        return;
+      }
+      const duration = getCurrentPanelDuration();
+      rotationTimerRef.current = window.setTimeout(() => {
+        advanceToNextPanel();
+        scheduleNext(); // Programar el siguiente
+      }, duration);
+    };
+
+    // Iniciar el ciclo
+    scheduleNext();
+
+    if (IS_DEV) {
+      console.log(`[OverlayRotator] Timer iniciado: ${availablePanels.length} paneles con duraciones individuales`);
+    }
+
+    // Cleanup: siempre limpiar el timer
+    return () => {
+      if (rotationTimerRef.current !== null) {
+        window.clearTimeout(rotationTimerRef.current);
+        rotationTimerRef.current = null;
+        if (IS_DEV) {
+          console.log("[OverlayRotator] Timer limpiado (cleanup)");
+        }
+      }
+    };
+  }, [rotationConfig.enabled, rotationConfig.durations_sec, availablePanels.length, availablePanelIds, rotationRestartKey]);
+
+  // Sincronizar la ref con el estado cuando cambie
+  useEffect(() => {
+    currentPanelIndexRef.current = currentPanelIndex;
+  }, [currentPanelIndex]);
+
+  // Determinar el panel actual a mostrar
+  const currentPanel = useMemo<RotatingCardItem | null>(() => {
+    if (availablePanels.length === 0) {
+      return null;
+    }
+
+    // Si rotation está deshabilitado o solo hay un panel, mostrar el primero
+    if (!rotationConfig.enabled || availablePanels.length === 1) {
+      return availablePanels[0] || null;
+    }
+
+    // Usar el índice cíclico
+    const index = currentPanelIndex % availablePanels.length;
+    return availablePanels[index] || availablePanels[0] || null;
+  }, [rotationConfig.enabled, availablePanels, currentPanelIndex]);
+
+  const lastUpdatedLabel = useMemo(() => {
+    if (!lastUpdatedAt) {
+      return null;
+    }
+    return dayjs(lastUpdatedAt).tz(timezone).format("HH:mm:ss");
+  }, [timezone, lastUpdatedAt]);
+
+  const statusLabel = useMemo(() => {
+    if (loading && !lastUpdatedAt) {
+      return "Sincronizando datos…";
+    }
+    if (lastUpdatedLabel) {
+      return `Actualizado ${lastUpdatedLabel}`;
+    }
+    return "Datos no disponibles";
+  }, [lastUpdatedAt, lastUpdatedLabel, loading]);
+
+  // Calcular progreso de rotación
+  const { progress: rotationProgress } = useRotationProgress(
+    currentPanel?.duration ?? 0,
+    currentPanel !== null && rotationConfig.enabled
+  );
+
+  // Obtener condición meteorológica para efectos ambientales
+  const weatherCondition = useMemo(() => {
+    const weather = (payload.weather ?? {}) as Record<string, unknown>;
+    return sanitizeRichText(weather.summary) || sanitizeRichText(weather.condition) || null;
+  }, [payload.weather]);
+
+  // Obtener velocidad del viento
+  const windSpeed = useMemo(() => {
+    const weather = (payload.weather ?? {}) as Record<string, unknown>;
+    const wind = typeof weather.wind_speed === "number" ? weather.wind_speed
+      : typeof weather.wind === "number" ? weather.wind
+        : typeof weather.windSpeed === "number" ? weather.windSpeed
+          : typeof weather.ws === "number" ? weather.ws
+            : 0;
+    // Normalizar velocidad del viento para efectos (-10 a 10)
+    return Math.max(-10, Math.min(10, (wind / 10) * 2));
+  }, [payload.weather]);
+
+  if (!currentPanel) {
+    return (
+      <section className="overlay-rotator" role="complementary" aria-live="polite">
+        <BackgroundGradient />
+        <div className="overlay-rotator__content">
+          {loading ? (
+            <SkeletonLoader variant="card" width="100%" height="400px" />
+          ) : (
+            <div className="overlay-rotator__fallback" role="status">
+              <p>Datos no disponibles</p>
+            </div>
+          )}
+          <p className="overlay-rotator__status">{statusLabel}</p>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="overlay-rotator" role="complementary" aria-live="polite">
+      <BackgroundGradient />
+      <WeatherAmbience
         condition={weatherCondition}
         isNight={isNight}
         windSpeed={windSpeed}
@@ -1239,15 +1434,7 @@ export const OverlayRotator: React.FC = () => {
                 <RotationProgress progress={rotationProgress} />
               )}
             </div>
-            <div className="overlay-rotator__status-container">
-              {lastUpdatedAt && (
-                <span className="overlay-rotator__live-indicator pulse-effect" aria-label="Datos en vivo">
-                  <span className="overlay-rotator__live-dot"></span>
-                  <span className="overlay-rotator__live-text">En vivo</span>
-                </span>
-              )}
-              <p className="overlay-rotator__status">{statusLabel}</p>
-            </div>
+            {/* Footer status removed for cleaner UI */}
           </>
         )}
       </div>
