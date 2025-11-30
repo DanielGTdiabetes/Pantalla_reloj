@@ -585,85 +585,13 @@ export default class AircraftLayer implements Layer {
   }
 
   private async determineRenderModeAsync(shouldLog: boolean): Promise<EffectiveRenderMode> {
-    if (this.renderMode === "circle") {
-      return "circle";
-    }
-    if (this.renderMode === "symbol_custom") {
-      // Intentar registrar el icono custom
-      if (!this.map) {
-        return "circle";
-      }
-      const registered = await registerPlaneIcon(this.map);
-      if (registered) {
-        this.planeIconRegistered = true;
-        return "symbol_custom";
-      }
-      if (shouldLog) {
-        console.warn("Flights: no se pudo registrar icono custom; usando circle");
-      }
-      return "circle";
-    }
-    if (this.renderMode === "symbol") {
-      if (this.spriteAvailable) {
-        return "symbol";
-      }
-      if (shouldLog && !AircraftLayer.forcedSymbolWarned) {
-        console.warn("Flights: sprite no disponible con mode=symbol; degradando a circle");
-        AircraftLayer.forcedSymbolWarned = true;
-      }
-      return "circle";
-    }
-    // render_mode === "auto"
-    if (this.spriteAvailable) {
-      return "symbol";
-    }
-    // Intentar usar icono custom como fallback
-    if (this.map) {
-      const registered = await registerPlaneIcon(this.map);
-      if (registered) {
-        this.planeIconRegistered = true;
-        return "symbol_custom";
-      }
-    }
-    if (shouldLog && !AircraftLayer.autoSpriteWarned) {
-      console.warn("Flights: sprite no disponible; usando fallback circle");
-      AircraftLayer.autoSpriteWarned = true;
-    }
-    return "circle";
+    // FORCE SYMBOL MODE FOR DEBUGGING
+    return "symbol";
   }
 
   private determineRenderMode(shouldLog: boolean): EffectiveRenderMode {
-    // Versión síncrona (para compatibilidad inicial)
-    if (this.renderMode === "circle") {
-      return "circle";
-    }
-    if (this.renderMode === "symbol_custom") {
-      // En modo síncrono, verificar si ya está registrado
-      if (this.planeIconRegistered && safeHasImage(this.map, "plane")) {
-        return "symbol_custom";
-      }
-      // Si no está registrado, usar circle temporalmente hasta que se registre
-      return "circle";
-    }
-    if (this.renderMode === "symbol") {
-      if (this.spriteAvailable) {
-        return "symbol";
-      }
-      if (shouldLog && !AircraftLayer.forcedSymbolWarned) {
-        console.warn("Flights: sprite no disponible con mode=symbol; degradando a circle");
-        AircraftLayer.forcedSymbolWarned = true;
-      }
-      return "circle";
-    }
-    // render_mode === "auto"
-    if (this.spriteAvailable) {
-      return "symbol";
-    }
-    // Para auto sin sprite, verificar si el icono custom ya está registrado
-    if (this.planeIconRegistered && safeHasImage(this.map, "plane")) {
-      return "symbol_custom";
-    }
-    return "circle";
+    // FORCE SYMBOL MODE FOR DEBUGGING
+    return "symbol";
   }
 
   /**
@@ -712,6 +640,8 @@ export default class AircraftLayer implements Layer {
       }
     }
   }
+
+
 
   /**
    * Encuentra el ID de la primera capa de símbolos de etiquetas para colocar nuestras capas antes de ella.
@@ -1048,14 +978,23 @@ export default class AircraftLayer implements Layer {
             "icon-rotate": ["coalesce", ["get", "track"], ["get", "true_track"], ["get", "heading"], 0],
             "icon-rotation-alignment": "map",
             visibility: this.enabled ? "visible" : "none",
+            // DEBUG: Force text label
+            "text-field": "✈",
+            "text-size": 24,
+            "text-allow-overlap": true,
+            "text-ignore-placement": true
           },
           paint: {
             "icon-color": "#f97316",
             "icon-halo-color": "#111827",
             "icon-halo-width": 0.25,
             "icon-opacity": this.opacity,
+            // DEBUG: Text color
+            "text-color": "#FF0000",
+            "text-halo-color": "#FFFFFF",
+            "text-halo-width": 1
           },
-        }, beforeId);
+        });
       }
     } else {
       if (!map.getLayer(this.id)) {
