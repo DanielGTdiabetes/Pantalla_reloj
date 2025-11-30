@@ -637,6 +637,23 @@ class GlobalRadarLayerConfig(BaseModel):
     frame_step: int = Field(default=5, ge=1, le=60)
 
 
+    frame_step: int = Field(default=5, ge=1, le=60)
+
+
+class LightningLayerConfig(BaseModel):
+    """Configuración de capa de rayos."""
+    enabled: bool = True
+    provider: Literal["blitzortung"] = "blitzortung"
+    refresh_seconds: int = Field(default=1, ge=1, le=60)
+    buffer_max: int = Field(default=500, ge=10, le=2000)
+    prune_seconds: int = Field(default=900, ge=60, le=3600)
+    mqtt_host: str = Field(default="127.0.0.1", max_length=256)
+    mqtt_port: int = Field(default=1883, ge=1, le=65535)
+    mqtt_topic: str = Field(default="blitzortung/1", max_length=256)
+    ws_enabled: bool = False
+    ws_url: Optional[str] = Field(default=None, max_length=512)
+
+
 class GlobalLayersConfig(BaseModel):
     """Contenedor de capas globales (satellite, radar)."""
     satellite: Optional[GlobalSatelliteLayerConfig] = Field(default_factory=GlobalSatelliteLayerConfig)
@@ -647,6 +664,7 @@ class LayersConfig(BaseModel):
     """Configuración de capas v2."""
     flights: Optional[FlightsLayerConfig] = None
     ships: Optional[ShipsLayerConfig] = None
+    lightning: Optional[LightningLayerConfig] = None
     global_: Optional[GlobalLayersConfig] = Field(default_factory=GlobalLayersConfig, alias="global")
 
 

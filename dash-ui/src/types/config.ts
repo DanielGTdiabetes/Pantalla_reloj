@@ -319,9 +319,23 @@ export type GlobalLayersConfig = {
   radar?: GlobalRadarLayerConfig;
 };
 
+export type LightningLayerConfig = {
+  enabled: boolean;
+  provider: "blitzortung";
+  refresh_seconds: number;
+  buffer_max: number;
+  prune_seconds: number;
+  mqtt_host: string;
+  mqtt_port: number;
+  mqtt_topic: string;
+  ws_enabled: boolean;
+  ws_url?: string | null;
+};
+
 export type LayersConfig = {
   flights?: FlightsLayerConfig;
   ships?: ShipsLayerConfig;
+  lightning?: LightningLayerConfig;
   global?: GlobalLayersConfig;
   global_?: GlobalLayersConfig; // Alias para compatibilidad con backend
 };

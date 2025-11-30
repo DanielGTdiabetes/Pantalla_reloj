@@ -77,3 +77,11 @@ async def satellite_test():
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@router.get("/lightning")
+async def lightning_data(request: Request, bbox: Optional[str] = None) -> JSONResponse:
+    main = _load_main_module()
+
+    def _call():
+        return main.get_lightning(request, bbox)
+
+    return await run_in_threadpool(_call)

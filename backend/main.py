@@ -404,6 +404,29 @@ def _startup_services() -> None:
     # Inicializar caché del servicio de efemérides
     ephemerides.init_cache(cache_store)
     # Otros servicios se inicializan en otro evento startup más abajo
+    
+    # Inicializar Blitzortung si está habilitado en config
+    global blitzortung_service
+    try:
+        config = config_manager.read()
+        lightning_config = config.layers.lightning if config.layers else None
+        
+        if lightning_config and lightning_config.enabled:
+            logger.info("[startup] Initializing Blitzortung service")
+            with _blitzortung_lock:
+                blitzortung_service = BlitzortungService(
+                    enabled=True,
+                    mqtt_host=lightning_config.mqtt_host,
+                    mqtt_port=lightning_config.mqtt_port,
+                    mqtt_topic=lightning_config.mqtt_topic,
+                    ws_enabled=lightning_config.ws_enabled,
+                    ws_url=lightning_config.ws_url,
+                    buffer_max=lightning_config.buffer_max,
+                    prune_seconds=lightning_config.prune_seconds
+                )
+                blitzortung_service.start()
+    except Exception as exc:
+        logger.error("[startup] Failed to initialize Blitzortung service: %s", exc)
 
 
 @app.on_event("shutdown")
@@ -10576,6 +10599,31 @@ def get_ships_layer(request: Request) -> JSONResponse:
     # Obtener snapshot del servicio AISStream
     snapshot = ships_service.get_snapshot()
     return JSONResponse(snapshot)
+
+
+def get_lightning(request: Request, bbox: Optional[str] = None) -> JSONResponse:
+    """Devuelve datos de rayos en formato GeoJSON."""
+    global blitzortung_service
+    
+    if not blitzortung_service:
+        return JSONResponse({
+            "type": "FeatureCollection",
+            "features": [],
+            "meta": {"ok": False, "reason": "service_not_initialized"}
+        })
+        
+    # Parsear bbox si está presente
+    bounds = None
+    if bbox:
+        try:
+            parts = [float(x.strip()) for x in bbox.split(",")]
+            if len(parts) == 4:
+                bounds = (parts[0], parts[1], parts[2], parts[3])
+        except (ValueError, IndexError):
+            pass
+            
+    data = blitzortung_service.to_geojson(bbox=bounds)
+    return JSONResponse(data)
 
 # Proveedores globales
 _gibs_provider = GIBSProvider()

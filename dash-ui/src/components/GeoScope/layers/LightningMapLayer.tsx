@@ -95,7 +95,7 @@ export default function LightningMapLayer({
         // Lightning config might be nested in global or separate, checking defaults
         // Assuming it's enabled by default or part of global layers if not explicitly in config types
         // For now, we'll assume it's enabled if not explicitly disabled in a hypothetical config
-        const lightningEnabled = true; // TODO: Check actual config if available
+        const lightningEnabled = merged.layers?.lightning?.enabled ?? true;
 
         const layerId: LayerId = "lightning" as LayerId; // Casting as it might not be in LayerId type yet
         const MAX_RETRIES = 3;
@@ -116,7 +116,7 @@ export default function LightningMapLayer({
                 // Fetch global lightning or bbox? API seems to support bbox but we can fetch all for now
                 // The API definition says: getLightning(bbox?: string)
 
-                let url = "/api/lightning";
+                let url = "/api/layers/lightning";
                 // Optional: add bbox if needed, but lightning is usually sparse enough to fetch globally or large area
 
                 const response = await retryWithBackoff(
