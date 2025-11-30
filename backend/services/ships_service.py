@@ -73,9 +73,13 @@ class AISStreamService:
             self._ws_url = ws_url or DEFAULT_STREAM_URL
 
             # Update BBox from config
+            # CRÍTICO: Formato [[[Lat1, Lon1], [Lat2, Lon2]]]
             if ships_config.aisstream and ships_config.aisstream.bbox:
                 bbox = ships_config.aisstream.bbox
-                self._bbox = [[[bbox.lamin, bbox.lomin], [bbox.lamax, bbox.lomax]]]
+                # Asegurar que son floats y estructura correcta
+                p1 = [float(bbox.lamin), float(bbox.lomin)]
+                p2 = [float(bbox.lamax), float(bbox.lomax)]
+                self._bbox = [[p1, p2]]
             else:
                 # Fallback to Spain defaults
                 self._bbox = [[[36.0, -10.0], [44.0, 5.0]]]
@@ -239,16 +243,25 @@ class AISStreamService:
         api_key: str,
         stop_event: threading.Event,
     ) -> None:
-        # Use configured BBox
+        # Construir payload de suscripción estrictamente según documentación
+        # Formato BoundingBoxes: [[[Lat1, Lon1], [Lat2, Lon2]]] (Matriz de 3 niveles)
+        # Orden: [Latitud, Longitud]
         bbox_to_use = self._bbox
+        
         subscription = {
             "APIKey": api_key,
             "BoundingBoxes": bbox_to_use,
-            "FilterShipTypes": [],
+            "FilterShipTypes": [], # Empty list = all ship types
             "FilterMessageTypes": ["PositionReport"],
         }
-        await ws.send(json.dumps(subscription))
-        self._logger.info("AISStream subscription sent")
+        
+        # CRÍTICO: Enviar suscripción INMEDIATAMENTE tras conectar
+        # No realizar operaciones bloqueantes antes de este punto
+        payload_str = json.dumps(subscription)
+        await ws.send(payload_str)
+        
+        self._logger.info("AISStream subscription sent: %s", payload_str)
+        
         with self._lock:
             self._ws_connected = True
             self._last_error = None
