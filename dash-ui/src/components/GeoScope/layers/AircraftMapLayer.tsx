@@ -1,3 +1,14 @@
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
+import type { Map as MaptilerMap } from "@maptiler/sdk";
+import type { FeatureCollection, Point, Feature, Geometry, GeoJsonProperties } from "geojson";
+
+import { apiGet } from "../../../lib/api";
+import { withConfigDefaults } from "../../../config/defaults";
+import { layerDiagnostics, type LayerId } from "./LayerDiagnostics";
+import type { LayerRegistry } from "./LayerRegistry";
+import AircraftLayer from "./AircraftLayer";
+import type { AppConfig } from "../../../types/config";
+
 type FlightFeatureProperties = {
     icao24?: string;
     callsign?: string;
