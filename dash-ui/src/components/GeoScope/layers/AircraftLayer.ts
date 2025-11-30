@@ -437,7 +437,9 @@ export default class AircraftLayer implements Layer {
                 ...feature,
                 properties: {
                   ...props,
-                  age_seconds: ageSeconds,
+                  // Force age to 0 to prevent issues with client clock synchronization
+                  // This ensures planes are always visible regardless of local time differences
+                  age_seconds: 0,
                   in_focus: inFocus,
                   stale: isStale ? true : undefined,
                 },

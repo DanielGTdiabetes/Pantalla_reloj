@@ -1254,6 +1254,13 @@ export default function GeoScopeMap({
           const ne = bounds.getNorthEast();
           bbox = `${sw.lng},${sw.lat},${ne.lng},${ne.lat}`;
           maxItemsView = shipsConfig.max_items_view;
+
+          // Fallback for Mini PC (small screen) to ensure data availability
+          if (typeof window !== "undefined" && window.innerWidth < 1280) {
+            const spainBbox = "-12.0,34.0,6.0,46.0"; // Generous Spain BBox (lomin, lamin, lomax, lamax)
+            console.log("[GeoScopeMap] Mini PC detected, forcing Ships BBOX:", spainBbox);
+            bbox = spainBbox;
+          }
         }
 
         // Construir URL con parámetros
