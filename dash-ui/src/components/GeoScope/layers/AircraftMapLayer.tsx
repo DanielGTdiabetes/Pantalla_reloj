@@ -325,8 +325,9 @@ export default function AircraftMapLayer({
                                     el.style.cursor = 'pointer';
                                     el.style.zIndex = '100'; // Ensure on top
 
+                                    // Remove rotationAlignment: 'map' which might be causing issues
                                     // @ts-ignore
-                                    const newMarker = new Marker({ element: el, rotationAlignment: 'map' })
+                                    const newMarker = new Marker({ element: el })
                                         .setLngLat(coords)
                                         .setRotation(track)
                                         .addTo(map);

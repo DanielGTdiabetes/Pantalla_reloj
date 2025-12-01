@@ -226,8 +226,9 @@ export default function ShipsMapLayer({
                                     el.style.cursor = 'pointer';
                                     el.style.zIndex = '90'; // Below aircraft (100)
 
+                                    // Remove rotationAlignment: 'map'
                                     // @ts-ignore
-                                    const newMarker = new Marker({ element: el, rotationAlignment: 'map' })
+                                    const newMarker = new Marker({ element: el })
                                         .setLngLat(coords)
                                         .setRotation(course)
                                         .addTo(map);
