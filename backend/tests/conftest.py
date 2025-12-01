@@ -62,6 +62,8 @@ def app_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[Tup
 
     if "backend.config_manager" in sys.modules:
         del sys.modules["backend.config_manager"]
+    if "backend.models" in sys.modules:
+        del sys.modules["backend.models"]
     if "backend.main" in sys.modules:
         del sys.modules["backend.main"]
 

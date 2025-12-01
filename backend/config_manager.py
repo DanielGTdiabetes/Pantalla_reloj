@@ -308,7 +308,7 @@ class ConfigManager:
 
     def write(self, payload: Dict[str, Any]) -> AppConfig:
         config = AppConfig.model_validate(payload)
-        self._atomic_write(config.model_dump(mode="json", exclude_none=True))
+        self._atomic_write(config.model_dump(mode="json", exclude_none=True, by_alias=True))
         self._write_snapshot(config)
         return config
     

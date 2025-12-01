@@ -31,6 +31,7 @@ import {
   testNewsFeeds,
   testShips,
   testXyz,
+  testOpenWeatherMap,
   updateAemetApiKey,
   updateOpenWeatherMapApiKey,
   getOpenWeatherMapApiKeyMeta,
@@ -49,6 +50,7 @@ import {
 
   type MapTilerTestResponse,
   type XyzTestResponse,
+  type OpenWeatherMapTestResponse,
 } from "../lib/api";
 
 import type {
@@ -142,6 +144,8 @@ export const ConfigPage: React.FC = () => {
   const [mapSaving, setMapSaving] = useState(false);
   const [openWeatherMapApiKey, setOpenWeatherMapApiKey] = useState("");
   const [openWeatherMapApiKeyMeta, setOpenWeatherMapApiKeyMeta] = useState<MaskedSecretMeta | null>(null);
+  const [openWeatherMapTestResult, setOpenWeatherMapTestResult] = useState<OpenWeatherMapTestResponse | null>(null);
+  const [openWeatherMapTesting, setOpenWeatherMapTesting] = useState(false);
 
   // AEMET
   const [aemetApiKey, setAemetApiKey] = useState("");
@@ -820,6 +824,58 @@ export const ConfigPage: React.FC = () => {
       console.error("Error testing AEMET:", error);
     } finally {
       setAemetTesting(false);
+    }
+  };
+
+  const handleTestOpenWeatherMap = async () => {
+    setOpenWeatherMapTesting(true);
+    setOpenWeatherMapTestResult(null);
+    try {
+      // Si hay apiKey en el input, probarla; si no, usar la guardada (pasando undefined)
+      const apiKeyToTest = openWeatherMapApiKey && openWeatherMapApiKey.trim().length > 0
+        ? openWeatherMapApiKey
+        : undefined;
+
+      const result = await testOpenWeatherMap(apiKeyToTest);
+      setOpenWeatherMapTestResult(result);
+    } catch (error) {
+      setOpenWeatherMapTestResult({ ok: false, error: "Error al probar OpenWeatherMap" });
+      console.error("Error testing OpenWeatherMap:", error);
+    } finally {
+      setOpenWeatherMapTesting(false);
+    }
+  };
+
+  const handleUpdateOpenWeatherMapApiKey = async (apiKey: string | null) => {
+    try {
+      await updateOpenWeatherMapApiKey(apiKey);
+      // Actualizar secrets en config localmente
+      setConfig((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          secrets: {
+            ...prev.secrets,
+            openweathermap: {
+              ...(prev.secrets?.openweathermap as any),
+              api_key: apiKey,
+            } as any,
+          },
+        };
+      });
+
+      // Actualizar metadata
+      try {
+        const owmMeta = await getOpenWeatherMapApiKeyMeta();
+        setOpenWeatherMapApiKeyMeta(owmMeta);
+        setOpenWeatherMapApiKey(""); // Limpiar input
+        alert("API Key de OpenWeatherMap guardada correctamente");
+      } catch (error) {
+        console.error("Error reloading OpenWeatherMap meta:", error);
+      }
+    } catch (error) {
+      console.error("Error updating OpenWeatherMap API key:", error);
+      alert("Error al guardar la API key de OpenWeatherMap");
     }
   };
 
@@ -4470,39 +4526,55 @@ export const ConfigPage: React.FC = () => {
               <div className="config-field__actions">
                 <button
                   className="config-button primary"
-                  onClick={async () => {
-                    try {
-                      await updateOpenWeatherMapApiKey(openWeatherMapApiKey || null);
-                      const meta = await getOpenWeatherMapApiKeyMeta();
-                      setOpenWeatherMapApiKeyMeta(meta);
-                      setOpenWeatherMapApiKey("");
-                      alert("API key de OpenWeatherMap guardada correctamente");
-                    } catch (error) {
-                      console.error("Error updating OpenWeatherMap API key:", error);
-                      alert("Error al guardar la API key");
-                    }
-                  }}
+                  onClick={() => handleUpdateOpenWeatherMapApiKey(openWeatherMapApiKey || null)}
                 >
                   Guardar API Key
                 </button>
                 <button
                   className="config-button"
-                  onClick={async () => {
-                    try {
-                      await updateOpenWeatherMapApiKey(null);
-                      const meta = await getOpenWeatherMapApiKeyMeta();
-                      setOpenWeatherMapApiKeyMeta(meta);
-                      setOpenWeatherMapApiKey("");
-                      alert("API key de OpenWeatherMap eliminada");
-                    } catch (error) {
-                      console.error("Error deleting OpenWeatherMap API key:", error);
-                      alert("Error al eliminar la API key");
-                    }
-                  }}
+                  onClick={handleTestOpenWeatherMap}
+                  disabled={openWeatherMapTesting}
+                >
+                  {openWeatherMapTesting ? "Probando..." : "Probar Conexión"}
+                </button>
+                <button
+                  className="config-button"
+                  onClick={() => handleUpdateOpenWeatherMapApiKey(null)}
                 >
                   Eliminar API Key
                 </button>
               </div>
+
+              {openWeatherMapTestResult && (
+                <div
+                  className={`config-field__hint ${openWeatherMapTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"}`}
+                  style={{ marginTop: "16px", padding: "12px", borderRadius: "8px", border: openWeatherMapTestResult.ok ? "1px solid rgba(76, 175, 80, 0.3)" : "1px solid rgba(244, 67, 54, 0.3)" }}
+                >
+                  {openWeatherMapTestResult.ok ? (
+                    <div>
+                      <div style={{ fontWeight: 600, marginBottom: "4px" }}>
+                        ✓ Conexión exitosa con OpenWeatherMap
+                      </div>
+                      {openWeatherMapTestResult.data && (
+                        <div style={{ fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)", marginTop: "4px" }}>
+                          Ubicación: {openWeatherMapTestResult.data.location}<br />
+                          Temperatura: {openWeatherMapTestResult.data.temp}°C<br />
+                          Condición: {openWeatherMapTestResult.data.condition}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ fontWeight: 600, marginBottom: "4px" }}>
+                        ✗ Error de conexión
+                      </div>
+                      <div style={{ fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)", marginTop: "4px" }}>
+                        {openWeatherMapTestResult.message || openWeatherMapTestResult.error || "Error desconocido"}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

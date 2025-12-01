@@ -398,7 +398,7 @@ class SatelliteConfig(BaseModel):
 class RadarConfig(BaseModel):
     """Configuración de radar global."""
     enabled: bool = False
-    provider: Literal["rainviewer", "maptiler_weather"] = Field(
+    provider: Literal["rainviewer", "maptiler_weather", "openweathermap"] = Field(
         default="maptiler_weather",
         description="Proveedor de datos de radar. 'rainviewer' está deprecated, usar 'maptiler_weather'"
     )
@@ -626,7 +626,7 @@ class GlobalSatelliteLayerConfig(BaseModel):
 class GlobalRadarLayerConfig(BaseModel):
     """Configuración de radar meteorológico global (MapTiler Weather, RainViewer, etc.)."""
     enabled: bool = Field(default=False)
-    provider: Literal["rainviewer", "maptiler_weather"] = Field(
+    provider: Literal["rainviewer", "maptiler_weather", "openweathermap"] = Field(
         default="maptiler_weather",
         description="Proveedor de datos de radar. 'rainviewer' está deprecated, usar 'maptiler_weather'"
     )
@@ -634,9 +634,6 @@ class GlobalRadarLayerConfig(BaseModel):
     layer_type: str = Field(default="precipitation", max_length=64)
     refresh_minutes: int = Field(default=5, ge=1, le=120)
     history_minutes: int = Field(default=90, ge=5, le=360)
-    frame_step: int = Field(default=5, ge=1, le=60)
-
-
     frame_step: int = Field(default=5, ge=1, le=60)
 
 

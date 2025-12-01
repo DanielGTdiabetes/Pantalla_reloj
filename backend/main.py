@@ -617,6 +617,10 @@ class OpenWeatherMapSecretRequest(BaseModel):
     api_key: Optional[str] = Field(default=None, max_length=256)
 
 
+class OpenWeatherMapTestRequest(BaseModel):
+    api_key: Optional[str] = Field(default=None, max_length=256)
+
+
 class MapTilerSecretRequest(BaseModel):
     api_key: Optional[str] = Field(default=None, max_length=256)
 
@@ -5953,6 +5957,78 @@ async def get_harvest_full_list():
 @app.get("/api/weather")
 def get_weather() -> Dict[str, Any]:
     return _load_or_default("weather")
+
+
+@app.post("/api/weather/test_openweathermap")
+async def test_openweathermap(request: OpenWeatherMapTestRequest) -> Dict[str, Any]:
+    """Prueba la API key de OpenWeatherMap.
+    
+    Si no se proporciona api_key en el request, usa la guardada en secrets.
+    Realiza una petición de clima actual para una ubicación por defecto (Castellón).
+    """
+    try:
+        api_key = request.api_key
+        if not api_key:
+            api_key = secret_store.get_secret("openweathermap_api_key")
+        
+        if not api_key:
+            return {
+                "ok": False,
+                "error": "missing_api_key",
+                "message": "No API key provided or stored"
+            }
+            
+        # Ubicación de prueba (Castellón)
+        lat = 39.98
+        lon = 0.20
+        
+        url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&units=metric&appid={api_key}"
+        
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(url)
+            
+        if response.status_code == 200:
+            data = response.json()
+            return {
+                "ok": True,
+                "status": 200,
+                "message": "Connection successful",
+                "data": {
+                    "temp": data.get("main", {}).get("temp"),
+                    "condition": data.get("weather", [{}])[0].get("main"),
+                    "location": data.get("name")
+                }
+            }
+        elif response.status_code == 401:
+            return {
+                "ok": False,
+                "status": 401,
+                "error": "unauthorized",
+                "message": "Invalid API key"
+            }
+        else:
+            return {
+                "ok": False,
+                "status": response.status_code,
+                "error": f"HTTP {response.status_code}",
+                "message": response.text
+            }
+            
+    except httpx.RequestError as exc:
+        return {
+            "ok": False,
+            "status": 0,
+            "error": "network_error",
+            "message": str(exc)
+        }
+    except Exception as exc:
+        logger.error("[weather] Error testing OpenWeatherMap: %s", exc)
+        return {
+            "ok": False,
+            "status": 0,
+            "error": "internal_error",
+            "message": str(exc)
+        }
 
 
 @app.get("/api/weather/weekly")

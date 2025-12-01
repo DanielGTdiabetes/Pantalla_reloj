@@ -920,6 +920,31 @@ export async function testRainViewer(
   }
 }
 
+export type OpenWeatherMapTestResponse = {
+  ok: boolean;
+  status?: number;
+  message?: string;
+  error?: string;
+  data?: {
+    temp?: number;
+    condition?: string;
+    location?: string;
+  };
+};
+
+export async function testOpenWeatherMap(apiKey?: string | null): Promise<OpenWeatherMapTestResponse> {
+  try {
+    return apiPost<OpenWeatherMapTestResponse>("/api/weather/test_openweathermap", { api_key: apiKey });
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      error: "connection_error",
+      message: error instanceof Error ? error.message : "Error de conexión"
+    };
+  }
+}
+
 export async function getRainViewerFrames(
   history_minutes?: number,
   frame_step?: number

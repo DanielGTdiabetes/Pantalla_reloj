@@ -6,6 +6,17 @@ def test_public_config_masks_openweather_secret(app_module: Tuple[object, object
     module, _ = app_module
     module.secret_store.set_secret("openweathermap_api_key", "OWM123456")
 
+    # Ensure provider is openweathermap
+    config = module.config_manager.read().model_dump(mode="json", by_alias=True)
+    if "layers" not in config:
+        config["layers"] = {}
+    if "global" not in config["layers"]:
+        config["layers"]["global"] = {}
+    if "radar" not in config["layers"]["global"]:
+        config["layers"]["global"]["radar"] = {}
+    config["layers"]["global"]["radar"]["provider"] = "openweathermap"
+    module.config_manager.write(config)
+    
     public = module._build_public_config(module.config_manager.read())
     radar_info = public["layers"]["global"]["radar"]
 
@@ -16,6 +27,17 @@ def test_public_config_masks_openweather_secret(app_module: Tuple[object, object
 
 def test_update_openweather_secret_persists(app_module: Tuple[object, object]) -> None:
     module, _ = app_module
+
+    # Ensure provider is openweathermap
+    config = module.config_manager.read().model_dump(mode="json", by_alias=True)
+    if "layers" not in config:
+        config["layers"] = {}
+    if "global" not in config["layers"]:
+        config["layers"]["global"] = {}
+    if "radar" not in config["layers"]["global"]:
+        config["layers"]["global"]["radar"] = {}
+    config["layers"]["global"]["radar"]["provider"] = "openweathermap"
+    module.config_manager.write(config)
 
     asyncio.run(
         module.update_openweather_secret(module.OpenWeatherMapSecretRequest(api_key="OWMKEY9999"))
@@ -34,6 +56,17 @@ def test_update_openweather_secret_persists(app_module: Tuple[object, object]) -
 def test_update_openweather_secret_can_clear(app_module: Tuple[object, object]) -> None:
     module, _ = app_module
     module.secret_store.set_secret("openweathermap_api_key", "TEMP0000")
+
+    # Ensure provider is openweathermap
+    config = module.config_manager.read().model_dump(mode="json", by_alias=True)
+    if "layers" not in config:
+        config["layers"] = {}
+    if "global" not in config["layers"]:
+        config["layers"]["global"] = {}
+    if "radar" not in config["layers"]["global"]:
+        config["layers"]["global"]["radar"] = {}
+    config["layers"]["global"]["radar"]["provider"] = "openweathermap"
+    module.config_manager.write(config)
 
     asyncio.run(module.update_openweather_secret(module.OpenWeatherMapSecretRequest(api_key=None)))
 
