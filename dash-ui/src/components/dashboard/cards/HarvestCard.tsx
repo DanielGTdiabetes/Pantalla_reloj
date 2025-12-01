@@ -40,13 +40,16 @@ const getCurrentSeasonProducts = (): HarvestItem[] => {
  * Obtiene la URL del icono, priorizando iconos locales del catálogo
  */
 const getIconUrl = (item: HarvestItem): string => {
+  const baseUrl = import.meta.env.BASE_URL;
+  const prefix = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+
   // Si el item tiene un icono del catálogo, usarlo
   if (item.icon) {
-    return `/icons/soydetemporada/${item.icon}`;
+    return `${prefix}icons/soydetemporada/${item.icon}`;
   }
 
   // Fallback a icono genérico
-  return "/icons/harvest/sprout.svg";
+  return `${prefix}icons/harvest/sprout.svg`;
 };
 
 export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
@@ -61,6 +64,7 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
     : [{ name: "Sin productos de temporada" }];
 
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [imageError, setImageError] = useState(false);
 
   useEffect(() => {
     if (entries.length <= 1) return;
@@ -71,6 +75,11 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
 
     return () => clearInterval(interval);
   }, [entries.length]);
+
+  // Reset error state when index changes
+  useEffect(() => {
+    setImageError(false);
+  }, [currentIndex]);
 
   const currentItem = entries[currentIndex];
   const iconUrl = getIconUrl(currentItem);
@@ -83,17 +92,23 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
       </div>
       <div className="harvest-carousel">
         <div className="harvest-slide fade-in" key={currentIndex}>
-          <img
-            src={iconUrl}
-            alt={currentItem.name}
-            className="harvest-icon-large"
-            style={{ width: "80px", height: "80px", objectFit: "contain" }}
-            onError={(e) => {
-              const target = e.target as HTMLImageElement;
-              // Fallback to generic sprout icon
-              target.src = "/icons/harvest/sprout.svg";
-            }}
-          />
+          {!imageError ? (
+            <img
+              src={iconUrl}
+              alt={currentItem.name}
+              className="harvest-icon-large"
+              style={{ width: "80px", height: "80px", objectFit: "contain" }}
+              onError={(e) => {
+                console.warn(`HarvestCard: Failed to load image ${iconUrl}`);
+                setImageError(true);
+              }}
+            />
+          ) : (
+            <SproutIcon
+              className="harvest-icon-large"
+              style={{ width: "80px", height: "80px", color: "var(--theme-accent)" }}
+            />
+          )}
           <div className="harvest-info">
             <span className="harvest-name">{currentItem.name}</span>
             {currentItem.status && <span className="harvest-status">{currentItem.status}</span>}
