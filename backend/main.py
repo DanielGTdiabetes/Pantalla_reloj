@@ -1057,6 +1057,14 @@ def _build_public_config(config: AppConfig) -> Dict[str, Any]:
         # AISHub
         if "aishub" in payload.get("secrets", {}):
             secrets_public["aishub"] = {"api_key": None}
+
+        # OpenWeatherMap
+        if "openweathermap" in payload.get("secrets", {}):
+            secrets_public["openweathermap"] = {"api_key": None}
+            stored_key = secret_store.get_secret("openweathermap_api_key")
+            secrets_public["openweathermap"]["has_api_key"] = bool(stored_key)
+            if stored_key and len(stored_key) >= 4:
+                secrets_public["openweathermap"]["api_key_last4"] = stored_key[-4:]
         
         payload["secrets"] = secrets_public
 

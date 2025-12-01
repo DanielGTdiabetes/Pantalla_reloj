@@ -444,6 +444,12 @@ export type AISHubSecretsConfig = {
   api_key?: string | null;
 };
 
+export type OpenWeatherMapSecretsConfig = {
+  api_key?: string | null;
+  has_api_key?: boolean;
+  api_key_last4?: string | null;
+};
+
 export type SecretsConfig = {
   opensky?: OpenSkySecretsConfig;
   google?: Record<string, unknown>;
@@ -452,6 +458,7 @@ export type SecretsConfig = {
   aviationstack?: AviationStackSecretsConfig;
   aisstream?: AISStreamSecretsConfig;
   aishub?: AISHubSecretsConfig;
+  openweathermap?: OpenWeatherMapSecretsConfig;
 };
 
 export type SaintsConfig = {

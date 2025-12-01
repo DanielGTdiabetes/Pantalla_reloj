@@ -272,6 +272,9 @@ export const DEFAULT_CONFIG: AppConfig = {
         client_id: "danigt-api-client",
         client_secret: "Mph0txbYD1udcExVL7OrsLoxDjl3eKbQ",
       }
+    },
+    openweathermap: {
+      api_key: null,
     }
   },
   calendar: DEFAULT_CALENDAR_CONFIG,

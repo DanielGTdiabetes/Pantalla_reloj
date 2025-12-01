@@ -980,6 +980,11 @@ class AISConfig(BaseModel):
     ws_url: Optional[str] = Field(default=None, max_length=512)
 
 
+class OpenWeatherMapSecretsConfig(BaseModel):
+    """Secrets para OpenWeatherMap (metadata only)."""
+    api_key: Optional[str] = Field(default=None, max_length=512)
+
+
 class SecretsConfig(BaseModel):
     """Secrets (metadata only, no valores reales)."""
     maptiler: Optional[MapTilerSecretsConfig] = None
@@ -989,6 +994,7 @@ class SecretsConfig(BaseModel):
     aviationstack: Optional[AviationStackSecretsConfig] = None
     aisstream: Optional[AISStreamSecretsConfig] = None
     aishub: Optional[AISHubSecretsConfig] = None
+    openweathermap: Optional[OpenWeatherMapSecretsConfig] = None
 
 
 class AppConfig(BaseModel):
