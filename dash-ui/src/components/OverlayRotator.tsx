@@ -93,7 +93,7 @@ const DEFAULT_DURATIONS_SEC = {
   calendar: 12,
   harvest: 10,
   news: 12,
-  historicalEvents: 6,
+  historicalEvents: 20,
 };
 
 const ROTATION_DEFAULT_ORDER = [
@@ -769,11 +769,11 @@ export const OverlayRotator: React.FC = () => {
       })
       : [];
     const v2ConfigForDuration = config as unknown as { panels?: { historicalEvents?: { rotation_seconds?: number } } };
-    const rotationSeconds = v2ConfigForDuration.panels?.historicalEvents?.rotation_seconds ?? 6;
+    const rotationSeconds = v2ConfigForDuration.panels?.historicalEvents?.rotation_seconds ?? 15;
 
     map.set("historicalEvents", {
       id: "historicalEvents",
-      duration: (durations.historicalEvents ?? 6) * 1000,
+      duration: (durations.historicalEvents ?? 20) * 1000,
       render: () => {
         const totalEvents = historicalEventsItemsForCard.length;
         if (totalEvents === 0) {
