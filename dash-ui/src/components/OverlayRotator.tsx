@@ -33,7 +33,7 @@ type DashboardPayload = {
   news?: Record<string, unknown>;
   astronomy?: Record<string, unknown>;
   calendar?: Record<string, unknown>;
-  santoral?: { saints?: string[]; namedays?: string[] };
+  santoral?: { saints?: (string | Record<string, unknown>)[]; namedays?: string[] };
   historicalEvents?: { date?: string; count?: number; items?: string[] };
 };
 
@@ -282,7 +282,7 @@ export const OverlayRotator: React.FC = () => {
   // Cache refs
   const weatherCacheRef = useRef<{ data: Record<string, unknown> | null; timestamp: number | null }>({ data: null, timestamp: null });
   const astronomyCacheRef = useRef<{ data: Record<string, unknown> | null; timestamp: number | null }>({ data: null, timestamp: null });
-  const santoralCacheRef = useRef<{ data: { date: string; names: string[] } | null; timestamp: number | null }>({ data: null, timestamp: null });
+  const santoralCacheRef = useRef<{ data: { date: string; names: (string | Record<string, unknown>)[] } | null; timestamp: number | null }>({ data: null, timestamp: null });
   const historicalEventsCacheRef = useRef<{ data: { date?: string; count?: number; items?: string[] } | null; timestamp: number | null }>({ data: null, timestamp: null });
 
   const timezone = useMemo(() => {
@@ -494,7 +494,8 @@ export const OverlayRotator: React.FC = () => {
               return { saints: santoralCacheRef.current.data.names, namedays: [] };
             }
             try {
-              const data = await getSantoralToday();
+              const saints = await apiGet<Record<string, unknown>[] | string[]>("/api/saints");
+              const data = { date: new Date().toISOString(), names: saints };
               if (mounted) {
                 santoralCacheRef.current = { data, timestamp: Date.now() };
               }
@@ -613,14 +614,9 @@ export const OverlayRotator: React.FC = () => {
   }));
 
   const santoralEntries = useMemo(() => {
-    const fromSaints = extractStrings(santoral.saints);
-    const fromNamedays = extractStrings(santoral.namedays);
-    const combined = [...fromSaints, ...fromNamedays];
-    const unique = combined.filter((entry, index, self) => {
-      const normalized = entry.toLowerCase().trim();
-      return self.findIndex((e) => e.toLowerCase().trim() === normalized) === index;
-    });
-    return unique;
+    const saints = Array.isArray(santoral.saints) ? santoral.saints : [];
+    const namedays = extractStrings(santoral.namedays);
+    return [...saints, ...namedays] as (string | Record<string, unknown>)[];
   }, [santoral.saints, santoral.namedays]);
 
   const forecastDays = useMemo(() => {

@@ -1,9 +1,7 @@
 import { StarIcon } from "../../icons";
 import { useState, useEffect } from "react";
 
-type SaintsCardProps = {
-  saints: string[];
-};
+
 
 const SantoralIconImage: React.FC<{ size?: number; className?: string }> = ({ size = 48, className = "" }) => {
   const [iconError, setIconError] = useState(false);
@@ -34,54 +32,98 @@ const SantoralIconImage: React.FC<{ size?: number; className?: string }> = ({ si
   );
 };
 
-export const SaintsCard = ({ saints }: SaintsCardProps): JSX.Element => {
-  // Filtrar entradas vacías y asegurar que sean strings válidos
-  const entries = saints
-    .map((entry) => (typeof entry === "string" ? entry.trim() : String(entry).trim()))
-    .filter((entry) => entry && entry !== "" && entry !== "[object Object]" && !entry.toLowerCase().includes("object"))
-    .filter((entry, index, self) => {
-      // Eliminar duplicados adicionales (case-insensitive)
-      const normalized = entry.toLowerCase();
-      return self.findIndex((e) => e.toLowerCase() === normalized) === index;
-    });
+export type EnrichedSaint = {
+  name: string;
+  bio?: string | null;
+  image?: string | null;
+  url?: string | null;
+};
 
-  const displayEntries = entries.length > 0 ? entries : ["—"];
+type SaintsCardProps = {
+  saints: (string | EnrichedSaint)[];
+};
+
+export const SaintsCard = ({ saints }: SaintsCardProps): JSX.Element => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  // Normalize data to EnrichedSaint[]
+  const entries: EnrichedSaint[] = saints
+    .map((entry) => {
+      if (typeof entry === "string") {
+        return { name: entry.trim() };
+      }
+      return entry;
+    })
+    .filter((entry) => entry && entry.name && entry.name !== "" && !entry.name.toLowerCase().includes("object"));
+
+  // Deduplicate
+  const uniqueEntries = entries.filter((entry, index, self) =>
+    self.findIndex((e) => e.name.toLowerCase() === entry.name.toLowerCase()) === index
+  );
+
+  const displayEntries = uniqueEntries.length > 0 ? uniqueEntries : [{ name: "—" }];
+
+  // Rotation logic if we have multiple items
+  useEffect(() => {
+    if (displayEntries.length <= 1) return;
+    const interval = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % displayEntries.length);
+    }, 10000); // 10 seconds per saint
+    return () => clearInterval(interval);
+  }, [displayEntries.length]);
+
+  const currentSaint = displayEntries[currentIndex];
 
   const formatSaintName = (name: string) => {
     if (name === "—") return name;
-
-    // Check if it already has a prefix
     const lower = name.toLowerCase();
     if (lower.startsWith("san ") || lower.startsWith("santa ") || lower.startsWith("santo ")) {
       return name;
     }
-
-    // Simple heuristic for gender (Spanish)
-    // Ends in 'a' -> Santa (exceptions exist, but good enough for simple logic)
-    // Otherwise -> San
-    // Exception: Maria -> Santa Maria
     if (lower === "maría" || lower === "maria" || name.endsWith("a")) {
       return `Santa ${name}`;
     }
     return `San ${name}`;
   };
 
+  const hasImage = !!currentSaint.image;
+
   return (
-    <div className="card saints-card saints-card-enhanced">
+    <div className={`card saints-card saints-card-enhanced ${hasImage ? "has-image" : ""}`}>
+      {hasImage && (
+        <div
+          className="saint-background-image"
+          style={{ backgroundImage: `url(${currentSaint.image})` }}
+        />
+      )}
       <div className="saints-card__header">
         <SantoralIconImage size={48} className="card-icon" />
         <h2>Santoral</h2>
       </div>
-      <div className="saints-card__scroller">
-        <div className="saints-list">
-          {displayEntries.map((entry, index) => (
-            <div key={`saints-${index}-${entry.substring(0, 10)}`} className="saint-item">
-              <span className="saint-icon">✝</span>
-              <span className="saint-name large-text">{formatSaintName(entry)}</span>
+
+      <div className="saints-content">
+        <div className="saint-display fade-in" key={currentIndex}>
+          <h3 className="saint-name-large">{formatSaintName(currentSaint.name)}</h3>
+          {currentSaint.bio && (
+            <p className="saint-bio">{currentSaint.bio}</p>
+          )}
+          {!currentSaint.bio && !hasImage && (
+            <div className="saint-placeholder">
+              <span className="saint-icon-large">✝</span>
             </div>
-          ))}
+          )}
         </div>
-        <div className="saints-card__gradient" aria-hidden="true" />
+
+        {displayEntries.length > 1 && (
+          <div className="saint-pagination">
+            {displayEntries.map((_, idx) => (
+              <span
+                key={idx}
+                className={`pagination-dot ${idx === currentIndex ? 'active' : ''}`}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

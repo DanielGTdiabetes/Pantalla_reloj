@@ -7826,6 +7826,30 @@ def get_santoral_today() -> JSONResponse:
         })
 
 
+from .services.saints_service import enrich_saints
+
+@app.get("/api/saints")
+async def get_saints_enriched() -> List[Dict[str, Any]]:
+    """Obtiene la lista de santos del día enriquecida con bio e imagen de Wikipedia."""
+    try:
+        # Reutilizar lógica de obtención de nombres
+        tz = _get_tz()
+        today_local = datetime.now(tz).date()
+        date_key = f"{today_local.month:02d}-{today_local.day:02d}"
+        
+        santoral_data = _load_santoral_data()
+        names = santoral_data.get(date_key, [])
+        
+        if not names:
+            return []
+            
+        return await enrich_saints(names)
+        
+    except Exception as exc:
+        logger.error("Failed to get enriched saints: %s", exc)
+        return []
+
+
 @app.get("/api/santoral/date")
 def get_santoral_date(iso: str) -> JSONResponse:
     """Obtiene los santos para una fecha específica desde el archivo JSON offline.
