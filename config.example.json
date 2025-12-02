@@ -11,7 +11,7 @@
     "interactive": false,
     "controls": false,
     "maptiler": {
-      "api_key": "fBZDqPrUD4EwoZLV4L6A",
+      "api_key": "TU_API_KEY_AQUI",
       "style": "vector-bright",
       "styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json"
     },
@@ -48,14 +48,22 @@
     }
   },
   "ui_global": {
-    "satellite": {
-      "enabled": false,
-      "provider": "gibs",
-      "opacity": 1.0
-    },
-    "radar": {
-      "enabled": false,
-      "provider": "rainviewer"
+    "weather_layers": {
+      "radar": {
+        "enabled": false,
+        "provider": "rainviewer",
+        "opacity": 0.7
+      },
+      "satellite": {
+        "enabled": false,
+        "provider": "gibs",
+        "opacity": 1.0
+      },
+      "alerts": {
+        "enabled": true,
+        "provider": "cap_aemet",
+        "opacity": 0.6
+      }
     },
     "overlay": {
       "rotator": {
@@ -157,13 +165,41 @@
     }
   },
   "secrets": {
+    "maptiler": {
+      "api_key": "TU_API_KEY_AQUI"
+    },
     "opensky": {
+      "username": null,
+      "password": null,
       "oauth2": {
         "client_id": null,
         "client_secret": null,
         "token_url": "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
         "scope": null
       }
+    },
+    "google": {
+      "api_key": null,
+      "calendar_id": null
+    },
+    "aviationstack": {
+      "api_key": null
+    },
+    "aisstream": {
+      "api_key": null
+    },
+    "aishub": {
+      "api_key": null
+    },
+    "openweathermap": {
+      "api_key": null
+    },
+    "meteoblue": {
+      "api_key": null
+    },
+    "calendar_ics": {
+      "url": null,
+      "path": null
     }
   }
 }
