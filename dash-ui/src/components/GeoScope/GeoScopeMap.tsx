@@ -57,7 +57,7 @@ import {
 const DEFAULT_VIEW = {
   lng: -3.5,
   lat: 40.0,
-  zoom: 3.6, // Zoom para ver toda la península ibérica en pantalla vertical
+  zoom: 5.5, // Zoom para ver toda la península ibérica en pantalla vertical
   bearing: 0,
   pitch: 0
 };

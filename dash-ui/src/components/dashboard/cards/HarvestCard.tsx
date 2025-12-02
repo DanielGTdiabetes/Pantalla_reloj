@@ -97,7 +97,7 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
               src={iconUrl}
               alt={currentItem.name}
               className="harvest-icon-large"
-              style={{ width: "80px", height: "80px", objectFit: "contain" }}
+              style={{ width: "120px", height: "120px", objectFit: "contain" }}
               onError={(e) => {
                 console.warn(`HarvestCard: Failed to load image ${iconUrl}`);
                 setImageError(true);
@@ -106,7 +106,7 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
           ) : (
             <SproutIcon
               className="harvest-icon-large"
-              style={{ width: "80px", height: "80px", color: "var(--theme-accent)" }}
+              style={{ width: "120px", height: "120px", color: "var(--theme-accent)" }}
             />
           )}
           <div className="harvest-info">
