@@ -1,0 +1,12 @@
+Parsing backend/temp_test.ics...
+Found 2 events.
+Event: VACA MANOLO BARRI
+  Start: 2013-12-09T00:00:00+00:00
+  End:   2013-12-10T00:00:00+00:00
+  Loc:   
+--------------------
+Event: ITV FIAT CASTELLON
+  Start: 2015-04-01T06:00:00+00:00
+  End:   2015-04-01T07:00:00+00:00
+  Loc:   CASTELLON
+--------------------
