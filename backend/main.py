@@ -1318,6 +1318,7 @@ _ALLOWED_SECRET_KEYS = {
     "aviationstack_api_key",
     "aishub_api_key",
     "maptiler_api_key",
+    "meteoblue_api_key",
 }
 
 def _canonical_secret_key(key: str) -> str:

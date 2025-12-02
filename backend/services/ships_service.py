@@ -99,8 +99,9 @@ class AISStreamService:
             if not self._secret_store.has_secret(SECRET_NAME):
                 # Fallback: Check config for API key
                 config_key = None
-                if ships_config.aisstream and ships_config.aisstream.api_key:
-                    config_key = ships_config.aisstream.api_key
+                # api_key is not in AISStreamProviderConfig model, so we skip this check
+                # if ships_config.aisstream and hasattr(ships_config.aisstream, "api_key"):
+                #     config_key = ships_config.aisstream.api_key
                 
                 if config_key:
                     self._logger.info("Using AISStream API key from config and migrating to secret store")
@@ -144,6 +145,7 @@ class AISStreamService:
                     "ok": self._ws_connected and len(self._vessels) > 0,
                 }
             )
+            self._logger.info(f"get_snapshot: {len(self._vessels)} vessels, connected={self._ws_connected}")
             return snapshot
 
     def get_status(self) -> Dict[str, Any]:

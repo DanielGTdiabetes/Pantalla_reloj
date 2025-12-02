@@ -1156,8 +1156,9 @@ export default function GeoScopeMap({
     // Ajuste dinámico para pantallas pequeñas (Mini PC)
     // Si la pantalla es pequeña (incluyendo 1024px o 1280px), FORZAMOS la vista de la península
     if (typeof window !== "undefined" && window.innerWidth < 1280) {
-      // Usamos 3.6 para que se vea la península entera en vertical
-      zoom = 3.6;
+      // Usamos 5.5 para que se vea la península mejor en pantallas pequeñas (Mini PC)
+      // 3.6 era demasiado lejano (se veía toda Europa)
+      zoom = 5.5;
       // Forzamos el centro a España para evitar que el mapa "viaje" a otras ciudades
       centerLat = 40.0;
       centerLng = -3.5;
