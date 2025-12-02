@@ -132,7 +132,7 @@ class CustomXyzConfig(BaseModel):
 class MapFixedView(BaseModel):
     """Vista fija del mapa."""
     center: MapCenter = Field(default_factory=MapCenter)
-    zoom: float = Field(default=6.8, ge=1, le=20)
+    zoom: float = Field(default=6.2, ge=1, le=20)
     bearing: float = Field(default=0, ge=-180, le=180)
     pitch: float = Field(default=0, ge=0, le=60)
 

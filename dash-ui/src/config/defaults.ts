@@ -64,7 +64,7 @@ export const DEFAULT_MAP_CONFIG: MapConfig = {
   viewMode: "fixed",
   fixed: {
     center: DEFAULT_MAP_CENTER,
-    zoom: 5.5, // Zoom para ver toda la península ibérica en pantalla vertical
+    zoom: 6.2, // Zoom para ver toda la península ibérica en pantalla vertical
     bearing: 0,
     pitch: 0,
   },
