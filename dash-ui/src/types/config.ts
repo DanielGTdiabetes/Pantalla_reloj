@@ -115,7 +115,7 @@ export type SatelliteConfig = {
 
 export type RadarConfig = {
   enabled: boolean;
-  provider: "rainviewer" | "aemet" | "maptiler_weather";
+  provider: "rainviewer" | "aemet" | "maptiler_weather" | "meteoblue" | "openweathermap";
 };
 
 export type RotatorDurationsConfig = {
@@ -459,6 +459,16 @@ export type SecretsConfig = {
   aisstream?: AISStreamSecretsConfig;
   aishub?: AISHubSecretsConfig;
   openweathermap?: OpenWeatherMapSecretsConfig;
+  meteoblue?: {
+    api_key?: string | null;
+    has_api_key?: boolean;
+    api_key_last4?: string | null;
+  };
+  maptiler?: {
+    api_key?: string | null;
+    has_api_key?: boolean;
+    api_key_last4?: string | null;
+  };
 };
 
 export type SaintsConfig = {

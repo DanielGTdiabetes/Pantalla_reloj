@@ -736,9 +736,7 @@ export default function GeoScopeMap({
     if (!mapRef.current) {
       try {
         // Ajustar zoom inicial según el ancho de pantalla
-        const initialZoom = typeof window !== "undefined" && window.innerWidth < 800
-          ? 4.5 // Zoom más alejado para pantallas pequeñas (Mini PC)
-          : DEFAULT_VIEW.zoom;
+        const initialZoom = DEFAULT_VIEW.zoom;
 
         const map = new MaptilerMap({
           container: mapFillRef.current,

@@ -1,20 +1,28 @@
 """
 Router para endpoints de capas meteorológicas unificadas.
+Soporta múltiples proveedores: Meteoblue (recomendado) y OpenWeatherMap (legacy).
 """
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Dict
 
+import requests
 from fastapi import APIRouter
 
+from ..config_manager import ConfigManager
+from ..secret_store import SecretStore
 from ..services import rainviewer as rainviewer_service
 from ..services import gibs as gibs_service
 from ..services import cap_warnings as cap_warnings_service
+from ..services.meteoblue_service import meteoblue_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/weather", tags=["weather"])
+config_manager = ConfigManager()
+secret_store = SecretStore()
 
 
 @router.get("/radar")
@@ -50,16 +58,15 @@ def get_weather_alerts() -> Dict[str, Any]:
     return cap_warnings_service.get_alerts_geojson()
 
 
-from ..config_manager import ConfigManager
-
-config_manager = ConfigManager()
-
 @router.get("/weekly")
 @router.get("/")
 def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
     """
-    Obtiene previsión meteorológica semanal (OpenWeatherMap).
+    Obtiene previsión meteorológica semanal.
+    Soporta múltiples proveedores: Meteoblue (recomendado) y OpenWeatherMap (legacy).
+    
     Si no se proporcionan lat/lon, se usan los de la configuración.
+    El proveedor se determina según la configuración (por defecto: Meteoblue).
     """
     # Resolve location
     if lat is None or lon is None:
@@ -70,34 +77,54 @@ def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
         
         # Fallback if still missing
         if lat is None or lon is None:
-             # Default to Madrid/Spain center if absolutely nothing is configured
-             lat = 40.4168
-             lon = -3.7038
-
-    api_key = secret_store.get_secret("openweathermap_api_key")
-    if not api_key:
-        # Fallback for dev/test without keys
+            # Default to Madrid/Spain center if absolutely nothing is configured
+            lat = 40.4168
+            lon = -3.7038
+    
+    # Determinar proveedor (por defecto Meteoblue)
+    # Puedes añadir un campo en config para seleccionar el proveedor
+    # Por ahora, intentamos Meteoblue primero, OpenWeatherMap como fallback
+    
+    # Intentar Meteoblue primero
+    meteoblue_key = secret_store.get_secret("meteoblue_api_key")
+    if meteoblue_key:
+        logger.info("Using Meteoblue as weather provider")
+        try:
+            result = meteoblue_service.get_weather(lat, lon, meteoblue_key)
+            if result.get("ok"):
+                return result
+            logger.warning(f"Meteoblue failed: {result.get('reason')}, falling back to OpenWeatherMap")
+        except Exception as e:
+            logger.error(f"Meteoblue error: {e}, falling back to OpenWeatherMap")
+    
+    # Fallback a OpenWeatherMap
+    openweather_key = secret_store.get_secret("openweathermap_api_key")
+    if not openweather_key:
+        # No hay API keys disponibles
         return {
             "ok": False, 
             "reason": "missing_api_key",
             "temperature": {"value": 20, "unit": "C"},
             "condition": "Clear",
             "summary": "Sin datos (Falta API Key)",
-            "days": []
+            "days": [],
+            "provider": "none"
         }
-
+    
+    logger.info("Using OpenWeatherMap as weather provider (fallback)")
+    
     # Try One Call 3.0
-    url = f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}&exclude=minutely,hourly&units=metric&appid={api_key}"
+    url = f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}&exclude=minutely,hourly&units=metric&appid={openweather_key}"
     
     try:
         resp = requests.get(url, timeout=10)
         if resp.status_code == 401:
-             # Fallback to 2.5 One Call if 3.0 fails (some keys are old)
-             url = f"https://api.openweathermap.org/data/2.5/onecall?lat={lat}&lon={lon}&exclude=minutely,hourly&units=metric&appid={api_key}"
-             resp = requests.get(url, timeout=10)
+            # Fallback to 2.5 One Call if 3.0 fails (some keys are old)
+            url = f"https://api.openweathermap.org/data/2.5/onecall?lat={lat}&lon={lon}&exclude=minutely,hourly&units=metric&appid={openweather_key}"
+            resp = requests.get(url, timeout=10)
         
         if resp.status_code != 200:
-             return {"ok": False, "reason": f"upstream_error_{resp.status_code}"}
+            return {"ok": False, "reason": f"upstream_error_{resp.status_code}", "provider": "openweathermap"}
         
         data = resp.json()
         
@@ -107,19 +134,20 @@ def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
         
         days = []
         for d in daily:
-             days.append({
-                 "date": time.strftime("%Y-%m-%d", time.localtime(d.get("dt"))),
-                 "dayName": time.strftime("%A", time.localtime(d.get("dt"))),
-                 "condition": d.get("weather", [{}])[0].get("description", ""),
-                 "temperature": {
-                     "min": d.get("temp", {}).get("min"),
-                     "max": d.get("temp", {}).get("max")
-                 },
-                 "precipitation": d.get("rain", 0) or (d.get("pop", 0) * 100)
-             })
+            days.append({
+                "date": time.strftime("%Y-%m-%d", time.localtime(d.get("dt"))),
+                "dayName": time.strftime("%A", time.localtime(d.get("dt"))),
+                "condition": d.get("weather", [{}])[0].get("description", ""),
+                "temperature": {
+                    "min": d.get("temp", {}).get("min"),
+                    "max": d.get("temp", {}).get("max")
+                },
+                "precipitation": d.get("rain", 0) or (d.get("pop", 0) * 100)
+            })
 
         return {
             "ok": True,
+            "provider": "openweathermap",
             "temperature": {
                 "value": current.get("temp"),
                 "unit": "C"
@@ -128,10 +156,12 @@ def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
             "wind_speed": current.get("wind_speed"),
             "summary": current.get("weather", [{}])[0].get("description", ""),
             "condition": current.get("weather", [{}])[0].get("main", ""),
-            "days": days
+            "days": days,
+            "daily": days,  # Alias para compatibilidad
+            "location": {"lat": lat, "lon": lon}
         }
 
     except Exception as e:
-        logger.error(f"Error fetching weather: {e}")
-        return {"ok": False, "reason": "internal_error"}
+        logger.error(f"Error fetching weather from OpenWeatherMap: {e}")
+        return {"ok": False, "reason": "internal_error", "provider": "openweathermap"}
 

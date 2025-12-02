@@ -625,6 +625,11 @@ class MapTilerSecretRequest(BaseModel):
     api_key: Optional[str] = Field(default=None, max_length=256)
 
 
+class MeteoblueSecretRequest(BaseModel):
+    api_key: Optional[str] = Field(default=None, max_length=256)
+
+
+
 class MapResetResponse(BaseModel):
     status: Literal["ok"] = "ok"
     reset_counter: int
@@ -1069,6 +1074,15 @@ def _build_public_config(config: AppConfig) -> Dict[str, Any]:
             secrets_public["openweathermap"]["has_api_key"] = bool(stored_key)
             if stored_key and len(stored_key) >= 4:
                 secrets_public["openweathermap"]["api_key_last4"] = stored_key[-4:]
+        
+        # Meteoblue
+        if "meteoblue" in payload.get("secrets", {}):
+            secrets_public["meteoblue"] = {"api_key": None}
+            stored_key = secret_store.get_secret("meteoblue_api_key")
+            secrets_public["meteoblue"]["has_api_key"] = bool(stored_key)
+            if stored_key and len(stored_key) >= 4:
+                secrets_public["meteoblue"]["api_key_last4"] = stored_key[-4:]
+
         
         payload["secrets"] = secrets_public
 
@@ -5274,6 +5288,31 @@ async def update_maptiler_secret(request: MapTilerSecretRequest) -> Response:
     config = config_manager.read()
     sign_maptiler_urls(config)
     return Response(status_code=204)
+
+
+@app.get("/api/config/secret/meteoblue_api_key")
+def get_meteoblue_secret_meta() -> Dict[str, Any]:
+    return _mask_secret(secret_store.get_secret("meteoblue_api_key"))
+
+
+@app.post("/api/config/secret/meteoblue_api_key", status_code=204)
+async def update_meteoblue_secret(request: MeteoblueSecretRequest) -> Response:
+    api_key = _sanitize_secret(request.api_key)
+    secret_store.set_secret("meteoblue_api_key", api_key)
+    masked = _mask_secret(api_key)
+    logger.info(
+        "Updating Meteoblue API key (present=%s, last4=%s)",
+        masked.get("has_api_key", False),
+        masked.get("api_key_last4", "****"),
+    )
+    return Response(status_code=204)
+
+
+@app.get("/api/config/secret/meteoblue_api_key/raw")
+def get_meteoblue_secret_raw() -> PlainTextResponse:
+    value = secret_store.get_secret("meteoblue_api_key") or ""
+    return PlainTextResponse(content=value)
+
 
 
 async def _update_opensky_secret(name: str, request: Request) -> Response:

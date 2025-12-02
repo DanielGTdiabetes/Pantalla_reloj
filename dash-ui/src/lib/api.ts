@@ -177,6 +177,7 @@ export async function saveConfig(data: AppConfig) {
 }
 
 // V2 API functions
+
 export async function getConfigV2(): Promise<AppConfig> {
   const config = await apiGet<AppConfig>("/api/config");
 
@@ -196,6 +197,7 @@ export async function reloadConfig(): Promise<{ success: boolean; message: strin
   return apiPost<{ success: boolean; message: string; config_path?: string; config_loaded_at?: string }>("/api/config/reload", {});
 }
 
+
 export type AemetSecretRequest = {
   api_key: string | null;
 };
@@ -210,203 +212,9 @@ export type MaskedSecretMeta = {
   api_key_last4: string | null;
 };
 
-export async function updateAemetApiKey(apiKey: string | null) {
-  return apiPost<undefined>("/api/config/secret/aemet_api_key", {
-    api_key: apiKey,
-  } satisfies AemetSecretRequest);
-}
-
-export async function updateAISStreamApiKey(apiKey: string | null) {
-  return apiPost<undefined>("/api/config/secret/aisstream_api_key", {
-    api_key: apiKey,
-  });
-}
-
-export async function testAemetApiKey(apiKey?: string) {
-  const body = apiKey && apiKey.trim().length > 0 ? { api_key: apiKey } : {};
-  return apiPost<AemetTestResponse | undefined>("/api/aemet/test_key", body);
-}
-
-export type CalendarTestResponse = {
-  ok: boolean;
-  source?: string;
-  count?: number;
-  sample?: Array<{
-    title: string;
-    start: string;
-    end: string;
-    location: string;
-    allDay: boolean;
-  }>;
-  range_days?: number;
-  message?: string;
-  reason?: string;
-  tip?: string;
-};
-
-export async function testCalendarConnection(apiKey?: string, calendarId?: string) {
-  // Si no se proporcionan credenciales, llamar sin body para usar el origen activo
-  if (!apiKey && !calendarId) {
-    try {
-      return apiPost<CalendarTestResponse | undefined>("/api/calendar/test", {});
-    } catch (error) {
-      return { ok: false, reason: "connection_error", message: String(error) };
-    }
-  }
-
-  const body: Record<string, unknown> = {};
-  if (apiKey && apiKey.trim().length > 0) {
-    body.api_key = apiKey.trim();
-  }
-  if (calendarId && calendarId.trim().length > 0) {
-    body.calendar_id = calendarId.trim();
-  }
-  return apiPost<CalendarTestResponse | undefined>("/api/calendar/test", body);
-}
-
-// Maps test endpoints
-export type MapTilerTestRequest = {
-  styleUrl: string;
-};
-
-export type MapTilerTestResponse = {
-  ok: boolean;
-  bytes?: number;
-  status?: number;
-  error?: string;
-};
-
-export async function testMapTiler(request: MapTilerTestRequest): Promise<MapTilerTestResponse> {
-  try {
-    return apiPost<MapTilerTestResponse>("/api/maps/test_maptiler", request);
-  } catch (error) {
-    return { ok: false, error: "connection_error" };
-  }
-}
-
-export type XyzTestRequest = {
-  tileUrl: string;
-};
-
-export type XyzTestResponse = {
-  ok: boolean;
-  bytes?: number;
-  contentType?: string;
-  error?: string;
-};
-
-export async function testXyz(request: XyzTestRequest): Promise<XyzTestResponse> {
-  try {
-    return apiPost<XyzTestResponse>("/api/maps/test_xyz", request);
-  } catch (error) {
-    return { ok: false, error: "connection_error" };
-  }
-}
-
-// News feeds test endpoint
-export type NewsTestFeedsRequest = {
-  feeds: string[];
-};
-
-export type NewsFeedTestResult = {
-  url: string;
-  reachable: boolean;
-  items: number;
-  title: string | null;
-  error: string | null;
-};
-
-export type NewsTestFeedsResponse = {
-  ok: boolean;
-  results: NewsFeedTestResult[];
-};
-
-export async function testNewsFeeds(request: NewsTestFeedsRequest): Promise<NewsTestFeedsResponse> {
-  try {
-    return apiPost<NewsTestFeedsResponse>("/api/news/test_feeds", request);
-  } catch (error) {
-    return { ok: false, results: [] };
-  }
-}
-
-// Calendar ICS endpoints
-export type CalendarICSUploadResponse = {
-  ok: boolean;
-  events_parsed?: number;
-  range_days?: number;
-  error?: string;
-  detail?: string;
-};
-
-export async function uploadCalendarICS(file: File): Promise<CalendarICSUploadResponse> {
-  try {
-    const formData = new FormData();
-    formData.append("file", file);
-
-    const response = await fetch(`${window.location.origin}/api/calendar/ics/upload`, {
-      method: "POST",
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: "unknown_error" }));
-      return { ok: false, error: error.error || "upload_error", detail: error.detail };
-    }
-
-    return await response.json();
-  } catch (error) {
-    return { ok: false, error: "connection_error", detail: String(error) };
-  }
-}
-
-export type CalendarICSUrlRequest = {
-  url: string;
-};
-
-export type CalendarICSUrlResponse = {
-  ok: boolean;
-  events?: number;
-  error?: string;
-  detail?: string;
-};
-
-export async function setCalendarICSUrl(request: CalendarICSUrlRequest): Promise<CalendarICSUrlResponse> {
-  try {
-    return apiPost<CalendarICSUrlResponse>("/api/calendar/ics/url", request);
-  } catch (error) {
-    return { ok: false, error: "connection_error", detail: String(error) };
-  }
-}
-
-export type CalendarPreviewItem = {
-  title: string;
-  start: string;
-  end: string;
-  location: string;
-  all_day: boolean;
-};
-
-export type CalendarPreviewResponse = {
-  ok: boolean;
-  source?: string;
-  count?: number;
-  items?: CalendarPreviewItem[];
-  error?: string;
-  message?: string;
-};
-
-export async function getCalendarPreview(limit: number = 10): Promise<CalendarPreviewResponse> {
-  try {
-    return apiGet<CalendarPreviewResponse>(`/api/calendar/preview?limit=${limit}`);
-  } catch (error) {
-    return { ok: false, error: "connection_error", message: String(error) };
-  }
-}
-
 export async function saveCalendarConfig(config: Partial<CalendarConfig>): Promise<void> {
   return apiPatch("/api/config/group/calendar", config);
 }
-
 
 export async function updateOpenWeatherMapApiKey(apiKey: string | null) {
   return apiPost<undefined>("/api/config/secret/openweathermap_api_key", { api_key: apiKey });
@@ -416,9 +224,18 @@ export async function getOpenWeatherMapApiKeyMeta() {
   return apiGet<MaskedSecretMeta>("/api/config/secret/openweathermap_api_key");
 }
 
+export async function updateMeteoblueApiKey(apiKey: string | null) {
+  return apiPost<undefined>("/api/config/secret/meteoblue_api_key", { api_key: apiKey });
+}
+
+export async function getMeteoblueApiKeyMeta() {
+  return apiGet<MaskedSecretMeta>("/api/config/secret/meteoblue_api_key");
+}
+
 export async function getSchema() {
   return apiGet<Record<string, unknown> | undefined>("/api/config/schema");
 }
+
 
 export type OpenSkyStatus = {
   enabled: boolean;
@@ -945,6 +762,31 @@ export async function testOpenWeatherMap(apiKey?: string | null): Promise<OpenWe
   }
 }
 
+export type MeteoblueTestResponse = {
+  ok: boolean;
+  status?: number;
+  message?: string;
+  error?: string;
+  data?: {
+    temp?: number;
+    condition?: string;
+    location?: string;
+  };
+};
+
+export async function testMeteoblue(apiKey?: string | null): Promise<MeteoblueTestResponse> {
+  try {
+    return apiPost<MeteoblueTestResponse>("/api/weather/test_meteoblue", { api_key: apiKey });
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      error: "connection_error",
+      message: error instanceof Error ? error.message : "Error de conexión"
+    };
+  }
+}
+
 export async function getRainViewerFrames(
   history_minutes?: number,
   frame_step?: number
@@ -1211,6 +1053,208 @@ export async function updateSecrets(secrets: {
   aishub?: {
     api_key?: string | null;
   };
+  maptiler?: {
+    api_key?: string | null;
+  };
+  openweathermap?: {
+    api_key?: string | null;
+  };
+  meteoblue?: {
+    api_key?: string | null;
+  };
 }): Promise<void> {
   return apiPatch("/api/config/group/secrets", secrets);
+}
+
+export async function updateAemetApiKey(apiKey: string | null) {
+  return apiPost<undefined>("/api/config/secret/aemet_api_key", {
+    api_key: apiKey,
+  } satisfies AemetSecretRequest);
+}
+
+export async function updateAISStreamApiKey(apiKey: string | null) {
+  return apiPost<undefined>("/api/config/secret/aisstream_api_key", {
+    api_key: apiKey,
+  });
+}
+
+export async function testAemetApiKey(apiKey?: string) {
+  const body = apiKey && apiKey.trim().length > 0 ? { api_key: apiKey } : {};
+  return apiPost<AemetTestResponse | undefined>("/api/aemet/test_key", body);
+}
+
+export type CalendarTestResponse = {
+  ok: boolean;
+  source?: string;
+  count?: number;
+  sample?: Array<{
+    title: string;
+    start: string;
+    end: string;
+    location: string;
+    allDay: boolean;
+  }>;
+  range_days?: number;
+  message?: string;
+  reason?: string;
+  tip?: string;
+};
+
+export async function testCalendarConnection(apiKey?: string, calendarId?: string) {
+  // Si no se proporcionan credenciales, llamar sin body para usar el origen activo
+  if (!apiKey && !calendarId) {
+    try {
+      return apiPost<CalendarTestResponse | undefined>("/api/calendar/test", {});
+    } catch (error) {
+      return { ok: false, reason: "connection_error", message: String(error) };
+    }
+  }
+
+  const body: Record<string, unknown> = {};
+  if (apiKey && apiKey.trim().length > 0) {
+    body.api_key = apiKey.trim();
+  }
+  if (calendarId && calendarId.trim().length > 0) {
+    body.calendar_id = calendarId.trim();
+  }
+  return apiPost<CalendarTestResponse | undefined>("/api/calendar/test", body);
+}
+
+// Maps test endpoints
+export type MapTilerTestRequest = {
+  styleUrl: string;
+};
+
+export type MapTilerTestResponse = {
+  ok: boolean;
+  bytes?: number;
+  status?: number;
+  error?: string;
+};
+
+export async function testMapTiler(request: MapTilerTestRequest): Promise<MapTilerTestResponse> {
+  try {
+    return apiPost<MapTilerTestResponse>("/api/maps/test_maptiler", request);
+  } catch (error) {
+    return { ok: false, error: "connection_error" };
+  }
+}
+
+export type XyzTestRequest = {
+  tileUrl: string;
+};
+
+export type XyzTestResponse = {
+  ok: boolean;
+  bytes?: number;
+  contentType?: string;
+  error?: string;
+};
+
+export async function testXyz(request: XyzTestRequest): Promise<XyzTestResponse> {
+  try {
+    return apiPost<XyzTestResponse>("/api/maps/test_xyz", request);
+  } catch (error) {
+    return { ok: false, error: "connection_error" };
+  }
+}
+
+// News feeds test endpoint
+export type NewsTestFeedsRequest = {
+  feeds: string[];
+};
+
+export type NewsFeedTestResult = {
+  url: string;
+  reachable: boolean;
+  items: number;
+  title: string | null;
+  error: string | null;
+};
+
+export type NewsTestFeedsResponse = {
+  ok: boolean;
+  results: NewsFeedTestResult[];
+};
+
+export async function testNewsFeeds(request: NewsTestFeedsRequest): Promise<NewsTestFeedsResponse> {
+  try {
+    return apiPost<NewsTestFeedsResponse>("/api/news/test_feeds", request);
+  } catch (error) {
+    return { ok: false, results: [] };
+  }
+}
+
+// Calendar ICS endpoints
+export type CalendarICSUploadResponse = {
+  ok: boolean;
+  events_parsed?: number;
+  range_days?: number;
+  error?: string;
+  detail?: string;
+};
+
+export async function uploadCalendarICS(file: File): Promise<CalendarICSUploadResponse> {
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch(`${window.location.origin}/api/calendar/ics/upload`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: "unknown_error" }));
+      return { ok: false, error: error.error || "upload_error", detail: error.detail };
+    }
+
+    return await response.json();
+  } catch (error) {
+    return { ok: false, error: "connection_error", detail: String(error) };
+  }
+}
+
+export type CalendarICSUrlRequest = {
+  url: string;
+};
+
+export type CalendarICSUrlResponse = {
+  ok: boolean;
+  events?: number;
+  error?: string;
+  detail?: string;
+};
+
+export async function setCalendarICSUrl(request: CalendarICSUrlRequest): Promise<CalendarICSUrlResponse> {
+  try {
+    return apiPost<CalendarICSUrlResponse>("/api/calendar/ics/url", request);
+  } catch (error) {
+    return { ok: false, error: "connection_error", detail: String(error) };
+  }
+}
+
+export type CalendarPreviewItem = {
+  title: string;
+  start: string;
+  end: string;
+  location: string;
+  all_day: boolean;
+};
+
+export type CalendarPreviewResponse = {
+  ok: boolean;
+  source?: string;
+  count?: number;
+  items?: CalendarPreviewItem[];
+  error?: string;
+  message?: string;
+};
+
+export async function getCalendarPreview(limit: number = 10): Promise<CalendarPreviewResponse> {
+  try {
+    return apiGet<CalendarPreviewResponse>(`/api/calendar/preview?limit=${limit}`);
+  } catch (error) {
+    return { ok: false, error: "connection_error", message: String(error) };
+  }
 }

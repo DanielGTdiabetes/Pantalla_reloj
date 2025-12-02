@@ -147,6 +147,13 @@ export const ConfigPage: React.FC = () => {
   const [openWeatherMapTestResult, setOpenWeatherMapTestResult] = useState<OpenWeatherMapTestResponse | null>(null);
   const [openWeatherMapTesting, setOpenWeatherMapTesting] = useState(false);
 
+  // Meteoblue
+  const [meteoblueApiKey, setMeteoblueApiKey] = useState("");
+  const [meteoblueApiKeyMeta, setMeteoblueApiKeyMeta] = useState<MaskedSecretMeta | null>(null);
+  const [meteoblueTestResult, setMeteoblueTestResult] = useState<any>(null);
+  const [meteoblueTesting, setMeteoblueTesting] = useState(false);
+
+
   // AEMET
   const [aemetApiKey, setAemetApiKey] = useState("");
   const [aemetTestResult, setAemetTestResult] = useState<{ ok: boolean; reason?: string } | null>(null);
