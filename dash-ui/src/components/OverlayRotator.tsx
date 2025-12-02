@@ -21,7 +21,7 @@ import { HarvestCard } from "./dashboard/cards/HarvestCard";
 import { HistoricalEventsCard } from "./dashboard/cards/HistoricalEventsCard";
 import { MoonCard } from "./dashboard/cards/MoonCard";
 import { NewsCard } from "./dashboard/cards/NewsCard";
-import { SaintsCard } from "./dashboard/cards/SaintsCard";
+import { SaintsCard, type EnrichedSaint } from "./dashboard/cards/SaintsCard";
 import { TimeCard } from "./dashboard/cards/TimeCard";
 import { WeatherCard } from "./dashboard/cards/WeatherCard";
 import { useRotationProgress } from "../hooks/useRotationProgress";
@@ -33,7 +33,7 @@ type DashboardPayload = {
   news?: Record<string, unknown>;
   astronomy?: Record<string, unknown>;
   calendar?: Record<string, unknown>;
-  santoral?: { saints?: (string | Record<string, unknown>)[]; namedays?: string[] };
+  santoral?: { saints?: (string | EnrichedSaint)[]; namedays?: string[] };
   historicalEvents?: { date?: string; count?: number; items?: string[] };
 };
 
@@ -282,7 +282,7 @@ export const OverlayRotator: React.FC = () => {
   // Cache refs
   const weatherCacheRef = useRef<{ data: Record<string, unknown> | null; timestamp: number | null }>({ data: null, timestamp: null });
   const astronomyCacheRef = useRef<{ data: Record<string, unknown> | null; timestamp: number | null }>({ data: null, timestamp: null });
-  const santoralCacheRef = useRef<{ data: { date: string; names: (string | Record<string, unknown>)[] } | null; timestamp: number | null }>({ data: null, timestamp: null });
+  const santoralCacheRef = useRef<{ data: { date: string; names: (string | EnrichedSaint)[] } | null; timestamp: number | null }>({ data: null, timestamp: null });
   const historicalEventsCacheRef = useRef<{ data: { date?: string; count?: number; items?: string[] } | null; timestamp: number | null }>({ data: null, timestamp: null });
 
   const timezone = useMemo(() => {
@@ -494,7 +494,7 @@ export const OverlayRotator: React.FC = () => {
               return { saints: santoralCacheRef.current.data.names, namedays: [] };
             }
             try {
-              const saints = await apiGet<Record<string, unknown>[] | string[]>("/api/saints");
+              const saints = await apiGet<(string | EnrichedSaint)[]>("/api/saints");
               const data = { date: new Date().toISOString(), names: saints };
               if (mounted) {
                 santoralCacheRef.current = { data, timestamp: Date.now() };
@@ -551,7 +551,7 @@ export const OverlayRotator: React.FC = () => {
   const news = (payload.news ?? {}) as Record<string, unknown>;
   const calendar = (payload.calendar ?? {}) as Record<string, unknown>;
   const historicalEvents = (payload.historicalEvents ?? {}) as { date?: string; count?: number; items?: string[] };
-  const santoral = (payload.santoral ?? {}) as Record<string, unknown>;
+  const santoral = (payload.santoral ?? {}) as { saints?: (string | EnrichedSaint)[]; namedays?: string[] };
 
   const targetUnit = "C";
   const rawTemperature = typeof weather.temperature === "number" ? weather.temperature : null;
@@ -616,7 +616,7 @@ export const OverlayRotator: React.FC = () => {
   const santoralEntries = useMemo(() => {
     const saints = Array.isArray(santoral.saints) ? santoral.saints : [];
     const namedays = extractStrings(santoral.namedays);
-    return [...saints, ...namedays] as (string | Record<string, unknown>)[];
+    return [...saints, ...namedays] as (string | EnrichedSaint)[];
   }, [santoral.saints, santoral.namedays]);
 
   const forecastDays = useMemo(() => {
