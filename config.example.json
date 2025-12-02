@@ -142,6 +142,14 @@
       }
     }
   },
+  "blitzortung": {
+    "enabled": true,
+    "mqtt_host": "127.0.0.1",
+    "mqtt_port": 1883,
+    "mqtt_topic": "blitzortung/1",
+    "retention_minutes": 30,
+    "max_points": 1500
+  },
   "panels": {
     "weatherWeekly": {
       "enabled": true
