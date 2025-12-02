@@ -5,6 +5,7 @@ import json
 import logging
 import threading
 import time
+import ssl
 from copy import deepcopy
 from typing import Any, Dict, Optional
 
@@ -210,12 +211,18 @@ class AISStreamService:
                 await asyncio.sleep(10)
                 continue
 
+            # Configuración SSL permisiva (Verified Script Logic)
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
             try:
                 async with websockets.connect(  # type: ignore[call-arg]
                     self._ws_url,
                     ping_interval=30,
                     ping_timeout=30,
                     close_timeout=10,
+                    ssl=ssl_context
                 ) as ws:
                     await self._handle_connection(ws, api_key, stop_event)
                     backoff = 1.0
@@ -243,25 +250,18 @@ class AISStreamService:
         api_key: str,
         stop_event: threading.Event,
     ) -> None:
-        # Construir payload de suscripción estrictamente según documentación
-        # Formato BoundingBoxes: [[[Lat1, Lon1], [Lat2, Lon2]]] (Matriz de 3 niveles)
-        # Orden: [Latitud, Longitud]
-        bbox_to_use = self._bbox
-        
+        # Construcción de suscripción simplificada y robusta (Verified Script Logic)
         subscription = {
             "APIKey": api_key,
-            "BoundingBoxes": bbox_to_use,
-            "FilterShipTypes": [], # Empty list = all ship types
+            "BoundingBoxes": self._bbox, # Formato [[[lat,lon], [lat,lon]]]
             "FilterMessageTypes": ["PositionReport", "StandardClassBPositionReport"],
+            "FilterShipTypes": []
         }
         
-        # CRÍTICO: Enviar suscripción INMEDIATAMENTE tras conectar
-        # No realizar operaciones bloqueantes antes de este punto
         payload_str = json.dumps(subscription)
         await ws.send(payload_str)
-        
-        self._logger.info("AISStream subscription sent: %s", payload_str)
-        
+        self._logger.info("Subscribed to AISStream with bbox: %s", self._bbox)
+
         with self._lock:
             self._ws_connected = True
             self._last_error = None
@@ -269,27 +269,18 @@ class AISStreamService:
         while not stop_event.is_set():
             try:
                 message = await asyncio.wait_for(ws.recv(), timeout=60)
+                if isinstance(message, bytes):
+                    message = message.decode("utf-8", errors="ignore")
+                
+                self._handle_message(message)
+                
             except asyncio.TimeoutError:
-                continue
-            except ConnectionClosed:  # type: ignore[misc]
+                self._logger.warning("AISStream read timeout")
                 break
-
-            if isinstance(message, bytes):
-                try:
-                    message = message.decode("utf-8")
-                except UnicodeDecodeError:
-                    self._logger.debug("Discarding non utf-8 AISStream frame")
-                    continue
-            if not isinstance(message, str):
-                continue
-            # Log de diagnóstico al primer mensaje válido
-            first_message = False
-            with self._lock:
-                first_message = self._last_message_ts is None
-            self._handle_message(message)
-            if first_message:
-                self._logger.debug("AISStream first message received")
-
+            except Exception as e:
+                self._logger.error("AISStream read error: %s", e)
+                break
+        
         with self._lock:
             self._ws_connected = False
 
@@ -300,86 +291,90 @@ class AISStreamService:
         try:
             data = json.loads(payload)
         except json.JSONDecodeError:
-            self._logger.debug("Invalid AISStream payload discarded")
             return
 
-        message = data.get("Message") if isinstance(data, dict) else None
-        metadata = data.get("MetaData") if isinstance(data, dict) else None
-        if not isinstance(message, dict):
-            self._logger.debug("AISStream payload missing Message block")
+        # Estructura esperada: {"Message": {"PositionReport": {...}}}
+        msg_container = data.get("Message")
+        if not isinstance(msg_container, dict):
             return
 
-        # Support both Class A and Class B position reports
-        position = message.get("PositionReport")
-        if not position:
-            position = message.get("StandardClassBPositionReport")
-
-        if not isinstance(position, dict):
-            # self._logger.debug("AISStream payload without PositionReport")
+        # Buscar reporte de posición (Class A o B)
+        report = msg_container.get("PositionReport")
+        if not report:
+            report = msg_container.get("StandardClassBPositionReport")
+        
+        if not isinstance(report, dict):
             return
 
-        # PascalCase keys as per AISStream documentation
-        lat = _to_float(position.get("Latitude") or position.get("LatitudeDegrees"))
-        lon = _to_float(position.get("Longitude") or position.get("LongitudeDegrees"))
-        if lat is None or lon is None:
+        # Extraer datos usando claves PascalCase (Verified Script Logic)
+        try:
+            # Coordenadas
+            lat = float(report.get("Latitude", 0))
+            lon = float(report.get("Longitude", 0))
+            
+            # Validar coordenadas
+            if lat == 0 and lon == 0:
+                return
+            if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+                return
+
+            # Identificación
+            user_id = report.get("UserID")
+            mmsi = str(user_id) if user_id else None
+            
+            # Si no hay UserID en el reporte, buscar en MetaData
+            if not mmsi:
+                meta = data.get("MetaData", {})
+                if isinstance(meta, dict):
+                    mmsi = str(meta.get("MMSI", ""))
+            
+            if not mmsi or mmsi == "0":
+                return
+
+            # Datos de navegación
+            sog = float(report.get("Sog", 0))
+            cog = float(report.get("Cog", 0))
+            heading = float(report.get("TrueHeading", 0))
+            
+            # Construir feature
+            properties = {
+                "mmsi": mmsi,
+                "speed": sog,
+                "course": cog,
+                "heading": heading,
+                "source": "aisstream",
+                "timestamp": int(time.time())
+            }
+
+            # Enriquecer con MetaData si existe
+            meta = data.get("MetaData")
+            if isinstance(meta, dict):
+                if "ShipName" in meta:
+                    properties["name"] = str(meta["ShipName"]).strip()
+                if "ShipTypeName" in meta:
+                    properties["shipType"] = str(meta["ShipTypeName"])
+
+            feature = {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [lon, lat]
+                },
+                "properties": properties
+            }
+
+            # Actualizar estado
+            now = time.time()
+            with self._lock:
+                self._vessels[mmsi] = {
+                    "feature": feature, 
+                    "received_at": now
+                }
+                self._last_message_ts = now
+
+        except (ValueError, TypeError):
+            # Ignorar errores de conversión
             return
-
-        if abs(lat) > 90 or abs(lon) > 180:
-            return
-
-        timestamp = _to_float(position.get("Timestamp") or position.get("TimeOfFix"))
-        if timestamp is None and isinstance(metadata, dict):
-            timestamp = _to_float(
-                metadata.get("UnixTime")
-                or metadata.get("received")
-                or metadata.get("ReceivedTimestamp")
-            )
-        if timestamp is None:
-            timestamp = time.time()
-        else:
-            timestamp = float(timestamp)
-
-        mmsi = None
-        if isinstance(metadata, dict):
-            mmsi = metadata.get("MMSI")
-        if mmsi is None:
-            mmsi = position.get("UserID") or message.get("UserID")
-        if mmsi is None:
-            return
-
-        properties: Dict[str, Any] = {
-            "mmsi": str(mmsi),
-            "timestamp": int(timestamp),
-            "speed": _to_float(position.get("Sog") or position.get("SpeedOverGround")),
-            "course": _to_float(position.get("Cog") or position.get("CourseOverGround")),
-            "heading": _to_float(position.get("TrueHeading") or position.get("Heading")),
-            "shipType": None,
-            "imo": None,
-            "callsign": None,
-            "name": None,
-            "source": "aisstream",
-        }
-
-        if isinstance(metadata, dict):
-            if metadata.get("IMO"):
-                properties["imo"] = str(metadata.get("IMO"))
-            if metadata.get("CallSign"):
-                properties["callsign"] = str(metadata.get("CallSign"))
-            if metadata.get("ShipName"):
-                properties["name"] = metadata.get("ShipName")
-            if metadata.get("ShipType") or metadata.get("ShipTypeName"):
-                properties["shipType"] = metadata.get("ShipTypeName") or metadata.get("ShipType")
-
-        feature = {
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [float(lon), float(lat)]},
-            "properties": {k: v for k, v in properties.items() if v is not None},
-        }
-
-        now = time.time()
-        with self._lock:
-            self._vessels[str(mmsi)] = {"feature": feature, "received_at": now}
-            self._last_message_ts = now
 
     # ------------------------------------------------------------------
     # Helpers
