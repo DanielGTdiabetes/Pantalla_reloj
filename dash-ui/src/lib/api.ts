@@ -197,7 +197,6 @@ export async function reloadConfig(): Promise<{ success: boolean; message: strin
   return apiPost<{ success: boolean; message: string; config_path?: string; config_loaded_at?: string }>("/api/config/reload", {});
 }
 
-
 export type AemetSecretRequest = {
   api_key: string | null;
 };
