@@ -342,6 +342,7 @@ export type LayersConfig = {
 
 export type PanelWeatherWeeklyConfig = {
   enabled: boolean;
+  provider?: "meteoblue" | "openweathermap";
 };
 
 export type PanelEphemeridesConfig = {

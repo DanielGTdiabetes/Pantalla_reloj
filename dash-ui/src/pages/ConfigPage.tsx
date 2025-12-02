@@ -35,6 +35,9 @@ import {
   updateAemetApiKey,
   updateOpenWeatherMapApiKey,
   getOpenWeatherMapApiKeyMeta,
+  testMeteoblue,
+  updateMeteoblueApiKey,
+  getMeteoblueApiKeyMeta,
   updateSecrets,
   uploadCalendarICS,
   reloadConfig,
@@ -51,6 +54,7 @@ import {
   type MapTilerTestResponse,
   type XyzTestResponse,
   type OpenWeatherMapTestResponse,
+  type MeteoblueTestResponse,
 } from "../lib/api";
 
 import type {
@@ -363,9 +367,12 @@ export const ConfigPage: React.FC = () => {
     }
 
     if (panels.weatherWeekly) {
-      payload.weatherWeekly = {
-        enabled: panels.weatherWeekly.enabled ?? false,
-      };
+      if (panels.weatherWeekly) {
+        payload.weatherWeekly = {
+          enabled: panels.weatherWeekly.enabled ?? false,
+          provider: panels.weatherWeekly.provider || "meteoblue",
+        };
+      }
     }
 
     return Object.keys(payload).length > 0 ? (payload as PanelsConfig) : undefined;
@@ -486,6 +493,14 @@ export const ConfigPage: React.FC = () => {
           setOpenWeatherMapApiKeyMeta(owmMeta);
         } catch (error) {
           console.error("Error loading OpenWeatherMap API key meta:", error);
+        }
+
+        // Cargar metadata de Meteoblue API key
+        try {
+          const mbMeta = await getMeteoblueApiKeyMeta();
+          setMeteoblueApiKeyMeta(mbMeta);
+        } catch (error) {
+          console.error("Error loading Meteoblue API key meta:", error);
         }
 
         // Cargar estado WiFi
@@ -883,6 +898,55 @@ export const ConfigPage: React.FC = () => {
     } catch (error) {
       console.error("Error updating OpenWeatherMap API key:", error);
       alert("Error al guardar la API key de OpenWeatherMap");
+    }
+  };
+
+  const handleTestMeteoblue = async () => {
+    setMeteoblueTesting(true);
+    setMeteoblueTestResult(null);
+    try {
+      // Si hay apiKey en el input, probarla; si no, usar la guardada (pasando undefined)
+      const apiKeyToTest = meteoblueApiKey && meteoblueApiKey.trim().length > 0
+        ? meteoblueApiKey
+        : undefined;
+
+      const result = await testMeteoblue(apiKeyToTest);
+      setMeteoblueTestResult(result);
+    } catch (error) {
+      setMeteoblueTestResult({ ok: false, error: "Error al probar Meteoblue" });
+      console.error("Error testing Meteoblue:", error);
+    } finally {
+      setMeteoblueTesting(false);
+    }
+  };
+
+  const handleUpdateMeteoblueApiKey = async (apiKey: string | null) => {
+    try {
+      await updateMeteoblueApiKey(apiKey);
+      // Actualizar secrets en config localmente
+      setConfig((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          secrets: {
+            ...prev.secrets,
+            meteoblue_api_key: apiKey, // Nota: esto no actualiza el modelo Pydantic en backend directamente, solo local
+          } as any,
+        };
+      });
+
+      // Actualizar metadata
+      try {
+        const mbMeta = await getMeteoblueApiKeyMeta();
+        setMeteoblueApiKeyMeta(mbMeta);
+        setMeteoblueApiKey(""); // Limpiar input
+        alert("API Key de Meteoblue guardada correctamente");
+      } catch (error) {
+        console.error("Error reloading Meteoblue meta:", error);
+      }
+    } catch (error) {
+      console.error("Error updating Meteoblue API key:", error);
+      alert("Error al guardar la API key de Meteoblue");
     }
   };
 
@@ -4478,6 +4542,30 @@ export const ConfigPage: React.FC = () => {
                   />
                   Habilitar Panel de Clima Semanal
                 </label>
+
+                {config.panels?.weatherWeekly?.enabled && (
+                  <div className="config-field" style={{ marginLeft: "24px", marginTop: "8px" }}>
+                    <label>Proveedor</label>
+                    <select
+                      value={config.panels.weatherWeekly.provider || "meteoblue"}
+                      onChange={(e) => {
+                        setConfig({
+                          ...config,
+                          panels: {
+                            ...config.panels,
+                            weatherWeekly: {
+                              ...config.panels?.weatherWeekly,
+                              provider: e.target.value as "meteoblue" | "openweathermap",
+                            } as any,
+                          },
+                        });
+                      }}
+                    >
+                      <option value="meteoblue">Meteoblue (Recomendado)</option>
+                      <option value="openweathermap">OpenWeatherMap</option>
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -4489,6 +4577,99 @@ export const ConfigPage: React.FC = () => {
               >
                 {panelRotatorSaving ? "Guardando..." : "Guardar"}
               </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ============================================
+            BLOQUE 2.4: Meteoblue API Key
+            ============================================ */}
+        <div style={{ marginBottom: "32px" }}>
+          <h2 style={{ fontSize: "1.8rem", marginBottom: "20px", borderBottom: "2px solid rgba(104, 162, 255, 0.3)", paddingBottom: "8px" }}>
+            Meteoblue
+          </h2>
+
+          <div className="config-card">
+            <h2>API Key de Meteoblue</h2>
+            <div className="config-form-fields">
+              <div className="config-field">
+                <label>API Key</label>
+                <input
+                  type="password"
+                  value={meteoblueApiKey}
+                  onChange={(e) => setMeteoblueApiKey(e.target.value)}
+                  placeholder={meteoblueApiKeyMeta?.has_api_key ? `••••${meteoblueApiKeyMeta.api_key_last4 || ""}` : "Introduce tu API key de Meteoblue"}
+                />
+                <div className="config-field__hint">
+                  Necesaria para obtener datos de pronóstico del tiempo de alta precisión.
+                  Obtén tu API key en <a href="https://www.meteoblue.com/en/weather-api" target="_blank" rel="noopener noreferrer">meteoblue.com</a>
+                </div>
+              </div>
+
+              {meteoblueApiKeyMeta && (
+                <div className="config-field">
+                  <div className={`config-field__hint ${meteoblueApiKeyMeta.has_api_key ? "config-field__hint--success" : "config-field__hint--error"}`}>
+                    {meteoblueApiKeyMeta.has_api_key ? (
+                      <>✓ API key configurada{meteoblueApiKeyMeta.api_key_last4 && ` (últimos 4: ${meteoblueApiKeyMeta.api_key_last4})`}</>
+                    ) : (
+                      "✗ No hay API key configurada"
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="config-field__actions">
+                <button
+                  className="config-button primary"
+                  onClick={() => handleUpdateMeteoblueApiKey(meteoblueApiKey || null)}
+                >
+                  Guardar API Key
+                </button>
+                <button
+                  className="config-button"
+                  onClick={handleTestMeteoblue}
+                  disabled={meteoblueTesting}
+                >
+                  {meteoblueTesting ? "Probando..." : "Probar Conexión"}
+                </button>
+                <button
+                  className="config-button"
+                  onClick={() => handleUpdateMeteoblueApiKey(null)}
+                >
+                  Eliminar API Key
+                </button>
+              </div>
+
+              {meteoblueTestResult && (
+                <div
+                  className={`config-field__hint ${meteoblueTestResult.ok ? "config-field__hint--success" : "config-field__hint--error"}`}
+                  style={{ marginTop: "16px", padding: "12px", borderRadius: "8px", border: meteoblueTestResult.ok ? "1px solid rgba(76, 175, 80, 0.3)" : "1px solid rgba(244, 67, 54, 0.3)" }}
+                >
+                  {meteoblueTestResult.ok ? (
+                    <div>
+                      <div style={{ fontWeight: 600, marginBottom: "4px" }}>
+                        ✓ Conexión exitosa con Meteoblue
+                      </div>
+                      {meteoblueTestResult.data && (
+                        <div style={{ fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)", marginTop: "4px" }}>
+                          Ubicación: {meteoblueTestResult.data.location}<br />
+                          Temperatura: {meteoblueTestResult.data.temp}°C<br />
+                          Condición: {meteoblueTestResult.data.condition}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ fontWeight: 600, marginBottom: "4px" }}>
+                        ✗ Error de conexión
+                      </div>
+                      <div style={{ fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)", marginTop: "4px" }}>
+                        {meteoblueTestResult.message || meteoblueTestResult.error || "Error desconocido"}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

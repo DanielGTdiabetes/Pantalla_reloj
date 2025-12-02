@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+from pydantic import BaseModel
 
 import requests
 from fastapi import APIRouter
@@ -169,3 +170,96 @@ def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
         logger.error(f"Error fetching weather from OpenWeatherMap: {e}")
         return {"ok": False, "reason": "internal_error", "provider": "openweathermap"}
 
+
+class TestWeatherRequest(BaseModel):
+    api_key: Optional[str] = None
+
+
+@router.post("/test_meteoblue")
+def test_meteoblue(request: TestWeatherRequest) -> Dict[str, Any]:
+    """
+    Prueba la conexión con Meteoblue usando la API key proporcionada o la guardada.
+    """
+    api_key = request.api_key
+    if not api_key:
+        api_key = secret_store.get_secret("meteoblue_api_key")
+    
+    if not api_key:
+        return {"ok": False, "reason": "missing_api_key", "message": "Falta API Key"}
+    
+    # Usar coordenadas por defecto (Madrid) para el test
+    lat = 40.4168
+    lon = -3.7038
+    
+    try:
+        result = weather_service.get_weather(lat, lon, api_key)
+        if result.get("ok"):
+            return {
+                "ok": True,
+                "message": "Conexión exitosa",
+                "data": {
+                    "temp": result.get("temperature", {}).get("value"),
+                    "condition": result.get("condition"),
+                    "location": f"{lat}, {lon}"
+                }
+            }
+        else:
+            return {
+                "ok": False, 
+                "reason": result.get("reason"), 
+                "message": result.get("summary") or "Error en la respuesta de Meteoblue"
+            }
+    except Exception as e:
+        logger.error(f"Error testing Meteoblue: {e}")
+        return {"ok": False, "reason": "internal_error", "message": str(e)}
+
+
+@router.post("/test_openweathermap")
+def test_openweathermap(request: TestWeatherRequest) -> Dict[str, Any]:
+    """
+    Prueba la conexión con OpenWeatherMap usando la API key proporcionada o la guardada.
+    """
+    api_key = request.api_key
+    if not api_key:
+        api_key = secret_store.get_secret("openweathermap_api_key")
+    
+    if not api_key:
+        return {"ok": False, "reason": "missing_api_key", "message": "Falta API Key"}
+    
+    # Usar coordenadas por defecto (Madrid) para el test
+    lat = 40.4168
+    lon = -3.7038
+    
+    try:
+        # Try One Call 3.0
+        url = f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}&exclude=minutely,hourly&units=metric&appid={api_key}"
+        
+        resp = requests.get(url, timeout=10)
+        if resp.status_code == 401:
+            # Fallback to 2.5 One Call
+            url = f"https://api.openweathermap.org/data/2.5/onecall?lat={lat}&lon={lon}&exclude=minutely,hourly&units=metric&appid={api_key}"
+            resp = requests.get(url, timeout=10)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            current = data.get("current", {})
+            weather = current.get("weather", [{}])[0]
+            return {
+                "ok": True,
+                "message": "Conexión exitosa",
+                "data": {
+                    "temp": current.get("temp"),
+                    "condition": weather.get("main"),
+                    "location": f"{lat}, {lon}"
+                }
+            }
+        else:
+            return {
+                "ok": False,
+                "reason": f"upstream_error_{resp.status_code}",
+                "message": f"Error {resp.status_code} de OpenWeatherMap"
+            }
+            
+    except Exception as e:
+        logger.error(f"Error testing OpenWeatherMap: {e}")
+        return {"ok": False, "reason": "internal_error", "message": str(e)}
