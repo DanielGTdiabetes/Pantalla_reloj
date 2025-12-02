@@ -97,10 +97,19 @@ class AISStreamService:
                 return
 
             if not self._secret_store.has_secret(SECRET_NAME):
-                self._logger.debug("AISStream secret not configured yet")
-                self._stop_thread_locked()
-                self._reset_state_locked()
-                return
+                # Fallback: Check config for API key
+                config_key = None
+                if ships_config.aisstream and ships_config.aisstream.api_key:
+                    config_key = ships_config.aisstream.api_key
+                
+                if config_key:
+                    self._logger.info("Using AISStream API key from config and migrating to secret store")
+                    self._secret_store.set_secret(SECRET_NAME, config_key)
+                else:
+                    self._logger.debug("AISStream secret not configured yet")
+                    self._stop_thread_locked()
+                    self._reset_state_locked()
+                    return
 
             self._start_thread_locked()
 
@@ -254,8 +263,7 @@ class AISStreamService:
         subscription = {
             "APIKey": api_key,
             "BoundingBoxes": self._bbox, # Formato [[[lat,lon], [lat,lon]]]
-            "FilterMessageTypes": ["PositionReport", "StandardClassBPositionReport"],
-            "FilterShipTypes": []
+            "FilterMessageTypes": ["PositionReport", "StandardClassBPositionReport"]
         }
         
         payload_str = json.dumps(subscription)
