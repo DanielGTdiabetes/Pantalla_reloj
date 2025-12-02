@@ -665,9 +665,12 @@ class LayersConfig(BaseModel):
     global_: Optional[GlobalLayersConfig] = Field(default_factory=GlobalLayersConfig, alias="global")
 
 
+
 class PanelWeatherWeeklyConfig(BaseModel):
     """Configuración de panel de clima semanal."""
     enabled: bool = True
+    provider: Literal["meteoblue", "openweathermap"] = Field(default="meteoblue")
+
 
 
 class PanelEphemeridesConfig(BaseModel):
@@ -992,6 +995,7 @@ class SecretsConfig(BaseModel):
     aisstream: Optional[AISStreamSecretsConfig] = None
     aishub: Optional[AISHubSecretsConfig] = None
     openweathermap: Optional[OpenWeatherMapSecretsConfig] = None
+    meteoblue_api_key: Optional[str] = Field(default=None, max_length=512)
 
 
 class AppConfig(BaseModel):

@@ -16,7 +16,7 @@ from ..secret_store import SecretStore
 from ..services import rainviewer as rainviewer_service
 from ..services import gibs as gibs_service
 from ..services import cap_warnings as cap_warnings_service
-from ..services.meteoblue_service import meteoblue_service
+from ..services.weather_service import weather_service
 
 logger = logging.getLogger(__name__)
 
@@ -69,8 +69,8 @@ def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
     El proveedor se determina según la configuración (por defecto: Meteoblue).
     """
     # Resolve location
+    config = config_manager.read()
     if lat is None or lon is None:
-        config = config_manager.read()
         if config.location:
             lat = config.location.lat
             lon = config.location.lon
@@ -81,26 +81,30 @@ def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
             lat = 40.4168
             lon = -3.7038
     
-    # Determinar proveedor (por defecto Meteoblue)
-    # Puedes añadir un campo en config para seleccionar el proveedor
-    # Por ahora, intentamos Meteoblue primero, OpenWeatherMap como fallback
+    # Determinar proveedor
+    provider = "meteoblue"
+    if config.panels and config.panels.weatherWeekly:
+        provider = config.panels.weatherWeekly.provider
     
-    # Intentar Meteoblue primero
-    meteoblue_key = secret_store.get_secret("meteoblue_api_key")
-    if meteoblue_key:
-        logger.info("Using Meteoblue as weather provider")
-        try:
-            result = meteoblue_service.get_weather(lat, lon, meteoblue_key)
-            if result.get("ok"):
-                return result
-            logger.warning(f"Meteoblue failed: {result.get('reason')}, falling back to OpenWeatherMap")
-        except Exception as e:
-            logger.error(f"Meteoblue error: {e}, falling back to OpenWeatherMap")
+    # Si el proveedor es Meteoblue, intentar usarlo
+    if provider == "meteoblue":
+        meteoblue_key = secret_store.get_secret("meteoblue_api_key")
+        if meteoblue_key:
+            logger.info("Using Meteoblue as weather provider")
+            try:
+                result = weather_service.get_weather(lat, lon, meteoblue_key)
+                if result.get("ok"):
+                    return result
+                logger.warning(f"Meteoblue failed: {result.get('reason')}, falling back to OpenWeatherMap")
+            except Exception as e:
+                logger.error(f"Meteoblue error: {e}, falling back to OpenWeatherMap")
+        else:
+            logger.warning("Meteoblue selected but no API key found, falling back to OpenWeatherMap")
     
-    # Fallback a OpenWeatherMap
+    # Fallback a OpenWeatherMap (o si está seleccionado explícitamente)
     openweather_key = secret_store.get_secret("openweathermap_api_key")
     if not openweather_key:
-        # No hay API keys disponibles
+        # Si falló Meteoblue y no hay key de OWM, devolver error
         return {
             "ok": False, 
             "reason": "missing_api_key",
@@ -111,7 +115,7 @@ def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
             "provider": "none"
         }
     
-    logger.info("Using OpenWeatherMap as weather provider (fallback)")
+    logger.info("Using OpenWeatherMap as weather provider")
     
     # Try One Call 3.0
     url = f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}&exclude=minutely,hourly&units=metric&appid={openweather_key}"
