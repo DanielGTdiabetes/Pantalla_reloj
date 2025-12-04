@@ -1,37 +1,6 @@
-import { StarIcon } from "../../icons";
 import { useState, useEffect } from "react";
 
-
-
-const SantoralIconImage: React.FC<{ size?: number; className?: string }> = ({ size = 48, className = "" }) => {
-  const [iconError, setIconError] = useState(false);
-  const iconPath = "/icons/misc/santoral.svg";
-  const emojiFallback = "✨";
-
-  useEffect(() => {
-    setIconError(false);
-  }, [iconPath]);
-
-  if (iconError || !iconPath) {
-    return (
-      <span style={{ fontSize: `${size}px`, lineHeight: 1 }} className={className} role="img" aria-label="Santoral">
-        {emojiFallback}
-      </span>
-    );
-  }
-
-  return (
-    <img
-      src={iconPath}
-      alt="Santoral"
-      className={className}
-      style={{ width: `${size}px`, height: `${size}px`, objectFit: "contain" }}
-      onError={() => setIconError(true)}
-      loading="lazy"
-    />
-  );
-};
-
+// Restore EnrichedSaint for compatibility
 export type EnrichedSaint = {
   name: string;
   bio?: string | null;
@@ -39,94 +8,126 @@ export type EnrichedSaint = {
   url?: string | null;
 };
 
-type SaintsCardProps = {
+interface SaintsCardProps {
   saints: (string | EnrichedSaint)[];
-};
+}
 
-export const SaintsCard = ({ saints }: SaintsCardProps): JSX.Element => {
+interface SaintInfo {
+  extract?: string;
+  thumbnail?: { source: string };
+}
+
+export default function SaintsCard({ saints }: SaintsCardProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [saintInfo, setSaintInfo] = useState<SaintInfo | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  // Normalize data to EnrichedSaint[]
-  const entries: EnrichedSaint[] = saints
-    .map((entry) => {
-      if (typeof entry === "string") {
-        return { name: entry.trim() };
-      }
-      return entry;
-    })
-    .filter((entry) => entry && entry.name && entry.name !== "" && !entry.name.toLowerCase().includes("object"));
+  // Helper to get name
+  const getSaintName = (s: string | EnrichedSaint) => {
+    if (typeof s === 'string') return s;
+    return s.name;
+  };
 
-  // Deduplicate
-  const uniqueEntries = entries.filter((entry, index, self) =>
-    self.findIndex((e) => e.name.toLowerCase() === entry.name.toLowerCase()) === index
-  );
-
-  const displayEntries = uniqueEntries.length > 0 ? uniqueEntries : [{ name: "—" }];
-
-  // Rotation logic if we have multiple items
+  // 1. Lógica de rotación (Carrusel) - 15 segundos por santo
   useEffect(() => {
-    if (displayEntries.length <= 1) return;
+    if (!saints || saints.length === 0) return;
     const interval = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % displayEntries.length);
-    }, 10000); // 10 seconds per saint
+      setCurrentIndex((prev) => (prev + 1) % saints.length);
+    }, 15000);
     return () => clearInterval(interval);
-  }, [displayEntries.length]);
+  }, [saints]);
 
-  const currentSaint = displayEntries[currentIndex];
-
-  const formatSaintName = (name: string) => {
-    if (name === "—") return name;
-    const lower = name.toLowerCase();
-    if (lower.startsWith("san ") || lower.startsWith("santa ") || lower.startsWith("santo ")) {
-      return name;
-    }
-    if (lower === "maría" || lower === "maria" || name.endsWith("a")) {
-      return `Santa ${name}`;
-    }
+  // 2. Lógica de Prefijos Inteligente
+  const formatName = (name: string) => {
+    if (name.includes("San") || name.includes("Beato") || name.includes("Santa")) return name;
+    // Regla heurística: termina en 'a' es Santa (salvo excepciones)
+    if (name.endsWith("a") && !["Luka", "Josua", "Bautisma"].includes(name)) return `Santa ${name}`;
     return `San ${name}`;
   };
 
-  const hasImage = !!currentSaint.image;
+  const currentEntry = saints && saints.length > 0 ? saints[currentIndex] : "Cargando...";
+  const currentName = getSaintName(currentEntry);
+  const fullName = formatName(currentName);
+
+  // 3. Integración Wikipedia (Cliente)
+  useEffect(() => {
+    if (!currentName || currentName === "Cargando...") return;
+
+    setLoading(true);
+    const fetchWiki = async () => {
+      try {
+        // Intentar buscar con el prefijo "San/Santa"
+        const searchName = fullName.replace(/ /g, "_");
+        const res = await fetch(`https://es.wikipedia.org/api/rest_v1/page/summary/${searchName}`);
+
+        if (res.ok) {
+          const data = await res.json();
+          // Solo aceptamos si es una persona (type standard) para evitar desambiguaciones raras
+          if (data.type === 'standard') {
+            setSaintInfo(data);
+            return;
+          }
+        }
+
+        // Reintento: Buscar solo por el nombre sin "San" (a veces Wikipedia lo tiene directo)
+        const res2 = await fetch(`https://es.wikipedia.org/api/rest_v1/page/summary/${currentName}`);
+        if (res2.ok) {
+          const data2 = await res2.json();
+          setSaintInfo(data2);
+        } else {
+          setSaintInfo(null);
+        }
+      } catch (e) {
+        console.warn("Wiki fetch error", e);
+        setSaintInfo(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchWiki();
+  }, [currentName, fullName]);
+
+  if (!saints || saints.length === 0) {
+    return <div className="flex h-full items-center justify-center p-4 text-white/50">Hoy no hay santos destacados</div>;
+  }
 
   return (
-    <div className={`card saints-card saints-card-enhanced ${hasImage ? "has-image" : ""}`}>
-      {hasImage && (
+    <div className="relative flex h-full w-full flex-col overflow-hidden rounded-xl bg-black/20">
+      {/* Imagen de Fondo con Blur */}
+      {saintInfo?.thumbnail && (
         <div
-          className="saint-background-image"
-          style={{ backgroundImage: `url(${currentSaint.image})` }}
+          className="absolute inset-0 bg-cover bg-center opacity-40 transition-opacity duration-1000"
+          style={{ backgroundImage: `url(${saintInfo.thumbnail.source})` }}
         />
       )}
-      <div className="saints-card__header">
-        <SantoralIconImage size={48} className="card-icon" />
-        <h2>Santoral</h2>
-      </div>
 
-      <div className="saints-content">
-        <div className="saint-display fade-in" key={currentIndex}>
-          <h3 className="saint-name-large">{formatSaintName(currentSaint.name)}</h3>
-          {currentSaint.bio && (
-            <p className="saint-bio">{currentSaint.bio}</p>
-          )}
-          {!currentSaint.bio && !hasImage && (
-            <div className="saint-placeholder">
-              <span className="saint-icon-large">✝</span>
-            </div>
-          )}
+      {/* Capa de degradado para leer el texto */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent" />
+
+      {/* Contenido */}
+      <div className="relative z-10 flex h-full flex-col items-center justify-end p-6 text-center pb-12">
+
+        {/* Nombre Gigante */}
+        <h2 className="mb-3 text-3xl font-bold text-yellow-400 drop-shadow-md transition-all duration-500">
+          {fullName}
+        </h2>
+
+        {/* Biografía Breve */}
+        <div className="line-clamp-4 max-w-prose text-sm leading-relaxed text-gray-100 drop-shadow-sm">
+          {saintInfo?.extract ? saintInfo.extract : "Santoral del día"}
         </div>
 
-        {displayEntries.length > 1 && (
-          <div className="saint-pagination">
-            {displayEntries.map((_, idx) => (
-              <span
-                key={idx}
-                className={`pagination-dot ${idx === currentIndex ? 'active' : ''}`}
-              />
-            ))}
-          </div>
-        )}
+        {/* Indicador de progreso (Puntos) */}
+        <div className="absolute bottom-4 flex gap-2">
+          {saints.map((_, idx) => (
+            <div
+              key={idx}
+              className={`h-1.5 rounded-full transition-all duration-300 ${idx === currentIndex ? "w-6 bg-yellow-500" : "w-1.5 bg-white/30"}`}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
-};
-
-export default SaintsCard;
+}
