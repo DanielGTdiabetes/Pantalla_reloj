@@ -295,6 +295,16 @@ class WeatherService:
                 day_data["icon"] = "cloudy"
                 day_data["condition"] = "Desconocido"
             
+            # Añadir nombre del día en español
+            if day_data["date"]:
+                try:
+                    dt = datetime.fromisoformat(day_data["date"])
+                    days_es = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+                    day_data["day_name"] = days_es[dt.weekday()]
+                    day_data["day"] = days_es[dt.weekday()] # Alias solicitado
+                except ValueError:
+                    pass
+
             forecast.append(day_data)
         
         return forecast
@@ -351,6 +361,7 @@ class WeatherService:
                 "summary": current["condition"],
                 "daily": forecast,
                 "days": forecast,  # Alias para compatibilidad
+                "forecast": forecast, # Alias solicitado
                 "location": {"lat": lat, "lon": lon}
             }
         

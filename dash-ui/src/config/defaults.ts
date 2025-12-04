@@ -175,6 +175,7 @@ export const DEFAULT_LAYERS_CONFIG: LayersConfig = {
 export const ROTATION_PANEL_IDS = [
   "clock",
   "weather",
+  "forecast",
   "astronomy",
   "santoral",
   "calendar",
@@ -187,7 +188,7 @@ const ROTATION_LEGACY_MAP: Record<string, string> = {
   time: "clock",
   clock: "clock",
   weather: "weather",
-  forecast: "weather",
+  // forecast: "weather", // Removed to allow distinct forecast panel
   moon: "astronomy",
   astronomy: "astronomy",
   ephemerides: "astronomy",

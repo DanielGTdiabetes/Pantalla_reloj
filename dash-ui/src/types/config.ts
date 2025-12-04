@@ -121,6 +121,7 @@ export type RadarConfig = {
 export type RotatorDurationsConfig = {
   clock: number;
   weather: number;
+  forecast: number;
   astronomy: number;
   santoral: number;
   calendar: number;
