@@ -36,15 +36,15 @@
     "viewMode": "fixed",
     "fixed": {
       "center": {
-        "lat": 39.98,
-        "lon": 0.20
+        "lat": 40.0,
+        "lon": -3.5
       },
-      "zoom": 9.0,
+      "zoom": 6.2,
       "bearing": 0,
       "pitch": 0
     },
     "region": {
-      "postalCode": "12001"
+      "postalCode": "12540"
     }
   },
   "ui_global": {
@@ -155,6 +155,11 @@
     "weatherWeekly": {
       "enabled": true
     },
+    "weather": {
+      "enabled": true,
+      "latitude": 39.9367,
+      "longitude": -0.1017
+    },
     "ephemerides": {
       "enabled": true
     },
@@ -210,5 +215,10 @@
       "url": null,
       "path": null
     }
+  },
+  "ephemerides": {
+    "latitude": 39.9367,
+    "longitude": -0.1017,
+    "timezone": "Europe/Madrid"
   }
 }
