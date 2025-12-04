@@ -1177,6 +1177,9 @@ export const ConfigPage: React.FC = () => {
         }
       }));
 
+      // Notificar cambio de configuración global para recarga inmediata
+      dispatchConfigSaved();
+
       alert("Mapa base guardado. Los cambios se aplicarán automáticamente.");
     } catch (error) {
       console.error("Error saving map settings:", error);

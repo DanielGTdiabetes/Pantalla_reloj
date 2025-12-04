@@ -1609,6 +1609,36 @@ export default function GeoScopeMap({
     }
   }, [config]);
 
+  // useEffect para gestionar la configuración de Barcos
+  useEffect(() => {
+    if (!config || !shipsLayerRef.current) return;
+
+    const merged = withConfigDefaults(config);
+    const shipsConfig = merged.layers?.ships;
+
+    if (shipsConfig) {
+      const layer = shipsLayerRef.current;
+      layer.setEnabled(shipsConfig.enabled);
+      if (shipsConfig.enabled) {
+        void layer.ensureShipsLayer();
+      }
+      layer.setMaxAgeSeconds(shipsConfig.max_age_seconds);
+      layer.setOpacity(shipsConfig.opacity ?? 1.0);
+      if (shipsConfig.render_mode) {
+        layer.setRenderMode(shipsConfig.render_mode);
+      }
+      if (shipsConfig.circle) {
+        layer.setCircleOptions(shipsConfig.circle);
+      }
+      if (shipsConfig.symbol) {
+        layer.setSymbolOptions(shipsConfig.symbol);
+      }
+      if (shipsConfig.styleScale) {
+        layer.setStyleScale(shipsConfig.styleScale);
+      }
+    }
+  }, [config]);
+
   useEffect(() => {
     if (!mapRef.current) {
       return;
