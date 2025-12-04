@@ -133,6 +133,7 @@
       "grid_px": 24,
       "styleScale": 1.4,
       "aisstream": {
+        "api_key": null,
         "bbox": {
           "lamin": 36.0,
           "lamax": 44.0,

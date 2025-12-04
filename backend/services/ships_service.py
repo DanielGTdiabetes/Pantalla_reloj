@@ -99,9 +99,8 @@ class AISStreamService:
             if not self._secret_store.has_secret(SECRET_NAME):
                 # Fallback: Check config for API key
                 config_key = None
-                # api_key is not in AISStreamProviderConfig model, so we skip this check
-                # if ships_config.aisstream and hasattr(ships_config.aisstream, "api_key"):
-                #     config_key = ships_config.aisstream.api_key
+                if ships_config.aisstream and ships_config.aisstream.api_key:
+                    config_key = ships_config.aisstream.api_key
                 
                 if config_key:
                     self._logger.info("Using AISStream API key from config and migrating to secret store")

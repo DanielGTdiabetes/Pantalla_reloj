@@ -521,6 +521,7 @@ class AISStreamProviderConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     ws_url: Optional[str] = Field(default=DEFAULT_AISSTREAM_WS_URL, max_length=512)
+    api_key: Optional[str] = Field(default=None, max_length=512)
     bbox: Optional[ShipsBBoxConfig] = Field(default_factory=ShipsBBoxConfig)
 
     @field_validator("ws_url", mode="before")
