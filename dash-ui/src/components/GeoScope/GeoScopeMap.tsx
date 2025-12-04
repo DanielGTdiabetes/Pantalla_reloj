@@ -1128,7 +1128,7 @@ export default function GeoScopeMap({
   // useEffect para actualizar vista cuando cambia ui_map.fixed (zoom/centro)
   useEffect(() => {
     // En pantallas pequeñas (Mini PC), ignoramos el modo tormenta para forzar la vista fija de la península
-    const isMiniPC = typeof window !== "undefined" && window.innerWidth < 1280;
+
 
     if (!config || !mapRef.current) {
       // No actualizar si no hay config o mapa
@@ -1154,15 +1154,8 @@ export default function GeoScopeMap({
     const pitch = v2Fixed.pitch ?? 0;
 
     // Ajuste dinámico para pantallas pequeñas (Mini PC)
-    // Si la pantalla es pequeña (incluyendo 1024px o 1280px), FORZAMOS la vista de la península
-    if (typeof window !== "undefined" && window.innerWidth < 1280) {
-      // Usamos 5.5 para que se vea la península mejor en pantallas pequeñas (Mini PC)
-      // 3.6 era demasiado lejano (se veía toda Europa)
-      zoom = 5.5;
-      // Forzamos el centro a España para evitar que el mapa "viaje" a otras ciudades
-      centerLat = 40.0;
-      centerLng = -3.5;
-    }
+    // ELIMINADO: Respetar configuración del usuario
+    // if (typeof window !== "undefined" && window.innerWidth < 1280) { ... }
 
     const map = mapRef.current;
     if (!map) {
