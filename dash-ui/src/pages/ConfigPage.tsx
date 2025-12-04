@@ -2438,6 +2438,85 @@ export const ConfigPage: React.FC = () => {
                 </>
               )}
 
+              {/* Configuración de Vista Fija */}
+              <div className="config-field" style={{ marginTop: "24px", borderTop: "1px solid rgba(104, 162, 255, 0.2)", paddingTop: "16px" }}>
+                <h3 style={{ marginBottom: "12px" }}>Vista Inicial (Fija)</h3>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
+                  <div className="config-field">
+                    <label>Zoom Inicial</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={config.ui_map.fixed?.zoom ?? 6.2}
+                      onChange={(e) => {
+                        const currentFixed = config.ui_map.fixed || { center: { lat: 40.0, lon: -3.5 }, zoom: 6.2, bearing: 0, pitch: 0 };
+                        setConfig({
+                          ...config,
+                          ui_map: {
+                            ...config.ui_map,
+                            fixed: {
+                              ...currentFixed,
+                              zoom: parseFloat(e.target.value) || 6.2,
+                            },
+                          },
+                        });
+                      }}
+                    />
+                  </div>
+                  <div className="config-field">
+                    <label>Latitud Centro</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={config.ui_map.fixed?.center?.lat ?? 40.0}
+                      onChange={(e) => {
+                        const currentFixed = config.ui_map.fixed || { center: { lat: 40.0, lon: -3.5 }, zoom: 6.2, bearing: 0, pitch: 0 };
+                        setConfig({
+                          ...config,
+                          ui_map: {
+                            ...config.ui_map,
+                            fixed: {
+                              ...currentFixed,
+                              center: {
+                                ...currentFixed.center,
+                                lat: parseFloat(e.target.value) || 40.0,
+                              },
+                            },
+                          },
+                        });
+                      }}
+                    />
+                  </div>
+                  <div className="config-field">
+                    <label>Longitud Centro</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={config.ui_map.fixed?.center?.lon ?? -3.5}
+                      onChange={(e) => {
+                        const currentFixed = config.ui_map.fixed || { center: { lat: 40.0, lon: -3.5 }, zoom: 6.2, bearing: 0, pitch: 0 };
+                        setConfig({
+                          ...config,
+                          ui_map: {
+                            ...config.ui_map,
+                            fixed: {
+                              ...currentFixed,
+                              center: {
+                                ...currentFixed.center,
+                                lon: parseFloat(e.target.value) || -3.5,
+                              },
+                            },
+                          },
+                        });
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="config-field__hint">
+                  Define la posición y zoom inicial del mapa. (Zoom 6.2 cubre la península ibérica)
+                </div>
+              </div>
+
               <div className="config-field">
                 <h3>Mapa satélite híbrido</h3>
                 <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
