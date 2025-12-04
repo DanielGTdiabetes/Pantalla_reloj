@@ -21,7 +21,7 @@ import { HarvestCard } from "./dashboard/cards/HarvestCard";
 import { HistoricalEventsCard } from "./dashboard/cards/HistoricalEventsCard";
 import { MoonCard } from "./dashboard/cards/MoonCard";
 import { NewsCard } from "./dashboard/cards/NewsCard";
-import { SaintsCard, type EnrichedSaint } from "./dashboard/cards/SaintsCard";
+import SaintsCard, { type EnrichedSaint } from "./dashboard/cards/SaintsCard";
 import { TimeCard } from "./dashboard/cards/TimeCard";
 import { WeatherCard } from "./dashboard/cards/WeatherCard";
 import { useRotationProgress } from "../hooks/useRotationProgress";
