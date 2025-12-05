@@ -151,11 +151,12 @@ export default function ShipsMapLayer({
 
                 if (map && map.isStyleLoaded()) {
                     const expandedBbox = getExpandedBbox(map, 1.5);
-                    bbox = `${expandedBbox.lamin},${expandedBbox.lamax},${expandedBbox.lomin},${expandedBbox.lomax}`;
+                    bbox = `${expandedBbox.lomin},${expandedBbox.lamin},${expandedBbox.lomax},${expandedBbox.lamax}`;
                 }
 
                 // FORCE Spain BBox for Mini PC debugging
-                const spainBbox = "35.0,44.0,-10.0,4.5";
+                // Format: minLon, minLat, maxLon, maxLat
+                const spainBbox = "-10.0,35.0,4.5,44.0";
                 if (typeof window !== "undefined") {
                     if (window.innerWidth < 2500 || !bbox) {
                         bbox = spainBbox;

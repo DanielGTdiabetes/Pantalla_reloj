@@ -56,6 +56,15 @@ PID_FILE=/tmp/kiosk.pid
   done
   printf '[%s] Launching Epiphany (FRONT_OK=%s API_OK=%s)\n' "$(date -Is)" "$FRONT_OK" "$API_OK"
 
+  # Disable screensaver and power management
+  if command -v xset >/dev/null 2>&1; then
+    xset s off -dpms
+    xset s noblank
+  fi
+
+  # Wait a bit for X11 to stabilize
+  sleep 5
+
   if ! dbus-run-session sh -c 'setsid -f epiphany-browser --new-window http://127.0.0.1 > /tmp/epi.out 2>/tmp/epi.err'; then
     printf '[%s] Epiphany launch command failed\n' "$(date -Is)"
   fi

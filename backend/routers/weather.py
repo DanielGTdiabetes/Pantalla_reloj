@@ -181,8 +181,15 @@ def test_meteoblue(request: TestWeatherRequest) -> Dict[str, Any]:
     Prueba la conexión con Meteoblue usando la API key proporcionada o la guardada.
     """
     api_key = request.api_key
-    if not api_key:
+    if api_key:
+        logger.info("Test Meteoblue: API key received in request body")
+    else:
+        logger.info("Test Meteoblue: No API key in request, checking secret store")
         api_key = secret_store.get_secret("meteoblue_api_key")
+        if api_key:
+            logger.info("Test Meteoblue: API key found in secret store")
+        else:
+            logger.warning("Test Meteoblue: No API key found in secret store")
     
     if not api_key:
         return {"ok": False, "reason": "missing_api_key", "message": "Falta API Key"}

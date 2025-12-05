@@ -435,6 +435,7 @@ export default class ShipsLayer implements Layer {
       };
 
       this.lastData = featuresWithAge;
+      console.log(`[ShipsLayer] updateData: ${featuresWithAge.features.length} features (after filtering)`);
 
       if (!this.map) {
         console.warn("[ShipsLayer] Map not available for updateData");
