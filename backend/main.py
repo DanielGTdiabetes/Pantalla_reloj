@@ -4830,6 +4830,16 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
             if "maptiler" in payload and isinstance(payload["maptiler"], dict):
                 if "api_key" in payload["maptiler"]:
                     secret_store.set_secret("maptiler_api_key", _sanitize_secret(payload["maptiler"]["api_key"]))
+
+            # meteoblue
+            if "meteoblue" in payload and isinstance(payload["meteoblue"], dict):
+                if "api_key" in payload["meteoblue"]:
+                    secret_store.set_secret("meteoblue_api_key", _sanitize_secret(payload["meteoblue"]["api_key"]))
+
+            # openweathermap
+            if "openweathermap" in payload and isinstance(payload["openweathermap"], dict):
+                if "api_key" in payload["openweathermap"]:
+                    secret_store.set_secret("openweathermap_api_key", _sanitize_secret(payload["openweathermap"]["api_key"]))
             
             logger.info("[secrets] Updated secrets via PATCH /api/config/group/secrets")
         except Exception as secret_exc:
