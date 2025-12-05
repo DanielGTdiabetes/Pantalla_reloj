@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 from pydantic import BaseModel
 
 import requests
-from fastapi import APIRouter
+from fastapi import APIRouter, Body
 
 from ..config_manager import ConfigManager
 from ..secret_store import SecretStore
@@ -176,20 +176,21 @@ class TestWeatherRequest(BaseModel):
 
 
 @router.post("/test_meteoblue")
-def test_meteoblue(request: TestWeatherRequest) -> Dict[str, Any]:
+def test_meteoblue(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
     """
     Prueba la conexión con Meteoblue usando la API key proporcionada o la guardada.
     """
-    api_key = request.api_key
+    api_key = payload.get("api_key")
+    logger.info(f"Test Meteoblue Payload: {payload}")
     if api_key:
-        logger.info("Test Meteoblue: API key received in request body")
+        logger.info(f"Test Meteoblue: API key received in request body (len={len(api_key)})")
     else:
         logger.info("Test Meteoblue: No API key in request, checking secret store")
         api_key = secret_store.get_secret("meteoblue_api_key")
         if api_key:
-            logger.info("Test Meteoblue: API key found in secret store")
+            logger.info(f"Test Meteoblue: API key found in secret store (len={len(api_key)})")
         else:
-            logger.warning("Test Meteoblue: No API key found in secret store")
+            logger.warning(f"Test Meteoblue: No API key found in secret store. Store file: {secret_store._file}")
     
     if not api_key:
         return {"ok": False, "reason": "missing_api_key", "message": "Falta API Key"}

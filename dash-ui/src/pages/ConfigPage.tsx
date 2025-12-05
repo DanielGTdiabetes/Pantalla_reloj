@@ -910,6 +910,8 @@ export const ConfigPage: React.FC = () => {
         ? meteoblueApiKey
         : undefined;
 
+      console.log("[ConfigPage] Testing Meteoblue with key:", apiKeyToTest ? "PROVIDED (len=" + apiKeyToTest.length + ")" : "UNDEFINED");
+
       const result = await testMeteoblue(apiKeyToTest);
       setMeteoblueTestResult(result);
     } catch (error) {
