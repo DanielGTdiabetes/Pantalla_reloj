@@ -246,6 +246,103 @@
 }
 
 /* ============================================
+   SINGLE FORECAST VIEW
+   ============================================ */
+.forecast-single-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-sm);
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  height: 100%;
+}
+
+.forecast-day-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.forecast-day-name-large {
+  font-size: var(--font-size-title);
+  font-weight: var(--font-weight-bold);
+  color: var(--theme-text-primary);
+  text-transform: capitalize;
+}
+
+.forecast-date-sub {
+  font-size: var(--font-size-body);
+  color: var(--theme-text-secondary);
+}
+
+.forecast-main-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-lg);
+  margin: var(--space-sm) 0;
+}
+
+.weather-icon-xlarge {
+  font-size: 4rem; /* Asumiendo que WeatherIcon usa font-size o width/height svg */
+  width: 80px;
+  height: 80px;
+}
+
+.forecast-temps-large {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.temp-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.temp-row .temp-label {
+  font-size: var(--font-size-body);
+  color: var(--theme-text-muted);
+  text-transform: uppercase;
+  width: 40px;
+  text-align: left;
+}
+
+.temp-row .temp-value {
+  font-size: 2rem;
+  font-weight: var(--font-weight-bold);
+}
+
+.temp-row.max .temp-value {
+  color: #ff6b6b;
+}
+
+.temp-row.min .temp-value {
+  color: #4dabf7;
+}
+
+.forecast-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.forecast-condition {
+  font-size: var(--font-size-subtitle);
+  color: var(--theme-text-secondary);
+  text-transform: capitalize;
+}
+
+.forecast-precip {
+  font-size: var(--font-size-body);
+  color: #4dabf7;
+  font-weight: var(--font-weight-semibold);
+}
+
+/* ============================================
    HARVEST CARD ENHANCED
    ============================================ */
 .harvest-card-enhanced .harvest-card__item {
