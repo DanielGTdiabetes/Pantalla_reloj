@@ -5232,28 +5232,53 @@ def get_config_schema() -> Dict[str, Any]:
 
 
 
-@app.post("/api/config/secret/aisstream_api_key", status_code=204)
-async def update_aisstream_secret(request: AISStreamSecretRequest) -> Response:
-    api_key = _sanitize_secret(request.api_key)
-    masked = _mask_secret(api_key)
-    logger.info(
-        "Updating AISStream API key (present=%s, last4=%s)",
-        masked.get("has_api_key", False),
-        masked.get("api_key_last4", "****"),
-    )
+@app.post("/api/config/secret/aisstream_api_key")
+async def update_aisstream_secret(request: Request) -> Dict[str, Any]:
+    """Guarda la API key de AISStream. Acepta JSON con {api_key: string} o texto plano."""
+    content_type = request.headers.get("content-type", "")
+    
+    try:
+        if "application/json" in content_type:
+            body = await request.json()
+            logger.info("AISStream API key update - JSON body received")
+            api_key = body.get("api_key") if isinstance(body, dict) else None
+        else:
+            raw_body = await request.body()
+            api_key = raw_body.decode("utf-8") if raw_body else None
+            logger.info("AISStream API key update - Raw body received (len=%s)", len(api_key) if api_key else 0)
+        
+        api_key = _sanitize_secret(api_key)
+        masked = _mask_secret(api_key)
+        logger.info(
+            "AISStream API key updated (present=%s, last4=%s)",
+            masked.get("has_api_key", False),
+            masked.get("api_key_last4", "****"),
+        )
+        secret_store.set_secret("aisstream_api_key", api_key)
+        current = config_manager.read()
+        ships_service.apply_config(current.layers.ships)
+        return {"ok": True, **masked}
+        
+    except Exception as e:
+        logger.error("Error updating AISStream API key: %s", e, exc_info=True)
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/config/secret/aisstream_api_key/raw")
+async def update_aisstream_secret_raw(request: Request) -> Dict[str, Any]:
+    """Guarda la API key de AISStream desde texto plano."""
+    value = await _read_secret_value(request)
+    api_key = _sanitize_secret(value)
     secret_store.set_secret("aisstream_api_key", api_key)
     current = config_manager.read()
     ships_service.apply_config(current.layers.ships)
-    return Response(status_code=204)
-
-
-@app.post("/api/config/secret/aisstream_api_key/raw", status_code=204)
-async def update_aisstream_secret_raw(request: Request) -> Response:
-    value = await _read_secret_value(request)
-    secret_store.set_secret("aisstream_api_key", _sanitize_secret(value))
-    current = config_manager.read()
-    ships_service.apply_config(current.layers.ships)
-    return Response(status_code=204)
+    masked = _mask_secret(api_key)
+    logger.info(
+        "AISStream API key updated via /raw (present=%s, last4=%s)",
+        masked.get("has_api_key", False),
+        masked.get("api_key_last4", "****"),
+    )
+    return {"ok": True, **masked}
 
 
 @app.get("/api/config/secret/openweathermap_api_key")

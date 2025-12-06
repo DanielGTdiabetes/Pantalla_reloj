@@ -1132,32 +1132,55 @@ export const ConfigPage: React.FC = () => {
   const handleSaveShipsSecrets = async () => {
     if (!config) return;
 
+    const provider = config.layers?.ships?.provider || "aisstream";
+    console.log("[ConfigPage] Saving ships secrets for provider:", provider);
+
     try {
-      const secrets: any = {};
-
-      if (config.layers?.ships?.provider === "aisstream") {
-        secrets.aisstream = {
-          api_key: aisstreamApiKey || null,
-        };
-      } else if (config.layers?.ships?.provider === "aishub") {
-        secrets.aishub = {
-          api_key: aishubApiKey || null,
-        };
-      }
-
-      if (Object.keys(secrets).length > 0) {
+      if (provider === "aisstream") {
+        const trimmedKey = aisstreamApiKey?.trim() || null;
+        console.log("[ConfigPage] Saving AISStream API key:", trimmedKey ? `(len=${trimmedKey.length})` : "null");
+        
+        if (!trimmedKey) {
+          alert("Introduce una API key de AISStream");
+          return;
+        }
+        
+        // Usar endpoint directo para guardar la API key
+        const response = await fetch("/api/config/secret/aisstream_api_key", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ api_key: trimmedKey }),
+        });
+        
+        const result = await response.json();
+        console.log("[ConfigPage] AISStream save result:", result);
+        
+        if (result.ok) {
+          setAisstreamApiKey(""); // Limpiar input
+          alert(`API Key de AISStream guardada correctamente (últimos 4: ${result.api_key_last4 || "****"})`);
+          
+          // Disparar evento para forzar reinicialización de capas
+          console.log("[ConfigPage] Dispatching layers:secrets:updated event for ships");
+          window.dispatchEvent(new CustomEvent('layers:secrets:updated', {
+            detail: { layer: 'ships' }
+          }));
+        } else {
+          alert(`Error al guardar: ${result.error || "Error desconocido"}`);
+        }
+      } else if (provider === "aishub") {
+        const secrets = { aishub: { api_key: aishubApiKey || null } };
         await updateSecrets(secrets);
-        alert("Secrets guardados correctamente");
-
-        // Disparar evento para forzar reinicialización de capas
-        console.log("[ConfigPage] Dispatching layers:secrets:updated event for ships");
+        alert("API Key de AIS Hub guardada correctamente");
+        
         window.dispatchEvent(new CustomEvent('layers:secrets:updated', {
           detail: { layer: 'ships' }
         }));
+      } else {
+        alert("Este proveedor no requiere API key");
       }
     } catch (error) {
-      console.error("Error saving ships secrets:", error);
-      alert("Error al guardar los secrets");
+      console.error("[ConfigPage] Error saving ships secrets:", error);
+      alert("Error al guardar la API key. Revisa la consola del navegador.");
     }
   };
 
