@@ -62,7 +62,7 @@ export default class AEMETWarningsLayer implements Layer {
   private hoveredFeatureId: string | null = null;
 
   constructor(options: AEMETWarningsLayerOptions = {}) {
-    this.enabled = options.enabled ?? false;
+    this.enabled = options.enabled ?? true;
     this.opacity = options.opacity ?? 0.6;
     this.minSeverity = options.minSeverity ?? "moderate";
     this.refreshSeconds = options.refreshSeconds ?? 900; // 15 minutos por defecto
@@ -238,7 +238,7 @@ export default class AEMETWarningsLayer implements Layer {
                 SEVERITY_COLORS.minor.fill,
                 SEVERITY_COLORS.unknown.fill,
               ],
-              "fill-opacity": this.opacity * 0.4,
+              "fill-opacity": 0.6,
               "fill-outline-color": [
                 "case",
                 ["==", ["get", "severity"], "extreme"],

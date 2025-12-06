@@ -82,23 +82,31 @@ export default class LightningLayer implements Layer {
                 "interpolate",
                 ["linear"],
                 ["get", "age_seconds"],
-                0, 6,
-                600, 6,
-                1800, 4
+                0, 16,     // Flash grande al inicio
+                1, 10,     // Reduce rápido
+                600, 6     // Tamaño estable
               ],
-              "circle-color": "#fcd34d",
+              "circle-color": [
+                "interpolate",
+                ["linear"],
+                ["get", "age_seconds"],
+                0, "#FFFFFF",  // Blanco brillante (flash)
+                2, "#FFD700",  // Amarillo eléctrico
+                600, "#FFA500" // Naranja al envejecer
+              ],
               "circle-opacity": [
-                "coalesce",
-                ["get", "opacity"],
-                0.65
+                "interpolate",
+                ["linear"],
+                ["get", "age_seconds"],
+                0, 1.0,
+                600, 0.6
               ],
               "circle-blur": [
                 "interpolate",
                 ["linear"],
                 ["get", "age_seconds"],
-                0, 0.35,
-                600, 0.5,
-                1800, 0.8
+                0, 0.2,
+                600, 0.5
               ]
             }
           });
