@@ -175,21 +175,75 @@ export default class AircraftLayer implements Layer {
     }
   }
 
+
   private async fetchFlights(): Promise<void> {
     try {
-      const response = await fetch("/api/layers/flights.geojson"); // Uses backend get_flights_geojson
+      // Use the correct endpoint that returns JSON items, not GeoJSON
+      const response = await fetch("/api/layers/flights");
       if (!response.ok) return;
 
       const remaining = response.headers.get("X-OpenSky-Remaining");
       const mode = response.headers.get("X-OpenSky-Mode");
       console.log(`[AircraftLayer] Fetch OK. Mode: ${mode}, RateLimit Remaining: ${remaining}`);
 
-      const data = await response.json() as FeatureCollection;
+      const json = await response.json();
+      const data = this.flightsResponseToGeoJSON(json);
       this.updateData(data);
     } catch (e) {
       console.warn("[AircraftLayer] fetch failed", e);
     }
   }
+
+  private flightsResponseToGeoJSON(payload: any): FeatureCollection {
+    if (!payload || typeof payload !== "object") {
+      return EMPTY;
+    }
+
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    const timestampFallback = typeof payload.ts === "number" ? payload.ts : Math.floor(Date.now() / 1000);
+    const features: Array<any> = [];
+
+    for (const item of items) {
+      if (!Number.isFinite(item.lon) || !Number.isFinite(item.lat)) {
+        continue;
+      }
+      const timestamp = typeof item.last_contact === "number" ? item.last_contact : timestampFallback;
+      const isStale = item.stale === true;
+
+      features.push({
+        type: "Feature",
+        id: item.id || item.icao24,
+        geometry: {
+          type: "Point",
+          coordinates: [item.lon, item.lat],
+        },
+        properties: {
+          icao24: item.icao24 ?? undefined,
+          callsign: item.callsign ?? undefined,
+          alt_baro: typeof item.alt === "number" ? item.alt : undefined,
+          track: typeof item.track === "number" ? item.track : undefined,
+          speed: typeof item.velocity === "number" ? item.velocity : undefined,
+          origin_country: item.origin_country ?? undefined,
+          on_ground: Boolean(item.on_ground),
+          category: item.category ?? null,
+          vertical_rate: typeof item.vertical_rate === "number" ? item.vertical_rate : undefined,
+          squawk: item.squawk ?? null,
+          timestamp,
+          last_contact: typeof item.last_contact === "number" ? item.last_contact : undefined,
+          stale: isStale ? true : undefined,
+          // Add age_seconds to prevent filtering in updateData
+          age_seconds: 0,
+          in_focus: true
+        },
+      });
+    }
+
+    return {
+      type: "FeatureCollection",
+      features,
+    };
+  }
+
 
   private startRefresh(): void {
     this.stopRefresh();
@@ -492,42 +546,9 @@ export default class AircraftLayer implements Layer {
           .filter((f): f is NonNullable<typeof f> => f !== null),
       };
 
-      // DEBUG: Inject test features near Vila-real to verify rendering
-      featuresWithAge.features.push({
-        type: "Feature",
-        geometry: {
-          type: "Point",
-          coordinates: [-0.1014, 39.9378], // Vila-real Center
-        },
-        properties: {
-          callsign: "TEST_VR1",
-          true_track: 45,
-          baro_altitude: 500,
-          on_ground: false,
-          velocity: 120,
-          age_seconds: 0,
-          in_focus: true,
-        } as any,
-      });
 
-      featuresWithAge.features.push({
-        type: "Feature",
-        geometry: {
-          type: "Point",
-          coordinates: [-0.08, 39.95], // Nearby
-        },
-        properties: {
-          callsign: "TEST_VR2",
-          true_track: 180,
-          baro_altitude: 1200,
-          on_ground: false,
-          velocity: 180,
-          age_seconds: 0,
-          in_focus: true,
-        } as any,
-      });
 
-      console.log("[AircraftLayer] Final features count (with injection):", featuresWithAge.features.length);
+      console.log("[AircraftLayer] Final features count:", featuresWithAge.features.length);
 
       this.lastData = featuresWithAge;
 
