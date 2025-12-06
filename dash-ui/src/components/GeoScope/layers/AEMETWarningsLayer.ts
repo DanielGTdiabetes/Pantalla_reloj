@@ -313,7 +313,7 @@ export default class AEMETWarningsLayer implements Layer {
   }
 
   private ensureLayerOrder(): void {
-    if (!this.map) {
+    if (!this.map || !this.map.getLayer(this.id)) {
       return;
     }
 
@@ -327,7 +327,9 @@ export default class AEMETWarningsLayer implements Layer {
           const lastLayer = layers[layers.length - 1] as { id?: string } | undefined;
           if (lastLayer && lastLayer.id !== this.id) {
             this.map.moveLayer(this.id, lastLayer.id);
-            this.map.moveLayer(`${this.id}-outline`, lastLayer.id);
+            if (this.map.getLayer(`${this.id}-outline`)) {
+              this.map.moveLayer(`${this.id}-outline`, lastLayer.id);
+            }
           }
         }
       } catch (error) {
