@@ -109,6 +109,7 @@ def get_alerts_geojson() -> Dict[str, Any]:
                                 except ValueError:
                                     continue
                         
+
                         # Cerrar el polígono si no está cerrado
                         if len(polygon_coords) >= 3:
                             if polygon_coords[0] != polygon_coords[-1]:
@@ -134,59 +135,36 @@ def get_alerts_geojson() -> Dict[str, Any]:
                     except (ValueError, IndexError) as e:
                         logger.debug("Error parsing coordinates: %s", e)
                         continue
-        
-        # Si no encontramos polígonos, crear un feature genérico para España
-        if not features:
-            logger.warning("No se encontraron polígonos en avisos CAP, creando feature genérico")
-            spain_bbox = [
-                [-9.0, 36.0],  # SW
-                [4.0, 36.0],   # SE
-                [4.0, 44.0],   # NE
-                [-9.0, 44.0],  # NW
-                [-9.0, 36.0],  # Cerrar
-            ]
-            features.append({
-                "type": "Feature",
-                "geometry": {
-                    "type": "Polygon",
-                    "coordinates": [spain_bbox]
-                },
-                "properties": {
-                    "id": "cap_spain_generic",
-                    "severity": "moderate",
-                    "status": "unknown",
-                    "event": "No data available",
-                    "headline": "",
-                    "source": "aemet",
-                }
-            })
-        
+
         # --- TEST INJECTION START ---
-        # Inyectar alerta de prueba sobre Vila-real
-        logger.info("INJECTING TEST ALERT FOR VILA-REAL")
-        features.append({
-            "type": "Feature",
-            "geometry": {
-                "type": "Polygon",
-                "coordinates": [[
-                    [-0.15, 39.90],
-                    [-0.05, 39.90],
-                    [-0.05, 39.98],
-                    [-0.15, 39.98],
-                    [-0.15, 39.90]
-                ]]
-            },
-            "properties": {
-                "id": "test_alert_vilareal",
-                "severity": "extreme", # Rojo para máxima visibilidad
-                "status": "actual",
-                "event": "ALERTA DE PRUEBA: Lluvias Torrenciales",
-                "headline": "Prueba de sistema de alertas - Vila-real",
-                "source": "test_injection"
+        # Inject a fake alert for Vila-real for testing
+        if True: # Force injection
+            from datetime import timedelta
+            test_alert = {
+                 "type": "Feature",
+                 "geometry": {
+                     "type": "Polygon",
+                     # Polygon covering Vila-real
+                     "coordinates": [[
+                         [-0.15, 39.90],
+                         [-0.05, 39.90],
+                         [-0.05, 40.00],
+                         [-0.15, 40.00],
+                         [-0.15, 39.90]
+                     ]]
+                 },
+                 "properties": {
+                     "id": "test_alert_vilareal",
+                     "severity": "extreme",
+                     "status": "actual",
+                     "event": "ALERTA DE PRUEBA: Lluvias Torrenciales",
+                     "headline": "Prueba de sistema de alertas - Vila-real",
+                     "source": "test_injection"
+                 }
             }
-        })
+            features.append(test_alert)
         # --- TEST INJECTION END ---
-        
+
         return {
             "type": "FeatureCollection",
             "features": features,

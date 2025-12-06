@@ -113,22 +113,17 @@ class BlitzortungService:
             logger.warning("[Blitzortung] Service already running")
             return False
         
-        # Intentar conectar vía MQTT o WebSocket
-        if mqtt and not self.ws_enabled:
-            if self._start_mqtt():
-                self.running = True
-                self._start_cleanup_thread()
-                logger.info("[Blitzortung] Service started via MQTT")
-                return True
+        if True: # Force test mode for debugging
+             logger.warning("[Blitzortung] FORCE STARTING TEST MODE generator for debugging")
+             self.running = True
+             self._start_cleanup_thread()
+             self._start_test_generator()
+             return True
         
-        if websocket and self.ws_enabled and self.ws_url:
-            if self._start_websocket():
-                self.running = True
-                self._start_cleanup_thread()
-                logger.info("[Blitzortung] Service started via WebSocket")
-                return True
-        
-        # --- TEST FALLBACK START ---
+        # Original logic below (commented out for debug)
+        # if mqtt and not self.ws_enabled:
+        #     if self._start_mqtt():
+        # ...
         # Si no hay conexión real, iniciar generador de pruebas
         logger.warning("[Blitzortung] Connection failed, STARTING TEST MODE generator")
         self.running = True
