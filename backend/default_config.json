@@ -226,8 +226,8 @@
     },
     "weather": {
       "enabled": true,
-      "latitude": 39.9367,
-      "longitude": -0.1017
+      "latitude": 39.9378,
+      "longitude": -0.1014
     },
     "ephemerides": {
       "enabled": true
@@ -274,8 +274,8 @@
     "rss_feeds": []
   },
   "ephemerides": {
-    "latitude": 39.9367,
-    "longitude": -0.1017,
+    "latitude": 39.9378,
+    "longitude": -0.1014,
     "timezone": "Europe/Madrid"
   },
   "calendar": {
