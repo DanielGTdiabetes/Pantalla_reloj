@@ -786,13 +786,13 @@ export const OverlayRotator: React.FC = () => {
 
     map.set("historicalEvents", {
       id: "historicalEvents",
-      duration: (durations.historicalEvents ?? 20) * 1000,
+      duration: (durations.historicalEvents ?? 25) * 1000,
       render: () => {
         const totalEvents = historicalEventsItemsForCard.length;
         if (totalEvents === 0) {
           return <HistoricalEventsCard items={["No hay efemérides para este día."]} rotationSeconds={rotationSeconds} />;
         }
-        const eventsPerDisplay = 2;
+        const eventsPerDisplay = 1;
         const currentCounter = historicalEventsCounterRef.current ?? 0;
         const displayIndex = currentCounter % Math.max(1, Math.ceil(totalEvents / eventsPerDisplay));
         const startIndex = (displayIndex * eventsPerDisplay) % totalEvents;
