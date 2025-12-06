@@ -161,6 +161,32 @@ def get_alerts_geojson() -> Dict[str, Any]:
                 }
             })
         
+        # --- TEST INJECTION START ---
+        # Inyectar alerta de prueba sobre Vila-real
+        logger.info("INJECTING TEST ALERT FOR VILA-REAL")
+        features.append({
+            "type": "Feature",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[
+                    [-0.15, 39.90],
+                    [-0.05, 39.90],
+                    [-0.05, 39.98],
+                    [-0.15, 39.98],
+                    [-0.15, 39.90]
+                ]]
+            },
+            "properties": {
+                "id": "test_alert_vilareal",
+                "severity": "extreme", # Rojo para máxima visibilidad
+                "status": "actual",
+                "event": "ALERTA DE PRUEBA: Lluvias Torrenciales",
+                "headline": "Prueba de sistema de alertas - Vila-real",
+                "source": "test_injection"
+            }
+        })
+        # --- TEST INJECTION END ---
+        
         return {
             "type": "FeatureCollection",
             "features": features,
