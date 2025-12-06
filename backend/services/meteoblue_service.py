@@ -85,12 +85,12 @@ def map_pictocode_to_condition(pictocode: int) -> str:
     """
     conditions = {
         1: "Despejado",
-        2: "Despejado con cirros",
-        3: "Despejado con cirros",
-        4: "Despejado con nubes bajas",
-        5: "Despejado con nubes bajas y cirros",
+        2: "Despejado",
+        3: "Despejado",
+        4: "Despejado",
+        5: "Despejado",
         6: "Parcialmente nublado",
-        7: "Parcialmente nublado con cirros",
+        7: "Parcialmente nublado",
         8: "Mayormente nublado",
         9: "Lluvia",
         10: "Lluvia ligera",
