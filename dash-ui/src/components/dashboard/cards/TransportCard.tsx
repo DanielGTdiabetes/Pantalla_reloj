@@ -111,71 +111,71 @@ export const TransportCard = ({ data }: TransportCardProps) => {
     return (
         <div className="relative flex h-full w-full overflow-hidden rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 text-white shadow-2xl border border-white/10">
             {/* Header / Banner - Seamless, non-interactive */}
-            <div className={`absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-2 backdrop-blur-md border-b border-white/5 ${headerBg}`}>
+            <div className={`absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-3 backdrop-blur-md border-b border-white/5 ${headerBg}`}>
                 <div className={`text-xs font-bold uppercase tracking-widest flex items-center gap-2 ${headerColor}`}>
-                    <span className="text-lg">{isPlane ? "✈️" : "🚢"}</span>
+                    <span className="text-xl">{isPlane ? "✈️" : "🚢"}</span>
                     {headerTitle}
                 </div>
-                <div className="text-xs opacity-50 font-mono">
+                <div className="text-xs opacity-50 font-mono bg-black/20 px-2 py-1 rounded">
                     {currentIndex + 1}/{currentItems.length}
                 </div>
             </div>
 
             {/* Main Content */}
-            <div className="relative z-10 flex flex-1 flex-col pt-12 pb-6 px-6 h-full justify-between" key={currentItem.id}>
+            <div className="relative z-10 flex flex-1 flex-col pt-14 pb-6 px-6 h-full justify-between" key={currentItem.id}>
 
-                {/* Visual Area */}
-                <div className="flex-1 w-full flex items-center justify-center min-h-0 my-2 relative">
+                {/* Visual Area - Grow to fill available space */}
+                <div className="flex-1 w-full flex items-center justify-center min-h-0 my-4 relative">
                     {hasImage ? (
-                        <div className="relative w-full h-full max-h-[180px] rounded-lg overflow-hidden shadow-2xl border border-white/10 animate-fade-in">
+                        <div className="relative w-full h-full max-h-[220px] rounded-xl overflow-hidden shadow-2xl border border-white/10 animate-fade-in group">
                             <img
                                 src={currentItem.img || ""}
                                 alt={currentItem.name}
-                                className="w-full h-full object-cover"
+                                className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-700"
                             />
                             {/* Overlay Badge */}
-                            <div className="absolute bottom-0 right-0 bg-black/60 backdrop-blur-md px-2 py-1 text-[10px] text-white/70">
+                            <div className="absolute bottom-0 right-0 bg-black/80 backdrop-blur-md px-3 py-1.5 text-[10px] text-white/90 font-mono border-tl-lg">
                                 © Planespotters.net
                             </div>
                         </div>
                     ) : (
-                        <div className="relative w-40 h-40 animate-float">
+                        <div className="relative w-48 h-48 animate-float">
                             <img
                                 src={get3DIcon(currentItem.type)}
                                 alt={currentItem.type}
-                                className="w-full h-full object-contain filter drop-shadow-2xl"
+                                className="w-full h-full object-contain filter drop-shadow-[0_20px_25px_rgba(0,0,0,0.5)]"
                             />
                         </div>
                     )}
 
                     {/* Speed Badge Floating */}
-                    <div className="absolute top-0 right-0 translate-x-2 -translate-y-2 bg-white/10 backdrop-blur-md border border-white/20 rounded-lg px-3 py-1 shadow-xl z-30">
-                        <span className="text-xl font-bold text-yellow-400">{currentItem.speed || "--"}</span>
-                        <span className="text-[10px] ml-1 opacity-70 uppercase">km/h</span>
+                    <div className="absolute top-2 right-2 translate-x-2 -translate-y-2 bg-black/60 backdrop-blur-xl border border-white/20 rounded-xl px-4 py-2 shadow-2xl z-30">
+                        <span className="text-2xl font-black text-yellow-400">{currentItem.speed || "--"}</span>
+                        <span className="text-[10px] ml-1 opacity-80 uppercase font-bold tracking-wider text-yellow-100">km/h</span>
                     </div>
                 </div>
 
-                {/* Info Area */}
-                <div className="text-center animate-fade-in-up mt-2">
-                    <h2 className="text-2xl md:text-3xl font-black tracking-tight text-white drop-shadow-lg truncate max-w-full">
+                {/* Info Area - Fixed Height Block */}
+                <div className="flex-none text-center animate-fade-in-up mb-6">
+                    <h2 className="text-3xl md:text-4xl font-black tracking-tighter text-white drop-shadow-xl truncate max-w-full leading-tight">
                         {currentItem.name}
                     </h2>
-                    <div className="text-sm font-medium uppercase tracking-widest text-blue-200/60 mt-1">
+                    <div className="text-sm md:text-base font-bold uppercase tracking-widest text-blue-200/80 mt-2 bg-blue-500/10 inline-block px-4 py-1 rounded-full border border-blue-400/20">
                         {currentItem.detail}
                     </div>
                 </div>
 
-                {/* Grid Stats */}
-                <div className="w-full grid grid-cols-2 gap-3 mt-4">
-                    <div className="bg-white/5 rounded-lg p-2 backdrop-blur-sm border border-white/5 flex flex-col items-center">
-                        <span className="text-[10px] uppercase opacity-40">Altitud</span>
-                        <span className="text-lg font-bold font-mono">
+                {/* Grid Stats - Bottom Block */}
+                <div className="flex-none w-full grid grid-cols-2 gap-4">
+                    <div className="bg-white/5 rounded-xl p-3 backdrop-blur-md border border-white/10 flex flex-col items-center shadow-lg">
+                        <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider mb-1">Altitud</span>
+                        <span className="text-xl md:text-2xl font-black font-mono text-white">
                             {currentItem.altitude ? `${currentItem.altitude}m` : "N/A"}
                         </span>
                     </div>
-                    <div className="bg-white/5 rounded-lg p-2 backdrop-blur-sm border border-white/5 flex flex-col items-center">
-                        <span className="text-[10px] uppercase opacity-40">Rumbo</span>
-                        <span className="text-lg font-bold font-mono">
+                    <div className="bg-white/5 rounded-xl p-3 backdrop-blur-md border border-white/10 flex flex-col items-center shadow-lg">
+                        <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider mb-1">Rumbo</span>
+                        <span className="text-xl md:text-2xl font-black font-mono text-white">
                             {currentItem.heading ? `${Math.round(currentItem.heading)}°` : "--"}
                         </span>
                     </div>
