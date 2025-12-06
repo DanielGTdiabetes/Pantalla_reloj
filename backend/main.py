@@ -10768,10 +10768,7 @@ def get_ships(
 
         data["features"] = final_features
         
-        # Añadir metadata si focus no está disponible
-        if focus_unavailable:
-            data["properties"] = data.get("properties", {})
-            data["properties"]["focus_unavailable"] = True
+
 
         # Guardar en caché
         meta = data.setdefault("meta", {})
