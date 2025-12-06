@@ -223,8 +223,21 @@ export async function getOpenWeatherMapApiKeyMeta() {
   return apiGet<MaskedSecretMeta>("/api/config/secret/openweathermap_api_key");
 }
 
-export async function updateMeteoblueApiKey(apiKey: string | null) {
-  return apiPost<undefined>("/api/config/secret/meteoblue_api_key", { api_key: apiKey });
+export async function updateMeteoblueApiKey(apiKey: string | null): Promise<{ ok: boolean; has_api_key?: boolean; api_key_last4?: string }> {
+  const trimmedKey = apiKey?.trim() || null;
+  console.log("[updateMeteoblueApiKey] Saving key:", trimmedKey ? `(len=${trimmedKey.length})` : "null");
+  
+  try {
+    const result = await apiPost<{ ok: boolean; has_api_key?: boolean; api_key_last4?: string }>(
+      "/api/config/secret/meteoblue_api_key", 
+      { api_key: trimmedKey }
+    );
+    console.log("[updateMeteoblueApiKey] Result:", result);
+    return result;
+  } catch (error) {
+    console.error("[updateMeteoblueApiKey] Error:", error);
+    throw error;
+  }
 }
 
 export async function getMeteoblueApiKeyMeta() {
@@ -766,6 +779,8 @@ export type MeteoblueTestResponse = {
   status?: number;
   message?: string;
   error?: string;
+  reason?: string;
+  saved?: boolean;  // true si la API key fue guardada automáticamente tras test exitoso
   data?: {
     temp?: number;
     condition?: string;
@@ -774,9 +789,23 @@ export type MeteoblueTestResponse = {
 };
 
 export async function testMeteoblue(apiKey?: string | null): Promise<MeteoblueTestResponse> {
+  // Preparar la API key: si hay valor, usarlo; si no, enviar null para usar la guardada
+  const trimmedKey = apiKey?.trim() || null;
+  const payload = { api_key: trimmedKey };
+  
+  console.log("[testMeteoblue] Testing with:", {
+    has_key: !!trimmedKey,
+    key_length: trimmedKey?.length,
+    key_preview: trimmedKey ? `${trimmedKey.substring(0, 4)}...` : "null",
+    payload_json: JSON.stringify(payload)
+  });
+  
   try {
-    return apiPost<MeteoblueTestResponse>("/api/weather/test_meteoblue", { api_key: apiKey });
+    const result = await apiPost<MeteoblueTestResponse>("/api/weather/test_meteoblue", payload);
+    console.log("[testMeteoblue] Result:", result);
+    return result;
   } catch (error) {
+    console.error("[testMeteoblue] Request failed:", error);
     return {
       ok: false,
       status: 0,

@@ -5306,23 +5306,61 @@ def get_meteoblue_secret_meta() -> Dict[str, Any]:
     return _mask_secret(secret_store.get_secret("meteoblue_api_key"))
 
 
-@app.post("/api/config/secret/meteoblue_api_key", status_code=204)
-async def update_meteoblue_secret(request: MeteoblueSecretRequest) -> Response:
-    api_key = _sanitize_secret(request.api_key)
-    secret_store.set_secret("meteoblue_api_key", api_key)
-    masked = _mask_secret(api_key)
-    logger.info(
-        "Updating Meteoblue API key (present=%s, last4=%s)",
-        masked.get("has_api_key", False),
-        masked.get("api_key_last4", "****"),
-    )
-    return Response(status_code=204)
+@app.post("/api/config/secret/meteoblue_api_key")
+async def update_meteoblue_secret(request: Request) -> Dict[str, Any]:
+    """Guarda la API key de Meteoblue. Acepta JSON con {api_key: string} o texto plano."""
+    content_type = request.headers.get("content-type", "")
+    
+    try:
+        if "application/json" in content_type:
+            body = await request.json()
+            logger.info("Meteoblue API key update - JSON body received: %s", {k: "***" if k == "api_key" else v for k, v in body.items()} if isinstance(body, dict) else type(body))
+            
+            if isinstance(body, dict):
+                api_key = body.get("api_key")
+            else:
+                api_key = None
+        else:
+            # Texto plano
+            raw_body = await request.body()
+            api_key = raw_body.decode("utf-8") if raw_body else None
+            logger.info("Meteoblue API key update - Raw body received (len=%s)", len(api_key) if api_key else 0)
+        
+        api_key = _sanitize_secret(api_key)
+        secret_store.set_secret("meteoblue_api_key", api_key)
+        masked = _mask_secret(api_key)
+        
+        logger.info(
+            "Meteoblue API key updated (present=%s, last4=%s)",
+            masked.get("has_api_key", False),
+            masked.get("api_key_last4", "****"),
+        )
+        return {"ok": True, **masked}
+        
+    except Exception as e:
+        logger.error("Error updating Meteoblue API key: %s", e, exc_info=True)
+        return {"ok": False, "error": str(e)}
 
 
 @app.get("/api/config/secret/meteoblue_api_key/raw")
 def get_meteoblue_secret_raw() -> PlainTextResponse:
     value = secret_store.get_secret("meteoblue_api_key") or ""
     return PlainTextResponse(content=value)
+
+
+@app.post("/api/config/secret/meteoblue_api_key/raw")
+async def update_meteoblue_secret_raw(request: Request) -> Dict[str, Any]:
+    """Guarda la API key de Meteoblue desde texto plano (raw)."""
+    value = await _read_secret_value(request)
+    api_key = _sanitize_secret(value)
+    secret_store.set_secret("meteoblue_api_key", api_key)
+    masked = _mask_secret(api_key)
+    logger.info(
+        "Updating Meteoblue API key via /raw (present=%s, last4=%s)",
+        masked.get("has_api_key", False),
+        masked.get("api_key_last4", "****"),
+    )
+    return {"ok": True, **masked}
 
 
 

@@ -904,27 +904,43 @@ export const ConfigPage: React.FC = () => {
   const handleTestMeteoblue = async () => {
     setMeteoblueTesting(true);
     setMeteoblueTestResult(null);
+    
+    // Obtener la API key del input
+    const apiKeyToTest = meteoblueApiKey?.trim() || null;
+    
+    console.log("[ConfigPage] Testing Meteoblue with key:", apiKeyToTest ? `PROVIDED (len=${apiKeyToTest.length}, value=${apiKeyToTest.substring(0, 4)}...)` : "NULL (using stored)");
+
     try {
-      // Si hay apiKey en el input, probarla; si no, usar la guardada (pasando undefined)
-      const apiKeyToTest = meteoblueApiKey && meteoblueApiKey.trim().length > 0
-        ? meteoblueApiKey
-        : undefined;
-
-      console.log("[ConfigPage] Testing Meteoblue with key:", apiKeyToTest ? "PROVIDED (len=" + apiKeyToTest.length + ")" : "UNDEFINED");
-
       const result = await testMeteoblue(apiKeyToTest);
+      console.log("[ConfigPage] Meteoblue test result:", result);
       setMeteoblueTestResult(result);
+      
+      // Si el test fue exitoso y guardó la key, actualizar metadata
+      if (result.ok && result.saved) {
+        try {
+          const mbMeta = await getMeteoblueApiKeyMeta();
+          setMeteoblueApiKeyMeta(mbMeta);
+          setMeteoblueApiKey(""); // Limpiar input ya que se guardó
+        } catch (metaError) {
+          console.error("Error reloading Meteoblue meta after test:", metaError);
+        }
+      }
     } catch (error) {
-      setMeteoblueTestResult({ ok: false, error: "Error al probar Meteoblue" });
-      console.error("Error testing Meteoblue:", error);
+      console.error("[ConfigPage] Error testing Meteoblue:", error);
+      setMeteoblueTestResult({ ok: false, error: "Error al probar Meteoblue", message: String(error) });
     } finally {
       setMeteoblueTesting(false);
     }
   };
 
   const handleUpdateMeteoblueApiKey = async (apiKey: string | null) => {
+    const trimmedKey = apiKey?.trim() || null;
+    console.log("[ConfigPage] Saving Meteoblue API key:", trimmedKey ? `(len=${trimmedKey.length})` : "null (clearing)");
+    
     try {
-      await updateMeteoblueApiKey(apiKey);
+      const result = await updateMeteoblueApiKey(trimmedKey);
+      console.log("[ConfigPage] Save result:", result);
+      
       // Actualizar secrets en config localmente
       setConfig((prev) => {
         if (!prev) return prev;
@@ -932,7 +948,7 @@ export const ConfigPage: React.FC = () => {
           ...prev,
           secrets: {
             ...prev.secrets,
-            meteoblue_api_key: apiKey, // Nota: esto no actualiza el modelo Pydantic en backend directamente, solo local
+            meteoblue_api_key: trimmedKey,
           } as any,
         };
       });
@@ -942,13 +958,20 @@ export const ConfigPage: React.FC = () => {
         const mbMeta = await getMeteoblueApiKeyMeta();
         setMeteoblueApiKeyMeta(mbMeta);
         setMeteoblueApiKey(""); // Limpiar input
-        alert("API Key de Meteoblue guardada correctamente");
-      } catch (error) {
-        console.error("Error reloading Meteoblue meta:", error);
+        
+        if (trimmedKey) {
+          alert("API Key de Meteoblue guardada correctamente");
+        } else {
+          alert("API Key de Meteoblue eliminada");
+        }
+      } catch (metaError) {
+        console.error("Error reloading Meteoblue meta:", metaError);
+        // Aún así mostrar éxito porque el guardado funcionó
+        alert(trimmedKey ? "API Key guardada (error al recargar estado)" : "API Key eliminada");
       }
     } catch (error) {
-      console.error("Error updating Meteoblue API key:", error);
-      alert("Error al guardar la API key de Meteoblue");
+      console.error("[ConfigPage] Error updating Meteoblue API key:", error);
+      alert("Error al guardar la API key de Meteoblue. Revisa la consola del navegador para más detalles.");
     }
   };
 
@@ -4732,7 +4755,8 @@ export const ConfigPage: React.FC = () => {
                   {meteoblueTestResult.ok ? (
                     <div>
                       <div style={{ fontWeight: 600, marginBottom: "4px" }}>
-                        ✓ Conexión exitosa con Meteoblue
+                        ✓ {meteoblueTestResult.message || "Conexión exitosa con Meteoblue"}
+                        {meteoblueTestResult.saved && " (API key guardada automáticamente)"}
                       </div>
                       {meteoblueTestResult.data && (
                         <div style={{ fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)", marginTop: "4px" }}>
@@ -4749,6 +4773,11 @@ export const ConfigPage: React.FC = () => {
                       </div>
                       <div style={{ fontSize: "0.875rem", color: "rgba(255, 255, 255, 0.7)", marginTop: "4px" }}>
                         {meteoblueTestResult.message || meteoblueTestResult.error || "Error desconocido"}
+                        {meteoblueTestResult.reason && (
+                          <span style={{ display: "block", fontSize: "0.75rem", opacity: 0.7, marginTop: "4px" }}>
+                            Código: {meteoblueTestResult.reason}
+                          </span>
+                        )}
                       </div>
                     </div>
                   )}
