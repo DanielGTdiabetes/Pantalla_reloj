@@ -179,10 +179,15 @@ class TestWeatherRequest(BaseModel):
 def test_meteoblue(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
     """
     Prueba la conexión con Meteoblue usando la API key proporcionada o la guardada.
+    Si la prueba es exitosa y se proporcionó una API key nueva, la guarda automáticamente.
     """
     api_key = payload.get("api_key")
+    auto_save = payload.get("auto_save", True)  # Por defecto, guardar si el test es exitoso
+    key_from_input = bool(api_key and api_key.strip())
+    
     logger.info(f"Test Meteoblue Payload: {payload}")
-    if api_key:
+    if key_from_input:
+        api_key = api_key.strip()
         logger.info(f"Test Meteoblue: API key received in request body (len={len(api_key)})")
     else:
         logger.info("Test Meteoblue: No API key in request, checking secret store")
@@ -193,7 +198,7 @@ def test_meteoblue(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
             logger.warning(f"Test Meteoblue: No API key found in secret store. Store file: {secret_store._file}")
     
     if not api_key:
-        return {"ok": False, "reason": "missing_api_key", "message": "Falta API Key"}
+        return {"ok": False, "reason": "missing_api_key", "message": "Falta API Key. Introduce una API key en el campo y vuelve a probar."}
     
     # Usar coordenadas por defecto (Madrid) para el test
     lat = 40.4168
@@ -202,9 +207,20 @@ def test_meteoblue(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
     try:
         result = weather_service.get_weather(lat, lon, api_key)
         if result.get("ok"):
+            # Si el test fue exitoso y la API key vino del input, guardarla automáticamente
+            saved = False
+            if key_from_input and auto_save:
+                try:
+                    secret_store.set_secret("meteoblue_api_key", api_key)
+                    saved = True
+                    logger.info("Test Meteoblue: API key guardada automáticamente tras test exitoso")
+                except Exception as save_error:
+                    logger.error(f"Test Meteoblue: Error al guardar API key: {save_error}")
+            
             return {
                 "ok": True,
-                "message": "Conexión exitosa",
+                "message": "Conexión exitosa" + (" y API key guardada" if saved else ""),
+                "saved": saved,
                 "data": {
                     "temp": result.get("temperature", {}).get("value"),
                     "condition": result.get("condition"),
@@ -212,14 +228,30 @@ def test_meteoblue(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
                 }
             }
         else:
+            reason = result.get("reason", "unknown_error")
+            error_msg = result.get("error", "")
+            
+            # Proporcionar mensajes más claros según el error
+            if reason == "api_request_failed":
+                if "401" in str(error_msg) or "Unauthorized" in str(error_msg):
+                    message = "API key inválida o no autorizada. Verifica que la API key sea correcta."
+                elif "403" in str(error_msg):
+                    message = "Acceso denegado. Tu plan de Meteoblue puede no tener acceso a esta API."
+                else:
+                    message = f"Error de conexión con Meteoblue: {error_msg}"
+            elif reason == "missing_api_key":
+                message = "Falta la API key de Meteoblue"
+            else:
+                message = result.get("summary") or f"Error en la respuesta de Meteoblue: {reason}"
+            
             return {
                 "ok": False, 
-                "reason": result.get("reason"), 
-                "message": result.get("summary") or "Error en la respuesta de Meteoblue"
+                "reason": reason, 
+                "message": message
             }
     except Exception as e:
-        logger.error(f"Error testing Meteoblue: {e}")
-        return {"ok": False, "reason": "internal_error", "message": str(e)}
+        logger.error(f"Error testing Meteoblue: {e}", exc_info=True)
+        return {"ok": False, "reason": "internal_error", "message": f"Error interno: {str(e)}"}
 
 
 @router.post("/test_openweathermap")
