@@ -115,26 +115,26 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
   }
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden rounded-lg">
+    <div className="flex h-full w-full flex-col overflow-hidden text-white">
       {/* Top Half: Image Container */}
-      <div className="relative h-[50%] w-full flex items-center justify-center p-2 bg-black/20">
+      <div className="relative flex-1 w-full flex items-center justify-center p-2 min-h-0">
         {imageUrl ? (
           <img
             src={imageUrl}
             alt={fullName}
-            className="h-full w-full object-contain drop-shadow-lg"
+            className="h-full w-full object-contain filter drop-shadow-[0_4px_6px_rgba(0,0,0,0.5)]"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center">
-            <span className="text-5xl opacity-30">✝️</span>
+          <div className="flex h-full w-full items-center justify-center bg-white/5 rounded-lg">
+            <span className="text-6xl opacity-20">✝️</span>
           </div>
         )}
       </div>
 
       {/* Bottom Half: Text Content */}
-      <div className="flex h-[50%] flex-col p-3 border-t border-white/10 bg-white/5">
+      <div className="flex flex-1 flex-col p-3 border-t border-white/10 bg-white/5 rounded-b-lg min-h-0">
         {/* Title */}
-        <h2 className="mb-2 text-center text-xl font-bold text-amber-400 truncate">
+        <h2 className="mb-2 text-center text-xl font-bold text-amber-400 truncate tracking-wide">
           {fullName}
         </h2>
 
@@ -146,9 +146,9 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
           {saintInfo?.extract ? (
             <p className="pb-2">{saintInfo?.extract}</p>
           ) : (
-            <p className="animate-pulse text-white/40 italic">
-              ...
-            </p>
+            <div className="flex items-center justify-center h-full">
+              <p className="animate-pulse text-white/40 italic">Buscando biografía...</p>
+            </div>
           )}
         </div>
 

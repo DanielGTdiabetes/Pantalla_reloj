@@ -153,6 +153,7 @@ body {
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -186,6 +187,7 @@ body {
   display: flex;
   flex-direction: column;
 }
+
 .w-screen {
   width: 100vw;
 }
@@ -545,15 +547,15 @@ main {
   flex: 1;
   position: relative;
   border-radius: 20px;
-  background: rgba(7, 12, 26, 0.78);
-  border: 1px solid var(--card-border);
+  background: transparent;
+  border: none;
   box-shadow: var(--card-shadow);
   overflow: hidden;
   padding: clamp(12px, 1.5vw, 20px);
   display: flex;
   align-items: stretch;
   justify-content: center;
-  backdrop-filter: blur(18px);
+  backdrop-filter: none;
   pointer-events: none;
   min-height: 0;
   max-height: 100%;
@@ -941,6 +943,7 @@ main {
   0% {
     transform: translateY(0);
   }
+
   100% {
     transform: translateY(-50%);
   }
@@ -1612,9 +1615,11 @@ main {
   0% {
     transform: translateX(-60%);
   }
+
   50% {
     transform: translateX(60%);
   }
+
   100% {
     transform: translateX(160%);
   }
