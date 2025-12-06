@@ -29,8 +29,11 @@ def get_alerts_geojson() -> Dict[str, Any]:
         GeoJSON FeatureCollection con los avisos
     """
     try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
         # Descargar archivo CAP comprimido
-        response = requests.get(CAP_URL, timeout=TIMEOUT)
+        response = requests.get(CAP_URL, headers=headers, timeout=TIMEOUT)
         response.raise_for_status()
         
         # Descomprimir contenido gzip
@@ -109,7 +112,6 @@ def get_alerts_geojson() -> Dict[str, Any]:
                                 except ValueError:
                                     continue
                         
-
                         # Cerrar el polígono si no está cerrado
                         if len(polygon_coords) >= 3:
                             if polygon_coords[0] != polygon_coords[-1]:
@@ -138,7 +140,7 @@ def get_alerts_geojson() -> Dict[str, Any]:
 
         # --- TEST INJECTION START ---
         # Inject a fake alert for Vila-real for testing
-        if True: # Force injection
+        if False: # Force injection
             from datetime import timedelta
             test_alert = {
                  "type": "Feature",
