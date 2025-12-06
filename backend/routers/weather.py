@@ -158,6 +158,7 @@ def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
                 "unit": "C"
             },
             "humidity": current.get("humidity"),
+            "feels_like": current.get("feels_like"),
             "wind_speed": current.get("wind_speed"),
             "summary": current.get("weather", [{}])[0].get("description", ""),
             "condition": current.get("weather", [{}])[0].get("main", ""),

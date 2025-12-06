@@ -554,14 +554,31 @@ export const OverlayRotator: React.FC = () => {
   const santoral = (payload.santoral ?? {}) as { saints?: (string | EnrichedSaint)[]; namedays?: string[] };
 
   const targetUnit = "C";
-  const rawTemperature = typeof weather.temperature === "number" ? weather.temperature : null;
-  const rawUnit = ensurePlainText(weather.unit) || "C";
+  const weatherTemp = weather.temperature;
+  let rawTemperature: number | null = null;
+  let rawUnit = ensurePlainText(weather.unit) || "C";
+
+  if (typeof weatherTemp === "number") {
+    rawTemperature = weatherTemp;
+  } else if (weatherTemp && typeof weatherTemp === "object") {
+    const tempObj = weatherTemp as { value?: number; unit?: string };
+    if (typeof tempObj.value === "number") {
+      rawTemperature = tempObj.value;
+    }
+    if (tempObj.unit) {
+      rawUnit = ensurePlainText(tempObj.unit) || rawUnit;
+    }
+  }
   const temperature = formatTemperature(rawTemperature, rawUnit, targetUnit);
 
-  const feelsLikeValue =
-    typeof weather.feels_like === "number"
-      ? formatTemperature(weather.feels_like as number, rawUnit, targetUnit)
-      : null;
+  const rawFeelsLike = typeof weather.feels_like === "number" ? weather.feels_like
+    : typeof weather.felt_temperature === "number" ? weather.felt_temperature
+      : typeof weather.apparent_temperature === "number" ? weather.apparent_temperature
+        : null;
+
+  const feelsLikeValue = rawFeelsLike !== null
+    ? formatTemperature(rawFeelsLike, rawUnit, targetUnit)
+    : null;
 
   const humidity = typeof weather.humidity === "number" ? (weather.humidity as number)
     : typeof weather.relative_humidity === "number" ? (weather.relative_humidity as number)
