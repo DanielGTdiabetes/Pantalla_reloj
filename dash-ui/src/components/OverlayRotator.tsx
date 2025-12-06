@@ -15,6 +15,7 @@ import { BackgroundGradient } from "./effects/BackgroundGradient";
 import { WeatherAmbience } from "./effects/WeatherAmbience";
 import { SkeletonLoader } from "./common/SkeletonLoader";
 import { CalendarCard } from "./dashboard/cards/CalendarCard";
+import { TransportCard } from "./dashboard/cards/TransportCard";
 import { WeatherForecastCard } from "./dashboard/cards/WeatherForecastCard";
 import { EphemeridesCard } from "./dashboard/cards/EphemeridesCard";
 import { HarvestCard } from "./dashboard/cards/HarvestCard";
@@ -35,6 +36,7 @@ type DashboardPayload = {
   calendar?: Record<string, unknown>;
   santoral?: { saints?: (string | EnrichedSaint)[]; namedays?: string[] };
   historicalEvents?: { date?: string; count?: number; items?: string[] };
+  transport?: any; // New transport data
 };
 
 const REFRESH_INTERVAL_MS = 60_000;
@@ -82,6 +84,7 @@ const PANEL_ID_MAP: Record<string, string> = {
   "harvest": "harvest",
   "news": "news",
   "historicalEvents": "historicalEvents",
+  "transport": "transport",
 };
 const DEFAULT_FALLBACK_PANEL = "clock";
 const DEFAULT_DURATIONS_SEC = {
@@ -94,12 +97,14 @@ const DEFAULT_DURATIONS_SEC = {
   harvest: 10,
   news: 12,
   historicalEvents: 20,
+  transport: 15,
 };
 
 const ROTATION_DEFAULT_ORDER = [
   "clock",
   "weather",
   "forecast",
+  "transport", // Add specifically after forecast as requested/logical
   "astronomy",
   "santoral",
   "calendar",
@@ -284,6 +289,7 @@ export const OverlayRotator: React.FC = () => {
   const astronomyCacheRef = useRef<{ data: Record<string, unknown> | null; timestamp: number | null }>({ data: null, timestamp: null });
   const santoralCacheRef = useRef<{ data: { date: string; names: (string | EnrichedSaint)[] } | null; timestamp: number | null }>({ data: null, timestamp: null });
   const historicalEventsCacheRef = useRef<{ data: { date?: string; count?: number; items?: string[] } | null; timestamp: number | null }>({ data: null, timestamp: null });
+  const transportCacheRef = useRef<{ data: any | null; timestamp: number | null }>({ data: null, timestamp: null });
 
   const timezone = useMemo(() => {
     const tz = safeGetTimezone(config as Record<string, unknown>);
@@ -426,7 +432,13 @@ export const OverlayRotator: React.FC = () => {
           : Infinity;
         const historicalEventsCacheValid = historicalEventsCacheAge < 5 * 60 * 1000;
 
-        const [weather, news, astronomy, calendar, santoral, historicalEvents] = await Promise.all([
+        // Verificar cache de transport (30s)
+        const transportCacheAge = transportCacheRef.current?.timestamp
+          ? Date.now() - transportCacheRef.current.timestamp
+          : Infinity;
+        const transportCacheValid = transportCacheAge < 30 * 1000;
+
+        const [weather, news, astronomy, calendar, santoral, historicalEvents, transport] = await Promise.all([
           (async () => {
             if (weatherCacheValid && weatherCacheRef.current?.data) {
               return weatherCacheRef.current.data;
@@ -522,11 +534,29 @@ export const OverlayRotator: React.FC = () => {
             } catch {
               return historicalEventsCacheRef.current?.data || { count: 0, items: [] };
             }
+          })(),
+          (async () => {
+            if (transportCacheValid && transportCacheRef.current?.data) {
+              return transportCacheRef.current.data;
+            }
+            try {
+              const v2Config = config as unknown as { panels?: { weather?: { latitude?: number; longitude?: number } } };
+              const lat = v2Config.panels?.weather?.latitude ?? 39.9378;
+              const lon = v2Config.panels?.weather?.longitude ?? -0.1014;
+              const data = await apiGet<any>(`/api/transport/nearby?lat=${lat}&lon=${lon}`);
+              if (mounted) {
+                transportCacheRef.current = { data, timestamp: Date.now() };
+              }
+              return data;
+            } catch (err) {
+              if (IS_DEV) console.warn("[OverlayRotator] Transport fetch failed", err);
+              return transportCacheRef.current?.data || { planes: [], ships: [] };
+            }
           })()
         ]);
 
         if (mounted) {
-          setPayload({ weather, news, astronomy, calendar, santoral, historicalEvents });
+          setPayload({ weather, news, astronomy, calendar, santoral, historicalEvents, transport });
           setLastUpdatedAt(Date.now());
         }
       } catch (error) {
@@ -552,6 +582,7 @@ export const OverlayRotator: React.FC = () => {
   const calendar = (payload.calendar ?? {}) as Record<string, unknown>;
   const historicalEvents = (payload.historicalEvents ?? {}) as { date?: string; count?: number; items?: string[] };
   const santoral = (payload.santoral ?? {}) as { saints?: (string | EnrichedSaint)[]; namedays?: string[] };
+  const transport = (payload.transport ?? {}) as any;
 
   const targetUnit = "C";
   const weatherTemp = weather.temperature;
@@ -813,6 +844,12 @@ export const OverlayRotator: React.FC = () => {
       }
     });
 
+    map.set("transport", {
+      id: "transport",
+      duration: (durations.transport ?? 15) * 1000,
+      render: () => <TransportCard data={transport} />
+    });
+
     return map;
   }, [
     rotationConfig.durations_sec,
@@ -834,7 +871,9 @@ export const OverlayRotator: React.FC = () => {
     sunset,
     ephemeridesEvents,
     santoralEntries,
+    santoralEntries,
     historicalEvents,
+    transport,
     config
   ]);
 
@@ -897,6 +936,8 @@ export const OverlayRotator: React.FC = () => {
         shouldInclude = forecastDays.length > 0 && weather.ok !== false;
       } else if (panelId === "weather") {
         shouldInclude = condition !== null || temperature.value !== "--";
+      } else if (panelId === "transport") {
+        shouldInclude = (transport.planes && transport.planes.length > 0) || (transport.ships && transport.ships.length > 0);
       }
 
       if (shouldInclude) {
@@ -929,7 +970,8 @@ export const OverlayRotator: React.FC = () => {
     forecastDays,
     condition,
     temperature.value,
-    historicalEvents
+    historicalEvents,
+    transport
   ]);
 
   const availablePanelIds = useMemo(() => availablePanels.map(p => p.id).join(','), [availablePanels]);
