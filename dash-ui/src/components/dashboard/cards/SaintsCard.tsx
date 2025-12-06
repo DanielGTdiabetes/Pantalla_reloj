@@ -15,6 +15,7 @@ interface SaintsCardProps {
 interface SaintInfo {
   extract?: string;
   thumbnail?: { source: string };
+  originalimage?: { source: string };
 }
 
 export default function SaintsCard({ saints }: SaintsCardProps) {
@@ -92,13 +93,15 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
     return <div className="flex h-full items-center justify-center p-4 text-white/50">Hoy no hay santos destacados</div>;
   }
 
+  const imageUrl = saintInfo?.originalimage?.source || saintInfo?.thumbnail?.source;
+
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden rounded-xl bg-black/20">
       {/* Imagen de Fondo con Blur */}
-      {saintInfo?.thumbnail && (
+      {imageUrl && (
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-30 transition-opacity duration-1000"
-          style={{ backgroundImage: `url(${saintInfo.thumbnail.source})` }}
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-40 blur-sm transition-opacity duration-1000"
+          style={{ backgroundImage: `url(${imageUrl})` }}
         />
       )}
 
