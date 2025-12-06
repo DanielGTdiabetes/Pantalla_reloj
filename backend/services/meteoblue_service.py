@@ -205,9 +205,25 @@ class MeteoblueService:
             Diccionario con datos del clima actual normalizados
         """
         data_1h = data.get("data_1h", {})
+        times = data_1h.get("time", [])
         
-        # Usar el primer índice (hora actual)
+        # Encontrar el índice más cercano a la hora actual
         idx = 0
+        now = datetime.now()
+        best_diff = float("inf")
+        
+        for i, time_str in enumerate(times):
+            try:
+                # Format: "2023-11-30 12:00"
+                # Meteoblue suele devolver hora local del lugar solicitado
+                t = datetime.strptime(time_str, "%Y-%m-%d %H:%M")
+                diff = abs((t - now).total_seconds())
+                
+                if diff < best_diff:
+                    best_diff = diff
+                    idx = i
+            except (ValueError, TypeError):
+                continue
         
         temperature = None
         pictocode = None
@@ -230,12 +246,12 @@ class MeteoblueService:
         if "felttemperature" in data_1h and len(data_1h["felttemperature"]) > idx:
             felt_temperature = data_1h["felttemperature"][idx]
         
-        # Determinar si es de noche (simplificado: asumimos día)
+        # Determinar si es de noche
         is_night = False
-        if "time" in data_1h and len(data_1h["time"]) > idx:
-            time_str = data_1h["time"][idx]
+        if len(times) > idx:
             try:
                 # Format: "2023-11-30 12:00"
+                time_str = times[idx]
                 hour = int(time_str.split()[1].split(":")[0])
                 is_night = hour < 6 or hour >= 20
             except (IndexError, ValueError):
