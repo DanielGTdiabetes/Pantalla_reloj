@@ -21,6 +21,8 @@ export default class LightningLayer implements Layer {
   private map?: MaptilerMap;
   private readonly sourceId = "geoscope-lightning-source";
   private lastData: FeatureCollection = EMPTY;
+  private refreshTimer?: number;
+  private refreshSeconds = 15; // 15 seconds refresh for lightning is good
 
   constructor(options: LightningLayerOptions = {}) {
     this.enabled = options.enabled ?? true;
@@ -28,6 +30,9 @@ export default class LightningLayer implements Layer {
 
   add(map: MaptilerMap): void | Promise<void> {
     this.map = map;
+
+    // Start fetching data
+    this.startRefresh();
 
     // Inicializar la capa de forma asíncrona
     if (this.enabled) {
@@ -103,9 +108,15 @@ export default class LightningLayer implements Layer {
     );
 
     this.applyVisibility();
+
+    // Fetch initial data if empty
+    if (this.lastData.features.length === 0) {
+      this.fetchLightning();
+    }
   }
 
   remove(map: MaptilerMap): void {
+    this.stopRefresh();
     if (map.getLayer(this.id)) {
       map.removeLayer(this.id);
     }
@@ -118,6 +129,46 @@ export default class LightningLayer implements Layer {
   setEnabled(on: boolean): void {
     this.enabled = on;
     this.applyVisibility();
+    if (on) {
+      this.startRefresh();
+    } else {
+      this.stopRefresh();
+    }
+  }
+
+  private async fetchLightning(): Promise<void> {
+    try {
+      // Optional: pass bbox if needed, but for lightning global/regional is often fine.
+      // If map is available, use map bounds?
+      let url = "/api/layers/lightning";
+      /*
+      if (this.map) {
+          const bounds = this.map.getBounds();
+          const bbox = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
+          url += `?bbox=${bbox}`;
+      }
+      */
+
+      const response = await fetch(url);
+      if (!response.ok) return; // Silent fail
+      const data = await response.json() as FeatureCollection;
+      this.updateData(data);
+    } catch (e) {
+      console.warn("[LightningLayer] fetch failed", e);
+    }
+  }
+
+  private startRefresh(): void {
+    this.stopRefresh();
+    this.fetchLightning();
+    this.refreshTimer = window.setInterval(() => this.fetchLightning(), this.refreshSeconds * 1000);
+  }
+
+  private stopRefresh(): void {
+    if (this.refreshTimer !== undefined) {
+      window.clearInterval(this.refreshTimer);
+      this.refreshTimer = undefined;
+    }
   }
 
   updateData(data: FeatureCollection): void {
@@ -135,7 +186,7 @@ export default class LightningLayer implements Layer {
 
       const ageSeconds = now - feature.properties.timestamp;
 
-      // Si es muy antiguo, excluirlo completamente
+      // Si es muy antiguo, excluirlo completamente (backend prune_seconds might handle this too)
       if (ageSeconds > maxAgeSeconds) {
         return null;
       }
@@ -164,6 +215,9 @@ export default class LightningLayer implements Layer {
       features: processedFeatures
     };
 
+    // Update local state is not enough if we filtered results, we should keep original data for next refresh?
+    // Actually fetch gets fresh data. So filtering here only affects display.
+
     if (!this.map) return;
     const source = this.map.getSource(this.sourceId);
     if (isGeoJSONSource(source)) {
@@ -176,6 +230,7 @@ export default class LightningLayer implements Layer {
   }
 
   destroy(): void {
+    this.stopRefresh();
     this.map = undefined;
   }
 

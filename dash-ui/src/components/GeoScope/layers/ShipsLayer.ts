@@ -113,6 +113,9 @@ export default class ShipsLayer implements Layer {
   private onMouseMove?: (event: MapLayerMouseEvent) => void;
   private hoveredFeatureId: string | null = null;
 
+  private refreshTimer?: number;
+  private refreshSeconds = 30; // 30 seconds for ships
+
   constructor(options: ShipsLayerOptions = {}) {
     this.enabled = options.enabled ?? false;
     this.opacity = options.opacity ?? 1.0;
@@ -135,9 +138,36 @@ export default class ShipsLayer implements Layer {
     this.map = map;
     this.registerEvents(map);
 
+    // Start fetching
+    this.startRefresh();
+
     // Inicializar la capa de forma asíncrona si está habilitada
     if (this.enabled) {
       return this.ensureShipsLayer();
+    }
+  }
+
+  private async fetchShips(): Promise<void> {
+    try {
+      const response = await fetch("/api/layers/ships"); // Uses backend get_ships
+      if (!response.ok) return;
+      const data = await response.json() as FeatureCollection;
+      this.updateData(data);
+    } catch (e) {
+      console.warn("[ShipsLayer] fetch failed", e);
+    }
+  }
+
+  private startRefresh(): void {
+    this.stopRefresh();
+    this.fetchShips();
+    this.refreshTimer = window.setInterval(() => this.fetchShips(), this.refreshSeconds * 1000);
+  }
+
+  private stopRefresh(): void {
+    if (this.refreshTimer !== undefined) {
+      window.clearInterval(this.refreshTimer);
+      this.refreshTimer = undefined;
     }
   }
 
@@ -263,6 +293,7 @@ export default class ShipsLayer implements Layer {
   }
 
   remove(map: MaptilerMap): void {
+    this.stopRefresh();
     this.unregisterEvents(map);
     this.removeLayers(map);
     if (map.getSource(this.sourceId)) {
@@ -272,12 +303,18 @@ export default class ShipsLayer implements Layer {
   }
 
   destroy(): void {
+    this.stopRefresh();
     this.map = undefined;
   }
 
   setEnabled(on: boolean): void {
     this.enabled = on;
     this.applyVisibility();
+    if (on) {
+      this.startRefresh();
+    } else {
+      this.stopRefresh();
+    }
   }
 
   setOpacity(opacity: number): void {

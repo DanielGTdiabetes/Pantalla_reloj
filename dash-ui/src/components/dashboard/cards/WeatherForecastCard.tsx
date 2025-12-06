@@ -25,29 +25,39 @@ const get3DIconUrl = (condition: string): string => {
 
   const c = condition.toLowerCase();
 
-  // Mapeo heurístico
-  if (c.includes("despejado") || c.includes("clear")) return `${baseUrl}Sun.png`;
-  if (c.includes("parcial") || c.includes("partly")) return `${skyUrl}Sun%20Behind%20Cloud.png`;
-  if (c.includes("nublado") || c.includes("cloud") || c.includes("cubierto")) return `${skyUrl}Cloud.png`;
-  if (c.includes("lluvia") || c.includes("rain") || c.includes("llovizna")) return `${skyUrl}Cloud%20with%20Rain.png`;
+  // Robust heuristic mapping
+  if (c.includes("despejado") || c.includes("clear") || c.includes("soleado")) return `${baseUrl}Sun.png`;
+  if (c.includes("parcial") || c.includes("partly") || c.includes("cloud") && c.includes("sun")) return `${skyUrl}Sun%20Behind%20Cloud.png`;
+  if (c.includes("nublado") || c.includes("cloud") || c.includes("cubierto") || c.includes("overcast")) return `${skyUrl}Cloud.png`;
+  if (c.includes("lluvia") || c.includes("rain") || c.includes("llovizna") || c.includes("chubasco")) return `${skyUrl}Cloud%20with%20Rain.png`;
   if (c.includes("tormenta") || c.includes("storm") || c.includes("thunder")) return `${skyUrl}Cloud%20with%20Lightning%20and%20Rain.png`;
   if (c.includes("nieve") || c.includes("snow")) return `${skyUrl}Cloud%20with%20Snow.png`;
-  if (c.includes("niebla") || c.includes("fog")) return `${skyUrl}Fog.png`;
+  if (c.includes("niebla") || c.includes("fog") || c.includes("mist")) return `${skyUrl}Fog.png`;
 
   return `${baseUrl}Sun.png`; // Fallback
 };
 
 const WeatherIcon3D = ({ condition, className }: { condition: string, className?: string }) => {
   const url = get3DIconUrl(condition);
+  const [error, setError] = useState(false);
+
+  if (error) {
+    // Fallback to simpler or text representation if image fails
+    return (
+      <div className={`flex items-center justify-center ${className} bg-white/10 rounded-full`}>
+        <span className="text-4xl">🌤️</span>
+      </div>
+    );
+  }
 
   return (
     <div className={`relative ${className}`}>
-      {/* Container para efecto de flotación */}
-      <div className="animate-float drop-shadow-2xl filter hover:scale-110 transition-transform duration-500">
+      <div className="animate-float drop-shadow-2xl filter hover:scale-110 transition-transform duration-500 w-full h-full">
         <img
           src={url}
           alt={condition}
           className="w-full h-full object-contain"
+          onError={() => setError(true)}
         />
       </div>
     </div>

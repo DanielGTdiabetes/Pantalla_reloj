@@ -136,6 +136,9 @@ export default class AircraftLayer implements Layer {
   private onMouseMove?: (event: MapLayerMouseEvent) => void;
   private hoveredFeatureId: string | null = null;
 
+  private refreshTimer?: number;
+  private refreshSeconds = 10; // 10 seconds for aircraft
+
   constructor(options: AircraftLayerOptions = {}) {
     this.enabled = options.enabled ?? false;
     this.opacity = options.opacity ?? 1.0;
@@ -163,9 +166,36 @@ export default class AircraftLayer implements Layer {
     this.map = map;
     this.registerEvents(map);
 
+    // Start fetching
+    this.startRefresh();
+
     // Inicializar la capa de forma asíncrona si está habilitada
     if (this.enabled) {
       return this.ensureFlightsLayer();
+    }
+  }
+
+  private async fetchFlights(): Promise<void> {
+    try {
+      const response = await fetch("/api/layers/flights.geojson"); // Uses backend get_flights_geojson
+      if (!response.ok) return;
+      const data = await response.json() as FeatureCollection;
+      this.updateData(data);
+    } catch (e) {
+      console.warn("[AircraftLayer] fetch failed", e);
+    }
+  }
+
+  private startRefresh(): void {
+    this.stopRefresh();
+    this.fetchFlights();
+    this.refreshTimer = window.setInterval(() => this.fetchFlights(), this.refreshSeconds * 1000);
+  }
+
+  private stopRefresh(): void {
+    if (this.refreshTimer !== undefined) {
+      window.clearInterval(this.refreshTimer);
+      this.refreshTimer = undefined;
     }
   }
 
@@ -295,6 +325,7 @@ export default class AircraftLayer implements Layer {
   }
 
   remove(map: MaptilerMap): void {
+    this.stopRefresh();
     this.unregisterEvents(map);
     this.removeLayers(map);
     if (map.getSource(this.sourceId)) {
@@ -304,12 +335,18 @@ export default class AircraftLayer implements Layer {
   }
 
   destroy(): void {
+    this.stopRefresh();
     this.map = undefined;
   }
 
   setEnabled(on: boolean): void {
     this.enabled = on;
     this.applyVisibility();
+    if (on) {
+      this.startRefresh();
+    } else {
+      this.stopRefresh();
+    }
   }
 
   setOpacity(opacity: number): void {

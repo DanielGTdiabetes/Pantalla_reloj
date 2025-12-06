@@ -11791,6 +11791,83 @@ async def serve_frontend(full_path: str, request: Request):
     return await spa_static_files.get_response(path, request.scope)
 
 
+
+def get_ships(request: Request, bbox: Optional[str] = None, max_items_view: Optional[int] = None) -> JSONResponse:
+    try:
+        snapshot = ships_service.get_snapshot()
+        
+        # Fallback to cache if null
+        if not snapshot:
+             cached = cache_store.load("ships_stream", max_age_minutes=5)
+             if cached:
+                 snapshot = cached.payload
+        
+        if not snapshot:
+            return JSONResponse({
+                "type": "FeatureCollection", 
+                "features": [],
+                "metadata": {"status": "no_data"}
+            })
+
+        features = snapshot.get("features", [])
+        
+        if bbox:
+            try:
+                parts = [float(p) for p in bbox.split(",")]
+                if len(parts) == 4:
+                    min_lon, min_lat, max_lon, max_lat = parts
+                    filtered = []
+                    for f in features:
+                        coords = f.get("geometry", {}).get("coordinates")
+                        if coords and len(coords) == 2:
+                            lon, lat = coords
+                            if min_lon <= lon <= max_lon and min_lat <= lat <= max_lat:
+                                filtered.append(f)
+                    features = filtered
+            except Exception:
+                pass
+                
+        if max_items_view and len(features) > max_items_view:
+            features = features[:max_items_view]
+            
+        return JSONResponse({
+            "type": "FeatureCollection",
+            "features": features,
+            "metadata": {
+                "count": len(features),
+                "timestamp": snapshot.get("meta", {}).get("last_message_ts")
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error serving ships layer: {e}")
+        return JSONResponse({"type": "FeatureCollection", "features": [], "error": str(e)}, status_code=500)
+
+
+def get_lightning(request: Request, bbox: Optional[str] = None) -> JSONResponse:
+    if not blitzortung_service:
+        return JSONResponse({
+            "type": "FeatureCollection", 
+            "features": [],
+            "metadata": {"error": "service_not_initialized"}
+        })
+    
+    bbox_tuple = None
+    if bbox:
+        try:
+            parts = [float(x) for x in bbox.split(",")]
+            if len(parts) == 4:
+                bbox_tuple = (parts[1], parts[3], parts[0], parts[2])
+        except Exception:
+            pass
+            
+    try:
+        data = blitzortung_service.to_geojson(bbox=bbox_tuple)
+        return JSONResponse(data)
+    except Exception as e:
+         logger.error(f"Error serving lightning layer: {e}")
+         return JSONResponse({"type": "FeatureCollection", "features": [], "error": str(e)}, status_code=500)
+
+
 def run(host: str = "127.0.0.1", port: int = 8081) -> None:
     """Ejecuta la aplicación FastAPI usando uvicorn.
 

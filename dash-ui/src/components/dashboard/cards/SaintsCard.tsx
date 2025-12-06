@@ -131,33 +131,33 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
         )}
       </div>
 
-      {/* Bottom Half: Text Content */}
-      <div className="flex h-[45%] flex-col bg-gradient-to-b from-gray-800 to-gray-900 p-4">
+      {/* Bottom Half: Text Content - Increased Contrast */}
+      <div className="flex h-[45%] flex-col bg-slate-900 border-t border-white/20 p-5">
         {/* Title */}
-        <h2 className="mb-2 text-center text-2xl font-bold text-yellow-400 drop-shadow-sm truncate">
+        <h2 className="mb-2 text-center text-2xl font-black text-amber-400 drop-shadow-md truncate tracking-tight">
           {fullName}
         </h2>
 
         {/* Scrollable Bio */}
         <div
           ref={scrollRef}
-          className="flex-1 overflow-y-auto pr-2 text-sm leading-relaxed text-gray-200 scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent"
+          className="flex-1 overflow-y-auto pr-2 text-base leading-relaxed text-white font-medium scrollbar-thin scrollbar-thumb-white/30 scrollbar-track-transparent"
         >
           {saintInfo?.extract ? (
-            <p className="pb-2">{saintInfo.extract}</p>
+            <p className="pb-2 drop-shadow-sm">{saintInfo.extract}</p>
           ) : (
-            <p className="animate-pulse text-white/40 italic text-center mt-4">
+            <p className="animate-pulse text-white/50 italic text-center mt-4">
               Buscando información...
             </p>
           )}
         </div>
 
         {/* Progress Indicators */}
-        <div className="mt-3 flex justify-center gap-1.5 pt-2 border-t border-white/5">
+        <div className="mt-4 flex justify-center gap-2 pt-3 border-t border-white/10">
           {saints.map((_, idx) => (
             <div
               key={idx}
-              className={`h-1.5 rounded-full transition-all duration-500 ${idx === currentIndex ? "w-6 bg-yellow-500" : "w-1.5 bg-white/20"
+              className={`h-2 rounded-full transition-all duration-500 shadow-sm ${idx === currentIndex ? "w-8 bg-amber-400" : "w-2 bg-white/20"
                 }`}
             />
           ))}
