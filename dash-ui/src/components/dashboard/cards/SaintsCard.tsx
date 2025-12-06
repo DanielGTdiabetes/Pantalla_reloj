@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 // Restore EnrichedSaint for compatibility
 export type EnrichedSaint = {
@@ -21,7 +21,7 @@ interface SaintInfo {
 export default function SaintsCard({ saints }: SaintsCardProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [saintInfo, setSaintInfo] = useState<SaintInfo | null>(null);
-  const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // Helper to get name
   const getSaintName = (s: string | EnrichedSaint) => {
@@ -29,7 +29,7 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
     return s.name;
   };
 
-  // 1. Lógica de rotación (Carrusel) - 15 segundos por santo
+  // 1. Rotation Logic - 15 seconds per saint
   useEffect(() => {
     if (!saints || saints.length === 0) return;
     const interval = setInterval(() => {
@@ -38,10 +38,9 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
     return () => clearInterval(interval);
   }, [saints]);
 
-  // 2. Lógica de Prefijos Inteligente
+  // 2. Smart Prefix Logic
   const formatName = (name: string) => {
     if (name.includes("San") || name.includes("Beato") || name.includes("Santa")) return name;
-    // Regla heurística: termina en 'a' es Santa (salvo excepciones)
     if (name.endsWith("a") && !["Luka", "Josua", "Bautisma"].includes(name)) return `Santa ${name}`;
     return `San ${name}`;
   };
@@ -50,27 +49,23 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
   const currentName = getSaintName(currentEntry);
   const fullName = formatName(currentName);
 
-  // 3. Integración Wikipedia (Cliente)
+  // 3. Wikipedia Integration
   useEffect(() => {
     if (!currentName || currentName === "Cargando...") return;
 
-    setLoading(true);
     const fetchWiki = async () => {
       try {
-        // Intentar buscar con el prefijo "San/Santa"
         const searchName = fullName.replace(/ /g, "_");
         const res = await fetch(`https://es.wikipedia.org/api/rest_v1/page/summary/${searchName}`);
 
         if (res.ok) {
           const data = await res.json();
-          // Solo aceptamos si es una persona (type standard) para evitar desambiguaciones raras
           if (data.type === 'standard') {
             setSaintInfo(data);
             return;
           }
         }
 
-        // Reintento: Buscar solo por el nombre sin "San" (a veces Wikipedia lo tiene directo)
         const res2 = await fetch(`https://es.wikipedia.org/api/rest_v1/page/summary/${currentName}`);
         if (res2.ok) {
           const data2 = await res2.json();
@@ -81,52 +76,89 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
       } catch (e) {
         console.warn("Wiki fetch error", e);
         setSaintInfo(null);
-      } finally {
-        setLoading(false);
       }
     };
 
     fetchWiki();
   }, [currentName, fullName]);
 
+  // Reset scroll when saint changes
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
+    }
+  }, [currentIndex]);
+
   if (!saints || saints.length === 0) {
     return <div className="flex h-full items-center justify-center p-4 text-white/50">Hoy no hay santos destacados</div>;
   }
 
-  const imageUrl = saintInfo?.originalimage?.source || saintInfo?.thumbnail?.source;
+  // Upgrade image quality helper
+  const upgradeImageQuality = (url: string) => {
+    if (!url) return url;
+    if (url.includes("/thumb/")) {
+      const parts = url.split("/thumb/");
+      if (parts.length === 2) {
+        const pathParts = parts[1].split("/");
+        if (pathParts.length > 1) {
+          pathParts.pop();
+          return `${parts[0]}/${pathParts.join("/")}`;
+        }
+      }
+    }
+    return url;
+  };
+
+  let imageUrl = saintInfo?.originalimage?.source;
+  if (!imageUrl && saintInfo?.thumbnail?.source) {
+    imageUrl = upgradeImageQuality(saintInfo.thumbnail.source);
+  }
 
   return (
-    <div className="relative flex h-full w-full flex-col overflow-hidden rounded-xl bg-black/20">
-      {/* Imagen de Fondo con Blur */}
-      {imageUrl && (
-        <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-40 blur-sm transition-opacity duration-1000"
-          style={{ backgroundImage: `url(${imageUrl})` }}
-        />
-      )}
+    <div className="flex h-full w-full flex-col overflow-hidden rounded-xl bg-gray-900 border border-white/10 shadow-2xl">
+      {/* Top Half: Image Container */}
+      <div className="relative h-[55%] w-full bg-black/40 p-4">
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt={fullName}
+            className="h-full w-full object-contain drop-shadow-2xl"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center">
+            <span className="text-6xl opacity-20">✝️</span>
+          </div>
+        )}
+      </div>
 
-      {/* Capa de degradado para leer el texto */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-transparent" />
-
-      {/* Contenido */}
-      <div className="relative z-10 flex h-full flex-col items-center justify-end p-6 text-center pb-12">
-
-        {/* Nombre Gigante */}
-        <h2 className="mb-3 text-3xl font-bold text-yellow-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] transition-all duration-500">
+      {/* Bottom Half: Text Content */}
+      <div className="flex h-[45%] flex-col bg-gradient-to-b from-gray-800 to-gray-900 p-4">
+        {/* Title */}
+        <h2 className="mb-2 text-center text-2xl font-bold text-yellow-400 drop-shadow-sm truncate">
           {fullName}
         </h2>
 
-        {/* Biografía Breve */}
-        <div className="line-clamp-4 max-w-prose text-sm leading-relaxed text-gray-100 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] bg-black/30 p-2 rounded-lg backdrop-blur-sm">
-          {saintInfo?.extract ? saintInfo.extract : "Santoral del día"}
+        {/* Scrollable Bio */}
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto pr-2 text-sm leading-relaxed text-gray-200 scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent"
+        >
+          {saintInfo?.extract ? (
+            <p className="pb-2">{saintInfo.extract}</p>
+          ) : (
+            <p className="animate-pulse text-white/40 italic text-center mt-4">
+              Buscando información...
+            </p>
+          )}
         </div>
 
-        {/* Indicador de progreso (Puntos) */}
-        <div className="absolute bottom-4 flex gap-2">
+        {/* Progress Indicators */}
+        <div className="mt-3 flex justify-center gap-1.5 pt-2 border-t border-white/5">
           {saints.map((_, idx) => (
             <div
               key={idx}
-              className={`h-1.5 rounded-full transition-all duration-300 ${idx === currentIndex ? "w-6 bg-yellow-500" : "w-1.5 bg-white/30"}`}
+              className={`h-1.5 rounded-full transition-all duration-500 ${idx === currentIndex ? "w-6 bg-yellow-500" : "w-1.5 bg-white/20"
+                }`}
             />
           ))}
         </div>
