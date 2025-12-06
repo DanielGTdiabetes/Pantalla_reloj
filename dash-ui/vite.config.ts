@@ -10,7 +10,13 @@ export default {
   plugins: [react()],
   server: {
     host: "0.0.0.0",
-    port: 5173
+    port: 5173,
+    proxy: {
+      "/api": {
+        target: "http://localhost:8081",
+        changeOrigin: true
+      }
+    }
   },
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
