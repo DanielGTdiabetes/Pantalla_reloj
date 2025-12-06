@@ -941,6 +941,14 @@ export const ConfigPage: React.FC = () => {
       const result = await updateMeteoblueApiKey(trimmedKey);
       console.log("[ConfigPage] Save result:", result);
       
+      // Verificar que el guardado fue exitoso
+      if (!result.ok) {
+        const errorMsg = (result as any).error || "Error desconocido";
+        console.error("[ConfigPage] Meteoblue save failed:", errorMsg);
+        alert(`Error al guardar la API key: ${errorMsg}`);
+        return;
+      }
+      
       // Actualizar secrets en config localmente
       setConfig((prev) => {
         if (!prev) return prev;
@@ -960,7 +968,7 @@ export const ConfigPage: React.FC = () => {
         setMeteoblueApiKey(""); // Limpiar input
         
         if (trimmedKey) {
-          alert("API Key de Meteoblue guardada correctamente");
+          alert(`API Key de Meteoblue guardada correctamente (últimos 4: ${result.api_key_last4 || "****"})`);
         } else {
           alert("API Key de Meteoblue eliminada");
         }
