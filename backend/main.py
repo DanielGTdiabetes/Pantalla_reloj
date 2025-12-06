@@ -662,7 +662,7 @@ async def _read_secret_value(request: Request) -> Optional[str]:
         except json.JSONDecodeError:
             return text or None
         if isinstance(parsed, dict):
-            for key in ("value", "secret", "client_id", "client_secret"):
+            for key in ("value", "secret", "api_key", "client_id", "client_secret"):
                 candidate = parsed.get(key)
                 if candidate is not None:
                     return str(candidate).strip() or None
@@ -5335,9 +5335,8 @@ def get_meteoblue_secret_meta() -> Dict[str, Any]:
 async def update_meteoblue_secret(request: Request) -> Dict[str, Any]:
     """Guarda la API key de Meteoblue. Acepta JSON con {api_key: string} o texto plano."""
     content_type = request.headers.get("content-type", "")
-    
     try:
-        if "application/json" in content_type:
+        if "application/json" in content_type.lower():
             body = await request.json()
             logger.info("Meteoblue API key update - JSON body received: %s", {k: "***" if k == "api_key" else v for k, v in body.items()} if isinstance(body, dict) else type(body))
             

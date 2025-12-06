@@ -185,7 +185,6 @@ def test_meteoblue(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
     auto_save = payload.get("auto_save", True)  # Por defecto, guardar si el test es exitoso
     key_from_input = bool(api_key and api_key.strip())
     
-    logger.info(f"Test Meteoblue Payload: {payload}")
     if key_from_input:
         api_key = api_key.strip()
         logger.info(f"Test Meteoblue: API key received in request body (len={len(api_key)})")
@@ -206,6 +205,7 @@ def test_meteoblue(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
     
     try:
         result = weather_service.get_weather(lat, lon, api_key)
+        
         if result.get("ok"):
             # Si el test fue exitoso y la API key vino del input, guardarla automáticamente
             saved = False
