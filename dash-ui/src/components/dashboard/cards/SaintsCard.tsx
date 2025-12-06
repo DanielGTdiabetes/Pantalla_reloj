@@ -97,24 +97,24 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
       {/* Imagen de Fondo con Blur */}
       {saintInfo?.thumbnail && (
         <div
-          className="absolute inset-0 bg-cover bg-center opacity-40 transition-opacity duration-1000"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-30 transition-opacity duration-1000"
           style={{ backgroundImage: `url(${saintInfo.thumbnail.source})` }}
         />
       )}
 
       {/* Capa de degradado para leer el texto */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-transparent" />
 
       {/* Contenido */}
       <div className="relative z-10 flex h-full flex-col items-center justify-end p-6 text-center pb-12">
 
         {/* Nombre Gigante */}
-        <h2 className="mb-3 text-3xl font-bold text-yellow-400 drop-shadow-md transition-all duration-500">
+        <h2 className="mb-3 text-3xl font-bold text-yellow-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] transition-all duration-500">
           {fullName}
         </h2>
 
         {/* Biografía Breve */}
-        <div className="line-clamp-4 max-w-prose text-sm leading-relaxed text-gray-100 drop-shadow-sm">
+        <div className="line-clamp-4 max-w-prose text-sm leading-relaxed text-gray-100 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] bg-black/30 p-2 rounded-lg backdrop-blur-sm">
           {saintInfo?.extract ? saintInfo.extract : "Santoral del día"}
         </div>
 
