@@ -84,9 +84,9 @@ def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
 
         # Fallback if still missing
         if lat is None or lon is None:
-            # Default to Madrid/Spain center if absolutely nothing is configured
-            lat = 40.4168
-            lon = -3.7038
+            # Default to Vila-real (Castellón) if absolutely nothing is configured
+            lat = 39.9378
+            lon = -0.1014
     
     # Determinar proveedor
     provider = "meteoblue"

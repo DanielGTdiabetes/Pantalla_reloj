@@ -225,6 +225,9 @@ class MeteoblueService:
             except (ValueError, TypeError):
                 continue
         
+        self.logger.info(f"Meteoblue: Selected index {idx} for time {times[idx] if idx < len(times) else 'N/A'} (diff={best_diff}s)")
+
+        
         temperature = None
         pictocode = None
         windspeed = None

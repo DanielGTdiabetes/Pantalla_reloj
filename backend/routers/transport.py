@@ -52,7 +52,7 @@ def _resolve_plane_image(icao24: str) -> Optional[str]:
 async def get_transport_nearby(
     lat: float = 39.9378,  # Default: Vila-real
     lon: float = -0.1014,
-    radius_km: float = 50.0 
+    radius_km: float = 100.0  # Increased from 50.0 to 100.0
 ):
     """
     Get transport (planes and ships) near a location.
@@ -60,9 +60,9 @@ async def get_transport_nearby(
     """
     main = _load_main_module()
     
-    # 1. OpenSky (Planes)
-    d_lat = 0.15 # ~15km
-    d_lon = 0.20 
+    # 1. OpenSky (Planes) - Widen the box to ensures we catch planes on approach to Valencia/Castellón
+    d_lat = 1.0 # ~110km latitude delta
+    d_lon = 1.5 # ~120km longitude delta
     
     planes_bbox = (
         lat - d_lat, # min_lat
@@ -105,7 +105,9 @@ async def get_transport_nearby(
         print(f"Error fetching planes: {e}")
 
     # 2. Ships (AISStream)
-    ships_bbox = (39.7, 40.6, -0.05, 0.90)
+    # Widen to include Castellón/Burriana coast (-0.1 is Vila-real, Coast is approx -0.0)
+    # Min lon must be west of Vila-real (-0.10) to catch anything close, or at least covers the port.
+    ships_bbox = (39.0, 41.0, -0.50, 1.50)
     
     ships_data = []
     try:
@@ -117,6 +119,7 @@ async def get_transport_nearby(
                 coords = geo.get("coordinates")
                 if coords:
                     slon, slat = coords
+                    # Check if inside our "nearby" box
                     if (ships_bbox[0] <= slat <= ships_bbox[1] and 
                         ships_bbox[2] <= slon <= ships_bbox[3]):
                         

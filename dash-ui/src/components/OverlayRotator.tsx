@@ -456,8 +456,8 @@ export const OverlayRotator: React.FC = () => {
             }
             try {
               const v2Config = config as unknown as { panels?: { weather?: { latitude?: number; longitude?: number } } };
-              const lat = v2Config.panels?.weather?.latitude ?? 39.98;
-              const lon = v2Config.panels?.weather?.longitude ?? 0.20;
+              const lat = v2Config.panels?.weather?.latitude ?? 39.9378;
+              const lon = v2Config.panels?.weather?.longitude ?? -0.1014;
               const data = await apiGet<Record<string, unknown>>(`/api/weather/weekly?lat=${lat}&lon=${lon}`);
               if (mounted) {
                 weatherCacheRef.current = { data, timestamp: Date.now() };
