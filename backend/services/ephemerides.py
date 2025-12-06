@@ -277,14 +277,47 @@ async def get_ephemerides(
     except HTTPException:
         # Re-lanzar excepciones HTTP
         raise
-    except Exception as e:
-        logger.exception("Error obteniendo efemérides")
         return {
             "error": str(e),
             "source": "wikimedia",
             "items": [],
             "count": 0
         }
+
+@router.get("/apod")
+async def get_nasa_apod() -> Dict[str, Any]:
+    """
+    Get NASA Astronomy Picture of the Day.
+    Uses generic DEMO_KEY, cached 12h.
+    """
+    cache_key = f"nasa_apod_{datetime.date.today().isoformat()}"
+    if cache_store:
+        cached = cache_store.load(cache_key, max_age_minutes=720) # 12h
+        if cached and cached.payload:
+            return cached.payload
+
+    try:
+        url = "https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+            
+            # Extract relevant fields
+            result = {
+                "title": data.get("title"),
+                "url": data.get("hdurl") or data.get("url"), # Prefer HD
+                "date": data.get("date"),
+                "explanation": data.get("explanation"),
+                "media_type": data.get("media_type") # image or video
+            }
+            
+            if cache_store:
+                cache_store.store(cache_key, result)
+            return result
+    except Exception as e:
+        logger.error(f"Error fetching APOD: {e}")
+        return {"error": str(e)}
 
 
 def init_cache(store: CacheStore) -> None:

@@ -16,6 +16,7 @@ import { WeatherAmbience } from "./effects/WeatherAmbience";
 import { SkeletonLoader } from "./common/SkeletonLoader";
 import { CalendarCard } from "./dashboard/cards/CalendarCard";
 import { TransportCard } from "./dashboard/cards/TransportCard";
+import { ApodCard } from "./dashboard/cards/ApodCard";
 import { WeatherForecastCard } from "./dashboard/cards/WeatherForecastCard";
 import { EphemeridesCard } from "./dashboard/cards/EphemeridesCard";
 import { HarvestCard } from "./dashboard/cards/HarvestCard";
@@ -37,6 +38,7 @@ type DashboardPayload = {
   santoral?: { saints?: (string | EnrichedSaint)[]; namedays?: string[] };
   historicalEvents?: { date?: string; count?: number; items?: string[] };
   transport?: any; // New transport data
+  apod?: any; // NASA APOD data
 };
 
 const REFRESH_INTERVAL_MS = 60_000;
@@ -98,6 +100,7 @@ const DEFAULT_DURATIONS_SEC = {
   news: 12,
   historicalEvents: 20,
   transport: 15,
+  apod: 20
 };
 
 const ROTATION_DEFAULT_ORDER = [
@@ -106,6 +109,7 @@ const ROTATION_DEFAULT_ORDER = [
   "forecast",
   "transport", // Add specifically after forecast as requested/logical
   "astronomy",
+  "apod", // Add after astronomy
   "santoral",
   "calendar",
   "harvest",
@@ -290,6 +294,7 @@ export const OverlayRotator: React.FC = () => {
   const santoralCacheRef = useRef<{ data: { date: string; names: (string | EnrichedSaint)[] } | null; timestamp: number | null }>({ data: null, timestamp: null });
   const historicalEventsCacheRef = useRef<{ data: { date?: string; count?: number; items?: string[] } | null; timestamp: number | null }>({ data: null, timestamp: null });
   const transportCacheRef = useRef<{ data: any | null; timestamp: number | null }>({ data: null, timestamp: null });
+  const apodCacheRef = useRef<{ data: any | null; timestamp: number | null }>({ data: null, timestamp: null });
 
   const timezone = useMemo(() => {
     const tz = safeGetTimezone(config as Record<string, unknown>);
@@ -438,7 +443,13 @@ export const OverlayRotator: React.FC = () => {
           : Infinity;
         const transportCacheValid = transportCacheAge < 30 * 1000;
 
-        const [weather, news, astronomy, calendar, santoral, historicalEvents, transport] = await Promise.all([
+        // Verify APOD cache (12h)
+        const apodCacheAge = apodCacheRef.current?.timestamp
+          ? Date.now() - apodCacheRef.current.timestamp
+          : Infinity;
+        const apodCacheValid = apodCacheAge < 12 * 60 * 60 * 1000;
+
+        const [weather, news, astronomy, calendar, santoral, historicalEvents, transport, apod] = await Promise.all([
           (async () => {
             if (weatherCacheValid && weatherCacheRef.current?.data) {
               return weatherCacheRef.current.data;
@@ -552,11 +563,26 @@ export const OverlayRotator: React.FC = () => {
               if (IS_DEV) console.warn("[OverlayRotator] Transport fetch failed", err);
               return transportCacheRef.current?.data || { planes: [], ships: [] };
             }
+          })(),
+          (async () => {
+            if (apodCacheValid && apodCacheRef.current?.data) {
+              return apodCacheRef.current.data;
+            }
+            try {
+              const data = await apiGet<any>("/api/ephemerides/apod");
+              if (mounted) {
+                apodCacheRef.current = { data, timestamp: Date.now() };
+              }
+              return data;
+            } catch (err) {
+              if (IS_DEV) console.warn("[OverlayRotator] APOD fetch failed", err);
+              return apodCacheRef.current?.data || { error: "Failed to load APOD" };
+            }
           })()
         ]);
 
         if (mounted) {
-          setPayload({ weather, news, astronomy, calendar, santoral, historicalEvents, transport });
+          setPayload({ weather, news, astronomy, calendar, santoral, historicalEvents, transport, apod });
           setLastUpdatedAt(Date.now());
         }
       } catch (error) {
@@ -583,6 +609,7 @@ export const OverlayRotator: React.FC = () => {
   const historicalEvents = (payload.historicalEvents ?? {}) as { date?: string; count?: number; items?: string[] };
   const santoral = (payload.santoral ?? {}) as { saints?: (string | EnrichedSaint)[]; namedays?: string[] };
   const transport = (payload.transport ?? {}) as any;
+  const apod = (payload.apod ?? {}) as any;
 
   const targetUnit = "C";
   const weatherTemp = weather.temperature;
@@ -850,6 +877,12 @@ export const OverlayRotator: React.FC = () => {
       render: () => <TransportCard data={transport} />
     });
 
+    map.set("apod", {
+      id: "apod",
+      duration: (durations.apod ?? 20) * 1000,
+      render: () => <ApodCard data={apod} />
+    });
+
     return map;
   }, [
     rotationConfig.durations_sec,
@@ -874,6 +907,7 @@ export const OverlayRotator: React.FC = () => {
     santoralEntries,
     historicalEvents,
     transport,
+    apod,
     config
   ]);
 
@@ -938,6 +972,8 @@ export const OverlayRotator: React.FC = () => {
         shouldInclude = condition !== null || temperature.value !== "--";
       } else if (panelId === "transport") {
         shouldInclude = (transport.planes && transport.planes.length > 0) || (transport.ships && transport.ships.length > 0);
+      } else if (panelId === "apod") {
+        shouldInclude = apod && !apod.error && apod.media_type === "image";
       }
 
       if (shouldInclude) {
@@ -971,7 +1007,8 @@ export const OverlayRotator: React.FC = () => {
     condition,
     temperature.value,
     historicalEvents,
-    transport
+    transport,
+    apod
   ]);
 
   const availablePanelIds = useMemo(() => availablePanels.map(p => p.id).join(','), [availablePanels]);
