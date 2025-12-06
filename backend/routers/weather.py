@@ -72,10 +72,16 @@ def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
     # Resolve location
     config = config_manager.read()
     if lat is None or lon is None:
-        if config.location:
-            lat = config.location.lat
-            lon = config.location.lon
+        # 1. Try Ephemerides location (usually the main device location)
+        if config.ephemerides:
+            lat = config.ephemerides.latitude
+            lon = config.ephemerides.longitude
         
+        # 2. Try Map center
+        if (lat is None or lon is None) and config.ui_map and config.ui_map.fixed and config.ui_map.fixed.center:
+            lat = config.ui_map.fixed.center.lat
+            lon = config.ui_map.fixed.center.lon
+
         # Fallback if still missing
         if lat is None or lon is None:
             # Default to Madrid/Spain center if absolutely nothing is configured
@@ -200,9 +206,20 @@ def test_meteoblue(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
     if not api_key:
         return {"ok": False, "reason": "missing_api_key", "message": "Falta API Key. Introduce una API key en el campo y vuelve a probar."}
     
-    # Usar coordenadas por defecto (Madrid) para el test
+    # Resolve location for test
     lat = 40.4168
     lon = -3.7038
+    
+    try:
+        config = config_manager.read()
+        if config.ephemerides:
+            lat = config.ephemerides.latitude
+            lon = config.ephemerides.longitude
+        elif config.ui_map and config.ui_map.fixed and config.ui_map.fixed.center:
+            lat = config.ui_map.fixed.center.lat
+            lon = config.ui_map.fixed.center.lon
+    except Exception as e:
+        logger.warning(f"Could not resolve config location for test: {e}")
     
     try:
         result = weather_service.get_weather(lat, lon, api_key)
