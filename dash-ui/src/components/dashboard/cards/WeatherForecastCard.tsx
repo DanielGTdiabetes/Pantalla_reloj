@@ -68,7 +68,7 @@ export const WeatherForecastCard = ({ forecast, unit }: WeatherForecastCardProps
   // Use up to 7 days for the carousel
   const days = forecast.slice(0, 7);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const ROTATION_INTERVAL = 4000; // 4 seconds per day, slower to enjoy the 3D icon
+  const ROTATION_INTERVAL = 4000; // 4 seconds per day
 
   useEffect(() => {
     if (days.length <= 1) return;
@@ -84,55 +84,55 @@ export const WeatherForecastCard = ({ forecast, unit }: WeatherForecastCardProps
   if (!currentDay) return null;
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden rounded-xl bg-gradient-to-br from-[#1a2942] to-[#121b2b] text-white shadow-2xl border border-white/10">
+    <div className="flex h-full w-full flex-col text-white">
       {/* Header Compacto */}
-      <div className="bg-black/20 p-3 text-center backdrop-blur-sm">
+      <div className="p-2 text-center border-b border-white/10 bg-white/5 rounded-t-lg">
         <h2 className="text-sm font-medium uppercase tracking-wider opacity-80">
-          Previsión Semanal ({currentIndex + 1}/{days.length})
+          Previsión ({currentIndex + 1}/{days.length})
         </h2>
       </div>
 
       {/* Cuerpo Principal */}
-      <div className="flex flex-1 flex-col items-center justify-between p-4" key={currentIndex}>
+      <div className="flex flex-1 flex-col items-center justify-between p-2" key={currentIndex}>
 
         {/* Fecha y Día */}
-        <div className="text-center animate-fade-in-down">
-          <div className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-200 to-white">
+        <div className="text-center animate-fade-in-down mt-1">
+          <div className="text-2xl font-bold text-blue-100">
             {currentDay.dayName || currentDay.date}
           </div>
-          <div className="text-sm text-blue-200/60 mt-1">{currentDay.date}</div>
+          <div className="text-xs text-blue-200/60">{currentDay.date}</div>
         </div>
 
         {/* Icono 3D Grande */}
-        <div className="flex-1 w-full flex items-center justify-center py-2 h-32">
-          <WeatherIcon3D condition={currentDay.condition} className="w-32 h-32 md:w-40 md:h-40" />
+        <div className="flex-1 w-full flex items-center justify-center py-1 min-h-0">
+          <WeatherIcon3D condition={currentDay.condition} className="w-24 h-24 md:w-32 md:h-32" />
         </div>
 
         {/* Temperaturas Grandes */}
-        <div className="flex w-full justify-center gap-8 mb-4">
+        <div className="flex w-full justify-center gap-6 mb-2">
           <div className="flex flex-col items-center">
-            <span className="text-4xl font-bold text-red-400 drop-shadow-lg">
+            <span className="text-3xl font-bold text-red-400">
               {currentDay.temperature.max !== null ? Math.round(currentDay.temperature.max) : "--"}°
             </span>
-            <span className="text-xs uppercase tracking-widest opacity-60">Max</span>
+            <span className="text-[10px] uppercase tracking-widest opacity-60">Max</span>
           </div>
           <div className="w-px bg-white/10 mx-2"></div>
           <div className="flex flex-col items-center">
-            <span className="text-4xl font-bold text-blue-400 drop-shadow-lg">
+            <span className="text-3xl font-bold text-blue-400">
               {currentDay.temperature.min !== null ? Math.round(currentDay.temperature.min) : "--"}°
             </span>
-            <span className="text-xs uppercase tracking-widest opacity-60">Min</span>
+            <span className="text-[10px] uppercase tracking-widest opacity-60">Min</span>
           </div>
         </div>
 
         {/* Footer: Precipitación y Condición */}
-        <div className="w-full rounded-lg bg-black/30 p-3 backdrop-blur-md">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium capitalize text-gray-200 truncate pr-2 max-w-[70%]">
+        <div className="w-full rounded-lg bg-white/5 p-2 border border-white/5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-medium capitalize text-gray-200 truncate flex-1 block text-left">
               {currentDay.condition}
             </span>
             {currentDay.precipitation !== null && currentDay.precipitation !== undefined && (
-              <div className="flex items-center gap-1.5 text-blue-300 font-bold bg-blue-500/10 px-2 py-1 rounded-full">
+              <div className="flex items-center gap-1 text-blue-300 font-bold bg-blue-500/10 px-2 py-1 rounded-full text-xs whitespace-nowrap">
                 <span>💧</span>
                 <span>{Math.round(currentDay.precipitation)}%</span>
               </div>
@@ -145,7 +145,7 @@ export const WeatherForecastCard = ({ forecast, unit }: WeatherForecastCardProps
       <style>{`
         @keyframes float {
           0%, 100% { transform: translateY(0px); }
-          50% { transform: translateY(-10px); }
+          50% { transform: translateY(-6px); }
         }
         .animate-float {
           animation: float 4s ease-in-out infinite;

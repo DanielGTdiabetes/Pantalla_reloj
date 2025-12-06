@@ -115,49 +115,49 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
   }
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden rounded-xl bg-gray-900 border border-white/10 shadow-2xl">
+    <div className="flex h-full w-full flex-col overflow-hidden rounded-lg">
       {/* Top Half: Image Container */}
-      <div className="relative h-[55%] w-full bg-black/40 p-4">
+      <div className="relative h-[50%] w-full flex items-center justify-center p-2 bg-black/20">
         {imageUrl ? (
           <img
             src={imageUrl}
             alt={fullName}
-            className="h-full w-full object-contain drop-shadow-2xl"
+            className="h-full w-full object-contain drop-shadow-lg"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center">
-            <span className="text-6xl opacity-20">✝️</span>
+            <span className="text-5xl opacity-30">✝️</span>
           </div>
         )}
       </div>
 
-      {/* Bottom Half: Text Content - Increased Contrast */}
-      <div className="flex h-[45%] flex-col bg-slate-900 border-t border-white/20 p-5">
+      {/* Bottom Half: Text Content */}
+      <div className="flex h-[50%] flex-col p-3 border-t border-white/10 bg-white/5">
         {/* Title */}
-        <h2 className="mb-2 text-center text-2xl font-black text-amber-400 drop-shadow-md truncate tracking-tight">
+        <h2 className="mb-2 text-center text-xl font-bold text-amber-400 truncate">
           {fullName}
         </h2>
 
         {/* Scrollable Bio */}
         <div
           ref={scrollRef}
-          className="flex-1 overflow-y-auto pr-2 text-base leading-relaxed text-white font-medium scrollbar-thin scrollbar-thumb-white/30 scrollbar-track-transparent"
+          className="flex-1 overflow-y-auto pr-1 text-sm leading-relaxed text-blue-100 font-medium scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent text-center"
         >
           {saintInfo?.extract ? (
-            <p className="pb-2 drop-shadow-sm">{saintInfo.extract}</p>
+            <p className="pb-2">{saintInfo?.extract}</p>
           ) : (
-            <p className="animate-pulse text-white/50 italic text-center mt-4">
-              Buscando información...
+            <p className="animate-pulse text-white/40 italic">
+              ...
             </p>
           )}
         </div>
 
         {/* Progress Indicators */}
-        <div className="mt-4 flex justify-center gap-2 pt-3 border-t border-white/10">
+        <div className="mt-2 flex justify-center gap-1.5 pt-2 border-t border-white/5 shrink-0">
           {saints.map((_, idx) => (
             <div
               key={idx}
-              className={`h-2 rounded-full transition-all duration-500 shadow-sm ${idx === currentIndex ? "w-8 bg-amber-400" : "w-2 bg-white/20"
+              className={`h-1.5 rounded-full transition-all duration-300 ${idx === currentIndex ? "w-6 bg-amber-400" : "w-1.5 bg-white/20"
                 }`}
             />
           ))}
@@ -165,4 +165,4 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
       </div>
     </div>
   );
-}
+};
