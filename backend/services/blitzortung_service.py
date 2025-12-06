@@ -113,27 +113,26 @@ class BlitzortungService:
             logger.warning("[Blitzortung] Service already running")
             return False
         
-        if True: # Force test mode for debugging
-             logger.warning("[Blitzortung] FORCE STARTING TEST MODE generator for debugging")
-             self.running = True
-             self._start_cleanup_thread()
-             self._start_test_generator()
-             return True
+        # Try to start MQTT if configured
+        if mqtt and not self.ws_enabled:
+            if self._start_mqtt():
+                self.running = True
+                self._start_cleanup_thread()
+                return True
+            else:
+                logger.warning("[Blitzortung] MQTT connection failed")
         
-        # Original logic below (commented out for debug)
-        # if mqtt and not self.ws_enabled:
-        #     if self._start_mqtt():
-        # ...
-        # Si no hay conexión real, iniciar generador de pruebas
-        logger.warning("[Blitzortung] Connection failed, STARTING TEST MODE generator")
-        self.running = True
-        self._start_cleanup_thread()
-        self._start_test_generator()
-        return True
-        # --- TEST FALLBACK END ---
+        # Try to start WebSocket if configured
+        if websocket and (self.ws_enabled or self.ws_url):
+             if self._start_websocket():
+                 self.running = True
+                 self._start_cleanup_thread()
+                 return True
+             else:
+                 logger.warning("[Blitzortung] WebSocket connection failed")
         
-        # logger.warning("[Blitzortung] Failed to start: MQTT/WebSocket not available or misconfigured")
-        # return False
+        logger.warning("[Blitzortung] Failed to start: No valid connection established")
+        return False
     
     def stop(self) -> None:
         """Detiene el servicio Blitzortung."""
