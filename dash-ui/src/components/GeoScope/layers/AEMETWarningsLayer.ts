@@ -70,13 +70,13 @@ export default class AEMETWarningsLayer implements Layer {
 
   add(map: MaptilerMap): void | Promise<void> {
     this.map = map;
-    
+
     // Registrar eventos inmediatamente
     this.registerEvents(map);
-    
+
     // Iniciar refresco periódico
     this.startRefresh();
-    
+
     // Inicializar la capa de forma asíncrona si está habilitada
     // ensureWarningsLayer() espera a que el estilo esté listo
     if (this.enabled) {
@@ -87,19 +87,19 @@ export default class AEMETWarningsLayer implements Layer {
   remove(map: MaptilerMap): void {
     this.stopRefresh();
     this.unregisterEvents(map);
-    
+
     if (map.getLayer(`${this.id}-outline`)) {
       map.removeLayer(`${this.id}-outline`);
     }
-    
+
     if (map.getLayer(this.id)) {
       map.removeLayer(this.id);
     }
-    
+
     if (map.getSource(this.sourceId)) {
       map.removeSource(this.sourceId);
     }
-    
+
     this.map = undefined;
   }
 
@@ -149,7 +149,7 @@ export default class AEMETWarningsLayer implements Layer {
     this.ensureLayer();
     this.ensureLayerOrder();
     this.applyVisibility();
-    
+
     // Recargar datos si es necesario
     if (this.lastData.features.length === 0) {
       await this.fetchWarnings();
@@ -216,7 +216,7 @@ export default class AEMETWarningsLayer implements Layer {
 
     if (!this.map.getLayer(this.id)) {
       const beforeId = this.findBeforeId();
-      
+
       const layerAdded = withSafeMapStyle(
         this.map,
         () => {
@@ -347,12 +347,12 @@ export default class AEMETWarningsLayer implements Layer {
     }
 
     const visibility = this.enabled ? "visible" : "none";
-    
+
     try {
       if (this.map.getLayer(this.id)) {
         this.map.setLayoutProperty(this.id, "visibility", visibility);
       }
-      
+
       if (this.map.getLayer(`${this.id}-outline`)) {
         this.map.setLayoutProperty(`${this.id}-outline`, "visibility", visibility);
       }
@@ -386,7 +386,7 @@ export default class AEMETWarningsLayer implements Layer {
 
   private async fetchWarnings(): Promise<void> {
     try {
-      const response = await fetch("/api/aemet/warnings");
+      const response = await fetch("/api/weather/alerts");
       if (!response.ok) {
         console.warn("[AEMETWarningsLayer] Failed to fetch warnings:", response.status);
         return;
@@ -401,7 +401,7 @@ export default class AEMETWarningsLayer implements Layer {
 
   private startRefresh(): void {
     this.stopRefresh();
-    
+
     if (this.refreshSeconds <= 0) {
       return;
     }
@@ -443,7 +443,7 @@ export default class AEMETWarningsLayer implements Layer {
       const severity = String(feature.properties.severity || "unknown").toUpperCase();
       const status = String(feature.properties.status || "unknown").toUpperCase();
       const event_name = String(feature.properties.event || "Unknown");
-      
+
       const content = `<strong>Aviso AEMET</strong><br/>
         <strong>Severidad:</strong> ${severity}<br/>
         <strong>Estado:</strong> ${status}<br/>
@@ -483,11 +483,11 @@ export default class AEMETWarningsLayer implements Layer {
     map.on("mouseenter", this.id, this.onMouseEnter as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
     map.on("mouseleave", this.id, this.onMouseLeave as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
     map.on("mousemove", this.id, this.onMouseMove as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
-    
+
     map.on("mouseenter", `${this.id}-outline`, this.onMouseEnter as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
     map.on("mouseleave", `${this.id}-outline`, this.onMouseLeave as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
     map.on("mousemove", `${this.id}-outline`, this.onMouseMove as unknown as (ev: MapLayerMouseEvent & { features?: GeoJSONFeature[] }) => void);
-    
+
     this.eventsRegistered = true;
   }
 

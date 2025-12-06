@@ -35,10 +35,10 @@ export default class WeatherLayer implements Layer {
 
   add(map: MaptilerMap): void | Promise<void> {
     this.map = map;
-    
+
     // Iniciar refresco periódico inmediatamente
     this.startRefresh();
-    
+
     // Inicializar la capa de forma asíncrona si está habilitada
     if (this.enabled) {
       return this.ensureWeatherLayer();
@@ -50,7 +50,7 @@ export default class WeatherLayer implements Layer {
    */
   async ensureWeatherLayer(): Promise<void> {
     const layerId: LayerId = "weather";
-    
+
     if (!this.map || !this.enabled) {
       return;
     }
@@ -66,7 +66,7 @@ export default class WeatherLayer implements Layer {
     }
 
     const map = this.map;
-    
+
     try {
       // Añadir source de forma segura
       const sourceAdded = withSafeMapStyle(
@@ -119,7 +119,7 @@ export default class WeatherLayer implements Layer {
       }
 
       this.applyVisibility();
-      
+
       layerDiagnostics.setState(layerId, "ready");
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
@@ -132,7 +132,7 @@ export default class WeatherLayer implements Layer {
 
   remove(map: MaptilerMap): void {
     this.stopRefresh();
-    
+
     if (map.getLayer(this.id)) {
       map.removeLayer(this.id);
     }
@@ -160,7 +160,7 @@ export default class WeatherLayer implements Layer {
 
   updateData(data: FeatureCollection): void {
     const layerId: LayerId = "weather";
-    
+
     try {
       // Validar que los datos sean un FeatureCollection válido
       if (!data || typeof data !== "object" || data.type !== "FeatureCollection") {
@@ -262,9 +262,9 @@ export default class WeatherLayer implements Layer {
 
   private async fetchWeatherData(): Promise<void> {
     const layerId: LayerId = "weather";
-    
+
     try {
-      const response = await fetch("/api/aemet/warnings");
+      const response = await fetch("/api/weather/alerts");
       if (!response.ok) {
         const error = new Error(`HTTP ${response.status}: ${response.statusText}`);
         layerDiagnostics.recordError(layerId, error, {
@@ -288,7 +288,7 @@ export default class WeatherLayer implements Layer {
 
   private startRefresh(): void {
     this.stopRefresh();
-    
+
     if (this.refreshSeconds <= 0) {
       return;
     }

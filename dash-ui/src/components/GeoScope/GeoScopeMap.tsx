@@ -718,6 +718,13 @@ export default function GeoScopeMap({
     }
   }, [config, maptilerConfigV2, mapSettings, maptilerKey]);
 
+  // Set default/placeholder key immediately to avoid SDK errors
+  useEffect(() => {
+    if (!maptilerConfig.apiKey) {
+      maptilerConfig.apiKey = "fBZDqPrUD4EwoZLV4L6A";
+    }
+  }, []);
+
   // Inicialización del mapa
   useEffect(() => {
     const error = checkWebGLSupport();
@@ -766,9 +773,9 @@ export default function GeoScopeMap({
         // Registrar capas en el registro para que reciban el mapa y eventos
         layerRegistryRef.current.register("geoscope-aircraft", aircraftLayerRef.current);
         layerRegistryRef.current.register("geoscope-ships", shipsLayerRef.current);
-        layerRegistryRef.current.register("geoscope-radar", globalRadarLayerRef.current);
-        layerRegistryRef.current.register("geoscope-satellite", globalSatelliteLayerRef.current);
-        layerRegistryRef.current.register("geoscope-warnings", aemetWarningsLayerRef.current);
+        layerRegistryRef.current.register("geoscope-global-radar", globalRadarLayerRef.current);
+        layerRegistryRef.current.register("geoscope-global-satellite", globalSatelliteLayerRef.current);
+        layerRegistryRef.current.register("geoscope-aemet-warnings", aemetWarningsLayerRef.current);
         layerRegistryRef.current.register("geoscope-lightning", lightningLayerRef.current);
         layerRegistryRef.current.register("geoscope-weather", weatherLayerRef.current);
 
