@@ -179,6 +179,11 @@ export default class AircraftLayer implements Layer {
     try {
       const response = await fetch("/api/layers/flights.geojson"); // Uses backend get_flights_geojson
       if (!response.ok) return;
+
+      const remaining = response.headers.get("X-OpenSky-Remaining");
+      const mode = response.headers.get("X-OpenSky-Mode");
+      console.log(`[AircraftLayer] Fetch OK. Mode: ${mode}, RateLimit Remaining: ${remaining}`);
+
       const data = await response.json() as FeatureCollection;
       this.updateData(data);
     } catch (e) {
@@ -487,23 +492,42 @@ export default class AircraftLayer implements Layer {
           .filter((f): f is NonNullable<typeof f> => f !== null),
       };
 
-      // DEBUG: Inject a test feature in Madrid to verify rendering
+      // DEBUG: Inject test features near Vila-real to verify rendering
       featuresWithAge.features.push({
         type: "Feature",
         geometry: {
           type: "Point",
-          coordinates: [-3.7038, 40.4168], // Madrid
+          coordinates: [-0.1014, 39.9378], // Vila-real Center
         },
         properties: {
-          callsign: "TEST001",
-          true_track: 0,
-          baro_altitude: 1000,
+          callsign: "TEST_VR1",
+          true_track: 45,
+          baro_altitude: 500,
           on_ground: false,
-          velocity: 100,
+          velocity: 120,
           age_seconds: 0,
           in_focus: true,
         } as any,
       });
+
+      featuresWithAge.features.push({
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [-0.08, 39.95], // Nearby
+        },
+        properties: {
+          callsign: "TEST_VR2",
+          true_track: 180,
+          baro_altitude: 1200,
+          on_ground: false,
+          velocity: 180,
+          age_seconds: 0,
+          in_focus: true,
+        } as any,
+      });
+
+      console.log("[AircraftLayer] Final features count (with injection):", featuresWithAge.features.length);
 
       this.lastData = featuresWithAge;
 
