@@ -962,15 +962,15 @@ export const OverlayRotator: React.FC = () => {
         const ephemeridesConfigV1 = config as unknown as { ephemerides?: { enabled?: boolean } };
         const ephemeridesEnabledV2 = panelsConfig.panels?.ephemerides?.enabled !== false;
         const ephemeridesEnabledV1 = ephemeridesConfigV1.ephemerides?.enabled !== false;
-        const hasData = !!(sunrise || sunset || moonPhase || ephemeridesEvents.length > 0);
-        shouldInclude = (ephemeridesEnabledV2 || ephemeridesEnabledV1) && hasData;
+        // Relax hasData check to ensure panel shows up (card handles empty states)
+        shouldInclude = (ephemeridesEnabledV2 || ephemeridesEnabledV1);
       } else if (panelId === "ephemerides") {
         const panelsConfig = config as unknown as { panels?: { ephemerides?: { enabled?: boolean } } };
         const ephemeridesConfigV1 = config as unknown as { ephemerides?: { enabled?: boolean } };
         const ephemeridesEnabledV2 = panelsConfig.panels?.ephemerides?.enabled !== false;
         const ephemeridesEnabledV1 = ephemeridesConfigV1.ephemerides?.enabled !== false;
-        const hasData = !!(sunrise || sunset || moonPhase || ephemeridesEvents.length > 0);
-        shouldInclude = (ephemeridesEnabledV2 || ephemeridesEnabledV1) && hasData;
+        // Relax hasData check
+        shouldInclude = (ephemeridesEnabledV2 || ephemeridesEnabledV1);
       } else if (panelId === "forecast") {
         shouldInclude = forecastDays.length > 0 && weather.ok !== false;
       } else if (panelId === "weather") {

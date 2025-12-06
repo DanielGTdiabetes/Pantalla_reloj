@@ -1399,7 +1399,7 @@ export default function GeoScopeMap({
               const openskyEnabled = openskyConfig.enabled ?? true;
               const openskyHasCredentials = openskyConfig.oauth2?.has_credentials === true;
 
-              if (flightsConfig?.enabled && openskyEnabled && openskyHasCredentials) {
+              if (flightsConfig?.enabled && openskyEnabled) {
                 void aircraftLayerRef.current.ensureFlightsLayer();
               }
             } else if (layerId === "ships" && shipsLayerRef.current) {
