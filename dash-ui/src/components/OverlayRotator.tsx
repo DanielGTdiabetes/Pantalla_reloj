@@ -26,6 +26,7 @@ import { NewsCard } from "./dashboard/cards/NewsCard";
 import SaintsCard, { type EnrichedSaint } from "./dashboard/cards/SaintsCard";
 import { TimeCard } from "./dashboard/cards/TimeCard";
 import { WeatherCard } from "./dashboard/cards/WeatherCard";
+import { WarningsCard } from "./dashboard/cards/WarningsCard";
 import { useRotationProgress } from "../hooks/useRotationProgress";
 import { useDayNightMode } from "../hooks/useDayNightMode";
 import harvestCatalog from "../data/harvest_catalog.json";
@@ -39,6 +40,7 @@ type DashboardPayload = {
   historicalEvents?: { date?: string; count?: number; items?: string[] };
   transport?: any; // New transport data
   apod?: any; // NASA APOD data
+  warnings?: any; // AEMET Warnings data
 };
 
 const REFRESH_INTERVAL_MS = 60_000;
@@ -88,6 +90,7 @@ const PANEL_ID_MAP: Record<string, string> = {
   "historicalEvents": "historicalEvents",
   "transport": "transport",
   "apod": "apod",
+  "warnings": "warnings",
 };
 const DEFAULT_FALLBACK_PANEL = "clock";
 const DEFAULT_DURATIONS_SEC = {
@@ -101,11 +104,13 @@ const DEFAULT_DURATIONS_SEC = {
   news: 12,
   historicalEvents: 20,
   transport: 15,
-  apod: 20
+  apod: 20,
+  warnings: 10
 };
 
 const ROTATION_DEFAULT_ORDER = [
   "clock",
+  "warnings",
   "weather",
   "forecast",
   "transport", // Add specifically after forecast as requested/logical
@@ -185,6 +190,7 @@ const sanitizeRotationPanelOrder = (panels: unknown): string[] => {
   // Force include new panels if they might be missing from old configs but desired defaults
   if (!normalized.includes("transport")) normalized.splice(3, 0, "transport");
   if (!normalized.includes("apod")) normalized.splice(5, 0, "apod");
+  if (!normalized.includes("warnings")) normalized.splice(1, 0, "warnings");
 
   return normalized.length > 0 ? normalized : [...ROTATION_DEFAULT_ORDER];
 };
@@ -454,7 +460,7 @@ export const OverlayRotator: React.FC = () => {
           : Infinity;
         const apodCacheValid = apodCacheAge < 12 * 60 * 60 * 1000;
 
-        const [weather, news, astronomy, calendar, santoral, historicalEvents, transport, apod] = await Promise.all([
+        const [weather, news, astronomy, calendar, santoral, historicalEvents, transport, apod, warnings] = await Promise.all([
           (async () => {
             if (weatherCacheValid && weatherCacheRef.current?.data) {
               return weatherCacheRef.current.data;
@@ -583,11 +589,22 @@ export const OverlayRotator: React.FC = () => {
               if (IS_DEV) console.warn("[OverlayRotator] APOD fetch failed", err);
               return apodCacheRef.current?.data || { error: "Failed to load APOD" };
             }
+          })(),
+          (async () => {
+            try {
+              const data = await apiGet<any>("/api/weather/alerts");
+              // Simular fallo si no hay features para que no rompa nada
+              if (!data || !data.features) return { features: [] };
+              return data;
+            } catch (err) {
+              if (IS_DEV) console.warn("[OverlayRotator] Warnings fetch failed", err);
+              return { features: [] };
+            }
           })()
         ]);
 
         if (mounted) {
-          setPayload({ weather, news, astronomy, calendar, santoral, historicalEvents, transport, apod });
+          setPayload({ weather, news, astronomy, calendar, santoral, historicalEvents, transport, apod, warnings });
           setLastUpdatedAt(Date.now());
         }
       } catch (error) {
@@ -615,6 +632,7 @@ export const OverlayRotator: React.FC = () => {
   const santoral = (payload.santoral ?? {}) as { saints?: (string | EnrichedSaint)[]; namedays?: string[] };
   const transport = (payload.transport ?? {}) as any;
   const apod = (payload.apod ?? {}) as any;
+  const warnings = (payload.warnings ?? {}) as any;
 
   const targetUnit = "C";
   const weatherTemp = weather.temperature;
@@ -888,6 +906,12 @@ export const OverlayRotator: React.FC = () => {
       render: () => <ApodCard data={apod} />
     });
 
+    map.set("warnings", {
+      id: "warnings",
+      duration: (durations.warnings ?? 10) * 1000,
+      render: () => <WarningsCard alerts={warnings?.features || []} />
+    });
+
     return map;
   }, [
     rotationConfig.durations_sec,
@@ -913,6 +937,7 @@ export const OverlayRotator: React.FC = () => {
     historicalEvents,
     transport,
     apod,
+    warnings,
     config
   ]);
 

@@ -140,7 +140,7 @@ def get_alerts_geojson() -> Dict[str, Any]:
 
         # --- TEST INJECTION START ---
         # Inject a fake alert for Vila-real for testing
-        if False: # Force injection
+        if True: # Force injection
             from datetime import timedelta
             test_alert = {
                  "type": "Feature",
