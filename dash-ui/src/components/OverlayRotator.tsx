@@ -87,6 +87,7 @@ const PANEL_ID_MAP: Record<string, string> = {
   "news": "news",
   "historicalEvents": "historicalEvents",
   "transport": "transport",
+  "apod": "apod",
 };
 const DEFAULT_FALLBACK_PANEL = "clock";
 const DEFAULT_DURATIONS_SEC = {
@@ -181,6 +182,10 @@ const sanitizeRotationPanelOrder = (panels: unknown): string[] => {
       normalized.push(mapped);
     }
   }
+  // Force include new panels if they might be missing from old configs but desired defaults
+  if (!normalized.includes("transport")) normalized.splice(3, 0, "transport");
+  if (!normalized.includes("apod")) normalized.splice(5, 0, "apod");
+
   return normalized.length > 0 ? normalized : [...ROTATION_DEFAULT_ORDER];
 };
 
@@ -971,9 +976,11 @@ export const OverlayRotator: React.FC = () => {
       } else if (panelId === "weather") {
         shouldInclude = condition !== null || temperature.value !== "--";
       } else if (panelId === "transport") {
-        shouldInclude = (transport.planes && transport.planes.length > 0) || (transport.ships && transport.ships.length > 0);
+        // Show even if empty to confirm presence, or checking transport object
+        shouldInclude = !!transport;
       } else if (panelId === "apod") {
-        shouldInclude = apod && !apod.error && apod.media_type === "image";
+        // Relax check to allow debugging on card level if needed
+        shouldInclude = !!apod;
       }
 
       if (shouldInclude) {
