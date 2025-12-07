@@ -1,4 +1,4 @@
-import { StandardCard } from "../StandardCard";
+import { useState, useEffect } from "react";
 
 type WeatherCardProps = {
   temperatureLabel: string;
@@ -11,100 +11,161 @@ type WeatherCardProps = {
   timezone?: string;
 };
 
-// 3D Icon Helper
-const get3DIconUrl = (condition: string): string => {
+const get3DIcon = (condition: string | null): string => {
   const c = (condition || "").toLowerCase();
-  if (c.includes("lluvia") || c.includes("rain") || c.includes("tormenta") || c.includes("nube")) return "/img/icons/3d/cloud-rain.png";
-  if (c.includes("noche") || c.includes("night") || c.includes("moon")) return "/img/icons/3d/moon-sleep.png";
-  if (c.includes("claro") || c.includes("clear") || c.includes("sol") || c.includes("sunny")) return "/img/icons/3d/sun-smile.png";
+  if (c.includes("lluvia") || c.includes("rain") || c.includes("tormenta") || c.includes("nube")) {
+    return "/img/icons/3d/cloud-rain.png";
+  }
+  if (c.includes("noche") || c.includes("night") || c.includes("moon")) {
+    return "/img/icons/3d/moon-sleep.png";
+  }
   return "/img/icons/3d/sun-smile.png";
 };
 
-export const WeatherCard = (props: WeatherCardProps): JSX.Element => {
-  const { temperatureLabel, feelsLikeLabel, condition, humidity, wind, rain } = props;
-
-  // Clean temp value
-  const tempValue = temperatureLabel.replace(/[^\d-]/g, '');
-  const iconUrl = get3DIconUrl(condition || "");
-
-  // Header Icon for Card
-  const headerIcon = <img src={iconUrl} className="w-8 h-8 drop-shadow-md animate-bounce-slow" alt="weather" />;
+export const WeatherCard = ({
+  temperatureLabel,
+  feelsLikeLabel,
+  condition,
+  humidity,
+  wind,
+  rain
+}: WeatherCardProps): JSX.Element => {
+  const tempValue = temperatureLabel.replace(/[^\d-]/g, "");
+  const iconUrl = get3DIcon(condition);
 
   return (
-    <StandardCard
-      title="Tiempo Actual"
-      subtitle={condition || "Meteorología"}
-      icon={headerIcon}
-      className="weather-card-root"
-    >
-      {/* Background Noise */}
-      <div className="absolute inset-0 opacity-10 bg-[url('/img/noise.png')] mix-blend-overlay pointer-events-none" />
+    <div className="weather-card-3d">
+      <div className="weather-card-3d__header">
+        <img src={iconUrl} alt="" className="weather-card-3d__header-icon" />
+        <span>Tiempo Actual</span>
+      </div>
 
-      <div className="flex flex-col h-full justify-between py-6 relative z-10 animate-fade-in-up">
-
-        {/* Top section: Main visual and Temp */}
-        <div className="flex items-center justify-center gap-6">
-          {/* 3D Main Icon */}
-          <div className="relative w-32 h-32 flex items-center justify-center">
-            <div className="absolute inset-0 bg-white/20 blur-[60px] rounded-full animate-pulse-slow pointer-events-none scale-110" />
-            <img
-              src={iconUrl}
-              alt={condition || "weather"}
-              className="w-full h-full object-contain drop-shadow-2xl animate-float"
-            />
-          </div>
-
-          {/* Big Temperature */}
-          <div className="flex flex-col drop-shadow-lg">
-            <span className="text-[5rem] md:text-[6rem] font-black leading-none tracking-tighter text-white">
-              {tempValue}°
-            </span>
-            {feelsLikeLabel && (
-              <span className="text-sm font-bold text-white/80 tracking-wide uppercase bg-black/20 px-2 py-0.5 rounded-md self-start">
-                Sensación: {feelsLikeLabel.replace(/[^\d-]/g, '')}°
-              </span>
-            )}
-          </div>
+      <div className="weather-card-3d__main">
+        <div className="weather-card-3d__icon-container">
+          <img src={iconUrl} alt={condition || "weather"} className="weather-card-3d__main-icon" />
         </div>
-
-        {/* Metrics Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-auto">
-          <div className="bg-white/10 rounded-xl p-3 backdrop-blur-sm border border-white/5 flex flex-col items-center">
-            <span className="text-xs font-bold text-white/60 uppercase tracking-wider">Humedad</span>
-            <span className="text-xl font-black text-white">{humidity ?? "--"}%</span>
-          </div>
-          <div className="bg-white/10 rounded-xl p-3 backdrop-blur-sm border border-white/5 flex flex-col items-center">
-            <span className="text-xs font-bold text-white/60 uppercase tracking-wider">Viento</span>
-            <span className="text-xl font-black text-white">{Math.round(wind ?? 0)} <small className="text-sm font-bold">km/h</small></span>
-          </div>
-          <div className="bg-white/10 rounded-xl p-3 backdrop-blur-sm border border-white/5 flex flex-col items-center col-span-2 md:col-span-1">
-            <span className="text-xs font-bold text-white/60 uppercase tracking-wider">Lluvia</span>
-            <span className="text-xl font-black text-white">{rain ? rain.toFixed(1) : "0"} <small className="text-sm font-bold">mm</small></span>
-          </div>
+        <div className="weather-card-3d__temp-block">
+          <span className="weather-card-3d__temp">{tempValue}°</span>
+          {feelsLikeLabel && (
+            <span className="weather-card-3d__feels">Sensación: {feelsLikeLabel}</span>
+          )}
         </div>
       </div>
 
+      <div className="weather-card-3d__condition">{condition || "Sin datos"}</div>
+
+      <div className="weather-card-3d__metrics">
+        <div className="weather-card-3d__metric">
+          <span className="weather-card-3d__metric-label">Humedad</span>
+          <span className="weather-card-3d__metric-value">{humidity ?? "--"}%</span>
+        </div>
+        <div className="weather-card-3d__metric">
+          <span className="weather-card-3d__metric-label">Viento</span>
+          <span className="weather-card-3d__metric-value">{wind ?? "--"} km/h</span>
+        </div>
+        {rain !== null && rain > 0 && (
+          <div className="weather-card-3d__metric">
+            <span className="weather-card-3d__metric-label">Lluvia</span>
+            <span className="weather-card-3d__metric-value">{rain.toFixed(1)} mm</span>
+          </div>
+        )}
+      </div>
+
       <style>{`
-            .weather-card-root {
-               background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%) !important;
-               color: white !important; 
-            }
-            @keyframes float {
-                0%, 100% { transform: translateY(0px) rotate(0deg); }
-                50% { transform: translateY(-10px) rotate(2deg); }
-            }
-            .animate-float {
-                animation: float 6s ease-in-out infinite;
-            }
-            .animate-fade-in-up {
-                animation: fadeInUp 0.5s ease-out forwards;
-            }
-            @keyframes fadeInUp {
-                 from { opacity: 0; transform: translateY(10px); }
-                 to { opacity: 1; transform: translateY(0); }
-            }
-        `}</style>
-    </StandardCard>
+        .weather-card-3d {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          height: 100%;
+          width: 100%;
+          padding: 0.75rem;
+          box-sizing: border-box;
+          color: white;
+          text-align: center;
+          gap: 0.5rem;
+        }
+        .weather-card-3d__header {
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
+          font-size: 0.85rem;
+          font-weight: 600;
+          opacity: 0.8;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+        .weather-card-3d__header-icon {
+          width: 24px;
+          height: 24px;
+          object-fit: contain;
+        }
+        .weather-card-3d__main {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 1rem;
+        }
+        .weather-card-3d__icon-container {
+          width: 70px;
+          height: 70px;
+        }
+        .weather-card-3d__main-icon {
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+          filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
+          animation: float3d 4s ease-in-out infinite;
+        }
+        .weather-card-3d__temp-block {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .weather-card-3d__temp {
+          font-size: 3.5rem;
+          font-weight: 900;
+          line-height: 1;
+        }
+        .weather-card-3d__feels {
+          font-size: 0.8rem;
+          opacity: 0.7;
+        }
+        .weather-card-3d__condition {
+          font-size: 1.2rem;
+          font-weight: 600;
+          text-transform: capitalize;
+        }
+        .weather-card-3d__metrics {
+          display: flex;
+          gap: 0.75rem;
+          flex-wrap: wrap;
+          justify-content: center;
+        }
+        .weather-card-3d__metric {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          padding: 0.4rem 0.6rem;
+          background: rgba(255,255,255,0.1);
+          border-radius: 0.4rem;
+          min-width: 55px;
+        }
+        .weather-card-3d__metric-label {
+          font-size: 0.65rem;
+          opacity: 0.7;
+          text-transform: uppercase;
+        }
+        .weather-card-3d__metric-value {
+          font-size: 0.95rem;
+          font-weight: 700;
+        }
+        @keyframes float3d {
+          0%, 100% { transform: translateY(0) rotate(0deg); }
+          50% { transform: translateY(-6px) rotate(2deg); }
+        }
+      `}</style>
+    </div>
   );
 };
 

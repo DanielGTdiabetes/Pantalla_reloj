@@ -1,7 +1,5 @@
 import { useState, useEffect } from "react";
-import { SproutIcon } from "../../icons";
 import harvestCatalog from "../../../data/harvest_catalog.json";
-import { StandardCard } from "../StandardCard";
 
 type HarvestItem = {
   name: string;
@@ -15,19 +13,13 @@ type HarvestCardProps = {
 
 type CatalogItem = {
   name: string;
-  slug: string;
   months: number[];
   icon: string;
-  season_summary?: string;
 };
 
-/**
- * Obtiene los productos de temporada para el mes actual desde el catálogo completo
- */
 const getCurrentSeasonProducts = (): HarvestItem[] => {
-  const currentMonth = new Date().getMonth() + 1; // 1-12
+  const currentMonth = new Date().getMonth() + 1;
   const catalog = harvestCatalog as CatalogItem[];
-
   return catalog
     .filter((item) => item.months.includes(currentMonth))
     .map((item) => ({
@@ -37,154 +29,148 @@ const getCurrentSeasonProducts = (): HarvestItem[] => {
     }));
 };
 
-/**
- * Obtiene la URL del icono, priorizando iconos locales del catálogo
- */
 const getIconUrl = (item: HarvestItem): string => {
-  const baseUrl = import.meta.env.BASE_URL;
-  const prefix = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+  const baseUrl = import.meta.env.BASE_URL || "/";
+  const prefix = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
 
   let iconName = item.icon;
-
-  // Si no hay icono (ej: datos del backend sin campo icon), buscar en el catálogo local por nombre
   if (!iconName) {
     const catalog = harvestCatalog as CatalogItem[];
-    // Normalizar nombres para la búsqueda (ignorar mayúsculas/minúsculas y acentos si es necesario, aunque aquí asumimos coincidencia directa o simple)
     const found = catalog.find(c => c.name.toLowerCase() === item.name.toLowerCase());
-    if (found) {
-      iconName = found.icon;
-    }
+    if (found) iconName = found.icon;
   }
 
-  // Si tenemos icono, construir URL
   if (iconName) {
     return `${prefix}icons/soydetemporada/${iconName}`;
   }
-
-  // Fallback a icono genérico
   return `${prefix}icons/harvest/sprout.svg`;
 };
 
 export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
-  // Si se pasan items desde props (API legacy), usarlos
-  // Si no, usar el catálogo completo filtrado por mes actual
-  const seasonProducts = items && items.length > 0
-    ? items
-    : getCurrentSeasonProducts();
-
-  const entries = seasonProducts.length > 0
-    ? seasonProducts
-    : [{ name: "Sin productos de temporada" }];
+  const seasonProducts = items && items.length > 0 ? items : getCurrentSeasonProducts();
+  const entries = seasonProducts.length > 0 ? seasonProducts : [{ name: "Sin productos de temporada" }];
 
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [imageError, setImageError] = useState(false);
 
   useEffect(() => {
     if (entries.length <= 1) return;
-
     const interval = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % entries.length);
-    }, 5000); // 5 seconds per item
-
+    }, 4000);
     return () => clearInterval(interval);
   }, [entries.length]);
 
-  // Reset error state when index changes
-  useEffect(() => {
-    setImageError(false);
-  }, [currentIndex]);
-
   const currentItem = entries[currentIndex];
-
   const iconUrl = getIconUrl(currentItem);
 
   return (
-    <StandardCard
-      title="Temporada"
-      subtitle="Recolección ideal este mes"
-      icon={<img src="/img/icons/3d/harvest-basket.png" className="w-8 h-8 drop-shadow-md animate-bounce-slow" alt="icon" />}
-      className="harvest-card-root relative overflow-hidden"
-    >
-      {/* Subtle Pattern Overlay instead of Image */}
-      <div className="absolute inset-0 opacity-10 bg-[url('/img/noise.png')] mix-blend-overlay pointer-events-none" />
-
-      {/* Background gradient structure */}
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-green-900/20 to-green-950/50 pointer-events-none" />
-
-      <div className="flex flex-col items-center justify-between py-4 h-full w-full relative z-10" key={currentIndex}>
-
-        {/* Floating Header Pill */}
-        <div className="bg-white/20 backdrop-blur-md px-4 py-1 rounded-full border border-white/30 shadow-sm mb-2">
-          <h2 className="text-lg font-bold text-white uppercase tracking-wider drop-shadow-sm">
-            De Temporada
-          </h2>
-        </div>
-
-        {/* Main Icon - Centered */}
-        <div className="relative group cursor-pointer flex-1 flex items-center justify-center w-full min-h-0">
-          <div className="absolute inset-0 bg-white/20 rounded-full blur-[50px] animate-pulse-slow pointer-events-none scale-125" />
-
-          <img
-            src={iconUrl} // Keep existing logic for specific vegetable/fruit icon if avaialble, or fallback
-            alt={currentItem.name}
-            className="w-auto h-[65%] max-h-[180px] object-contain drop-shadow-[0_10px_20px_rgba(0,0,0,0.25)] transition-transform duration-500 hover:scale-110 animate-beat z-10"
-            onError={() => setImageError(true)}
-          />
-        </div>
-
-        {/* Info Box */}
-        <div className="mt-4 flex flex-col items-center gap-1 z-20 w-full px-2">
-          <h3 className="text-2xl md:text-3xl font-black text-white tracking-tight leading-tight text-center drop-shadow-md text-shadow-sm line-clamp-2">
-            {currentItem.name}
-          </h3>
-          {currentItem.status && (
-            <span className="text-emerald-100 font-bold uppercase tracking-widest text-[10px] md:text-xs bg-black/20 px-3 py-1 rounded-full border border-white/10 shrink-0">
-              {currentItem.status}
-            </span>
-          )}
-        </div>
-
-        {/* Indicators */}
-        {entries.length > 1 && (
-          <div className="absolute bottom-1 flex gap-2 z-30 opacity-60">
-            {entries.map((_, idx) => (
-              <div
-                key={idx}
-                className={`h-1.5 rounded-full transition-all duration-300 shadow-sm ${idx === currentIndex ? "bg-white w-6" : "bg-white/40 w-1.5"
-                  }`}
-              />
-            ))}
-          </div>
-        )}
+    <div className="harvest-card-3d">
+      <div className="harvest-card-3d__header">
+        <img src="/img/icons/3d/harvest-basket.png" alt="" className="harvest-card-3d__header-icon" />
+        <span>De Temporada</span>
       </div>
 
+      <div className="harvest-card-3d__icon-container" key={currentIndex}>
+        <img src={iconUrl} alt={currentItem.name} className="harvest-card-3d__main-icon" />
+      </div>
+
+      <div className="harvest-card-3d__name">{currentItem.name}</div>
+
+      {currentItem.status && (
+        <div className="harvest-card-3d__status">{currentItem.status}</div>
+      )}
+
+      {entries.length > 1 && (
+        <div className="harvest-card-3d__dots">
+          {entries.map((_, idx) => (
+            <span key={idx} className={`harvest-card-3d__dot ${idx === currentIndex ? "active" : ""}`} />
+          ))}
+        </div>
+      )}
+
       <style>{`
-        .harvest-card-root {
-          background: linear-gradient(135deg, #10b981 0%, #047857 100%) !important;
-          color: white !important;
+        .harvest-card-3d {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          height: 100%;
+          width: 100%;
+          padding: 0.75rem;
+          box-sizing: border-box;
+          color: white;
+          text-align: center;
+          gap: 0.25rem;
         }
-        .harvest-card-root h2,
-        .harvest-card-root span, 
-        .harvest-card-root p {
-            color: white !important;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+        .harvest-card-3d__header {
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
+          font-size: 0.85rem;
+          font-weight: 600;
+          opacity: 0.8;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
         }
-        @keyframes beat {
-           0%, 100% { transform: scale(1); }
-           50% { transform: scale(1.03); }
+        .harvest-card-3d__header-icon {
+          width: 24px;
+          height: 24px;
+          object-fit: contain;
         }
-        .animate-beat {
-           animation: beat 4s ease-in-out infinite;
+        .harvest-card-3d__icon-container {
+          width: 100px;
+          height: 100px;
+          margin: 0.5rem 0;
+          animation: scaleIn3d 0.4s ease-out;
         }
-        @keyframes bounce-slow {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-3px); }
+        .harvest-card-3d__main-icon {
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+          filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
+          animation: float3d 4s ease-in-out infinite;
         }
-        .animate-bounce-slow {
-            animation: bounce-slow 3s ease-in-out infinite;
+        .harvest-card-3d__name {
+          font-size: 1.5rem;
+          font-weight: 800;
+        }
+        .harvest-card-3d__status {
+          font-size: 0.75rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.1em;
+          opacity: 0.7;
+          background: rgba(255,255,255,0.1);
+          padding: 0.2rem 0.5rem;
+          border-radius: 0.25rem;
+        }
+        .harvest-card-3d__dots {
+          display: flex;
+          gap: 0.25rem;
+          margin-top: 0.5rem;
+        }
+        .harvest-card-3d__dot {
+          width: 5px;
+          height: 5px;
+          border-radius: 50%;
+          background: rgba(255,255,255,0.3);
+          transition: all 0.3s;
+        }
+        .harvest-card-3d__dot.active {
+          background: #22c55e;
+          width: 14px;
+          border-radius: 3px;
+        }
+        @keyframes float3d {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-6px); }
+        }
+        @keyframes scaleIn3d {
+          from { opacity: 0; transform: scale(0.9); }
+          to { opacity: 1; transform: scale(1); }
         }
       `}</style>
-    </StandardCard>
+    </div>
   );
 };
 

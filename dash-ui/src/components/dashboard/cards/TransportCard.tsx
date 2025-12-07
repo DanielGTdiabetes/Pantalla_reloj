@@ -1,510 +1,232 @@
 import { useState, useEffect } from "react";
 
+type TransportData = {
+    planes?: Array<{
+        callsign?: string;
+        origin?: string;
+        destination?: string;
+        altitude?: number;
+        speed?: number;
+        heading?: number;
+        distance_km?: number;
+        airline?: string;
+        aircraft_type?: string;
+        lat?: number;
+        lon?: number;
+    }>;
+    ships?: Array<{
+        name?: string;
+        type?: string;
+        destination?: string;
+        speed?: number;
+        heading?: number;
+        distance_km?: number;
+        mmsi?: string;
+    }>;
+};
+
+type TransportCardProps = {
+    data: TransportData | null;
+};
+
 type TransportType = "plane" | "ship";
 
-interface TransportItem {
-    id: string;
-    name: string;
-    type: TransportType;
-    speed?: number; // km/h
-    altitude?: number; // meters (planes)
-    heading?: number;
-    lat: number;
-    lon: number;
-    detail: string;
-    img?: string | null;
-}
-
-interface TransportData {
-    planes: any[];
-    ships: any[];
-}
-
-interface TransportCardProps {
-    data: TransportData | null;
-}
-
-// Professional SVG Icons - Not used in favor of 3D images if available
-const Icons = {
-    Scan: () => (
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
-            <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-            <path d="M21 3v5h-5" />
-        </svg>
-    )
-};
-
-// 3D Icon paths
-const ICONS_3D = {
-    plane: "/img/icons/3d/plane.png", // Ensure this exists or fallback
-    ship: "/img/icons/3d/ship.png"
-};
-
-export const TransportCard = ({ data }: TransportCardProps) => {
+export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
     const [activeTab, setActiveTab] = useState<TransportType>("plane");
     const [currentIndex, setCurrentIndex] = useState(0);
 
-    // Normalize data
-    const planes: TransportItem[] = (data?.planes || []).map((p: any) => ({
-        id: p.ic || Math.random().toString(),
-        name: p.cs || p.ic || "Sin Distintivo",
-        type: "plane" as TransportType,
-        speed: p.spd ? Math.round(p.spd * 3.6) : undefined,
-        altitude: p.alt ? Math.round(p.alt) : undefined,
-        heading: p.hdg,
-        lat: p.lat,
-        lon: p.lon,
-        detail: p.co || 'País desconocido',
-        img: p.img // Keep pulling image if available, otherwise use fallback logic
-    }));
+    const planes = data?.planes || [];
+    const ships = data?.ships || [];
+    const isPlane = activeTab === "plane";
+    const items = isPlane ? planes : ships;
 
-    const ships: TransportItem[] = (data?.ships || []).map((s: any) => ({
-        id: String(s.mmsi),
-        name: s.name || s.mmsi || "Navío Desconocido",
-        type: "ship" as TransportType,
-        speed: s.spd ? Math.round(s.spd * 1.852) : undefined,
-        heading: s.hdg,
-        lat: s.lat,
-        lon: s.lon,
-        detail: s.dest || s.type || "Destino desconocido",
-        img: null
-    }));
-
-    const hasPlanes = planes.length > 0;
-    const hasShips = ships.length > 0;
-
-    // Auto-switch modes logic
+    // Auto-switch between planes and ships
     useEffect(() => {
-        // If we have both, cycle between them
+        const hasPlanes = planes.length > 0;
+        const hasShips = ships.length > 0;
+
         if (hasPlanes && hasShips) {
-            const modeInterval = setInterval(() => {
+            const interval = setInterval(() => {
                 setActiveTab(prev => prev === "plane" ? "ship" : "plane");
                 setCurrentIndex(0);
             }, 12000);
-            return () => clearInterval(modeInterval);
-        }
-
-        // If we only have planes, force plane tab
-        if (hasPlanes && !hasShips) {
+            return () => clearInterval(interval);
+        } else if (hasPlanes) {
             setActiveTab("plane");
-        }
-
-        // If we only have ships, force ship tab
-        if (!hasPlanes && hasShips) {
+        } else if (hasShips) {
             setActiveTab("ship");
         }
+    }, [planes.length, ships.length]);
 
-        // If both are empty, default to plane to show scanning for planes primarily (user preference)
-        if (!hasPlanes && !hasShips) {
-            setActiveTab("plane");
-        }
-    }, [hasPlanes, hasShips]);
-
-    const currentItems = activeTab === "plane" ? planes : ships;
-
-    // Rotate items within current mode
+    // Rotate through items
     useEffect(() => {
-        if (currentItems.length <= 1) return;
+        if (items.length <= 1) return;
         const interval = setInterval(() => {
-            setCurrentIndex(prev => (prev + 1) % currentItems.length);
-        }, 6000);
+            setCurrentIndex(prev => (prev + 1) % items.length);
+        }, 5000);
         return () => clearInterval(interval);
-    }, [currentItems.length, activeTab]);
+    }, [items.length, activeTab]);
 
-    // Scanning state - no data
-    if (!hasPlanes && !hasShips) {
-        return (
-            <div className="transport-card transport-card--scanning">
-                <div className="transport-card__glow transport-card__glow--cyan" />
-                <div className="transport-card__glow transport-card__glow--purple" />
-
-                <div className="transport-card__content transport-card__content--center">
-                    <div className="transport-card__scan-icon">
-                        <Icons.Scan />
-                    </div>
-                    <h2 className="transport-card__scan-title">Escaneando</h2>
-                    <p className="transport-card__scan-subtitle">Buscando tráfico aéreo y marítimo...</p>
-                </div>
-            </div>
-        );
-    }
-
-    const currentItem = currentItems[currentIndex] || currentItems[0];
-
-    // Dispatch highlight event
-    useEffect(() => {
-        if (!currentItem) return;
-        const event = new CustomEvent("pantalla:map:highlight", {
-            detail: {
-                id: currentItem.id,
-                type: currentItem.type,
-                lat: currentItem.lat,
-                lon: currentItem.lon
-            }
-        });
-        window.dispatchEvent(event);
-    }, [currentItem]);
-
-    if (!currentItem) return null;
-
-    const isPlane = currentItem.type === "plane";
-    const bgClass = isPlane ? "transport-card--plane" : "transport-card--ship";
-    const displayIconUrl = currentItem.img;
+    const current = items[currentIndex];
+    const iconUrl = isPlane ? "/img/icons/3d/plane.png" : "/img/icons/3d/ship.png";
 
     return (
-        <div className={`transport-card ${bgClass}`}>
-            {/* Glow effects */}
-            <div className="transport-card__glow transport-card__glow--primary" />
-            <div className="transport-card__glow transport-card__glow--secondary" />
+        <div className="transport-card-3d">
+            <div className="transport-card-3d__header">
+                <img src={iconUrl} alt="" className="transport-card-3d__header-icon" />
+                <span>{isPlane ? "Aviones Cercanos" : "Barcos Cercanos"}</span>
+            </div>
 
-            {/* Header */}
-            <header className="transport-card__header">
-                <div className="transport-card__header-left">
-                    <span className="transport-card__label">
-                        {isPlane ? "✈️ Tráfico Aéreo" : "🚢 Tráfico Marítimo"}
-                    </span>
-                    <span className="transport-card__counter">
-                        {currentIndex + 1} / {currentItems.length}
-                    </span>
+            {items.length === 0 ? (
+                <div className="transport-card-3d__empty">
+                    <img src={iconUrl} alt="" className="transport-card-3d__empty-icon" />
+                    <span>Escaneando...</span>
                 </div>
-                <div className="transport-card__header-icon">
-                    <img
-                        src={isPlane ? ICONS_3D.plane : ICONS_3D.ship}
-                        alt={isPlane ? "Avión" : "Barco"}
-                        className="w-full h-full object-contain drop-shadow-md animate-bounce-slow"
-                    />
-                </div>
-            </header>
+            ) : (
+                <div className="transport-card-3d__content" key={`${activeTab}-${currentIndex}`}>
+                    <div className="transport-card-3d__icon-container">
+                        <img src={iconUrl} alt={isPlane ? "avión" : "barco"} className="transport-card-3d__main-icon" />
+                    </div>
 
-            {/* Main content */}
-            <main className="transport-card__main" key={currentItem.id}>
-                {/* Vehicle image/icon */}
-                <div className="transport-card__visual">
-                    <div className="transport-card__visual-glow" />
-                    {currentItem.img ? (
-                        <div className="transport-card__photo">
-                            <img
-                                src={displayIconUrl || ""}
-                                alt={currentItem.name}
-                                className="transport-card__photo-img"
-                            />
+                    <div className="transport-card-3d__info">
+                        <div className="transport-card-3d__name">
+                            {isPlane ? (current as any).callsign || "Vuelo" : (current as any).name || "Barco"}
                         </div>
-                    ) : (
-                        <div className="transport-card__icon-large">
-                            <img
-                                src={isPlane ? ICONS_3D.plane : ICONS_3D.ship}
-                                alt={isPlane ? "Avión" : "Barco"}
-                                className="w-full h-full object-contain filter drop-shadow-lg"
-                            />
-                        </div>
-                    )}
-                </div>
 
-                {/* Vehicle name */}
-                <h1 className="transport-card__name">{currentItem.name}</h1>
-                <p className="transport-card__detail">{currentItem.detail}</p>
-            </main>
+                        {isPlane && (current as any).destination && (
+                            <div className="transport-card-3d__detail">✈️ {(current as any).destination}</div>
+                        )}
+                        {!isPlane && (current as any).destination && (
+                            <div className="transport-card-3d__detail">⚓ {(current as any).destination}</div>
+                        )}
 
-            {/* Stats footer */}
-            <footer className="transport-card__footer">
-                <div className="transport-card__stat">
-                    <span className="transport-card__stat-label">Velocidad</span>
-                    <span className="transport-card__stat-value">
-                        {currentItem.speed ?? "--"} <small>km/h</small>
-                    </span>
+                        {(current as any).distance_km && (
+                            <div className="transport-card-3d__distance">
+                                📍 {(current as any).distance_km.toFixed(1)} km
+                            </div>
+                        )}
+                    </div>
                 </div>
-                <div className="transport-card__stat">
-                    <span className="transport-card__stat-label">
-                        {isPlane ? "Altitud" : "Rumbo"}
-                    </span>
-                    <span className="transport-card__stat-value">
-                        {isPlane
-                            ? (currentItem.altitude ? `${currentItem.altitude}m` : "--")
-                            : (currentItem.heading != null ? `${Math.round(currentItem.heading)}°` : "--")
-                        }
-                    </span>
+            )}
+
+            {items.length > 1 && (
+                <div className="transport-card-3d__dots">
+                    {items.map((_, idx) => (
+                        <span key={idx} className={`transport-card-3d__dot ${idx === currentIndex ? "active" : ""}`} />
+                    ))}
                 </div>
-                <div className="transport-card__stat">
-                    <span className="transport-card__stat-label">Posición</span>
-                    <span className="transport-card__stat-value transport-card__stat-value--mono">
-                        {currentItem.lat?.toFixed(2) ?? "--"}, {currentItem.lon?.toFixed(2) ?? "--"}
-                    </span>
-                </div>
-            </footer>
+            )}
 
             <style>{`
-                .transport-card {
-                    display: flex;
-                    flex-direction: column;
-                    width: 100%;
-                    height: 100%;
-                    border-radius: 1.5rem;
-                    overflow: hidden;
-                    position: relative;
-                    color: white;
-                    font-family: system-ui, -apple-system, sans-serif;
-                }
-
-                .transport-card--plane {
-                    background: linear-gradient(135deg, #1e40af 0%, #312e81 100%);
-                }
-
-                .transport-card--ship {
-                    background: linear-gradient(135deg, #0d9488 0%, #064e3b 100%);
-                }
-
-                .transport-card--scanning {
-                    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-                    border: 1px solid rgba(255,255,255,0.1);
-                }
-
-                .transport-card__glow {
-                    position: absolute;
-                    border-radius: 50%;
-                    filter: blur(60px);
-                    pointer-events: none;
-                    opacity: 0.3;
-                }
-
-                .transport-card__glow--primary {
-                    width: 200px;
-                    height: 200px;
-                    top: -50px;
-                    right: -50px;
-                    background: rgba(255,255,255,0.2);
-                }
-
-                .transport-card__glow--secondary {
-                    width: 150px;
-                    height: 150px;
-                    bottom: -30px;
-                    left: -30px;
-                    background: rgba(255,255,255,0.15);
-                }
-
-                .transport-card__glow--cyan {
-                    width: 120px;
-                    height: 120px;
-                    top: 20%;
-                    left: 10%;
-                    background: #22d3ee;
-                }
-
-                .transport-card__glow--purple {
-                    width: 100px;
-                    height: 100px;
-                    bottom: 20%;
-                    right: 10%;
-                    background: #a855f7;
-                }
-
-                /* Header */
-                .transport-card__header {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    padding: 1rem 1.25rem;
-                    position: relative;
-                    z-index: 10;
-                }
-
-                .transport-card__header-left {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 0.25rem;
-                }
-
-                .transport-card__label {
-                    font-size: 0.75rem;
-                    font-weight: 700;
-                    text-transform: uppercase;
-                    letter-spacing: 0.15em;
-                    opacity: 0.9;
-                }
-
-                .transport-card__counter {
-                    font-size: 0.625rem;
-                    font-family: monospace;
-                    opacity: 0.6;
-                }
-
-                .transport-card__header-icon {
-                    width: 48px;
-                    height: 48px;
-                    object-fit: contain;
-                    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
-                    animation: float 4s ease-in-out infinite;
-                }
-
-                /* Main */
-                .transport-card__main {
-                    flex: 1;
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: center;
-                    padding: 0.5rem 1.25rem;
-                    position: relative;
-                    z-index: 10;
-                    animation: fadeInUp 0.4s ease-out;
-                }
-
-                .transport-card__visual {
-                    position: relative;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    margin-bottom: 0.75rem;
-                }
-
-                .transport-card__visual-glow {
-                    position: absolute;
-                    width: 140px;
-                    height: 140px;
-                    background: rgba(255,255,255,0.15);
-                    border-radius: 50%;
-                    filter: blur(40px);
-                    animation: pulse 3s ease-in-out infinite;
-                }
-
-                .transport-card__icon-large {
-                    width: auto;
-                    height: 100px;
-                    max-width: 140px;
-                    object-fit: contain;
-                    filter: drop-shadow(0 8px 16px rgba(0,0,0,0.4));
-                    animation: float 5s ease-in-out infinite;
-                    position: relative;
-                    z-index: 1;
-                }
-
-                .transport-card__photo {
-                    width: 180px;
-                    height: 100px;
-                    border-radius: 0.75rem;
-                    overflow: hidden;
-                    border: 2px solid rgba(255,255,255,0.2);
-                    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-                }
-
-                .transport-card__photo-img {
-                    width: 100%;
-                    height: 100%;
-                    object-fit: cover;
-                }
-
-                .transport-card__name {
-                    font-size: 1.5rem;
-                    font-weight: 800;
-                    text-align: center;
-                    margin: 0;
-                    text-shadow: 0 2px 8px rgba(0,0,0,0.3);
-                    line-height: 1.2;
-                }
-
-                .transport-card__detail {
-                    font-size: 0.7rem;
-                    text-transform: uppercase;
-                    letter-spacing: 0.1em;
-                    opacity: 0.7;
-                    margin: 0.25rem 0 0;
-                }
-
-                /* Footer */
-                .transport-card__footer {
-                    display: grid;
-                    grid-template-columns: repeat(3, 1fr);
-                    gap: 0.5rem;
-                    padding: 0.75rem 1rem;
-                    background: rgba(0,0,0,0.2);
-                    backdrop-filter: blur(8px);
-                    border-top: 1px solid rgba(255,255,255,0.1);
-                    position: relative;
-                    z-index: 10;
-                }
-
-                .transport-card__stat {
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    text-align: center;
-                }
-
-                .transport-card__stat-label {
-                    font-size: 0.5rem;
-                    text-transform: uppercase;
-                    letter-spacing: 0.1em;
-                    opacity: 0.5;
-                    font-weight: 600;
-                }
-
-                .transport-card__stat-value {
-                    font-size: 0.875rem;
-                    font-weight: 700;
-                }
-
-                .transport-card__stat-value small {
-                    font-size: 0.5rem;
-                    opacity: 0.7;
-                }
-
-                .transport-card__stat-value--mono {
-                    font-family: monospace;
-                    font-size: 0.625rem;
-                }
-
-                /* Scanning state */
-                .transport-card__content--center {
-                    flex: 1;
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: center;
-                    padding: 2rem;
-                    position: relative;
-                    z-index: 10;
-                }
-
-                .transport-card__scan-icon {
-                    width: 80px;
-                    height: 80px;
-                    margin-bottom: 1rem;
-                    animation: pulse 2s ease-in-out infinite;
-                    opacity: 0.7;
-                }
-
-                .transport-card__scan-title {
-                    font-size: 1.25rem;
-                    font-weight: 700;
-                    text-transform: uppercase;
-                    letter-spacing: 0.2em;
-                    margin: 0;
-                    opacity: 0.8;
-                }
-
-                .transport-card__scan-subtitle {
-                    font-size: 0.625rem;
-                    font-family: monospace;
-                    opacity: 0.5;
-                    margin: 0.5rem 0 0;
-                }
-
-                /* Animations */
-                @keyframes float {
-                    0%, 100% { transform: translateY(0) rotate(0deg); }
-                    50% { transform: translateY(-6px) rotate(2deg); }
-                }
-
-                @keyframes pulse {
-                    0%, 100% { opacity: 0.3; transform: scale(1); }
-                    50% { opacity: 0.6; transform: scale(1.05); }
-                }
-
-                @keyframes fadeInUp {
-                    from { opacity: 0; transform: translateY(10px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-            `}</style>
+        .transport-card-3d {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          height: 100%;
+          width: 100%;
+          padding: 0.75rem;
+          box-sizing: border-box;
+          color: white;
+          text-align: center;
+          gap: 0.25rem;
+        }
+        .transport-card-3d__header {
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
+          font-size: 0.85rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          opacity: 0.8;
+        }
+        .transport-card-3d__header-icon {
+          width: 24px;
+          height: 24px;
+          object-fit: contain;
+        }
+        .transport-card-3d__empty {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 0.5rem;
+          flex: 1;
+          justify-content: center;
+          opacity: 0.6;
+        }
+        .transport-card-3d__empty-icon {
+          width: 50px;
+          height: 50px;
+          object-fit: contain;
+          animation: pulse3d 2s ease-in-out infinite;
+        }
+        .transport-card-3d__content {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+          flex: 1;
+          animation: fadeIn3d 0.4s ease-out;
+        }
+        .transport-card-3d__icon-container {
+          width: 70px;
+          height: 70px;
+        }
+        .transport-card-3d__main-icon {
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+          filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
+          animation: float3d 4s ease-in-out infinite;
+        }
+        .transport-card-3d__info {
+          text-align: left;
+        }
+        .transport-card-3d__name {
+          font-size: 1.3rem;
+          font-weight: 700;
+        }
+        .transport-card-3d__detail {
+          font-size: 0.85rem;
+          opacity: 0.8;
+        }
+        .transport-card-3d__distance {
+          font-size: 0.8rem;
+          color: #38bdf8;
+          font-weight: 600;
+        }
+        .transport-card-3d__dots {
+          display: flex;
+          gap: 0.25rem;
+          margin-top: 0.5rem;
+        }
+        .transport-card-3d__dot {
+          width: 5px;
+          height: 5px;
+          border-radius: 50%;
+          background: rgba(255,255,255,0.3);
+          transition: all 0.3s;
+        }
+        .transport-card-3d__dot.active {
+          background: #38bdf8;
+          width: 14px;
+          border-radius: 3px;
+        }
+        @keyframes float3d {
+          0%, 100% { transform: translateY(0) rotate(0deg); }
+          50% { transform: translateY(-6px) rotate(2deg); }
+        }
+        @keyframes fadeIn3d {
+          from { opacity: 0; transform: translateY(5px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes pulse3d {
+          0%, 100% { opacity: 0.6; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.05); }
+        }
+      `}</style>
         </div>
     );
 };
+
+export default TransportCard;

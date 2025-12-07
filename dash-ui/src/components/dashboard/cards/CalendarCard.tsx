@@ -1,5 +1,3 @@
-import { StandardCard } from "../StandardCard";
-import { dayjs } from "../../../utils/dayjs";
 import { useState, useEffect } from "react";
 
 type CalendarEvent = {
@@ -14,127 +12,193 @@ type CalendarCardProps = {
   timezone: string;
 };
 
-const getCountdown = (startTime: string | null | undefined, timezone: string): string | null => {
-  if (!startTime) return null;
-  const now = dayjs().tz(timezone);
-  const start = dayjs(startTime).tz(timezone);
-  const diffMs = Number(start.valueOf()) - Number(now.valueOf());
-  const diff = Math.round(diffMs / (60 * 1000));
-
-  if (diff < 0) return "En curso";
-  if (diff < 60) return `En ${diff} min`;
-
-  const hours = Math.floor(diff / 60);
-  const minutes = diff % 60;
-  if (minutes === 0) return `En ${hours}h`;
-  return `En ${hours}h ${minutes}m`;
+const formatTime = (dateStr: string, tz: string): string => {
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleTimeString("es-ES", { timeZone: tz, hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "--:--";
+  }
 };
 
 export const CalendarCard = ({ events, timezone }: CalendarCardProps): JSX.Element => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const validEvents = events || [];
 
-  // Rotation for events if more than 3, or just show list? 
-  // Given the "premium" look with large text, showing one focal event + list might be better, 
-  // or a rotating list of pages. Let's do a rotating spotlight if many, or static list if few.
-  // Actually, StandardCard is tall. Let's do a vertical list with "next up" highlighted.
+  const validEvents = events && events.length > 0 ? events.slice(0, 5) : [];
 
-  // Filter only future or current events
-  const upcomingEvents = validEvents.filter(e => {
-    if (!e.end) return true;
-    return dayjs(e.end).tz(timezone).valueOf() > dayjs().tz(timezone).valueOf();
-  }).slice(0, 4); // Show max 4
+  const now = new Date();
+  const dayNum = now.toLocaleDateString("es-ES", { timeZone: timezone, day: "numeric" });
+  const monthName = now.toLocaleDateString("es-ES", { timeZone: timezone, month: "short" });
+  const dayName = now.toLocaleDateString("es-ES", { timeZone: timezone, weekday: "long" });
 
-  const now = dayjs().tz(timezone);
-  const dateNum = now.format("D");
-  const monthName = now.format("MMM");
-  const dayName = now.format("dddd");
+  useEffect(() => {
+    if (validEvents.length <= 1) return;
+    const interval = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % validEvents.length);
+    }, 6000);
+    return () => clearInterval(interval);
+  }, [validEvents.length]);
+
+  const current = validEvents[currentIndex];
 
   return (
-    <StandardCard
-      title="Agenda"
-      subtitle={dayName}
-      icon={<span className="text-3xl drop-shadow-md">📅</span>}
-      className="calendar-card-root"
-    >
-      {/* Background Noise */}
-      <div className="absolute inset-0 opacity-10 bg-[url('/img/noise.png')] mix-blend-overlay pointer-events-none" />
+    <div className="calendar-card-3d">
+      <div className="calendar-card-3d__header">📅 Agenda</div>
 
-      {/* Background Gradient */}
-      <div className="absolute inset-0 bg-gradient-to-br from-indigo-900 to-slate-900 -z-10" />
-
-      <div className="flex gap-4 h-full relative z-10 p-2 animate-fade-in-up">
-
-        {/* Left: Big Calendar Leaf Visual */}
-        <div className="flex flex-col items-center justify-center bg-white text-slate-900 rounded-xl shadow-2xl overflow-hidden w-24 md:w-28 shrink-0 self-center transform -rotate-2 border-t-8 border-red-500">
-          <span className="text-xs font-bold uppercase tracking-widest pt-1 text-red-500">{monthName}</span>
-          <span className="text-5xl md:text-6xl font-black tracking-tighter leading-none pb-2">{dateNum}</span>
+      <div className="calendar-card-3d__main">
+        <div className="calendar-card-3d__leaf">
+          <span className="calendar-card-3d__month">{monthName}</span>
+          <span className="calendar-card-3d__day">{dayNum}</span>
         </div>
 
-        {/* Right: Event List */}
-        <div className="flex-1 flex flex-col justify-center gap-3 overflow-hidden">
-          {upcomingEvents.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-white/50">
-              <span className="text-4xl mb-2 opacity-50">☕</span>
-              <p className="font-medium">Sin eventos próximos</p>
+        <div className="calendar-card-3d__events">
+          {validEvents.length === 0 ? (
+            <div className="calendar-card-3d__empty">
+              <span>☕</span>
+              <span>Sin eventos</span>
             </div>
           ) : (
-            upcomingEvents.map((evt, idx) => {
-              const isFirst = idx === 0;
-              const timeStr = evt.start ? dayjs(evt.start).tz(timezone).format("HH:mm") : "";
-              const countdown = getCountdown(evt.start, timezone);
-
-              return (
-                <div
-                  key={idx}
-                  className={`flex flex-col p-3 rounded-lg border backdrop-blur-sm transition-all
-                                ${isFirst ? 'bg-white/10 border-white/20 shadow-lg scale-[1.02]' : 'bg-white/5 border-white/5 opacity-70'}
-                            `}
-                >
-                  <div className="flex justify-between items-baseline mb-1">
-                    <h3 className={`font-bold leading-tight ${isFirst ? 'text-white text-lg' : 'text-gray-200 text-base'} line-clamp-1`}>
-                      {evt.title}
-                    </h3>
-                    <span className="text-amber-400 font-mono font-bold text-sm shrink-0 ml-2">
-                      {timeStr}
-                    </span>
-                  </div>
-
-                  {(evt.location || countdown) && (
-                    <div className="flex items-center gap-3 text-xs text-gray-300">
-                      {evt.location && (
-                        <span className="flex items-center gap-1 truncate max-w-[120px]">
-                          📍 {evt.location}
-                        </span>
-                      )}
-                      {countdown && isFirst && (
-                        <span className="text-emerald-300 font-bold bg-emerald-900/30 px-1.5 py-0.5 rounded">
-                          {countdown}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })
+            <div className="calendar-card-3d__event" key={currentIndex}>
+              <div className="calendar-card-3d__event-title">{current.title}</div>
+              {current.start && (
+                <div className="calendar-card-3d__event-time">{formatTime(current.start, timezone)}</div>
+              )}
+              {current.location && (
+                <div className="calendar-card-3d__event-location">📍 {current.location}</div>
+              )}
+            </div>
           )}
         </div>
       </div>
 
+      <div className="calendar-card-3d__dayname">{dayName}</div>
+
+      {validEvents.length > 1 && (
+        <div className="calendar-card-3d__dots">
+          {validEvents.map((_, idx) => (
+            <span key={idx} className={`calendar-card-3d__dot ${idx === currentIndex ? "active" : ""}`} />
+          ))}
+        </div>
+      )}
+
       <style>{`
-        .calendar-card-root {
-            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%) !important;
-            color: white !important;
+        .calendar-card-3d {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          height: 100%;
+          width: 100%;
+          padding: 0.75rem;
+          box-sizing: border-box;
+          color: white;
+          overflow: hidden;
         }
-        .animate-fade-in-up {
-            animation: fadeInUp 0.5s ease-out forwards;
+        .calendar-card-3d__header {
+          font-size: 0.9rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          opacity: 0.8;
+          margin-bottom: 0.5rem;
         }
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+        .calendar-card-3d__main {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+          flex: 1;
+          width: 100%;
+        }
+        .calendar-card-3d__leaf {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          background: white;
+          color: #1e293b;
+          border-radius: 0.5rem;
+          padding: 0.5rem;
+          width: 60px;
+          box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+          border-top: 4px solid #ef4444;
+          transform: rotate(-2deg);
+        }
+        .calendar-card-3d__month {
+          font-size: 0.6rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          color: #ef4444;
+        }
+        .calendar-card-3d__day {
+          font-size: 2rem;
+          font-weight: 900;
+          line-height: 1;
+        }
+        .calendar-card-3d__events {
+          flex: 1;
+          min-width: 0;
+        }
+        .calendar-card-3d__empty {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 0.25rem;
+          opacity: 0.6;
+          font-size: 0.9rem;
+        }
+        .calendar-card-3d__event {
+          animation: fadeIn3d 0.4s ease-out;
+        }
+        .calendar-card-3d__event-title {
+          font-size: 1rem;
+          font-weight: 700;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .calendar-card-3d__event-time {
+          font-size: 0.85rem;
+          color: #fbbf24;
+          font-weight: 600;
+          font-family: monospace;
+        }
+        .calendar-card-3d__event-location {
+          font-size: 0.75rem;
+          opacity: 0.7;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .calendar-card-3d__dayname {
+          font-size: 1rem;
+          font-weight: 600;
+          text-transform: capitalize;
+          opacity: 0.8;
+          margin-top: 0.25rem;
+        }
+        .calendar-card-3d__dots {
+          display: flex;
+          justify-content: center;
+          gap: 0.25rem;
+          margin-top: 0.5rem;
+        }
+        .calendar-card-3d__dot {
+          width: 5px;
+          height: 5px;
+          border-radius: 50%;
+          background: rgba(255,255,255,0.3);
+          transition: all 0.3s;
+        }
+        .calendar-card-3d__dot.active {
+          background: #fbbf24;
+          width: 14px;
+          border-radius: 3px;
+        }
+        @keyframes fadeIn3d {
+          from { opacity: 0; transform: translateY(5px); }
+          to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
-    </StandardCard>
+    </div>
   );
 };
 
