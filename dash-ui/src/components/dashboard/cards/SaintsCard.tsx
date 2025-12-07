@@ -115,54 +115,164 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
   }
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden text-white">
+
+    <div className="saints-card-container">
       {/* Top Half: Image Container */}
-      <div className="relative flex-1 w-full flex items-center justify-center p-2 min-h-0">
+      <div className="saints-card__image-container">
         {imageUrl ? (
           <img
             src={imageUrl}
             alt={fullName}
-            className="h-full w-full object-contain filter drop-shadow-[0_4px_6px_rgba(0,0,0,0.5)]"
+            className="saints-card__image"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-white/5 rounded-lg">
-            <span className="text-6xl opacity-20">✝️</span>
+          <div className="saints-card__placeholder">
+            <span style={{ fontSize: "4rem", opacity: 0.2 }}>✝️</span>
           </div>
         )}
       </div>
 
       {/* Bottom Half: Text Content */}
-      <div className="flex flex-1 flex-col p-3 border-t border-white/10 bg-white/5 rounded-b-lg min-h-0">
+      <div className="saints-card__content">
         {/* Title */}
-        <h2 className="mb-2 text-center text-xl font-bold text-amber-400 truncate tracking-wide">
+        <h2 className="saints-card__title">
           {fullName}
         </h2>
 
         {/* Scrollable Bio */}
         <div
           ref={scrollRef}
-          className="flex-1 overflow-y-auto pr-1 text-sm leading-relaxed text-blue-100 font-medium scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent text-center"
+          className="saints-card__bio"
         >
           {saintInfo?.extract ? (
             <p className="pb-2">{saintInfo?.extract}</p>
           ) : (
             <div className="flex items-center justify-center h-full">
-              <p className="animate-pulse text-white/40 italic">Buscando biografía...</p>
+              <p className="saints-card__loading">Buscando biografía...</p>
             </div>
           )}
         </div>
 
         {/* Progress Indicators */}
-        <div className="mt-2 flex justify-center gap-1.5 pt-2 border-t border-white/5 shrink-0">
+        <div className="saints-card__progress">
           {saints.map((_, idx) => (
             <div
               key={idx}
-              className={`h-1.5 rounded-full transition-all duration-300 ${idx === currentIndex ? "w-6 bg-amber-400" : "w-1.5 bg-white/20"
-                }`}
+              className={`saints-card__dot ${idx === currentIndex ? "active" : ""}`}
             />
           ))}
         </div>
       </div>
+
+      <style>{`
+        .saints-card-container {
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+          width: 100%;
+          overflow: hidden;
+          color: white;
+          background: linear-gradient(135deg, #1c1917 0%, #292524 100%);
+          border-radius: 1.5rem;
+          border: 1px solid rgba(255,255,255,0.1);
+          font-family: system-ui, -apple-system, sans-serif;
+        }
+
+        .saints-card__image-container {
+          position: relative;
+          flex: 1;
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0.5rem;
+          min-height: 0;
+        }
+
+        .saints-card__image {
+          height: 100%;
+          width: 100%;
+          object-fit: contain;
+          filter: drop-shadow(0 4px 6px rgba(0,0,0,0.5));
+        }
+
+        .saints-card__placeholder {
+          display: flex;
+          height: 100%;
+          width: 100%;
+          align-items: center;
+          justify-content: center;
+          background: rgba(255,255,255,0.05);
+          border-radius: 0.5rem;
+        }
+
+        .saints-card__content {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          padding: 1rem;
+          border-top: 1px solid rgba(255,255,255,0.1);
+          background: rgba(255,255,255,0.02);
+          min-height: 0;
+        }
+
+        .saints-card__title {
+          margin-bottom: 0.5rem;
+          text-align: center;
+          font-size: 1.25rem;
+          font-weight: 700;
+          color: #fbbf24; /* amber-400 */
+          letter-spacing: 0.025em;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          font-family: system-ui, -apple-system, sans-serif;
+        }
+
+        .saints-card__bio {
+          flex: 1;
+          overflow-y: auto;
+          padding-right: 0.25rem;
+          font-size: 0.875rem;
+          line-height: 1.5;
+          color: #dbeafe; /* blue-100 */
+          font-weight: 500;
+          text-align: center;
+        }
+
+        .saints-card__loading {
+          animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+          color: rgba(255,255,255,0.4);
+          font-style: italic;
+        }
+
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: .5; }
+        }
+
+        .saints-card__progress {
+          margin-top: 0.5rem;
+          display: flex;
+          justify-content: center;
+          gap: 0.375rem;
+          padding-top: 0.5rem;
+          border-top: 1px solid rgba(255,255,255,0.05);
+          flex-shrink: 0;
+        }
+
+        .saints-card__dot {
+          height: 0.375rem;
+          border-radius: 9999px;
+          transition: all 0.3s;
+          background-color: rgba(255,255,255,0.2);
+          width: 0.375rem;
+        }
+        .saints-card__dot.active {
+          width: 1.5rem;
+          background-color: #fbbf24;
+        }
+      `}</style>
     </div>
   );
 };

@@ -44,9 +44,21 @@ const getIconUrl = (item: HarvestItem): string => {
   const baseUrl = import.meta.env.BASE_URL;
   const prefix = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
 
-  // Si el item tiene un icono del catálogo, usarlo
-  if (item.icon) {
-    return `${prefix}icons/soydetemporada/${item.icon}`;
+  let iconName = item.icon;
+
+  // Si no hay icono (ej: datos del backend sin campo icon), buscar en el catálogo local por nombre
+  if (!iconName) {
+    const catalog = harvestCatalog as CatalogItem[];
+    // Normalizar nombres para la búsqueda (ignorar mayúsculas/minúsculas y acentos si es necesario, aunque aquí asumimos coincidencia directa o simple)
+    const found = catalog.find(c => c.name.toLowerCase() === item.name.toLowerCase());
+    if (found) {
+      iconName = found.icon;
+    }
+  }
+
+  // Si tenemos icono, construir URL
+  if (iconName) {
+    return `${prefix}icons/soydetemporada/${iconName}`;
   }
 
   // Fallback a icono genérico
@@ -91,10 +103,13 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
       title="Temporada"
       subtitle="Recolección ideal este mes"
       icon={<img src="/img/icons/3d/harvest-basket.png" className="w-8 h-8 drop-shadow-md animate-bounce-slow" alt="icon" />}
-      className="bg-gradient-to-br from-green-500 to-emerald-700 relative overflow-hidden"
+      className="harvest-card-root relative overflow-hidden"
     >
       {/* Subtle Pattern Overlay instead of Image */}
       <div className="absolute inset-0 opacity-10 bg-[url('/img/noise.png')] mix-blend-overlay pointer-events-none" />
+
+      {/* Background gradient structure */}
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-green-900/20 to-green-950/50 pointer-events-none" />
 
       <div className="flex flex-col items-center justify-between py-4 h-full w-full relative z-10" key={currentIndex}>
 
@@ -119,7 +134,7 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
 
         {/* Info Box */}
         <div className="mt-4 flex flex-col items-center gap-1 z-20 w-full">
-          <h3 className="text-3xl md:text-4xl font-black text-white tracking-tight leading-none text-center drop-shadow-md">
+          <h3 className="text-3xl md:text-4xl font-black text-white tracking-tight leading-none text-center drop-shadow-md text-shadow-sm">
             {currentItem.name}
           </h3>
           {currentItem.status && (
@@ -144,6 +159,16 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
       </div>
 
       <style>{`
+        .harvest-card-root {
+          background: linear-gradient(135deg, #10b981 0%, #047857 100%) !important;
+          color: white !important;
+        }
+        .harvest-card-root h2,
+        .harvest-card-root span, 
+        .harvest-card-root p {
+            color: white !important;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+        }
         @keyframes beat {
            0%, 100% { transform: scale(1); }
            50% { transform: scale(1.03); }

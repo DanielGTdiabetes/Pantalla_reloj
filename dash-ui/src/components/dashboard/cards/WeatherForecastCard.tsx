@@ -74,7 +74,7 @@ export const WeatherForecastCard = ({ forecast, unit }: WeatherForecastCardProps
       title="Previsión"
       subtitle="Pronóstico semanal"
       icon={headerIcon}
-      className="bg-gradient-to-br from-sky-400 to-blue-600 relative overflow-hidden"
+      className="weather-forecast-root relative overflow-hidden"
     >
       {/* Subtle Pattern Overlay */}
       <div className="absolute inset-0 opacity-10 bg-[url('/img/noise.png')] mix-blend-overlay pointer-events-none" />
@@ -150,28 +150,38 @@ export const WeatherForecastCard = ({ forecast, unit }: WeatherForecastCardProps
       </div>
 
       <style>{`
-            @keyframes float {
-                0%, 100% { transform: translateY(0px) rotate(0deg); }
-                50% { transform: translateY(-8px) rotate(2deg); }
-            }
-            .animate-float {
-                animation: float 5s ease-in-out infinite;
-            }
-             @keyframes bounce-slow {
-                0%, 100% { transform: translateY(0); }
-                50% { transform: translateY(-3px); }
-            }
-            .animate-bounce-slow {
-                animation: bounce-slow 3s ease-in-out infinite;
-            }
-            .animate-fade-in-up {
-                 animation: fade-in-up 0.4s ease-out forwards;
-            }
-            @keyframes fade-in-up {
-                from { opacity: 0; transform: translateY(5px); }
-                to { opacity: 1; transform: translateY(0); }
-            }
-        `}</style>
+        .weather-forecast-root {
+          background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%) !important;
+          color: white !important;
+        }
+        .weather-forecast-root h2,
+        .weather-forecast-root span, 
+        .weather-forecast-root p {
+            color: white !important;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-8px) rotate(2deg); }
+        }
+        .animate-float {
+            animation: float 5s ease-in-out infinite;
+        }
+            @keyframes bounce-slow {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-3px); }
+        }
+        .animate-bounce-slow {
+            animation: bounce-slow 3s ease-in-out infinite;
+        }
+        .animate-fade-in-up {
+                animation: fade-in-up 0.4s ease-out forwards;
+        }
+        @keyframes fade-in-up {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </StandardCard>
   );
 };

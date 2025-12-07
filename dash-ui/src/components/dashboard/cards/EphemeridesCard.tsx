@@ -45,7 +45,7 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
       title="Astronomía"
       subtitle="Ciclos celestes diarios"
       icon={getIconForState()}
-      className="bg-gradient-to-br from-indigo-900 to-slate-900 relative overflow-hidden"
+      className="ephemerides-card-root relative overflow-hidden"
     >
       {/* Subtle Pattern Overlay */}
       <div className="absolute inset-0 opacity-20 bg-[url('/img/noise.png')] mix-blend-overlay pointer-events-none" />
@@ -59,12 +59,12 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
 
         {/* Floating Header Pill */}
         <div className={`backdrop-blur-md px-4 py-1 rounded-full border shadow-sm mb-2 transition-colors duration-1000 ${currentState === "sunrise" ? "bg-amber-500/20 border-amber-500/30" :
-            currentState === "sunset" ? "bg-orange-500/20 border-orange-500/30" :
-              "bg-indigo-500/20 border-indigo-500/30"
+          currentState === "sunset" ? "bg-orange-500/20 border-orange-500/30" :
+            "bg-indigo-500/20 border-indigo-500/30"
           }`}>
           <h2 className={`text-lg font-bold uppercase tracking-wider drop-shadow-sm transition-colors duration-1000 ${currentState === "sunrise" ? "text-amber-200" :
-              currentState === "sunset" ? "text-orange-200" :
-                "text-indigo-200"
+            currentState === "sunset" ? "text-orange-200" :
+              "text-indigo-200"
             }`}>
             {currentState === "sunrise" ? "Amanecer" : currentState === "sunset" ? "Anochecer" : "Fase Lunar"}
           </h2>
@@ -74,8 +74,8 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
         <div className="relative w-full flex-1 flex items-center justify-center min-h-0">
           {/* Glow backing */}
           <div className={`absolute inset-0 blur-[50px] rounded-full opacity-40 transition-colors duration-1000 ${currentState === "sunrise" ? "bg-amber-400" :
-              currentState === "sunset" ? "bg-orange-600" :
-                "bg-blue-600"
+            currentState === "sunset" ? "bg-orange-600" :
+              "bg-blue-600"
             }`} />
 
           <div className="relative z-10 transition-all duration-700 transform">
@@ -117,6 +117,16 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
       </div>
 
       <style>{`
+        .ephemerides-card-root {
+          background: linear-gradient(135deg, #312e81 0%, #0f172a 100%) !important;
+          color: white !important;
+        }
+        .ephemerides-card-root h2,
+        .ephemerides-card-root span, 
+        .ephemerides-card-root p {
+            color: white !important;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+        }
         @keyframes pulse-slow {
           0%, 100% { transform: scale(1); opacity: 1; }
           50% { transform: scale(1.05); opacity: 0.95; }
