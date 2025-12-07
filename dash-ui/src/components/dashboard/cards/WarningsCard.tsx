@@ -1,5 +1,6 @@
 
 import { useState, useEffect } from "react";
+import { StandardCard } from "../StandardCard";
 
 
 interface WarningFeature {
@@ -49,59 +50,109 @@ export const WarningsCard = ({ alerts }: WarningsCardProps) => {
 
     const currentAlert = alerts[currentIndex];
     const props = currentAlert.properties;
-    const bgGradient = getSeverityColor(props.severity);
-    const severityLabel = getSeverityLabel(props.severity);
+    const severity = props.severity.toLowerCase();
+
+    // Map severity to simpler gradient colors or classes
+    const getGradient = (s: string) => {
+        if (s === "extreme") return "from-red-600 to-rose-900";
+        if (s === "severe") return "from-orange-500 to-red-800";
+        if (s === "moderate") return "from-yellow-400 to-orange-700";
+        return "from-blue-500 to-indigo-800";
+    };
+
+    const gradientClass = `bg-gradient-to-br ${getGradient(severity)}`;
+
+    // Header Icon
+    const headerIcon = <img
+        src="/img/icons/3d/warning.png"
+        className="w-8 h-8 drop-shadow-md animate-pulse-slow"
+        alt="warning"
+    />;
 
     return (
-        <div className={`flex h-full w-full flex-col overflow-hidden rounded-xl bg-gradient-to-br ${bgGradient} text-white shadow-2xl animate-pulse-slow`}>
-            {/* Header */}
-            <div className="flex items-center justify-between bg-black/20 p-4 backdrop-blur-sm">
-                <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 backdrop-blur-md">
-                        <span className="text-2xl">⚠️</span>
-                    </div>
-                    <div className="flex flex-col">
-                        <span className="text-xs font-black uppercase tracking-widest opacity-80">
-                            ALERTA AEMET
-                        </span>
-                        <span className="text-sm font-bold opacity-90">
-                            {currentIndex + 1} de {alerts.length}
-                        </span>
-                    </div>
-                </div>
-                <div className="rounded-lg bg-white/20 px-3 py-1 text-xs font-bold uppercase tracking-wider backdrop-blur-sm">
-                    {severityLabel}
-                </div>
-            </div>
+        <StandardCard
+            title="Avisos AEMET"
+            subtitle={`${currentIndex + 1} de ${alerts.length} - ${getSeverityLabel(props.severity)}`}
+            icon={headerIcon}
+            className={`${gradientClass} relative overflow-hidden`}
+        >
+            {/* Background Pattern */}
+            <div className="absolute inset-0 opacity-10 bg-[url('/img/noise.png')] mix-blend-overlay pointer-events-none" />
+            <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-white/20 via-transparent to-transparent opacity-40 animate-pulse-slow" />
 
-            {/* Main Content */}
-            <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
-                <div className="animate-fade-in-up">
-                    <h1 className="text-3xl font-black leading-tight tracking-tight drop-shadow-lg md:text-5xl mb-4">
+            <div className="flex flex-col items-center justify-between py-4 h-full w-full relative z-10 animate-fade-in-up" key={currentAlert.properties.event + currentIndex}>
+
+                {/* 1. Event Type Pill */}
+                <div className="bg-white/20 backdrop-blur-md px-4 py-1.5 rounded-full border border-white/30 shadow-sm mb-2">
+                    <h2 className="text-xl md:text-2xl font-black text-white uppercase tracking-tighter drop-shadow-sm text-center leading-none">
                         {props.event}
-                    </h1>
-                    <p className="mx-auto max-w-2xl text-lg font-medium leading-relaxed opacity-95 drop-shadow-md">
+                    </h2>
+                </div>
+
+                {/* 2. Main Visual Icon (Central) */}
+                <div className="relative flex-1 flex items-center justify-center w-full min-h-0 py-2">
+                    {/* Pulsing Glow behind icon */}
+                    <div className="absolute inset-0 bg-white/30 rounded-full blur-[60px] animate-pulse-fast pointer-events-none scale-110" />
+
+                    <img
+                        src="/img/icons/3d/warning.png"
+                        className="w-auto h-[140px] md:h-[160px] object-contain drop-shadow-[0_10px_30px_rgba(0,0,0,0.4)] animate-shake"
+                        alt="warning icon"
+                    />
+                </div>
+
+                {/* 3. Info Headline Box */}
+                <div className="w-full bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/20 flex flex-col gap-2 shadow-lg mt-auto text-center">
+                    <p className="text-sm md:text-base font-bold text-white leading-snug line-clamp-4 drop-shadow-sm">
                         {props.headline}
                     </p>
-                </div>
-            </div>
 
-            {/* Footer */}
-            <div className="flex items-center justify-center bg-black/20 p-3 backdrop-blur-sm">
-                <span className="text-xs font-mono uppercase tracking-widest opacity-60">
-                    {props.status} • {props.source}
-                </span>
+                    <div className="flex items-center justify-center gap-2 mt-1 pt-2 border-t border-white/10">
+                        <span className="text-[10px] uppercase font-mono text-white/60 tracking-widest">{props.source}</span>
+                        <span className="text-white/40">•</span>
+                        <span className="text-[10px] uppercase font-mono text-white/60 tracking-widest">{props.status}</span>
+                    </div>
+                </div>
+
             </div>
 
             <style>{`
-        .animate-pulse-slow {
-          animation: pulseSlow 4s ease-in-out infinite;
-        }
-        @keyframes pulseSlow {
-          0%, 100% { box-shadow: 0 0 20px rgba(0,0,0,0.2); }
-          50% { box-shadow: 0 0 40px rgba(0,0,0,0.4); }
-        }
-      `}</style>
-        </div>
+                 @keyframes shake {
+                    0%, 100% { transform: rotate(0deg); }
+                    25% { transform: rotate(-5deg); }
+                    75% { transform: rotate(5deg); }
+                }
+                .animate-shake {
+                    animation: shake 0.5s ease-in-out infinite;
+                    animation-play-state: paused;
+                }
+                .hover:animate-shake {
+                     animation-play-state: running;
+                }
+                 @keyframes pulse-fast {
+                    0%, 100% { opacity: 0.5; transform: scale(1); }
+                    50% { opacity: 0.8; transform: scale(1.1); }
+                }
+                .animate-pulse-fast {
+                    animation: pulse-fast 2s ease-in-out infinite;
+                }
+                 .animate-fade-in-up {
+                     animation: fade-in-up 0.4s ease-out forwards;
+                }
+                @keyframes fade-in-up {
+                    from { opacity: 0; transform: translateY(5px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                 @keyframes pulse-slow {
+                    0%, 100% { opacity: 0.3; transform: scale(1); }
+                    50% { opacity: 0.6; transform: scale(1.1); }
+                }
+                .animate-pulse-slow {
+                    animation: pulse-slow 4s ease-in-out infinite;
+                }
+            `}</style>
+        </StandardCard>
     );
 };
+
+

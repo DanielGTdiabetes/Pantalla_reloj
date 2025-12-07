@@ -103,94 +103,104 @@ export const TransportCard = ({ data }: TransportCardProps) => {
     if (!currentItem) return null;
 
     const isPlane = currentItem.type === "plane";
-    const headerTitle = isPlane ? "Tráfico Aéreo" : "Tráfico Marítimo";
-    const accentColor = isPlane ? "from-blue-500 to-indigo-600" : "from-teal-500 to-emerald-600";
-    const iconUrl = currentItem.img || get3DIcon(currentItem.type);
+    const title = isPlane ? "Tráfico Aéreo" : "Tráfico Marítimo";
+    const subtitle = isPlane ? "Vuelos en tiempo real" : "Buques en tiempo real";
+
+    // Header icon specific to type
+    const headerIcon = <img
+        src={isPlane ? "/img/icons/3d/plane.png" : "/img/icons/3d/ship.png"}
+        className="w-8 h-8 drop-shadow-md animate-bounce-slow"
+        alt="transport"
+    />;
+
+    // Background gradient based on type
+    const bgClass = isPlane
+        ? "bg-gradient-to-br from-blue-600 to-indigo-900"
+        : "bg-gradient-to-br from-teal-600 to-emerald-900";
+
+    const displayIconUrl = currentItem.img || (isPlane ? "/img/icons/3d/plane.png" : "/img/icons/3d/ship.png");
     const hasPhoto = !!currentItem.img;
 
     return (
-        <div className="h-full w-full overflow-hidden relative bg-slate-900 text-white font-sans p-4">
-            {/* Dynamic Background */}
-            <div className={`absolute inset-0 bg-gradient-to-br ${isPlane ? 'from-blue-900/30' : 'from-teal-900/30'} to-slate-950/80 z-0`} />
+        <StandardCard
+            title={title}
+            subtitle={subtitle}
+            icon={headerIcon}
+            className={`${bgClass} relative overflow-hidden`}
+        >
+            {/* Subtle Pattern Overlay */}
+            <div className="absolute inset-0 opacity-10 bg-[url('/img/noise.png')] mix-blend-overlay pointer-events-none" />
 
-            {/* Grid Layout Container */}
-            <div className="relative z-10 w-full h-full grid grid-rows-[auto_1fr_auto] gap-4">
+            {/* Map/Radar background effect hint */}
+            <div className="absolute inset-0 z-0 opacity-20">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white/10 via-transparent to-transparent animate-pulse-slow" />
+            </div>
 
-                {/* 1. Header Row */}
-                <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                    <div className="flex items-center gap-2">
-                        <span className="text-2xl filter drop-shadow-md">{isPlane ? "✈️" : "🚢"}</span>
-                        <h2 className={`text-xs font-bold uppercase tracking-[0.2em] ${isPlane ? 'text-blue-300' : 'text-teal-300'}`}>
-                            {headerTitle}
-                        </h2>
-                    </div>
-                    <div className="px-2 py-0.5 bg-white/5 rounded text-[10px] font-mono opacity-60">
-                        {currentIndex + 1}/{currentItems.length}
-                    </div>
+            <div className="flex flex-col items-center justify-between py-4 h-full w-full relative z-10 animate-fade-in-up" key={currentItem.id}>
+
+                {/* 1. Status Pill */}
+                <div className="bg-white/20 backdrop-blur-md px-4 py-1 rounded-full border border-white/30 shadow-sm mb-2">
+                    <h2 className="text-lg font-bold text-white uppercase tracking-wider drop-shadow-sm flex items-center gap-2">
+                        <span>{currentIndex + 1}/{currentItems.length}</span>
+                        <span className="opacity-50">|</span>
+                        <span className="text-white/90">{currentItem.id}</span>
+                    </h2>
                 </div>
 
-                {/* 2. Visual & Info Row (Centered) */}
-                <div className="grid grid-rows-[1fr_auto] gap-2 items-center justify-items-center w-full min-h-0 overflow-hidden">
+                {/* 2. Main Visual */}
+                <div className="relative group cursor-pointer flex-1 flex items-center justify-center w-full min-h-0 py-2">
+                    {/* Glow */}
+                    <div className="absolute inset-0 bg-white/20 rounded-full blur-[50px] animate-pulse-slow pointer-events-none scale-110" />
 
-                    {/* Image / Icon */}
-                    <div className="w-full h-full flex items-center justify-center relative min-h-[140px] max-h-[300px]">
-                        {hasPhoto ? (
-                            <div className="relative w-full h-full rounded-2xl overflow-hidden shadow-2xl border border-white/10 group">
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent z-10" />
-                                <img
-                                    src={iconUrl}
-                                    alt={currentItem.name}
-                                    className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-1000"
-                                />
-                                <div className="absolute bottom-2 right-2 z-20 text-[9px] text-white/60 font-mono bg-black/50 px-2 py-0.5 rounded">
-                                    © Planespotters
-                                </div>
+                    {hasPhoto ? (
+                        <div className="relative h-[160px] w-full max-w-[240px] rounded-xl overflow-hidden shadow-2xl border border-white/20 transform hover:scale-105 transition-transform duration-500">
+                            <img src={displayIconUrl} className="w-full h-full object-cover" alt={currentItem.name} />
+                            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+                                <span className="text-[10px] text-white/70 font-mono">© Propiedad de terceros</span>
                             </div>
-                        ) : (
-                            <div className="relative w-48 h-48 animate-float">
-                                <img
-                                    src={iconUrl}
-                                    alt="Transport Icon"
-                                    className="w-full h-full object-contain filter drop-shadow-[0_10px_20px_rgba(0,0,0,0.5)]"
-                                />
-                            </div>
-                        )}
-
-                        {/* Speed Badge overlay on image if photo exists, else separate */}
-                        <div className={`absolute top-4 right-4 z-30 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 shadow-xl flex flex-col items-center ${hasPhoto ? '' : '-right-2 top-0'}`}>
-                            <span className="text-xl font-black text-yellow-400 leading-none">
-                                {currentItem.speed || "--"}
-                            </span>
-                            <span className="text-[9px] uppercase font-bold text-yellow-100/70 tracking-wider">km/h</span>
                         </div>
-                    </div>
+                    ) : (
+                        <img
+                            src={displayIconUrl}
+                            className="w-auto h-[160px] object-contain drop-shadow-[0_10px_20px_rgba(0,0,0,0.3)] animate-float"
+                            alt={currentItem.name}
+                        />
+                    )}
+                </div>
 
-                    {/* Basic Info */}
-                    <div className="text-center w-full pt-2">
-                        <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white mb-1 drop-shadow-lg truncate w-full px-2">
+                {/* 3. Info Box */}
+                <div className="w-full bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/20 flex flex-col gap-2 shadow-lg mt-auto">
+                    {/* Name */}
+                    <div className="text-center border-b border-white/10 pb-2">
+                        <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight leading-none drop-shadow-sm truncate">
                             {currentItem.name}
                         </h1>
-                        <div className={`inline-block px-3 py-1 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-widest bg-white/5 border border-white/10 ${isPlane ? 'text-blue-200' : 'text-teal-200'}`}>
+                        <span className={`text-xs font-bold uppercase tracking-widest ${isPlane ? 'text-blue-200' : 'text-teal-200'}`}>
                             {currentItem.detail}
+                        </span>
+                    </div>
+
+                    {/* Stats Grid */}
+                    <div className="grid grid-cols-3 gap-2 text-center divide-x divide-white/10">
+                        <div className="flex flex-col">
+                            <span className="text-[9px] uppercase text-white/50 tracking-wider font-bold">Velocidad</span>
+                            <span className="text-sm font-bold text-white leading-tight">{currentItem.speed ?? "--"} <span className="text-[9px]">km/h</span></span>
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="text-[9px] uppercase text-white/50 tracking-wider font-bold">{isPlane ? "Altitud" : "Rumbo"}</span>
+                            <span className="text-sm font-bold text-white leading-tight">
+                                {isPlane ? (currentItem.altitude ? `${currentItem.altitude}m` : "--") : (currentItem.heading ? `${Math.round(currentItem.heading)}°` : "--")}
+                            </span>
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="text-[9px] uppercase text-white/50 tracking-wider font-bold">Lat/Lon</span>
+                            <span className="text-[10px] font-mono text-white/80 leading-tight truncate">
+                                {currentItem.lat.toFixed(2)}, {currentItem.lon.toFixed(2)}
+                            </span>
                         </div>
                     </div>
                 </div>
 
-                {/* 3. Stats Row (Footer) */}
-                <div className="grid grid-cols-2 gap-3 pb-1">
-                    <div className="bg-black/20 rounded-xl p-2.5 backdrop-blur-sm border border-white/5 flex flex-col items-center justify-center">
-                        <span className="text-[9px] uppercase text-white/40 tracking-widest font-bold mb-0.5">Altitud</span>
-                        <span className="text-xl font-bold font-mono text-white">
-                            {currentItem.altitude ? `${currentItem.altitude}m` : "N/A"}
-                        </span>
-                    </div>
-                    <div className="bg-black/20 rounded-xl p-2.5 backdrop-blur-sm border border-white/5 flex flex-col items-center justify-center">
-                        <span className="text-[9px] uppercase text-white/40 tracking-widest font-bold mb-0.5">Rumbo</span>
-                        <span className="text-xl font-bold font-mono text-white">
-                            {currentItem.heading ? `${Math.round(currentItem.heading)}°` : "--"}
-                        </span>
-                    </div>
-                </div>
             </div>
 
             <style>{`
@@ -201,7 +211,30 @@ export const TransportCard = ({ data }: TransportCardProps) => {
                 .animate-float {
                     animation: float 6s ease-in-out infinite;
                 }
+                 @keyframes bounce-slow {
+                    0%, 100% { transform: translateY(0); }
+                    50% { transform: translateY(-3px); }
+                }
+                .animate-bounce-slow {
+                    animation: bounce-slow 3s ease-in-out infinite;
+                }
+                 .animate-fade-in-up {
+                     animation: fade-in-up 0.4s ease-out forwards;
+                }
+                @keyframes fade-in-up {
+                    from { opacity: 0; transform: translateY(5px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                 @keyframes pulse-slow {
+                    0%, 100% { opacity: 0.3; transform: scale(1); }
+                    50% { opacity: 0.6; transform: scale(1.1); }
+                }
+                .animate-pulse-slow {
+                    animation: pulse-slow 4s ease-in-out infinite;
+                }
             `}</style>
-        </div>
+        </StandardCard>
     );
 };
+
+import { StandardCard } from "../StandardCard";
