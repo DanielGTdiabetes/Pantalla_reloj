@@ -17,31 +17,60 @@ type WeatherForecastCardProps = {
   unit: string;
 };
 
-const get3DIconUrl = (condition: string): string => {
+// Professional SVG Icons
+const Icons = {
+  Sun: ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="12" cy="12" r="5" />
+      <path d="M12 1v2" />
+      <path d="M12 21v2" />
+      <path d="M4.22 4.22l1.42 1.42" />
+      <path d="M18.36 18.36l1.42 1.42" />
+      <path d="M1 12h2" />
+      <path d="M21 12h2" />
+      <path d="M4.22 19.78l1.42-1.42" />
+      <path d="M18.36 5.64l1.42-1.42" />
+    </svg>
+  ),
+  CloudRain: ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M20 16.2A4.5 4.5 0 0 0 3.2 14.2a6 6 0 1 0 11.4 6" />
+      <path d="M16 20v2" />
+      <path d="M12 20v2" />
+      <path d="M8 20v2" />
+    </svg>
+  ),
+  Cloud: ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M17.5 19c0-1.7-1.3-3-3-3h-11c-1.7 0-3 1.3-3 3s1.3 3 3 3h11c1.7 0 3-1.3 3-3z" />
+      <path d="M17.5 19c2.5 0 4.5-2 4.5-4.5S20 10 17.5 10c-.5 0-.9 0-1.3.1A6.9 6.9 0 0 0 2.5 11" />
+    </svg>
+  ),
+  Moon: ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+    </svg>
+  )
+};
+
+const getIconComponent = (condition: string) => {
   const c = (condition || "").toLowerCase();
+  if (c.includes("lluvia") || c.includes("rain") || c.includes("tormenta") || c.includes("nube")) return Icons.CloudRain;
+  if (c.includes("claro") || c.includes("clear") || c.includes("sol") || c.includes("sunny")) return Icons.Sun;
+  if (c.includes("noche") || c.includes("night") || c.includes("moon")) return Icons.Moon;
 
-  if (c.includes("lluvia") || c.includes("rain") || c.includes("tormenta")) return "/img/icons/3d/cloud-rain.png";
-  if (c.includes("noche") || c.includes("moon")) return "/img/icons/3d/moon-sleep.png";
-
-  // Default sunny/partly cloudy -> sun smile
-  return "/img/icons/3d/sun-smile.png";
+  // Default
+  return Icons.Sun;
 };
 
 const WeatherIcon3D = ({ condition, className }: { condition: string; className?: string }) => {
-  const url = get3DIconUrl(condition);
-  const [error, setError] = useState(false);
+  const IconComp = getIconComponent(condition);
 
-  if (error) {
-    return <span className="text-4xl">🌤️</span>;
-  }
-
+  // Strip specific sizing classes from className to avoid conflicts if needed, but for now just pass
   return (
-    <img
-      src={url}
-      alt={condition}
-      className={`${className} object-contain filter drop-shadow-2xl will-change-transform z-10`}
-      onError={() => setError(true)}
-    />
+    <div className={`${className} flex items-center justify-center text-white drop-shadow-2xl`}>
+      <IconComp className="w-full h-full" />
+    </div>
   );
 };
 
@@ -67,7 +96,7 @@ export const WeatherForecastCard = ({ forecast, unit }: WeatherForecastCardProps
 
   // Choose header icon based on overall condition or just generic rain cloud if mixed? 
   // Let's use cloud-rain as generic 'Weather' icon for header to distinct from Astro
-  const headerIcon = <img src="/img/icons/3d/cloud-rain.png" className="w-8 h-8 drop-shadow-md animate-bounce-slow" alt="weather" />;
+  const headerIcon = <div className="w-8 h-8 drop-shadow-md text-white"><Icons.CloudRain className="w-full h-full animate-bounce-slow" /></div>;
 
   return (
     <StandardCard
