@@ -1,5 +1,6 @@
 import { NewspaperIcon } from "../../icons";
 import { useState, useEffect, useMemo, useRef } from "react";
+import { StandardCard } from "../StandardCard";
 
 type NewsItem = {
   title: string;

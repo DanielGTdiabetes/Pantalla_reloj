@@ -4,7 +4,7 @@ type StandardCardProps = {
     title?: string;
     subtitle?: string;
     icon?: ReactNode;
-    children: ReactNode;
+    children?: ReactNode;
     footer?: ReactNode;
     className?: string;
     noPadding?: boolean;
@@ -27,23 +27,26 @@ export const StandardCard = ({
             <div className="absolute bottom-0 left-10 w-48 h-48 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
 
             {/* Header */}
-            {(title || icon) && (
-                <header className="flex-none px-6 pt-5 pb-2 flex items-center justify-between z-10 w-full">
+            <header className="flex-none px-6 pt-5 pb-2 flex items-center justify-between z-10 w-full">
+                {(title || subtitle) ? (
                     <div className="flex flex-col items-start gap-0.5">
-                        {title && (
+                        {title ? (
                             <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-cyan-200/80 drop-shadow-md">
                                 {title}
                             </h2>
-                        )}
-                        {subtitle && (
+                        ) : null}
+                        {subtitle ? (
                             <span className="text-xs text-white/50 font-medium tracking-wider">
                                 {subtitle}
                             </span>
-                        )}
+                        ) : null}
                     </div>
-                    {icon && <div className="text-2xl text-white/90 drop-shadow-md filter">{icon}</div>}
-                </header>
-            )}
+                ) : <div />}
+
+                {icon ? (
+                    <div className="text-2xl text-white/90 drop-shadow-md filter">{icon}</div>
+                ) : null}
+            </header>
 
             {/* Main Content */}
             <main className={`flex-1 min-h-0 w-full z-10 ${noPadding ? "" : "px-6 py-2"} relative flex flex-col items-center justify-center`}>
@@ -51,11 +54,11 @@ export const StandardCard = ({
             </main>
 
             {/* Footer */}
-            {footer && (
+            {footer ? (
                 <footer className="flex-none px-6 pb-4 pt-2 z-10 w-full">
                     {footer}
                 </footer>
-            )}
+            ) : null}
         </div>
     );
 };
