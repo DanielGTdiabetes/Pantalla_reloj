@@ -385,22 +385,5 @@ export default function AircraftMapLayer({
 
     if (!mapReady) return null;
 
-    return (
-        <div style={{
-            position: 'absolute',
-            top: 200,
-            left: 10,
-            color: '#fff',
-            background: 'rgba(0,0,0,0.7)',
-            padding: '8px',
-            zIndex: 9999,
-            fontSize: '12px',
-            fontFamily: 'monospace',
-            pointerEvents: 'none',
-            borderRadius: '4px',
-            border: '1px solid #f97316'
-        }}>
-            Aircraft: {debugStatus}
-        </div>
-    );
+    return null;
 }
