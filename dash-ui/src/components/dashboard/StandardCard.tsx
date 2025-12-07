@@ -1,11 +1,11 @@
-import React, { ReactNode } from "react";
+import React from "react";
 
 type StandardCardProps = {
     title?: string;
     subtitle?: string;
-    icon?: ReactNode;
-    children?: ReactNode;
-    footer?: ReactNode;
+    icon?: React.ReactNode;
+    children?: React.ReactNode;
+    footer?: React.ReactNode;
     className?: string;
     noPadding?: boolean;
 };
@@ -44,19 +44,19 @@ export const StandardCard = ({
                 ) : <div />}
 
                 {icon ? (
-                    <div className="text-2xl text-white/90 drop-shadow-md filter">{icon}</div>
+                    <div className="text-2xl text-white/90 drop-shadow-md filter">{icon as any}</div>
                 ) : null}
             </header>
 
             {/* Main Content */}
             <main className={`flex-1 min-h-0 w-full z-10 ${noPadding ? "" : "px-6 py-2"} relative flex flex-col items-center justify-center`}>
-                {children}
+                {children as any}
             </main>
 
             {/* Footer */}
             {footer ? (
                 <footer className="flex-none px-6 pb-4 pt-2 z-10 w-full">
-                    {footer}
+                    {footer as any}
                 </footer>
             ) : null}
         </div>
