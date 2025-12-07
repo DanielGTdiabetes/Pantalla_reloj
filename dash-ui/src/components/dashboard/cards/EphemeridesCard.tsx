@@ -46,7 +46,7 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
 
   const getIcon = () => {
     if (currentState === "moon") {
-      return getMoonPhaseIcon(illumination);
+      return getMoonPhaseIcon(illumination ?? null);
     }
     // Sun icons for sunrise/sunset
     if (currentState === "sunset") {
