@@ -64,7 +64,7 @@ export const DEFAULT_MAP_CONFIG: MapConfig = {
   viewMode: "fixed",
   fixed: {
     center: DEFAULT_MAP_CENTER,
-    zoom: 6.2, // Zoom para ver toda la península ibérica en pantalla vertical
+    zoom: 5.0, // Zoom para ver toda la península ibérica en pantalla vertical
     bearing: 0,
     pitch: 0,
   },
@@ -80,7 +80,7 @@ export const DEFAULT_UI_GLOBAL_CONFIG: UIGlobalConfig = {
     opacity: 1.0,
   },
   radar: {
-    enabled: false,
+    enabled: true, // Changed default to true
     provider: "rainviewer",
   },
 };
@@ -89,6 +89,201 @@ export const DEFAULT_FLIGHTS_LAYER_CONFIG: FlightsLayerConfig = {
   enabled: true,
   provider: "opensky",
   refresh_seconds: 12,
+  max_age_seconds: 120,
+  max_items_global: 2000,
+  max_items_view: 1500,
+  rate_limit_per_min: 6,
+  decimate: "none",
+  grid_px: 24,
+  styleScale: 3.2,
+  render_mode: "symbol_custom",
+  circle: {
+    radius_base: 7.5,
+    radius_zoom_scale: 1.7,
+    opacity: 1.0,
+    color: "#FFD400",
+    stroke_color: "#000000",
+    stroke_width: 2.0,
+  },
+  symbol: {
+    size_vh: 2.0,
+    allow_overlap: true,
+  },
+};
+
+import { OpenSkyConfig } from "../types/config";
+
+export const DEFAULT_OPENSKY_CONFIG: OpenSkyConfig = {
+  enabled: true,
+  mode: "bbox" as const,
+  poll_seconds: 10,
+  max_aircraft: 400,
+  cluster: true,
+  extended: 0,
+  bbox: {
+    lamin: 36.0,
+    lamax: 44.0,
+    lomin: -10.0,
+    lomax: 5.0,
+  },
+  oauth2: {
+    client_id: "danigt-api-client",
+    client_secret: "Mph0txbYD1udcExVL7OrsLoxDjl3eKbQ",
+    token_url:
+      "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
+    scope: null,
+  },
+};
+
+export const DEFAULT_SHIPS_LAYER_CONFIG: ShipsLayerConfig = {
+  enabled: true,
+  provider: "aisstream",
+  refresh_seconds: 10,
+  max_age_seconds: 180,
+  max_items_global: 1500,
+  max_items_view: 420,
+  rate_limit_per_min: 4,
+  decimate: "grid",
+  grid_px: 24,
+  styleScale: 1.4,
+  aisstream: {
+    ws_url: "wss://stream.aisstream.io/v0/stream",
+    bbox: {
+      lamin: 36.0,
+      lamax: 44.0,
+      lomin: -10.0,
+      lomax: 5.0,
+    },
+  },
+};
+
+export const DEFAULT_GLOBAL_RADAR_CONFIG: GlobalRadarLayerConfig = {
+  enabled: true,
+  provider: "maptiler_weather",
+  opacity: 0.7,
+  animation_speed: 1.0,
+};
+
+export const DEFAULT_LAYERS_CONFIG: LayersConfig = {
+  flights: DEFAULT_FLIGHTS_LAYER_CONFIG,
+  ships: DEFAULT_SHIPS_LAYER_CONFIG,
+  global: {
+    radar: DEFAULT_GLOBAL_RADAR_CONFIG,
+  },
+};
+
+export const ROTATION_PANEL_IDS = [
+  "clock",
+  "weather",
+  "forecast",
+  "astronomy",
+  "moon",
+  "santoral",
+  "calendar",
+  "harvest",
+  "news",
+  "historicalEvents",
+] as const;
+
+const ROTATION_LEGACY_MAP: Record<string, string> = {
+  time: "clock",
+  clock: "clock",
+  weather: "weather",
+  // forecast: "weather", // Removed to allow distinct forecast panel
+  moon: "moon",
+  astronomy: "astronomy",
+  ephemerides: "astronomy",
+  saints: "santoral",
+  santoral: "santoral",
+  calendar: "calendar",
+  news: "news",
+  historicalevents: "historicalEvents",
+  historicalEvents: "historicalEvents",
+  // Variaciones en español (mapeo a harvest)
+  harvest: "harvest",
+  cosecha: "harvest",
+  cosechas: "harvest",
+  hortaliza: "harvest",
+  hortalizas: "harvest",
+  verdura: "harvest",
+  verduras: "harvest",
+  fruta: "harvest",
+  frutas: "harvest",
+  siembra: "harvest",
+  siembras: "harvest",
+  cultivo: "harvest",
+  cultivos: "harvest",
+} as const;
+
+const ROTATION_DEFAULT_ORDER = [...ROTATION_PANEL_IDS];
+
+export const DEFAULT_UI_ROTATION_CONFIG: UIRotationConfig = {
+  enabled: true,
+  duration_sec: 60,
+  panels: ROTATION_DEFAULT_ORDER,
+};
+
+export const DEFAULT_PANELS_CONFIG: PanelsConfig = {
+  weatherWeekly: {
+    enabled: true,
+  },
+  ephemerides: {
+    enabled: true,
+  },
+  news: {
+    enabled: true,
+    feeds: [],
+  },
+  calendar: {
+    enabled: false,
+    provider: "google",
+  },
+  harvest: {
+    enabled: true,
+  },
+  historicalEvents: {
+    enabled: true,
+    provider: "wikimedia",
+    lang: "es",
+  },
+};
+
+export const DEFAULT_CALENDAR_CONFIG: CalendarConfig = {
+  enabled: false,
+  source: "google",
+  provider: "google",
+  days_ahead: 14,
+};
+
+export const DEFAULT_CONFIG: AppConfig = {
+  version: 2,
+  ui_map: DEFAULT_MAP_CONFIG,
+  ui: {
+    rotation: DEFAULT_UI_ROTATION_CONFIG,
+  },
+  ui_global: DEFAULT_UI_GLOBAL_CONFIG,
+  opensky: DEFAULT_OPENSKY_CONFIG,
+  layers: DEFAULT_LAYERS_CONFIG,
+  panels: DEFAULT_PANELS_CONFIG,
+  secrets: {
+    aisstream: {
+      api_key: "38dd87bbfef35a1f4dc6133293bed27f0e2c9ff7",
+    },
+    opensky: {
+      oauth2: {
+        client_id: "danigt-api-client",
+        client_secret: "Mph0txbYD1udcExVL7OrsLoxDjl3eKbQ",
+      }
+    },
+    openweathermap: {
+      api_key: null,
+    }
+  },
+  calendar: DEFAULT_CALENDAR_CONFIG,
+};
+
+/**
+ * Función helper para mergear configuración v2 con defaults.
   max_age_seconds: 120,
   max_items_global: 2000,
   max_items_view: 1500,
@@ -303,7 +498,14 @@ export function withConfigDefaults(
     ...DEFAULT_MAP_CONFIG.maptiler!,
     ...(uiMapInput.maptiler ?? {}),
     // Force default styleUrl if input is null/empty
-    styleUrl: uiMapInput.maptiler?.styleUrl || DEFAULT_MAP_CONFIG.maptiler?.styleUrl || null,
+    styleUrl: uiMapInput.maptiler?.styleUrl ||
+      ((uiMapInput as any).settings?.maptiler?.styleUrl) ||
+      DEFAULT_MAP_CONFIG.maptiler?.styleUrl ||
+      null,
+    apiKey: uiMapInput.maptiler?.apiKey ||
+      ((uiMapInput as any).settings?.maptiler?.apiKey) ||
+      DEFAULT_MAP_CONFIG.maptiler?.apiKey ||
+      null,
   };
 
   const mergedSatellite = {
