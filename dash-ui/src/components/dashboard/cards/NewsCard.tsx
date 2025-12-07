@@ -165,28 +165,59 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
   }, [items.length]);
 
   return (
-    <div className="card news-card news-card-enhanced">
-      <div className="news-card__header">
-        <NewsIconImage size={48} className="card-icon" />
-        <h2>Noticias del día</h2>
-      </div>
-      <div className="news-card__scroller vertical-marquee">
-        <div className="news-card__list marquee-content">
-          {repeatItems(list).map((item, index) => (
-            <article key={`news-${index}`} className="news-item">
-              {item.source && (
-                <div className="news-source">{item.source}</div>
-              )}
-              <h3 className="news-title">{item.title}</h3>
-              {item.summary && (
-                <p className="news-summary">{item.summary}</p>
-              )}
-            </article>
-          ))}
+    <StandardCard
+      title="Noticias"
+      subtitle={new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}
+      icon={<NewsIconImage size={32} className="drop-shadow-lg" />}
+      noPadding
+    >
+      <div className="w-full h-full relative flex flex-col items-center justify-center p-4">
+        {/* Marquee/Scroll Container */}
+        <div className="w-full h-full overflow-hidden relative mask-linear-fade">
+          <div className="absolute top-0 left-0 w-full animate-marquee-vertical flex flex-col gap-6">
+            {repeatItems(list).map((item, index) => (
+              <article key={`news-${index}`} className="flex flex-col gap-1 w-full p-4 bg-white/5 rounded-xl border border-white/5 backdrop-blur-sm shadow-sm transition-transform hover:scale-[1.02]">
+                {item.source && (
+                  <span className="text-xs font-bold text-cyan-300 uppercase tracking-wider opacity-80">
+                    {item.source}
+                  </span>
+                )}
+                <h3 className="text-base md:text-lg font-bold text-white leading-tight text-shadow-sm">
+                  {item.title}
+                </h3>
+                {item.summary && (
+                  <p className="text-sm text-gray-300 leading-relaxed line-clamp-2">
+                    {item.summary}
+                  </p>
+                )}
+              </article>
+            ))}
+          </div>
         </div>
+
+        {/* Gradients for smooth fade */}
+        <div className="absolute top-0 left-0 w-full h-8 bg-gradient-to-b from-black/20 to-transparent pointer-events-none z-10" />
+        <div className="absolute bottom-0 left-0 w-full h-12 bg-gradient-to-t from-black/40 to-transparent pointer-events-none z-10" />
       </div>
-      <div className="news-card__gradient" aria-hidden="true" />
-    </div>
+
+      <style>{`
+        @keyframes marquee-vertical {
+          0% { transform: translateY(0); }
+          100% { transform: translateY(-50%); }
+        }
+        .animate-marquee-vertical {
+          animation: marquee-vertical ${Math.max(20, list.length * 5)}s linear infinite;
+        }
+        /* Pause on hover if interactive */
+        .animate-marquee-vertical:hover {
+          animation-play-state: paused;
+        }
+        .mask-linear-fade {
+          mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+          -webkit-mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+        }
+      `}</style>
+    </StandardCard>
   );
 };
 

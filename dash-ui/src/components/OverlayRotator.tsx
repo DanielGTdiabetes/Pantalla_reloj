@@ -14,6 +14,7 @@ import { RotationProgress } from "./dashboard/RotationProgress";
 import { BackgroundGradient } from "./effects/BackgroundGradient";
 import { WeatherAmbience } from "./effects/WeatherAmbience";
 import { SkeletonLoader } from "./common/SkeletonLoader";
+import { StandardCard } from "./dashboard/StandardCard";
 import { CalendarCard } from "./dashboard/cards/CalendarCard";
 import { TransportCard } from "./dashboard/cards/TransportCard";
 import { ApodCard } from "./dashboard/cards/ApodCard";
@@ -1078,94 +1079,6 @@ export const OverlayRotator: React.FC = () => {
   const availablePanelIds = useMemo(() => availablePanels.map(p => p.id).join(','), [availablePanels]);
 
   useEffect(() => {
-    setCurrentPanelIndex(0);
-    currentPanelIndexRef.current = 0;
-  }, [availablePanelIds, rotationRestartKey]);
-
-  useEffect(() => {
-    if (rotationTimerRef.current !== null) {
-      window.clearTimeout(rotationTimerRef.current);
-      rotationTimerRef.current = null;
-      if (IS_DEV) {
-        console.log("[OverlayRotator] Timer limpiado (dependencias cambiaron)");
-      }
-    }
-
-    if (!rotationConfig.enabled || availablePanels.length <= 1) {
-      if (IS_DEV) {
-        console.log(`[OverlayRotator] Timer no iniciado: enabled=${rotationConfig.enabled}, panels=${availablePanels.length}`);
-      }
-      if (!rotationConfig.enabled || availablePanels.length <= 1) {
-        setCurrentPanelIndex(0);
-        currentPanelIndexRef.current = 0;
-      }
-      return;
-    }
-
-    const currentIndexValue = currentPanelIndexRef.current ?? 0;
-    const validIndex = currentIndexValue % availablePanels.length;
-    if (currentIndexValue !== validIndex) {
-      setCurrentPanelIndex(validIndex);
-      currentPanelIndexRef.current = validIndex;
-    }
-
-    const getCurrentPanelDuration = () => {
-      const currentPanels = availablePanelsRef.current;
-      if (!currentPanels || currentPanels.length === 0) {
-        return DEFAULT_DURATIONS_SEC.clock * 1000;
-      }
-      const currentIndexValue = currentPanelIndexRef.current ?? 0;
-      const currentIndex = currentIndexValue % currentPanels.length;
-      const currentPanel = currentPanels[currentIndex];
-      return currentPanel?.duration ?? DEFAULT_DURATIONS_SEC.clock * 1000;
-    };
-
-    const advanceToNextPanel = () => {
-      setCurrentPanelIndex((prevIndex) => {
-        const currentPanels = availablePanelsRef.current;
-        if (!currentPanels || currentPanels.length === 0) {
-          currentPanelIndexRef.current = 0;
-          return 0;
-        }
-        const nextIndex = (prevIndex + 1) % currentPanels.length;
-        currentPanelIndexRef.current = nextIndex;
-        if (IS_DEV) {
-          console.log(`[OverlayRotator] Rotando de panel ${prevIndex} a ${nextIndex} (${currentPanels[nextIndex]?.id})`);
-        }
-        return nextIndex;
-      });
-    };
-
-    const scheduleNext = () => {
-      const currentPanels = availablePanelsRef.current;
-      if (!rotationConfig.enabled || !currentPanels || currentPanels.length <= 1) {
-        return;
-      }
-      const duration = getCurrentPanelDuration();
-      rotationTimerRef.current = window.setTimeout(() => {
-        advanceToNextPanel();
-        scheduleNext();
-      }, duration);
-    };
-
-    scheduleNext();
-
-    if (IS_DEV) {
-      console.log(`[OverlayRotator] Timer iniciado: ${availablePanels.length} paneles con duraciones individuales`);
-    }
-
-    return () => {
-      if (rotationTimerRef.current !== null) {
-        window.clearTimeout(rotationTimerRef.current);
-        rotationTimerRef.current = null;
-        if (IS_DEV) {
-          console.log("[OverlayRotator] Timer limpiado (cleanup)");
-        }
-      }
-    };
-  }, [rotationConfig.enabled, rotationConfig.durations_sec, availablePanels.length, availablePanelIds, rotationRestartKey]);
-
-  useEffect(() => {
     currentPanelIndexRef.current = currentPanelIndex;
   }, [currentPanelIndex]);
 
@@ -1221,26 +1134,96 @@ export const OverlayRotator: React.FC = () => {
     return Math.max(-10, Math.min(10, (wind / 10) * 2));
   }, [payload.weather]);
 
-  if (!currentPanel) {
+  // Animation State
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [displayPanel, setDisplayPanel] = useState<RotatingCardItem | null>(null);
+  const [nextPanelBuffer, setNextPanelBuffer] = useState<RotatingCardItem | null>(null);
+
+  // Sync display panel with current index logic
+  useEffect(() => {
+    // Initial load
+    if (!displayPanel && currentPanel) {
+      setDisplayPanel(currentPanel);
+      return;
+    }
+  }, [currentPanel, displayPanel]);
+
+  // Modified rotation logic to handle animation
+  const advanceToNextPanel = useCallback(() => {
+    if (isAnimating) return; // Prevent double trigger
+
+    const currentPanels = availablePanelsRef.current;
+    if (!currentPanels || currentPanels.length <= 1) return;
+
+    const currentIndex = currentPanelIndexRef.current ?? 0;
+    const nextIndex = (currentIndex + 1) % currentPanels.length;
+
+    const nextItem = currentPanels[nextIndex];
+
+    // 1. Setup Next Panel in Buffer
+    setNextPanelBuffer(nextItem);
+    setIsAnimating(true);
+
+    // 2. Wait for animation to finish (e.g. 800ms)
+    setTimeout(() => {
+      // 3. Swap Display to Next, Clear Buffer, Reset Animation
+      setDisplayPanel(nextItem);
+      setNextPanelBuffer(null);
+      setIsAnimating(false);
+
+      // 4. Update the logical index
+      setCurrentPanelIndex(nextIndex);
+      currentPanelIndexRef.current = nextIndex;
+    }, 800); // Matches CSS transition duration
+
+  }, [isAnimating]);
+
+  // Override the auto-rotation effect to use our new advanceToNextPanel
+  useEffect(() => {
+    // Clear existing timers from the original effect if any (ref check)
+    if (rotationTimerRef.current) clearTimeout(rotationTimerRef.current);
+
+    const schedule = () => {
+      if (!rotationConfig.enabled || availablePanels.length <= 1) return;
+
+      const currentPanels = availablePanelsRef.current;
+      if (!currentPanels) return;
+
+      // Get duration of the *currently displayed* panel
+      const activeId = displayPanel?.id;
+      const activeItem = currentPanels.find(p => p.id === activeId) || currentPanels[0];
+      const duration = activeItem?.duration ?? 10000;
+
+      rotationTimerRef.current = window.setTimeout(() => {
+        advanceToNextPanel();
+        schedule();
+      }, duration);
+    };
+
+    schedule();
+
+    return () => {
+      if (rotationTimerRef.current) clearTimeout(rotationTimerRef.current);
+    };
+  }, [rotationConfig.enabled, availablePanels.length, displayPanel?.id, advanceToNextPanel]);
+
+
+
+
+  if (!displayPanel) {
+    // Loading state ...
     return (
-      <section className="overlay-rotator" role="complementary" aria-live="polite">
+      <section className="overlay-rotator" role="complementary">
         <BackgroundGradient />
-        <div className="overlay-rotator__content">
-          {loading ? (
-            <SkeletonLoader variant="card" width="100%" height="400px" />
-          ) : (
-            <div className="overlay-rotator__fallback" role="status">
-              <p>Datos no disponibles</p>
-            </div>
-          )}
-          <p className="overlay-rotator__status">{statusLabel}</p>
+        <div className="flex items-center justify-center w-full h-full p-10">
+          <SkeletonLoader variant="card" width="100%" height="100%" />
         </div>
       </section>
     );
   }
 
   return (
-    <section className="overlay-rotator" role="complementary" aria-live="polite">
+    <section className="overlay-rotator relative w-full h-full overflow-hidden font-sans" role="complementary" aria-live="polite">
       <BackgroundGradient />
       <WeatherAmbience
         condition={weatherCondition}
@@ -1248,20 +1231,43 @@ export const OverlayRotator: React.FC = () => {
         windSpeed={windSpeed}
         intensity="moderate"
       />
-      <div className="overlay-rotator__content">
-        {loading && !lastUpdatedAt ? (
-          <SkeletonLoader variant="card" width="100%" height="100%" />
-        ) : (
-          <>
-            <div className="rotating-card-wrapper">
-              <RotatingCard cards={[currentPanel]} />
-              {rotationConfig.enabled && currentPanel.duration > 0 && (
-                <RotationProgress progress={rotationProgress} />
-              )}
+
+      {/* 3D Scene Container */}
+      <div className="w-full h-full perspective-1000 p-4 md:p-8 flex items-center justify-center relative z-10">
+        <div className={`relative w-full h-full max-w-4xl max-h-[80vh] preserve-3d transition-transform duration-800 ease-in-out ${isAnimating ? "rotate-x-90" : ""}`}>
+
+          {/* Front Face (Current) */}
+          <div className="absolute inset-0 backface-hidden origin-center z-20">
+            <div className="w-full h-full">
+              {displayPanel.render()}
             </div>
-          </>
-        )}
+          </div>
+
+          {/* Bottom Face (Next) - Pre-rendered roughly below */}
+          <div className="absolute inset-0 backface-hidden origin-center rotate-x-minus-90 translate-y-full z-10">
+            <div className="w-full h-full">
+              {nextPanelBuffer ? nextPanelBuffer.render() : <div />}
+            </div>
+          </div>
+
+        </div>
       </div>
+
+      {/* Footer Info */}
+      <div className="absolute bottom-4 right-6 z-50 text-[10px] text-white/30 font-medium tracking-widest uppercase pointer-events-none">
+        {statusLabel}
+      </div>
+
+      <style>{`
+        .perspective-1000 { perspective: 2000px; }
+        .preserve-3d { transform-style: preserve-3d; }
+        .backface-hidden { backface-visibility: hidden; }
+        .rotate-x-90 { transform: rotateX(90deg); }
+        .rotate-x-minus-90 { transform: rotateX(-90deg); transform-origin: top; }
+        
+        /* Ensure specific card classes that used to rely on globals still work or default to block */
+        .card { width: 100%; height: 100%; }
+      `}</style>
     </section>
   );
 };

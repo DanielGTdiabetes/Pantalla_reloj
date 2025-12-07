@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { SproutIcon } from "../../icons";
 import harvestCatalog from "../../../data/harvest_catalog.json";
+import { StandardCard } from "../StandardCard";
 
 type HarvestItem = {
   name: string;
@@ -85,48 +86,67 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
   const iconUrl = getIconUrl(currentItem);
 
   return (
-    <div className="card harvest-card harvest-card-enhanced">
-      <div className="harvest-card__header">
-        <SproutIcon className="card-icon" aria-hidden="true" />
-        <h2>Cosechas de Temporada</h2>
-      </div>
-      <div className="harvest-carousel">
-        <div className="harvest-slide fade-in" key={currentIndex}>
+    <StandardCard
+      title="Temporada"
+      subtitle="Recolección ideal este mes"
+      icon={<SproutIcon className="w-8 h-8 text-green-400 drop-shadow-md" />}
+      className="bg-gradient-to-br from-green-950/50 to-slate-900"
+    >
+      <div className="flex flex-col items-center justify-center gap-6 w-full h-full relative" key={currentIndex}>
+
+        {/* Main Icon with Glow */}
+        <div className="relative group perspective-500">
+          <div className="absolute inset-0 bg-green-500/20 rounded-full blur-3xl animate-pulse-slow pointer-events-none" />
           {!imageError ? (
             <img
               src={iconUrl}
               alt={currentItem.name}
-              className="harvest-icon-large"
-              style={{ width: "180px", height: "180px", objectFit: "contain" }}
-              onError={(e) => {
-                console.warn(`HarvestCard: Failed to load image ${iconUrl}`);
-                setImageError(true);
-              }}
+              className="w-40 h-40 md:w-56 md:h-56 object-contain drop-shadow-2xl transition-transform duration-700 animate-float"
+              onError={() => setImageError(true)}
             />
           ) : (
-            <SproutIcon
-              className="harvest-icon-large"
-              style={{ width: "180px", height: "180px", color: "var(--theme-accent)" }}
-            />
+            <SproutIcon className="w-40 h-40 text-green-500/80 drop-shadow-[0_0_15px_rgba(34,197,94,0.4)]" />
           )}
-          <div className="harvest-info">
-            <span className="harvest-name">{currentItem.name}</span>
-            {currentItem.status && <span className="harvest-status">{currentItem.status}</span>}
-          </div>
         </div>
+
+        {/* Info */}
+        <div className="text-center z-10 space-y-2">
+          <h3 className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-green-300 to-emerald-100 drop-shadow-sm uppercase tracking-tight">
+            {currentItem.name}
+          </h3>
+          {currentItem.status && (
+            <span className="inline-block px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-300 text-sm font-bold uppercase tracking-widest backdrop-blur-md">
+              {currentItem.status}
+            </span>
+          )}
+        </div>
+
+        {/* Indicators */}
         {entries.length > 1 && (
-          <div className="harvest-indicators">
+          <div className="absolute bottom-2 flex gap-2">
             {entries.map((_, idx) => (
-              <span
+              <div
                 key={idx}
-                className={`indicator ${idx === currentIndex ? "active" : ""}`}
+                className={`w-2 h-2 rounded-full transition-all duration-300 ${idx === currentIndex ? "bg-green-400 w-6 shadow-[0_0_8px_rgba(74,222,128,0.6)]" : "bg-white/10"
+                  }`}
               />
             ))}
           </div>
         )}
       </div>
-    </div>
+
+      <style>{`
+        @keyframes float {
+           0%, 100% { transform: translateY(0px) rotate(0deg); }
+           50% { transform: translateY(-10px) rotate(2deg); }
+        }
+        .animate-float {
+           animation: float 6s ease-in-out infinite;
+        }
+      `}</style>
+    </StandardCard>
   );
 };
+
 
 export default HarvestCard;
