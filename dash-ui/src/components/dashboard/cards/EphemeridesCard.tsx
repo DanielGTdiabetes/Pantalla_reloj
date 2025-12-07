@@ -13,37 +13,9 @@ type EphemeridesCardProps = {
 
 type AstroState = "sunrise" | "moon" | "sunset";
 
-// Professional SVG Icons
+// Professional SVG Icons - Not used in favor of 3D images
 const Icons = {
-  Sunrise: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
-      <path d="M12 2v2" />
-      <path d="m4.93 4.93 1.41 1.41" />
-      <path d="M20 12h2" />
-      <path d="m19.07 4.93-1.41 1.41" />
-      <path d="M15.91 11.63c1.3 2.24-1.4 4.86-3.82 3.6a2.79 2.79 0 0 1 0-4.8c2.42-1.26 5.12 1.37 3.82 3.59z" />
-      <path d="M2 12h2" />
-      <path d="M22 22H2" />
-      <path d="m8 6 4-4 4 4" />
-      <path d="M16 18a4 4 0 0 0-8 0" />
-    </svg>
-  ),
-  Sunset: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
-      <path d="M12 10V2" />
-      <path d="m4.93 4.93 1.41 1.41" />
-      <path d="M20 12h2" />
-      <path d="m19.07 4.93-1.41 1.41" />
-      <path d="M22 22H2" />
-      <path d="m16 6-4 4-4-4" />
-      <path d="M16 18a4 4 0 0 0-8 0" />
-    </svg>
-  ),
-  Moon: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="none" className="w-full h-full">
-      <path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 0 1-4.4 2.26 5.403 5.403 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z" />
-    </svg>
-  )
+  // Keeping structure but not using them
 };
 
 export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: EphemeridesCardProps): JSX.Element => {
@@ -67,9 +39,9 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
 
   const getIconForState = () => {
     switch (currentState) {
-      case "sunrise": return <div className="w-8 h-8 text-amber-300 drop-shadow-md"><Icons.Sunrise /></div>;
-      case "sunset": return <div className="w-8 h-8 text-orange-400 drop-shadow-md"><Icons.Sunset /></div>;
-      case "moon": return <div className="w-8 h-8 text-blue-200 drop-shadow-md"><Icons.Moon /></div>;
+      case "sunrise": return <img src="/img/icons/3d/sun-smile.png" className="w-8 h-8 drop-shadow-md animate-bounce-slow" alt="sunrise" />;
+      case "sunset": return <img src="/img/icons/3d/sun-smile.png" className="w-8 h-8 drop-shadow-md animate-bounce-slow grayscale opacity-80" alt="sunset" />;
+      case "moon": return <img src="/img/icons/3d/moon-sleep.png" className="w-8 h-8 drop-shadow-md animate-bounce-slow" alt="moon" />;
     }
   };
 
@@ -113,19 +85,15 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
 
           <div className="relative z-10 transition-all duration-700 transform flex items-center justify-center">
             {currentState === "sunrise" && (
-              <div className="w-[120px] h-[120px] text-amber-300 drop-shadow-[0_0_25px_rgba(251,191,36,0.6)] animate-pulse-slow">
-                <Icons.Sunrise />
-              </div>
+              <img src="/img/icons/3d/sun-smile.png" className="w-auto h-[160px] object-contain drop-shadow-[0_0_25px_rgba(251,191,36,0.6)] animate-pulse-slow" alt="Sunrise" />
             )}
             {currentState === "sunset" && (
-              <div className="w-[120px] h-[120px] text-orange-400 drop-shadow-[0_0_25px_rgba(251,146,60,0.6)] animate-pulse-slow">
-                <Icons.Sunset />
+              <div className="relative">
+                <img src="/img/icons/3d/sun-smile.png" className="w-auto h-[160px] object-contain drop-shadow-[0_0_25px_rgba(251,146,60,0.6)] grayscale-[40%] sepia-[40%] animate-pulse-slow" alt="Sunset" />
               </div>
             )}
             {currentState === "moon" && (
-              <div className="w-[100px] h-[100px] text-blue-100 drop-shadow-[0_0_30px_rgba(255,255,255,0.4)] animate-float">
-                <Icons.Moon />
-              </div>
+              <img src="/img/icons/3d/moon-sleep.png" className="w-auto h-[160px] object-contain drop-shadow-[0_0_30px_rgba(255,255,255,0.4)] animate-float" alt="Moon" />
             )}
           </div>
         </div>

@@ -110,112 +110,72 @@ const NewsIconImage: React.FC<{ size?: number; className?: string }> = ({ size =
 };
 
 export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
-  const readNewsIdsRef = useRef<Set<string>>(getReadNewsIds());
-  const hasMarkedAsReadRef = useRef(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
 
-  // Filtrar noticias no leídas
-  const unreadNews = useMemo(() => {
-    if (items.length === 0) {
-      return [{ title: "Sin titulares disponibles" }];
-    }
-
-    // Obtener IDs de noticias leídas
-    const readIds = readNewsIdsRef.current;
-
-    // Filtrar noticias no leídas
-    const unread = items.filter(item => {
-      const id = getNewsId(item);
-      return !readIds?.has(id);
-    });
-
-    // Si todas están leídas o no hay noticias no leídas, mostrar todas
-    // (para que siempre haya algo que mostrar)
-    if (unread.length === 0 && items.length > 0) {
-      // Resetear noticias leídas si todas están leídas para mostrar de nuevo
-      localStorage.removeItem(STORAGE_KEY_READ_NEWS);
-      readNewsIdsRef.current = new Set();
-      return items;
-    }
-
-    return unread.length > 0 ? unread : items;
-  }, [items]);
-
-  // Marcar noticias como leídas después de un tiempo de visualización
+  // Rotation logic - 8 seconds per headline
   useEffect(() => {
-    if (hasMarkedAsReadRef.current || unreadNews.length === 0 || unreadNews[0].title === "Sin titulares disponibles") {
-      return;
-    }
-
-    // Marcar como leídas después de 15 segundos (tiempo suficiente para leer)
-    const timer = window.setTimeout(() => {
-      markNewsAsRead(unreadNews);
-      hasMarkedAsReadRef.current = true;
-      readNewsIdsRef.current = getReadNewsIds();
-    }, 15000);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [unreadNews]);
-
-  const list = unreadNews;
-
-  // Resetear flag cuando cambian los items
-  useEffect(() => {
-    hasMarkedAsReadRef.current = false;
+    if (items.length <= 1) return;
+    const interval = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % items.length);
+    }, 8000);
+    return () => clearInterval(interval);
   }, [items.length]);
+
+  const currentItem = items[currentIndex] || { title: "Cargando noticias...", summary: "Espere un momento..." };
 
   return (
     <StandardCard
       title="Noticias"
-      subtitle={new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}
+      subtitle={currentItem.source || "Última Hora"}
       icon={<NewsIconImage size={32} className="drop-shadow-lg" />}
-      noPadding
+      className="news-card-root relative overflow-hidden"
     >
-      <div className="w-full h-full relative flex flex-col items-center justify-center p-4">
-        {/* Marquee/Scroll Container */}
-        <div className="w-full h-full overflow-hidden relative mask-linear-fade">
-          <div className="absolute top-0 left-0 w-full animate-marquee-vertical flex flex-col gap-6">
-            {repeatItems(list).map((item, index) => (
-              <article key={`news-${index}`} className="flex flex-col gap-1 w-full p-4 bg-white/5 rounded-xl border border-white/5 backdrop-blur-sm shadow-sm transition-transform hover:scale-[1.02]">
-                {item.source && (
-                  <span className="text-xs font-bold text-cyan-300 uppercase tracking-wider opacity-80">
-                    {item.source}
-                  </span>
-                )}
-                <h3 className="text-base md:text-lg font-bold text-white leading-tight text-shadow-sm">
-                  {item.title}
-                </h3>
-                {item.summary && (
-                  <p className="text-sm text-gray-300 leading-relaxed line-clamp-2">
-                    {item.summary}
-                  </p>
-                )}
-              </article>
-            ))}
-          </div>
+      {/* Subtle Background Pattern */}
+      <div className="absolute inset-0 opacity-10 bg-[url('/img/noise.png')] mix-blend-overlay pointer-events-none" />
+
+      <div className="flex flex-col h-full justify-between py-2 relative z-10" key={currentIndex}>
+
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col justify-center gap-4 px-2 animate-fade-in-up">
+          <div className="w-12 h-1 bg-cyan-400 rounded-full mb-2 opacity-80" />
+
+          <h2 className="text-xl md:text-2xl font-black text-white leading-tight drop-shadow-md line-clamp-4">
+            {currentItem.title}
+          </h2>
+
+          {currentItem.summary && (
+            <div className="mt-2 p-3 bg-white/10 rounded-lg border-l-2 border-cyan-400 backdrop-blur-sm">
+              <p className="text-sm md:text-base text-gray-100 font-medium leading-relaxed line-clamp-3">
+                {currentItem.summary}
+              </p>
+            </div>
+          )}
         </div>
 
-        {/* Gradients for smooth fade */}
-        <div className="absolute top-0 left-0 w-full h-8 bg-gradient-to-b from-black/20 to-transparent pointer-events-none z-10" />
-        <div className="absolute bottom-0 left-0 w-full h-12 bg-gradient-to-t from-black/40 to-transparent pointer-events-none z-10" />
+        {/* Pagination/Progress */}
+        {items.length > 1 && (
+          <div className="flex gap-1.5 mt-auto pt-4 justify-center opacity-60">
+            {items.map((_, idx) => (
+              <div
+                key={idx}
+                className={`h-1.5 rounded-full transition-all duration-300 ${idx === currentIndex ? 'w-6 bg-cyan-400' : 'w-1.5 bg-white/30'}`}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       <style>{`
-        @keyframes marquee-vertical {
-          0% { transform: translateY(0); }
-          100% { transform: translateY(-50%); }
+        .news-card-root {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
+            color: white !important;
         }
-        .animate-marquee-vertical {
-          animation: marquee-vertical ${Math.max(20, list.length * 5)}s linear infinite;
+        .animate-fade-in-up {
+            animation: fadeInUp 0.5s ease-out forwards;
         }
-        /* Pause on hover if interactive */
-        .animate-marquee-vertical:hover {
-          animation-play-state: paused;
-        }
-        .mask-linear-fade {
-          mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
-          -webkit-mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
     </StandardCard>

@@ -24,26 +24,20 @@ interface TransportCardProps {
     data: TransportData | null;
 }
 
-// Professional SVG Icons
+// Professional SVG Icons - Not used in favor of 3D images if available
 const Icons = {
-    Plane: () => (
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
-            <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" />
-        </svg>
-    ),
-    Ship: () => (
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
-            <path d="M20 21c-1.39 0-2.78-.47-4-1.32-2.44 1.71-5.56 1.71-8 0C6.78 20.53 5.39 21 4 21H2v2h2c1.38 0 2.74-.35 4-.99 2.52 1.29 5.48 1.29 8 0 1.26.65 2.62.99 4 .99h2v-2h-2zM3.95 19H4c1.6 0 3.02-.88 4-2 .98 1.12 2.4 2 4 2s3.02-.88 4-2c.98 1.12 2.4 2 4 2h.05l1.89-6.68c.08-.26.06-.54-.06-.78s-.34-.39-.6-.39H2.66c-.26 0-.5.15-.6.39s-.14.52-.06.78L3.95 19zM6 6h12v3.52c0 .64.31.25.6.39s.44.37.49.63l.36 1.26H4.55l.36-1.26c.05-.26.2-.49.49-.63.29-.14.6-.25.6-.39V6z" />
-            <rect x="7" y="3" width="10" height="2" />
-            <rect x="9" y="1" width="6" height="2" />
-        </svg>
-    ),
     Scan: () => (
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
             <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
             <path d="M21 3v5h-5" />
         </svg>
     )
+};
+
+// 3D Icon paths
+const ICONS_3D = {
+    plane: "/img/icons/3d/plane.png", // Ensure this exists or fallback
+    ship: "/img/icons/3d/ship.png"
 };
 
 export const TransportCard = ({ data }: TransportCardProps) => {
@@ -81,14 +75,28 @@ export const TransportCard = ({ data }: TransportCardProps) => {
 
     // Auto-switch modes logic
     useEffect(() => {
-        if (!hasPlanes && hasShips) setActiveTab("ship");
-        else if (hasPlanes && !hasShips) setActiveTab("plane");
-        else if (hasPlanes && hasShips) {
+        // If we have both, cycle between them
+        if (hasPlanes && hasShips) {
             const modeInterval = setInterval(() => {
                 setActiveTab(prev => prev === "plane" ? "ship" : "plane");
                 setCurrentIndex(0);
             }, 12000);
             return () => clearInterval(modeInterval);
+        }
+
+        // If we only have planes, force plane tab
+        if (hasPlanes && !hasShips) {
+            setActiveTab("plane");
+        }
+
+        // If we only have ships, force ship tab
+        if (!hasPlanes && hasShips) {
+            setActiveTab("ship");
+        }
+
+        // If both are empty, default to plane to show scanning for planes primarily (user preference)
+        if (!hasPlanes && !hasShips) {
+            setActiveTab("plane");
         }
     }, [hasPlanes, hasShips]);
 
@@ -160,7 +168,11 @@ export const TransportCard = ({ data }: TransportCardProps) => {
                     </span>
                 </div>
                 <div className="transport-card__header-icon">
-                    {isPlane ? <Icons.Plane /> : <Icons.Ship />}
+                    <img
+                        src={isPlane ? ICONS_3D.plane : ICONS_3D.ship}
+                        alt={isPlane ? "Avión" : "Barco"}
+                        className="w-full h-full object-contain drop-shadow-md animate-bounce-slow"
+                    />
                 </div>
             </header>
 
@@ -179,7 +191,11 @@ export const TransportCard = ({ data }: TransportCardProps) => {
                         </div>
                     ) : (
                         <div className="transport-card__icon-large">
-                            {isPlane ? <Icons.Plane /> : <Icons.Ship />}
+                            <img
+                                src={isPlane ? ICONS_3D.plane : ICONS_3D.ship}
+                                alt={isPlane ? "Avión" : "Barco"}
+                                className="w-full h-full object-contain filter drop-shadow-lg"
+                            />
                         </div>
                     )}
                 </div>

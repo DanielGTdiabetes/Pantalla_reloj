@@ -1037,8 +1037,13 @@ export const OverlayRotator: React.FC = () => {
         // Show even if empty to confirm presence, or checking transport object
         shouldInclude = !!transport;
       } else if (panelId === "apod") {
-        // Relax check to allow debugging on card level if needed
-        shouldInclude = !!apod;
+        // Ensure we only show APOD if it's an image
+        shouldInclude = !!apod && apod.media_type === "image";
+      } else if (panelId === "warnings") {
+        const hasWarnings = warnings?.features && Array.isArray(warnings.features) && warnings.features.length > 0;
+        const panelsConfig = config as unknown as { panels?: { warnings?: { enabled?: boolean } } };
+        const enabled = panelsConfig.panels?.warnings?.enabled !== false;
+        shouldInclude = enabled && !!hasWarnings;
       }
 
       if (shouldInclude) {

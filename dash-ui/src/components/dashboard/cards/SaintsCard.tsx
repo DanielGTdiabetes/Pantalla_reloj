@@ -40,8 +40,15 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
 
   // 2. Smart Prefix Logic
   const formatName = (name: string) => {
-    if (name.includes("San") || name.includes("Beato") || name.includes("Santa")) return name;
+    // Already has prefix?
+    if (name.includes("San ") || name.includes("Santo ") || name.includes("Santa ") || name.includes("Beato ") || name.includes("Beata ")) return name;
+
+    // Specific fixes
+    if (name.toLowerCase() === "ambrosio") return "San Ambrosio";
+
+    // Gender guessing (naive but functional for simple lists)
     if (name.endsWith("a") && !["Luka", "Josua", "Bautisma"].includes(name)) return `Santa ${name}`;
+
     return `San ${name}`;
   };
 

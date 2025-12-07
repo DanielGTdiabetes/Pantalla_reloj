@@ -133,12 +133,12 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
         </div>
 
         {/* Info Box */}
-        <div className="mt-4 flex flex-col items-center gap-1 z-20 w-full">
-          <h3 className="text-3xl md:text-4xl font-black text-white tracking-tight leading-none text-center drop-shadow-md text-shadow-sm">
+        <div className="mt-4 flex flex-col items-center gap-1 z-20 w-full px-2">
+          <h3 className="text-2xl md:text-3xl font-black text-white tracking-tight leading-tight text-center drop-shadow-md text-shadow-sm line-clamp-2">
             {currentItem.name}
           </h3>
           {currentItem.status && (
-            <span className="text-emerald-100 font-bold uppercase tracking-widest text-xs bg-black/20 px-3 py-1 rounded-full border border-white/10">
+            <span className="text-emerald-100 font-bold uppercase tracking-widest text-[10px] md:text-xs bg-black/20 px-3 py-1 rounded-full border border-white/10 shrink-0">
               {currentItem.status}
             </span>
           )}
