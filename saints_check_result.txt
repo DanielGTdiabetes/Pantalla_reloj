@@ -1,0 +1,11 @@
+Testing saint fetch for San Ambrosio...
+Fetching info for: ['Ambrosio']
+
+========================================
+Name: Ambrosio
+Has Bio: Yes
+Bio preview: Ambrosio de Milán, de nombre original Aurelio Ambrosio, canonizado como San Ambrosio,fue un destacad...
+Has Image: Yes
+Image URL: https://upload.wikimedia.org/wikipedia/commons/9/9a/AmbroseOfMilan.jpg
+Wiki URL: https://es.wikipedia.org/wiki/Ambrosio_de_Mil%C3%A1n
+========================================

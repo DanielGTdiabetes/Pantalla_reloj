@@ -1,29 +1,27 @@
 import asyncio
 import logging
+import sys
 from services.saints_service import fetch_saint_info_wikipedia, enrich_saints
 
-logging.basicConfig(level=logging.INFO)
-
 async def main():
-    with open("test_saints_output.txt", "w", encoding="utf-8") as f:
-        f.write("Testing single saint fetch...\n")
-        # Test with a known saint
-        name = "San Francisco de Asís"
-        info = await fetch_saint_info_wikipedia(name)
-        f.write(f"Result for {name}:\n")
-        f.write(f"Name: {info['name']}\n")
-        f.write(f"Bio: {info['bio']}\n")
-        f.write(f"Image: {info['image']}\n")
-        f.write("-" * 20 + "\n")
-
-        f.write("Testing enrichment list...\n")
-        names = ["Santa Bárbara", "San Nicolás", "Santo Tomás"]
-        results = await enrich_saints(names)
+    with open("saints_check_result.txt", "w", encoding="utf-8") as f:
+        f.write("Testing saint fetch for San Ambrosio...\n")
+        
+        names_to_test = ["Ambrosio"]
+        
+        f.write(f"Fetching info for: {names_to_test}\n")
+        results = await enrich_saints(names_to_test)
+        
         for res in results:
+            f.write("\n" + "="*40 + "\n")
             f.write(f"Name: {res['name']}\n")
-            f.write(f"Bio: {res['bio'][:50]}..." if res['bio'] else "No bio\n")
-            f.write(f"Image: {res['image']}\n")
-            f.write("-" * 20 + "\n")
+            f.write(f"Has Bio: {'Yes' if res['bio'] else 'No'}\n")
+            if res['bio']:
+                f.write(f"Bio preview: {res['bio'][:100]}...\n")
+            f.write(f"Has Image: {'Yes' if res['image'] else 'No'}\n")
+            f.write(f"Image URL: {res['image']}\n")
+            f.write(f"Wiki URL: {res['url']}\n")
+            f.write("="*40 + "\n")
 
 if __name__ == "__main__":
     asyncio.run(main())
