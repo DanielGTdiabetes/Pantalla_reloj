@@ -2485,11 +2485,22 @@ async def upload_ics_file(
         ) from exc
 
     incoming = {
+        # Update panels.calendar (for panel display logic)
         "panels": {
             "calendar": {
                 "enabled": True,
                 "provider": "ics",
                 "ics_path": str(ICS_STORAGE_PATH),
+            }
+        },
+        # Also update top-level calendar config (for /api/calendar/test endpoint)
+        "calendar": {
+            "enabled": True,
+            "source": "ics",
+            "provider": "ics",
+            "ics": {
+                "stored_path": str(ICS_STORAGE_PATH),
+                "file_path": str(ICS_STORAGE_PATH),
             }
         },
     }

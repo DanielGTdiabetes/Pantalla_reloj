@@ -4,6 +4,8 @@ import json
 import logging
 import os
 import re
+import sys
+import tempfile
 import time
 import traceback
 from copy import deepcopy
@@ -16,9 +18,42 @@ from .config_manager import ConfigManager
 
 LOGGER = logging.getLogger("pantalla.backend.config_store")
 
-CONFIG_PATH = Path("/var/lib/pantalla-reloj/config.json")
-ICS_STORAGE_DIR = Path(os.getenv("PANTALLA_ICS_DIR", "/var/lib/pantalla-reloj/calendar"))
+# Cross-platform path resolution
+def _resolve_storage_path(env_var: str, linux_default: str, windows_fallback_name: str) -> Path:
+    """Resolve storage path with cross-platform support."""
+    env_value = os.getenv(env_var)
+    if env_value:
+        return Path(env_value)
+    
+    linux_path = Path(linux_default)
+    
+    # Check if we're on Windows or if Linux path doesn't exist
+    if sys.platform == "win32" or not linux_path.parent.exists():
+        # Use temp directory on Windows
+        temp_base = Path(tempfile.gettempdir()) / "pantalla-reloj"
+        temp_base.mkdir(parents=True, exist_ok=True)
+        return temp_base / windows_fallback_name
+    
+    return linux_path
+
+
+CONFIG_PATH = _resolve_storage_path(
+    "PANTALLA_CONFIG",
+    "/var/lib/pantalla-reloj/config.json",
+    "config.json"
+)
+ICS_STORAGE_DIR = _resolve_storage_path(
+    "PANTALLA_ICS_DIR",
+    "/var/lib/pantalla-reloj/calendar",
+    "calendar"
+)
 ICS_STORAGE_PATH = ICS_STORAGE_DIR / "calendar.ics"
+
+# Ensure ICS directory exists
+try:
+    ICS_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+except (OSError, PermissionError) as exc:
+    LOGGER.warning("Could not create ICS storage directory: %s", exc)
 
 
 class CalendarValidationError(Exception):

@@ -279,9 +279,9 @@
     "timezone": "Europe/Madrid"
   },
   "calendar": {
-    "enabled": false,
-    "source": "google",
-    "provider": "google",
+    "enabled": true,
+    "source": "ics",
+    "provider": "ics",
     "days_ahead": 14
   },
   "harvest": {
