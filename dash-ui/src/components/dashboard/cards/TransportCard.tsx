@@ -100,6 +100,29 @@ export const TransportCard = ({ data }: TransportCardProps) => {
     }
 
     const currentItem = currentItems[currentIndex] || currentItems[0];
+
+    // Dispatch highlight event when item changes
+    useEffect(() => {
+        if (!currentItem) return;
+
+        const event = new CustomEvent("pantalla:map:highlight", {
+            detail: {
+                id: currentItem.id,
+                type: currentItem.type, // 'plane' | 'ship'
+                lat: currentItem.lat,
+                lon: currentItem.lon
+            }
+        });
+        window.dispatchEvent(event);
+
+        return () => {
+            // Optional: dispatch clear event on unmount or change? 
+            // We can just rely on the next event replacing it, 
+            // or dispatch null if component unmounts.
+            // For now, let's leave the last highlight or let the map handle timeout.
+        };
+    }, [currentItem]);
+
     if (!currentItem) return null;
 
     const isPlane = currentItem.type === "plane";

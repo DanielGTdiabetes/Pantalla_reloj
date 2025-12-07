@@ -1947,6 +1947,87 @@ export default function GeoScopeMap({
     radarOpacity,
   ]);
 
+  // Listener events for Highlighting Transport Items
+  useEffect(() => {
+    const handleHighlight = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!mapRef.current || !mapRef.current.getStyle()) return;
+
+      const map = mapRef.current;
+      const sourceId = "highlight-transport-source";
+      const layerId = "highlight-transport-layer"; // Inner ring
+      const pulseLayerId = "highlight-transport-pulse"; // Outer glow
+
+      if (!detail || !detail.lat || !detail.lon) {
+        // Clear highlight
+        const source = map.getSource(sourceId) as any;
+        if (source) {
+          source.setData({ type: "FeatureCollection", features: [] });
+        }
+        return;
+      }
+
+      const point = {
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [detail.lon, detail.lat]
+        },
+        properties: {}
+      };
+
+      const source = map.getSource(sourceId) as any;
+      if (source) {
+        source.setData(point);
+
+        // Update color if type changed
+        if (map.getLayer(pulseLayerId)) {
+          setPaintProperty(map, pulseLayerId, "circle-color", detail.type === 'plane' ? "#3b82f6" : "#14b8a6");
+        }
+      } else {
+        // Add source and layers if not exist
+        if (!map.getSource(sourceId)) {
+          map.addSource(sourceId, {
+            type: "geojson",
+            data: point as any
+          });
+        }
+
+        if (!map.getLayer(pulseLayerId)) {
+          map.addLayer({
+            id: pulseLayerId,
+            type: "circle",
+            source: sourceId,
+            paint: {
+              "circle-radius": 35,
+              "circle-color": detail.type === 'plane' ? "#3b82f6" : "#14b8a6",
+              "circle-opacity": 0.5,
+              "circle-stroke-width": 0,
+              "circle-blur": 0.5
+            }
+          });
+        }
+
+        if (!map.getLayer(layerId)) {
+          map.addLayer({
+            id: layerId,
+            type: "circle",
+            source: sourceId,
+            paint: {
+              "circle-radius": 20,
+              "circle-color": "transparent",
+              "circle-stroke-width": 3,
+              "circle-stroke-color": "#ffffff"
+            }
+          });
+        }
+      }
+    };
+
+    window.addEventListener("pantalla:map:highlight", handleHighlight);
+    return () => window.removeEventListener("pantalla:map:highlight", handleHighlight);
+  }, []);
+
 
   // Mostrar error si WebGL no está disponible o el mapa falló
   if (webglError) {
