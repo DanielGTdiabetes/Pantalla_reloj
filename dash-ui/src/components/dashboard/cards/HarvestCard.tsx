@@ -66,7 +66,7 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
   return (
     <div className="harvest-card-dark">
       <div className="harvest-card-dark__header">
-        <img src="/img/icons/3d/harvest-basket.png" alt="" className="harvest-card-dark__header-icon" />
+        <span className="harvest-card-dark__icon-emoji">🧺</span>
         <span className="harvest-card-dark__title">De Temporada</span>
       </div>
 
@@ -107,11 +107,8 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
           gap: 0.5rem;
           margin-bottom: 0.5rem;
         }
-        .harvest-card-dark__header-icon {
-          width: 48px;
-          height: 48px;
-          object-fit: contain;
-          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+        .harvest-card-dark__icon-emoji {
+          font-size: 2rem;
         }
         .harvest-card-dark__title {
           font-size: 1.3rem;
@@ -131,16 +128,12 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
           width: 140px;
           height: 140px;
           animation: scaleIn-dark 0.4s ease-out;
-          background: rgba(255,255,255,0.9);
-          border-radius: 1rem;
-          padding: 0.5rem;
-          box-sizing: border-box;
         }
         .harvest-card-dark__main-icon {
           width: 100%;
           height: 100%;
           object-fit: contain;
-          filter: drop-shadow(0 4px 12px rgba(0,0,0,0.2));
+          filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3));
           animation: float-dark 4s ease-in-out infinite;
         }
         .harvest-card-dark__name {

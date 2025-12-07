@@ -16,15 +16,39 @@ type WeatherForecastCardProps = {
   unit: string;
 };
 
-const get3DIcon = (condition: string): string => {
+// Map condition to weather icon (day icons for forecast)
+const getWeatherIcon = (condition: string): string => {
   const c = (condition || "").toLowerCase();
-  if (c.includes("lluvia") || c.includes("rain") || c.includes("tormenta") || c.includes("nube")) {
-    return "/img/icons/3d/cloud-rain.png";
+
+  if (c.includes("tormenta") || c.includes("thunder") || c.includes("storm")) {
+    return "/icons/weather/day/thunderstorm.svg";
   }
-  if (c.includes("noche") || c.includes("night") || c.includes("moon")) {
-    return "/img/icons/3d/moon-sleep.png";
+  if (c.includes("lluvia") || c.includes("rain") || c.includes("lluvioso")) {
+    return "/icons/weather/day/rain.svg";
   }
-  return "/img/icons/3d/sun-smile.png";
+  if (c.includes("llovizna") || c.includes("drizzle")) {
+    return "/icons/weather/day/drizzle.svg";
+  }
+  if (c.includes("nieve") || c.includes("snow")) {
+    return "/icons/weather/day/snow.svg";
+  }
+  if (c.includes("niebla") || c.includes("fog") || c.includes("bruma")) {
+    return "/icons/weather/day/fog.svg";
+  }
+  if (c.includes("nublado") || c.includes("cloudy") || c.includes("nubes")) {
+    return "/icons/weather/day/cloudy.svg";
+  }
+  if (c.includes("parcialmente") || c.includes("partly")) {
+    return "/icons/weather/day/partly-cloudy.svg";
+  }
+  if (c.includes("cubierto") || c.includes("overcast")) {
+    return "/icons/weather/day/overcast.svg";
+  }
+  if (c.includes("despejado") || c.includes("clear") || c.includes("soleado") || c.includes("sunny") || c.includes("sol")) {
+    return "/icons/weather/day/sunny.svg";
+  }
+
+  return "/icons/weather/day/sunny.svg";
 };
 
 export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX.Element | null => {
@@ -43,12 +67,12 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
   const day = days[currentIndex];
   if (!day) return null;
 
-  const iconUrl = get3DIcon(day.condition);
+  const iconUrl = getWeatherIcon(day.condition);
 
   return (
     <div className="forecast-card-dark">
       <div className="forecast-card-dark__header">
-        <img src="/img/icons/3d/cloud-rain.png" alt="" className="forecast-card-dark__header-icon" />
+        <img src="/icons/weather/day/cloudy.svg" alt="" className="forecast-card-dark__header-icon" />
         <span className="forecast-card-dark__title">Previsión Semanal</span>
       </div>
 

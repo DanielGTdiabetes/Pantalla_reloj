@@ -11,15 +11,45 @@ type WeatherCardProps = {
   timezone?: string;
 };
 
-const get3DIcon = (condition: string | null): string => {
+// Map condition to appropriate weather icon
+const getWeatherIcon = (condition: string | null): string => {
   const c = (condition || "").toLowerCase();
-  if (c.includes("lluvia") || c.includes("rain") || c.includes("tormenta") || c.includes("nube")) {
-    return "/img/icons/3d/cloud-rain.png";
+
+  // Check time of day for day/night icons
+  const hour = new Date().getHours();
+  const isNight = hour < 6 || hour >= 21;
+  const folder = isNight ? "night" : "day";
+
+  if (c.includes("tormenta") || c.includes("thunder") || c.includes("storm")) {
+    return `/icons/weather/${folder}/thunderstorm.svg`;
   }
-  if (c.includes("noche") || c.includes("night") || c.includes("moon")) {
-    return "/img/icons/3d/moon-sleep.png";
+  if (c.includes("lluvia") || c.includes("rain") || c.includes("lluvioso")) {
+    return `/icons/weather/${folder}/rain.svg`;
   }
-  return "/img/icons/3d/sun-smile.png";
+  if (c.includes("llovizna") || c.includes("drizzle")) {
+    return `/icons/weather/${folder}/drizzle.svg`;
+  }
+  if (c.includes("nieve") || c.includes("snow")) {
+    return `/icons/weather/${folder}/snow.svg`;
+  }
+  if (c.includes("niebla") || c.includes("fog") || c.includes("bruma")) {
+    return `/icons/weather/${folder}/fog.svg`;
+  }
+  if (c.includes("nublado") || c.includes("cloudy") || c.includes("nubes")) {
+    return `/icons/weather/${folder}/cloudy.svg`;
+  }
+  if (c.includes("parcialmente") || c.includes("partly")) {
+    return `/icons/weather/${folder}/partly-cloudy.svg`;
+  }
+  if (c.includes("cubierto") || c.includes("overcast")) {
+    return `/icons/weather/${folder}/overcast.svg`;
+  }
+  if (c.includes("despejado") || c.includes("clear") || c.includes("soleado") || c.includes("sunny") || c.includes("sol")) {
+    return `/icons/weather/${folder}/sunny.svg`;
+  }
+
+  // Default based on time
+  return isNight ? "/icons/weather/night/clear.svg" : "/icons/weather/day/sunny.svg";
 };
 
 export const WeatherCard = ({
@@ -31,7 +61,7 @@ export const WeatherCard = ({
   rain
 }: WeatherCardProps): JSX.Element => {
   const tempValue = temperatureLabel.replace(/[^\d-]/g, "");
-  const iconUrl = get3DIcon(condition);
+  const iconUrl = getWeatherIcon(condition);
 
   return (
     <div className="weather-card-dark">

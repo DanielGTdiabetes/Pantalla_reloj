@@ -10,6 +10,23 @@ type EphemeridesCardProps = {
 
 type AstroState = "sunrise" | "moon" | "sunset";
 
+// Get moon phase icon based on illumination percentage
+const getMoonPhaseIcon = (illumination: number | null): string => {
+  if (illumination === null || Number.isNaN(illumination)) {
+    return "/icons/moon/moon-50.svg";
+  }
+
+  // Normalize to 0-1 if percentage
+  const illum = illumination > 1 ? illumination / 100 : illumination;
+  const normalized = Math.max(0, Math.min(1, illum));
+
+  if (normalized <= 0.12) return "/icons/moon/moon-0.svg";
+  if (normalized <= 0.37) return "/icons/moon/moon-25.svg";
+  if (normalized <= 0.62) return "/icons/moon/moon-50.svg";
+  if (normalized <= 0.87) return "/icons/moon/moon-75.svg";
+  return "/icons/moon/moon-100.svg";
+};
+
 export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: EphemeridesCardProps): JSX.Element => {
   const [currentState, setCurrentState] = useState<AstroState>("sunrise");
 
@@ -28,8 +45,14 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
     : null;
 
   const getIcon = () => {
-    if (currentState === "moon") return "/img/icons/3d/moon-sleep.png";
-    return "/img/icons/3d/sun-smile.png";
+    if (currentState === "moon") {
+      return getMoonPhaseIcon(illumination);
+    }
+    // Sun icons for sunrise/sunset
+    if (currentState === "sunset") {
+      return "/icons/weather/day/sunset.svg"; // Fall back to sunny if no sunset
+    }
+    return "/icons/weather/day/sunny.svg";
   };
 
   const getLabel = () => {
@@ -44,10 +67,12 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
     return moonPhase || "Luna";
   };
 
+  const iconUrl = getIcon();
+
   return (
     <div className="ephemerides-card-dark">
       <div className="ephemerides-card-dark__header">
-        <img src={getIcon()} alt="" className="ephemerides-card-dark__header-icon" />
+        <img src={iconUrl} alt="" className="ephemerides-card-dark__header-icon" />
         <span className="ephemerides-card-dark__title">Astronomía</span>
       </div>
 
@@ -56,7 +81,7 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
 
         <div className="ephemerides-card-dark__icon-container">
           <img
-            src={getIcon()}
+            src={iconUrl}
             alt={getLabel()}
             className={`ephemerides-card-dark__main-icon ${currentState === "sunset" ? "sunset-filter" : ""}`}
           />
@@ -122,11 +147,11 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
           width: 100%;
           height: 100%;
           object-fit: contain;
-          filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));
+          filter: drop-shadow(0 4px 12px rgba(255,255,255,0.2));
           animation: float-dark 4s ease-in-out infinite;
         }
         .ephemerides-card-dark__main-icon.sunset-filter {
-          filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4)) sepia(0.3) saturate(1.3);
+          filter: drop-shadow(0 4px 12px rgba(255,150,50,0.4)) sepia(0.3) saturate(1.3);
         }
         .ephemerides-card-dark__value {
           font-size: 2.5rem;

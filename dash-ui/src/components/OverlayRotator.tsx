@@ -1037,8 +1037,8 @@ export const OverlayRotator: React.FC = () => {
         // This fixes the issue where user sees planes on map but card is hidden due to race conditions or brief empty data
         shouldInclude = true;
       } else if (panelId === "apod") {
-        // Ensure we only show APOD if it's an image
-        shouldInclude = !!apod && apod.media_type === "image";
+        // Show APOD for both images and videos
+        shouldInclude = !!apod && (apod.media_type === "image" || apod.media_type === "video");
       } else if (panelId === "warnings") {
         const hasWarnings = warnings?.features && Array.isArray(warnings.features) && warnings.features.length > 0;
         const panelsConfig = config as unknown as { panels?: { warnings?: { enabled?: boolean } } };
