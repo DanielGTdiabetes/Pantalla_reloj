@@ -400,7 +400,7 @@ SAINTS_BY_DATE: Dict[str, List[str]] = {
     "12-03": ["Francisco Javier"],
     "12-04": ["Juan Damasceno"],
     "12-06": ["Nicolás"],
-    "12-07": ["Ambrocio"],
+    "12-07": ["Ambrosio"],
     "12-08": ["Inmaculada Concepción"],
     "12-09": ["Juan Diego"],
     "12-11": ["Dámaso"],
