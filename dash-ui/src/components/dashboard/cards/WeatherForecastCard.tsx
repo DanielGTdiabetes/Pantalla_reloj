@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { StandardCard } from "../StandardCard";
 
 type ForecastDay = {
   date: string;
@@ -16,22 +17,14 @@ type WeatherForecastCardProps = {
   unit: string;
 };
 
-// Mapeo heurístico a iconos 3D estáticos
 const get3DIconUrl = (condition: string): string => {
-  const baseUrl = "https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Travel%20and%20places/";
-  const skyUrl = "https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Sky%20and%20weather/";
-
   const c = (condition || "").toLowerCase();
 
-  if (c.includes("despejado") || c.includes("clear") || c.includes("soleado")) return `${baseUrl}Sun.png`;
-  if (c.includes("parcial") || c.includes("partly") || (c.includes("nub") && c.includes("sol"))) return `${skyUrl}Sun%20Behind%20Cloud.png`;
-  if (c.includes("lluvia") || c.includes("rain") || c.includes("llovizna") || c.includes("chubasco")) return `${skyUrl}Cloud%20with%20Rain.png`;
-  if (c.includes("tormenta") || c.includes("storm") || c.includes("trueno")) return `${skyUrl}Cloud%20with%20Lightning%20and%20Rain.png`;
-  if (c.includes("nieve") || c.includes("snow")) return `${skyUrl}Cloud%20with%20Snow.png`;
-  if (c.includes("niebla") || c.includes("fog") || c.includes("mist")) return `${skyUrl}Fog.png`;
-  if (c.includes("nublado") || c.includes("cloud") || c.includes("cubierto")) return `${skyUrl}Cloud.png`;
+  if (c.includes("lluvia") || c.includes("rain") || c.includes("tormenta")) return "/img/icons/3d/cloud-rain.png";
+  if (c.includes("noche") || c.includes("moon")) return "/img/icons/3d/moon-sleep.png";
 
-  return `${baseUrl}Sun.png`;
+  // Default sunny/partly cloudy -> sun smile
+  return "/img/icons/3d/sun-smile.png";
 };
 
 const WeatherIcon3D = ({ condition, className }: { condition: string; className?: string }) => {
@@ -39,15 +32,14 @@ const WeatherIcon3D = ({ condition, className }: { condition: string; className?
   const [error, setError] = useState(false);
 
   if (error) {
-    return <span className="text-6xl filter drop-shadow-lg">🌤️</span>;
+    return <span className="text-4xl">🌤️</span>;
   }
-
 
   return (
     <img
       src={url}
       alt={condition}
-      className={`${className} object-contain filter drop-shadow-2xl will-change-transform`}
+      className={`${className} object-contain filter drop-shadow-2xl will-change-transform z-10`}
       onError={() => setError(true)}
     />
   );
@@ -73,89 +65,114 @@ export const WeatherForecastCard = ({ forecast, unit }: WeatherForecastCardProps
   const currentDay = days[currentIndex];
   if (!currentDay) return null;
 
+  // Choose header icon based on overall condition or just generic rain cloud if mixed? 
+  // Let's use cloud-rain as generic 'Weather' icon for header to distinct from Astro
+  const headerIcon = <img src="/img/icons/3d/cloud-rain.png" className="w-8 h-8 drop-shadow-md animate-bounce-slow" alt="weather" />;
+
   return (
-    <div className="h-full w-full relative overflow-hidden rounded-3xl shadow-2xl border border-white/5">
-      {/* Background Image "Nano Banana" */}
-      <div className="absolute inset-0 z-0">
-        <img src="/img/panels/weather-bg.png" alt="Weather Background" className="w-full h-full object-cover opacity-80" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/60" />
-      </div>
+    <StandardCard
+      title="Previsión"
+      subtitle="Pronóstico semanal"
+      icon={headerIcon}
+      className="bg-gradient-to-br from-sky-400 to-blue-600 relative overflow-hidden"
+    >
+      {/* Subtle Pattern Overlay */}
+      <div className="absolute inset-0 opacity-10 bg-[url('/img/noise.png')] mix-blend-overlay pointer-events-none" />
 
-      <div className="absolute inset-0 flex flex-col items-center justify-between p-4 z-10">
+      {/* Background gradient structure */}
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-blue-800/20 to-blue-900/50 pointer-events-none" />
 
-        {/* Header */}
-        <div className="w-full flex justify-between items-start z-10">
-          <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-200/60">
-            Previsión Semanal
+      <div className="flex flex-col items-center justify-between py-4 h-full w-full relative z-10 animate-fade-in-up" key={currentIndex}>
+
+        {/* 1. Date Pill */}
+        <div className="bg-white/20 backdrop-blur-md px-4 py-1 rounded-full border border-white/30 shadow-sm mb-2">
+          <h2 className="text-lg font-bold text-white uppercase tracking-wider drop-shadow-sm flex flex-col items-center leading-none gap-0.5">
+            <span>{currentDay.dayName || "Hoy"}</span>
+            <span className="text-[10px] opacity-80 font-normal tracking-widest">{currentDay.date}</span>
           </h2>
         </div>
 
-        {/* Content Container - Flex layout for better distribution */}
-        <div className="flex-1 w-full flex flex-col items-center justify-center gap-2 z-10 mt-1">
+        {/* 2. Main Weather Icon - Centered */}
+        <div className="relative group cursor-pointer flex-1 flex items-center justify-center w-full min-h-0">
+          <div className="absolute inset-0 bg-white/30 rounded-full blur-[60px] animate-pulse-slow pointer-events-none scale-125" />
+          <WeatherIcon3D
+            condition={currentDay.condition}
+            className="w-auto h-[65%] max-h-[160px] animate-float"
+          />
+        </div>
 
-          {/* 1. Date & Day Name */}
-          <div className="text-center flex flex-col items-center">
-            <h1 className="text-3xl md:text-4xl lg:text-5xl font-black text-white tracking-wide drop-shadow-lg leading-none uppercase">
-              {currentDay.dayName || "Día"}
-            </h1>
-            <span className="text-lg md:text-xl text-cyan-100/80 font-medium mt-1 tracking-wider">
-              {currentDay.date}
-            </span>
-          </div>
-
-          {/* 2. Icon (Dynamic Float) */}
-          <div className="relative flex-1 w-full flex items-center justify-center min-h-[100px] animate-float-slow">
-            <WeatherIcon3D
-              condition={currentDay.condition}
-              className="h-28 w-28 md:h-36 md:w-36 drop-shadow-2xl"
-            />
-          </div>
-
-          {/* 3. Temps & Condition */}
-          <div className="w-full flex items-center justify-between bg-white/5 p-3 rounded-2xl backdrop-blur-sm border border-white/10 shadow-lg mt-auto">
-
-            {/* Temps */}
-            <div className="flex items-center gap-4">
-              <div className="flex flex-col items-center">
-                <span className="text-3xl font-bold text-red-300 drop-shadow-sm leading-none">
-                  {currentDay.temperature.max ? Math.round(currentDay.temperature.max) : "--"}°
-                </span>
-              </div>
-              <div className="w-px h-8 bg-white/20" />
-              <div className="flex flex-col items-center">
-                <span className="text-3xl font-bold text-cyan-300 drop-shadow-sm leading-none">
-                  {currentDay.temperature.min ? Math.round(currentDay.temperature.min) : "--"}°
-                </span>
-              </div>
-            </div>
-
-            {/* Condition Text */}
-            <div className="flex flex-col items-end text-right max-w-[120px]">
-              <span className="text-xs md:text-sm font-medium text-white/90 capitalize leading-tight">
-                {currentDay.condition}
+        {/* 3. Temps & Condition Box */}
+        <div className="w-full bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/20 flex items-center justify-between shadow-lg mt-auto">
+          <div className="flex items-center gap-3">
+            {/* Min/Max */}
+            <div className="flex flex-col items-center">
+              <span className="text-xl md:text-2xl font-black text-white drop-shadow-sm leading-none flex gap-0.5">
+                {currentDay.temperature.max ? Math.round(currentDay.temperature.max) : "--"}°
+                <span className="text-xs text-white/60 font-medium self-start mt-1">MAX</span>
               </span>
-              {currentDay.precipitation !== null && currentDay.precipitation !== undefined && currentDay.precipitation > 0 && (
-                <div className="flex items-center gap-1 mt-1 text-blue-300">
-                  <span className="text-xs">💧</span>
-                  <span className="text-xs font-bold">{Math.round(currentDay.precipitation)}%</span>
-                </div>
-              )}
             </div>
+            <div className="w-px h-6 bg-white/30" />
+            <div className="flex flex-col items-center">
+              <span className="text-xl md:text-2xl font-black text-cyan-100 drop-shadow-sm leading-none flex gap-0.5">
+                {currentDay.temperature.min ? Math.round(currentDay.temperature.min) : "--"}°
+                <span className="text-xs text-cyan-100/60 font-medium self-start mt-1">MIN</span>
+              </span>
+            </div>
+          </div>
 
+          {/* Condition Text */}
+          <div className="flex flex-col items-end text-right max-w-[100px] leading-tight">
+            <span className="text-xs font-bold text-white uppercase drop-shadow-sm line-clamp-2">
+              {currentDay.condition}
+            </span>
+            {currentDay.precipitation !== null && currentDay.precipitation !== undefined && currentDay.precipitation > 0 && (
+              <div className="flex items-center gap-1 mt-0.5 text-blue-100 bg-blue-500/30 px-1.5 rounded-md">
+                <span className="text-[10px]">💧</span>
+                <span className="text-[10px] font-bold">{Math.round(currentDay.precipitation)}%</span>
+              </div>
+            )}
           </div>
         </div>
 
-        <style>{`
-            @keyframes float-slow {
+        {/* Indicators */}
+        {days.length > 1 && (
+          <div className="absolute bottom-1 flex gap-2 z-30 opacity-60">
+            {days.map((_, idx) => (
+              <div
+                key={idx}
+                className={`h-1 rounded-full transition-all duration-300 shadow-sm ${idx === currentIndex ? "bg-white w-4" : "bg-white/40 w-1"
+                  }`}
+              />
+            ))}
+          </div>
+        )}
+
+      </div>
+
+      <style>{`
+            @keyframes float {
                 0%, 100% { transform: translateY(0px) rotate(0deg); }
-                50% { transform: translateY(-6px) rotate(1deg); }
+                50% { transform: translateY(-8px) rotate(2deg); }
             }
-            .animate-float-slow {
-                animation: float-slow 5s ease-in-out infinite;
+            .animate-float {
+                animation: float 5s ease-in-out infinite;
+            }
+             @keyframes bounce-slow {
+                0%, 100% { transform: translateY(0); }
+                50% { transform: translateY(-3px); }
+            }
+            .animate-bounce-slow {
+                animation: bounce-slow 3s ease-in-out infinite;
+            }
+            .animate-fade-in-up {
+                 animation: fade-in-up 0.4s ease-out forwards;
+            }
+            @keyframes fade-in-up {
+                from { opacity: 0; transform: translateY(5px); }
+                to { opacity: 1; transform: translateY(0); }
             }
         `}</style>
-      </div>
-    </div>
+    </StandardCard>
   );
 };
 
