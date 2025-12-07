@@ -2408,10 +2408,11 @@ async def upload_ics_file(
         logger.debug("[config] Could not stat config file for ownership: %s", exc)
 
     # Operaciones de disco bloqueantes en thread (I/O bound)
+    # Operaciones de disco bloqueantes en thread (I/O bound)
     async def save_file_securely():
         if not ICS_STORAGE_DIR.exists():
             ICS_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-            if uid is not None and gid is not None:
+            if uid is not None and gid is not None and hasattr(os, "chown"):
                 try:
                     os.chown(ICS_STORAGE_DIR, uid, gid)
                 except OSError as exc:
@@ -2435,7 +2436,7 @@ async def upload_ics_file(
             os.fsync(handle.fileno())
         
         # Asegurar permisos correctos del archivo después de escribirlo
-        if uid is not None and gid is not None:
+        if uid is not None and gid is not None and hasattr(os, "chown"):
             try:
                 os.chown(ICS_STORAGE_PATH, uid, gid)
             except OSError as exc:

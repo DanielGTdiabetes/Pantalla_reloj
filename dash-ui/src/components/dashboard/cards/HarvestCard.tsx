@@ -98,23 +98,37 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
           width: 100%;
           padding: 0.5rem;
           box-sizing: border-box;
-          background: linear-gradient(135deg, #166534 0%, #14532d 100%);
-          color: white;
+          background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%);
+          color: #166534;
+          border-radius: 1rem;
         }
         .harvest-card-dark__header {
           display: flex;
           align-items: center;
           gap: 0.5rem;
           margin-bottom: 0.5rem;
+          border-bottom: 2px solid #e1e7e3;
+          padding-bottom: 0.5rem;
         }
         .harvest-card-dark__icon-emoji {
-          font-size: 2rem;
+          display: none;
+        }
+        .harvest-card-dark__header::before {
+            content: '';
+            display: block;
+            width: 48px;
+            height: 48px;
+            background-image: url('/img/icons/modern/harvest.png');
+            background-size: contain;
+            background-repeat: no-repeat;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
         }
         .harvest-card-dark__title {
-          font-size: 1.3rem;
-          font-weight: 700;
+          font-size: 1.8rem;
+          font-weight: 800;
           text-transform: uppercase;
-          letter-spacing: 0.1em;
+          letter-spacing: 0.05em;
+          color: #14532d;
         }
         .harvest-card-dark__body {
           flex: 1;
@@ -125,30 +139,34 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
           gap: 0.25rem;
         }
         .harvest-card-dark__icon-container {
-          width: 140px;
-          height: 140px;
+          width: 160px;
+          height: 160px;
           animation: scaleIn-dark 0.4s ease-out;
+          filter: drop-shadow(0 8px 16px rgba(0,0,0,0.1));
         }
         .harvest-card-dark__main-icon {
           width: 100%;
           height: 100%;
           object-fit: contain;
-          filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3));
           animation: float-dark 4s ease-in-out infinite;
         }
         .harvest-card-dark__name {
-          font-size: 1.6rem;
-          font-weight: 800;
-          text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+          font-size: 2.5rem;
+          font-weight: 900;
+          color: #1a2e05;
+          text-align: center;
+          margin-top: 0.5rem;
         }
         .harvest-card-dark__status {
-          font-size: 0.8rem;
-          font-weight: 600;
+          font-size: 0.9rem;
+          font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.1em;
-          background: rgba(255,255,255,0.2);
-          padding: 0.2rem 0.6rem;
-          border-radius: 0.25rem;
+          background: #dcfce7;
+          color: #166534;
+          padding: 0.3rem 0.8rem;
+          border-radius: 1rem;
+          margin-top: 0.2rem;
         }
         .harvest-card-dark__dots {
           display: flex;
@@ -156,16 +174,16 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
           margin-top: 0.5rem;
         }
         .harvest-card-dark__dot {
-          width: 6px;
-          height: 6px;
+          width: 8px;
+          height: 8px;
           border-radius: 50%;
-          background: rgba(255,255,255,0.3);
+          background: rgba(22, 101, 52, 0.2);
           transition: all 0.3s;
         }
         .harvest-card-dark__dot.active {
-          background: white;
-          width: 18px;
-          border-radius: 3px;
+          background: #166534;
+          width: 20px;
+          border-radius: 4px;
         }
         @keyframes float-dark {
           0%, 100% { transform: translateY(0); }

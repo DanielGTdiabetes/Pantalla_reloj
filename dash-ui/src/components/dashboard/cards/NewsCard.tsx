@@ -11,9 +11,12 @@ type NewsCardProps = {
 };
 
 // Utility to clean text from simple HTML tags if they leak through
+// Utility to clean text from simple HTML tags if they leak through
 const stripHtml = (html: string) => {
   if (!html) return "";
-  return html.replace(/<[^>]*>?/gm, "").replace(/&nbsp;/g, " ");
+  const tmp = document.createElement("DIV");
+  tmp.innerHTML = html;
+  return (tmp.textContent || tmp.innerText || "").trim();
 };
 
 export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {

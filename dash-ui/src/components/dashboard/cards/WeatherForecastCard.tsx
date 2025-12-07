@@ -28,28 +28,25 @@ const getWeatherIcon = (condition: string): string => {
     return "/icons/weather/day/rain.svg";
   }
   if (c.includes("llovizna") || c.includes("drizzle")) {
-    return "/icons/weather/day/drizzle.svg";
-  }
-  if (c.includes("nieve") || c.includes("snow")) {
-    return "/icons/weather/day/snow.svg";
+    return "/icons/weather/day/rain.png";
   }
   if (c.includes("niebla") || c.includes("fog") || c.includes("bruma")) {
-    return "/icons/weather/day/fog.svg";
+    return "/icons/weather/day/fog.png";
   }
   if (c.includes("nublado") || c.includes("cloudy") || c.includes("nubes")) {
-    return "/icons/weather/day/cloudy.svg";
+    return "/icons/weather/day/cloudy.png";
   }
   if (c.includes("parcialmente") || c.includes("partly")) {
-    return "/icons/weather/day/partly-cloudy.svg";
+    return "/icons/weather/day/partly-cloudy.png";
   }
   if (c.includes("cubierto") || c.includes("overcast")) {
-    return "/icons/weather/day/overcast.svg";
+    return "/icons/weather/day/cloudy.png";
   }
   if (c.includes("despejado") || c.includes("clear") || c.includes("soleado") || c.includes("sunny") || c.includes("sol")) {
-    return "/icons/weather/day/sunny.svg";
+    return "/icons/weather/day/sunny.png";
   }
 
-  return "/icons/weather/day/sunny.svg";
+  return "/icons/weather/day/sunny.png";
 };
 
 export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX.Element | null => {
@@ -68,34 +65,13 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
   const day = days[currentIndex];
   if (!day) return null;
 
-  const iconUrl = day.icon ? `/icons/weather/day/${day.icon}.svg` : getWeatherIcon(day.condition);
+  const iconUrl = day.icon ? `/icons/weather/day/${day.icon}.png` : getWeatherIcon(day.condition).replace('.svg', '.png');
 
   return (
     <div className="forecast-card-dark">
       <div className="forecast-card-dark__header">
-        <img src="/img/icons/modern/clock.png" alt="" className="forecast-card-dark__header-icon" style={{ opacity: 0 }} />
+        <img src="/icons/weather/day/partly-cloudy.png" alt="" className="forecast-card-dark__header-icon" />
         <span className="forecast-card-dark__title">Tiempo 7 Días</span>
-      </div>
-      <style>{`
-        .forecast-card-dark__header-icon { display: none; }
-        .forecast-card-dark__header::before {
-            content: '';
-            display: block;
-            width: 64px;
-            height: 64px;
-            background-image: url('/icons/weather/day/partly-cloudy.svg');
-            background-size: contain;
-            background-repeat: no-repeat;
-            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
-        }
-      `}</style>
-      <div className="forecast-card-dark__header" style={{ marginTop: '-1rem', position: 'absolute', opacity: 0, pointerEvents: 'none' }}>
-        {/* Hidden original header to keep layout if needed, but we used pseudo element. Actually let's just replace the header cleanly. */}
-      </div>
-      {/* Real Header */}
-      <div className="forecast-card-dark__header" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
-        <img src="/icons/weather/day/partly-cloudy.svg" alt="" className="forecast-card-dark__header-icon-real" style={{ width: '64px', height: '64px', filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' }} />
-        <span className="forecast-card-dark__title" style={{ fontSize: '1.8rem', fontWeight: 800 }}>Tiempo 7 Días</span>
       </div>
 
       <div className="forecast-card-dark__body">

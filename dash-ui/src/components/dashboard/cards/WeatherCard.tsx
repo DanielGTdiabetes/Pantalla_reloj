@@ -21,35 +21,35 @@ const getWeatherIcon = (condition: string | null): string => {
   const folder = isNight ? "night" : "day";
 
   if (c.includes("tormenta") || c.includes("thunder") || c.includes("storm")) {
-    return `/icons/weather/${folder}/thunderstorm.svg`;
+    return `/icons/weather/${folder}/thunderstorm.png`;
   }
   if (c.includes("lluvia") || c.includes("rain") || c.includes("lluvioso")) {
-    return `/icons/weather/${folder}/rain.svg`;
+    return `/icons/weather/${folder}/rain.png`;
   }
   if (c.includes("llovizna") || c.includes("drizzle")) {
-    return `/icons/weather/${folder}/drizzle.svg`;
+    return `/icons/weather/${folder}/rain.png`;
   }
   if (c.includes("nieve") || c.includes("snow")) {
-    return `/icons/weather/${folder}/snow.svg`;
+    return `/icons/weather/${folder}/snow.png`;
   }
   if (c.includes("niebla") || c.includes("fog") || c.includes("bruma")) {
-    return `/icons/weather/${folder}/fog.svg`;
+    return `/icons/weather/${folder}/fog.png`;
   }
   if (c.includes("nublado") || c.includes("cloudy") || c.includes("nubes")) {
-    return `/icons/weather/${folder}/cloudy.svg`;
+    return `/icons/weather/${folder}/cloudy.png`;
   }
   if (c.includes("parcialmente") || c.includes("partly")) {
-    return `/icons/weather/${folder}/partly-cloudy.svg`;
+    return `/icons/weather/${folder}/partly-cloudy.png`;
   }
   if (c.includes("cubierto") || c.includes("overcast")) {
-    return `/icons/weather/${folder}/overcast.svg`;
+    return `/icons/weather/${folder}/cloudy.png`;
   }
   if (c.includes("despejado") || c.includes("clear") || c.includes("soleado") || c.includes("sunny") || c.includes("sol")) {
-    return `/icons/weather/${folder}/sunny.svg`;
+    return `/icons/weather/${folder}/sunny.png`;
   }
 
   // Default based on time
-  return isNight ? "/icons/weather/night/clear.svg" : "/icons/weather/day/sunny.svg";
+  return isNight ? "/icons/weather/night/clear.png" : "/icons/weather/day/sunny.png";
 };
 
 export const WeatherCard = ({
@@ -127,10 +127,11 @@ export const WeatherCard = ({
           filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
         }
         .weather-card-dark__title {
-          font-size: 1.3rem;
-          font-weight: 700;
+          font-size: 1.8rem;
+          font-weight: 800;
           text-transform: uppercase;
           letter-spacing: 0.1em;
+          text-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
         .weather-card-dark__body {
           flex: 1;
