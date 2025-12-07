@@ -6579,6 +6579,7 @@ async def post_news_rss(request: Request) -> Dict[str, Any]:
                 # Normalizar formato
                 all_items.append({
                     "title": item.get("title", ""),
+                    "summary": item.get("summary", ""),
                     "link": item.get("link", ""),
                     "source": feed_url,
                     "published": item.get("published_at", item.get("published", ""))

@@ -418,39 +418,54 @@ SAINTS_BY_DATE: Dict[str, List[str]] = {
 }
 
 
+
+from bs4 import BeautifulSoup
+
 async def parse_rss_feed(feed_url: str, max_items: int = 10, timeout: int = 10) -> List[Dict[str, Any]]:
-    """Parsea un feed RSS/Atom y devuelve una lista de artículos de forma asíncrona."""
+    """Parsea un feed RSS/Atom y devuelve una lista de artículos de forma asíncrona usando BeautifulSoup."""
     try:
         async with httpx.AsyncClient(timeout=float(timeout), follow_redirects=True) as client:
             response = await client.get(feed_url, headers={
                 "User-Agent": "Mozilla/5.0 (compatible; PantallaReloj/1.0)"
             })
             response.raise_for_status()
-            content = response.text
+            content = response.content # Usar bytes para que BS4 maneje la codificación
         
+        soup = BeautifulSoup(content, "xml")
         items: List[Dict[str, Any]] = []
-        item_pattern = re.compile(r'<(?:item|entry)[^>]*>(.*?)</(?:item|entry)>', re.DOTALL | re.IGNORECASE)
-        matches = item_pattern.findall(content)
         
-        for match in matches[:max_items]:
+        # Intentar encontrar items (RSS) o entries (Atom)
+        entries = soup.find_all(["item", "entry"])
+        
+        for entry in entries[:max_items]:
             item: Dict[str, Any] = {}
-            title_match = re.search(r'<(?:title|dc:title)[^>]*>(.*?)</(?:title|dc:title)>', match, re.DOTALL | re.IGNORECASE)
-            if title_match:
-                title = html.unescape(re.sub(r'<[^>]+>', '', title_match.group(1)).strip())
-                item["title"] = title
             
-            desc_match = re.search(r'<(?:description|summary|content|dc:description)[^>]*>(.*?)</(?:description|summary|content|dc:description)>', match, re.DOTALL | re.IGNORECASE)
-            if desc_match:
-                desc = html.unescape(re.sub(r'<[^>]+>', '', desc_match.group(1)).strip())
-                item["summary"] = desc[:200] + "..." if len(desc) > 200 else desc
+            # Title
+            title_tag = entry.find(["title", "dc:title"])
+            if title_tag:
+                item["title"] = title_tag.get_text(strip=True)
             
-            link_match = re.search(r'<(?:link|guid)[^>]*>(.*?)</(?:link|guid)>', match, re.DOTALL | re.IGNORECASE)
-            if link_match:
-                item["link"] = link_match.group(1).strip()
+            # Description / Summary
+            desc_tag = entry.find(["description", "summary", "content", "dc:description"])
+            if desc_tag:
+                # Limpiar HTML si es necesario, o tomar texto plano
+                # BS4 get_text() extrae texto de CDATA también
+                raw_desc = desc_tag.get_text(separator=" ", strip=True)
+                # Limitar longitud
+                item["summary"] = raw_desc[:300] + "..." if len(raw_desc) > 300 else raw_desc
             
-            date_match = re.search(r'<(?:pubDate|published|dc:date)[^>]*>(.*?)</(?:pubDate|published|dc:date)>', match, re.DOTALL | re.IGNORECASE)
-            if date_match:
-                item["published_at"] = date_match.group(1).strip()
+            # Link
+            link_tag = entry.find(["link", "guid"]) # En Atom link es self-closing con href
+            if link_tag:
+                if link_tag.name == "link" and link_tag.has_attr("href"):
+                     item["link"] = link_tag["href"]
+                else:
+                     item["link"] = link_tag.get_text(strip=True)
+            
+            # Date
+            date_tag = entry.find(["pubDate", "published", "dc:date", "updated"])
+            if date_tag:
+                item["published_at"] = date_tag.get_text(strip=True)
             
             parsed_url = urlparse(feed_url)
             item["source"] = parsed_url.netloc.replace("www.", "")
