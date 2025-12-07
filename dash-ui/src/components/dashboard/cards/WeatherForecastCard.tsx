@@ -9,6 +9,7 @@ type ForecastDay = {
     max: number | null;
   };
   precipitation?: number | null;
+  icon?: string;
 };
 
 type WeatherForecastCardProps = {
@@ -67,13 +68,34 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
   const day = days[currentIndex];
   if (!day) return null;
 
-  const iconUrl = getWeatherIcon(day.condition);
+  const iconUrl = day.icon ? `/icons/weather/day/${day.icon}.svg` : getWeatherIcon(day.condition);
 
   return (
     <div className="forecast-card-dark">
       <div className="forecast-card-dark__header">
-        <img src="/icons/weather/day/cloudy.svg" alt="" className="forecast-card-dark__header-icon" />
-        <span className="forecast-card-dark__title">Previsión Semanal</span>
+        <img src="/img/icons/modern/clock.png" alt="" className="forecast-card-dark__header-icon" style={{ opacity: 0 }} />
+        <span className="forecast-card-dark__title">Tiempo 7 Días</span>
+      </div>
+      <style>{`
+        .forecast-card-dark__header-icon { display: none; }
+        .forecast-card-dark__header::before {
+            content: '';
+            display: block;
+            width: 64px;
+            height: 64px;
+            background-image: url('/icons/weather/day/partly-cloudy.svg');
+            background-size: contain;
+            background-repeat: no-repeat;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+        }
+      `}</style>
+      <div className="forecast-card-dark__header" style={{ marginTop: '-1rem', position: 'absolute', opacity: 0, pointerEvents: 'none' }}>
+        {/* Hidden original header to keep layout if needed, but we used pseudo element. Actually let's just replace the header cleanly. */}
+      </div>
+      {/* Real Header */}
+      <div className="forecast-card-dark__header" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
+        <img src="/icons/weather/day/partly-cloudy.svg" alt="" className="forecast-card-dark__header-icon-real" style={{ width: '64px', height: '64px', filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' }} />
+        <span className="forecast-card-dark__title" style={{ fontSize: '1.8rem', fontWeight: 800 }}>Tiempo 7 Días</span>
       </div>
 
       <div className="forecast-card-dark__body">
@@ -151,18 +173,19 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
           align-items: center;
         }
         .forecast-card-dark__dayname {
-          font-size: 1.5rem;
-          font-weight: 700;
+          font-size: 2.2rem;
+          font-weight: 800;
           text-transform: capitalize;
+          text-shadow: 0 2px 8px rgba(0,0,0,0.5);
         }
         .forecast-card-dark__date {
           font-size: 0.8rem;
           opacity: 0.6;
         }
         .forecast-card-dark__icon-container {
-          width: 120px;
-          height: 120px;
-          margin: 0.25rem 0;
+          width: 150px;
+          height: 150px;
+          margin: 0.5rem 0;
         }
         .forecast-card-dark__main-icon {
           width: 100%;
@@ -180,7 +203,7 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
           display: flex;
           flex-direction: column;
           align-items: center;
-          font-size: 2rem;
+          font-size: 3.5rem;
           font-weight: 800;
           line-height: 1;
         }
@@ -194,7 +217,7 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
         .forecast-card-dark__max { color: #fbbf24; }
         .forecast-card-dark__min { color: #38bdf8; }
         .forecast-card-dark__condition {
-          font-size: 1.1rem;
+          font-size: 1.6rem;
           font-weight: 600;
           text-transform: capitalize;
         }

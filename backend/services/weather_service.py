@@ -301,7 +301,8 @@ class WeatherService:
                     dt = datetime.fromisoformat(day_data["date"])
                     days_es = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
                     day_data["day_name"] = days_es[dt.weekday()]
-                    day_data["day"] = days_es[dt.weekday()] # Alias solicitado
+                    day_data["dayName"] = days_es[dt.weekday()] # Frontend compatibility
+                    day_data["day"] = days_es[dt.weekday()] # Alias requested
                 except ValueError:
                     pass
 

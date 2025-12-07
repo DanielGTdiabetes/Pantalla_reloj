@@ -10,6 +10,12 @@ type NewsCardProps = {
   items: NewsItem[];
 };
 
+// Utility to clean text from simple HTML tags if they leak through
+const stripHtml = (html: string) => {
+  if (!html) return "";
+  return html.replace(/<[^>]*>?/gm, "").replace(/&nbsp;/g, " ");
+};
+
 export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
   const [currentIndex, setCurrentIndex] = useState(0);
 
@@ -19,7 +25,7 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
     if (validItems.length <= 1) return;
     const interval = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % validItems.length);
-    }, 8000);
+    }, 10000); // Slower cycle for reading
     return () => clearInterval(interval);
   }, [validItems.length]);
 
@@ -28,7 +34,7 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
   return (
     <div className="news-card-dark">
       <div className="news-card-dark__header">
-        <span className="news-card-dark__icon">📰</span>
+        <img src="/img/icons/modern/news.png" alt="" className="news-card-dark__header-icon" />
         <span className="news-card-dark__title">Noticias</span>
       </div>
 
@@ -36,9 +42,9 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
         {current.source && (
           <div className="news-card-dark__source">{current.source}</div>
         )}
-        <h2 className="news-card-dark__headline">{current.title}</h2>
+        <h2 className="news-card-dark__headline">{stripHtml(current.title)}</h2>
         {current.summary && (
-          <p className="news-card-dark__summary">{current.summary}</p>
+          <p className="news-card-dark__summary">{stripHtml(current.summary)}</p>
         )}
       </div>
 
@@ -56,26 +62,33 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
           flex-direction: column;
           height: 100%;
           width: 100%;
-          padding: 0.5rem;
+          padding: 1rem;
           box-sizing: border-box;
           background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
           color: white;
           overflow: hidden;
+          border-radius: 1rem;
         }
         .news-card-dark__header {
           display: flex;
           align-items: center;
-          gap: 0.5rem;
-          margin-bottom: 0.5rem;
+          gap: 1rem;
+          margin-bottom: 1rem;
+          padding-bottom: 0.5rem;
+          border-bottom: 1px solid rgba(255,255,255,0.1);
         }
-        .news-card-dark__icon {
-          font-size: 2rem;
+        .news-card-dark__header-icon {
+          width: 64px;
+          height: 64px;
+          object-fit: contain;
+          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
         }
         .news-card-dark__title {
-          font-size: 1.3rem;
-          font-weight: 700;
+          font-size: 1.8rem;
+          font-weight: 800;
           text-transform: uppercase;
           letter-spacing: 0.1em;
+          text-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
         .news-card-dark__body {
           flex: 1;
@@ -86,53 +99,54 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
           animation: fadeIn-dark 0.5s ease-out;
         }
         .news-card-dark__source {
-          font-size: 0.75rem;
+          font-size: 1.1rem;
           font-weight: 700;
           color: #38bdf8;
           text-transform: uppercase;
           letter-spacing: 0.1em;
-          margin-bottom: 0.25rem;
+          margin-bottom: 0.5rem;
         }
         .news-card-dark__headline {
-          font-size: 1.2rem;
-          font-weight: 700;
-          line-height: 1.3;
+          font-size: 2.2rem;
+          font-weight: 800;
+          line-height: 1.2;
           margin: 0;
           display: -webkit-box;
           -webkit-line-clamp: 3;
           -webkit-box-orient: vertical;
           overflow: hidden;
+          text-shadow: 0 2px 8px rgba(0,0,0,0.6);
         }
         .news-card-dark__summary {
-          font-size: 0.9rem;
-          line-height: 1.4;
-          opacity: 0.8;
-          margin: 0.5rem 0 0 0;
+          font-size: 1.4rem;
+          line-height: 1.5;
+          opacity: 0.9;
+          margin: 1rem 0 0 0;
           display: -webkit-box;
-          -webkit-line-clamp: 2;
+          -webkit-line-clamp: 3;
           -webkit-box-orient: vertical;
           overflow: hidden;
         }
         .news-card-dark__dots {
           display: flex;
           justify-content: center;
-          gap: 0.3rem;
-          margin-top: 0.5rem;
+          gap: 0.5rem;
+          margin-top: 1rem;
         }
         .news-card-dark__dot {
-          width: 6px;
-          height: 6px;
+          width: 10px;
+          height: 10px;
           border-radius: 50%;
           background: rgba(255,255,255,0.3);
           transition: all 0.3s;
         }
         .news-card-dark__dot.active {
           background: #38bdf8;
-          width: 18px;
-          border-radius: 3px;
+          width: 24px;
+          border-radius: 5px;
         }
         @keyframes fadeIn-dark {
-          from { opacity: 0; transform: translateY(5px); }
+          from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
         }
       `}</style>

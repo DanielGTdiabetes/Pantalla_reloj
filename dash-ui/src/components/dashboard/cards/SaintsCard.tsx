@@ -100,26 +100,25 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
   if (!saints || saints.length === 0) {
     return (
       <div className="saints-card-dark saints-card-dark__empty">
-        <span>Hoy no hay santos destacados</span>
+        <span className="saints-card-dark__empty-text">Hoy no hay santos destacados</span>
       </div>
     );
   }
 
-  const imageUrl = saintInfo?.originalimage?.source || saintInfo?.thumbnail?.source;
+  // Use fetched image or fallback to icon
+  const imageUrl = saintInfo?.originalimage?.source || saintInfo?.thumbnail?.source || "/img/icons/modern/saints.png";
 
   return (
     <div className="saints-card-dark">
       <div className="saints-card-dark__header">
-        <span className="saints-card-dark__icon">📿</span>
+        <img src="/img/icons/modern/saints.png" alt="" className="saints-card-dark__header-icon" />
         <span className="saints-card-dark__title">Santoral</span>
       </div>
 
       <div className="saints-card-dark__body">
-        {imageUrl && (
-          <div className="saints-card-dark__image-container">
-            <img src={imageUrl} alt={fullName} className="saints-card-dark__image" />
-          </div>
-        )}
+        <div className="saints-card-dark__image-container">
+          <img src={imageUrl} alt={fullName} className="saints-card-dark__image" />
+        </div>
 
         <div className="saints-card-dark__info">
           <h2 className="saints-card-dark__name">{fullName}</h2>
@@ -129,7 +128,7 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
             ) : saintInfo?.extract ? (
               <p>{saintInfo.extract}</p>
             ) : (
-              <p className="saints-card-dark__loading">No se encontró información</p>
+              <p className="saints-card-dark__loading">No se encontró información detallada.</p>
             )}
           </div>
         </div>
@@ -149,11 +148,12 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
           flex-direction: column;
           height: 100%;
           width: 100%;
-          padding: 0.5rem;
+          padding: 1rem;
           box-sizing: border-box;
           background: linear-gradient(135deg, #78350f 0%, #1c1917 100%);
           color: white;
           overflow: hidden;
+          border-radius: 1rem;
         }
         .saints-card-dark__empty {
           display: flex;
@@ -161,36 +161,46 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
           justify-content: center;
           opacity: 0.7;
         }
+        .saints-card-dark__empty-text {
+          font-size: 1.5rem;
+          font-weight: 600;
+        }
         .saints-card-dark__header {
           display: flex;
           align-items: center;
-          gap: 0.5rem;
-          margin-bottom: 0.5rem;
+          gap: 1rem;
+          margin-bottom: 1rem;
+          padding-bottom: 0.5rem;
+          border-bottom: 1px solid rgba(255,255,255,0.1);
         }
-        .saints-card-dark__icon {
-          font-size: 2rem;
+        .saints-card-dark__header-icon {
+          width: 64px;
+          height: 64px;
+          object-fit: contain;
+          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
         }
         .saints-card-dark__title {
-          font-size: 1.3rem;
-          font-weight: 700;
+          font-size: 1.8rem;
+          font-weight: 800;
           text-transform: uppercase;
           letter-spacing: 0.1em;
+          text-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
         .saints-card-dark__body {
           flex: 1;
           display: flex;
-          gap: 0.75rem;
+          gap: 1.5rem;
           min-height: 0;
           animation: fadeIn-dark 0.5s ease-out;
         }
         .saints-card-dark__image-container {
-          width: 100px;
-          height: 100px;
+          width: 140px;
+          height: 140px;
           flex-shrink: 0;
-          border-radius: 0.5rem;
+          border-radius: 1rem;
           overflow: hidden;
           background: rgba(255,255,255,0.1);
-          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         }
         .saints-card-dark__image {
           width: 100%;
@@ -204,20 +214,22 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
           min-width: 0;
         }
         .saints-card-dark__name {
-          font-size: 1.2rem;
-          font-weight: 700;
+          font-size: 2rem;
+          font-weight: 800;
           color: #fbbf24;
-          margin: 0 0 0.25rem 0;
+          margin: 0 0 0.5rem 0;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
+          text-shadow: 0 2px 8px rgba(0,0,0,0.5);
         }
         .saints-card-dark__bio {
           flex: 1;
           overflow-y: auto;
-          font-size: 0.85rem;
-          line-height: 1.4;
-          opacity: 0.9;
+          font-size: 1.3rem;
+          line-height: 1.5;
+          opacity: 0.95;
+          padding-right: 0.5rem;
         }
         .saints-card-dark__bio p {
           margin: 0;
@@ -229,23 +241,23 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
         .saints-card-dark__dots {
           display: flex;
           justify-content: center;
-          gap: 0.3rem;
-          margin-top: 0.5rem;
+          gap: 0.5rem;
+          margin-top: 1rem;
         }
         .saints-card-dark__dot {
-          width: 6px;
-          height: 6px;
+          width: 10px;
+          height: 10px;
           border-radius: 50%;
           background: rgba(255,255,255,0.3);
           transition: all 0.3s;
         }
         .saints-card-dark__dot.active {
           background: #fbbf24;
-          width: 18px;
-          border-radius: 3px;
+          width: 24px;
+          border-radius: 5px;
         }
         @keyframes fadeIn-dark {
-          from { opacity: 0; transform: translateY(5px); }
+          from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
         }
       `}</style>

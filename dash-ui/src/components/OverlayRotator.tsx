@@ -1038,7 +1038,8 @@ export const OverlayRotator: React.FC = () => {
         shouldInclude = true;
       } else if (panelId === "apod") {
         // Show APOD for both images and videos
-        shouldInclude = !!apod && (apod.media_type === "image" || apod.media_type === "video");
+        // Show APOD for both images and videos, or error state
+        shouldInclude = !!apod;
       } else if (panelId === "warnings") {
         const hasWarnings = warnings?.features && Array.isArray(warnings.features) && warnings.features.length > 0;
         const panelsConfig = config as unknown as { panels?: { warnings?: { enabled?: boolean } } };
@@ -1114,9 +1115,9 @@ export const OverlayRotator: React.FC = () => {
       return "Sincronizando datos…";
     }
     if (lastUpdatedLabel) {
-      return `Actualizado ${lastUpdatedLabel}`;
+      return ""; // User requested removal of update time
     }
-    return "Datos no disponibles";
+    return "";
   }, [lastUpdatedAt, lastUpdatedLabel, loading]);
 
   const { progress: rotationProgress } = useRotationProgress(
@@ -1237,23 +1238,29 @@ export const OverlayRotator: React.FC = () => {
         intensity="moderate"
       />
 
-      {/* 3D Scene Container */}
-      <div className="w-full h-full perspective-1000 p-4 md:p-8 flex items-center justify-center relative z-10">
-        <div className={`relative w-full h-full max-w-4xl max-h-[80vh] preserve-3d transition-transform duration-800 ease-in-out ${isAnimating ? "rotate-x-90" : ""}`}>
+      {/* 3D Scene Container - Now just a fade container */}
+      <div className="w-full h-full p-4 md:p-8 flex items-center justify-center relative z-10">
+        <div className="relative w-full h-full max-w-4xl max-h-[80vh]">
 
-          {/* Front Face (Current) */}
-          <div className="absolute inset-0 backface-hidden origin-center z-20">
+          {/* Front Face (Current) - Fade Out */}
+          <div
+            className={`absolute inset-0 z-20 transition-opacity duration-1000 ease-in-out ${isAnimating ? "opacity-0" : "opacity-100"}`}
+          >
             <div className="w-full h-full">
               {displayPanel.render()}
             </div>
           </div>
 
-          {/* Bottom Face (Next) - Pre-rendered roughly below */}
-          <div className="absolute inset-0 backface-hidden origin-center rotate-x-minus-90 translate-y-full z-10">
-            <div className="w-full h-full">
-              {nextPanelBuffer ? nextPanelBuffer.render() : <div />}
+          {/* Next Face - Fade In (Pre-positioned) */}
+          {isAnimating && nextPanelBuffer && (
+            <div
+              className="absolute inset-0 z-10 opacity-100"
+            >
+              <div className="w-full h-full">
+                {nextPanelBuffer.render()}
+              </div>
             </div>
-          </div>
+          )}
 
         </div>
       </div>

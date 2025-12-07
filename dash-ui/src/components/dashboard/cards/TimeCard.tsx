@@ -26,7 +26,7 @@ export const TimeCard = ({ timezone }: TimeCardProps): JSX.Element => {
   return (
     <div className="time-card-dark">
       <div className="time-card-dark__header">
-        <span className="time-card-dark__icon">🕐</span>
+        <img src="/img/icons/modern/clock.png" alt="" className="time-card-dark__header-icon" />
         <span className="time-card-dark__title">Reloj</span>
       </div>
 
@@ -50,25 +50,32 @@ export const TimeCard = ({ timezone }: TimeCardProps): JSX.Element => {
           flex-direction: column;
           height: 100%;
           width: 100%;
-          padding: 0.5rem;
+          padding: 1rem;
           box-sizing: border-box;
           background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%);
           color: white;
+          border-radius: 1rem;
         }
         .time-card-dark__header {
           display: flex;
           align-items: center;
-          gap: 0.5rem;
-          margin-bottom: 0.5rem;
+          gap: 1rem;
+          margin-bottom: 1rem;
+          padding-bottom: 0.5rem;
+          border-bottom: 1px solid rgba(255,255,255,0.1);
         }
-        .time-card-dark__icon {
-          font-size: 2rem;
+        .time-card-dark__header-icon {
+          width: 64px;
+          height: 64px;
+          object-fit: contain;
+          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
         }
         .time-card-dark__title {
-          font-size: 1.3rem;
-          font-weight: 700;
+          font-size: 1.8rem;
+          font-weight: 800;
           text-transform: uppercase;
           letter-spacing: 0.1em;
+          text-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
         .time-card-dark__body {
           flex: 1;
@@ -78,46 +85,48 @@ export const TimeCard = ({ timezone }: TimeCardProps): JSX.Element => {
           justify-content: center;
         }
         .time-card-dark__greeting {
-          font-size: 1.1rem;
+          font-size: 2rem;
           font-weight: 600;
           opacity: 0.8;
-          margin-bottom: 0.25rem;
+          margin-bottom: 0.5rem;
         }
         .time-card-dark__clock {
           display: flex;
           align-items: baseline;
-          gap: 0.15rem;
+          gap: 0.2rem;
         }
         .time-card-dark__hours,
         .time-card-dark__minutes {
-          font-size: 4.5rem;
+          font-size: 8rem;
           font-weight: 900;
           line-height: 1;
-          text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+          text-shadow: 0 4px 16px rgba(0,0,0,0.6);
         }
         .time-card-dark__sep {
-          font-size: 3.5rem;
+          font-size: 6rem;
           font-weight: 700;
           opacity: 0.7;
           animation: blink-dark 1s step-end infinite;
+          margin: 0 0.5rem;
         }
         .time-card-dark__seconds {
-          font-size: 1.5rem;
+          font-size: 2.5rem;
           font-weight: 600;
           opacity: 0.6;
-          margin-left: 0.25rem;
+          margin-left: 0.5rem;
         }
         .time-card-dark__date {
-          margin-top: 0.75rem;
+          margin-top: 2rem;
           text-align: center;
         }
         .time-card-dark__dayname {
-          font-size: 1.4rem;
-          font-weight: 700;
+          font-size: 2.2rem;
+          font-weight: 800;
           text-transform: capitalize;
+          margin-bottom: 0.5rem;
         }
         .time-card-dark__fulldate {
-          font-size: 1rem;
+          font-size: 1.5rem;
           opacity: 0.7;
           text-transform: capitalize;
         }

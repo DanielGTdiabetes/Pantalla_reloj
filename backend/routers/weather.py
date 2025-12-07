@@ -72,21 +72,29 @@ def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
     # Resolve location
     config = config_manager.read()
     if lat is None or lon is None:
+        # 0. Try specific weather panel configuration (Preferred)
+        if config.panels and config.panels.weather and config.panels.weather.latitude is not None:
+            lat = config.panels.weather.latitude
+            lon = config.panels.weather.longitude
+        
         # 1. Try Ephemerides location (usually the main device location)
-        if config.ephemerides:
+        elif config.ephemerides:
             lat = config.ephemerides.latitude
             lon = config.ephemerides.longitude
         
         # 2. Try Map center
-        if (lat is None or lon is None) and config.ui_map and config.ui_map.fixed and config.ui_map.fixed.center:
+        elif config.ui_map and config.ui_map.fixed and config.ui_map.fixed.center:
             lat = config.ui_map.fixed.center.lat
             lon = config.ui_map.fixed.center.lon
 
         # Fallback if still missing
         if lat is None or lon is None:
-            # Default to Vila-real (Castellón) if absolutely nothing is configured
+            # Default to Vila-real (Castellón)
             lat = 39.9378
             lon = -0.1014
+            
+    # Log resolved location for debugging
+    logger.info(f"Weather location resolved to: {lat}, {lon}")
     
     # Determinar proveedor
     provider = "meteoblue"
@@ -207,12 +215,15 @@ def test_meteoblue(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
         return {"ok": False, "reason": "missing_api_key", "message": "Falta API Key. Introduce una API key en el campo y vuelve a probar."}
     
     # Resolve location for test
-    lat = 40.4168
-    lon = -3.7038
+    lat = 39.9378
+    lon = -0.1014
     
     try:
         config = config_manager.read()
-        if config.ephemerides:
+        if config.panels and config.panels.weather and config.panels.weather.latitude is not None:
+            lat = config.panels.weather.latitude
+            lon = config.panels.weather.longitude
+        elif config.ephemerides:
             lat = config.ephemerides.latitude
             lon = config.ephemerides.longitude
         elif config.ui_map and config.ui_map.fixed and config.ui_map.fixed.center:
@@ -284,9 +295,9 @@ def test_openweathermap(request: TestWeatherRequest) -> Dict[str, Any]:
     if not api_key:
         return {"ok": False, "reason": "missing_api_key", "message": "Falta API Key"}
     
-    # Usar coordenadas por defecto (Madrid) para el test
-    lat = 40.4168
-    lon = -3.7038
+    # Usar coordenadas por defecto (Vila-real) para el test
+    lat = 39.9378
+    lon = -0.1014
     
     try:
         # Try One Call 3.0
