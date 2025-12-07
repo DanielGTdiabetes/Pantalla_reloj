@@ -57,6 +57,16 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
   const fullName = formatName(currentName);
 
   useEffect(() => {
+    // If we have an EnrichedSaint with data, use it directly
+    if (typeof currentEntry !== "string" && currentEntry.bio) {
+      setSaintInfo({
+        extract: currentEntry.bio,
+        originalimage: currentEntry.image ? { source: currentEntry.image } : undefined
+      });
+      setLoading(false);
+      return;
+    }
+
     if (!currentName || currentName === "Cargando...") return;
 
     const fetchWiki = async () => {
@@ -91,7 +101,7 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
     };
 
     fetchWiki();
-  }, [currentName, fullName]);
+  }, [currentName, fullName, currentEntry]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;

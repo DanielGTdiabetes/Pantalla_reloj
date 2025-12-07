@@ -1,0 +1,19 @@
+Testing single saint fetch...
+Result for San Francisco de Asís:
+Name: San Francisco de Asís
+Bio: Francisco de Asís, de nombre secular Giovanni di Pietro di Bernardone, fue un santo umbro (italiano), diácono, también conocido como «El Padre Francisco» y fundador de la Orden Franciscana, de una segunda orden conocida como Hermanas Clarisas y una tercera conocidas como Tercera Orden Regular y Terc...
+Image: https://upload.wikimedia.org/wikipedia/commons/f/f8/San_Francesco.jpg
+--------------------
+Testing enrichment list...
+Name: Santa Bárbara
+No bio
+Image: None
+--------------------
+Name: San Nicolás
+No bio
+Image: None
+--------------------
+Name: Santo Tomás
+No bio
+Image: None
+--------------------
