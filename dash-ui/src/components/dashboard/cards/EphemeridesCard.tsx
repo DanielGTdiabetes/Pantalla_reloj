@@ -37,8 +37,18 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
       title="Astronomía"
       subtitle={currentState === "sunrise" ? "Amanecer" : currentState === "sunset" ? "Anochecer" : "Luna"}
       icon={<div className="text-2xl">✨</div>}
-      className="transition-colors duration-700 ease-in-out"
+      className="relative overflow-hidden group"
     >
+      {/* Generated "Nano Banana" Background */}
+      <div className="absolute inset-0 z-0">
+        <img
+          src="/img/panels/astro-bg.png"
+          alt="Space Background"
+          className="w-full h-full object-cover opacity-60 scale-110 blur-[2px] transition-transform duration-[20s] ease-linear group-hover:scale-125 group-hover:rotate-1"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/60" />
+      </div>
+
       <div className="flex flex-col items-center justify-center gap-6 animate-fade-in-up">
 
         {/* Animated Icon Container */}

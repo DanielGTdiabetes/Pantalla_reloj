@@ -90,8 +90,14 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
       title="Temporada"
       subtitle="Recolección ideal este mes"
       icon={<SproutIcon className="w-8 h-8 text-green-400 drop-shadow-md" />}
-      className="bg-gradient-to-br from-green-950/50 to-slate-900"
+      className="relative overflow-hidden"
     >
+      {/* Generated "Nano Banana" Background */}
+      <div className="absolute inset-0 z-0">
+        <img src="/img/panels/harvest-bg.png" alt="Harvest Background" className="w-full h-full object-cover opacity-70 scale-110 blur-sm" />
+        <div className="absolute inset-0 bg-black/40" />
+      </div>
+
       <div className="flex flex-col items-center justify-center gap-6 w-full h-full relative" key={currentIndex}>
 
         {/* Main Icon with Glow */}

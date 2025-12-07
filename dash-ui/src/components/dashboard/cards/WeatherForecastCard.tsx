@@ -42,6 +42,7 @@ const WeatherIcon3D = ({ condition, className }: { condition: string; className?
     return <span className="text-6xl filter drop-shadow-lg">🌤️</span>;
   }
 
+
   return (
     <img
       src={url}
@@ -73,74 +74,78 @@ export const WeatherForecastCard = ({ forecast, unit }: WeatherForecastCardProps
   if (!currentDay) return null;
 
   return (
-    <div className="h-full w-full bg-gradient-to-br from-blue-950 to-slate-900 flex flex-col items-center justify-between p-4 overflow-hidden relative border border-white/5 rounded-3xl shadow-2xl">
-      {/* Background Accent - Aurora effect */}
-      <div className="absolute -top-10 -right-10 w-40 h-40 bg-purple-500/20 blur-3xl rounded-full pointer-events-none" />
-      <div className="absolute top-20 -left-10 w-40 h-40 bg-blue-500/10 blur-3xl rounded-full pointer-events-none" />
-
-      {/* Header */}
-      <div className="w-full flex justify-between items-start z-10">
-        <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-200/60">
-          Previsión Semanal
-        </h2>
+    <div className="h-full w-full relative overflow-hidden rounded-3xl shadow-2xl border border-white/5">
+      {/* Background Image "Nano Banana" */}
+      <div className="absolute inset-0 z-0">
+        <img src="/img/panels/weather-bg.png" alt="Weather Background" className="w-full h-full object-cover opacity-80" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/60" />
       </div>
 
-      {/* Content Container - Flex layout for better distribution */}
-      <div className="flex-1 w-full flex flex-col items-center justify-center gap-2 z-10 mt-1">
+      <div className="absolute inset-0 flex flex-col items-center justify-between p-4 z-10">
 
-        {/* 1. Date & Day Name */}
-        <div className="text-center flex flex-col items-center">
-          <h1 className="text-3xl md:text-4xl lg:text-5xl font-black text-white tracking-wide drop-shadow-lg leading-none uppercase">
-            {currentDay.dayName || "Día"}
-          </h1>
-          <span className="text-lg md:text-xl text-cyan-100/80 font-medium mt-1 tracking-wider">
-            {currentDay.date}
-          </span>
+        {/* Header */}
+        <div className="w-full flex justify-between items-start z-10">
+          <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-200/60">
+            Previsión Semanal
+          </h2>
         </div>
 
-        {/* 2. Icon (Dynamic Float) */}
-        <div className="relative flex-1 w-full flex items-center justify-center min-h-[100px] animate-float-slow">
-          <WeatherIcon3D
-            condition={currentDay.condition}
-            className="h-28 w-28 md:h-36 md:w-36 drop-shadow-2xl"
-          />
-        </div>
+        {/* Content Container - Flex layout for better distribution */}
+        <div className="flex-1 w-full flex flex-col items-center justify-center gap-2 z-10 mt-1">
 
-        {/* 3. Temps & Condition */}
-        <div className="w-full flex items-center justify-between bg-white/5 p-3 rounded-2xl backdrop-blur-sm border border-white/10 shadow-lg mt-auto">
-
-          {/* Temps */}
-          <div className="flex items-center gap-4">
-            <div className="flex flex-col items-center">
-              <span className="text-3xl font-bold text-red-300 drop-shadow-sm leading-none">
-                {currentDay.temperature.max ? Math.round(currentDay.temperature.max) : "--"}°
-              </span>
-            </div>
-            <div className="w-px h-8 bg-white/20" />
-            <div className="flex flex-col items-center">
-              <span className="text-3xl font-bold text-cyan-300 drop-shadow-sm leading-none">
-                {currentDay.temperature.min ? Math.round(currentDay.temperature.min) : "--"}°
-              </span>
-            </div>
-          </div>
-
-          {/* Condition Text */}
-          <div className="flex flex-col items-end text-right max-w-[120px]">
-            <span className="text-xs md:text-sm font-medium text-white/90 capitalize leading-tight">
-              {currentDay.condition}
+          {/* 1. Date & Day Name */}
+          <div className="text-center flex flex-col items-center">
+            <h1 className="text-3xl md:text-4xl lg:text-5xl font-black text-white tracking-wide drop-shadow-lg leading-none uppercase">
+              {currentDay.dayName || "Día"}
+            </h1>
+            <span className="text-lg md:text-xl text-cyan-100/80 font-medium mt-1 tracking-wider">
+              {currentDay.date}
             </span>
-            {currentDay.precipitation !== null && currentDay.precipitation !== undefined && currentDay.precipitation > 0 && (
-              <div className="flex items-center gap-1 mt-1 text-blue-300">
-                <span className="text-xs">💧</span>
-                <span className="text-xs font-bold">{Math.round(currentDay.precipitation)}%</span>
-              </div>
-            )}
           </div>
 
-        </div>
-      </div>
+          {/* 2. Icon (Dynamic Float) */}
+          <div className="relative flex-1 w-full flex items-center justify-center min-h-[100px] animate-float-slow">
+            <WeatherIcon3D
+              condition={currentDay.condition}
+              className="h-28 w-28 md:h-36 md:w-36 drop-shadow-2xl"
+            />
+          </div>
 
-      <style>{`
+          {/* 3. Temps & Condition */}
+          <div className="w-full flex items-center justify-between bg-white/5 p-3 rounded-2xl backdrop-blur-sm border border-white/10 shadow-lg mt-auto">
+
+            {/* Temps */}
+            <div className="flex items-center gap-4">
+              <div className="flex flex-col items-center">
+                <span className="text-3xl font-bold text-red-300 drop-shadow-sm leading-none">
+                  {currentDay.temperature.max ? Math.round(currentDay.temperature.max) : "--"}°
+                </span>
+              </div>
+              <div className="w-px h-8 bg-white/20" />
+              <div className="flex flex-col items-center">
+                <span className="text-3xl font-bold text-cyan-300 drop-shadow-sm leading-none">
+                  {currentDay.temperature.min ? Math.round(currentDay.temperature.min) : "--"}°
+                </span>
+              </div>
+            </div>
+
+            {/* Condition Text */}
+            <div className="flex flex-col items-end text-right max-w-[120px]">
+              <span className="text-xs md:text-sm font-medium text-white/90 capitalize leading-tight">
+                {currentDay.condition}
+              </span>
+              {currentDay.precipitation !== null && currentDay.precipitation !== undefined && currentDay.precipitation > 0 && (
+                <div className="flex items-center gap-1 mt-1 text-blue-300">
+                  <span className="text-xs">💧</span>
+                  <span className="text-xs font-bold">{Math.round(currentDay.precipitation)}%</span>
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+
+        <style>{`
             @keyframes float-slow {
                 0%, 100% { transform: translateY(0px) rotate(0deg); }
                 50% { transform: translateY(-6px) rotate(1deg); }
@@ -149,6 +154,7 @@ export const WeatherForecastCard = ({ forecast, unit }: WeatherForecastCardProps
                 animation: float-slow 5s ease-in-out infinite;
             }
         `}</style>
+      </div>
     </div>
   );
 };
