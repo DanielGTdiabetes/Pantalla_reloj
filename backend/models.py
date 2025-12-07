@@ -411,6 +411,7 @@ class RotatorDurationsConfig(BaseModel):
     clock: int = Field(default=10, ge=3, le=300)
     weather: int = Field(default=12, ge=3, le=300)
     astronomy: int = Field(default=10, ge=3, le=300)
+    moon: int = Field(default=10, ge=3, le=300)
     santoral: int = Field(default=8, ge=3, le=300)
     calendar: int = Field(default=12, ge=3, le=300)
     news: int = Field(default=12, ge=3, le=300)
@@ -420,7 +421,7 @@ class RotatorConfig(BaseModel):
     """Configuración del panel rotativo overlay."""
     enabled: bool = Field(default=True)
     order: List[str] = Field(
-        default_factory=lambda: ["clock", "weather", "astronomy", "santoral", "calendar", "news"]
+        default_factory=lambda: ["clock", "weather", "astronomy", "moon", "santoral", "calendar", "news"]
     )
     durations_sec: Optional[RotatorDurationsConfig] = None
     transition_ms: int = Field(default=400, ge=0, le=2000)

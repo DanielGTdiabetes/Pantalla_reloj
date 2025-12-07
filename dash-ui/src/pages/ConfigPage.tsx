@@ -75,6 +75,7 @@ const ROTATION_PANEL_LABELS: Record<string, string> = {
   clock: "Reloj",
   weather: "Tiempo",
   astronomy: "Astronomía",
+  moon: "Luna",
   santoral: "Santoral",
   calendar: "Calendario",
   harvest: "Cosechas",
@@ -94,7 +95,7 @@ const ROTATION_PANEL_NORMALIZE_MAP: Record<string, string> = {
   forecast: "weather",
   astronomy: "astronomy",
   ephemerides: "astronomy",
-  moon: "astronomy",
+  moon: "moon",
   saints: "santoral",
   santoral: "santoral",
   calendar: "calendar",
@@ -904,17 +905,17 @@ export const ConfigPage: React.FC = () => {
   const handleTestMeteoblue = async () => {
     setMeteoblueTesting(true);
     setMeteoblueTestResult(null);
-    
+
     // Obtener la API key del input
     const apiKeyToTest = meteoblueApiKey?.trim() || null;
-    
+
     console.log("[ConfigPage] Testing Meteoblue with key:", apiKeyToTest ? `PROVIDED (len=${apiKeyToTest.length}, value=${apiKeyToTest.substring(0, 4)}...)` : "NULL (using stored)");
 
     try {
       const result = await testMeteoblue(apiKeyToTest);
       console.log("[ConfigPage] Meteoblue test result:", result);
       setMeteoblueTestResult(result);
-      
+
       // Si el test fue exitoso y guardó la key, actualizar metadata
       if (result.ok && result.saved) {
         try {
@@ -936,11 +937,11 @@ export const ConfigPage: React.FC = () => {
   const handleUpdateMeteoblueApiKey = async (apiKey: string | null) => {
     const trimmedKey = apiKey?.trim() || null;
     console.log("[ConfigPage] Saving Meteoblue API key:", trimmedKey ? `(len=${trimmedKey.length})` : "null (clearing)");
-    
+
     try {
       const result = await updateMeteoblueApiKey(trimmedKey);
       console.log("[ConfigPage] Save result:", result);
-      
+
       // Verificar que el guardado fue exitoso
       if (!result.ok) {
         const errorMsg = (result as any).error || "Error desconocido";
@@ -948,7 +949,7 @@ export const ConfigPage: React.FC = () => {
         alert(`Error al guardar la API key: ${errorMsg}`);
         return;
       }
-      
+
       // Actualizar secrets en config localmente
       setConfig((prev) => {
         if (!prev) return prev;
@@ -966,7 +967,7 @@ export const ConfigPage: React.FC = () => {
         const mbMeta = await getMeteoblueApiKeyMeta();
         setMeteoblueApiKeyMeta(mbMeta);
         setMeteoblueApiKey(""); // Limpiar input
-        
+
         if (trimmedKey) {
           alert(`API Key de Meteoblue guardada correctamente (últimos 4: ${result.api_key_last4 || "****"})`);
         } else {
@@ -1147,26 +1148,26 @@ export const ConfigPage: React.FC = () => {
       if (provider === "aisstream") {
         const trimmedKey = aisstreamApiKey?.trim() || null;
         console.log("[ConfigPage] Saving AISStream API key:", trimmedKey ? `(len=${trimmedKey.length})` : "null");
-        
+
         if (!trimmedKey) {
           alert("Introduce una API key de AISStream");
           return;
         }
-        
+
         // Usar endpoint directo para guardar la API key
         const response = await fetch("/api/config/secret/aisstream_api_key", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ api_key: trimmedKey }),
         });
-        
+
         const result = await response.json();
         console.log("[ConfigPage] AISStream save result:", result);
-        
+
         if (result.ok) {
           setAisstreamApiKey(""); // Limpiar input
           alert(`API Key de AISStream guardada correctamente (últimos 4: ${result.api_key_last4 || "****"})`);
-          
+
           // Disparar evento para forzar reinicialización de capas
           console.log("[ConfigPage] Dispatching layers:secrets:updated event for ships");
           window.dispatchEvent(new CustomEvent('layers:secrets:updated', {
@@ -1179,7 +1180,7 @@ export const ConfigPage: React.FC = () => {
         const secrets = { aishub: { api_key: aishubApiKey || null } };
         await updateSecrets(secrets);
         alert("API Key de AIS Hub guardada correctamente");
-        
+
         window.dispatchEvent(new CustomEvent('layers:secrets:updated', {
           detail: { layer: 'ships' }
         }));

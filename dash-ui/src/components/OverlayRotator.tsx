@@ -105,7 +105,8 @@ const DEFAULT_DURATIONS_SEC = {
   historicalEvents: 20,
   transport: 15,
   apod: 20,
-  warnings: 10
+  warnings: 10,
+  moon: 10
 };
 
 const ROTATION_DEFAULT_ORDER = [
@@ -115,6 +116,7 @@ const ROTATION_DEFAULT_ORDER = [
   "forecast",
   "transport", // Add specifically after forecast as requested/logical
   "astronomy",
+  "moon",
   "apod", // Add after astronomy
   "santoral",
   "calendar",
@@ -191,6 +193,7 @@ const sanitizeRotationPanelOrder = (panels: unknown): string[] => {
   if (!normalized.includes("transport")) normalized.splice(3, 0, "transport");
   if (!normalized.includes("apod")) normalized.splice(5, 0, "apod");
   if (!normalized.includes("warnings")) normalized.splice(1, 0, "warnings");
+  if (!normalized.includes("moon")) normalized.splice(6, 0, "moon");
 
   return normalized.length > 0 ? normalized : [...ROTATION_DEFAULT_ORDER];
 };
@@ -808,6 +811,31 @@ export const OverlayRotator: React.FC = () => {
       )
     });
 
+    map.set("astronomy", {
+      id: "astronomy",
+      duration: (durations.astronomy ?? 10) * 1000,
+      render: () => (
+        <EphemeridesCard
+          sunrise={sunrise}
+          sunset={sunset}
+          moonPhase={moonPhase}
+          illumination={moonIllumination}
+          events={ephemeridesEvents}
+        />
+      )
+    });
+
+    map.set("moon", {
+      id: "moon",
+      duration: (durations.moon ?? 10) * 1000,
+      render: () => (
+        <MoonCard
+          moonPhase={moonPhase}
+          illumination={moonIllumination}
+        />
+      )
+    });
+
     if (forecastDays.length > 0) {
       map.set("forecast", {
         id: "forecast",
@@ -996,6 +1024,10 @@ export const OverlayRotator: React.FC = () => {
         const ephemeridesEnabledV1 = ephemeridesConfigV1.ephemerides?.enabled !== false;
         // Relax hasData check
         shouldInclude = (ephemeridesEnabledV2 || ephemeridesEnabledV1);
+      } else if (panelId === "moon") {
+        // Show moon panel if we have phase data, or even if not (it shows placeholders)
+        // Assuming it's enabled by default if in the list
+        shouldInclude = true;
       } else if (panelId === "forecast") {
         shouldInclude = forecastDays.length > 0 && weather.ok !== false;
       } else if (panelId === "weather") {

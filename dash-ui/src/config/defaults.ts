@@ -177,6 +177,7 @@ export const ROTATION_PANEL_IDS = [
   "weather",
   "forecast",
   "astronomy",
+  "moon",
   "santoral",
   "calendar",
   "harvest",
@@ -189,7 +190,7 @@ const ROTATION_LEGACY_MAP: Record<string, string> = {
   clock: "clock",
   weather: "weather",
   // forecast: "weather", // Removed to allow distinct forecast panel
-  moon: "astronomy",
+  moon: "moon",
   astronomy: "astronomy",
   ephemerides: "astronomy",
   saints: "santoral",
