@@ -303,51 +303,51 @@ export default function AircraftMapLayer({
                             const currentIds = new Set<string>();
                             const markerMap = markersRef.current;
 
-                            features.forEach(feature => {
-                                const id = String(feature.id || feature.properties.icao24 || Math.random());
-                                currentIds.add(id);
-                                const coords = feature.geometry.coordinates as [number, number];
-                                const track = feature.properties.track ?? 0;
+                            if (markerMap) {
+                                features.forEach(feature => {
+                                    const id = String(feature.id || feature.properties.icao24 || Math.random());
+                                    currentIds.add(id);
+                                    const coords = feature.geometry.coordinates as [number, number];
+                                    const track = feature.properties.track ?? 0;
 
-                                let marker = markerMap.get(id);
+                                    let marker = markerMap.get(id);
 
-                                if (!marker) {
-                                    // Create new marker
-                                    const el = document.createElement('div');
-                                    el.className = 'aircraft-marker';
-                                    el.style.width = '24px';
-                                    el.style.height = '24px';
-                                    el.style.backgroundImage = 'url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%23f97316\' stroke=\'%23ffffff\' stroke-width=\'2\'%3E%3Cpath d=\'M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z\'/%3E%3C/svg%3E")';
-                                    el.style.backgroundSize = 'contain';
-                                    el.style.backgroundRepeat = 'no-repeat';
-                                    el.style.cursor = 'pointer';
-                                    el.style.zIndex = '100';
+                                    if (!marker) {
+                                        // Create new marker
+                                        const el = document.createElement('div');
+                                        el.className = 'aircraft-marker';
+                                        el.style.width = '24px';
+                                        el.style.height = '24px';
+                                        el.style.backgroundImage = 'url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%23f97316\' stroke=\'%23ffffff\' stroke-width=\'2\'%3E%3Cpath d=\'M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z\'/%3E%3C/svg%3E")';
+                                        el.style.backgroundSize = 'contain';
+                                        el.style.backgroundRepeat = 'no-repeat';
+                                        el.style.cursor = 'pointer';
+                                        el.style.zIndex = '100';
 
-                                    // @ts-ignore
-                                    const newMarker = new Marker({ element: el })
-                                        .setLngLat(coords)
-                                        .setRotation(track)
-                                        .addTo(mapInstance);
+                                        // @ts-ignore
+                                        const newMarker = new Marker({ element: el })
+                                            .setLngLat(coords)
+                                            .setRotation(track)
+                                            .addTo(mapInstance);
 
-                                    markerMap.set(id, newMarker);
-                                } else {
-                                    // Update existing
-                                    marker.setLngLat(coords);
-                                    marker.setRotation(track);
-                                    // Ensure it is on the map (in case map instance changed but we caught it)
-                                    // But map doesn't change here usually.
-                                }
-                            });
+                                        markerMap.set(id, newMarker);
+                                    } else {
+                                        // Update existing
+                                        marker.setLngLat(coords);
+                                        marker.setRotation(track);
+                                    }
+                                });
 
-                            // Remove stale markers
-                            const toRemove: string[] = [];
-                            markerMap.forEach((marker, id) => {
-                                if (!currentIds.has(id)) {
-                                    marker.remove();
-                                    toRemove.push(id);
-                                }
-                            });
-                            toRemove.forEach(id => markerMap.delete(id));
+                                // Remove stale markers
+                                const toRemove: string[] = [];
+                                markerMap.forEach((marker, id) => {
+                                    if (!currentIds.has(id)) {
+                                        marker.remove();
+                                        toRemove.push(id);
+                                    }
+                                });
+                                toRemove.forEach(id => markerMap.delete(id));
+                            }
 
                             setDebugStatus(`Updated (HTML): ${features.length} aircraft`);
                         }
