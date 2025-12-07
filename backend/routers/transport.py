@@ -58,7 +58,21 @@ async def get_transport_nearby(
     Get transport (planes and ships) near a location.
     Specific logic for Vila-real/Castellón context requested by user.
     """
-    main = _load_main_module()
+    planes_data = []
+    ships_data = []
+    errors = []
+    
+    try:
+        main = _load_main_module()
+    except Exception as e:
+        print(f"Error loading main module: {e}")
+        return {
+            "ok": False,
+            "error": f"module_load_failed: {e}",
+            "location": {"lat": lat, "lon": lon},
+            "planes": [],
+            "ships": []
+        }
     
     # 1. OpenSky (Planes) - Widen the box to ensures we catch planes on approach to Valencia/Castellón
     d_lat = 1.0 # ~110km latitude delta
@@ -71,82 +85,119 @@ async def get_transport_nearby(
         lon + d_lon  # max_lon
     )
     
-    planes_data = []
     try:
         opensky = main.opensky_service
-        snapshot = opensky.get_snapshot(
-            config=main.global_config,
-            bbox=planes_bbox,
-            extended_override=1
-        )
+        config = main.global_config
         
-        if snapshot and snapshot.payload.get("items"):
-            for item in snapshot.payload["items"]:
-                p = item
-                if isinstance(p, dict):
-                    icao = p.get("icao24")
-                    img = None
-                    if icao:
-                         # Run in threadpool to avoid blocking loop with requests
-                         img = await run_in_threadpool(_resolve_plane_image, icao)
+        # Check if flights layer is enabled
+        layers = getattr(config, "layers", None)
+        flights_config = getattr(layers, "flights", None) if layers else None
+        
+        if flights_config and flights_config.enabled:
+            snapshot = opensky.get_snapshot(
+                config=config,
+                bbox=planes_bbox,
+                extended_override=1
+            )
+            
+            if snapshot and snapshot.payload.get("items"):
+                for item in snapshot.payload["items"]:
+                    p = item
+                    if isinstance(p, dict):
+                        icao = p.get("icao24")
+                        img = None
+                        if icao:
+                             # Run in threadpool to avoid blocking loop with requests
+                             try:
+                                 img = await run_in_threadpool(_resolve_plane_image, icao)
+                             except Exception:
+                                 pass
 
-                    planes_data.append({
-                        "ic": icao,
-                        "cs": (p.get("callsign") or "").strip(),
-                        "alt": p.get("baro_altitude"),
-                        "spd": p.get("velocity"),
-                        "hdg": p.get("true_track"),
-                        "lat": p.get("latitude"),
-                        "lon": p.get("longitude"),
-                        "co": p.get("origin_country"),
-                        "img": img
-                    })
+                        p_lat = p.get("latitude")
+                        p_lon = p.get("longitude")
+                        # Skip items without coordinates
+                        if p_lat is None or p_lon is None:
+                            continue
+                            
+                        planes_data.append({
+                            "ic": icao,
+                            "cs": (p.get("callsign") or "").strip(),
+                            "alt": p.get("baro_altitude"),
+                            "spd": p.get("velocity"),
+                            "hdg": p.get("true_track"),
+                            "lat": p_lat,
+                            "lon": p_lon,
+                            "co": p.get("origin_country"),
+                            "img": img
+                        })
+        else:
+            errors.append("flights_layer_disabled")
     except Exception as e:
         print(f"Error fetching planes: {e}")
+        errors.append(f"planes_error: {e}")
 
     # 2. Ships (AISStream)
     # Widen to include Castellón/Burriana coast (-0.1 is Vila-real, Coast is approx -0.0)
     # Min lon must be west of Vila-real (-0.10) to catch anything close, or at least covers the port.
     ships_bbox = (39.0, 41.0, -0.50, 1.50)
     
-    ships_data = []
     try:
         ais = main.ships_service
-        snapshot = ais.get_snapshot()
-        if snapshot and "features" in snapshot:
-            for feature in snapshot["features"]:
-                geo = feature.get("geometry", {})
-                coords = geo.get("coordinates")
-                if coords:
-                    slon, slat = coords
-                    # Check if inside our "nearby" box
-                    if (ships_bbox[0] <= slat <= ships_bbox[1] and 
-                        ships_bbox[2] <= slon <= ships_bbox[3]):
-                        
-                        props = feature.get("properties", {})
-                        ships_data.append({
-                            "name": props.get("name") or str(props.get("mmsi")),
-                            "mmsi": props.get("mmsi"),
-                            "type": props.get("shipType"),
-                            "spd": props.get("speed"),
-                            "hdg": props.get("heading"),
-                            "lat": slat,
-                            "lon": slon,
-                            "dest": props.get("destination"),
-                            # Ship photos are harder to get freely by API. 
-                            # Leaving img as null/undefined to trigger fallback.
-                            "img": None 
-                        })
+        
+        # Check if ships layer is enabled
+        layers = getattr(main.global_config, "layers", None)
+        ships_config = getattr(layers, "ships", None) if layers else None
+        
+        if ships_config and ships_config.enabled:
+            snapshot = ais.get_snapshot()
+            if snapshot and "features" in snapshot:
+                for feature in snapshot["features"]:
+                    geo = feature.get("geometry", {})
+                    coords = geo.get("coordinates")
+                    if coords:
+                        slon, slat = coords
+                        # Check if inside our "nearby" box
+                        if (ships_bbox[0] <= slat <= ships_bbox[1] and 
+                            ships_bbox[2] <= slon <= ships_bbox[3]):
+                            
+                            props = feature.get("properties", {})
+                            ships_data.append({
+                                "name": props.get("name") or str(props.get("mmsi")),
+                                "mmsi": props.get("mmsi"),
+                                "type": props.get("shipType"),
+                                "spd": props.get("speed"),
+                                "hdg": props.get("heading"),
+                                "lat": slat,
+                                "lon": slon,
+                                "dest": props.get("destination"),
+                                # Ship photos are harder to get freely by API. 
+                                # Leaving img as null/undefined to trigger fallback.
+                                "img": None 
+                            })
+        else:
+            errors.append("ships_layer_disabled")
     except Exception as e:
         print(f"Error fetching ships: {e}")
+        errors.append(f"ships_error: {e}")
 
     # Sort by proximity to target (Vila-real)
-    planes_data.sort(key=lambda x: _dist(lat, lon, x.get('lat',0), x.get('lon',0)))
-    ships_data.sort(key=lambda x: _dist(lat, lon, x.get('lat',0), x.get('lon',0)))
+    # Use default 0 for None values to avoid math errors
+    try:
+        planes_data.sort(key=lambda x: _dist(lat, lon, x.get('lat') or 0, x.get('lon') or 0))
+        ships_data.sort(key=lambda x: _dist(lat, lon, x.get('lat') or 0, x.get('lon') or 0))
+    except Exception as e:
+        print(f"Error sorting transport data: {e}")
+        errors.append(f"sort_error: {e}")
 
-    return {
-        "ok": True,
+    result = {
+        "ok": len(errors) == 0,
         "location": {"lat": lat, "lon": lon},
         "planes": planes_data[:5], 
         "ships": ships_data[:10]
     }
+    
+    if errors:
+        result["errors"] = errors
+        
+    return result
+
