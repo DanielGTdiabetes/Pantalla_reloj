@@ -1,4 +1,5 @@
 import { useRef, useEffect } from "react";
+import { StandardCard } from "../StandardCard";
 
 interface ApodData {
     title: string;
@@ -22,56 +23,63 @@ export const ApodCard = ({ data }: ApodCardProps) => {
     }
 
     return (
-        <div className="relative h-full w-full overflow-hidden rounded-xl bg-black text-white shadow-2xl">
-            {/* Full Image */}
+        <StandardCard
+            noPadding
+            className="group relative overflow-hidden"
+        >
+            {/* Full Image Background with Ken Burns */}
             <div className="absolute inset-0 z-0">
                 <img
                     src={data.url}
                     alt={data.title}
-                    className="h-full w-full object-cover animate-ken-burns"
+                    className="h-full w-full object-cover animate-ken-burns transition-transform duration-[20s] ease-out group-hover:scale-125"
                 />
-                {/* Stronger Gradient Overlay for bottom text area */}
-                <div className="absolute inset-x-0 bottom-0 h-3/4 bg-gradient-to-t from-black via-black/80 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent opacity-90" />
             </div>
 
-            {/* Content with glass effect backing just in case */}
-            <div className="relative z-10 flex h-full flex-col justify-end p-6 md:p-8">
-                <div className="animate-fade-in-up flex flex-col gap-3">
-                    <div className="self-start inline-flex items-center gap-2 rounded-full bg-black/40 px-3 py-1.5 text-[10px] md:text-xs font-bold uppercase tracking-widest backdrop-blur-lg border border-white/10 shadow-lg">
-                        <span className="text-blue-400">🔭</span> <span className="text-white/90">NASA APOD</span>
-                    </div>
+            {/* Content Overlay */}
+            <div className="relative z-10 flex flex-col justify-end h-full w-full p-6 md:p-8 animate-fade-in-up">
 
-                    <h1 className="text-2xl md:text-4xl lg:text-5xl font-black leading-tight tracking-tight drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] text-white">
-                        {data.title}
-                    </h1>
+                {/* Badge */}
+                <div className="self-start mb-4 inline-flex items-center gap-2 rounded-full bg-blue-500/20 px-3 py-1 text-xs font-bold uppercase tracking-widest backdrop-blur-md border border-blue-400/30 text-blue-200 shadow-[0_0_15px_rgba(59,130,246,0.5)]">
+                    <span>🔭</span> <span>NASA APOD</span>
+                </div>
 
-                    <div className="bg-black/20 backdrop-blur-sm rounded-lg p-3 md:p-4 border border-white/5 shadow-2xl">
-                        <p className="text-sm md:text-base lg:text-lg font-medium leading-relaxed text-gray-200/95 line-clamp-4 drop-shadow-md">
-                            {data.explanation}
-                        </p>
-                        <div className="mt-3 text-xs opacity-60 font-mono tracking-wide text-gray-400">
+                {/* Title */}
+                <h1 className="text-3xl md:text-4xl lg:text-5xl font-black leading-none tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white to-blue-200 drop-shadow-lg mb-4">
+                    {data.title}
+                </h1>
+
+                {/* Description Box */}
+                <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl shadow-2xl">
+                    <p className="text-sm md:text-base leading-relaxed text-gray-100/90 line-clamp-4 font-medium text-shadow-sm">
+                        {data.explanation}
+                    </p>
+                    <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3">
+                        <span className="font-mono text-xs text-blue-300/80 tracking-widest uppercase">
                             {data.date}
-                        </div>
+                        </span>
+                        <div className="h-1 w-12 rounded-full bg-blue-500/50" />
                     </div>
                 </div>
             </div>
 
             <style>{`
                 .animate-ken-burns {
-                    animation: kenBurns 20s ease-out forwards;
+                    animation: kenBurns 30s ease-out infinite alternate;
                 }
                 .animate-fade-in-up {
-                    animation: fadeInUp 1s ease-out;
+                    animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
                 }
                 @keyframes kenBurns {
                     from { transform: scale(1.0); }
                     to { transform: scale(1.15); }
                 }
                 @keyframes fadeInUp {
-                    from { opacity: 0; transform: translateY(20px); }
+                    from { opacity: 0; transform: translateY(40px); }
                     to { opacity: 1; transform: translateY(0); }
                 }
             `}</style>
-        </div>
+        </StandardCard>
     );
 };
