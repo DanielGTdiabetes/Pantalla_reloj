@@ -2614,10 +2614,33 @@ async def upload_calendar_ics_file(
             "detail": exc.detail.get("error", "Invalid ICS format") if isinstance(exc.detail, dict) else str(exc.detail)
         }
     
+    # Logging detallado para diagnóstico
+    logger.info("[calendar/ics/upload] Received file: %s, size: %d bytes", file.filename, len(content))
+    logger.info("[calendar/ics/upload] ICS_STORAGE_DIR: %s, exists: %s, writable: %s",
+                ICS_STORAGE_DIR, ICS_STORAGE_DIR.exists(), 
+                os.access(ICS_STORAGE_DIR, os.W_OK) if ICS_STORAGE_DIR.exists() else False)
+    
     # Crear directorio si no existe
-    _ensure_ics_storage_directory()
+    try:
+        _ensure_ics_storage_directory()
+    except Exception as exc:
+        logger.error("[calendar/ics/upload] Error ensuring storage directory: %s", exc)
+        return {
+            "ok": False,
+            "error": "storage_error",
+            "detail": f"No se puede crear directorio de almacenamiento: {str(exc)}"
+        }
+    
     tmp_dir = ICS_STORAGE_DIR / "tmp"
-    tmp_dir.mkdir(exist_ok=True)
+    try:
+        tmp_dir.mkdir(exist_ok=True)
+    except (OSError, PermissionError) as exc:
+        logger.error("[calendar/ics/upload] Error creating tmp directory: %s", exc)
+        return {
+            "ok": False,
+            "error": "storage_error",
+            "detail": f"No se puede crear directorio temporal: {str(exc)}"
+        }
     
     # Obtener UID/GID del propietario del config
     uid = gid = None
