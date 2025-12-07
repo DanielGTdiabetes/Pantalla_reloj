@@ -516,6 +516,14 @@ else
   chown "$USER_NAME:$USER_NAME" "$SAMPLE_ICS" 2>/dev/null || true
   chmod 0644 "$SAMPLE_ICS" 2>/dev/null || true
 fi
+
+# Crear directorio para subida de archivos ICS desde el panel web
+# El backend (config_store.py) usa /var/lib/pantalla-reloj/calendar/
+CALENDAR_UPLOAD_DIR="$STATE_DIR/calendar"
+install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$CALENDAR_UPLOAD_DIR"
+install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$CALENDAR_UPLOAD_DIR/tmp"
+SUMMARY+=("[install] directorio para subida de calendarios ICS creado en ${CALENDAR_UPLOAD_DIR}")
+
 install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$STATE_DIR/cache"
 # Crear directorios de caché para layers (flights/ships) y focus masks
 install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 /var/cache/pantalla
