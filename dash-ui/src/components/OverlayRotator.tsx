@@ -1034,8 +1034,9 @@ export const OverlayRotator: React.FC = () => {
       } else if (panelId === "weather") {
         shouldInclude = condition !== null || temperature.value !== "--";
       } else if (panelId === "transport") {
-        // Show even if empty to confirm presence, or checking transport object
-        shouldInclude = !!transport;
+        // Always show transport panel if enabled in rotation, let the card handle "Scanning" state if empty
+        // This fixes the issue where user sees planes on map but card is hidden due to race conditions or brief empty data
+        shouldInclude = true;
       } else if (panelId === "apod") {
         // Ensure we only show APOD if it's an image
         shouldInclude = !!apod && apod.media_type === "image";
