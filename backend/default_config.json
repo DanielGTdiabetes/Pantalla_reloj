@@ -169,7 +169,7 @@
         "allow_overlap": true
       },
       "opensky": {
-        "mode": "oauth2",
+        "mode": "bbox",
         "bbox": {
           "lamin": 36.0,
           "lamax": 44.0,
@@ -289,7 +289,7 @@
     "custom_items": []
   },
   "opensky": {
-    "enabled": false,
+    "enabled": true,
     "mode": "bbox",
     "bbox": {
       "lamin": 36.0,

@@ -10470,6 +10470,7 @@ def get_flights(request: Request, bbox: Optional[str] = None, extended: Optional
     # Verificar si la capa de vuelos está habilitada y usa OpenSky
     layers = getattr(config, "layers", None)
     flights_config = getattr(layers, "flights", None) if layers else None
+    
     flights_enabled = flights_config and flights_config.enabled and flights_config.provider == "opensky"
     
     # Si opensky.enabled está explícitamente en False, deshabilitar
