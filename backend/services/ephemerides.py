@@ -284,13 +284,54 @@ async def get_ephemerides(
             "count": 0
         }
 
+
+async def _translate_text(text: str, source: str = "en", target: str = "es") -> str:
+    """
+    Traduce texto usando una API gratuita (MyMemory).
+    Se usa solo para APOD, con un límite diario de 5000 caracteres, así que cuidado.
+    """
+    if not text:
+        return ""
+    
+    # Limpieza básica
+    text = text.strip()
+    if not text:
+        return ""
+
+    try:
+        # MyMemory usage limit is generous enough for one APOD per day
+        # Split text if it's too long (limit usually around 500 chars for optimal quality, but API accepts more)
+        # We'll just try to send it all. If it fails or truncates, we fallback.
+        url = "https://api.mymemory.translated.net/get"
+        params = {
+            "q": text,
+            "langpair": f"{source}|{target}"
+        }
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            
+            if data.get("responseStatus") == 200:
+                translated = data.get("responseData", {}).get("translatedText")
+                if translated:
+                    # MyMemory sometimes returns HTML entities
+                    import html
+                    return html.unescape(translated)
+    except Exception as e:
+        logger.warning(f"Translation failed for '{text[:20]}...': {e}")
+    
+    return text  # Fallback to original
+
 @router.get("/apod")
 async def get_nasa_apod() -> Dict[str, Any]:
     """
     Get NASA Astronomy Picture of the Day.
     Uses generic DEMO_KEY, cached 12h.
+    Translates title and explanation to Spanish.
     """
-    cache_key = f"nasa_apod_{datetime.date.today().isoformat()}"
+    cache_key = f"nasa_apod_{datetime.date.today().isoformat()}_es"
     if cache_store:
         cached = cache_store.load(cache_key, max_age_minutes=720) # 12h
         if cached and cached.payload:
@@ -303,12 +344,43 @@ async def get_nasa_apod() -> Dict[str, Any]:
             resp.raise_for_status()
             data = resp.json()
             
+            title = data.get("title", "")
+            explanation = data.get("explanation", "")
+            
+            # Translate content
+            title_es = await _translate_text(title)
+            # Split explanation to avoid query limits if needed? 
+            # MyMemory free limit per request is 500 bytes. Translation might be partial.
+            # Let's try to translate sentence by sentence or chunks?
+            # For robustness, we only translate title first, then attempt explanation split by '. '
+            
+            explanation_es = explanation
+            if len(explanation) > 0:
+                # Naive splitting to respect potential API limits/quality
+                # If text is too long (e.g. > 450 chars), split chunks
+                chunks = []
+                current_chunk = ""
+                for sentence in explanation.split(". "):
+                    if len(current_chunk) + len(sentence) < 450:
+                        current_chunk += sentence + ". "
+                    else:
+                        chunks.append(current_chunk)
+                        current_chunk = sentence + ". "
+                if current_chunk:
+                    chunks.append(current_chunk)
+                
+                translated_chunks = []
+                for chunk in chunks:
+                    translated_chunks.append(await _translate_text(chunk))
+                
+                explanation_es = "".join(translated_chunks)
+
             # Extract relevant fields
             result = {
-                "title": data.get("title"),
+                "title": title_es,
                 "url": data.get("hdurl") or data.get("url"), # Prefer HD
                 "date": data.get("date"),
-                "explanation": data.get("explanation"),
+                "explanation": explanation_es,
                 "media_type": data.get("media_type") # image or video
             }
             
