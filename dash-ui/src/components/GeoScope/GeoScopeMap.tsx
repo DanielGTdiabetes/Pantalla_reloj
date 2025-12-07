@@ -762,7 +762,7 @@ export default function GeoScopeMap({
         layerRegistryRef.current = new LayerRegistry(map);
 
         // Inicializar capas
-        aircraftLayerRef.current = new AircraftLayer();
+        // aircraftLayerRef.current = new AircraftLayer();
         shipsLayerRef.current = new ShipsLayer();
         globalRadarLayerRef.current = new GlobalRadarLayer();
         globalSatelliteLayerRef.current = new GlobalSatelliteLayer();
@@ -771,7 +771,7 @@ export default function GeoScopeMap({
         weatherLayerRef.current = new WeatherLayer();
 
         // Registrar capas en el registro para que reciban el mapa y eventos
-        layerRegistryRef.current.register("geoscope-aircraft", aircraftLayerRef.current);
+        // layerRegistryRef.current.register("geoscope-aircraft", aircraftLayerRef.current);
         layerRegistryRef.current.register("geoscope-ships", shipsLayerRef.current);
         layerRegistryRef.current.register("geoscope-global-radar", globalRadarLayerRef.current);
         layerRegistryRef.current.register("geoscope-global-satellite", globalSatelliteLayerRef.current);

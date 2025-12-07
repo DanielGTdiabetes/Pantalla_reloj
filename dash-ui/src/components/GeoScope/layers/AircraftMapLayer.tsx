@@ -196,6 +196,7 @@ export default function AircraftMapLayer({
     mapReady,
 }: AircraftMapLayerProps) {
     const [debugStatus, setDebugStatus] = useState<string>("Initializing...");
+    const markersRef = useRef<Map<string, Marker>>(new Map());
 
     useEffect(() => {
         console.log("[AircraftMapLayer] Mounted (HTML Mode)");
@@ -230,11 +231,12 @@ export default function AircraftMapLayer({
         layerDiagnostics.setEnabled(layerId, true);
 
         // FORCE ZOOM/CENTER for Mini PC
-        if (mapRef.current) {
+        const map = mapRef.current;
+        if (map) {
             // Only jump if we are very far away or at 0,0
-            const center = mapRef.current.getCenter();
+            const center = map.getCenter();
             if (center.lng === 0 && center.lat === 0) {
-                mapRef.current.jumpTo({
+                map.jumpTo({
                     center: [-3.7038, 40.4168], // Madrid
                     zoom: 5.0
                 });
@@ -242,13 +244,14 @@ export default function AircraftMapLayer({
         }
 
         const loadFlightsData = async (): Promise<void> => {
-            const map = mapRef.current;
+            const mapInstance = mapRef.current; // Get fresh ref
+            if (!mapInstance) return;
 
             try {
                 let bbox: string | undefined;
 
-                if (map && map.isStyleLoaded()) {
-                    const expandedBbox = getExpandedBbox(map, 1.5);
+                if (mapInstance.isStyleLoaded()) {
+                    const expandedBbox = getExpandedBbox(mapInstance, 1.5);
                     bbox = `${expandedBbox.lamin},${expandedBbox.lamax},${expandedBbox.lomin},${expandedBbox.lomax}`;
                 }
 
@@ -294,16 +297,11 @@ export default function AircraftMapLayer({
                         const featureCollection = flightsResponseToGeoJSON(response);
 
                         // HTML MARKER RENDERING
-                        if (map) {
-                            const MAX_MARKERS = 500; // Increased limit for user request
+                        if (mapInstance) {
+                            const MAX_MARKERS = 500;
                             const features = featureCollection.features.slice(0, MAX_MARKERS);
                             const currentIds = new Set<string>();
-
-                            // Initialize marker cache if needed
-                            if (!(window as any)._aircraftMarkers) {
-                                (window as any)._aircraftMarkers = new Map<string, Marker>();
-                            }
-                            const markerMap = (window as any)._aircraftMarkers as Map<string, Marker>;
+                            const markerMap = markersRef.current;
 
                             features.forEach(feature => {
                                 const id = String(feature.id || feature.properties.icao24 || Math.random());
@@ -323,40 +321,47 @@ export default function AircraftMapLayer({
                                     el.style.backgroundSize = 'contain';
                                     el.style.backgroundRepeat = 'no-repeat';
                                     el.style.cursor = 'pointer';
-                                    el.style.zIndex = '100'; // Ensure on top
+                                    el.style.zIndex = '100';
 
-                                    // Remove rotationAlignment: 'map' which might be causing issues
                                     // @ts-ignore
                                     const newMarker = new Marker({ element: el })
                                         .setLngLat(coords)
                                         .setRotation(track)
-                                        .addTo(map);
+                                        .addTo(mapInstance);
 
                                     markerMap.set(id, newMarker);
                                 } else {
                                     // Update existing
                                     marker.setLngLat(coords);
                                     marker.setRotation(track);
+                                    // Ensure it is on the map (in case map instance changed but we caught it)
+                                    // But map doesn't change here usually.
                                 }
                             });
 
                             // Remove stale markers
-                            for (const [id, marker] of markerMap.entries()) {
+                            const toRemove: string[] = [];
+                            markerMap.forEach((marker, id) => {
                                 if (!currentIds.has(id)) {
                                     marker.remove();
-                                    markerMap.delete(id);
+                                    toRemove.push(id);
                                 }
-                            }
+                            });
+                            toRemove.forEach(id => markerMap.delete(id));
+
                             setDebugStatus(`Updated (HTML): ${features.length} aircraft`);
                         }
 
                     } catch (e) {
                         console.error("Error updating aircraft data", e);
+                        setDebugStatus("Error updating aircraft data: " + String(e));
                     }
+                } else {
+                    setDebugStatus("Backend reports disabled");
                 }
             } catch (error) {
                 console.error("Error loading flights:", error);
-                setDebugStatus("Error loading flights");
+                setDebugStatus("Error loading flights: " + String(error));
             }
         };
 
@@ -370,8 +375,32 @@ export default function AircraftMapLayer({
 
         return () => {
             clearInterval(intervalId);
+            // Cleanup markers on unmount
+            if (markersRef.current) {
+                markersRef.current.forEach(marker => marker.remove());
+                markersRef.current.clear();
+            }
         };
     }, [config, mapReady]);
 
-    return null;
+    if (!mapReady) return null;
+
+    return (
+        <div style={{
+            position: 'absolute',
+            top: 200,
+            left: 10,
+            color: '#fff',
+            background: 'rgba(0,0,0,0.7)',
+            padding: '8px',
+            zIndex: 9999,
+            fontSize: '12px',
+            fontFamily: 'monospace',
+            pointerEvents: 'none',
+            borderRadius: '4px',
+            border: '1px solid #f97316'
+        }}>
+            Aircraft: {debugStatus}
+        </div>
+    );
 }
