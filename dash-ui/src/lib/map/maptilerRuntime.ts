@@ -54,7 +54,12 @@ export function extractMaptilerApiKey(
   health?: HealthLike | null
 ): string | null {
   // 1. Desde secrets
-  const fromSecrets = config?.secrets?.maptiler?.api_key;
+  const fromSecrets = config?.secrets?.maptiler?.api_key ||
+    (config as any)?.secrets?.maptiler?.apiKey ||
+    (config as any)?.secrets?.maptiler?.key ||
+    (config?.ui_map?.maptiler?.api_key) ||
+    (config?.ui_map?.maptiler?.apiKey);
+
   if (fromSecrets && typeof fromSecrets === "string" && fromSecrets.trim()) {
     return fromSecrets.trim();
   }
@@ -115,8 +120,14 @@ export function buildMaptilerStyleUrl(
     } catch {
       // Si no es una URL válida, añadir key manualmente
       const sep = trimmed.includes("?") ? "&" : "?";
+      // Force streets-v2 if bare style.json reference to generic domain
+      let finalUrl = trimmed;
+      if (trimmed === "https://api.maptiler.com/maps/style.json" || trimmed.endsWith("/maps/style.json")) {
+        // This is invalid usually, let's fix it to a safe default
+        finalUrl = "https://api.maptiler.com/maps/streets-v2/style.json";
+      }
       return withStyleCacheBuster(
-        `${trimmed}${sep}key=${encodeURIComponent(apiKey.trim())}`
+        `${finalUrl}${sep}key=${encodeURIComponent(apiKey.trim())}`
       );
     }
   }
