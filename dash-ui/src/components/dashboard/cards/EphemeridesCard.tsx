@@ -45,60 +45,60 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
   };
 
   return (
-    <div className="ephemerides-card-v2">
-      <div className="ephemerides-card-v2__header">
-        <img src={getIcon()} alt="" className="ephemerides-card-v2__header-icon" />
-        <span className="ephemerides-card-v2__title">Astronomía</span>
+    <div className="ephemerides-card-dark">
+      <div className="ephemerides-card-dark__header">
+        <img src={getIcon()} alt="" className="ephemerides-card-dark__header-icon" />
+        <span className="ephemerides-card-dark__title">Astronomía</span>
       </div>
 
-      <div className="ephemerides-card-v2__body">
-        <div className="ephemerides-card-v2__label">{getLabel()}</div>
+      <div className="ephemerides-card-dark__body">
+        <div className="ephemerides-card-dark__label">{getLabel()}</div>
 
-        <div className="ephemerides-card-v2__icon-container">
+        <div className="ephemerides-card-dark__icon-container">
           <img
             src={getIcon()}
             alt={getLabel()}
-            className={`ephemerides-card-v2__main-icon ${currentState === "sunset" ? "sunset-filter" : ""}`}
+            className={`ephemerides-card-dark__main-icon ${currentState === "sunset" ? "sunset-filter" : ""}`}
           />
         </div>
 
-        <div className="ephemerides-card-v2__value">{getValue()}</div>
+        <div className="ephemerides-card-dark__value">{getValue()}</div>
 
         {currentState === "moon" && illuminationPercent !== null && (
-          <div className="ephemerides-card-v2__illumination">{illuminationPercent}% iluminación</div>
+          <div className="ephemerides-card-dark__illumination">{illuminationPercent}% iluminación</div>
         )}
       </div>
 
       <style>{`
-        .ephemerides-card-v2 {
+        .ephemerides-card-dark {
           display: flex;
           flex-direction: column;
           height: 100%;
           width: 100%;
           padding: 0.5rem;
           box-sizing: border-box;
+          background: linear-gradient(135deg, #312e81 0%, #0f172a 100%);
+          color: white;
         }
-        .ephemerides-card-v2__header {
+        .ephemerides-card-dark__header {
           display: flex;
           align-items: center;
           gap: 0.5rem;
           margin-bottom: 0.5rem;
         }
-        .ephemerides-card-v2__header-icon {
+        .ephemerides-card-dark__header-icon {
           width: 48px;
           height: 48px;
           object-fit: contain;
-          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
         }
-        .ephemerides-card-v2__title {
+        .ephemerides-card-dark__title {
           font-size: 1.3rem;
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.1em;
-          color: #1e293b;
-          text-shadow: 0 1px 2px rgba(255,255,255,0.8);
         }
-        .ephemerides-card-v2__body {
+        .ephemerides-card-dark__body {
           flex: 1;
           display: flex;
           flex-direction: column;
@@ -106,43 +106,40 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
           justify-content: center;
           gap: 0.25rem;
         }
-        .ephemerides-card-v2__label {
+        .ephemerides-card-dark__label {
           font-size: 1.1rem;
           font-weight: 600;
           text-transform: uppercase;
           letter-spacing: 0.1em;
-          color: #334155;
-          text-shadow: 0 1px 2px rgba(255,255,255,0.5);
+          opacity: 0.9;
         }
-        .ephemerides-card-v2__icon-container {
+        .ephemerides-card-dark__icon-container {
           width: 120px;
           height: 120px;
           margin: 0.25rem 0;
         }
-        .ephemerides-card-v2__main-icon {
+        .ephemerides-card-dark__main-icon {
           width: 100%;
           height: 100%;
           object-fit: contain;
-          filter: drop-shadow(0 4px 12px rgba(0,0,0,0.25));
-          animation: float-v2 4s ease-in-out infinite;
+          filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));
+          animation: float-dark 4s ease-in-out infinite;
         }
-        .ephemerides-card-v2__main-icon.sunset-filter {
-          filter: drop-shadow(0 4px 12px rgba(0,0,0,0.25)) sepia(0.3) saturate(1.3);
+        .ephemerides-card-dark__main-icon.sunset-filter {
+          filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4)) sepia(0.3) saturate(1.3);
         }
-        .ephemerides-card-v2__value {
+        .ephemerides-card-dark__value {
           font-size: 2.5rem;
           font-weight: 900;
           line-height: 1;
           font-family: monospace;
-          color: #0f172a;
-          text-shadow: 0 2px 4px rgba(255,255,255,0.6);
+          text-shadow: 0 2px 10px rgba(0,0,0,0.5);
         }
-        .ephemerides-card-v2__illumination {
+        .ephemerides-card-dark__illumination {
           font-size: 0.85rem;
-          color: #475569;
-          text-shadow: 0 1px 2px rgba(255,255,255,0.5);
+          opacity: 0.7;
         }
-        @keyframes float-v2 {
+        @keyframes float-dark {
           0%, 100% { transform: translateY(0) rotate(0deg); }
           50% { transform: translateY(-8px) rotate(2deg); }
         }

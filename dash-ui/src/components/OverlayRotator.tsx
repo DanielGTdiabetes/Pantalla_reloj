@@ -1026,9 +1026,8 @@ export const OverlayRotator: React.FC = () => {
         // Relax hasData check
         shouldInclude = (ephemeridesEnabledV2 || ephemeridesEnabledV1);
       } else if (panelId === "moon") {
-        // Show moon panel if we have phase data, or even if not (it shows placeholders)
-        // Assuming it's enabled by default if in the list
-        shouldInclude = true;
+        // Disable standalone moon panel - already included in EphemeridesCard (astronomy)
+        shouldInclude = false;
       } else if (panelId === "forecast") {
         shouldInclude = forecastDays.length > 0 && weather.ok !== false;
       } else if (panelId === "weather") {

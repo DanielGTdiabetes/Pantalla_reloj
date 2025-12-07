@@ -46,74 +46,74 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
   const iconUrl = get3DIcon(day.condition);
 
   return (
-    <div className="forecast-card-v2">
-      <div className="forecast-card-v2__header">
-        <img src="/img/icons/3d/cloud-rain.png" alt="" className="forecast-card-v2__header-icon" />
-        <span className="forecast-card-v2__title">Previsión Semanal</span>
+    <div className="forecast-card-dark">
+      <div className="forecast-card-dark__header">
+        <img src="/img/icons/3d/cloud-rain.png" alt="" className="forecast-card-dark__header-icon" />
+        <span className="forecast-card-dark__title">Previsión Semanal</span>
       </div>
 
-      <div className="forecast-card-v2__body">
-        <div className="forecast-card-v2__day">
-          <span className="forecast-card-v2__dayname">{day.dayName || "Hoy"}</span>
-          <span className="forecast-card-v2__date">{day.date}</span>
+      <div className="forecast-card-dark__body">
+        <div className="forecast-card-dark__day">
+          <span className="forecast-card-dark__dayname">{day.dayName || "Hoy"}</span>
+          <span className="forecast-card-dark__date">{day.date}</span>
         </div>
 
-        <div className="forecast-card-v2__icon-container">
-          <img src={iconUrl} alt={day.condition} className="forecast-card-v2__main-icon" />
+        <div className="forecast-card-dark__icon-container">
+          <img src={iconUrl} alt={day.condition} className="forecast-card-dark__main-icon" />
         </div>
 
-        <div className="forecast-card-v2__temps">
-          <span className="forecast-card-v2__max">
+        <div className="forecast-card-dark__temps">
+          <span className="forecast-card-dark__max">
             {day.temperature.max !== null ? Math.round(day.temperature.max) : "--"}°
             <small>máx</small>
           </span>
-          <span className="forecast-card-v2__min">
+          <span className="forecast-card-dark__min">
             {day.temperature.min !== null ? Math.round(day.temperature.min) : "--"}°
             <small>mín</small>
           </span>
         </div>
 
-        <div className="forecast-card-v2__condition">{day.condition}</div>
+        <div className="forecast-card-dark__condition">{day.condition}</div>
 
         {days.length > 1 && (
-          <div className="forecast-card-v2__dots">
+          <div className="forecast-card-dark__dots">
             {days.map((_, idx) => (
-              <span key={idx} className={`forecast-card-v2__dot ${idx === currentIndex ? "active" : ""}`} />
+              <span key={idx} className={`forecast-card-dark__dot ${idx === currentIndex ? "active" : ""}`} />
             ))}
           </div>
         )}
       </div>
 
       <style>{`
-        .forecast-card-v2 {
+        .forecast-card-dark {
           display: flex;
           flex-direction: column;
           height: 100%;
           width: 100%;
           padding: 0.5rem;
           box-sizing: border-box;
+          background: linear-gradient(135deg, #0c4a6e 0%, #0f172a 100%);
+          color: white;
         }
-        .forecast-card-v2__header {
+        .forecast-card-dark__header {
           display: flex;
           align-items: center;
           gap: 0.5rem;
           margin-bottom: 0.5rem;
         }
-        .forecast-card-v2__header-icon {
+        .forecast-card-dark__header-icon {
           width: 48px;
           height: 48px;
           object-fit: contain;
-          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
         }
-        .forecast-card-v2__title {
+        .forecast-card-dark__title {
           font-size: 1.3rem;
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.1em;
-          color: #1e293b;
-          text-shadow: 0 1px 2px rgba(255,255,255,0.8);
         }
-        .forecast-card-v2__body {
+        .forecast-card-dark__body {
           flex: 1;
           display: flex;
           flex-direction: column;
@@ -121,40 +121,38 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
           justify-content: center;
           gap: 0.25rem;
         }
-        .forecast-card-v2__day {
+        .forecast-card-dark__day {
           display: flex;
           flex-direction: column;
           align-items: center;
         }
-        .forecast-card-v2__dayname {
+        .forecast-card-dark__dayname {
           font-size: 1.5rem;
           font-weight: 700;
           text-transform: capitalize;
-          color: #1e293b;
-          text-shadow: 0 1px 2px rgba(255,255,255,0.5);
         }
-        .forecast-card-v2__date {
+        .forecast-card-dark__date {
           font-size: 0.8rem;
-          color: #64748b;
+          opacity: 0.6;
         }
-        .forecast-card-v2__icon-container {
+        .forecast-card-dark__icon-container {
           width: 120px;
           height: 120px;
           margin: 0.25rem 0;
         }
-        .forecast-card-v2__main-icon {
+        .forecast-card-dark__main-icon {
           width: 100%;
           height: 100%;
           object-fit: contain;
-          filter: drop-shadow(0 4px 12px rgba(0,0,0,0.25));
-          animation: float-v2 4s ease-in-out infinite;
+          filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));
+          animation: float-dark 4s ease-in-out infinite;
         }
-        .forecast-card-v2__temps {
+        .forecast-card-dark__temps {
           display: flex;
           gap: 2rem;
         }
-        .forecast-card-v2__max,
-        .forecast-card-v2__min {
+        .forecast-card-dark__max,
+        .forecast-card-dark__min {
           display: flex;
           flex-direction: column;
           align-items: center;
@@ -162,46 +160,38 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
           font-weight: 800;
           line-height: 1;
         }
-        .forecast-card-v2__max small,
-        .forecast-card-v2__min small {
+        .forecast-card-dark__max small,
+        .forecast-card-dark__min small {
           font-size: 0.7rem;
           font-weight: 600;
           text-transform: uppercase;
-          color: #64748b;
+          opacity: 0.7;
         }
-        .forecast-card-v2__max {
-          color: #c2410c;
-          text-shadow: 0 1px 2px rgba(255,255,255,0.5);
-        }
-        .forecast-card-v2__min {
-          color: #0369a1;
-          text-shadow: 0 1px 2px rgba(255,255,255,0.5);
-        }
-        .forecast-card-v2__condition {
+        .forecast-card-dark__max { color: #fbbf24; }
+        .forecast-card-dark__min { color: #38bdf8; }
+        .forecast-card-dark__condition {
           font-size: 1.1rem;
           font-weight: 600;
           text-transform: capitalize;
-          color: #334155;
-          text-shadow: 0 1px 2px rgba(255,255,255,0.5);
         }
-        .forecast-card-v2__dots {
+        .forecast-card-dark__dots {
           display: flex;
           gap: 0.3rem;
           margin-top: 0.5rem;
         }
-        .forecast-card-v2__dot {
+        .forecast-card-dark__dot {
           width: 6px;
           height: 6px;
           border-radius: 50%;
-          background: rgba(0,0,0,0.2);
+          background: rgba(255,255,255,0.3);
           transition: all 0.3s;
         }
-        .forecast-card-v2__dot.active {
-          background: #1e293b;
+        .forecast-card-dark__dot.active {
+          background: white;
           width: 18px;
           border-radius: 3px;
         }
-        @keyframes float-v2 {
+        @keyframes float-dark {
           0%, 100% { transform: translateY(0) rotate(0deg); }
           50% { transform: translateY(-8px) rotate(2deg); }
         }

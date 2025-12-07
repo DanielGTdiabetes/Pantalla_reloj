@@ -34,75 +34,75 @@ export const WeatherCard = ({
   const iconUrl = get3DIcon(condition);
 
   return (
-    <div className="weather-card-v2">
-      <div className="weather-card-v2__header">
-        <img src={iconUrl} alt="" className="weather-card-v2__header-icon" />
-        <span className="weather-card-v2__title">Tiempo Actual</span>
+    <div className="weather-card-dark">
+      <div className="weather-card-dark__header">
+        <img src={iconUrl} alt="" className="weather-card-dark__header-icon" />
+        <span className="weather-card-dark__title">Tiempo Actual</span>
       </div>
 
-      <div className="weather-card-v2__body">
-        <div className="weather-card-v2__main">
-          <div className="weather-card-v2__icon-container">
-            <img src={iconUrl} alt={condition || "weather"} className="weather-card-v2__main-icon" />
+      <div className="weather-card-dark__body">
+        <div className="weather-card-dark__main">
+          <div className="weather-card-dark__icon-container">
+            <img src={iconUrl} alt={condition || "weather"} className="weather-card-dark__main-icon" />
           </div>
-          <div className="weather-card-v2__temp-block">
-            <span className="weather-card-v2__temp">{tempValue}°</span>
+          <div className="weather-card-dark__temp-block">
+            <span className="weather-card-dark__temp">{tempValue}°</span>
             {feelsLikeLabel && (
-              <span className="weather-card-v2__feels">Sensación: {feelsLikeLabel}</span>
+              <span className="weather-card-dark__feels">Sensación: {feelsLikeLabel}</span>
             )}
           </div>
         </div>
 
-        <div className="weather-card-v2__condition">{condition || "Sin datos"}</div>
+        <div className="weather-card-dark__condition">{condition || "Sin datos"}</div>
 
-        <div className="weather-card-v2__metrics">
-          <div className="weather-card-v2__metric">
-            <span className="weather-card-v2__metric-label">Humedad</span>
-            <span className="weather-card-v2__metric-value">{humidity ?? "--"}%</span>
+        <div className="weather-card-dark__metrics">
+          <div className="weather-card-dark__metric">
+            <span className="weather-card-dark__metric-label">Humedad</span>
+            <span className="weather-card-dark__metric-value">{humidity ?? "--"}%</span>
           </div>
-          <div className="weather-card-v2__metric">
-            <span className="weather-card-v2__metric-label">Viento</span>
-            <span className="weather-card-v2__metric-value">{wind ?? "--"} km/h</span>
+          <div className="weather-card-dark__metric">
+            <span className="weather-card-dark__metric-label">Viento</span>
+            <span className="weather-card-dark__metric-value">{wind ?? "--"} km/h</span>
           </div>
           {rain !== null && rain > 0 && (
-            <div className="weather-card-v2__metric">
-              <span className="weather-card-v2__metric-label">Lluvia</span>
-              <span className="weather-card-v2__metric-value">{rain.toFixed(1)} mm</span>
+            <div className="weather-card-dark__metric">
+              <span className="weather-card-dark__metric-label">Lluvia</span>
+              <span className="weather-card-dark__metric-value">{rain.toFixed(1)} mm</span>
             </div>
           )}
         </div>
       </div>
 
       <style>{`
-        .weather-card-v2 {
+        .weather-card-dark {
           display: flex;
           flex-direction: column;
           height: 100%;
           width: 100%;
           padding: 0.5rem;
           box-sizing: border-box;
+          background: linear-gradient(135deg, #0c4a6e 0%, #0f172a 100%);
+          color: white;
         }
-        .weather-card-v2__header {
+        .weather-card-dark__header {
           display: flex;
           align-items: center;
           gap: 0.5rem;
           margin-bottom: 0.5rem;
         }
-        .weather-card-v2__header-icon {
+        .weather-card-dark__header-icon {
           width: 48px;
           height: 48px;
           object-fit: contain;
-          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
         }
-        .weather-card-v2__title {
+        .weather-card-dark__title {
           font-size: 1.3rem;
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.1em;
-          color: #1e293b;
-          text-shadow: 0 1px 2px rgba(255,255,255,0.8);
         }
-        .weather-card-v2__body {
+        .weather-card-dark__body {
           flex: 1;
           display: flex;
           flex-direction: column;
@@ -110,75 +110,70 @@ export const WeatherCard = ({
           justify-content: center;
           gap: 0.25rem;
         }
-        .weather-card-v2__main {
+        .weather-card-dark__main {
           display: flex;
           align-items: center;
           justify-content: center;
           gap: 0.75rem;
         }
-        .weather-card-v2__icon-container {
+        .weather-card-dark__icon-container {
           width: 120px;
           height: 120px;
         }
-        .weather-card-v2__main-icon {
+        .weather-card-dark__main-icon {
           width: 100%;
           height: 100%;
           object-fit: contain;
-          filter: drop-shadow(0 4px 12px rgba(0,0,0,0.25));
-          animation: float-v2 4s ease-in-out infinite;
+          filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));
+          animation: float-dark 4s ease-in-out infinite;
         }
-        .weather-card-v2__temp-block {
+        .weather-card-dark__temp-block {
           display: flex;
           flex-direction: column;
           align-items: flex-start;
         }
-        .weather-card-v2__temp {
+        .weather-card-dark__temp {
           font-size: 4rem;
           font-weight: 900;
           line-height: 1;
-          color: #0f172a;
-          text-shadow: 0 2px 4px rgba(255,255,255,0.6);
+          text-shadow: 0 2px 10px rgba(0,0,0,0.5);
         }
-        .weather-card-v2__feels {
+        .weather-card-dark__feels {
           font-size: 0.85rem;
-          color: #475569;
-          text-shadow: 0 1px 2px rgba(255,255,255,0.5);
+          opacity: 0.7;
         }
-        .weather-card-v2__condition {
+        .weather-card-dark__condition {
           font-size: 1.3rem;
           font-weight: 700;
           text-transform: capitalize;
-          color: #1e293b;
-          text-shadow: 0 1px 2px rgba(255,255,255,0.5);
         }
-        .weather-card-v2__metrics {
+        .weather-card-dark__metrics {
           display: flex;
           gap: 0.75rem;
           flex-wrap: wrap;
           justify-content: center;
           margin-top: 0.5rem;
         }
-        .weather-card-v2__metric {
+        .weather-card-dark__metric {
           display: flex;
           flex-direction: column;
           align-items: center;
           padding: 0.4rem 0.6rem;
-          background: rgba(0,0,0,0.1);
+          background: rgba(255,255,255,0.1);
           border-radius: 0.4rem;
           min-width: 60px;
         }
-        .weather-card-v2__metric-label {
+        .weather-card-dark__metric-label {
           font-size: 0.65rem;
-          color: #64748b;
+          opacity: 0.7;
           text-transform: uppercase;
           font-weight: 600;
         }
-        .weather-card-v2__metric-value {
+        .weather-card-dark__metric-value {
           font-size: 1rem;
           font-weight: 700;
-          color: #1e293b;
         }
-        @keyframes float-v2 {
+        @keyframes float-dark {
           0%, 100% { transform: translateY(0) rotate(0deg); }
           50% { transform: translateY(-8px) rotate(2deg); }
         }

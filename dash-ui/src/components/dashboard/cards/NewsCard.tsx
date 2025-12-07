@@ -26,115 +26,112 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
   const current = validItems[currentIndex];
 
   return (
-    <div className="news-card-v2">
-      <div className="news-card-v2__header">
-        <span className="news-card-v2__icon">📰</span>
-        <span className="news-card-v2__title">Noticias</span>
+    <div className="news-card-dark">
+      <div className="news-card-dark__header">
+        <span className="news-card-dark__icon">📰</span>
+        <span className="news-card-dark__title">Noticias</span>
       </div>
 
-      <div className="news-card-v2__body" key={currentIndex}>
+      <div className="news-card-dark__body" key={currentIndex}>
         {current.source && (
-          <div className="news-card-v2__source">{current.source}</div>
+          <div className="news-card-dark__source">{current.source}</div>
         )}
-        <h2 className="news-card-v2__headline">{current.title}</h2>
+        <h2 className="news-card-dark__headline">{current.title}</h2>
         {current.summary && (
-          <p className="news-card-v2__summary">{current.summary}</p>
+          <p className="news-card-dark__summary">{current.summary}</p>
         )}
       </div>
 
       {validItems.length > 1 && (
-        <div className="news-card-v2__dots">
+        <div className="news-card-dark__dots">
           {validItems.map((_, idx) => (
-            <span key={idx} className={`news-card-v2__dot ${idx === currentIndex ? "active" : ""}`} />
+            <span key={idx} className={`news-card-dark__dot ${idx === currentIndex ? "active" : ""}`} />
           ))}
         </div>
       )}
 
       <style>{`
-        .news-card-v2 {
+        .news-card-dark {
           display: flex;
           flex-direction: column;
           height: 100%;
           width: 100%;
           padding: 0.5rem;
           box-sizing: border-box;
+          background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
+          color: white;
           overflow: hidden;
         }
-        .news-card-v2__header {
+        .news-card-dark__header {
           display: flex;
           align-items: center;
           gap: 0.5rem;
           margin-bottom: 0.5rem;
         }
-        .news-card-v2__icon {
+        .news-card-dark__icon {
           font-size: 2rem;
         }
-        .news-card-v2__title {
+        .news-card-dark__title {
           font-size: 1.3rem;
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.1em;
-          color: #1e293b;
-          text-shadow: 0 1px 2px rgba(255,255,255,0.8);
         }
-        .news-card-v2__body {
+        .news-card-dark__body {
           flex: 1;
           display: flex;
           flex-direction: column;
           justify-content: center;
           min-height: 0;
-          animation: fadeIn-v2 0.5s ease-out;
+          animation: fadeIn-dark 0.5s ease-out;
         }
-        .news-card-v2__source {
+        .news-card-dark__source {
           font-size: 0.75rem;
           font-weight: 700;
-          color: #0369a1;
+          color: #38bdf8;
           text-transform: uppercase;
           letter-spacing: 0.1em;
           margin-bottom: 0.25rem;
-          text-shadow: 0 1px 2px rgba(255,255,255,0.5);
         }
-        .news-card-v2__headline {
+        .news-card-dark__headline {
           font-size: 1.2rem;
           font-weight: 700;
           line-height: 1.3;
           margin: 0;
-          color: #0f172a;
-          text-shadow: 0 1px 2px rgba(255,255,255,0.5);
           display: -webkit-box;
           -webkit-line-clamp: 3;
           -webkit-box-orient: vertical;
           overflow: hidden;
         }
-        .news-card-v2__summary {
+        .news-card-dark__summary {
           font-size: 0.9rem;
           line-height: 1.4;
-          color: #475569;
+          opacity: 0.8;
           margin: 0.5rem 0 0 0;
           display: -webkit-box;
           -webkit-line-clamp: 2;
           -webkit-box-orient: vertical;
           overflow: hidden;
         }
-        .news-card-v2__dots {
+        .news-card-dark__dots {
           display: flex;
           justify-content: center;
           gap: 0.3rem;
           margin-top: 0.5rem;
         }
-        .news-card-v2__dot {
+        .news-card-dark__dot {
           width: 6px;
           height: 6px;
           border-radius: 50%;
-          background: rgba(0,0,0,0.2);
+          background: rgba(255,255,255,0.3);
           transition: all 0.3s;
         }
-        .news-card-v2__dot.active {
-          background: #0369a1;
+        .news-card-dark__dot.active {
+          background: #38bdf8;
           width: 18px;
           border-radius: 3px;
         }
-        @keyframes fadeIn-v2 {
+        @keyframes fadeIn-dark {
           from { opacity: 0; transform: translateY(5px); }
           to { opacity: 1; transform: translateY(0); }
         }

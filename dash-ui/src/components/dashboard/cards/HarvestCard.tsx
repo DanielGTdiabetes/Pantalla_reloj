@@ -64,62 +64,62 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
   const iconUrl = getIconUrl(currentItem);
 
   return (
-    <div className="harvest-card-v2">
-      <div className="harvest-card-v2__header">
-        <img src="/img/icons/3d/harvest-basket.png" alt="" className="harvest-card-v2__header-icon" />
-        <span className="harvest-card-v2__title">De Temporada</span>
+    <div className="harvest-card-dark">
+      <div className="harvest-card-dark__header">
+        <img src="/img/icons/3d/harvest-basket.png" alt="" className="harvest-card-dark__header-icon" />
+        <span className="harvest-card-dark__title">De Temporada</span>
       </div>
 
-      <div className="harvest-card-v2__body">
-        <div className="harvest-card-v2__icon-container" key={currentIndex}>
-          <img src={iconUrl} alt={currentItem.name} className="harvest-card-v2__main-icon" />
+      <div className="harvest-card-dark__body">
+        <div className="harvest-card-dark__icon-container" key={currentIndex}>
+          <img src={iconUrl} alt={currentItem.name} className="harvest-card-dark__main-icon" />
         </div>
 
-        <div className="harvest-card-v2__name">{currentItem.name}</div>
+        <div className="harvest-card-dark__name">{currentItem.name}</div>
 
         {currentItem.status && (
-          <div className="harvest-card-v2__status">{currentItem.status}</div>
+          <div className="harvest-card-dark__status">{currentItem.status}</div>
         )}
 
         {entries.length > 1 && (
-          <div className="harvest-card-v2__dots">
+          <div className="harvest-card-dark__dots">
             {entries.map((_, idx) => (
-              <span key={idx} className={`harvest-card-v2__dot ${idx === currentIndex ? "active" : ""}`} />
+              <span key={idx} className={`harvest-card-dark__dot ${idx === currentIndex ? "active" : ""}`} />
             ))}
           </div>
         )}
       </div>
 
       <style>{`
-        .harvest-card-v2 {
+        .harvest-card-dark {
           display: flex;
           flex-direction: column;
           height: 100%;
           width: 100%;
           padding: 0.5rem;
           box-sizing: border-box;
+          background: linear-gradient(135deg, #166534 0%, #14532d 100%);
+          color: white;
         }
-        .harvest-card-v2__header {
+        .harvest-card-dark__header {
           display: flex;
           align-items: center;
           gap: 0.5rem;
           margin-bottom: 0.5rem;
         }
-        .harvest-card-v2__header-icon {
+        .harvest-card-dark__header-icon {
           width: 48px;
           height: 48px;
           object-fit: contain;
-          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
         }
-        .harvest-card-v2__title {
+        .harvest-card-dark__title {
           font-size: 1.3rem;
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.1em;
-          color: #1e293b;
-          text-shadow: 0 1px 2px rgba(255,255,255,0.8);
         }
-        .harvest-card-v2__body {
+        .harvest-card-dark__body {
           flex: 1;
           display: flex;
           flex-direction: column;
@@ -127,56 +127,58 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
           justify-content: center;
           gap: 0.25rem;
         }
-        .harvest-card-v2__icon-container {
+        .harvest-card-dark__icon-container {
           width: 140px;
           height: 140px;
-          animation: scaleIn-v2 0.4s ease-out;
+          animation: scaleIn-dark 0.4s ease-out;
+          background: rgba(255,255,255,0.9);
+          border-radius: 1rem;
+          padding: 0.5rem;
+          box-sizing: border-box;
         }
-        .harvest-card-v2__main-icon {
+        .harvest-card-dark__main-icon {
           width: 100%;
           height: 100%;
           object-fit: contain;
-          filter: drop-shadow(0 4px 12px rgba(0,0,0,0.25));
-          animation: float-v2 4s ease-in-out infinite;
+          filter: drop-shadow(0 4px 12px rgba(0,0,0,0.2));
+          animation: float-dark 4s ease-in-out infinite;
         }
-        .harvest-card-v2__name {
+        .harvest-card-dark__name {
           font-size: 1.6rem;
           font-weight: 800;
-          color: #0f172a;
-          text-shadow: 0 1px 2px rgba(255,255,255,0.5);
+          text-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
-        .harvest-card-v2__status {
+        .harvest-card-dark__status {
           font-size: 0.8rem;
           font-weight: 600;
           text-transform: uppercase;
           letter-spacing: 0.1em;
-          color: #166534;
-          background: rgba(34,197,94,0.15);
+          background: rgba(255,255,255,0.2);
           padding: 0.2rem 0.6rem;
           border-radius: 0.25rem;
         }
-        .harvest-card-v2__dots {
+        .harvest-card-dark__dots {
           display: flex;
           gap: 0.3rem;
           margin-top: 0.5rem;
         }
-        .harvest-card-v2__dot {
+        .harvest-card-dark__dot {
           width: 6px;
           height: 6px;
           border-radius: 50%;
-          background: rgba(0,0,0,0.2);
+          background: rgba(255,255,255,0.3);
           transition: all 0.3s;
         }
-        .harvest-card-v2__dot.active {
-          background: #166534;
+        .harvest-card-dark__dot.active {
+          background: white;
           width: 18px;
           border-radius: 3px;
         }
-        @keyframes float-v2 {
+        @keyframes float-dark {
           0%, 100% { transform: translateY(0); }
           50% { transform: translateY(-8px); }
         }
-        @keyframes scaleIn-v2 {
+        @keyframes scaleIn-dark {
           from { opacity: 0; transform: scale(0.9); }
           to { opacity: 1; transform: scale(1); }
         }

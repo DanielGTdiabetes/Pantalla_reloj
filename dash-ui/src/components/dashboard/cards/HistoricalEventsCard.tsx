@@ -53,105 +53,103 @@ export const HistoricalEventsCard = ({ items, rotationSeconds = 12 }: Historical
   const current = parsedEvents[currentIndex];
 
   return (
-    <div className="historical-card-v2">
-      <div className="historical-card-v2__header">
-        <span className="historical-card-v2__icon">📜</span>
-        <span className="historical-card-v2__title">Efemérides Históricas</span>
+    <div className="historical-card-dark">
+      <div className="historical-card-dark__header">
+        <span className="historical-card-dark__icon">📜</span>
+        <span className="historical-card-dark__title">Efemérides Históricas</span>
       </div>
 
-      <div className="historical-card-v2__body" key={currentIndex}>
+      <div className="historical-card-dark__body" key={currentIndex}>
         {current.year && (
-          <div className="historical-card-v2__year">{current.year}</div>
+          <div className="historical-card-dark__year">{current.year}</div>
         )}
-        <div ref={scrollRef} className="historical-card-v2__text">
+        <div ref={scrollRef} className="historical-card-dark__text">
           <p>{current.text}</p>
         </div>
       </div>
 
       {parsedEvents.length > 1 && (
-        <div className="historical-card-v2__dots">
+        <div className="historical-card-dark__dots">
           {parsedEvents.map((_, idx) => (
-            <span key={idx} className={`historical-card-v2__dot ${idx === currentIndex ? "active" : ""}`} />
+            <span key={idx} className={`historical-card-dark__dot ${idx === currentIndex ? "active" : ""}`} />
           ))}
         </div>
       )}
 
       <style>{`
-        .historical-card-v2 {
+        .historical-card-dark {
           display: flex;
           flex-direction: column;
           height: 100%;
           width: 100%;
           padding: 0.5rem;
           box-sizing: border-box;
+          background: linear-gradient(135deg, #44403c 0%, #1c1917 100%);
+          color: white;
           overflow: hidden;
         }
-        .historical-card-v2__header {
+        .historical-card-dark__header {
           display: flex;
           align-items: center;
           gap: 0.5rem;
           margin-bottom: 0.5rem;
         }
-        .historical-card-v2__icon {
+        .historical-card-dark__icon {
           font-size: 2rem;
         }
-        .historical-card-v2__title {
+        .historical-card-dark__title {
           font-size: 1.2rem;
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.1em;
-          color: #1e293b;
-          text-shadow: 0 1px 2px rgba(255,255,255,0.8);
         }
-        .historical-card-v2__body {
+        .historical-card-dark__body {
           flex: 1;
           display: flex;
           flex-direction: column;
           align-items: center;
           min-height: 0;
-          animation: fadeIn-v2 0.5s ease-out;
+          animation: fadeIn-dark 0.5s ease-out;
         }
-        .historical-card-v2__year {
+        .historical-card-dark__year {
           font-size: 1.8rem;
           font-weight: 900;
-          color: #92400e;
-          background: rgba(146,64,14,0.1);
+          color: #fbbf24;
+          background: rgba(251,191,36,0.15);
           padding: 0.25rem 0.75rem;
           border-radius: 0.5rem;
           margin-bottom: 0.5rem;
-          text-shadow: 0 1px 2px rgba(255,255,255,0.5);
         }
-        .historical-card-v2__text {
+        .historical-card-dark__text {
           flex: 1;
           overflow-y: auto;
           text-align: center;
           font-size: 1rem;
           line-height: 1.5;
           padding: 0 0.5rem;
-          color: #334155;
         }
-        .historical-card-v2__text p {
+        .historical-card-dark__text p {
           margin: 0;
         }
-        .historical-card-v2__dots {
+        .historical-card-dark__dots {
           display: flex;
           justify-content: center;
           gap: 0.3rem;
           margin-top: 0.5rem;
         }
-        .historical-card-v2__dot {
+        .historical-card-dark__dot {
           width: 6px;
           height: 6px;
           border-radius: 50%;
-          background: rgba(0,0,0,0.2);
+          background: rgba(255,255,255,0.3);
           transition: all 0.3s;
         }
-        .historical-card-v2__dot.active {
-          background: #92400e;
+        .historical-card-dark__dot.active {
+          background: #fbbf24;
           width: 18px;
           border-radius: 3px;
         }
-        @keyframes fadeIn-v2 {
+        @keyframes fadeIn-dark {
           from { opacity: 0; transform: translateY(5px); }
           to { opacity: 1; transform: translateY(0); }
         }
