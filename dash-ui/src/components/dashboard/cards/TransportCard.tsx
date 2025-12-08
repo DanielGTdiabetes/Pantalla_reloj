@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo } from "react";
 import { AutoScrollContainer } from "../../common/AutoScrollContainer";
-import { PlaneIcon, ShipIcon } from "../../icons/TransportIcons";
+import { PlaneIcon, ShipIcon, TransportRadarIcon } from "../../icons/TransportIcons";
 
 type Aircraft = {
    id?: string;
@@ -25,7 +25,8 @@ type Ship = {
    id?: string;
    name?: string;
    mmsi?: string;
-   type?: string;
+   type?: string | null;
+   ship_type?: string | null;
    destination?: string | null;
    speed?: number | null;
    speed_kts?: number | null;
@@ -95,16 +96,20 @@ const normalizeShips = (data?: TransportData | null): Ship[] => {
    const items = (data?.ships ?? []) as any[];
    return items
      .filter(item => item && normalizeNumber(item.lat) !== null && normalizeNumber(item.lon) !== null)
-     .map(item => ({
-       id: item.id || item.mmsi || item.name || `${item.lat}-${item.lon}`,
-       name: item.name ?? item.vessel ?? item.mmsi ?? "",
-       mmsi: item.mmsi,
-       type: item.type ?? item.vessel_type ?? "",
-       destination: item.destination ?? item.dest ?? null,
-       speed: normalizeNumber(item.speed_kts ?? item.speed ?? item.spd),
-       heading: normalizeNumber(item.heading_deg ?? item.heading ?? item.hdg),
-       distance_km: normalizeNumber(item.distance_km ?? item.distance),
-     }));
+     .map(item => {
+       const resolvedType = item.ship_type ?? item.type ?? item.vessel_type ?? null;
+       return {
+         id: item.id || item.mmsi || item.name || `${item.lat}-${item.lon}`,
+         name: item.name ?? item.vessel ?? item.mmsi ?? "",
+         mmsi: item.mmsi,
+         type: resolvedType,
+         ship_type: resolvedType,
+         destination: item.destination ?? item.dest ?? null,
+         speed: normalizeNumber(item.speed_kts ?? item.speed ?? item.spd),
+         heading: normalizeNumber(item.heading_deg ?? item.heading ?? item.hdg),
+         distance_km: normalizeNumber(item.distance_km ?? item.distance),
+       };
+     });
 };
 
 const formatNumber = (value: number | null | undefined, suffix: string) =>
@@ -134,34 +139,51 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
    const renderShips = ships.length > 0 && (
      <section className="transport-card-dark__section" data-testid="panel-ships">
        <div className="transport-card-dark__section-header">
-         <div className="transport-card-dark__section-icon panel-title-icon"><ShipIcon size={38} /></div>
-         <span className="transport-card-dark__section-title">Barcos cercanos</span>
+          <div className="transport-card-dark__section-icon panel-title-icon"><ShipIcon size={38} /></div>
+          <span className="transport-card-dark__section-title">Barcos cercanos</span>
        </div>
-       <div className={shipsListClass}>
-         {ships.map(ship => (
-           <div key={ship.id} className="transport-card-dark__item">
-             <div className="transport-card-dark__item-header">
-               <div className="transport-card-dark__name panel-item-title">
-                 {ship.name || ship.mmsi || "Barco desconocido"}
-               </div>
-               <div className="transport-card-dark__badge">
-                 {ship.distance_km !== null && ship.distance_km !== undefined
-                   ? `${ship.distance_km.toFixed(1)} km`
-                   : "--"}
-               </div>
-             </div>
-             {ship.destination && (
-               <div className="transport-card-dark__subtitle panel-item-subtitle">{ship.destination}</div>
-             )}
-             <div className="transport-card-dark__meta-grid">
-               {renderDetail("Velocidad", formatNumber(ship.speed ?? ship.speed_kts, " kn"))}
-               {renderDetail("Rumbo", formatNumber(ship.heading, "°"))}
-               {renderDetail("Tipo", ship.type || "--")}
-               {renderDetail("MMSI", ship.mmsi || "--")}
-             </div>
-           </div>
-         ))}
-       </div>
+        <div className={shipsListClass}>
+          {ships.map(ship => {
+            const hasDistance = ship.distance_km !== null && ship.distance_km !== undefined;
+            const distanceLabel = hasDistance && typeof ship.distance_km === "number"
+              ? `${ship.distance_km.toFixed(1)} km`
+              : null;
+            return (
+              <div key={ship.id} className="transport-card-dark__item">
+                <div className="transport-card-dark__item-header">
+                  <div className="transport-card-dark__name panel-item-title">
+                    {ship.name || ship.mmsi || "Barco desconocido"}
+                  </div>
+                  {distanceLabel && (
+                    <div className="transport-card-dark__badge">
+                      {distanceLabel}
+                    </div>
+                  )}
+                </div>
+                {(ship.ship_type || distanceLabel) && (
+                  <div className="transport-card-dark__inline-meta">
+                    {ship.ship_type && <span className="transport-card-dark__chip">{ship.ship_type}</span>}
+                    {ship.ship_type && distanceLabel && (
+                      <span className="transport-card-dark__separator">·</span>
+                    )}
+                    {distanceLabel && (
+                      <span className="transport-card-dark__meta-distance">{distanceLabel}</span>
+                    )}
+                  </div>
+                )}
+                {ship.destination && (
+                  <div className="transport-card-dark__subtitle panel-item-subtitle">{ship.destination}</div>
+                )}
+                <div className="transport-card-dark__meta-grid">
+                  {renderDetail("Velocidad", formatNumber(ship.speed ?? ship.speed_kts, " kn"))}
+                  {renderDetail("Rumbo", formatNumber(ship.heading, "°"))}
+                 {renderDetail("Tipo", ship.ship_type || ship.type || "--")}
+                  {renderDetail("MMSI", ship.mmsi || "--")}
+                </div>
+              </div>
+            );
+          })}
+        </div>
      </section>
    );
  
@@ -171,20 +193,24 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
          <div className="transport-card-dark__section-icon panel-title-icon"><PlaneIcon size={38} /></div>
          <span className="transport-card-dark__section-title">Vuelos cercanos</span>
        </div>
-       <div className={aircraftListClass}>
+        <div className={aircraftListClass}>
          {aircraft.map(flight => {
            const route = formatRoute(flight.origin, flight.destination);
+           const distanceLabel =
+             flight.distance_km !== null && flight.distance_km !== undefined && typeof flight.distance_km === "number"
+               ? `${flight.distance_km.toFixed(1)} km`
+               : null;
            return (
              <div key={flight.id} className="transport-card-dark__item">
                <div className="transport-card-dark__item-header">
                  <div className="transport-card-dark__name panel-item-title">
                    {flight.callsign || "Vuelo desconocido"}
                  </div>
-                 <div className="transport-card-dark__badge">
-                   {flight.distance_km !== null && flight.distance_km !== undefined
-                     ? `${flight.distance_km.toFixed(1)} km`
-                     : "--"}
-                 </div>
+                 {distanceLabel && (
+                   <div className="transport-card-dark__badge">
+                     {distanceLabel}
+                   </div>
+                 )}
                </div>
                {route && <div className="transport-card-dark__subtitle panel-item-subtitle">{route}</div>}
                <div className="transport-card-dark__meta-grid">
@@ -196,18 +222,18 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
              </div>
            );
          })}
-       </div>
-     </section>
+        </div>
+      </section>
    );
  
    return (
      <div className="transport-card-dark" data-testid="panel-transport">
-       <div className="transport-card-dark__header">
-         <div className="transport-card-dark__header-icon panel-title-icon">
-           <PlaneIcon size={54} />
-         </div>
-       <span className="transport-card-dark__title panel-title-text">Transporte cercano</span>
-      </div>
+      <div className="transport-card-dark__header">
+        <div className="transport-card-dark__header-icon panel-title-icon">
+          <TransportRadarIcon size={54} />
+        </div>
+      <span className="transport-card-dark__title panel-title-text">Transporte cercano</span>
+     </div>
 
       <AutoScrollContainer speed={8} pauseAtEndMs={4000} className="transport-card-dark__scroller">
         <div className="transport-card-dark__stack">
@@ -343,6 +369,32 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
           font-weight: 700;
           min-width: 74px;
           text-align: center;
+        }
+        .transport-card-dark__inline-meta {
+          display: flex;
+          align-items: center;
+          gap: 0.35rem;
+          margin-top: -0.2rem;
+          color: rgba(226, 232, 240, 0.9);
+          font-weight: 700;
+        }
+        .transport-card-dark__chip {
+          display: inline-flex;
+          align-items: center;
+          padding: 0.15rem 0.65rem;
+          background: rgba(255,255,255,0.12);
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.18);
+          font-size: 0.95rem;
+          text-transform: capitalize;
+        }
+        .transport-card-dark__meta-distance {
+          font-weight: 800;
+          color: #a5f3fc;
+          letter-spacing: 0.02em;
+        }
+        .transport-card-dark__separator {
+          opacity: 0.65;
         }
         .transport-card-dark__subtitle {
           font-size: 1rem;

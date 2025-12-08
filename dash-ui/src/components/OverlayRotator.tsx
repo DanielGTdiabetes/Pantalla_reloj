@@ -1075,9 +1075,12 @@ export const OverlayRotator: React.FC = () => {
         // This fixes the issue where user sees planes on map but card is hidden due to race conditions or brief empty data
         shouldInclude = true;
       } else if (panelId === "apod") {
-        // Show APOD for both images and videos
-        // Show APOD for both images and videos, or error state
-        shouldInclude = !!apod;
+        // Only show APOD when media is an image; hide videos in production rotator
+        const hasImageMedia = apod?.media_type === "image";
+        shouldInclude = !!apod && hasImageMedia;
+        if (!hasImageMedia && IS_DEV) {
+          console.debug("[OverlayRotator] APOD oculto en rotador por ser vídeo u otro formato", apod?.media_type);
+        }
       } else if (panelId === "warnings") {
         const hasWarnings = warnings?.features && Array.isArray(warnings.features) && warnings.features.length > 0;
         const panelsConfig = config as unknown as { panels?: { warnings?: { enabled?: boolean } } };

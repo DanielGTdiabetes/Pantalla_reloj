@@ -1,0 +1,13 @@
+<svg width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="80" cy="80" r="74" stroke="#38BDF8" stroke-width="6" stroke-opacity="0.65"/>
+  <circle cx="80" cy="80" r="52" stroke="#E2E8F0" stroke-width="5" stroke-opacity="0.55"/>
+  <circle cx="80" cy="80" r="30" stroke="#38BDF8" stroke-width="5" stroke-opacity="0.8"/>
+  <circle cx="80" cy="80" r="6" fill="#38BDF8"/>
+  <path d="M80 22v18" stroke="#38BDF8" stroke-width="6" stroke-linecap="round" stroke-opacity="0.9"/>
+  <path d="M80 120v18" stroke="#38BDF8" stroke-width="6" stroke-linecap="round" stroke-opacity="0.9"/>
+  <path d="M22 80h18" stroke="#38BDF8" stroke-width="6" stroke-linecap="round" stroke-opacity="0.9"/>
+  <path d="M120 80h18" stroke="#38BDF8" stroke-width="6" stroke-linecap="round" stroke-opacity="0.9"/>
+  <path d="M52 98c3-6 12-18 28-18 16 0 25 12 28 18" stroke="#0EA5E9" stroke-width="6" stroke-linecap="round" stroke-opacity="0.85"/>
+  <path d="M60 68l12-8 8 4 8-14 12 6" stroke="#F8FAFC" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.85"/>
+  <path d="M96 114h-32c-2.2 0-4-1.8-4-4v-2c0-2.2 1.8-4 4-4h32c2.2 0 4 1.8 4 4v2c0 2.2-1.8 4-4 4z" fill="#0EA5E9" fill-opacity="0.9"/>
+</svg>

@@ -1,5 +1,3 @@
-import { useMemo } from "react";
-
 import { AutoScrollContainer } from "../../common/AutoScrollContainer";
 
 interface ApodData {
@@ -16,6 +14,8 @@ interface ApodCardProps {
     data: ApodData | null;
 }
 
+const IS_DEV = typeof import.meta !== "undefined" && Boolean((import.meta as any)?.env?.DEV);
+
 // Panel lateral de la imagen/vídeo del día de NASA APOD
 export const ApodCard = ({ data }: ApodCardProps) => {
 
@@ -28,28 +28,21 @@ export const ApodCard = ({ data }: ApodCardProps) => {
         );
     }
 
-    const isVideo = data.media_type === "video";
     const isImage = data.media_type === "image";
+    const isUnsupportedMedia = data.media_type && data.media_type !== "image";
     const imageUrl = isImage ? data.url : data.thumbnail_url || "";
     const hasImage = Boolean(imageUrl);
 
-    const embedUrl = useMemo(() => {
-        if (!isVideo || !data.url) return null;
-        if (data.url.includes("youtube.com/watch")) {
-            const id = new URL(data.url).searchParams.get("v");
-            return id ? `https://www.youtube.com/embed/${id}` : null;
-        }
-        if (data.url.includes("youtu.be/")) {
-            const id = data.url.split("youtu.be/")[1]?.split("?")[0];
-            return id ? `https://www.youtube.com/embed/${id}` : null;
-        }
-        if (data.url.includes("vimeo.com")) {
-            const parts = data.url.split("/");
-            const id = parts[parts.length - 1];
-            return id ? `https://player.vimeo.com/video/${id}` : null;
-        }
-        return data.url;
-    }, [data?.url, isVideo]);
+    if (isUnsupportedMedia) {
+        return (
+            <div className="apod-card-dark apod-card-dark--empty" data-testid="panel-nasa-apod">
+                <span className="apod-card-dark__icon">🔭</span>
+                <span className="panel-item-title">
+                    {IS_DEV ? "APOD de hoy es un vídeo; no se muestra en la pantalla principal." : "Foto del día no disponible"}
+                </span>
+            </div>
+        );
+    }
 
     return (
         <div className="apod-card-dark" data-testid="panel-nasa-apod">
@@ -66,23 +59,10 @@ export const ApodCard = ({ data }: ApodCardProps) => {
                 <div className="apod-card-dark__badge panel-title-text">
                     <span>🔭</span>
                     <span>NASA APOD</span>
-                    {isVideo && <span className="apod-card-dark__video-tag">📹 Video</span>}
                 </div>
 
                 <div className="apod-card-dark__media">
-                    {isVideo && embedUrl ? (
-                        <div className="nasa-video-wrapper">
-                            <iframe
-                                src={embedUrl}
-                                className="nasa-video-iframe"
-                                allowFullScreen
-                                loading="lazy"
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                referrerPolicy="no-referrer-when-downgrade"
-                                title={data.title}
-                            />
-                        </div>
-                    ) : isImage && hasImage ? (
+                    {isImage && hasImage ? (
                         <img src={imageUrl} alt={data.title} className="apod-card-dark__media-img" />
                     ) : (
                         <div className="apod-card-dark__media-placeholder" aria-hidden>
