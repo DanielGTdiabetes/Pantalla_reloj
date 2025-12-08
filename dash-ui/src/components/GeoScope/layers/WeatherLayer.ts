@@ -11,6 +11,7 @@ interface WeatherLayerOptions {
   enabled?: boolean;
   opacity?: number;
   refreshSeconds?: number;
+  provider?: string | null;
 }
 
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
@@ -22,6 +23,7 @@ export default class WeatherLayer implements Layer {
   private enabled: boolean;
   private opacity: number;
   private refreshSeconds: number;
+  private provider: string | null;
   private map?: MaptilerMap;
   private readonly sourceId = "geoscope-weather-source";
   private lastData: FeatureCollection = EMPTY;
@@ -31,6 +33,7 @@ export default class WeatherLayer implements Layer {
     this.enabled = options.enabled ?? false;
     this.opacity = options.opacity ?? 0.3;
     this.refreshSeconds = options.refreshSeconds ?? 900; // 15 minutos por defecto
+    this.provider = options.provider ?? null;
   }
 
   add(map: MaptilerMap): void | Promise<void> {
@@ -52,6 +55,12 @@ export default class WeatherLayer implements Layer {
     const layerId: LayerId = "weather";
 
     if (!this.map || !this.enabled) {
+      return;
+    }
+
+    if (!this.isGeoJSONProvider()) {
+      layerDiagnostics.setState(layerId, "disabled", { reason: "provider_not_geojson", provider: this.provider });
+      console.debug(`[WeatherLayer] Disabled for provider ${this.provider ?? "<unknown>"} (expects GeoJSON)`);
       return;
     }
 
@@ -145,6 +154,16 @@ export default class WeatherLayer implements Layer {
   setEnabled(on: boolean): void {
     this.enabled = on;
     this.applyVisibility();
+
+    if (!this.enabled) {
+      this.stopRefresh();
+    } else {
+      this.startRefresh();
+    }
+  }
+
+  setProvider(provider: string | null): void {
+    this.provider = provider;
   }
 
   setOpacity(opacity: number): void {
@@ -160,6 +179,16 @@ export default class WeatherLayer implements Layer {
 
   updateData(data: FeatureCollection): void {
     const layerId: LayerId = "weather";
+
+    if (!this.enabled) {
+      return;
+    }
+
+    if (!this.isGeoJSONProvider()) {
+      layerDiagnostics.setState(layerId, "disabled", { reason: "provider_not_geojson", provider: this.provider });
+      console.debug(`[WeatherLayer] Skipping updateData: provider ${this.provider ?? "<unknown>"} is not GeoJSON-based`);
+      return;
+    }
 
     try {
       // Validar que los datos sean un FeatureCollection válido
@@ -181,10 +210,11 @@ export default class WeatherLayer implements Layer {
         return;
       }
 
-      this.lastData = data;
+      const sanitizedData = this.sanitizeFeatureCollection(data);
+      this.lastData = sanitizedData;
 
       if (!this.map) {
-        console.warn("[WeatherLayer] Map not available for updateData");
+        console.debug("[WeatherLayer] Map not available for updateData");
         return;
       }
 
@@ -193,21 +223,17 @@ export default class WeatherLayer implements Layer {
         try {
           source.setData(this.lastData);
           // Registrar actualización exitosa
-          layerDiagnostics.recordDataUpdate(layerId, data.features.length);
+          layerDiagnostics.recordDataUpdate(layerId, sanitizedData.features.length);
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error));
           layerDiagnostics.recordError(layerId, err, {
             phase: "updateData_setData",
-            featureCount: data.features.length,
+            featureCount: sanitizedData.features.length,
           });
           console.error("[WeatherLayer] Error setting data to source:", error);
         }
       } else {
-        const error = new Error(`Source ${this.sourceId} is not a GeoJSON source`);
-        layerDiagnostics.recordError(layerId, error, {
-          phase: "updateData_source_check",
-        });
-        console.warn("[WeatherLayer] Source is not a GeoJSON source:", source);
+        console.debug(`[WeatherLayer] Source ${this.sourceId} is not ready or not GeoJSON, skipping updateData`);
       }
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
@@ -263,6 +289,10 @@ export default class WeatherLayer implements Layer {
   private async fetchWeatherData(): Promise<void> {
     const layerId: LayerId = "weather";
 
+    if (!this.enabled || !this.isGeoJSONProvider()) {
+      return;
+    }
+
     try {
       const response = await fetch("/api/weather/alerts");
       if (!response.ok) {
@@ -289,7 +319,7 @@ export default class WeatherLayer implements Layer {
   private startRefresh(): void {
     this.stopRefresh();
 
-    if (this.refreshSeconds <= 0) {
+    if (this.refreshSeconds <= 0 || !this.enabled || !this.isGeoJSONProvider()) {
       return;
     }
 
@@ -306,6 +336,58 @@ export default class WeatherLayer implements Layer {
     if (this.refreshTimer !== undefined) {
       window.clearInterval(this.refreshTimer);
       this.refreshTimer = undefined;
+    }
+  }
+
+  private isGeoJSONProvider(): boolean {
+    // MapTiler Weather y otros proveedores raster no usan fuentes GeoJSON
+    const nonGeoJSONProviders = new Set(["maptiler_weather", "maptiler", "meteoblue_raster"]);
+    return this.provider ? !nonGeoJSONProviders.has(this.provider) : true;
+  }
+
+  private sanitizeFeatureCollection(data: FeatureCollection): FeatureCollection {
+    if (!data?.features) {
+      return EMPTY;
+    }
+
+    const sanitizedFeatures = data.features.filter((feature) => {
+      const geometry = feature?.geometry;
+      return geometry ? this.geometryHasValidNumbers(geometry) : false;
+    });
+
+    return { ...data, features: sanitizedFeatures };
+  }
+
+  private geometryHasValidNumbers(geometry: FeatureCollection["features"][number]["geometry"]): boolean {
+    const hasNumber = (value: unknown): boolean => typeof value === "number" && Number.isFinite(value);
+
+    const checkCoords = (coords: any): boolean => {
+      if (Array.isArray(coords)) {
+        if (coords.length === 0) return false;
+        if (typeof coords[0] === "number") {
+          return coords.every(hasNumber);
+        }
+        return coords.every((item) => checkCoords(item));
+      }
+      return false;
+    };
+
+    if (!geometry) return false;
+
+    switch (geometry.type) {
+      case "Point":
+      case "MultiPoint":
+      case "LineString":
+      case "MultiLineString":
+      case "Polygon":
+      case "MultiPolygon":
+        return checkCoords((geometry as any).coordinates);
+      case "GeometryCollection":
+        return Array.isArray((geometry as any).geometries)
+          ? (geometry as any).geometries.every((g: any) => this.geometryHasValidNumbers(g))
+          : false;
+      default:
+        return false;
     }
   }
 }

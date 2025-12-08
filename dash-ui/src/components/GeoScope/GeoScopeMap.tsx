@@ -1442,6 +1442,38 @@ export default function GeoScopeMap({
     };
   }, [config]);
 
+  // Configuración de la capa de alertas meteorológicas (GeoJSON)
+  useEffect(() => {
+    const weatherLayer = weatherLayerRef.current;
+    if (!weatherLayer || !config) {
+      return;
+    }
+
+    const configAsV2 = config as unknown as {
+      version?: number;
+      ui_global?: { weather_layers?: { alerts?: { enabled?: boolean; opacity?: number; provider?: string; refresh_minutes?: number } } };
+    };
+
+    const alertsConfig = configAsV2.ui_global?.weather_layers?.alerts;
+    const provider = alertsConfig?.provider ?? null;
+    const enabled = alertsConfig?.enabled ?? false;
+
+    weatherLayer.setProvider(provider);
+    weatherLayer.setEnabled(enabled);
+
+    if (typeof alertsConfig?.opacity === "number") {
+      weatherLayer.setOpacity(alertsConfig.opacity);
+    }
+
+    if (typeof alertsConfig?.refresh_minutes === "number") {
+      weatherLayer.setRefreshSeconds(alertsConfig.refresh_minutes * 60);
+    }
+
+    if (enabled && provider !== "maptiler_weather") {
+      void weatherLayer.ensureWeatherLayer();
+    }
+  }, [config]);
+
   // useEffect para gestionar la configuración del radar
   // RainViewer está deprecado: si el provider es "rainviewer", se fuerza a "maptiler_weather"
   // MapTiler Weather se gestiona directamente mediante GlobalRadarLayer cuando provider === "maptiler_weather"
