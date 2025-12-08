@@ -219,21 +219,29 @@ export default class WeatherLayer implements Layer {
       }
 
       const source = this.map.getSource(this.sourceId);
-      if (isGeoJSONSource(source)) {
-        try {
-          source.setData(this.lastData);
-          // Registrar actualización exitosa
-          layerDiagnostics.recordDataUpdate(layerId, sanitizedData.features.length);
-        } catch (error) {
-          const err = error instanceof Error ? error : new Error(String(error));
-          layerDiagnostics.recordError(layerId, err, {
-            phase: "updateData_setData",
-            featureCount: sanitizedData.features.length,
-          });
-          console.error("[WeatherLayer] Error setting data to source:", error);
-        }
-      } else {
-        console.debug(`[WeatherLayer] Source ${this.sourceId} is not ready or not GeoJSON, skipping updateData`);
+      if (!source) {
+        console.debug(`[WeatherLayer] Source ${this.sourceId} not found, skipping updateData`);
+        return;
+      }
+
+      const sourceWithSetData = source as unknown as { setData?: (data: FeatureCollection) => void; type?: string };
+
+      if (!isGeoJSONSource(source) || typeof sourceWithSetData.setData !== "function") {
+        console.debug(`[WeatherLayer] Source ${this.sourceId} is not GeoJSON or lacks setData, skipping updateData`);
+        return;
+      }
+
+      try {
+        sourceWithSetData.setData(this.lastData);
+        // Registrar actualización exitosa
+        layerDiagnostics.recordDataUpdate(layerId, sanitizedData.features.length);
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        layerDiagnostics.recordError(layerId, err, {
+          phase: "updateData_setData",
+          featureCount: sanitizedData.features.length,
+        });
+        console.error("[WeatherLayer] Error setting data to source:", error);
       }
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
@@ -350,12 +358,31 @@ export default class WeatherLayer implements Layer {
       return EMPTY;
     }
 
-    const sanitizedFeatures = data.features.filter((feature) => {
-      const geometry = feature?.geometry;
-      return geometry ? this.geometryHasValidNumbers(geometry) : false;
-    });
+    const sanitizedFeatures = data.features
+      .filter((feature) => {
+        const geometry = feature?.geometry;
+        return geometry ? this.geometryHasValidNumbers(geometry) : false;
+      })
+      .map((feature) => this.sanitizeProperties(feature));
 
     return { ...data, features: sanitizedFeatures };
+  }
+
+  private sanitizeProperties(feature: FeatureCollection["features"][number]): FeatureCollection["features"][number] {
+    if (!feature?.properties || typeof feature.properties !== "object") {
+      return feature;
+    }
+
+    const safeProperties: Record<string, unknown> = { ...feature.properties };
+    for (const [key, value] of Object.entries(safeProperties)) {
+      if (value === null) {
+        safeProperties[key] = 0;
+      } else if (typeof value === "number" && !Number.isFinite(value)) {
+        safeProperties[key] = 0;
+      }
+    }
+
+    return { ...feature, properties: safeProperties };
   }
 
   private geometryHasValidNumbers(geometry: FeatureCollection["features"][number]["geometry"]): boolean {
