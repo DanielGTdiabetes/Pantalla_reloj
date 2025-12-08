@@ -95,6 +95,8 @@ PREFLIGHT_ERROR=0
   echo "[backend-launch] ERROR: icalendar no importable" >&2
   PREFLIGHT_ERROR=1
 }
+python3 -m py_compile /opt/pantalla-reloj/backend/services/weather_service.py \
+  || { echo "[ERROR] weather_service.py tiene errores de sintaxis"; exit 4; }
 "$VENV_PYTHON" -c "import backend.main" 2>&1 || {
   echo "[backend-launch] ERROR: backend.main no importable" >&2
   echo "[backend-launch] Intentando mostrar el error completo:" >&2
