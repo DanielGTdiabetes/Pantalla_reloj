@@ -19,6 +19,7 @@ const capitalizeText = (value: string): string => {
   return value.charAt(0).toUpperCase() + value.slice(1);
 };
 
+// Panel lateral de efemérides históricas
 export const HistoricalEventsCard = ({ items, rotationSeconds = 12 }: HistoricalEventsCardProps): JSX.Element => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -58,18 +59,18 @@ export const HistoricalEventsCard = ({ items, rotationSeconds = 12 }: Historical
   const current = parsedEvents[currentIndex];
 
   return (
-    <div className="historical-card-dark">
+    <div className="historical-card-dark" data-testid="panel-history">
       <div className="historical-card-dark__header">
-        <img src="/icons/misc/efemerides.svg" alt="" className="historical-card-dark__icon" />
-        <span className="historical-card-dark__title">Efemérides Históricas</span>
+        <img src="/icons/misc/efemerides.svg" alt="" className="historical-card-dark__icon panel-title-icon" />
+        <span className="historical-card-dark__title panel-title-text">Efemérides Históricas</span>
       </div>
 
-      <div className="historical-card-dark__body" key={currentIndex}>
+      <div className="historical-card-dark__body panel-body" key={currentIndex}>
         {current.year && (
-          <div className="historical-card-dark__year">{current.year}</div>
+          <div className="historical-card-dark__year panel-item-title">{current.year}</div>
         )}
-        <div ref={scrollRef} className="historical-card-dark__text no-scrollbar">
-          <p>{capitalizeText(current.text)}</p>
+        <div ref={scrollRef} className="historical-card-dark__text no-scrollbar panel-scroll-auto">
+          <p className="panel-item-subtitle">{capitalizeText(current.text)}</p>
         </div>
       </div>
 

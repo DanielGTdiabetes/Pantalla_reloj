@@ -26,6 +26,7 @@ const SAINT_NAME_VARIATIONS: Record<string, string[]> = {
   "pablo": ["San Pablo", "Pablo de Tarso"],
 };
 
+// Panel lateral de santoral
 export default function SaintsCard({ saints }: SaintsCardProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [saintInfo, setSaintInfo] = useState<SaintInfo | null>(null);
@@ -125,8 +126,8 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
 
   if (!saints || saints.length === 0) {
     return (
-      <div className="saints-card-dark saints-card-dark__empty">
-        <span className="saints-card-dark__empty-text">Hoy no hay santos destacados</span>
+      <div className="saints-card-dark saints-card-dark__empty" data-testid="panel-santoral">
+        <span className="saints-card-dark__empty-text panel-item-title">Hoy no hay santos destacados</span>
       </div>
     );
   }
@@ -135,20 +136,20 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
   const imageUrl = saintInfo?.originalimage?.source || saintInfo?.thumbnail?.source || "/icons/misc/santoral.svg";
 
   return (
-    <div className="saints-card-dark">
+    <div className="saints-card-dark" data-testid="panel-santoral">
       <div className="saints-card-dark__header">
-        <img src="/icons/misc/santoral.svg" alt="" className="saints-card-dark__header-icon" />
-        <span className="saints-card-dark__title">Santoral</span>
+        <img src="/icons/misc/santoral.svg" alt="" className="saints-card-dark__header-icon panel-title-icon" />
+        <span className="saints-card-dark__title panel-title-text">Santoral</span>
       </div>
 
-      <div className="saints-card-dark__body">
+      <div className="saints-card-dark__body panel-body">
         <div className="saints-card-dark__image-container">
           <img src={imageUrl} alt={fullName} className="saints-card-dark__image" />
         </div>
 
         <div className="saints-card-dark__info">
-          <h2 className="saints-card-dark__name">{fullName}</h2>
-          <div ref={scrollRef} className="saints-card-dark__bio no-scrollbar">
+          <h2 className="saints-card-dark__name panel-item-title">{fullName}</h2>
+          <div ref={scrollRef} className="saints-card-dark__bio no-scrollbar panel-scroll-auto">
             {loading ? (
               <p className="saints-card-dark__loading">Buscando información...</p>
             ) : saintInfo?.extract ? (

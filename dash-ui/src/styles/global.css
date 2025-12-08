@@ -56,6 +56,17 @@ body {
   display: none;
 }
 
+.auto-scroll-container,
+.panel-scroll-auto {
+  overflow-y: hidden;
+  position: relative;
+}
+
+.auto-scroll-container::-webkit-scrollbar,
+.panel-scroll-auto::-webkit-scrollbar {
+  display: none;
+}
+
 
 .app-shell {
   min-height: 100svh;

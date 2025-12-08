@@ -35,6 +35,7 @@ type TransportCardProps = {
 
 type TransportType = "plane" | "ship";
 
+// Panel lateral de transporte: aviones y barcos cercanos
 export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
   const [activeTab, setActiveTab] = useState<TransportType>("plane");
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -125,9 +126,9 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
   const renderEmpty = () => {
     const label = isPlane ? "Sin vuelos cercanos" : "Sin barcos cercanos";
     return (
-      <div className="transport-card-dark__empty">
-        <img src={iconUrl} alt="" className="transport-card-dark__empty-icon" />
-        <span className="transport-card-dark__empty-text">{label}</span>
+      <div className="transport-card-dark__empty" data-testid={isPlane ? "panel-flights" : "panel-ships"}>
+        <img src={iconUrl} alt="" className="transport-card-dark__empty-icon panel-title-icon" />
+        <span className="transport-card-dark__empty-text panel-item-title">{label}</span>
       </div>
     );
   };
@@ -140,35 +141,40 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
   );
 
   return (
-    <div className="transport-card-dark">
+    <div className="transport-card-dark" data-testid="panel-transport">
       <div className="transport-card-dark__header">
-        <img src={iconUrl} alt="" className="transport-card-dark__header-icon" />
-        <span className="transport-card-dark__title">{isPlane ? "Aviones Cercanos" : "Barcos Cercanos"}</span>
+        <img src={iconUrl} alt="" className="transport-card-dark__header-icon panel-title-icon" />
+        <span className="transport-card-dark__title panel-title-text">{isPlane ? "Aviones Cercanos" : "Barcos Cercanos"}</span>
       </div>
 
-      <div className="transport-card-dark__body">
+      <div className="transport-card-dark__body panel-body">
         {items.length === 0 ? (
           renderEmpty()
         ) : (
-          <div className="transport-card-dark__content" key={`${activeTab}-${currentIndex}`}>
+          <div
+            className="transport-card-dark__content"
+            key={`${activeTab}-${currentIndex}`}
+            data-testid={isPlane ? "panel-flights" : "panel-ships"}
+          >
             <div className="transport-card-dark__icon-container">
               <img
                 src={iconUrl}
                 alt={isPlane ? "avión" : "barco"}
-                className="transport-card-dark__main-icon"
+                className="transport-card-dark__main-icon panel-title-icon"
               />
             </div>
 
             <div className="transport-card-dark__info">
-              <div className="transport-card-dark__name">
+              <div className="transport-card-dark__name panel-item-title">
                 {isPlane ? (current as any).callsign || "Vuelo Desconocido" : (current as any).name || "Barco Desconocido"}
               </div>
 
               {(current as any).destination && (
-                <div className="transport-card-dark__destination">{(current as any).destination}</div>
+                <div className="transport-card-dark__destination panel-item-subtitle">{(current as any).destination}</div>
               )}
 
               <div className="transport-card-dark__meta-grid">
+                {renderDetail("Altitud", (current as any).altitude ? `${Math.round((current as any).altitude)} m` : "--")}
                 {renderDetail("Distancia", (current as any).distance_km ? `${(current as any).distance_km.toFixed(1)} km` : "--", true)}
                 {renderDetail("Velocidad", getSpeed(current) || "--")}
                 {renderDetail("Rumbo", getHeading(current) !== null ? `${getHeading(current)}°` : "--")}

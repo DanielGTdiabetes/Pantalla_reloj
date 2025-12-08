@@ -18,6 +18,7 @@ type WeatherForecastCardProps = {
   unit: string;
 };
 
+// Panel lateral de predicción meteorológica
 export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX.Element | null => {
   const [currentIndex, setCurrentIndex] = useState(0);
 
@@ -52,16 +53,16 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
     : resolveWeatherIcon(day.condition, { isNight: false });
 
   return (
-    <div className="forecast-card-dark">
+    <div className="forecast-card-dark" data-testid="panel-weather-forecast">
       <div className="forecast-card-dark__header">
-        <img src="/icons/weather/day/partly-cloudy.svg" alt="" className="forecast-card-dark__header-icon" />
-        <span className="forecast-card-dark__title">Tiempo 7 Días</span>
+        <img src="/icons/weather/day/partly-cloudy.svg" alt="" className="forecast-card-dark__header-icon panel-title-icon" />
+        <span className="forecast-card-dark__title panel-title-text">Tiempo 7 Días</span>
       </div>
 
-      <div className="forecast-card-dark__body">
+      <div className="forecast-card-dark__body panel-body">
         <div className="forecast-card-dark__day">
-          <span className="forecast-card-dark__dayname">{day.dayName || "Hoy"}</span>
-          <span className="forecast-card-dark__date">{day.date}</span>
+          <span className="forecast-card-dark__dayname panel-item-title">{day.dayName || "Hoy"}</span>
+          <span className="forecast-card-dark__date panel-item-subtitle">{day.date}</span>
         </div>
 
         <div className="forecast-card-dark__icon-container">
@@ -69,17 +70,17 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
         </div>
 
         <div className="forecast-card-dark__temps">
-          <span className="forecast-card-dark__max">
+          <span className="forecast-card-dark__max panel-item-title">
             {day.temperature.max !== null ? Math.round(day.temperature.max) : "--"}°
             <small>máx</small>
           </span>
-          <span className="forecast-card-dark__min">
+          <span className="forecast-card-dark__min panel-item-subtitle">
             {day.temperature.min !== null ? Math.round(day.temperature.min) : "--"}°
             <small>mín</small>
           </span>
         </div>
 
-        <div className="forecast-card-dark__condition">{day.condition}</div>
+        <div className="forecast-card-dark__condition panel-item-title">{day.condition}</div>
 
         {days.length > 1 && (
           <div className="forecast-card-dark__dots">

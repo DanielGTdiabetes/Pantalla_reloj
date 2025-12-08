@@ -12,6 +12,7 @@ type WeatherCardProps = {
   timezone?: string;
 };
 
+// Panel lateral de tiempo actual
 export const WeatherCard = ({
   temperatureLabel,
   feelsLikeLabel,
@@ -31,26 +32,26 @@ export const WeatherCard = ({
   const iconUrl = resolveWeatherIcon(normalizedCondition, { isNight });
 
   return (
-    <div className="weather-card-dark">
+    <div className="weather-card-dark" data-testid="panel-weather-current">
       <div className="weather-card-dark__header">
-        <img src={iconUrl} alt="" className="weather-card-dark__header-icon" />
-        <span className="weather-card-dark__title">Tiempo Actual</span>
+        <img src={iconUrl} alt="" className="weather-card-dark__header-icon panel-title-icon" />
+        <span className="weather-card-dark__title panel-title-text">Tiempo Actual</span>
       </div>
 
-      <div className="weather-card-dark__body">
+      <div className="weather-card-dark__body panel-body">
         <div className="weather-card-dark__main">
           <div className="weather-card-dark__icon-container">
             <img src={iconUrl} alt={normalizedCondition || "weather"} className="weather-card-dark__main-icon" />
           </div>
           <div className="weather-card-dark__temp-block">
-            <span className="weather-card-dark__temp">{tempValue}°</span>
+            <span className="weather-card-dark__temp panel-item-title">{tempValue}°</span>
             {feelsLikeLabel && (
-              <span className="weather-card-dark__feels">Sensación: {feelsLikeLabel}</span>
+              <span className="weather-card-dark__feels panel-item-subtitle">Sensación: {feelsLikeLabel}</span>
             )}
           </div>
         </div>
 
-        <div className="weather-card-dark__condition">{normalizedCondition || "Sin datos"}</div>
+        <div className="weather-card-dark__condition panel-item-title">{normalizedCondition || "Sin datos"}</div>
 
         <div className="weather-card-dark__metrics">
           <div className="weather-card-dark__metric">
