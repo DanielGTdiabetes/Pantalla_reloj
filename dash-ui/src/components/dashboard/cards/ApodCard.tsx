@@ -14,6 +14,7 @@ interface ApodCardProps {
     data: ApodData | null;
 }
 
+// Panel lateral de la imagen/vídeo del día de NASA APOD
 export const ApodCard = ({ data }: ApodCardProps) => {
 
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -38,9 +39,9 @@ export const ApodCard = ({ data }: ApodCardProps) => {
 
     if (!data || data.error) {
         return (
-            <div className="apod-card-dark apod-card-dark--empty">
+            <div className="apod-card-dark apod-card-dark--empty" data-testid="panel-nasa-apod">
                 <span className="apod-card-dark__icon">🔭</span>
-                <span>Foto del día no disponible</span>
+                <span className="panel-item-title">Foto del día no disponible</span>
             </div>
         );
     }
@@ -50,7 +51,7 @@ export const ApodCard = ({ data }: ApodCardProps) => {
     const hasImage = Boolean(imageUrl);
 
     return (
-        <div className="apod-card-dark">
+        <div className="apod-card-dark" data-testid="panel-nasa-apod">
             {/* Background Image */}
             {hasImage && (
                 <div className="apod-card-dark__bg">
@@ -61,7 +62,7 @@ export const ApodCard = ({ data }: ApodCardProps) => {
 
             {/* Content */}
             <div className="apod-card-dark__content">
-                <div className="apod-card-dark__badge">
+                <div className="apod-card-dark__badge panel-title-text">
                     <span>🔭</span>
                     <span>NASA APOD</span>
                     {isVideo && <span className="apod-card-dark__video-tag">📹 Video</span>}
@@ -80,7 +81,7 @@ export const ApodCard = ({ data }: ApodCardProps) => {
 
                 <h1 className="apod-card-dark__title">{data.title}</h1>
 
-                <div ref={scrollRef} className="apod-card-dark__desc no-scrollbar">
+                <div ref={scrollRef} className="apod-card-dark__desc no-scrollbar panel-scroll-auto">
                     <p>{data.explanation}</p>
                 </div>
 

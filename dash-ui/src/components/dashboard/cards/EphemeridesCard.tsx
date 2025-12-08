@@ -30,6 +30,7 @@ const getMoonPhaseIcon = (illumination: number | null): string => {
   return "/icons/astronomy/moon/waning-crescent-1.svg";
 };
 
+// Panel lateral de astronomía (amanecer, atardecer y luna)
 export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: EphemeridesCardProps): JSX.Element => {
   const [currentState, setCurrentState] = useState<AstroState>("sunrise");
 
@@ -73,14 +74,14 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
   const iconUrl = getIcon();
 
   return (
-    <div className="ephemerides-card-dark">
+    <div className="ephemerides-card-dark" data-testid="panel-astronomy">
       <div className="ephemerides-card-dark__header">
-        <img src={iconUrl} alt="" className="ephemerides-card-dark__header-icon" />
-        <span className="ephemerides-card-dark__title">Astronomía</span>
+        <img src={iconUrl} alt="" className="ephemerides-card-dark__header-icon panel-title-icon" />
+        <span className="ephemerides-card-dark__title panel-title-text">Astronomía</span>
       </div>
 
-      <div className="ephemerides-card-dark__body">
-        <div className="ephemerides-card-dark__label">{getLabel()}</div>
+      <div className="ephemerides-card-dark__body panel-body">
+        <div className="ephemerides-card-dark__label panel-item-title">{getLabel()}</div>
 
         <div className="ephemerides-card-dark__icon-container">
           <img
@@ -90,7 +91,7 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
           />
         </div>
 
-        <div className="ephemerides-card-dark__value">{getValue()}</div>
+        <div className="ephemerides-card-dark__value panel-item-title">{getValue()}</div>
 
         {currentState === "moon" && illuminationPercent !== null && (
           <div className="ephemerides-card-dark__illumination">{illuminationPercent}% iluminación</div>

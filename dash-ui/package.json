@@ -13,6 +13,7 @@
     "build:full": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:right-panel": "vitest run src/components/RightPanel/right-panel.test.tsx",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "clean": "rimraf node_modules dist .vite .parcel-cache || true",

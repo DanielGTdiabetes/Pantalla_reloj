@@ -4,6 +4,7 @@ type TimeCardProps = {
   timezone: string;
 };
 
+// Panel lateral de reloj principal
 export const TimeCard = ({ timezone }: TimeCardProps): JSX.Element => {
   const [time, setTime] = useState(new Date());
 
@@ -24,19 +25,19 @@ export const TimeCard = ({ timezone }: TimeCardProps): JSX.Element => {
   const greeting = hour >= 6 && hour < 12 ? "Buenos días" : hour >= 12 && hour < 21 ? "Buenas tardes" : "Buenas noches";
 
   return (
-    <div className="time-card-dark">
-      <div className="time-card-dark__body">
-        <div className="time-card-dark__eyebrow">Hora</div>
-        <div className="time-card-dark__greeting">{greeting}</div>
+    <div className="time-card-dark" data-testid="panel-clock">
+      <div className="time-card-dark__body panel-body">
+        <div className="time-card-dark__eyebrow panel-title-text">Hora</div>
+        <div className="time-card-dark__greeting panel-item-title">{greeting}</div>
         <div className="time-card-dark__clock">
-          <span className="time-card-dark__hours">{hours}</span>
+          <span className="time-card-dark__hours panel-item-title">{hours}</span>
           <span className="time-card-dark__sep">:</span>
-          <span className="time-card-dark__minutes">{minutes}</span>
-          <span className="time-card-dark__seconds">{seconds}</span>
+          <span className="time-card-dark__minutes panel-item-title">{minutes}</span>
+          <span className="time-card-dark__seconds panel-item-subtitle">{seconds}</span>
         </div>
         <div className="time-card-dark__date">
-          <div className="time-card-dark__dayname">{dayName}</div>
-          <div className="time-card-dark__fulldate">{fullDate}</div>
+          <div className="time-card-dark__dayname panel-item-title">{dayName}</div>
+          <div className="time-card-dark__fulldate panel-item-subtitle">{fullDate}</div>
         </div>
       </div>
 

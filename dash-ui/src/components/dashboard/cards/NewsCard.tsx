@@ -19,6 +19,7 @@ const stripHtml = (html: string) => {
   return (tmp.textContent || tmp.innerText || "").trim();
 };
 
+// Panel lateral de noticias
 export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -54,18 +55,18 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
   }, [currentIndex, current.summary, current.title]);
 
   return (
-    <div className="news-card-dark">
+    <div className="news-card-dark" data-testid="panel-news">
       <div className="news-card-dark__header">
-        <img src="/icons/misc/news.svg" alt="" className="news-card-dark__header-icon" />
-        <span className="news-card-dark__title">Noticias</span>
+        <img src="/icons/misc/news.svg" alt="" className="news-card-dark__header-icon panel-title-icon" />
+        <span className="news-card-dark__title panel-title-text">Noticias</span>
       </div>
 
-      <div className="news-card-dark__body" key={currentIndex}>
-        <div className="news-card-dark__source">Fuente: {sourceLabel}</div>
-        <div ref={scrollRef} className="news-card-dark__content no-scrollbar">
-          <h2 className="news-card-dark__headline">{stripHtml(current.title)}</h2>
+      <div className="news-card-dark__body panel-body" key={currentIndex}>
+        <div className="news-card-dark__source panel-item-subtitle">Fuente: {sourceLabel}</div>
+        <div ref={scrollRef} className="news-card-dark__content no-scrollbar panel-scroll-auto">
+          <h2 className="news-card-dark__headline panel-item-title">{stripHtml(current.title)}</h2>
           {current.summary && (
-            <p className="news-card-dark__summary">{stripHtml(current.summary)}</p>
+            <p className="news-card-dark__summary panel-item-subtitle">{stripHtml(current.summary)}</p>
           )}
         </div>
       </div>
