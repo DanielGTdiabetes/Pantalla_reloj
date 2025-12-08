@@ -69,7 +69,7 @@ async def get_transport_nearby(
     Get transport (planes and ships) near a location.
     Specific logic for Vila-real/Castellón context requested by user.
     """
-    planes_data = []
+    planes_data: List[Dict[str, Any]] = []
     ships_data = []
     errors = []
     
@@ -122,38 +122,51 @@ async def get_transport_nearby(
 
             for item in payload_items:
                 p = item
-                if isinstance(p, dict):
-                    icao = p.get("icao24")
-                    img = None
-                    if icao:
-                        # Run in threadpool to avoid blocking loop with requests
-                        try:
-                            img = await run_in_threadpool(_resolve_plane_image, icao)
-                        except Exception:
-                            pass
+                if not isinstance(p, dict):
+                    continue
 
-                    p_lat = p.get("latitude")
-                    p_lon = p.get("longitude")
-                    # Skip items without coordinates
-                    if p_lat is None or p_lon is None:
-                        continue
+                p_lat = p.get("latitude")
+                p_lon = p.get("longitude")
+                if p_lat is None or p_lon is None:
+                    continue
 
-                    distance_km = _haversine_km(lat, lon, p_lat, p_lon)
-                    if distance_km > radius * 1.25:
-                        continue
+                distance_km = _haversine_km(lat, lon, p_lat, p_lon)
+                if distance_km > radius * 1.25:
+                    continue
 
-                    planes_data.append({
-                        "ic": icao,
-                        "cs": (p.get("callsign") or "").strip(),
-                        "alt": p.get("baro_altitude"),
-                        "spd": p.get("velocity"),
-                        "hdg": p.get("true_track"),
-                        "lat": p_lat,
-                        "lon": p_lon,
-                        "co": p.get("origin_country"),
-                        "img": img,
-                        "distance_km": distance_km,
-                    })
+                icao = p.get("icao24")
+                img = None
+                if icao:
+                    try:
+                        img = await run_in_threadpool(_resolve_plane_image, icao)
+                    except Exception:
+                        pass
+
+                altitude_m = p.get("baro_altitude")
+                altitude_ft = altitude_m * 3.28084 if altitude_m is not None else None
+                speed_ms = p.get("velocity")
+                speed_kts = speed_ms * 1.94384 if speed_ms is not None else None
+                heading = p.get("true_track")
+                callsign = (p.get("callsign") or "").strip() or None
+                origin = p.get("estDepartureAirport") or p.get("from")
+                destination = p.get("estArrivalAirport") or p.get("to")
+
+                planes_data.append({
+                    "id": icao or callsign or f"plane-{p_lat:.4f}-{p_lon:.4f}",
+                    "callsign": callsign,
+                    "origin": origin,
+                    "destination": destination,
+                    "altitude_ft": altitude_ft,
+                    "speed_kts": speed_kts,
+                    "heading_deg": heading,
+                    "lat": p_lat,
+                    "lon": p_lon,
+                    "distance_km": distance_km,
+                    "airline": p.get("origin_country"),
+                    "icao24": icao,
+                    "image": img,
+                    "kind": "aircraft",
+                })
         else:
             errors.append("flights_layer_disabled")
     except Exception as e:
@@ -212,6 +225,7 @@ async def get_transport_nearby(
                             # Ship photos are harder to get freely by API.
                             # Leaving img as null/undefined to trigger fallback.
                             "img": None,
+                            "kind": "ship",
                         })
         else:
             errors.append("ships_layer_disabled")
@@ -231,7 +245,8 @@ async def get_transport_nearby(
     result = {
         "ok": len(errors) == 0,
         "location": {"lat": lat, "lon": lon},
-        "planes": planes_data[:5], 
+        "planes": planes_data[:20],
+        "aircraft": planes_data[:20],
         "ships": ships_data[:10]
     }
     
