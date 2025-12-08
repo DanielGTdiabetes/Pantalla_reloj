@@ -400,6 +400,37 @@ def _ensure_ics_storage_directory() -> None:
         logger.warning("[config] Could not ensure ICS storage directory: %s", exc)
 
 
+def _find_uploaded_ics_path() -> Optional[str]:
+    """Busca un archivo ICS existente en ICS_STORAGE_DIR.
+    
+    Prioridad:
+    1. current.ics (si existe)
+    2. Cualquier otro archivo .ics en el directorio
+    
+    Returns:
+        Ruta absoluta al archivo ICS si existe, None si no hay ninguno.
+    """
+    if not ICS_STORAGE_DIR.exists():
+        return None
+    
+    # Priorizar current.ics
+    current_ics = ICS_STORAGE_DIR / "current.ics"
+    if current_ics.exists() and current_ics.is_file():
+        return str(current_ics)
+    
+    # Buscar cualquier archivo .ics (excluyendo tmp/)
+    try:
+        for item in ICS_STORAGE_DIR.iterdir():
+            if item.is_file() and item.suffix.lower() == ".ics":
+                # Verificar que es legible
+                if os.access(item, os.R_OK):
+                    return str(item)
+    except OSError as exc:
+        logger.debug("[config] Error scanning ICS_STORAGE_DIR: %s", exc)
+    
+    return None
+
+
 @app.on_event("startup")
 def _startup_services() -> None:
     """Inicializar servicios y directorios al inicio."""
@@ -4539,19 +4570,17 @@ async def save_config(request: Request) -> JSONResponse:
         
         if provider_final == "ics" and enabled_final:
             if not effective_ics_url and not effective_ics_path:
-                logger.warning("[config] Provider ICS requires url or path (none provided)")
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "error": "Calendar provider 'ics' requires url or path",
-                        "field": "calendar.source",
-                        "tip": "Configura secrets.calendar_ics.url o secrets.calendar_ics.path antes de activar ICS",
-                        "missing": [
-                            "secrets.calendar_ics.url",
-                            "secrets.calendar_ics.path",
-                        ],
-                    },
-                )
+                # Buscar archivo ICS subido en ICS_STORAGE_DIR como fallback
+                uploaded_ics = _find_uploaded_ics_path()
+                if uploaded_ics:
+                    effective_ics_path = uploaded_ics
+                    logger.info("[config] Found uploaded ICS file: %s", uploaded_ics)
+                else:
+                    logger.warning("[config] ICS provider selected but no ICS file found in %s", ICS_STORAGE_DIR)
+                    raise HTTPException(
+                        status_code=400,
+                        detail={"detail": "calendar_ics_missing"},
+                    )
 
         # Validar ICS usando validate_calendar_provider (nunca 500, solo 400)
         try:
@@ -4562,6 +4591,47 @@ async def save_config(request: Request) -> JSONResponse:
                 status_code=400,
                 detail={"error": str(exc), "missing": exc.missing if exc.missing else []},
             ) from exc
+
+        # Si el proveedor es ICS y tenemos un effective_ics_path, actualizar config_dict
+        if provider_final == "ics" and effective_ics_path:
+            # Asegurar que config_dict refleja el ics_path encontrado
+            if "calendar" not in config_dict:
+                config_dict["calendar"] = {}
+            calendar_block = config_dict["calendar"]
+            if not isinstance(calendar_block, dict):
+                calendar_block = {}
+                config_dict["calendar"] = calendar_block
+            
+            calendar_block["source"] = "ics"
+            calendar_block["provider"] = "ics"
+            calendar_block["enabled"] = enabled_final
+            calendar_block["ics_path"] = effective_ics_path
+            
+            # Asegurar sub-bloque ics
+            if "ics" not in calendar_block or not isinstance(calendar_block.get("ics"), dict):
+                calendar_block["ics"] = {}
+            calendar_block["ics"]["path"] = effective_ics_path
+            calendar_block["ics"]["stored_path"] = effective_ics_path
+            
+            # Actualizar panels.calendar también
+            if "panels" not in config_dict:
+                config_dict["panels"] = {}
+            panels_block = config_dict["panels"]
+            if not isinstance(panels_block, dict):
+                panels_block = {}
+                config_dict["panels"] = panels_block
+            if "calendar" not in panels_block:
+                panels_block["calendar"] = {}
+            panel_cal = panels_block["calendar"]
+            if not isinstance(panel_cal, dict):
+                panel_cal = {}
+                panels_block["calendar"] = panel_cal
+            panel_cal["provider"] = "ics"
+            panel_cal["source"] = "ics"
+            panel_cal["enabled"] = enabled_final
+            panel_cal["ics_path"] = effective_ics_path
+            
+            logger.info("[config] Updated calendar config with ics_path=%s", effective_ics_path)
 
         # Guardar config normalizado
         # Usar config_dict que tiene los defaults de maps y layers_global aplicados
@@ -5026,19 +5096,17 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
 
     if provider_final == "ics" and enabled_final:
         if not effective_ics_url and not effective_ics_path:
-            logger.warning("[config] Provider ICS requires url or path (none provided) [group=%s]", group_name)
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "Calendar provider 'ics' requires url or path",
-                    "field": "calendar.source",
-                    "tip": "Configura secrets.calendar_ics.url o secrets.calendar_ics.path antes de activar ICS",
-                    "missing": [
-                        "secrets.calendar_ics.url",
-                        "secrets.calendar_ics.path",
-                    ],
-                },
-            )
+            # Buscar archivo ICS subido en ICS_STORAGE_DIR como fallback
+            uploaded_ics = _find_uploaded_ics_path()
+            if uploaded_ics:
+                effective_ics_path = uploaded_ics
+                logger.info("[config] Found uploaded ICS file: %s [group=%s]", uploaded_ics, group_name)
+            else:
+                logger.warning("[config] ICS provider selected but no ICS file found in %s [group=%s]", ICS_STORAGE_DIR, group_name)
+                raise HTTPException(
+                    status_code=400,
+                    detail={"detail": "calendar_ics_missing"},
+                )
 
     try:
         validate_calendar_provider(provider_final, enabled_final, effective_ics_path)
@@ -5048,6 +5116,47 @@ async def save_config_group(group_name: str, request: Request) -> JSONResponse:
             status_code=400,
             detail={"error": str(exc), "missing": exc.missing if exc.missing else []},
         ) from exc
+    
+    # Si el proveedor es ICS y tenemos un effective_ics_path, actualizar el config
+    if provider_final == "ics" and effective_ics_path:
+        # Asegurar que el config refleja el ics_path encontrado
+        if "calendar" not in sanitized_config:
+            sanitized_config["calendar"] = {}
+        calendar_block = sanitized_config["calendar"]
+        if not isinstance(calendar_block, dict):
+            calendar_block = {}
+            sanitized_config["calendar"] = calendar_block
+        
+        calendar_block["source"] = "ics"
+        calendar_block["provider"] = "ics"
+        calendar_block["enabled"] = enabled_final
+        calendar_block["ics_path"] = effective_ics_path
+        
+        # Asegurar sub-bloque ics
+        if "ics" not in calendar_block or not isinstance(calendar_block.get("ics"), dict):
+            calendar_block["ics"] = {}
+        calendar_block["ics"]["path"] = effective_ics_path
+        calendar_block["ics"]["stored_path"] = effective_ics_path
+        
+        # Actualizar panels.calendar también
+        if "panels" not in sanitized_config:
+            sanitized_config["panels"] = {}
+        panels_block = sanitized_config["panels"]
+        if not isinstance(panels_block, dict):
+            panels_block = {}
+            sanitized_config["panels"] = panels_block
+        if "calendar" not in panels_block:
+            panels_block["calendar"] = {}
+        panel_cal = panels_block["calendar"]
+        if not isinstance(panel_cal, dict):
+            panel_cal = {}
+            panels_block["calendar"] = panel_cal
+        panel_cal["provider"] = "ics"
+        panel_cal["source"] = "ics"
+        panel_cal["enabled"] = enabled_final
+        panel_cal["ics_path"] = effective_ics_path
+        
+        logger.info("[config] Updated calendar config with ics_path=%s [group=%s]", effective_ics_path, group_name)
     
     # Guardar atómicamente (usar sanitized)
     try:
