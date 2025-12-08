@@ -1,11 +1,14 @@
 import React from "react";
 import type { WeatherKind } from "../../types/weather";
 
-interface WeatherIconProps {
-  kind: WeatherKind;
+interface BaseWeatherIconProps {
   animated?: boolean;
   size?: number;
   className?: string;
+}
+
+interface WeatherIconProps extends BaseWeatherIconProps {
+  kind: WeatherKind;
 }
 
 const sharedProps = (size: number, className?: string) => ({
@@ -49,7 +52,7 @@ const Glow = () => (
   </defs>
 );
 
-const SunnyIcon = ({ size = 96, animated = true, className }: WeatherIconProps) => (
+const SunnyIcon = ({ size = 96, animated = true, className }: BaseWeatherIconProps) => (
   <svg {...sharedProps(size, className)}>
     <Glow />
     <g filter="url(#shadow)">
@@ -79,7 +82,7 @@ const CloudLayers = ({ opacity = 1, offsetY = 0 }: { opacity?: number; offsetY?:
   </g>
 );
 
-const PartlyCloudyIcon = ({ size = 96, animated = true, className }: WeatherIconProps) => (
+const PartlyCloudyIcon = ({ size = 96, animated = true, className }: BaseWeatherIconProps) => (
   <svg {...sharedProps(size, className)}>
     <Glow />
     <SunnyIcon size={60} animated={animated} />
@@ -87,7 +90,7 @@ const PartlyCloudyIcon = ({ size = 96, animated = true, className }: WeatherIcon
   </svg>
 );
 
-const CloudyIcon = ({ size = 96, className }: WeatherIconProps) => (
+const CloudyIcon = ({ size = 96, className }: BaseWeatherIconProps) => (
   <svg {...sharedProps(size, className)}>
     <Glow />
     <CloudLayers opacity={0.85} offsetY={-4} />
@@ -95,7 +98,7 @@ const CloudyIcon = ({ size = 96, className }: WeatherIconProps) => (
   </svg>
 );
 
-const FogIcon = ({ size = 96, className }: WeatherIconProps) => (
+const FogIcon = ({ size = 96, className }: BaseWeatherIconProps) => (
   <svg {...sharedProps(size, className)}>
     <Glow />
     <CloudLayers opacity={0.7} offsetY={8} />
@@ -107,7 +110,7 @@ const FogIcon = ({ size = 96, className }: WeatherIconProps) => (
   </svg>
 );
 
-const RainIcon = ({ size = 96, animated = true, className }: WeatherIconProps) => (
+const RainIcon = ({ size = 96, animated = true, className }: BaseWeatherIconProps) => (
   <svg {...sharedProps(size, className)}>
     <Glow />
     <CloudLayers opacity={0.95} />
@@ -128,7 +131,7 @@ const RainIcon = ({ size = 96, animated = true, className }: WeatherIconProps) =
   </svg>
 );
 
-const SleetIcon = ({ size = 96, animated = true, className }: WeatherIconProps) => (
+const SleetIcon = ({ size = 96, animated = true, className }: BaseWeatherIconProps) => (
   <svg {...sharedProps(size, className)}>
     <Glow />
     <CloudLayers opacity={0.95} />
@@ -143,7 +146,7 @@ const SleetIcon = ({ size = 96, animated = true, className }: WeatherIconProps) 
   </svg>
 );
 
-const SnowIcon = ({ size = 96, animated = true, className }: WeatherIconProps) => (
+const SnowIcon = ({ size = 96, animated = true, className }: BaseWeatherIconProps) => (
   <svg {...sharedProps(size, className)}>
     <Glow />
     <CloudLayers opacity={0.92} />
@@ -161,7 +164,7 @@ const SnowIcon = ({ size = 96, animated = true, className }: WeatherIconProps) =
   </svg>
 );
 
-const ThunderIcon = ({ size = 96, animated = true, className }: WeatherIconProps) => (
+const ThunderIcon = ({ size = 96, animated = true, className }: BaseWeatherIconProps) => (
   <svg {...sharedProps(size, className)}>
     <Glow />
     <CloudLayers opacity={0.9} />
@@ -173,7 +176,7 @@ const ThunderIcon = ({ size = 96, animated = true, className }: WeatherIconProps
   </svg>
 );
 
-const UnknownIcon = ({ size = 96, className }: WeatherIconProps) => (
+const UnknownIcon = ({ size = 96, className }: BaseWeatherIconProps) => (
   <svg {...sharedProps(size, className)}>
     <Glow />
     <circle cx="80" cy="80" r="42" fill="#1F2937" opacity="0.9" />
@@ -184,23 +187,23 @@ const UnknownIcon = ({ size = 96, className }: WeatherIconProps) => (
 export const WeatherIcon: React.FC<WeatherIconProps> = ({ kind, animated = true, size = 64, className }) => {
   switch (kind) {
     case "clear":
-      return <SunnyIcon kind={kind} animated={animated} size={size} className={className} />;
+      return <SunnyIcon animated={animated} size={size} className={className} />;
     case "partly_cloudy":
-      return <PartlyCloudyIcon kind={kind} animated={animated} size={size} className={className} />;
+      return <PartlyCloudyIcon animated={animated} size={size} className={className} />;
     case "cloudy":
-      return <CloudyIcon kind={kind} animated={animated} size={size} className={className} />;
+      return <CloudyIcon animated={animated} size={size} className={className} />;
     case "fog":
-      return <FogIcon kind={kind} animated={animated} size={size} className={className} />;
+      return <FogIcon animated={animated} size={size} className={className} />;
     case "rain":
-      return <RainIcon kind={kind} animated={animated} size={size} className={className} />;
+      return <RainIcon animated={animated} size={size} className={className} />;
     case "sleet":
-      return <SleetIcon kind={kind} animated={animated} size={size} className={className} />;
+      return <SleetIcon animated={animated} size={size} className={className} />;
     case "snow":
-      return <SnowIcon kind={kind} animated={animated} size={size} className={className} />;
+      return <SnowIcon animated={animated} size={size} className={className} />;
     case "thunderstorm":
-      return <ThunderIcon kind={kind} animated={animated} size={size} className={className} />;
+      return <ThunderIcon animated={animated} size={size} className={className} />;
     default:
-      return <UnknownIcon kind={kind} animated={animated} size={size} className={className} />;
+      return <UnknownIcon animated={animated} size={size} className={className} />;
   }
 };
 
