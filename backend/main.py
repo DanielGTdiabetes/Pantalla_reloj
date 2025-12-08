@@ -10617,6 +10617,7 @@ async def get_ships_preview(limit: int = 20) -> Dict[str, Any]:
         }
 
 
+@app.get("/api/layers/flights")
 def get_flights(request: Request, bbox: Optional[str] = None, extended: Optional[int] = None) -> JSONResponse:
     config = config_manager.read()
     opensky_cfg = config.opensky
