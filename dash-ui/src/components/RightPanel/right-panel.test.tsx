@@ -95,7 +95,7 @@ describe("Right panel components", () => {
       <TransportCard
         data={{
           ships: [
-            { name: "Ferry Valencia", speed: 12.3, heading: 180, distance_km: 5.2, destination: "Castelló" }
+            { name: "Ferry Valencia", speed: 12.3, heading: 180, distance_km: 5.2, destination: "Castelló", lat: 39.1, lon: -0.1 }
           ]
         }}
       />
@@ -113,7 +113,7 @@ describe("Right panel components", () => {
       <TransportCard
         data={{
           planes: [
-            { callsign: "VLG123", altitude: 10234, speed: 60, heading: 270, distance_km: 15.4, aircraft_type: "A320" }
+            { callsign: "VLG123", altitude: 10234, speed: 60, heading: 270, distance_km: 15.4, aircraft_type: "A320", lat: 39.2, lon: -0.2 }
           ]
         }}
       />
@@ -121,8 +121,8 @@ describe("Right panel components", () => {
 
     const panel = screen.getByTestId("panel-flights");
     expect(screen.getByText(/VLG123/)).toBeInTheDocument();
-    expect(screen.getByText(/10234 m/)).toBeInTheDocument();
-    expect(screen.getByText(/216 km\/h/)).toBeInTheDocument();
+    expect(screen.getByText(/33576 ft/)).toBeInTheDocument();
+    expect(screen.getByText(/117 kt/)).toBeInTheDocument();
     expect(screen.getByText(/A320/)).toBeInTheDocument();
   });
 

@@ -73,7 +73,7 @@ export const AutoScrollContainer: React.FC<AutoScrollContainerProps> = ({
   }, [children]);
 
   return (
-    <div className={`auto-scroll-container ${className || ""}`} ref={containerRef}>
+    <div className={`auto-scroll-container panel-scroll-auto ${className || ""}`} ref={containerRef}>
       <div
         ref={contentRef}
         style={{ transform: `translateY(-${offset}px)` }}
