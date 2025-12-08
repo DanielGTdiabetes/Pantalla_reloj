@@ -183,8 +183,8 @@ async def get_transport_nearby(
                 if not isinstance(p, dict):
                     continue
 
-                p_lat = p.get("latitude")
-                p_lon = p.get("longitude")
+                p_lat = p.get("lat") or p.get("latitude")
+                p_lon = p.get("lon") or p.get("longitude")
                 if p_lat is None or p_lon is None:
                     continue
 
@@ -198,11 +198,11 @@ async def get_transport_nearby(
                     except Exception:
                         pass
 
-                altitude_m = p.get("baro_altitude")
+                altitude_m = p.get("alt") or p.get("baro_altitude")
                 altitude_ft = altitude_m * 3.28084 if altitude_m is not None else None
                 speed_ms = p.get("velocity")
                 speed_kts = speed_ms * 1.94384 if speed_ms is not None else 0.0
-                heading = p.get("true_track") or 0.0
+                heading = p.get("track") or p.get("true_track") or 0.0
                 callsign = (p.get("callsign") or "").strip() or "Vuelo"
                 origin = p.get("estDepartureAirport") or p.get("from")
                 destination = p.get("estArrivalAirport") or p.get("to")
