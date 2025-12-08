@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
+
+import { AutoScrollContainer } from "../../common/AutoScrollContainer";
 
 type HistoricalEventItem = string;
 
@@ -22,7 +24,6 @@ const capitalizeText = (value: string): string => {
 // Panel lateral de efemérides históricas
 export const HistoricalEventsCard = ({ items, rotationSeconds = 12 }: HistoricalEventsCardProps): JSX.Element => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   const list = items.length > 0 ? items : ["No hay efemérides para este día."];
   const parsedEvents = list.map(parseEvent);
@@ -34,27 +35,6 @@ export const HistoricalEventsCard = ({ items, rotationSeconds = 12 }: Historical
     }, rotationSeconds * 1000);
     return () => clearInterval(interval);
   }, [parsedEvents.length, rotationSeconds]);
-
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = 0;
-
-    const el = scrollRef.current;
-    if (!el) return;
-
-    let animId: number;
-    let start: number | null = null;
-    const delay = 2000;
-
-    const step = (ts: number) => {
-      if (!start) start = ts;
-      if (ts - start > delay && el.scrollHeight > el.clientHeight) {
-        el.scrollTop += 0.5;
-      }
-      animId = requestAnimationFrame(step);
-    };
-    animId = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(animId);
-  }, [currentIndex]);
 
   const current = parsedEvents[currentIndex];
 
@@ -69,9 +49,9 @@ export const HistoricalEventsCard = ({ items, rotationSeconds = 12 }: Historical
         {current.year && (
           <div className="historical-card-dark__year panel-item-title">{current.year}</div>
         )}
-        <div ref={scrollRef} className="historical-card-dark__text no-scrollbar panel-scroll-auto">
+        <AutoScrollContainer className="historical-card-dark__text">
           <p className="panel-item-subtitle">{capitalizeText(current.text)}</p>
-        </div>
+        </AutoScrollContainer>
       </div>
 
       {parsedEvents.length > 1 && (

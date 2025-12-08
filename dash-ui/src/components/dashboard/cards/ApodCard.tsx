@@ -1,4 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useMemo } from "react";
+
+import { AutoScrollContainer } from "../../common/AutoScrollContainer";
 
 interface ApodData {
     title: string;
@@ -17,26 +19,6 @@ interface ApodCardProps {
 // Panel lateral de la imagen/vídeo del día de NASA APOD
 export const ApodCard = ({ data }: ApodCardProps) => {
 
-    const scrollRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        const el = scrollRef.current;
-        if (!el) return;
-        el.scrollTop = 0;
-
-        let rafId: number;
-        const step = () => {
-            if (!el) return;
-            const maxScroll = el.scrollHeight - el.clientHeight;
-            if (maxScroll > 4) {
-                el.scrollTop = (el.scrollTop + 0.6) % (maxScroll + 12);
-            }
-            rafId = requestAnimationFrame(step);
-        };
-        rafId = requestAnimationFrame(step);
-        return () => cancelAnimationFrame(rafId);
-    }, [data?.explanation, data?.title]);
-
     if (!data || data.error) {
         return (
             <div className="apod-card-dark apod-card-dark--empty" data-testid="panel-nasa-apod">
@@ -49,6 +31,24 @@ export const ApodCard = ({ data }: ApodCardProps) => {
     const isVideo = data.media_type === "video";
     const imageUrl = isVideo ? (data.thumbnail_url || "") : data.url;
     const hasImage = Boolean(imageUrl);
+
+    const embedUrl = useMemo(() => {
+        if (!isVideo || !data.url) return null;
+        if (data.url.includes("youtube.com/watch")) {
+            const id = new URL(data.url).searchParams.get("v");
+            return id ? `https://www.youtube.com/embed/${id}` : null;
+        }
+        if (data.url.includes("youtu.be/")) {
+            const id = data.url.split("youtu.be/")[1]?.split("?")[0];
+            return id ? `https://www.youtube.com/embed/${id}` : null;
+        }
+        if (data.url.includes("vimeo.com")) {
+            const parts = data.url.split("/");
+            const id = parts[parts.length - 1];
+            return id ? `https://player.vimeo.com/video/${id}` : null;
+        }
+        return data.url;
+    }, [data?.url, isVideo]);
 
     return (
         <div className="apod-card-dark" data-testid="panel-nasa-apod">
@@ -69,7 +69,19 @@ export const ApodCard = ({ data }: ApodCardProps) => {
                 </div>
 
                 <div className="apod-card-dark__media">
-                    {hasImage ? (
+                    {isVideo && embedUrl ? (
+                        <div className="nasa-video-wrapper">
+                            <iframe
+                                src={embedUrl}
+                                className="nasa-video-iframe"
+                                allowFullScreen
+                                loading="lazy"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                referrerPolicy="no-referrer-when-downgrade"
+                                title={data.title}
+                            />
+                        </div>
+                    ) : hasImage ? (
                         <img src={imageUrl} alt={data.title} className="apod-card-dark__media-img" />
                     ) : (
                         <div className="apod-card-dark__media-placeholder" aria-hidden>
@@ -81,9 +93,9 @@ export const ApodCard = ({ data }: ApodCardProps) => {
 
                 <h1 className="apod-card-dark__title">{data.title}</h1>
 
-                <div ref={scrollRef} className="apod-card-dark__desc no-scrollbar panel-scroll-auto">
+                <AutoScrollContainer className="apod-card-dark__desc">
                     <p>{data.explanation}</p>
-                </div>
+                </AutoScrollContainer>
 
                 <div className="apod-card-dark__footer">
                     <span className="apod-card-dark__date">{data.date}</span>
@@ -165,6 +177,21 @@ export const ApodCard = ({ data }: ApodCardProps) => {
                     border: 1px solid rgba(255,255,255,0.12);
                     min-height: 120px;
                     max-height: 160px;
+                }
+                .nasa-video-wrapper {
+                    position: relative;
+                    width: 100%;
+                    padding-top: 56.25%;
+                    background: rgba(0,0,0,0.6);
+                }
+                .nasa-video-iframe {
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    border: 0;
+                    border-radius: 0.75rem;
                 }
                 .apod-card-dark__media-img {
                     width: 100%;

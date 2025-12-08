@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+
+import { AutoScrollContainer } from "../../common/AutoScrollContainer";
 
 type NewsItem = {
   title: string;
@@ -22,7 +24,6 @@ const stripHtml = (html: string) => {
 // Panel lateral de noticias
 export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   const validItems = items && items.length > 0 ? items : [{ title: "Sin noticias disponibles" }];
 
@@ -37,23 +38,6 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
   const current = validItems[currentIndex];
   const sourceLabel = current.source || "El País";
 
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTop = 0;
-    let rafId: number;
-    const step = () => {
-      if (!el) return;
-      const maxScroll = el.scrollHeight - el.clientHeight;
-      if (maxScroll > 2) {
-        el.scrollTop = (el.scrollTop + 0.7) % (maxScroll + 14);
-      }
-      rafId = requestAnimationFrame(step);
-    };
-    rafId = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(rafId);
-  }, [currentIndex, current.summary, current.title]);
-
   return (
     <div className="news-card-dark" data-testid="panel-news">
       <div className="news-card-dark__header">
@@ -63,12 +47,12 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
 
       <div className="news-card-dark__body panel-body" key={currentIndex}>
         <div className="news-card-dark__source panel-item-subtitle">Fuente: {sourceLabel}</div>
-        <div ref={scrollRef} className="news-card-dark__content no-scrollbar panel-scroll-auto">
+        <AutoScrollContainer className="news-card-dark__content">
           <h2 className="news-card-dark__headline panel-item-title">{stripHtml(current.title)}</h2>
           {current.summary && (
             <p className="news-card-dark__summary panel-item-subtitle">{stripHtml(current.summary)}</p>
           )}
-        </div>
+        </AutoScrollContainer>
       </div>
 
       {validItems.length > 1 && (
