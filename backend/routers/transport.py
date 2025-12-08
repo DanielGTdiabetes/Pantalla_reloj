@@ -11,6 +11,30 @@ from fastapi.concurrency import run_in_threadpool
 router = APIRouter(prefix="/api/transport", tags=["transport"])
 logger = logging.getLogger(__name__)
 
+AIS_TYPE_MAP: Dict[int, str] = {
+    60: "Pasajeros",
+    70: "Carga",
+    71: "Carga",
+    72: "Carga",
+    73: "Carga",
+    74: "Carga",
+    75: "Carga",
+    76: "Carga",
+    77: "Carga",
+    78: "Carga",
+    79: "Carga",
+    80: "Petrolero",
+    81: "Petrolero",
+    82: "Petrolero",
+    83: "Petrolero",
+    84: "Petrolero",
+    85: "Petrolero",
+    86: "Petrolero",
+    87: "Petrolero",
+    88: "Petrolero",
+    89: "Petrolero",
+}
+
 def _load_main_module():
     """Lazy load main module to access services."""
     return importlib.import_module("backend.main")
@@ -29,6 +53,24 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
+
+
+def _resolve_ship_type(raw_type: Any) -> Optional[str]:
+    if raw_type is None:
+        return None
+
+    if isinstance(raw_type, (int, float)):
+        return AIS_TYPE_MAP.get(int(raw_type)) or str(int(raw_type))
+
+    if isinstance(raw_type, str):
+        normalized = raw_type.strip()
+        if normalized.isdigit():
+            mapped = AIS_TYPE_MAP.get(int(normalized))
+            if mapped:
+                return mapped
+        return normalized if normalized else None
+
+    return None
 
 import requests
 from functools import lru_cache
@@ -229,11 +271,14 @@ async def get_transport_nearby(
                         and valid_bbox[2] <= slon <= valid_bbox[3]
                     ):
                         props = feature.get("properties", {}) or {}
+                        raw_type = props.get("shipType") or props.get("type")
+                        ship_type = _resolve_ship_type(raw_type)
                         ships_data.append({
                             "id": props.get("mmsi") or f"ship-{slat:.4f}-{slon:.4f}",
                             "name": props.get("name") or str(props.get("mmsi") or ""),
                             "mmsi": props.get("mmsi"),
-                            "type": props.get("shipType"),
+                            "type": ship_type or raw_type,
+                            "ship_type": ship_type or raw_type,
                             "speed_kts": props.get("speed"),
                             "heading_deg": props.get("heading"),
                             "lat": slat,

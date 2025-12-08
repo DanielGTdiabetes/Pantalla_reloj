@@ -389,7 +389,7 @@ async def get_nasa_apod() -> Dict[str, Any]:
             return result
     except Exception as e:
         logger.error(f"Error fetching APOD: {e}")
-        return {"error": str(e)}
+        return {"error": str(e), "media_type": None}
 
 
 def init_cache(store: CacheStore) -> None:

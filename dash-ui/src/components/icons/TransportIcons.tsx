@@ -51,4 +51,15 @@ export const ShipIcon: React.FC<{ size?: number; className?: string }> = ({ size
   </svg>
 );
 
+export const TransportRadarIcon: React.FC<{ size?: number; className?: string }> = ({ size = 40, className }) => (
+  <img
+    src="/icons/transport/transport-radar.svg"
+    alt="Transportes cercanos"
+    width={size}
+    height={size}
+    className={className}
+    style={{ objectFit: "contain" }}
+  />
+);
+
 export default PlaneIcon;
