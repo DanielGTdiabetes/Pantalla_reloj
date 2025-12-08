@@ -45,6 +45,13 @@ declare module "react" {
   }
   export type Ref<T> = MutableRefObject<T> | ((instance: T | null) => void) | null;
   export type RefCallback<T> = (instance: T | null) => void;
+  export interface SyntheticEvent<T = Element, E = Event> {
+    nativeEvent: E;
+    target: T;
+    currentTarget: T;
+    preventDefault(): void;
+    stopPropagation(): void;
+  }
   export function createElement(type: any, props?: any, ...children: ReactNode[]): ReactNode;
   export function cloneElement(element: ReactNode, props?: any, ...children: ReactNode[]): ReactNode;
   export function createContext<T>(defaultValue: T): Context<T>;
