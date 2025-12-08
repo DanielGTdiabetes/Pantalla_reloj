@@ -52,6 +52,44 @@ PICTOCODE_TO_ICON = {
     35: "snow",                  # Mostly cloudy with snow shower
 }
 
+conditions = {
+    1: "Soleado",
+    2: "Soleado",
+    3: "Soleado",
+    4: "Soleado",
+    5: "Soleado",
+    6: "Parcialmente nublado",
+    7: "Parcialmente nublado",
+    8: "Nublado",
+    9: "Lluvia",
+    10: "Lluvia ligera",
+    11: "Lluvia con tormenta",
+    12: "Lluvia intensa",
+    13: "Nieve",
+    14: "Nieve",
+    15: "Nieve",
+    16: "Nieve",
+    17: "Chubasco",
+    18: "Chubasco ligero",
+    19: "Chubasco con tormenta",
+    20: "Chubasco intenso con tormenta",
+    21: "Nieve",
+    22: "Nieve",
+    23: "Nieve",
+    24: "Nieve ligera",
+    25: "Niebla",
+    26: "Niebla",
+    27: "Soleado",
+    28: "Claro",
+    29: "Lluvia",
+    30: "Nieve",
+    31: "Nieve",
+    32: "Tormenta",
+    33: "Nublado",
+    34: "Lluvia",
+    35: "Nieve",
+}
+
 
 def map_pictocode_to_icon(pictocode: int, is_night: bool = False) -> str:
     """
@@ -86,43 +124,6 @@ def map_pictocode_to_condition(pictocode: int) -> str:
     Returns:
         Descripción del clima en español
     """
-        conditions = {
-        1: "Soleado",
-        2: "Soleado",
-        3: "Soleado",
-        4: "Soleado",
-        5: "Soleado",
-        6: "Parcialmente nublado",
-        7: "Parcialmente nublado",
-        8: "Nublado",
-        9: "Lluvia",
-        10: "Lluvia ligera",
-        11: "Lluvia con tormenta",
-        12: "Lluvia intensa",
-        13: "Nieve",
-        14: "Nieve",
-        15: "Nieve",
-        16: "Nieve",
-        17: "Chubasco",
-        18: "Chubasco ligero",
-        19: "Chubasco con tormenta",
-        20: "Chubasco intenso con tormenta",
-        21: "Nieve",
-        22: "Nieve",
-        23: "Nieve",
-        24: "Nieve ligera",
-        25: "Niebla",
-        26: "Niebla",
-        27: "Soleado",
-        28: "Claro",
-        29: "Lluvia",
-        30: "Nieve",
-        31: "Nieve",
-        32: "Tormenta",
-        33: "Nublado",
-        34: "Lluvia",
-        35: "Nieve",
-    }
     return conditions.get(pictocode, "Desconocido")
 
 
