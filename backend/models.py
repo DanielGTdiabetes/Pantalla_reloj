@@ -947,6 +947,21 @@ class EphemeridesTopLevelConfig(BaseModel):
     timezone: str = Field(default="Europe/Madrid", min_length=1)
 
 
+class LocationConfig(BaseModel):
+    """Ubicación principal configurada para el dispositivo."""
+
+    name: Optional[str] = None
+    lat: float
+    lon: float
+
+
+class WeatherConfig(BaseModel):
+    """Configuración global de clima."""
+
+    enabled: bool = True
+    provider: Literal["meteoblue", "openweathermap"] = "meteoblue"
+
+
 class OpenSkyOAuth2Config(BaseModel):
     """Configuración OAuth2 para OpenSky."""
     client_id: Optional[str] = Field(default=None, max_length=512)
@@ -1015,6 +1030,8 @@ class AppConfig(BaseModel):
     news: Optional[NewsTopLevelConfig] = None
     ephemerides: Optional[EphemeridesTopLevelConfig] = None
     calendar: Optional[CalendarConfig] = None
+    location: Optional[LocationConfig] = None
+    weather: Optional[WeatherConfig] = None
     harvest: HarvestConfig = Field(default_factory=HarvestConfig)
     saints: SaintsConfig = Field(default_factory=SaintsConfig)
     opensky: Optional[OpenSkyTopLevelConfig] = None
