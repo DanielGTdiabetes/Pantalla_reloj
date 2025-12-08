@@ -1,4 +1,4 @@
-import type { ReactEventHandler } from "react";
+import type { SyntheticEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 type TransportData = {
@@ -100,7 +100,7 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
   const current = items[currentIndex];
   const iconUrl = isPlane ? "/img/icons/3d/plane.png" : "/img/icons/3d/ship.png";
 
-  const handleIconError: ReactEventHandler<HTMLImageElement> = event => {
+  const handleIconError = (event: SyntheticEvent<HTMLImageElement, Event>) => {
     const fallback = isPlane ? "/img/icons/3d/plane.png" : "/img/icons/3d/ship.png";
     if (event.currentTarget.src !== fallback) {
       event.currentTarget.src = fallback;
