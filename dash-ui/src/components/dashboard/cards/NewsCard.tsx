@@ -37,7 +37,7 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
   return (
     <div className="news-card-dark">
       <div className="news-card-dark__header">
-        <img src="/img/icons/modern/news.png" alt="" className="news-card-dark__header-icon" />
+        <img src="/img/icons/3d/warning.png" alt="" className="news-card-dark__header-icon" />
         <span className="news-card-dark__title">Noticias</span>
       </div>
 

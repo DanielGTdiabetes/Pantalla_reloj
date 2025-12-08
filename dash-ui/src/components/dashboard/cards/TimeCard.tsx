@@ -26,7 +26,7 @@ export const TimeCard = ({ timezone }: TimeCardProps): JSX.Element => {
   return (
     <div className="time-card-dark">
       <div className="time-card-dark__header">
-        <img src="/img/icons/modern/clock.png" alt="" className="time-card-dark__header-icon" />
+        <img src="/img/icons/3d/sun-smile.png" alt="" className="time-card-dark__header-icon" />
         <span className="time-card-dark__title">Reloj</span>
       </div>
 

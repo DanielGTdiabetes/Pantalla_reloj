@@ -116,12 +116,12 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
   }
 
   // Use fetched image or fallback to icon
-  const imageUrl = saintInfo?.originalimage?.source || saintInfo?.thumbnail?.source || "/img/icons/modern/saints.png";
+  const imageUrl = saintInfo?.originalimage?.source || saintInfo?.thumbnail?.source || "/img/icons/3d/sun-smile.png";
 
   return (
     <div className="saints-card-dark">
       <div className="saints-card-dark__header">
-        <img src="/img/icons/modern/saints.png" alt="" className="saints-card-dark__header-icon" />
+        <img src="/img/icons/3d/sun-smile.png" alt="" className="saints-card-dark__header-icon" />
         <span className="saints-card-dark__title">Santoral</span>
       </div>
 

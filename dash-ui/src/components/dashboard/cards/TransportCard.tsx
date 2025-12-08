@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import type { SyntheticEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type TransportData = {
   planes?: Array<{
@@ -39,8 +40,35 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
   const [activeTab, setActiveTab] = useState<TransportType>("plane");
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  const planes = data?.planes || [];
-  const ships = data?.ships || [];
+  const normalizedPlanes = useMemo(() => {
+    return (data?.planes || []).map((plane: any) => ({
+      callsign: plane.callsign ?? plane.cs ?? plane.flight ?? "",
+      origin: plane.origin ?? plane.from ?? "",
+      destination: plane.destination ?? plane.dest ?? "",
+      altitude: plane.altitude ?? plane.alt ?? null,
+      speed: plane.speed ?? plane.spd ?? null,
+      heading: plane.heading ?? plane.hdg ?? null,
+      distance_km: plane.distance_km ?? plane.distance ?? null,
+      airline: plane.airline ?? plane.co ?? "",
+      aircraft_type: plane.aircraft_type ?? plane.type ?? "",
+      lat: plane.lat,
+      lon: plane.lon,
+    }));
+  }, [data?.planes]);
+
+  const normalizedShips = useMemo(() => {
+    return (data?.ships || []).map((ship: any) => ({
+      name: ship.name ?? ship.vessel ?? ship.mmsi ?? "",
+      type: ship.type ?? ship.vessel_type ?? "",
+      destination: ship.destination ?? ship.dest ?? "",
+      speed: ship.speed ?? ship.spd ?? null,
+      heading: ship.heading ?? ship.hdg ?? null,
+      distance_km: ship.distance_km ?? ship.distance ?? null,
+    }));
+  }, [data?.ships]);
+
+  const planes = normalizedPlanes;
+  const ships = normalizedShips;
   const isPlane = activeTab === "plane";
   const items = isPlane ? planes : ships;
 
@@ -70,8 +98,14 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
   }, [items.length, activeTab]);
 
   const current = items[currentIndex];
-  // Use new modern icons
-  const iconUrl = isPlane ? "/img/icons/modern/plane.png" : "/img/icons/modern/ship.png";
+  const iconUrl = isPlane ? "/img/icons/3d/plane.png" : "/img/icons/3d/ship.png";
+
+  const handleIconError = (event: SyntheticEvent<HTMLImageElement>) => {
+    const fallback = isPlane ? "/img/icons/3d/plane.png" : "/img/icons/3d/ship.png";
+    if (event.currentTarget.src !== fallback) {
+      event.currentTarget.src = fallback;
+    }
+  };
 
   const getSpeed = (item: any) => {
     const s = item.speed ?? item.spd;
@@ -94,20 +128,25 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
   return (
     <div className="transport-card-dark">
       <div className="transport-card-dark__header">
-        <img src={iconUrl} alt="" className="transport-card-dark__header-icon" />
+        <img src={iconUrl} alt="" className="transport-card-dark__header-icon" onError={handleIconError} />
         <span className="transport-card-dark__title">{isPlane ? "Aviones Cercanos" : "Barcos Cercanos"}</span>
       </div>
 
       <div className="transport-card-dark__body">
         {items.length === 0 ? (
           <div className="transport-card-dark__empty">
-            <img src={iconUrl} alt="" className="transport-card-dark__empty-icon" />
+            <img src={iconUrl} alt="" className="transport-card-dark__empty-icon" onError={handleIconError} />
             <span className="transport-card-dark__empty-text">Escaneando...</span>
           </div>
         ) : (
           <div className="transport-card-dark__content" key={`${activeTab}-${currentIndex}`}>
             <div className="transport-card-dark__icon-container">
-              <img src={iconUrl} alt={isPlane ? "avión" : "barco"} className="transport-card-dark__main-icon" />
+              <img
+                src={iconUrl}
+                alt={isPlane ? "avión" : "barco"}
+                className="transport-card-dark__main-icon"
+                onError={handleIconError}
+              />
             </div>
 
             <div className="transport-card-dark__info">

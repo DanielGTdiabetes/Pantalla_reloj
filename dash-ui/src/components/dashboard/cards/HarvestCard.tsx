@@ -118,7 +118,7 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
             display: block;
             width: 48px;
             height: 48px;
-            background-image: url('/img/icons/modern/harvest.png');
+            background-image: url('/img/icons/3d/harvest-basket.png');
             background-size: contain;
             background-repeat: no-repeat;
             filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
