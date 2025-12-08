@@ -1,0 +1,52 @@
+.panel-bg-night {
+  background: radial-gradient(circle at 20% 0%, rgba(56, 189, 248, 0.22), transparent 55%),
+    radial-gradient(circle at 80% 10%, rgba(167, 139, 250, 0.25), transparent 45%),
+    linear-gradient(135deg, #050816, #020617);
+}
+
+.panel-bg-dawn {
+  background: radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.35), transparent 45%),
+    linear-gradient(135deg, #ff9a9e, #fad0c4 40%, #1f2933 100%);
+}
+
+.panel-bg-day {
+  background: radial-gradient(circle at 90% 10%, rgba(14, 165, 233, 0.2), transparent 45%),
+    linear-gradient(135deg, #1d4ed8, #22c1c3);
+}
+
+.panel-bg-dusk {
+  background: radial-gradient(circle at 30% 10%, rgba(236, 72, 153, 0.22), transparent 50%),
+    linear-gradient(135deg, #0f172a, #7c3aed);
+}
+
+.panel-bg-night,
+.panel-bg-dawn,
+.panel-bg-day,
+.panel-bg-dusk {
+  transition: background 0.8s ease-in-out;
+}
+
+.panel-card {
+  background: rgba(15, 23, 42, 0.7);
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.5);
+}
+
+.panel-icon {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auto-scroll-container {
+  overflow: hidden;
+  position: relative;
+}
+
+.auto-scroll-container::-webkit-scrollbar {
+  display: none;
+}

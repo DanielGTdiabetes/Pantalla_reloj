@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
+
+import { AutoScrollContainer } from "../../common/AutoScrollContainer";
 
 export type EnrichedSaint = {
   name: string;
@@ -31,8 +33,6 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [saintInfo, setSaintInfo] = useState<SaintInfo | null>(null);
   const [loading, setLoading] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
   const getSaintName = (s: string | EnrichedSaint) => {
     if (typeof s === "string") return s;
     return s.name;
@@ -104,27 +104,7 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
     fetchWiki();
   }, [currentName, fullName, currentEntry]);
 
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [currentIndex]);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    let rafId: number;
-    const step = () => {
-      if (!el) return;
-      const maxScroll = el.scrollHeight - el.clientHeight;
-      if (maxScroll > 2) {
-        el.scrollTop = (el.scrollTop + 0.5) % (maxScroll + 14);
-      }
-      rafId = requestAnimationFrame(step);
-    };
-    rafId = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(rafId);
-  }, [currentIndex, saintInfo?.extract]);
-
-  if (!saints || saints.length === 0) {
+    if (!saints || saints.length === 0) {
     return (
       <div className="saints-card-dark saints-card-dark__empty" data-testid="panel-santoral">
         <span className="saints-card-dark__empty-text panel-item-title">Hoy no hay santos destacados</span>
@@ -149,7 +129,7 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
 
         <div className="saints-card-dark__info">
           <h2 className="saints-card-dark__name panel-item-title">{fullName}</h2>
-          <div ref={scrollRef} className="saints-card-dark__bio no-scrollbar panel-scroll-auto">
+          <AutoScrollContainer className="saints-card-dark__bio">
             {loading ? (
               <p className="saints-card-dark__loading">Buscando información...</p>
             ) : saintInfo?.extract ? (
@@ -157,7 +137,7 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
             ) : (
               <p className="saints-card-dark__loading">No se encontró información detallada.</p>
             )}
-          </div>
+          </AutoScrollContainer>
         </div>
       </div>
 

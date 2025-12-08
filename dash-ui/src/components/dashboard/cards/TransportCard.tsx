@@ -166,7 +166,7 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
 
             <div className="transport-card-dark__info">
               <div className="transport-card-dark__name panel-item-title">
-                {isPlane ? (current as any).callsign || "Vuelo Desconocido" : (current as any).name || "Barco Desconocido"}
+                {isPlane ? (current as any).callsign || "Vuelo desconocido" : (current as any).name || (current as any).mmsi || "Barco desconocido"}
               </div>
 
               {(current as any).destination && (
@@ -174,11 +174,11 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
               )}
 
               <div className="transport-card-dark__meta-grid">
-                {renderDetail("Altitud", (current as any).altitude ? `${Math.round((current as any).altitude)} m` : "--")}
                 {renderDetail("Distancia", (current as any).distance_km ? `${(current as any).distance_km.toFixed(1)} km` : "--", true)}
                 {renderDetail("Velocidad", getSpeed(current) || "--")}
                 {renderDetail("Rumbo", getHeading(current) !== null ? `${getHeading(current)}°` : "--")}
                 {renderDetail("Tipo", getType(current) || "--")}
+                {isPlane && renderDetail("Altitud", (current as any).altitude ? `${Math.round((current as any).altitude)} m` : "--")}
               </div>
             </div>
           </div>

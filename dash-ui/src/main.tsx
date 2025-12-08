@@ -12,6 +12,7 @@ import "./styles/shadows.css";
 import "./styles/effects.css";
 import "./styles/accessibility.css";
 import "./styles/compact-layout.css";
+import "./styles/panels.css";
 import "./styles/global.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
