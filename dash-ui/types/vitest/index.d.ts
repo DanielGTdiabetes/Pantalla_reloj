@@ -24,6 +24,11 @@ declare module "vitest" {
     mocked<T>(item: T, options?: { shallow?: boolean }): T;
     useFakeTimers(): void;
     useRealTimers(): void;
+    isFakeTimers(): boolean;
+    runOnlyPendingTimers(): void;
+    advanceTimersByTime(ms: number): void;
+    stubGlobal(name: string, value: unknown): void;
+    unstubAllGlobals(): void;
     setSystemTime(time: unknown): void;
     clearAllMocks(): void;
     resetAllMocks(): void;

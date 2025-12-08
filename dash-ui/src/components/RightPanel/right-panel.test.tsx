@@ -12,18 +12,18 @@ import { NewsCard } from "../dashboard/cards/NewsCard";
 import { HistoricalEventsCard } from "../dashboard/cards/HistoricalEventsCard";
 import "../../test/setup";
 
-const originalFetch = global.fetch;
-const originalRaf = global.requestAnimationFrame;
-const originalCancelRaf = global.cancelAnimationFrame;
+const originalFetch = globalThis.fetch;
+const originalRaf = globalThis.requestAnimationFrame;
+const originalCancelRaf = globalThis.cancelAnimationFrame;
 
 describe("Right panel components", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, json: async () => ({}) })) as any);
-    global.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+    globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => {
       return setTimeout(() => cb(performance.now()), 0) as unknown as number;
     }) as any;
-    global.cancelAnimationFrame = ((id: number) => clearTimeout(id)) as any;
+    globalThis.cancelAnimationFrame = ((id: number) => clearTimeout(id)) as any;
   });
 
   afterEach(() => {
@@ -34,10 +34,10 @@ describe("Right panel components", () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     if (originalRaf) {
-      global.requestAnimationFrame = originalRaf;
+      globalThis.requestAnimationFrame = originalRaf;
     }
     if (originalCancelRaf) {
-      global.cancelAnimationFrame = originalCancelRaf;
+      globalThis.cancelAnimationFrame = originalCancelRaf;
     }
   });
 
