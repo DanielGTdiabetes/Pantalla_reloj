@@ -2533,25 +2533,25 @@ async def upload_ics_file(
             detail={"error": f"Failed to persist configuration: {str(exc)}", "missing": ["config.write"]},
         ) from exc
 
-    secret_store.set_secret("calendar_ics_path", str(ICS_STORAGE_PATH))
+    secret_store.set_secret("calendar_ics_path", str(current_ics_path))
 
     reloaded = reload_runtime_config(config_manager)
     if reloaded:
         global map_reset_counter
         map_reset_counter += 1
-    _update_calendar_runtime_state("ics", True, "stale", None, str(ICS_STORAGE_PATH))
+    _update_calendar_runtime_state("ics", True, "stale", None, str(current_ics_path))
     calendar_state = _get_calendar_runtime_state()
     
     # Contar eventos en el archivo
     try:
-        events = fetch_ics_calendar_events(path=str(ICS_STORAGE_PATH))
+        events = fetch_ics_calendar_events(path=str(current_ics_path))
         events_count = len(events)
     except Exception:
         events_count = 0
     
     # Obtener metadatos del archivo guardado
     try:
-        stat_info = ICS_STORAGE_PATH.stat()
+        stat_info = current_ics_path.stat()
         mtime_iso = datetime.fromtimestamp(stat_info.st_mtime, tz=timezone.utc).isoformat()
         file_size = stat_info.st_size
     except OSError:
@@ -2560,7 +2560,7 @@ async def upload_ics_file(
 
     response_payload = {
         "ok": True,
-        "ics_path": str(ICS_STORAGE_PATH),
+        "ics_path": str(current_ics_path),
         "size": file_size,
     }
 
@@ -2576,7 +2576,7 @@ async def upload_calendar_ics_file(
     Pasos:
     1. Guardar a tmp (/var/lib/pantalla-reloj/calendar/tmp/<uuid>.ics)
     2. Parsear con icalendar/ics para validar
-    3. Mover a /var/lib/pantalla-reloj/calendar/current.ics de forma atómica
+    3. Mover a /var/lib/pantalla-reloj/calendar/<filename>.ics de forma atómica
     4. Hacer PATCH merge seguro de config (calendar.enabled=true, source="ics", etc.)
     
     Returns:
@@ -2719,8 +2719,11 @@ async def upload_calendar_ics_file(
             "detail": f"Cannot parse ICS file: {str(exc)}"
         }
     
-    # Paso 3: Mover a current.ics de forma atómica
-    current_ics_path = ICS_STORAGE_DIR / "current.ics"
+    # Paso 3: Mover a <filename>.ics de forma atómica
+    sanitized_filename = (Path(file.filename).name if file.filename else "calendar.ics")
+    if not sanitized_filename.lower().endswith(".ics"):
+        sanitized_filename = f"{sanitized_filename}.ics"
+    current_ics_path = ICS_STORAGE_DIR / sanitized_filename
     try:
         # Reemplazar atómicamente
         tmp_file.replace(current_ics_path)
@@ -2748,48 +2751,53 @@ async def upload_calendar_ics_file(
         }
     
     # Paso 4: PATCH merge seguro de config
+    range_days = 14
+    calendar_data: Dict[str, Any] = {}
+    ics_data: Dict[str, Any] = {}
     try:
         config = config_manager.read()
         config_data = config.model_dump(mode="json", exclude_unset=False)
-        
+
         # Asegurar que calendar existe
-        if "calendar" not in config_data:
-            config_data["calendar"] = {}
-        
-        calendar_data = config_data["calendar"]
-        
+        calendar_block = config_data.get("calendar")
+        calendar_data = calendar_block if isinstance(calendar_block, dict) else {}
+        if not calendar_data:
+            calendar_data = {}
+            config_data["calendar"] = calendar_data
+
         # Merge seguro: solo actualizar campos específicos sin borrar otros
         calendar_data["enabled"] = True
         calendar_data["source"] = "ics"
-        
+        calendar_data["provider"] = "ics"
+
         # Asegurar que ics existe
-        if "ics" not in calendar_data:
-            calendar_data["ics"] = {}
-        
-        ics_data = calendar_data["ics"]
-        
+        ics_block = calendar_data.get("ics")
+        ics_data = ics_block if isinstance(ics_block, dict) else {}
+        calendar_data["ics"] = ics_data
+
         # Actualizar campos ICS sin borrar otros (merge seguro)
-        ics_data["filename"] = "current.ics"
+        ics_data["filename"] = sanitized_filename
         ics_data["stored_path"] = str(current_ics_path)
+        ics_data["path"] = str(current_ics_path)
+        ics_data["file_path"] = str(current_ics_path)
         # Preservar max_events y days_ahead si existen, sino usar defaults
-        if "max_events" not in ics_data:
-            ics_data["max_events"] = 50
-        if "days_ahead" not in ics_data:
-            ics_data["days_ahead"] = 14
+        ics_data.setdefault("max_events", 50)
+        ics_data.setdefault("days_ahead", 14)
         ics_data["last_ok"] = datetime.now(timezone.utc).isoformat()
         ics_data["last_error"] = None
+        # Propagar days_ahead al nivel superior para compatibilidad
+        calendar_data["days_ahead"] = ics_data.get("days_ahead", 14)
         # Preservar google si existe
-        if "google" not in calendar_data:
+        if "google" not in calendar_data or calendar_data.get("google") is None:
             calendar_data["google"] = {}
-        
+
         # Guardar configuración de forma atómica
         _persist_config(config_data, reason="calendar_ics_upload")
+        range_days = ics_data.get("days_ahead", 14)
     except Exception as exc:
         logger.warning("[calendar] Failed to update config after ICS upload: %s", exc)
         # No fallar, el archivo ya está guardado
-    
-    # Obtener range_days de la config
-    range_days = ics_data.get("days_ahead", 14) if "ics" in calendar_data else 14
+        range_days = ics_data.get("days_ahead", 14) if isinstance(ics_data, dict) else 14
     
     return {
         "ok": True,

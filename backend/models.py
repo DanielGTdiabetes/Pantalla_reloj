@@ -760,6 +760,7 @@ class CalendarICSConfig(BaseModel):
     """Configuración de calendario ICS."""
     filename: Optional[str] = Field(default=None, max_length=256)  # nombre almacenado (solo lectura)
     stored_path: Optional[str] = Field(default=None, max_length=1024)  # ruta en disco (solo backend, no se expone)
+    path: Optional[str] = Field(default=None, max_length=1024)  # ruta del archivo ICS
     max_events: int = Field(default=50, ge=1, le=1000)
     days_ahead: int = Field(default=14, ge=1, le=90)
     # Legacy fields para retrocompatibilidad
