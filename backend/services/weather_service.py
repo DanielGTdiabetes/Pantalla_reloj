@@ -210,8 +210,36 @@ class WeatherService:
         """
         data_1h = data.get("data_1h", {})
         
-        # Usar el primer índice (hora actual)
+        # Seleccionar el índice horario más cercano a la hora actual (evita usar siempre el slot de medianoche)
         idx = 0
+        times = data_1h.get("time") or []
+        if times:
+            try:
+                tzinfo = None
+                metadata = data.get("metadata") or {}
+                tz_name = metadata.get("timezone")
+                if tz_name:
+                    try:
+                        from zoneinfo import ZoneInfo
+                        tzinfo = ZoneInfo(tz_name)
+                    except Exception:
+                        tzinfo = None
+
+                now = datetime.now(tzinfo) if tzinfo else datetime.now()
+                parsed_times = []
+                for i, time_str in enumerate(times):
+                    try:
+                        dt = datetime.strptime(time_str, "%Y-%m-%d %H:%M")
+                        if tzinfo:
+                            dt = dt.replace(tzinfo=tzinfo)
+                        parsed_times.append((i, dt))
+                    except Exception:
+                        continue
+
+                if parsed_times:
+                    idx = min(parsed_times, key=lambda pair: abs((pair[1] - now).total_seconds()))[0]
+            except Exception as err:  # noqa: BLE001
+                self.logger.debug(f"Could not resolve current Meteoblue hour index: {err}")
         
         temperature = None
         pictocode = None
