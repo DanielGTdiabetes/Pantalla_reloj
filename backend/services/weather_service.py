@@ -15,13 +15,13 @@ logger = logging.getLogger(__name__)
 # Mapeo de pictocodes de Meteoblue a iconos internos
 # Fuente: https://content.meteoblue.com/en/specifications/standards/symbols-and-pictograms
 PICTOCODE_TO_ICON = {
-    1: "clear-day",              # Clear, cloudless sky
-    2: "partly-cloudy-day",      # Clear, few cirrus
-    3: "partly-cloudy-day",      # Clear with cirrus
-    4: "partly-cloudy-day",      # Clear with few low clouds
-    5: "partly-cloudy-day",      # Clear with few low clouds and cirrus
-    6: "cloudy",                 # Partly cloudy
-    7: "cloudy",                 # Partly cloudy and cirrus
+    1: "clear_day",              # Clear, cloudless sky
+    2: "clear_day",              # Clear, few cirrus
+    3: "clear_day",              # Clear with cirrus
+    4: "clear_day",              # Clear with few low clouds
+    5: "clear_day",              # Clear with few low clouds and cirrus
+    6: "partly_cloudy",          # Partly cloudy
+    7: "partly_cloudy",          # Partly cloudy and cirrus
     8: "cloudy",                 # Mostly cloudy
     9: "rain",                   # Rain
     10: "rain",                  # Light rain
@@ -41,8 +41,8 @@ PICTOCODE_TO_ICON = {
     24: "snow",                  # Light snow shower
     25: "fog",                   # Fog
     26: "fog",                   # Fog depositing rime
-    27: "partly-cloudy-day",     # Fair skies
-    28: "rain",                  # Mostly fair
+    27: "clear_day",             # Fair skies
+    28: "partly_cloudy",         # Mostly fair
     29: "rain",                  # Mostly cloudy with rain
     30: "snow",                  # Mostly cloudy with sleet
     31: "snow",                  # Mostly cloudy with snow
@@ -64,12 +64,15 @@ def map_pictocode_to_icon(pictocode: int, is_night: bool = False) -> str:
     Returns:
         Nombre del icono (ej: "clear-day", "rain", etc.)
     """
-    icon = PICTOCODE_TO_ICON.get(pictocode, "cloudy")
-    
+    icon = PICTOCODE_TO_ICON.get(pictocode, "unknown")
+
     # Convertir variantes diurnas a nocturnas si es necesario
     if is_night:
-        icon = icon.replace("-day", "-night")
-    
+        if icon == "clear_day":
+            icon = "clear_night"
+        elif icon == "partly_cloudy":
+            icon = "partly_cloudy_night"
+
     return icon
 
 
@@ -83,42 +86,42 @@ def map_pictocode_to_condition(pictocode: int) -> str:
     Returns:
         Descripción del clima en español
     """
-    conditions = {
-        1: "Despejado",
-        2: "Despejado",
-        3: "Despejado",
-        4: "Despejado",
-        5: "Despejado",
+        conditions = {
+        1: "Soleado",
+        2: "Soleado",
+        3: "Soleado",
+        4: "Soleado",
+        5: "Soleado",
         6: "Parcialmente nublado",
         7: "Parcialmente nublado",
-        8: "Mayormente nublado",
+        8: "Nublado",
         9: "Lluvia",
         10: "Lluvia ligera",
         11: "Lluvia con tormenta",
-        12: "Lluvia intensa con tormenta",
-        13: "Aguanieve",
-        14: "Aguanieve ligera",
+        12: "Lluvia intensa",
+        13: "Nieve",
+        14: "Nieve",
         15: "Nieve",
-        16: "Nieve ligera",
+        16: "Nieve",
         17: "Chubasco",
         18: "Chubasco ligero",
         19: "Chubasco con tormenta",
         20: "Chubasco intenso con tormenta",
-        21: "Chubasco de aguanieve",
-        22: "Chubasco ligero de aguanieve",
-        23: "Chubasco de nieve",
-        24: "Chubasco ligero de nieve",
+        21: "Nieve",
+        22: "Nieve",
+        23: "Nieve",
+        24: "Nieve ligera",
         25: "Niebla",
-        26: "Niebla con escarcha",
-        27: "Cielos despejados",
-        28: "Mayormente despejado",
-        29: "Mayormente nublado con lluvia",
-        30: "Mayormente nublado con aguanieve",
-        31: "Mayormente nublado con nieve",
-        32: "Mayormente nublado con tormenta",
-        33: "Nublado sin precipitación",
-        34: "Mayormente nublado con chubascos",
-        35: "Mayormente nublado con chubascos de nieve",
+        26: "Niebla",
+        27: "Soleado",
+        28: "Claro",
+        29: "Lluvia",
+        30: "Nieve",
+        31: "Nieve",
+        32: "Tormenta",
+        33: "Nublado",
+        34: "Lluvia",
+        35: "Nieve",
     }
     return conditions.get(pictocode, "Desconocido")
 
@@ -243,6 +246,12 @@ class WeatherService:
         
         icon = map_pictocode_to_icon(pictocode or 1, is_night)
         condition = map_pictocode_to_condition(pictocode or 1)
+
+        # Normalizar valores numéricos
+        temperature = round(temperature, 1) if isinstance(temperature, (int, float)) else temperature
+        felt_temperature = round(felt_temperature, 1) if isinstance(felt_temperature, (int, float)) else felt_temperature
+        windspeed = round(windspeed, 1) if isinstance(windspeed, (int, float)) else windspeed
+        humidity = round(humidity) if isinstance(humidity, (int, float)) else humidity
         
         return {
             "temperature": temperature,

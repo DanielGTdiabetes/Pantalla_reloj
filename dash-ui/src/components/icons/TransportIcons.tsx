@@ -10,33 +10,14 @@ const baseProps = (size = 40, className?: string) => ({
 });
 
 export const PlaneIcon: React.FC<{ size?: number; className?: string }> = ({ size = 40, className }) => (
-  <svg {...baseProps(size, className)}>
-    <defs>
-      <linearGradient id="planeBody" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stopColor="#9ce1ff" />
-        <stop offset="100%" stopColor="#2563eb" />
-      </linearGradient>
-      <linearGradient id="planeWing" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stopColor="#eff6ff" />
-        <stop offset="100%" stopColor="#c7d2fe" />
-      </linearGradient>
-    </defs>
-    <g filter="url(#shadow-plane)">
-      <path d="M70 14c6-4 14-4 20 0l10 92-40-2 10-90z" fill="url(#planeBody)" />
-      <path d="M40 104l36-12 12 0 32 12-44 12z" fill="url(#planeWing)" />
-      <path d="M70 108l-20 34c-1 2 0 4 2 4h12l18-36-12-2z" fill="#bfdbfe" />
-      <path d="M90 110l20 34c1 2 4 2 5 0l6-10c1-2 0-4-2-5l-27-21-2 2z" fill="#bfdbfe" />
-      <circle cx="80" cy="30" r="10" fill="#1d4ed8" opacity="0.8" />
-    </g>
-    <filter id="shadow-plane" x="-30" y="-20" width="220" height="220" colorInterpolationFilters="sRGB">
-      <feGaussianBlur stdDeviation="6" result="blur" />
-      <feOffset dx="0" dy="6" />
-      <feMerge>
-        <feMergeNode in="blur" />
-        <feMergeNode in="SourceGraphic" />
-      </feMerge>
-    </filter>
-  </svg>
+  <img
+    src="/icons/transport/plane-3d.png"
+    alt="Avión"
+    width={size}
+    height={size}
+    className={className}
+    style={{ objectFit: "contain", filter: "drop-shadow(0 6px 14px rgba(0,0,0,0.35))" }}
+  />
 );
 
 export const ShipIcon: React.FC<{ size?: number; className?: string }> = ({ size = 40, className }) => (

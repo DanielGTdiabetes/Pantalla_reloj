@@ -1,5 +1,18 @@
 import { useState, useEffect } from "react";
 
+const astroAsset = (path: string) => new URL(`../../../assets/astronomy/${path}`, import.meta.url).href;
+
+const MOON_ICON_MAP: Record<string, string> = {
+  new: astroAsset("moon/new.png"),
+  "waxing-crescent-1": astroAsset("moon/waxing_crescent-1.png"),
+  "first-quarter": astroAsset("moon/first-quarter.png"),
+  "waxing-gibbous-1": astroAsset("moon/waxing_gibbous-1.png"),
+  full: astroAsset("moon/full.png"),
+  "waning-gibbous-1": astroAsset("moon/waning_gibbous-1.png"),
+  "last-quarter": astroAsset("moon/last-quarter.png"),
+  "waning-crescent-1": astroAsset("moon/waning_crescent-1.png"),
+};
+
 type EphemeridesCardProps = {
   sunrise: string | null;
   sunset: string | null;
@@ -13,21 +26,21 @@ type AstroState = "sunrise" | "moon" | "sunset";
 // Get moon phase icon based on illumination percentage
 const getMoonPhaseIcon = (illumination: number | null): string => {
   if (illumination === null || Number.isNaN(illumination)) {
-    return "/icons/astronomy/moon/full.svg";
+    return MOON_ICON_MAP.full;
   }
 
   // Normalize to 0-1 if percentage
   const illum = illumination > 1 ? illumination / 100 : illumination;
   const normalized = Math.max(0, Math.min(1, illum));
 
-  if (normalized <= 0.12) return "/icons/astronomy/moon/new.svg";
-  if (normalized <= 0.25) return "/icons/astronomy/moon/waxing-crescent-1.svg";
-  if (normalized <= 0.37) return "/icons/astronomy/moon/first-quarter.svg";
-  if (normalized <= 0.5) return "/icons/astronomy/moon/waxing-gibbous-1.svg";
-  if (normalized <= 0.62) return "/icons/astronomy/moon/full.svg";
-  if (normalized <= 0.75) return "/icons/astronomy/moon/waning-gibbous-1.svg";
-  if (normalized <= 0.87) return "/icons/astronomy/moon/last-quarter.svg";
-  return "/icons/astronomy/moon/waning-crescent-1.svg";
+  if (normalized <= 0.12) return MOON_ICON_MAP.new;
+  if (normalized <= 0.25) return MOON_ICON_MAP["waxing-crescent-1"];
+  if (normalized <= 0.37) return MOON_ICON_MAP["first-quarter"];
+  if (normalized <= 0.5) return MOON_ICON_MAP["waxing-gibbous-1"];
+  if (normalized <= 0.62) return MOON_ICON_MAP.full;
+  if (normalized <= 0.75) return MOON_ICON_MAP["waning-gibbous-1"];
+  if (normalized <= 0.87) return MOON_ICON_MAP["last-quarter"];
+  return MOON_ICON_MAP["waning-crescent-1"];
 };
 
 // Panel lateral de astronomía (amanecer, atardecer y luna)
@@ -53,10 +66,10 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
       return getMoonPhaseIcon(illumination ?? null);
     }
     // Sun icons for sunrise/sunset
-    if (currentState === "sunset") { 
-      return "/icons/astronomy/sunset.svg"; 
+    if (currentState === "sunset") {
+      return astroAsset("sunset.png");
     }
-    return "/icons/astronomy/sunrise.svg";
+    return astroAsset("sunrise.png");
   };
 
   const getLabel = () => {

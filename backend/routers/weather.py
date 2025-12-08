@@ -30,6 +30,9 @@ secret_store = SecretStore()
 def resolve_weather_location(config: AppConfig, lat: float | None, lon: float | None) -> Tuple[float, float]:
     """Resuelve coordenadas para servicios de clima con múltiples fuentes."""
 
+    DEFAULT_LAT = 39.9378
+    DEFAULT_LON = -0.1014
+
     if lat is not None and lon is not None:
         return lat, lon
 
@@ -38,6 +41,8 @@ def resolve_weather_location(config: AppConfig, lat: float | None, lon: float | 
 
     if config.ephemerides and config.ephemerides.latitude is not None and config.ephemerides.longitude is not None:
         return config.ephemerides.latitude, config.ephemerides.longitude
+
+    return DEFAULT_LAT, DEFAULT_LON
 
     raise HTTPException(status_code=500, detail="Weather location not configured")
 

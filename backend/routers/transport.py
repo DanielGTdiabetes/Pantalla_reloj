@@ -74,9 +74,10 @@ async def get_transport_nearby(
     planes_data: List[Dict[str, Any]] = []
     ships_data = []
     errors = []
-    
+
     try:
         main = _load_main_module()
+        config = main.global_config
     except Exception as e:
         print(f"Error loading main module: {e}")
         return {
@@ -86,22 +87,35 @@ async def get_transport_nearby(
             "planes": [],
             "ships": []
         }
-    
-    # 1. OpenSky (Planes) - build bbox from radius
+
+    # 1. OpenSky (Planes) - prefer configured bbox
     radius = max(50.0, min(radius_km, 250.0))
     d_lat = radius / 111.0
     d_lon = radius / max(1e-6, 111.0 * math.cos(math.radians(lat)))
 
-    planes_bbox = (
-        lat - d_lat, # min_lat
-        lat + d_lat, # max_lat
-        lon - d_lon, # min_lon
-        lon + d_lon  # max_lon
-    )
+    bbox_cfg = getattr(getattr(config, "opensky", None), "bbox", None)
+    planes_bbox = None
+    if bbox_cfg:
+        try:
+            planes_bbox = (
+                float(bbox_cfg.lamin),
+                float(bbox_cfg.lamax),
+                float(bbox_cfg.lomin),
+                float(bbox_cfg.lomax),
+            )
+        except Exception:
+            planes_bbox = None
+
+    if not planes_bbox:
+        planes_bbox = (
+            lat - d_lat, # min_lat
+            lat + d_lat, # max_lat
+            lon - d_lon, # min_lon
+            lon + d_lon  # max_lon
+        )
     
     try:
         opensky = main.opensky_service
-        config = main.global_config
         
         # Check if flights layer is enabled
         layers = getattr(config, "layers", None)
@@ -133,8 +147,6 @@ async def get_transport_nearby(
                     continue
 
                 distance_km = _haversine_km(lat, lon, p_lat, p_lon)
-                if distance_km > radius * 1.25:
-                    continue
 
                 icao = p.get("icao24")
                 img = None
@@ -147,20 +159,23 @@ async def get_transport_nearby(
                 altitude_m = p.get("baro_altitude")
                 altitude_ft = altitude_m * 3.28084 if altitude_m is not None else None
                 speed_ms = p.get("velocity")
-                speed_kts = speed_ms * 1.94384 if speed_ms is not None else None
-                heading = p.get("true_track")
-                callsign = (p.get("callsign") or "").strip() or None
+                speed_kts = speed_ms * 1.94384 if speed_ms is not None else 0.0
+                heading = p.get("true_track") or 0.0
+                callsign = (p.get("callsign") or "").strip() or "Vuelo"
                 origin = p.get("estDepartureAirport") or p.get("from")
                 destination = p.get("estArrivalAirport") or p.get("to")
 
                 planes_data.append({
                     "id": icao or callsign or f"plane-{p_lat:.4f}-{p_lon:.4f}",
                     "callsign": callsign,
+                    "icao": icao,
                     "origin": origin,
                     "destination": destination,
                     "altitude_ft": altitude_ft,
                     "speed_kts": speed_kts,
+                    "vel_kts": speed_kts,
                     "heading_deg": heading,
+                    "heading": heading,
                     "lat": p_lat,
                     "lon": p_lon,
                     "distance_km": distance_km,

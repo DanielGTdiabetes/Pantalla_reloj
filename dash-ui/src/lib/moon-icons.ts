@@ -104,7 +104,7 @@ export function getMoonIconPath(phase: MoonPhase): string {
   };
 
   const phaseName = phaseMap[phase] || "new";
-  return `/icons/astronomy/moon/${phaseName}.svg`;
+  return new URL(`../assets/astronomy/moon/${phaseName}.png`, import.meta.url).href;
 }
 
 /**

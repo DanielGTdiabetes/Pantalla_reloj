@@ -44,7 +44,7 @@ export const CalendarCard = ({ events, timezone }: CalendarCardProps): JSX.Eleme
   return (
     <div className="calendar-card-dark">
       <div className="calendar-card-dark__header">
-        <span className="calendar-card-dark__icon">📅</span>
+        <img src="/icons/calendar/agenda.png" alt="Agenda" className="calendar-card-dark__icon" />
         <span className="calendar-card-dark__title">Agenda</span>
       </div>
 
@@ -57,8 +57,7 @@ export const CalendarCard = ({ events, timezone }: CalendarCardProps): JSX.Eleme
         <div className="calendar-card-dark__events">
           {validEvents.length === 0 ? (
             <div className="calendar-card-dark__empty">
-              <span>☕</span>
-              <span>Sin eventos</span>
+              <span>No hay próximos eventos</span>
             </div>
           ) : (
             <div className="calendar-card-dark__event" key={currentIndex}>
@@ -91,11 +90,14 @@ export const CalendarCard = ({ events, timezone }: CalendarCardProps): JSX.Eleme
           align-items: center;
           height: 100%;
           width: 100%;
-          padding: 0.5rem;
+          padding: 0.75rem;
           box-sizing: border-box;
           background: linear-gradient(135deg, #4c1d95 0%, #1e1b4b 100%);
           color: white;
           overflow: hidden;
+          border-radius: 16px;
+          border: 1px solid rgba(255,255,255,0.12);
+          box-shadow: 0 18px 45px rgba(0,0,0,0.45);
         }
         .calendar-card-dark__header {
           display: flex;
@@ -103,15 +105,20 @@ export const CalendarCard = ({ events, timezone }: CalendarCardProps): JSX.Eleme
           gap: 0.5rem;
           width: 100%;
           margin-bottom: 0.5rem;
+          padding-bottom: 0.35rem;
+          border-bottom: 1px solid rgba(255,255,255,0.15);
         }
         .calendar-card-dark__icon {
-          font-size: 2rem;
+          width: 52px;
+          height: 52px;
+          object-fit: contain;
         }
         .calendar-card-dark__title {
           font-size: 1.3rem;
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.1em;
+          text-shadow: 0 2px 4px rgba(0,0,0,0.4);
         }
         .calendar-card-dark__body {
           display: flex;
@@ -119,6 +126,7 @@ export const CalendarCard = ({ events, timezone }: CalendarCardProps): JSX.Eleme
           gap: 1rem;
           flex: 1;
           width: 100%;
+          padding: 0.5rem 0.25rem;
         }
         .calendar-card-dark__leaf {
           display: flex;
@@ -128,8 +136,8 @@ export const CalendarCard = ({ events, timezone }: CalendarCardProps): JSX.Eleme
           background: white;
           color: #1e293b;
           border-radius: 0.5rem;
-          padding: 0.5rem 0.75rem;
-          width: 70px;
+          padding: 0.65rem 0.75rem;
+          width: 80px;
           box-shadow: 0 4px 12px rgba(0,0,0,0.3);
           border-top: 5px solid #dc2626;
           transform: rotate(-2deg);
@@ -148,17 +156,26 @@ export const CalendarCard = ({ events, timezone }: CalendarCardProps): JSX.Eleme
         .calendar-card-dark__events {
           flex: 1;
           min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
         }
         .calendar-card-dark__empty {
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 0.25rem;
-          opacity: 0.7;
-          font-size: 0.9rem;
+          justify-content: center;
+          gap: 0.4rem;
+          opacity: 0.85;
+          font-size: 1rem;
+          width: 100%;
+          text-align: center;
         }
         .calendar-card-dark__event {
           animation: fadeIn-dark 0.4s ease-out;
+          display: flex;
+          flex-direction: column;
+          gap: 0.2rem;
         }
         .calendar-card-dark__event-title {
           font-size: 1.1rem;
@@ -166,6 +183,7 @@ export const CalendarCard = ({ events, timezone }: CalendarCardProps): JSX.Eleme
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
+          line-height: 1.2;
         }
         .calendar-card-dark__event-time {
           font-size: 1rem;
@@ -179,6 +197,9 @@ export const CalendarCard = ({ events, timezone }: CalendarCardProps): JSX.Eleme
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
+          display: flex;
+          align-items: center;
+          gap: 0.25rem;
         }
         .calendar-card-dark__dayname {
           font-size: 1.1rem;

@@ -41,7 +41,7 @@ export const HistoricalEventsCard = ({ items, rotationSeconds = 12 }: Historical
   return (
     <div className="historical-card-dark" data-testid="panel-history">
       <div className="historical-card-dark__header">
-        <img src="/icons/misc/efemerides.svg" alt="" className="historical-card-dark__icon panel-title-icon" />
+        <img src="/icons/misc/efemerides.png" alt="" className="historical-card-dark__icon panel-title-icon" />
         <span className="historical-card-dark__title panel-title-text">Efemérides Históricas</span>
       </div>
 
@@ -84,6 +84,7 @@ export const HistoricalEventsCard = ({ items, rotationSeconds = 12 }: Historical
           width: 42px;
           height: 42px;
           object-fit: contain;
+          filter: drop-shadow(0 4px 10px rgba(0,0,0,0.35));
         }
         .historical-card-dark__title {
           font-size: 1.2rem;
