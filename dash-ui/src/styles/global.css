@@ -47,6 +47,15 @@ body {
   overflow: hidden;
 }
 
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 
 .app-shell {
   min-height: 100svh;

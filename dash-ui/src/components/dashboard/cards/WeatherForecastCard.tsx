@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { resolveWeatherIcon, sanitizeWeatherCondition } from "../../../utils/weather";
 
 type ForecastDay = {
   date: string;
@@ -17,42 +18,23 @@ type WeatherForecastCardProps = {
   unit: string;
 };
 
-// Map condition to weather icon (day icons for forecast)
-const getWeatherIcon = (condition: string): string => {
-  const c = (condition || "").toLowerCase();
-
-  if (c.includes("tormenta") || c.includes("thunder") || c.includes("storm")) {
-    return "/icons/weather/day/thunderstorm.svg";
-  }
-  if (c.includes("lluvia") || c.includes("rain") || c.includes("lluvioso")) {
-    return "/icons/weather/day/rain.svg";
-  }
-  if (c.includes("llovizna") || c.includes("drizzle")) {
-    return "/icons/weather/day/rain.png";
-  }
-  if (c.includes("niebla") || c.includes("fog") || c.includes("bruma")) {
-    return "/icons/weather/day/fog.png";
-  }
-  if (c.includes("nublado") || c.includes("cloudy") || c.includes("nubes")) {
-    return "/icons/weather/day/cloudy.png";
-  }
-  if (c.includes("parcialmente") || c.includes("partly")) {
-    return "/icons/weather/day/partly-cloudy.png";
-  }
-  if (c.includes("cubierto") || c.includes("overcast")) {
-    return "/icons/weather/day/cloudy.png";
-  }
-  if (c.includes("despejado") || c.includes("clear") || c.includes("soleado") || c.includes("sunny") || c.includes("sol")) {
-    return "/icons/weather/day/sunny.png";
-  }
-
-  return "/icons/weather/day/sunny.png";
-};
-
 export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX.Element | null => {
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  const days = forecast.filter(d => d.date).slice(0, 7);
+  const days = useMemo(() => {
+    return forecast
+      .filter(d => d.date)
+      .slice(0, 7)
+      .map((day) => {
+        const averageTemp = [day.temperature.min, day.temperature.max]
+          .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
+          .reduce((acc, value, _, arr) => acc + value / arr.length, 0);
+        return {
+          ...day,
+          condition: sanitizeWeatherCondition(day.condition, averageTemp || null)
+        };
+      });
+  }, [forecast]);
 
   useEffect(() => {
     if (days.length <= 1) return;
@@ -65,12 +47,14 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
   const day = days[currentIndex];
   if (!day) return null;
 
-  const iconUrl = day.icon ? `/icons/weather/day/${day.icon}.png` : getWeatherIcon(day.condition).replace('.svg', '.png');
+  const iconUrl = day.icon
+    ? `/icons/weather/day/${day.icon}.svg`
+    : resolveWeatherIcon(day.condition, { isNight: false });
 
   return (
     <div className="forecast-card-dark">
       <div className="forecast-card-dark__header">
-        <img src="/icons/weather/day/partly-cloudy.png" alt="" className="forecast-card-dark__header-icon" />
+        <img src="/icons/weather/day/partly-cloudy.svg" alt="" className="forecast-card-dark__header-icon" />
         <span className="forecast-card-dark__title">Tiempo 7 Días</span>
       </div>
 

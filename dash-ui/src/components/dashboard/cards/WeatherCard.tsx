@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useMemo } from "react";
+import { resolveWeatherIcon, sanitizeWeatherCondition } from "../../../utils/weather";
 
 type WeatherCardProps = {
   temperatureLabel: string;
@@ -11,47 +12,6 @@ type WeatherCardProps = {
   timezone?: string;
 };
 
-// Map condition to appropriate weather icon
-const getWeatherIcon = (condition: string | null): string => {
-  const c = (condition || "").toLowerCase();
-
-  // Check time of day for day/night icons
-  const hour = new Date().getHours();
-  const isNight = hour < 6 || hour >= 21;
-  const folder = isNight ? "night" : "day";
-
-  if (c.includes("tormenta") || c.includes("thunder") || c.includes("storm")) {
-    return `/icons/weather/${folder}/thunderstorm.png`;
-  }
-  if (c.includes("lluvia") || c.includes("rain") || c.includes("lluvioso")) {
-    return `/icons/weather/${folder}/rain.png`;
-  }
-  if (c.includes("llovizna") || c.includes("drizzle")) {
-    return `/icons/weather/${folder}/rain.png`;
-  }
-  if (c.includes("nieve") || c.includes("snow")) {
-    return `/icons/weather/${folder}/snow.png`;
-  }
-  if (c.includes("niebla") || c.includes("fog") || c.includes("bruma")) {
-    return `/icons/weather/${folder}/fog.png`;
-  }
-  if (c.includes("nublado") || c.includes("cloudy") || c.includes("nubes")) {
-    return `/icons/weather/${folder}/cloudy.png`;
-  }
-  if (c.includes("parcialmente") || c.includes("partly")) {
-    return `/icons/weather/${folder}/partly-cloudy.png`;
-  }
-  if (c.includes("cubierto") || c.includes("overcast")) {
-    return `/icons/weather/${folder}/cloudy.png`;
-  }
-  if (c.includes("despejado") || c.includes("clear") || c.includes("soleado") || c.includes("sunny") || c.includes("sol")) {
-    return `/icons/weather/${folder}/sunny.png`;
-  }
-
-  // Default based on time
-  return isNight ? "/icons/weather/night/clear.png" : "/icons/weather/day/sunny.png";
-};
-
 export const WeatherCard = ({
   temperatureLabel,
   feelsLikeLabel,
@@ -60,8 +20,15 @@ export const WeatherCard = ({
   wind,
   rain
 }: WeatherCardProps): JSX.Element => {
-  const tempValue = temperatureLabel.replace(/[^\d-]/g, "");
-  const iconUrl = getWeatherIcon(condition);
+  const tempValue = temperatureLabel.replace(/[^\d.-]/g, "");
+  const numericTemp = Number.isFinite(Number(tempValue)) ? Number(tempValue) : null;
+  const normalizedCondition = useMemo(
+    () => sanitizeWeatherCondition(condition, numericTemp),
+    [condition, numericTemp]
+  );
+  const now = new Date();
+  const isNight = now.getHours() < 6 || now.getHours() >= 21;
+  const iconUrl = resolveWeatherIcon(normalizedCondition, { isNight });
 
   return (
     <div className="weather-card-dark">
@@ -73,7 +40,7 @@ export const WeatherCard = ({
       <div className="weather-card-dark__body">
         <div className="weather-card-dark__main">
           <div className="weather-card-dark__icon-container">
-            <img src={iconUrl} alt={condition || "weather"} className="weather-card-dark__main-icon" />
+            <img src={iconUrl} alt={normalizedCondition || "weather"} className="weather-card-dark__main-icon" />
           </div>
           <div className="weather-card-dark__temp-block">
             <span className="weather-card-dark__temp">{tempValue}°</span>
@@ -83,7 +50,7 @@ export const WeatherCard = ({
           </div>
         </div>
 
-        <div className="weather-card-dark__condition">{condition || "Sin datos"}</div>
+        <div className="weather-card-dark__condition">{normalizedCondition || "Sin datos"}</div>
 
         <div className="weather-card-dark__metrics">
           <div className="weather-card-dark__metric">
@@ -118,7 +85,7 @@ export const WeatherCard = ({
           display: flex;
           align-items: center;
           gap: 0.5rem;
-          margin-bottom: 0.5rem;
+          margin-bottom: 0.25rem;
         }
         .weather-card-dark__header-icon {
           width: 48px;
@@ -127,10 +94,10 @@ export const WeatherCard = ({
           filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
         }
         .weather-card-dark__title {
-          font-size: 1.8rem;
+          font-size: 1.4rem;
           font-weight: 800;
           text-transform: uppercase;
-          letter-spacing: 0.1em;
+          letter-spacing: 0.08em;
           text-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
         .weather-card-dark__body {
@@ -139,7 +106,8 @@ export const WeatherCard = ({
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          gap: 0.25rem;
+          gap: 0.35rem;
+          padding: 0.25rem 0.5rem;
         }
         .weather-card-dark__main {
           display: flex;
@@ -148,8 +116,8 @@ export const WeatherCard = ({
           gap: 0.75rem;
         }
         .weather-card-dark__icon-container {
-          width: 120px;
-          height: 120px;
+          width: 110px;
+          height: 110px;
         }
         .weather-card-dark__main-icon {
           width: 100%;
@@ -164,7 +132,7 @@ export const WeatherCard = ({
           align-items: flex-start;
         }
         .weather-card-dark__temp {
-          font-size: 4rem;
+          font-size: 3.6rem;
           font-weight: 900;
           line-height: 1;
           text-shadow: 0 2px 10px rgba(0,0,0,0.5);
@@ -174,9 +142,10 @@ export const WeatherCard = ({
           opacity: 0.7;
         }
         .weather-card-dark__condition {
-          font-size: 1.3rem;
+          font-size: 1.2rem;
           font-weight: 700;
           text-transform: capitalize;
+          text-align: center;
         }
         .weather-card-dark__metrics {
           display: flex;
@@ -195,14 +164,15 @@ export const WeatherCard = ({
           min-width: 60px;
         }
         .weather-card-dark__metric-label {
-          font-size: 0.65rem;
-          opacity: 0.7;
+          font-size: 0.7rem;
+          opacity: 0.75;
           text-transform: uppercase;
-          font-weight: 600;
+          font-weight: 700;
+          letter-spacing: 0.04em;
         }
         .weather-card-dark__metric-value {
-          font-size: 1rem;
-          font-weight: 700;
+          font-size: 1.05rem;
+          font-weight: 800;
         }
         @keyframes float-dark {
           0%, 100% { transform: translateY(0) rotate(0deg); }

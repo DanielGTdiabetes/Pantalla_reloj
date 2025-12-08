@@ -17,6 +17,17 @@ def _dist(lat1, lon1, lat2, lon2):
     # Simple Euclidean distance for rough proximity sorts (degrees)
     return math.sqrt((lat1 - lat2)**2 + (lon1 - lon2)**2)
 
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
 import requests
 from functools import lru_cache
 
@@ -74,10 +85,11 @@ async def get_transport_nearby(
             "ships": []
         }
     
-    # 1. OpenSky (Planes) - Widen the box to ensures we catch planes on approach to Valencia/Castellón
-    d_lat = 2.0 # ~220km latitude delta
-    d_lon = 3.0 # ~240km longitude delta
-    
+    # 1. OpenSky (Planes) - build bbox from radius
+    radius = max(50.0, min(radius_km, 250.0))
+    d_lat = radius / 111.0
+    d_lon = radius / max(1e-6, 111.0 * math.cos(math.radians(lat)))
+
     planes_bbox = (
         lat - d_lat, # min_lat
         lat + d_lat, # max_lat
@@ -99,37 +111,49 @@ async def get_transport_nearby(
                 bbox=planes_bbox,
                 extended_override=1
             )
-            
-            if snapshot and snapshot.payload.get("items"):
-                for item in snapshot.payload["items"]:
-                    p = item
-                    if isinstance(p, dict):
-                        icao = p.get("icao24")
-                        img = None
-                        if icao:
-                             # Run in threadpool to avoid blocking loop with requests
-                             try:
-                                 img = await run_in_threadpool(_resolve_plane_image, icao)
-                             except Exception:
-                                 pass
 
-                        p_lat = p.get("latitude")
-                        p_lon = p.get("longitude")
-                        # Skip items without coordinates
-                        if p_lat is None or p_lon is None:
-                            continue
-                            
-                        planes_data.append({
-                            "ic": icao,
-                            "cs": (p.get("callsign") or "").strip(),
-                            "alt": p.get("baro_altitude"),
-                            "spd": p.get("velocity"),
-                            "hdg": p.get("true_track"),
-                            "lat": p_lat,
-                            "lon": p_lon,
-                            "co": p.get("origin_country"),
-                            "img": img
-                        })
+            payload_items = []
+            if snapshot and snapshot.payload.get("items"):
+                payload_items = snapshot.payload["items"]
+            elif hasattr(opensky, "get_last_snapshot"):
+                fallback = opensky.get_last_snapshot()
+                if fallback and fallback.payload.get("items"):
+                    payload_items = fallback.payload["items"]
+
+            for item in payload_items:
+                p = item
+                if isinstance(p, dict):
+                    icao = p.get("icao24")
+                    img = None
+                    if icao:
+                         # Run in threadpool to avoid blocking loop with requests
+                         try:
+                             img = await run_in_threadpool(_resolve_plane_image, icao)
+                         except Exception:
+                             pass
+
+                    p_lat = p.get("latitude")
+                    p_lon = p.get("longitude")
+                    # Skip items without coordinates
+                    if p_lat is None or p_lon is None:
+                        continue
+
+                    distance_km = _haversine_km(lat, lon, p_lat, p_lon)
+                    if distance_km > radius * 1.25:
+                        continue
+
+                    planes_data.append({
+                        "ic": icao,
+                        "cs": (p.get("callsign") or "").strip(),
+                        "alt": p.get("baro_altitude"),
+                        "spd": p.get("velocity"),
+                        "hdg": p.get("true_track"),
+                        "lat": p_lat,
+                        "lon": p_lon,
+                        "co": p.get("origin_country"),
+                        "img": img,
+                        "distance_km": distance_km,
+                    })
         else:
             errors.append("flights_layer_disabled")
     except Exception as e:
@@ -159,9 +183,9 @@ async def get_transport_nearby(
                     if coords:
                         slon, slat = coords
                         # Check if inside our "nearby" box
-                        if (ships_bbox[0] <= slat <= ships_bbox[1] and 
+                            if (ships_bbox[0] <= slat <= ships_bbox[1] and
                             ships_bbox[2] <= slon <= ships_bbox[3]):
-                            
+
                             props = feature.get("properties", {})
                             ships_data.append({
                                 "name": props.get("name") or str(props.get("mmsi")),
@@ -172,9 +196,10 @@ async def get_transport_nearby(
                                 "lat": slat,
                                 "lon": slon,
                                 "dest": props.get("destination"),
-                                # Ship photos are harder to get freely by API. 
+                                "distance_km": _haversine_km(lat, lon, slat, slon),
+                                # Ship photos are harder to get freely by API.
                                 # Leaving img as null/undefined to trigger fallback.
-                                "img": None 
+                                "img": None
                             })
         else:
             errors.append("ships_layer_disabled")
