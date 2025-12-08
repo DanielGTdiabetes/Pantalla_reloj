@@ -13,7 +13,6 @@ type NewsCardProps = {
 };
 
 // Utility to clean text from simple HTML tags if they leak through
-// Utility to clean text from simple HTML tags if they leak through
 const stripHtml = (html: string) => {
   if (!html) return "";
   const tmp = document.createElement("DIV");
@@ -31,131 +30,146 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
     if (validItems.length <= 1) return;
     const interval = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % validItems.length);
-    }, 10000); // Slower cycle for reading
+    }, 10000);
     return () => clearInterval(interval);
   }, [validItems.length]);
 
   const current = validItems[currentIndex];
-  const sourceLabel = current.source || "El País";
+  const sourceLabel = current.source || "Fuente desconocida";
+
+  const summaryContent = current.summary ? stripHtml(current.summary) : "";
 
   return (
-    <div className="news-card-dark" data-testid="panel-news">
-      <div className="news-card-dark__header">
-        <img src="/icons/misc/news.svg" alt="" className="news-card-dark__header-icon panel-title-icon" />
-        <span className="news-card-dark__title panel-title-text">Noticias</span>
+    <div className="news-card" data-testid="panel-news">
+      <div className="news-card__header">
+        <img src="/icons/misc/news.svg" alt="" className="news-card__icon panel-title-icon" />
+        <span className="news-card__title panel-title-text">Noticias</span>
       </div>
 
-      <div className="news-card-dark__body panel-body" key={currentIndex}>
-        <div className="news-card-dark__source panel-item-subtitle">Fuente: {sourceLabel}</div>
-        <AutoScrollContainer className="news-card-dark__content">
-          <h2 className="news-card-dark__headline panel-item-title">{stripHtml(current.title)}</h2>
-          {current.summary && (
-            <p className="news-card-dark__summary panel-item-subtitle">{stripHtml(current.summary)}</p>
+      <div className="news-card__body panel-body" key={currentIndex}>
+        <div className="news-card__source panel-item-subtitle">Fuente: {sourceLabel}</div>
+        <div className="news-card__content">
+          <h3 className="news-card__headline">{stripHtml(current.title)}</h3>
+          {summaryContent ? (
+            <AutoScrollContainer
+              className="news-card__summary-wrapper"
+              speed={12}
+              pauseAtEndMs={3500}
+              overflowThreshold={10}
+            >
+              <p className="news-card__summary">{summaryContent}</p>
+            </AutoScrollContainer>
+          ) : (
+            <p className="news-card__summary news-card__summary--static">Sin resumen disponible</p>
           )}
-        </AutoScrollContainer>
+        </div>
       </div>
 
       {validItems.length > 1 && (
-        <div className="news-card-dark__dots">
+        <div className="news-card__dots">
           {validItems.map((_, idx) => (
-            <span key={idx} className={`news-card-dark__dot ${idx === currentIndex ? "active" : ""}`} />
+            <span key={idx} className={`news-card__dot ${idx === currentIndex ? "active" : ""}`} />
           ))}
         </div>
       )}
 
       <style>{`
-        .news-card-dark {
+        .news-card {
           display: flex;
           flex-direction: column;
           height: 100%;
           width: 100%;
           padding: 1rem;
           box-sizing: border-box;
-          background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
-          color: white;
+          background: linear-gradient(145deg, rgba(18, 27, 48, 0.92), rgba(12, 19, 33, 0.9));
+          color: #eaeaea;
           overflow: hidden;
           border-radius: 1rem;
+          border: 1px solid rgba(255,255,255,0.06);
+          backdrop-filter: blur(10px);
         }
-        .news-card-dark__header {
+        .news-card__header {
           display: flex;
           align-items: center;
-          gap: 1rem;
-          margin-bottom: 1rem;
+          gap: 0.75rem;
+          margin-bottom: 0.75rem;
           padding-bottom: 0.5rem;
-          border-bottom: 1px solid rgba(255,255,255,0.1);
+          border-bottom: 1px solid rgba(255,255,255,0.08);
         }
-        .news-card-dark__header-icon {
-          width: 52px;
-          height: 52px;
+        .news-card__icon {
+          width: 42px;
+          height: 42px;
           object-fit: contain;
-          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));
         }
-        .news-card-dark__title {
-          font-size: 1.4rem;
-          font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: 0.1em;
-          text-shadow: 0 2px 4px rgba(0,0,0,0.5);
-        }
-        .news-card-dark__body {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          min-height: 0;
-          animation: fadeIn-dark 0.5s ease-out;
-        }
-        .news-card-dark__source {
-          font-size: 0.95rem;
-          font-weight: 700;
-          color: #38bdf8;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          margin-bottom: 0.35rem;
-        }
-        .news-card-dark__content {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          gap: 0.6rem;
-          overflow: hidden;
-        }
-        .news-card-dark__headline {
-          font-size: 1.8rem;
-          font-weight: 800;
-          line-height: 1.2;
-          margin: 0;
-          overflow: hidden;
-          text-shadow: 0 2px 8px rgba(0,0,0,0.6);
-        }
-        .news-card-dark__summary {
+        .news-card__title {
           font-size: 1.05rem;
-          line-height: 1.5;
-          opacity: 0.9;
-          margin: 0;
-          overflow: hidden;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
         }
-        .news-card-dark__dots {
+        .news-card__body {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          min-height: 0;
+          gap: 0.35rem;
+        }
+        .news-card__source {
+          font-size: 0.9rem;
+          font-weight: 600;
+          color: #9ad8ff;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+        .news-card__content {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+          min-height: 0;
+          padding: 0.35rem 0.25rem 0.25rem;
+        }
+        .news-card__headline {
+          font-size: 1.125rem;
+          font-weight: 600;
+          line-height: 1.3;
+          margin: 0;
+          color: #f5f7fb;
+        }
+        .news-card__summary-wrapper {
+          flex: 1;
+          overflow: hidden;
+          position: relative;
+          padding-right: 2px;
+        }
+        .news-card__summary {
+          font-size: 1rem;
+          line-height: 1.4;
+          font-weight: 400;
+          margin: 0;
+          color: #e1e7ef;
+        }
+        .news-card__summary--static {
+          opacity: 0.85;
+        }
+        .news-card__dots {
           display: flex;
           justify-content: center;
-          gap: 0.5rem;
-          margin-top: 1rem;
+          gap: 0.35rem;
+          margin-top: 0.75rem;
         }
-        .news-card-dark__dot {
-          width: 10px;
-          height: 10px;
+        .news-card__dot {
+          width: 9px;
+          height: 9px;
           border-radius: 50%;
-          background: rgba(255,255,255,0.3);
-          transition: all 0.3s;
+          background: rgba(255,255,255,0.22);
+          transition: all 0.3s ease;
         }
-        .news-card-dark__dot.active {
-          background: #38bdf8;
-          width: 24px;
-          border-radius: 5px;
-        }
-        @keyframes fadeIn-dark {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
+        .news-card__dot.active {
+          background: #5dc3ff;
+          width: 20px;
+          border-radius: 6px;
         }
       `}</style>
     </div>

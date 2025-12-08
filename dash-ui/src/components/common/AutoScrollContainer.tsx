@@ -5,6 +5,7 @@ interface AutoScrollContainerProps {
   speed?: number; // px per second
   pauseAtEndMs?: number;
   className?: string;
+  overflowThreshold?: number; // minimum overflow (px) to activate scrolling
 }
 
 export const AutoScrollContainer: React.FC<AutoScrollContainerProps> = ({
@@ -12,6 +13,7 @@ export const AutoScrollContainer: React.FC<AutoScrollContainerProps> = ({
   speed = 18,
   pauseAtEndMs = 2500,
   className = "",
+  overflowThreshold = 8,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -23,7 +25,7 @@ export const AutoScrollContainer: React.FC<AutoScrollContainerProps> = ({
     const content = contentRef.current;
     if (!container || !content) return;
 
-    let animationId: number;
+    let animationId: number | null = null;
     let lastTs = performance.now();
     let pausedUntil = 0;
 
@@ -36,9 +38,9 @@ export const AutoScrollContainer: React.FC<AutoScrollContainerProps> = ({
       const viewport = container.clientHeight;
       const maxOffset = Math.max(contentHeight - viewport, 0);
 
-      if (maxOffset <= 0) {
+      if (maxOffset <= overflowThreshold) {
         setOffset(0);
-        animationId = requestAnimationFrame(tick);
+        offsetRef.current = 0;
         return;
       }
 
@@ -63,10 +65,24 @@ export const AutoScrollContainer: React.FC<AutoScrollContainerProps> = ({
       animationId = requestAnimationFrame(tick);
     };
 
-    animationId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(animationId);
+    const contentHeight = content.scrollHeight;
+    const viewport = container.clientHeight;
+    const maxOffset = Math.max(contentHeight - viewport, 0);
+
+    if (maxOffset > overflowThreshold) {
+      animationId = requestAnimationFrame(tick);
+    } else {
+      offsetRef.current = 0;
+      setOffset(0);
+    }
+
+    return () => {
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [speed, pauseAtEndMs, children]);
+  }, [speed, pauseAtEndMs, overflowThreshold, children]);
 
   useEffect(() => {
     offsetRef.current = 0;
