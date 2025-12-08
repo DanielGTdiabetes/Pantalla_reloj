@@ -126,11 +126,11 @@ async def get_transport_nearby(
                     icao = p.get("icao24")
                     img = None
                     if icao:
-                         # Run in threadpool to avoid blocking loop with requests
-                         try:
-                             img = await run_in_threadpool(_resolve_plane_image, icao)
-                         except Exception:
-                             pass
+                        # Run in threadpool to avoid blocking loop with requests
+                        try:
+                            img = await run_in_threadpool(_resolve_plane_image, icao)
+                        except Exception:
+                            pass
 
                     p_lat = p.get("latitude")
                     p_lon = p.get("longitude")
@@ -180,27 +180,39 @@ async def get_transport_nearby(
                 for feature in snapshot["features"]:
                     geo = feature.get("geometry", {})
                     coords = geo.get("coordinates")
-                    if coords:
-                        slon, slat = coords
-                        # Check if inside our "nearby" box
-                            if (ships_bbox[0] <= slat <= ships_bbox[1] and
-                            ships_bbox[2] <= slon <= ships_bbox[3]):
+                    if not coords or not isinstance(coords, (list, tuple)):
+                        continue
 
-                            props = feature.get("properties", {})
-                            ships_data.append({
-                                "name": props.get("name") or str(props.get("mmsi")),
-                                "mmsi": props.get("mmsi"),
-                                "type": props.get("shipType"),
-                                "spd": props.get("speed"),
-                                "hdg": props.get("heading"),
-                                "lat": slat,
-                                "lon": slon,
-                                "dest": props.get("destination"),
-                                "distance_km": _haversine_km(lat, lon, slat, slon),
-                                # Ship photos are harder to get freely by API.
-                                # Leaving img as null/undefined to trigger fallback.
-                                "img": None
-                            })
+                    if len(coords) != 2:
+                        continue
+
+                    slon, slat = coords
+
+                    valid_bbox = ships_bbox if ships_bbox and len(ships_bbox) == 4 else None
+
+                    if not valid_bbox:
+                        continue
+
+                    # Check if inside our "nearby" box
+                    if (
+                        valid_bbox[0] <= slat <= valid_bbox[1]
+                        and valid_bbox[2] <= slon <= valid_bbox[3]
+                    ):
+                        props = feature.get("properties", {}) or {}
+                        ships_data.append({
+                            "name": props.get("name") or str(props.get("mmsi") or ""),
+                            "mmsi": props.get("mmsi"),
+                            "type": props.get("shipType"),
+                            "spd": props.get("speed"),
+                            "hdg": props.get("heading"),
+                            "lat": slat,
+                            "lon": slon,
+                            "dest": props.get("destination"),
+                            "distance_km": _haversine_km(lat, lon, slat, slon),
+                            # Ship photos are harder to get freely by API.
+                            # Leaving img as null/undefined to trigger fallback.
+                            "img": None,
+                        })
         else:
             errors.append("ships_layer_disabled")
     except Exception as e:
