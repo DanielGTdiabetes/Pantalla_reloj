@@ -97,14 +97,7 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
   }, [items.length, activeTab]);
 
   const current = items[currentIndex];
-  const iconUrl = isPlane ? "/img/icons/3d/plane.png" : "/img/icons/3d/ship.png";
-
-  const handleIconError: React.ReactEventHandler<HTMLImageElement> = event => {
-    const fallback = isPlane ? "/img/icons/3d/plane.png" : "/img/icons/3d/ship.png";
-    if (event.currentTarget.src !== fallback) {
-      event.currentTarget.src = fallback;
-    }
-  };
+  const iconUrl = isPlane ? "/icons/transport/plane.svg" : "/icons/transport/ship.svg";
 
   const getSpeed = (item: any) => {
     const s = item.speed ?? item.spd;
@@ -124,19 +117,38 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
     return Math.round(h);
   };
 
+  const getType = (item: any) => {
+    if (isPlane) return item.aircraft_type || item.airline || "";
+    return item.type || "";
+  };
+
+  const renderEmpty = () => {
+    const label = isPlane ? "Sin vuelos cercanos" : "Sin barcos cercanos";
+    return (
+      <div className="transport-card-dark__empty">
+        <img src={iconUrl} alt="" className="transport-card-dark__empty-icon" />
+        <span className="transport-card-dark__empty-text">{label}</span>
+      </div>
+    );
+  };
+
+  const renderDetail = (label: string, value: React.ReactNode, highlight?: boolean) => (
+    <div className={`transport-card-dark__detail ${highlight ? "highlight" : ""}`}>
+      <span className="transport-card-dark__detail-label">{label}</span>
+      <span className="transport-card-dark__detail-value">{value}</span>
+    </div>
+  );
+
   return (
     <div className="transport-card-dark">
       <div className="transport-card-dark__header">
-        <img src={iconUrl} alt="" className="transport-card-dark__header-icon" onError={handleIconError} />
+        <img src={iconUrl} alt="" className="transport-card-dark__header-icon" />
         <span className="transport-card-dark__title">{isPlane ? "Aviones Cercanos" : "Barcos Cercanos"}</span>
       </div>
 
       <div className="transport-card-dark__body">
         {items.length === 0 ? (
-          <div className="transport-card-dark__empty">
-            <img src={iconUrl} alt="" className="transport-card-dark__empty-icon" onError={handleIconError} />
-            <span className="transport-card-dark__empty-text">Escaneando...</span>
-          </div>
+          renderEmpty()
         ) : (
           <div className="transport-card-dark__content" key={`${activeTab}-${currentIndex}`}>
             <div className="transport-card-dark__icon-container">
@@ -144,7 +156,6 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
                 src={iconUrl}
                 alt={isPlane ? "avión" : "barco"}
                 className="transport-card-dark__main-icon"
-                onError={handleIconError}
               />
             </div>
 
@@ -153,29 +164,15 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
                 {isPlane ? (current as any).callsign || "Vuelo Desconocido" : (current as any).name || "Barco Desconocido"}
               </div>
 
-              {isPlane && (current as any).destination && (
-                <div className="transport-card-dark__detail">✈️ {(current as any).destination}</div>
-              )}
-              {!isPlane && (current as any).destination && (
-                <div className="transport-card-dark__detail">⚓ {(current as any).destination}</div>
+              {(current as any).destination && (
+                <div className="transport-card-dark__destination">{(current as any).destination}</div>
               )}
 
-              <div className="transport-card-dark__meta-row">
-                {(current as any).distance_km && (
-                  <div className="transport-card-dark__detail highlight">
-                    📍 {(current as any).distance_km.toFixed(1)} km
-                  </div>
-                )}
-                {getSpeed(current) && (
-                  <div className="transport-card-dark__detail">
-                    💨 {getSpeed(current)}
-                  </div>
-                )}
-                {getHeading(current) !== null && (
-                  <div className="transport-card-dark__detail">
-                    🧭 {getHeading(current)}°
-                  </div>
-                )}
+              <div className="transport-card-dark__meta-grid">
+                {renderDetail("Distancia", (current as any).distance_km ? `${(current as any).distance_km.toFixed(1)} km` : "--", true)}
+                {renderDetail("Velocidad", getSpeed(current) || "--")}
+                {renderDetail("Rumbo", getHeading(current) !== null ? `${getHeading(current)}°` : "--")}
+                {renderDetail("Tipo", getType(current) || "--")}
               </div>
             </div>
           </div>
@@ -277,23 +274,44 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
           font-size: 2.2rem;
           font-weight: 800;
           line-height: 1.1;
-          margin-bottom: 0.5rem;
+          margin-bottom: 0.2rem;
           text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+          text-transform: uppercase;
+        }
+        .transport-card-dark__destination {
+          font-size: 1.1rem;
+          opacity: 0.85;
+        }
+        .transport-card-dark__meta-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 0.65rem;
+          margin-top: 0.75rem;
         }
         .transport-card-dark__detail {
-          font-size: 1.4rem;
-          opacity: 0.9;
-          font-weight: 500;
-        }
-        .transport-card-dark__meta-row {
           display: flex;
-          flex-wrap: wrap;
-          gap: 1rem;
-          margin-top: 0.5rem;
+          flex-direction: column;
+          gap: 0.15rem;
+          padding: 0.65rem 0.75rem;
+          background: rgba(255,255,255,0.08);
+          border-radius: 0.6rem;
+          border: 1px solid rgba(255,255,255,0.08);
+          font-size: 1.05rem;
+        }
+        .transport-card-dark__detail-label {
+          font-size: 0.8rem;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          opacity: 0.7;
+          font-weight: 700;
+        }
+        .transport-card-dark__detail-value {
+          font-weight: 800;
+          font-size: 1.25rem;
         }
         .transport-card-dark__detail.highlight {
-          color: #38bdf8;
-          font-weight: 700;
+          border-color: rgba(56,189,248,0.4);
+          box-shadow: 0 6px 14px rgba(56,189,248,0.18);
         }
         .transport-card-dark__dots {
           display: flex;

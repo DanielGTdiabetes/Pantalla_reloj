@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type NewsItem = {
   title: string;
@@ -21,6 +21,7 @@ const stripHtml = (html: string) => {
 
 export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const validItems = items && items.length > 0 ? items : [{ title: "Sin noticias disponibles" }];
 
@@ -33,22 +34,40 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
   }, [validItems.length]);
 
   const current = validItems[currentIndex];
+  const sourceLabel = current.source || "El País";
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = 0;
+    let rafId: number;
+    const step = () => {
+      if (!el) return;
+      const maxScroll = el.scrollHeight - el.clientHeight;
+      if (maxScroll > 2) {
+        el.scrollTop = (el.scrollTop + 0.7) % (maxScroll + 14);
+      }
+      rafId = requestAnimationFrame(step);
+    };
+    rafId = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafId);
+  }, [currentIndex, current.summary, current.title]);
 
   return (
     <div className="news-card-dark">
       <div className="news-card-dark__header">
-        <img src="/img/icons/3d/warning.png" alt="" className="news-card-dark__header-icon" />
+        <img src="/icons/misc/news.svg" alt="" className="news-card-dark__header-icon" />
         <span className="news-card-dark__title">Noticias</span>
       </div>
 
       <div className="news-card-dark__body" key={currentIndex}>
-        {current.source && (
-          <div className="news-card-dark__source">{current.source}</div>
-        )}
-        <h2 className="news-card-dark__headline">{stripHtml(current.title)}</h2>
-        {current.summary && (
-          <p className="news-card-dark__summary">{stripHtml(current.summary)}</p>
-        )}
+        <div className="news-card-dark__source">Fuente: {sourceLabel}</div>
+        <div ref={scrollRef} className="news-card-dark__content no-scrollbar">
+          <h2 className="news-card-dark__headline">{stripHtml(current.title)}</h2>
+          {current.summary && (
+            <p className="news-card-dark__summary">{stripHtml(current.summary)}</p>
+          )}
+        </div>
       </div>
 
       {validItems.length > 1 && (
@@ -81,13 +100,13 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
           border-bottom: 1px solid rgba(255,255,255,0.1);
         }
         .news-card-dark__header-icon {
-          width: 64px;
-          height: 64px;
+          width: 52px;
+          height: 52px;
           object-fit: contain;
           filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
         }
         .news-card-dark__title {
-          font-size: 1.8rem;
+          font-size: 1.4rem;
           font-weight: 800;
           text-transform: uppercase;
           letter-spacing: 0.1em;
@@ -102,32 +121,33 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
           animation: fadeIn-dark 0.5s ease-out;
         }
         .news-card-dark__source {
-          font-size: 1.1rem;
+          font-size: 0.95rem;
           font-weight: 700;
           color: #38bdf8;
           text-transform: uppercase;
-          letter-spacing: 0.1em;
-          margin-bottom: 0.5rem;
+          letter-spacing: 0.08em;
+          margin-bottom: 0.35rem;
+        }
+        .news-card-dark__content {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 0.6rem;
+          overflow: hidden;
         }
         .news-card-dark__headline {
-          font-size: 2.2rem;
+          font-size: 1.8rem;
           font-weight: 800;
           line-height: 1.2;
           margin: 0;
-          display: -webkit-box;
-          -webkit-line-clamp: 3;
-          -webkit-box-orient: vertical;
           overflow: hidden;
           text-shadow: 0 2px 8px rgba(0,0,0,0.6);
         }
         .news-card-dark__summary {
-          font-size: 1.4rem;
+          font-size: 1.05rem;
           line-height: 1.5;
           opacity: 0.9;
-          margin: 1rem 0 0 0;
-          display: -webkit-box;
-          -webkit-line-clamp: 3;
-          -webkit-box-orient: vertical;
+          margin: 0;
           overflow: hidden;
         }
         .news-card-dark__dots {

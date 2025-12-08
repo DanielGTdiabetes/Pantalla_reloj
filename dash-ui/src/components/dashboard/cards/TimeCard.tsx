@@ -25,12 +25,8 @@ export const TimeCard = ({ timezone }: TimeCardProps): JSX.Element => {
 
   return (
     <div className="time-card-dark">
-      <div className="time-card-dark__header">
-        <img src="/img/icons/3d/sun-smile.png" alt="" className="time-card-dark__header-icon" />
-        <span className="time-card-dark__title">Reloj</span>
-      </div>
-
       <div className="time-card-dark__body">
+        <div className="time-card-dark__eyebrow">Hora</div>
         <div className="time-card-dark__greeting">{greeting}</div>
         <div className="time-card-dark__clock">
           <span className="time-card-dark__hours">{hours}</span>
@@ -50,32 +46,11 @@ export const TimeCard = ({ timezone }: TimeCardProps): JSX.Element => {
           flex-direction: column;
           height: 100%;
           width: 100%;
-          padding: 1rem;
+          padding: 0.75rem 1rem 1rem;
           box-sizing: border-box;
           background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%);
           color: white;
           border-radius: 1rem;
-        }
-        .time-card-dark__header {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-          margin-bottom: 1rem;
-          padding-bottom: 0.5rem;
-          border-bottom: 1px solid rgba(255,255,255,0.1);
-        }
-        .time-card-dark__header-icon {
-          width: 64px;
-          height: 64px;
-          object-fit: contain;
-          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
-        }
-        .time-card-dark__title {
-          font-size: 1.8rem;
-          font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: 0.1em;
-          text-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
         .time-card-dark__body {
           flex: 1;
@@ -83,52 +58,64 @@ export const TimeCard = ({ timezone }: TimeCardProps): JSX.Element => {
           flex-direction: column;
           align-items: center;
           justify-content: center;
+          gap: 0.35rem;
+        }
+        .time-card-dark__eyebrow {
+          font-size: 0.9rem;
+          text-transform: uppercase;
+          letter-spacing: 0.12em;
+          opacity: 0.75;
         }
         .time-card-dark__greeting {
-          font-size: 2rem;
+          font-size: 1.4rem;
           font-weight: 600;
           opacity: 0.8;
-          margin-bottom: 0.5rem;
+          margin-bottom: 0.25rem;
         }
         .time-card-dark__clock {
           display: flex;
           align-items: baseline;
           gap: 0.2rem;
+          flex-wrap: nowrap;
         }
         .time-card-dark__hours,
         .time-card-dark__minutes {
-          font-size: 8rem;
+          font-size: 6.8rem;
           font-weight: 900;
           line-height: 1;
           text-shadow: 0 4px 16px rgba(0,0,0,0.6);
         }
         .time-card-dark__sep {
-          font-size: 6rem;
+          font-size: 5rem;
           font-weight: 700;
           opacity: 0.7;
           animation: blink-dark 1s step-end infinite;
           margin: 0 0.5rem;
         }
         .time-card-dark__seconds {
-          font-size: 2.5rem;
+          font-size: 2rem;
           font-weight: 600;
           opacity: 0.6;
           margin-left: 0.5rem;
         }
         .time-card-dark__date {
-          margin-top: 2rem;
+          margin-top: 1.2rem;
           text-align: center;
+          width: 100%;
         }
         .time-card-dark__dayname {
-          font-size: 2.2rem;
+          font-size: 1.8rem;
           font-weight: 800;
           text-transform: capitalize;
           margin-bottom: 0.5rem;
+          word-break: break-word;
         }
         .time-card-dark__fulldate {
-          font-size: 1.5rem;
-          opacity: 0.7;
+          font-size: 1.3rem;
+          opacity: 0.8;
           text-transform: capitalize;
+          word-break: break-word;
+          line-height: 1.35;
         }
         @keyframes blink-dark {
           0%, 50% { opacity: 1; }

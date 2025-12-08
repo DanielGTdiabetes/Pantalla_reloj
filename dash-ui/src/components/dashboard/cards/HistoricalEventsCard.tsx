@@ -14,6 +14,11 @@ const parseEvent = (item: string): { year?: number; text: string } => {
   return { year, text };
 };
 
+const capitalizeText = (value: string): string => {
+  if (!value) return value;
+  return value.charAt(0).toUpperCase() + value.slice(1);
+};
+
 export const HistoricalEventsCard = ({ items, rotationSeconds = 12 }: HistoricalEventsCardProps): JSX.Element => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -55,7 +60,7 @@ export const HistoricalEventsCard = ({ items, rotationSeconds = 12 }: Historical
   return (
     <div className="historical-card-dark">
       <div className="historical-card-dark__header">
-        <span className="historical-card-dark__icon">📜</span>
+        <img src="/icons/misc/efemerides.svg" alt="" className="historical-card-dark__icon" />
         <span className="historical-card-dark__title">Efemérides Históricas</span>
       </div>
 
@@ -63,8 +68,8 @@ export const HistoricalEventsCard = ({ items, rotationSeconds = 12 }: Historical
         {current.year && (
           <div className="historical-card-dark__year">{current.year}</div>
         )}
-        <div ref={scrollRef} className="historical-card-dark__text">
-          <p>{current.text}</p>
+        <div ref={scrollRef} className="historical-card-dark__text no-scrollbar">
+          <p>{capitalizeText(current.text)}</p>
         </div>
       </div>
 
@@ -95,7 +100,9 @@ export const HistoricalEventsCard = ({ items, rotationSeconds = 12 }: Historical
           margin-bottom: 0.5rem;
         }
         .historical-card-dark__icon {
-          font-size: 2rem;
+          width: 42px;
+          height: 42px;
+          object-fit: contain;
         }
         .historical-card-dark__title {
           font-size: 1.2rem;

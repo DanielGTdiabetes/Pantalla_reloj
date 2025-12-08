@@ -13,18 +13,21 @@ type AstroState = "sunrise" | "moon" | "sunset";
 // Get moon phase icon based on illumination percentage
 const getMoonPhaseIcon = (illumination: number | null): string => {
   if (illumination === null || Number.isNaN(illumination)) {
-    return "/icons/moon/moon-50.svg";
+    return "/icons/astronomy/moon/full.svg";
   }
 
   // Normalize to 0-1 if percentage
   const illum = illumination > 1 ? illumination / 100 : illumination;
   const normalized = Math.max(0, Math.min(1, illum));
 
-  if (normalized <= 0.12) return "/icons/moon/moon-0.svg";
-  if (normalized <= 0.37) return "/icons/moon/moon-25.svg";
-  if (normalized <= 0.62) return "/icons/moon/moon-50.svg";
-  if (normalized <= 0.87) return "/icons/moon/moon-75.svg";
-  return "/icons/moon/moon-100.svg";
+  if (normalized <= 0.12) return "/icons/astronomy/moon/new.svg";
+  if (normalized <= 0.25) return "/icons/astronomy/moon/waxing-crescent-1.svg";
+  if (normalized <= 0.37) return "/icons/astronomy/moon/first-quarter.svg";
+  if (normalized <= 0.5) return "/icons/astronomy/moon/waxing-gibbous-1.svg";
+  if (normalized <= 0.62) return "/icons/astronomy/moon/full.svg";
+  if (normalized <= 0.75) return "/icons/astronomy/moon/waning-gibbous-1.svg";
+  if (normalized <= 0.87) return "/icons/astronomy/moon/last-quarter.svg";
+  return "/icons/astronomy/moon/waning-crescent-1.svg";
 };
 
 export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: EphemeridesCardProps): JSX.Element => {
@@ -49,10 +52,10 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
       return getMoonPhaseIcon(illumination ?? null);
     }
     // Sun icons for sunrise/sunset
-    if (currentState === "sunset") {
-      return "/icons/weather/day/sunset.svg"; // Fall back to sunny if no sunset
+    if (currentState === "sunset") { 
+      return "/icons/astronomy/sunset.svg"; 
     }
-    return "/icons/weather/day/sunny.svg";
+    return "/icons/astronomy/sunrise.svg";
   };
 
   const getLabel = () => {
@@ -112,8 +115,8 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
           margin-bottom: 0.5rem;
         }
         .ephemerides-card-dark__header-icon {
-          width: 48px;
-          height: 48px;
+          width: 52px;
+          height: 52px;
           object-fit: contain;
           filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
         }
@@ -139,9 +142,9 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
           opacity: 0.9;
         }
         .ephemerides-card-dark__icon-container {
-          width: 120px;
-          height: 120px;
-          margin: 0.25rem 0;
+          width: 124px;
+          height: 124px;
+          margin: 0.4rem 0;
         }
         .ephemerides-card-dark__main-icon {
           width: 100%;

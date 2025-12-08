@@ -107,6 +107,22 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [currentIndex]);
 
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let rafId: number;
+    const step = () => {
+      if (!el) return;
+      const maxScroll = el.scrollHeight - el.clientHeight;
+      if (maxScroll > 2) {
+        el.scrollTop = (el.scrollTop + 0.5) % (maxScroll + 14);
+      }
+      rafId = requestAnimationFrame(step);
+    };
+    rafId = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafId);
+  }, [currentIndex, saintInfo?.extract]);
+
   if (!saints || saints.length === 0) {
     return (
       <div className="saints-card-dark saints-card-dark__empty">
@@ -116,12 +132,12 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
   }
 
   // Use fetched image or fallback to icon
-  const imageUrl = saintInfo?.originalimage?.source || saintInfo?.thumbnail?.source || "/img/icons/3d/sun-smile.png";
+  const imageUrl = saintInfo?.originalimage?.source || saintInfo?.thumbnail?.source || "/icons/misc/santoral.svg";
 
   return (
     <div className="saints-card-dark">
       <div className="saints-card-dark__header">
-        <img src="/img/icons/3d/sun-smile.png" alt="" className="saints-card-dark__header-icon" />
+        <img src="/icons/misc/santoral.svg" alt="" className="saints-card-dark__header-icon" />
         <span className="saints-card-dark__title">Santoral</span>
       </div>
 
@@ -132,7 +148,7 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
 
         <div className="saints-card-dark__info">
           <h2 className="saints-card-dark__name">{fullName}</h2>
-          <div ref={scrollRef} className="saints-card-dark__bio">
+          <div ref={scrollRef} className="saints-card-dark__bio no-scrollbar">
             {loading ? (
               <p className="saints-card-dark__loading">Buscando información...</p>
             ) : saintInfo?.extract ? (

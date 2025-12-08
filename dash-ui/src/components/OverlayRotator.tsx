@@ -31,6 +31,7 @@ import { WarningsCard } from "./dashboard/cards/WarningsCard";
 import { useRotationProgress } from "../hooks/useRotationProgress";
 import { useDayNightMode } from "../hooks/useDayNightMode";
 import harvestCatalog from "../data/harvest_catalog.json";
+import { sanitizeWeatherCondition } from "../utils/weather";
 
 type DashboardPayload = {
   weather?: Record<string, unknown>;
@@ -676,7 +677,7 @@ export const OverlayRotator: React.FC = () => {
         : typeof weather.ws === "number" ? (weather.ws as number)
           : null;
 
-  const condition = sanitizeRichText(weather.summary) || sanitizeRichText(weather.condition) || null;
+  const rawCondition = sanitizeRichText(weather.summary) || sanitizeRichText(weather.condition) || null;
   const sunrise = sanitizeRichText(astronomy.sunrise) || null;
   const sunset = sanitizeRichText(astronomy.sunset) || null;
   const moonPhase = sanitizeRichText(astronomy.moon_phase) || null;
@@ -685,6 +686,8 @@ export const OverlayRotator: React.FC = () => {
     : typeof weather.precipitation === "number" ? (weather.precipitation as number)
       : typeof weather.rainfall === "number" ? (weather.rainfall as number)
         : null;
+
+  const condition = sanitizeWeatherCondition(rawCondition, rawTemperature);
 
   const moonIllumination = typeof astronomy.moon_illumination === "number"
     ? (astronomy.moon_illumination as number)
@@ -770,10 +773,14 @@ export const OverlayRotator: React.FC = () => {
 
       const humidity = typeof day.humidity === "number" ? day.humidity : null;
 
+      const averageTemp = [tempMin, tempMax]
+        .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
+        .reduce((acc, value, _, arr) => acc + value / arr.length, 0);
+
       return {
         date: date || new Date().toISOString().split("T")[0],
         dayName: dayName || undefined,
-        condition: condition || "Sin datos",
+        condition: sanitizeWeatherCondition(condition || "Sin datos", averageTemp || null),
         temperature: {
           min: tempMin,
           max: tempMax,
