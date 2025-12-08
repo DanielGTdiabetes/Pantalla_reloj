@@ -5,9 +5,13 @@ type Aircraft = {
   callsign?: string | null;
   origin?: string | null;
   destination?: string | null;
+  altitude?: number | null;
   altitude_ft?: number | null;
+  alt?: number | null;
   speed_kts?: number | null;
+  speed?: number | null;
   heading_deg?: number | null;
+  heading?: number | null;
   lat?: number;
   lon?: number;
   distance_km?: number | null;
