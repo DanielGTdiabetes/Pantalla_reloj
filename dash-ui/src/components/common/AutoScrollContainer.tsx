@@ -48,7 +48,8 @@ export const AutoScrollContainer: React.FC<AutoScrollContainerProps> = ({
       }
 
       const deltaPx = (speed * delta) / 1000;
-      const nextOffset = offsetRef.current + deltaPx;
+      const currentOffset = offsetRef.current ?? 0;
+      const nextOffset = currentOffset + deltaPx;
 
       if (nextOffset >= maxOffset) {
         offsetRef.current = 0;
