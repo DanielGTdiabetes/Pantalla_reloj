@@ -1,10 +1,15 @@
 import { useState, useEffect, useMemo } from "react";
-import { resolveWeatherIcon, sanitizeWeatherCondition } from "../../../utils/weather";
+import { formatWeatherKindLabel, resolveWeatherKind, sanitizeWeatherCondition } from "../../../utils/weather";
+import type { WeatherKind } from "../../../types/weather";
+import { WeatherIcon } from "../../weather/WeatherIcon";
+import { getPanelTimeOfDay, getWeatherBackgroundClass } from "../../../theme/panelTheme";
 
 type ForecastDay = {
   date: string;
   dayName?: string;
   condition: string;
+  pictocode?: number | null;
+  kind?: WeatherKind;
   temperature: {
     min: number | null;
     max: number | null;
@@ -30,8 +35,16 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
         const averageTemp = [day.temperature.min, day.temperature.max]
           .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
           .reduce((acc, value, _, arr) => acc + value / arr.length, 0);
+
+        const kind = day.kind || resolveWeatherKind({
+          symbol: day.pictocode,
+          condition: day.condition,
+          precipitation: typeof day.precipitation === "number" ? day.precipitation : null,
+        });
+
         return {
           ...day,
+          kind,
           condition: sanitizeWeatherCondition(day.condition, averageTemp || null)
         };
       });
@@ -48,14 +61,15 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
   const day = days[currentIndex];
   if (!day) return null;
 
-  const iconUrl = day.icon
-    ? `/icons/weather/day/${day.icon}.svg`
-    : resolveWeatherIcon(day.condition, { isNight: false });
+  const now = new Date();
+  const backgroundClass = getWeatherBackgroundClass(day.kind, getPanelTimeOfDay(now));
 
   return (
-    <div className="forecast-card-dark" data-testid="panel-weather-forecast">
+    <div className={`forecast-card-dark ${backgroundClass}`} data-testid="panel-weather-forecast">
       <div className="forecast-card-dark__header">
-        <img src="/icons/weather/day/partly-cloudy.svg" alt="" className="forecast-card-dark__header-icon panel-title-icon" />
+        <div className="forecast-card-dark__header-icon panel-title-icon">
+          <WeatherIcon kind={day.kind || "unknown"} size={44} />
+        </div>
         <span className="forecast-card-dark__title panel-title-text">Tiempo 7 Días</span>
       </div>
 
@@ -66,7 +80,7 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
         </div>
 
         <div className="forecast-card-dark__icon-container">
-          <img src={iconUrl} alt={day.condition} className="forecast-card-dark__main-icon" />
+          <WeatherIcon kind={day.kind || "unknown"} size={130} className="forecast-card-dark__main-icon" />
         </div>
 
         <div className="forecast-card-dark__temps">
@@ -80,7 +94,7 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
           </span>
         </div>
 
-        <div className="forecast-card-dark__condition panel-item-title">{day.condition}</div>
+        <div className="forecast-card-dark__condition panel-item-title">{formatWeatherKindLabel(day.kind || "unknown", day.condition)}</div>
 
         {days.length > 1 && (
           <div className="forecast-card-dark__dots">
@@ -97,10 +111,13 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
           flex-direction: column;
           height: 100%;
           width: 100%;
-          padding: 0.5rem;
+          padding: 0.75rem;
           box-sizing: border-box;
-          background: linear-gradient(135deg, #0c4a6e 0%, #0f172a 100%);
           color: white;
+          border-radius: 1rem;
+          border: 1px solid rgba(255,255,255,0.08);
+          box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+          backdrop-filter: blur(10px);
         }
         .forecast-card-dark__header {
           display: flex;
@@ -111,8 +128,12 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
         .forecast-card-dark__header-icon {
           width: 48px;
           height: 48px;
-          object-fit: contain;
-          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+          display: grid;
+          place-items: center;
+          background: rgba(255,255,255,0.08);
+          border-radius: 12px;
+          border: 1px solid rgba(255,255,255,0.14);
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
         }
         .forecast-card-dark__title {
           font-size: 1.3rem;
@@ -147,6 +168,7 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
           width: 150px;
           height: 150px;
           margin: 0.5rem 0;
+          filter: drop-shadow(0 10px 28px rgba(0,0,0,0.35));
         }
         .forecast-card-dark__main-icon {
           width: 100%;

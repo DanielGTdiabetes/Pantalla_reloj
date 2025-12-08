@@ -31,7 +31,8 @@ import { WarningsCard } from "./dashboard/cards/WarningsCard";
 import { useRotationProgress } from "../hooks/useRotationProgress";
 import { useDayNightMode } from "../hooks/useDayNightMode";
 import harvestCatalog from "../data/harvest_catalog.json";
-import { sanitizeWeatherCondition } from "../utils/weather";
+import { formatWeatherKindLabel, resolveWeatherKind, sanitizeWeatherCondition } from "../utils/weather";
+import type { WeatherKind } from "../types/weather";
 
 type DashboardPayload = {
   weather?: Record<string, unknown>;
@@ -678,6 +679,9 @@ export const OverlayRotator: React.FC = () => {
           : null;
 
   const rawCondition = sanitizeRichText(weather.summary) || sanitizeRichText(weather.condition) || null;
+  const pictocode = typeof weather.pictocode === "number" ? weather.pictocode
+    : typeof (weather as any).symbol === "number" ? (weather as any).symbol
+      : null;
   const sunrise = sanitizeRichText(astronomy.sunrise) || null;
   const sunset = sanitizeRichText(astronomy.sunset) || null;
   const moonPhase = sanitizeRichText(astronomy.moon_phase) || null;
@@ -687,7 +691,20 @@ export const OverlayRotator: React.FC = () => {
       : typeof weather.rainfall === "number" ? (weather.rainfall as number)
         : null;
 
-  const condition = sanitizeWeatherCondition(rawCondition, rawTemperature);
+  const weatherKind: WeatherKind = resolveWeatherKind({
+    symbol: pictocode,
+    condition: rawCondition,
+    precipitation: rain,
+  });
+  const condition = formatWeatherKindLabel(weatherKind, sanitizeWeatherCondition(rawCondition, rawTemperature));
+
+  if (IS_DEV) {
+    console.debug("[Weather] symbol=", pictocode, "kind=", weatherKind, {
+      rawCondition,
+      rain,
+      temp: rawTemperature,
+    });
+  }
 
   const moonIllumination = typeof astronomy.moon_illumination === "number"
     ? (astronomy.moon_illumination as number)
@@ -736,6 +753,11 @@ export const OverlayRotator: React.FC = () => {
       const date = ensurePlainText(day.date || day.dt || day.time);
       const dayName = ensurePlainText(day.dayName || day.day_name || day.name);
       const condition = sanitizeRichText(day.condition || day.weather || day.summary || day.description);
+      const pictocode = typeof day.pictocode === "number"
+        ? day.pictocode
+        : typeof (day as any).symbol === "number"
+          ? (day as any).symbol
+          : null;
 
       let tempMin: number | null = null;
       if (typeof day.temp_min === "number") {
@@ -777,10 +799,18 @@ export const OverlayRotator: React.FC = () => {
         .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
         .reduce((acc, value, _, arr) => acc + value / arr.length, 0);
 
+      const kind = resolveWeatherKind({
+        symbol: pictocode,
+        condition,
+        precipitation,
+      });
+
       return {
         date: date || new Date().toISOString().split("T")[0],
         dayName: dayName || undefined,
         condition: sanitizeWeatherCondition(condition || "Sin datos", averageTemp || null),
+        pictocode,
+        kind,
         temperature: {
           min: tempMin,
           max: tempMax,
@@ -810,6 +840,7 @@ export const OverlayRotator: React.FC = () => {
           temperatureLabel={`${temperature.value}${temperature.unit}`}
           feelsLikeLabel={feelsLikeValue ? `${feelsLikeValue.value}${feelsLikeValue.unit}` : null}
           condition={condition}
+          kind={weatherKind}
           humidity={humidity}
           wind={wind}
           rain={rain}

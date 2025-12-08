@@ -1,3 +1,5 @@
+import type { WeatherKind } from "../types/weather";
+
 export type PanelTimeOfDay = 'night' | 'dawn' | 'day' | 'dusk';
 
 export function getPanelTimeOfDay(now: Date): PanelTimeOfDay {
@@ -21,5 +23,27 @@ export function getPanelBackgroundClass(timeOfDay: PanelTimeOfDay): string {
       return 'panel-bg-dusk';
     default:
       return 'panel-bg-night';
+  }
+}
+
+export function getWeatherBackgroundClass(kind: WeatherKind | null | undefined, timeOfDay: PanelTimeOfDay): string {
+  switch (kind) {
+    case 'clear':
+      return timeOfDay === 'night' ? 'panel-bg-weather-clear-night' : 'panel-bg-weather-clear-day';
+    case 'partly_cloudy':
+      return timeOfDay === 'night' ? 'panel-bg-weather-partly-night' : 'panel-bg-weather-partly-day';
+    case 'cloudy':
+      return 'panel-bg-weather-cloudy';
+    case 'fog':
+      return 'panel-bg-weather-fog';
+    case 'rain':
+      return 'panel-bg-weather-rain';
+    case 'sleet':
+    case 'snow':
+      return 'panel-bg-weather-snow';
+    case 'thunderstorm':
+      return 'panel-bg-weather-storm';
+    default:
+      return getPanelBackgroundClass(timeOfDay);
   }
 }

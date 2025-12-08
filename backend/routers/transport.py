@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import importlib
 import math
+import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
 
 router = APIRouter(prefix="/api/transport", tags=["transport"])
+logger = logging.getLogger(__name__)
 
 def _load_main_module():
     """Lazy load main module to access services."""
@@ -213,14 +215,15 @@ async def get_transport_nearby(
                     ):
                         props = feature.get("properties", {}) or {}
                         ships_data.append({
+                            "id": props.get("mmsi") or f"ship-{slat:.4f}-{slon:.4f}",
                             "name": props.get("name") or str(props.get("mmsi") or ""),
                             "mmsi": props.get("mmsi"),
                             "type": props.get("shipType"),
-                            "spd": props.get("speed"),
-                            "hdg": props.get("heading"),
+                            "speed_kts": props.get("speed"),
+                            "heading_deg": props.get("heading"),
                             "lat": slat,
                             "lon": slon,
-                            "dest": props.get("destination"),
+                            "destination": props.get("destination"),
                             "distance_km": _haversine_km(lat, lon, slat, slon),
                             # Ship photos are harder to get freely by API.
                             # Leaving img as null/undefined to trigger fallback.
@@ -242,12 +245,20 @@ async def get_transport_nearby(
         print(f"Error sorting transport data: {e}")
         errors.append(f"sort_error: {e}")
 
+    logger.info(
+        "transport.nearby counts ships=%d aircraft=%d (radius_km=%.1f)",
+        len(ships_data),
+        len(planes_data),
+        radius,
+    )
+
     result = {
         "ok": len(errors) == 0,
+        "center": {"lat": lat, "lon": lon},
         "location": {"lat": lat, "lon": lon},
         "planes": planes_data[:20],
         "aircraft": planes_data[:20],
-        "ships": ships_data[:10]
+        "ships": ships_data[:15],
     }
     
     if errors:

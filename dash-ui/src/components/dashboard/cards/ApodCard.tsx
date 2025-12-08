@@ -29,7 +29,8 @@ export const ApodCard = ({ data }: ApodCardProps) => {
     }
 
     const isVideo = data.media_type === "video";
-    const imageUrl = isVideo ? (data.thumbnail_url || "") : data.url;
+    const isImage = data.media_type === "image";
+    const imageUrl = isImage ? data.url : data.thumbnail_url || "";
     const hasImage = Boolean(imageUrl);
 
     const embedUrl = useMemo(() => {
@@ -81,19 +82,19 @@ export const ApodCard = ({ data }: ApodCardProps) => {
                                 title={data.title}
                             />
                         </div>
-                    ) : hasImage ? (
+                    ) : isImage && hasImage ? (
                         <img src={imageUrl} alt={data.title} className="apod-card-dark__media-img" />
                     ) : (
                         <div className="apod-card-dark__media-placeholder" aria-hidden>
                             <span className="apod-card-dark__media-icon">🎞️</span>
-                            <span className="apod-card-dark__media-label">Contenido en vídeo</span>
+                            <span className="apod-card-dark__media-label">Contenido no compatible</span>
                         </div>
                     )}
                 </div>
 
                 <h1 className="apod-card-dark__title">{data.title}</h1>
 
-                <AutoScrollContainer className="apod-card-dark__desc">
+                <AutoScrollContainer className="apod-card-dark__desc" speed={8} pauseAtEndMs={3600}>
                     <p>{data.explanation}</p>
                 </AutoScrollContainer>
 
