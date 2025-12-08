@@ -16,7 +16,7 @@ export const AutoScrollContainer: React.FC<AutoScrollContainerProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [offset, setOffset] = useState(0);
-  const offsetRef = useRef(0);
+  const offsetRef = useRef<number>(0);
 
   useEffect(() => {
     const container = containerRef.current;
