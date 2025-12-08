@@ -207,6 +207,7 @@ class ConfigManager:
             self.logger.info("[config] Migrated legacy config v1 -> v2")
 
         config_data, migrated_defaults = self._migrate_missing_keys(config_data)
+        config_data, migrated_location_weather = self._migrate_location_weather(config_data)
 
         try:
             config = AppConfig.model_validate(config_data)
@@ -223,7 +224,7 @@ class ConfigManager:
                 self.logger.warning("[config] Could not persist default config: %s", write_exc)
             return config
 
-        if migrated_v1 or migrated_defaults:
+        if migrated_v1 or migrated_defaults or migrated_location_weather:
             try:
                 self._atomic_write(config.model_dump(mode="json", exclude_none=True))
                 self._write_snapshot(config)
@@ -774,7 +775,62 @@ class ConfigManager:
                 changed = True
         
         return migrated, changed
-    
+
+    def _migrate_location_weather(self, data: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
+        """Asegura que location y weather existan usando ephemerides como fallback."""
+
+        if not isinstance(data, dict):
+            return data, False
+
+        changed = False
+
+        ephemerides = data.get("ephemerides") if isinstance(data.get("ephemerides"), dict) else None
+        panels = data.get("panels") if isinstance(data.get("panels"), dict) else None
+
+        location = data.get("location") if isinstance(data.get("location"), dict) else None
+        if not location:
+            lat = ephemerides.get("latitude") if ephemerides else None
+            lon = ephemerides.get("longitude") if ephemerides else None
+            name = ephemerides.get("name") if ephemerides else None
+
+            if lat is not None and lon is not None:
+                if name is None and lat == 39.9378 and lon == -0.1014:
+                    name = "Vila-real"
+
+                data["location"] = {
+                    "name": name or "Default location",
+                    "lat": lat,
+                    "lon": lon,
+                }
+                changed = True
+        else:
+            if location.get("name") is None and {"lat", "lon"} <= set(location.keys()):
+                location = dict(location)
+                if location.get("lat") == 39.9378 and location.get("lon") == -0.1014:
+                    location["name"] = "Vila-real"
+                else:
+                    location["name"] = "Default location"
+                data["location"] = location
+                changed = True
+
+        weather_cfg = data.get("weather") if isinstance(data.get("weather"), dict) else None
+        if not weather_cfg:
+            provider = "meteoblue"
+            if panels:
+                weekly_cfg = panels.get("weatherWeekly") if isinstance(panels.get("weatherWeekly"), dict) else None
+                if weekly_cfg and weekly_cfg.get("provider"):
+                    provider = weekly_cfg.get("provider")
+            data["weather"] = {"enabled": True, "provider": provider}
+            changed = True
+        else:
+            if "provider" not in weather_cfg:
+                weather_cfg = dict(weather_cfg)
+                weather_cfg["provider"] = "meteoblue"
+                data["weather"] = weather_cfg
+                changed = True
+
+        return data, changed
+
     def _migrate_missing_keys(self, data: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
         merged_data, keys_added = self._merge_missing_dict_keys(
             data if isinstance(data, dict) else {},

@@ -278,6 +278,15 @@
     "longitude": -0.1014,
     "timezone": "Europe/Madrid"
   },
+  "location": {
+    "name": "Vila-real",
+    "lat": 39.9378,
+    "lon": -0.1014
+  },
+  "weather": {
+    "enabled": true,
+    "provider": "meteoblue"
+  },
   "calendar": {
     "enabled": true,
     "source": "ics",

@@ -6,13 +6,14 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 from pydantic import BaseModel
 
 import requests
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, HTTPException
 
 from ..config_manager import ConfigManager
+from ..models import AppConfig
 from ..secret_store import SecretStore
 from ..services import rainviewer as rainviewer_service
 from ..services import gibs as gibs_service
@@ -24,6 +25,51 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/weather", tags=["weather"])
 config_manager = ConfigManager()
 secret_store = SecretStore()
+
+
+def resolve_weather_location(config: AppConfig, lat: float | None, lon: float | None) -> Tuple[float, float]:
+    """Resuelve coordenadas para servicios de clima con múltiples fuentes."""
+
+    if lat is not None and lon is not None:
+        return lat, lon
+
+    if config.location and config.location.lat is not None and config.location.lon is not None:
+        return config.location.lat, config.location.lon
+
+    if config.ephemerides and config.ephemerides.latitude is not None and config.ephemerides.longitude is not None:
+        return config.ephemerides.latitude, config.ephemerides.longitude
+
+    raise HTTPException(status_code=500, detail="Weather location not configured")
+
+
+def _trim_weather_payload(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Reduce el tamaño del payload crudo de Meteoblue para depuración legible."""
+
+    trimmed: Dict[str, Any] = {}
+
+    units = raw.get("units") or raw.get("units_weather")
+    if units:
+        trimmed["units"] = units
+
+    for key in ("data_1h", "data_day"):
+        block = raw.get(key)
+        if isinstance(block, dict):
+            limited: Dict[str, Any] = {}
+            for inner_key, value in block.items():
+                if isinstance(value, list):
+                    limited[inner_key] = value[:3]
+            if limited:
+                trimmed[key] = limited
+
+    metadata = raw.get("metadata")
+    if metadata and isinstance(metadata, dict):
+        trimmed["metadata"] = {
+            k: metadata.get(k) for k in ("modelrun_utc", "lat", "lng", "timezone") if k in metadata
+        }
+
+    if not trimmed:
+        return raw
+    return trimmed
 
 
 @router.get("/radar")
@@ -69,36 +115,17 @@ def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
     Si no se proporcionan lat/lon, se usan los de la configuración.
     El proveedor se determina según la configuración (por defecto: Meteoblue).
     """
-    # Resolve location
     config = config_manager.read()
-    if lat is None or lon is None:
-        # 0. Try specific weather panel configuration (Preferred)
-        if config.panels and config.panels.weather and config.panels.weather.latitude is not None:
-            lat = config.panels.weather.latitude
-            lon = config.panels.weather.longitude
-        
-        # 1. Try Ephemerides location (usually the main device location)
-        elif config.ephemerides:
-            lat = config.ephemerides.latitude
-            lon = config.ephemerides.longitude
-        
-        # 2. Try Map center
-        elif config.ui_map and config.ui_map.fixed and config.ui_map.fixed.center:
-            lat = config.ui_map.fixed.center.lat
-            lon = config.ui_map.fixed.center.lon
+    lat, lon = resolve_weather_location(config, lat, lon)
 
-        # Fallback if still missing
-        if lat is None or lon is None:
-            # Default to Vila-real (Castellón)
-            lat = 39.9378
-            lon = -0.1014
-            
     # Log resolved location for debugging
     logger.info(f"Weather location resolved to: {lat}, {lon}")
-    
+
     # Determinar proveedor
     provider = "meteoblue"
-    if config.panels and config.panels.weatherWeekly:
+    if config.weather and config.weather.provider:
+        provider = config.weather.provider
+    elif config.panels and config.panels.weatherWeekly:
         provider = config.panels.weatherWeekly.provider
     
     # Si el proveedor es Meteoblue, intentar usarlo
@@ -115,7 +142,7 @@ def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
                 logger.error(f"Meteoblue error: {e}, falling back to OpenWeatherMap")
         else:
             logger.warning("Meteoblue selected but no API key found, falling back to OpenWeatherMap")
-    
+
     # Fallback a OpenWeatherMap (o si está seleccionado explícitamente)
     openweather_key = secret_store.get_secret("openweathermap_api_key")
     if not openweather_key:
@@ -186,6 +213,43 @@ def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
         return {"ok": False, "reason": "internal_error", "provider": "openweathermap"}
 
 
+@router.get("/debug")
+def get_weather_debug() -> Dict[str, Any]:
+    """Devuelve información de depuración del proveedor de clima configurado."""
+
+    config = config_manager.read()
+    lat, lon = resolve_weather_location(config, None, None)
+
+    provider = "meteoblue"
+    if config.weather and config.weather.provider:
+        provider = config.weather.provider
+    elif config.panels and config.panels.weatherWeekly:
+        provider = config.panels.weatherWeekly.provider
+
+    if provider != "meteoblue":
+        raise HTTPException(status_code=400, detail="Weather debug is only available for Meteoblue")
+
+    meteoblue_key = secret_store.get_secret("meteoblue_api_key")
+    if not meteoblue_key:
+        raise HTTPException(status_code=500, detail="Missing Meteoblue API key")
+
+    try:
+        raw = weather_service.fetch_weather(lat, lon, meteoblue_key)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Could not fetch Meteoblue data for debug: %s", exc)
+        raise HTTPException(status_code=502, detail="Failed to fetch Meteoblue data") from exc
+
+    return {
+        "provider": provider,
+        "location": {
+            "lat": lat,
+            "lon": lon,
+            "name": getattr(config.location, "name", None) if config.location else None,
+        },
+        "raw_sample": _trim_weather_payload(raw),
+    }
+
+
 class TestWeatherRequest(BaseModel):
     api_key: Optional[str] = None
 
@@ -215,22 +279,13 @@ def test_meteoblue(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
         return {"ok": False, "reason": "missing_api_key", "message": "Falta API Key. Introduce una API key en el campo y vuelve a probar."}
     
     # Resolve location for test
-    lat = 39.9378
-    lon = -0.1014
-    
     try:
         config = config_manager.read()
-        if config.panels and config.panels.weather and config.panels.weather.latitude is not None:
-            lat = config.panels.weather.latitude
-            lon = config.panels.weather.longitude
-        elif config.ephemerides:
-            lat = config.ephemerides.latitude
-            lon = config.ephemerides.longitude
-        elif config.ui_map and config.ui_map.fixed and config.ui_map.fixed.center:
-            lat = config.ui_map.fixed.center.lat
-            lon = config.ui_map.fixed.center.lon
+        lat, lon = resolve_weather_location(config, None, None)
     except Exception as e:
         logger.warning(f"Could not resolve config location for test: {e}")
+        lat = 39.9378
+        lon = -0.1014
     
     try:
         result = weather_service.get_weather(lat, lon, api_key)
