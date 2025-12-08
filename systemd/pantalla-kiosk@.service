@@ -6,6 +6,7 @@ Wants=pantalla-xorg.service
 
 [Service]
 User=%i
+Group=%i
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/%i/.Xauthority
 Environment=GDK_BACKEND=x11
@@ -14,6 +15,7 @@ Environment=GIO_USE_PORTALS=0
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
 EnvironmentFile=-/var/lib/pantalla-reloj/state/kiosk.env
 LogsDirectory=pantalla
+LogsDirectoryMode=0755
 ExecStartPre=/bin/sh -lc 'xset -dpms; xset s off; xset s noblank || true'
 ExecStart=/usr/local/bin/pantalla-kiosk
 Restart=on-failure
