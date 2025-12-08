@@ -1,10 +1,14 @@
 import { useMemo } from "react";
-import { resolveWeatherIcon, sanitizeWeatherCondition } from "../../../utils/weather";
+import { formatWeatherKindLabel, sanitizeWeatherCondition } from "../../../utils/weather";
+import type { WeatherKind } from "../../../types/weather";
+import { WeatherIcon } from "../../weather/WeatherIcon";
+import { getPanelTimeOfDay, getWeatherBackgroundClass } from "../../../theme/panelTheme";
 
 type WeatherCardProps = {
   temperatureLabel: string;
   feelsLikeLabel: string | null;
   condition: string | null;
+  kind?: WeatherKind;
   humidity: number | null;
   wind: number | null;
   rain: number | null;
@@ -17,6 +21,7 @@ export const WeatherCard = ({
   temperatureLabel,
   feelsLikeLabel,
   condition,
+  kind,
   humidity,
   wind,
   rain
@@ -28,20 +33,23 @@ export const WeatherCard = ({
     [condition, numericTemp]
   );
   const now = new Date();
-  const isNight = now.getHours() < 6 || now.getHours() >= 21;
-  const iconUrl = resolveWeatherIcon(normalizedCondition, { isNight });
+  const timeOfDay = getPanelTimeOfDay(now);
+  const backgroundClass = getWeatherBackgroundClass(kind, timeOfDay);
+  const label = formatWeatherKindLabel(kind || "unknown", normalizedCondition);
 
   return (
-    <div className="weather-card-dark" data-testid="panel-weather-current">
+    <div className={`weather-card-dark ${backgroundClass}`} data-testid="panel-weather-current">
       <div className="weather-card-dark__header">
-        <img src={iconUrl} alt="" className="weather-card-dark__header-icon panel-title-icon" />
+        <div className="weather-card-dark__header-icon panel-title-icon">
+          <WeatherIcon kind={kind || "unknown"} size={48} />
+        </div>
         <span className="weather-card-dark__title panel-title-text">Tiempo Actual</span>
       </div>
 
       <div className="weather-card-dark__body panel-body">
         <div className="weather-card-dark__main">
           <div className="weather-card-dark__icon-container">
-            <img src={iconUrl} alt={normalizedCondition || "weather"} className="weather-card-dark__main-icon" />
+            <WeatherIcon kind={kind || "unknown"} size={110} className="weather-card-dark__main-icon" />
           </div>
           <div className="weather-card-dark__temp-block">
             <span className="weather-card-dark__temp panel-item-title">{tempValue}°</span>
@@ -51,7 +59,7 @@ export const WeatherCard = ({
           </div>
         </div>
 
-        <div className="weather-card-dark__condition panel-item-title">{normalizedCondition || "Sin datos"}</div>
+        <div className="weather-card-dark__condition panel-item-title">{label}</div>
 
         <div className="weather-card-dark__metrics">
           <div className="weather-card-dark__metric">
@@ -77,10 +85,13 @@ export const WeatherCard = ({
           flex-direction: column;
           height: 100%;
           width: 100%;
-          padding: 0.5rem;
+          padding: 0.75rem;
           box-sizing: border-box;
-          background: linear-gradient(135deg, #0c4a6e 0%, #0f172a 100%);
           color: white;
+          border-radius: 1rem;
+          border: 1px solid rgba(255,255,255,0.08);
+          box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+          backdrop-filter: blur(10px);
         }
         .weather-card-dark__header {
           display: flex;
@@ -89,10 +100,14 @@ export const WeatherCard = ({
           margin-bottom: 0.25rem;
         }
         .weather-card-dark__header-icon {
-          width: 48px;
-          height: 48px;
-          object-fit: contain;
-          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+          width: 52px;
+          height: 52px;
+          display: grid;
+          place-items: center;
+          background: rgba(255,255,255,0.08);
+          border-radius: 14px;
+          border: 1px solid rgba(255,255,255,0.14);
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
         }
         .weather-card-dark__title {
           font-size: 1.4rem;
@@ -108,7 +123,7 @@ export const WeatherCard = ({
           align-items: center;
           justify-content: center;
           gap: 0.35rem;
-          padding: 0.25rem 0.5rem;
+          padding: 0.35rem 0.5rem;
         }
         .weather-card-dark__main {
           display: flex;
@@ -119,6 +134,7 @@ export const WeatherCard = ({
         .weather-card-dark__icon-container {
           width: 110px;
           height: 110px;
+          filter: drop-shadow(0 10px 28px rgba(0,0,0,0.35));
         }
         .weather-card-dark__main-icon {
           width: 100%;
@@ -147,6 +163,7 @@ export const WeatherCard = ({
           font-weight: 700;
           text-transform: capitalize;
           text-align: center;
+          text-shadow: 0 6px 20px rgba(0,0,0,0.28);
         }
         .weather-card-dark__metrics {
           display: flex;
@@ -163,6 +180,7 @@ export const WeatherCard = ({
           background: rgba(255,255,255,0.1);
           border-radius: 0.4rem;
           min-width: 60px;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
         }
         .weather-card-dark__metric-label {
           font-size: 0.7rem;

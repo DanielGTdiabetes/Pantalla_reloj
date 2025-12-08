@@ -359,6 +359,7 @@ class WeatherService:
                 "felt_temperature": current["felt_temperature"],
                 "condition": current["condition"],
                 "icon": current["icon"],
+                "pictocode": current.get("pictocode"),
                 "summary": current["condition"],
                 "daily": forecast,
                 "days": forecast,  # Alias para compatibilidad

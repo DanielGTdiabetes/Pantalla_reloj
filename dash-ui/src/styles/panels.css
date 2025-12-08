@@ -19,6 +19,50 @@
     linear-gradient(135deg, #0f172a, #7c3aed);
 }
 
+.panel-bg-weather-clear-day {
+  background: radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.18), transparent 50%),
+    linear-gradient(135deg, #fcd34d, #60a5fa);
+}
+
+.panel-bg-weather-clear-night {
+  background: radial-gradient(circle at 15% 20%, rgba(94, 234, 212, 0.24), transparent 55%),
+    linear-gradient(135deg, #0b1021, #111827);
+}
+
+.panel-bg-weather-partly-day {
+  background: radial-gradient(circle at 70% 0%, rgba(255, 255, 255, 0.3), transparent 55%),
+    linear-gradient(135deg, #9ae6b4, #60a5fa);
+}
+
+.panel-bg-weather-partly-night {
+  background: radial-gradient(circle at 10% 0%, rgba(165, 180, 252, 0.3), transparent 55%),
+    linear-gradient(135deg, #0f172a, #312e81);
+}
+
+.panel-bg-weather-cloudy {
+  background: radial-gradient(circle at 50% 10%, rgba(226, 232, 240, 0.32), transparent 50%),
+    linear-gradient(135deg, #334155, #1e293b);
+}
+
+.panel-bg-weather-fog {
+  background: linear-gradient(135deg, #cbd5e1, #94a3b8);
+}
+
+.panel-bg-weather-rain {
+  background: radial-gradient(circle at 80% 20%, rgba(96, 165, 250, 0.35), transparent 45%),
+    linear-gradient(145deg, #0ea5e9, #0f172a);
+}
+
+.panel-bg-weather-snow {
+  background: radial-gradient(circle at 30% 10%, rgba(226, 232, 240, 0.45), transparent 50%),
+    linear-gradient(145deg, #e0f2fe, #94a3b8);
+}
+
+.panel-bg-weather-storm {
+  background: radial-gradient(circle at 20% 0%, rgba(250, 204, 21, 0.3), transparent 50%),
+    linear-gradient(135deg, #1e293b, #0f172a 55%, #111827);
+}
+
 .panel-bg-night,
 .panel-bg-dawn,
 .panel-bg-day,
@@ -49,4 +93,42 @@
 
 .auto-scroll-container::-webkit-scrollbar {
   display: none;
+}
+
+.wi-spin {
+  animation: wiSpin 18s linear infinite;
+  transform-origin: center;
+}
+
+.wi-pulse {
+  animation: wiPulse 6s ease-in-out infinite;
+}
+
+.wi-fall {
+  animation: wiFall 2.8s linear infinite;
+}
+
+.wi-bounce {
+  animation: wiBounce 1.4s ease-in-out infinite;
+}
+
+@keyframes wiSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes wiPulse {
+  0%, 100% { opacity: 0.6; transform: scale(0.95); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+@keyframes wiFall {
+  0% { transform: translateY(0); opacity: 0.95; }
+  90% { opacity: 1; }
+  100% { transform: translateY(18px); opacity: 0; }
+}
+
+@keyframes wiBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(6px); }
 }
