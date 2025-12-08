@@ -6,6 +6,18 @@ DEFAULT_URL="${DEFAULT_ORIGIN}/"
 DEFAULT_STATE_DIR="/var/lib/pantalla-reloj/state"
 DEFAULT_LOG_DIR="/var/log/pantalla"
 
+LOG_DIR="/var/log/pantalla"
+LOG_FILE="$LOG_DIR/browser-kiosk.log"
+
+mkdir -p "$LOG_DIR"
+
+# Crear si no existe
+touch "$LOG_FILE"
+
+# Asegurar permisos correctos para el usuario que ejecuta el kiosk
+chown "$USER:$USER" "$LOG_FILE"
+chmod 644 "$LOG_FILE"
+
 log() {
   printf '[pantalla-kiosk] %s\n' "$*" >&2
 }

@@ -6,6 +6,7 @@ BindsTo=pantalla-xorg.service
 
 [Service]
 User=%i
+Group=%i
 PermissionsStartOnly=yes
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/%i/.Xauthority
