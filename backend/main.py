@@ -1077,7 +1077,20 @@ def _build_public_config(config: AppConfig) -> Dict[str, Any]:
         
         # Google Calendar
         if "google" in payload.get("secrets", {}):
-            secrets_public["google"] = {"api_key": None, "calendar_id": None}
+            secrets_public["google"] = {
+                "api_key": None, 
+                "calendar_id": None,
+                "client_id": None,
+                "client_secret": None
+            }
+            stored_api = secret_store.get_secret("google_calendar_api_key") or secret_store.get_secret("google_api_key")
+            stored_cal_id = secret_store.get_secret("google_calendar_id")
+            stored_client_id = secret_store.get_secret("google_calendar_client_id")
+            stored_client_secret = secret_store.get_secret("google_calendar_client_secret")
+            
+            secrets_public["google"]["has_api_key"] = bool(stored_api)
+            secrets_public["google"]["has_calendar_id"] = bool(stored_cal_id)
+            secrets_public["google"]["has_oauth"] = bool(stored_client_id and stored_client_secret)
         
         # Calendar ICS
         if "calendar_ics" in payload.get("secrets", {}):
@@ -1352,6 +1365,11 @@ _ALLOWED_SECRET_KEYS = {
     "aishub_api_key",
     "maptiler_api_key",
     "meteoblue_api_key",
+    "google_calendar_api_key",
+    "google_calendar_id",
+    "google_calendar_client_id",
+    "google_calendar_client_secret",
+    "google_api_key",
 }
 
 def _canonical_secret_key(key: str) -> str:

@@ -185,6 +185,10 @@ export const ConfigPage: React.FC = () => {
   const [aviationstackApiKey, setAviationstackApiKey] = useState<string>("");
   const [aisstreamApiKey, setAisstreamApiKey] = useState<string>("");
   const [aishubApiKey, setAishubApiKey] = useState<string>("");
+  const [googleApiKey, setGoogleApiKey] = useState<string>("");
+  const [googleCalendarId, setGoogleCalendarId] = useState<string>("");
+  const [googleClientId, setGoogleClientId] = useState<string>("");
+  const [googleClientSecret, setGoogleClientSecret] = useState<string>("");
 
   // GIBS
   const [gibsTestResult, setGibsTestResult] = useState<{ ok: boolean; reason?: string } | null>(null);
@@ -1190,6 +1194,45 @@ export const ConfigPage: React.FC = () => {
     } catch (error) {
       console.error("[ConfigPage] Error saving ships secrets:", error);
       alert("Error al guardar la API key. Revisa la consola del navegador.");
+    }
+  };
+
+  const handleSaveGoogleSecrets = async () => {
+    try {
+      let saved = false;
+      if (googleApiKey) {
+        await fetch("/api/config/secret/google_calendar_api_key", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value: googleApiKey }) });
+        saved = true;
+      }
+      if (googleCalendarId) {
+        await fetch("/api/config/secret/google_calendar_id", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value: googleCalendarId }) });
+        saved = true;
+      }
+      if (googleClientId) {
+        await fetch("/api/config/secret/google_calendar_client_id", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value: googleClientId }) });
+        saved = true;
+      }
+      if (googleClientSecret) {
+        await fetch("/api/config/secret/google_calendar_client_secret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value: googleClientSecret }) });
+        saved = true;
+      }
+
+      if (saved) {
+        alert("Credenciales de Google guardadas correctamente");
+        setGoogleApiKey("");
+        setGoogleCalendarId("");
+        setGoogleClientId("");
+        setGoogleClientSecret("");
+
+        // Recargar config
+        const loadedConfig = await getConfig();
+        setConfig(withConfigDefaults(loadedConfig));
+      } else {
+        alert("Introduce al menos un valor para guardar");
+      }
+    } catch (error) {
+      console.error("Error saving google secrets:", error);
+      alert("Error al guardar credenciales de Google");
     }
   };
 
@@ -4493,10 +4536,67 @@ export const ConfigPage: React.FC = () => {
                     )}
 
                     {config.calendar?.source === "google" && (
-                      <div style={{ marginTop: "12px" }}>
-                        <div className="config-field__hint config-field__hint--warning">
-                          ⚠ Para usar Google Calendar, configura api_key y calendar_id en secrets.google
+                      <div style={{ marginTop: "12px", padding: "12px", backgroundColor: "rgba(104, 162, 255, 0.1)", borderRadius: "4px" }}>
+                        <div style={{ marginBottom: "12px", fontSize: "0.9rem" }}>
+                          <div style={{ color: (config.secrets as any)?.google?.has_api_key ? "#4caf50" : "#ff9800" }}>
+                            • API Key: {(config.secrets as any)?.google?.has_api_key ? "Configurada" : "Falta"}
+                          </div>
+                          <div style={{ color: (config.secrets as any)?.google?.has_calendar_id ? "#4caf50" : "#ff9800" }}>
+                            • Calendar ID: {(config.secrets as any)?.google?.has_calendar_id ? "Configurado" : "Falta"}
+                          </div>
+                          <div style={{ color: (config.secrets as any)?.google?.has_oauth ? "#4caf50" : "#aaa" }}>
+                            • OAuth (Client ID/Secret): {(config.secrets as any)?.google?.has_oauth ? "Configurado" : "No configurado (Opcional)"}
+                          </div>
                         </div>
+
+                        <div className="config-field">
+                          <label>API Key (Google Cloud)</label>
+                          <input
+                            type="text"
+                            value={googleApiKey}
+                            onChange={(e) => setGoogleApiKey(e.target.value)}
+                            placeholder="Introduce API Key..."
+                          />
+                        </div>
+                        <div className="config-field">
+                          <label>Calendar ID (e.g. "primary" o email)</label>
+                          <input
+                            type="text"
+                            value={googleCalendarId}
+                            onChange={(e) => setGoogleCalendarId(e.target.value)}
+                            placeholder="Introduce Calendar ID..."
+                          />
+                        </div>
+
+                        <div style={{ marginTop: "12px", borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "12px" }}>
+                          <div style={{ fontSize: "0.85rem", marginBottom: "8px", color: "rgba(255,255,255,0.7)" }}>Opcional: OAuth 2.0 Client Credentials</div>
+                          <div className="config-field">
+                            <label>Client ID</label>
+                            <input
+                              type="text"
+                              value={googleClientId}
+                              onChange={(e) => setGoogleClientId(e.target.value)}
+                              placeholder="OAuth Client ID..."
+                            />
+                          </div>
+                          <div className="config-field">
+                            <label>Client Secret</label>
+                            <input
+                              type="password"
+                              value={googleClientSecret}
+                              onChange={(e) => setGoogleClientSecret(e.target.value)}
+                              placeholder="OAuth Client Secret..."
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          className="config-button"
+                          onClick={handleSaveGoogleSecrets}
+                          style={{ marginTop: "12px" }}
+                        >
+                          Guardar Credenciales Google
+                        </button>
                       </div>
                     )}
 
