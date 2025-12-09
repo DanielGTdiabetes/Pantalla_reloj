@@ -29,6 +29,12 @@ const getCurrentSeasonProducts = (): HarvestItem[] => {
     }));
 };
 
+const UPGRADED_ICONS = [
+  "manzana.png", "naranja.png", "limon.png", "mandarina.png",
+  "lechuga.png", "zanahoria.png", "aguacate.png", "brocoli.png",
+  "cebolla.png", "espinaca.png", "coliflor.png", "col.png"
+];
+
 const getIconUrl = (item: HarvestItem): string => {
   const baseUrl = import.meta.env.BASE_URL || "/";
   const prefix = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
@@ -41,6 +47,9 @@ const getIconUrl = (item: HarvestItem): string => {
   }
 
   if (iconName) {
+    if (UPGRADED_ICONS.includes(iconName)) {
+      return `${prefix}icons/3d/${iconName}`;
+    }
     return `${prefix}icons/soydetemporada/${iconName}`;
   }
   return `${prefix}icons/harvest/sprout.svg`;
