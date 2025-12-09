@@ -119,8 +119,17 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
           width: 100%;
           padding: 0.5rem;
           box-sizing: border-box;
-          background: linear-gradient(135deg, #312e81 0%, #0f172a 100%);
+          background: linear-gradient(145deg, rgba(49, 46, 129, 0.75) 0%, rgba(15, 23, 42, 0.85) 100%);
           color: white;
+          overflow: hidden;
+          border-radius: 1.5rem;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          box-shadow: 
+            0 20px 40px rgba(0,0,0,0.6),
+            inset 0 1px 0 rgba(255,255,255,0.15),
+            inset 0 10px 20px rgba(0,0,0,0.2);
         }
         .ephemerides-card-dark__header {
           display: flex;

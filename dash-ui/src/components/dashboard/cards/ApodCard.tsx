@@ -117,7 +117,9 @@ export const ApodCard = ({ data }: ApodCardProps) => {
                 .apod-card-dark__overlay {
                     position: absolute;
                     inset: 0;
-                    background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.5) 50%, transparent 100%);
+                    background: linear-gradient(to top, rgba(15, 23, 42, 0.95) 0%, rgba(15, 23, 42, 0.6) 60%, transparent 100%);
+                    backdrop-filter: blur(4px);
+                    -webkit-backdrop-filter: blur(4px);
                 }
                 .apod-card-dark__content {
                     position: relative;
@@ -133,16 +135,20 @@ export const ApodCard = ({ data }: ApodCardProps) => {
                     display: inline-flex;
                     align-items: center;
                     gap: 0.4rem;
-                    background: rgba(59, 130, 246, 0.3);
-                    border: 1px solid rgba(59, 130, 246, 0.5);
-                    padding: 0.25rem 0.5rem;
+                    background: rgba(59, 130, 246, 0.2);
+                    border: 1px solid rgba(59, 130, 246, 0.4);
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.1);
+                    backdrop-filter: blur(8px);
+                    padding: 0.25rem 0.6rem;
                     border-radius: 1rem;
-                    font-size: 0.7rem;
-                    font-weight: 700;
+                    font-size: 0.75rem;
+                    font-weight: 800;
                     text-transform: uppercase;
                     letter-spacing: 0.1em;
                     width: fit-content;
-                    margin-bottom: 0.25rem;
+                    margin-bottom: 0.35rem;
+                    color: #93c5fd;
+                    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
                 }
                 .apod-card-dark__video-tag {
                     background: rgba(239, 68, 68, 0.3);

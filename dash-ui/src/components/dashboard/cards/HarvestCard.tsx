@@ -98,16 +98,23 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
           width: 100%;
           padding: 0.5rem;
           box-sizing: border-box;
-          background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%);
-          color: #166534;
-          border-radius: 1rem;
+          background: linear-gradient(145deg, rgba(6, 78, 59, 0.75) 0%, rgba(2, 44, 34, 0.85) 100%);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          color: #ecfccb;
+          border-radius: 1.5rem;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          box-shadow: 
+            0 20px 40px rgba(0,0,0,0.6),
+            inset 0 1px 0 rgba(255,255,255,0.15),
+            inset 0 10px 20px rgba(0,0,0,0.2);
         }
         .harvest-card-dark__header {
           display: flex;
           align-items: center;
           gap: 0.5rem;
           margin-bottom: 0.5rem;
-          border-bottom: 2px solid #e1e7e3;
+          border-bottom: 1px solid rgba(255,255,255,0.1);
           padding-bottom: 0.5rem;
         }
         .harvest-card-dark__icon-emoji {
@@ -128,7 +135,8 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
           font-weight: 800;
           text-transform: uppercase;
           letter-spacing: 0.05em;
-          color: #14532d;
+          color: #bef264;
+          text-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
         .harvest-card-dark__body {
           flex: 1;
@@ -153,7 +161,8 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
         .harvest-card-dark__name {
           font-size: 2.5rem;
           font-weight: 900;
-          color: #1a2e05;
+          color: #f7fee7;
+          text-shadow: 0 2px 8px rgba(0,0,0,0.5);
           text-align: center;
           margin-top: 0.5rem;
         }
@@ -162,8 +171,9 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.1em;
-          background: #dcfce7;
-          color: #166534;
+          background: rgba(22, 163, 74, 0.2);
+          border: 1px solid rgba(22, 163, 74, 0.4);
+          color: #86efac;
           padding: 0.3rem 0.8rem;
           border-radius: 1rem;
           margin-top: 0.2rem;
@@ -177,11 +187,11 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
           width: 8px;
           height: 8px;
           border-radius: 50%;
-          background: rgba(22, 101, 52, 0.2);
+          background: rgba(255, 255, 255, 0.2);
           transition: all 0.3s;
         }
         .harvest-card-dark__dot.active {
-          background: #166534;
+          background: #bef264;
           width: 20px;
           border-radius: 4px;
         }

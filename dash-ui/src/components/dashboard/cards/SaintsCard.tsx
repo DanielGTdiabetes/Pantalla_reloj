@@ -104,7 +104,7 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
     fetchWiki();
   }, [currentName, fullName, currentEntry]);
 
-    if (!saints || saints.length === 0) {
+  if (!saints || saints.length === 0) {
     return (
       <div className="saints-card-dark saints-card-dark__empty" data-testid="panel-santoral">
         <span className="saints-card-dark__empty-text panel-item-title">Hoy no hay santos destacados</span>
@@ -157,10 +157,17 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
           width: 100%;
           padding: 1rem;
           box-sizing: border-box;
-          background: linear-gradient(135deg, #78350f 0%, #1c1917 100%);
+          background: linear-gradient(145deg, rgba(146, 64, 14, 0.75) 0%, rgba(67, 20, 7, 0.85) 100%);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
           color: white;
           overflow: hidden;
-          border-radius: 1rem;
+          border-radius: 1.5rem;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          box-shadow: 
+            0 20px 40px rgba(0,0,0,0.6),
+            inset 0 1px 0 rgba(255,255,255,0.15),
+            inset 0 10px 20px rgba(0,0,0,0.2);
         }
         .saints-card-dark__empty {
           display: flex;
@@ -207,7 +214,8 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
           border-radius: 1rem;
           overflow: hidden;
           background: rgba(255,255,255,0.1);
-          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+          border: 1px solid rgba(255,255,255,0.2);
+          box-shadow: 0 8px 16px rgba(0,0,0,0.4);
         }
         .saints-card-dark__image {
           width: 100%;

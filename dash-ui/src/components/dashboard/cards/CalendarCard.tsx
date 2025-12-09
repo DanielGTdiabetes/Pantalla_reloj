@@ -92,12 +92,17 @@ export const CalendarCard = ({ events, timezone }: CalendarCardProps): JSX.Eleme
           width: 100%;
           padding: 0.75rem;
           box-sizing: border-box;
-          background: linear-gradient(135deg, #4c1d95 0%, #1e1b4b 100%);
+          background: linear-gradient(145deg, rgba(76, 29, 149, 0.75) 0%, rgba(30, 27, 75, 0.85) 100%);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
           color: white;
           overflow: hidden;
-          border-radius: 16px;
-          border: 1px solid rgba(255,255,255,0.12);
-          box-shadow: 0 18px 45px rgba(0,0,0,0.45);
+          border-radius: 1.5rem;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          box-shadow: 
+            0 20px 40px rgba(0,0,0,0.6),
+            inset 0 1px 0 rgba(255,255,255,0.15),
+            inset 0 10px 20px rgba(0,0,0,0.2);
         }
         .calendar-card-dark__header {
           display: flex;

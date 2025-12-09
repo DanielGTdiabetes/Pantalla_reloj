@@ -114,10 +114,14 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
           padding: 0.75rem;
           box-sizing: border-box;
           color: white;
-          border-radius: 1rem;
-          border: 1px solid rgba(255,255,255,0.08);
-          box-shadow: 0 18px 40px rgba(0,0,0,0.35);
-          backdrop-filter: blur(10px);
+          border-radius: 1.5rem;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          box-shadow: 
+            0 20px 40px rgba(0,0,0,0.6),
+            inset 0 1px 0 rgba(255,255,255,0.15),
+            inset 0 10px 20px rgba(0,0,0,0.2);
         }
         .forecast-card-dark__header {
           display: flex;

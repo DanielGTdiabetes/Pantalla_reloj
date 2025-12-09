@@ -70,9 +70,17 @@ export const HistoricalEventsCard = ({ items, rotationSeconds = 12 }: Historical
           width: 100%;
           padding: 0.5rem;
           box-sizing: border-box;
-          background: linear-gradient(135deg, #44403c 0%, #1c1917 100%);
+          background: linear-gradient(145deg, rgba(68, 64, 60, 0.8) 0%, rgba(28, 25, 23, 0.9) 100%);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
           color: white;
           overflow: hidden;
+          border-radius: 1.5rem;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          box-shadow: 
+            0 20px 40px rgba(0,0,0,0.6),
+            inset 0 1px 0 rgba(255,255,255,0.15),
+            inset 0 10px 20px rgba(0,0,0,0.2);
         }
         .historical-card-dark__header {
           display: flex;

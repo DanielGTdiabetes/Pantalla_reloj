@@ -81,12 +81,17 @@ export const NewsCard = ({ items }: NewsCardProps): JSX.Element => {
           width: 100%;
           padding: 1rem;
           box-sizing: border-box;
-          background: linear-gradient(145deg, rgba(18, 27, 48, 0.92), rgba(12, 19, 33, 0.9));
+          background: linear-gradient(145deg, rgba(30, 58, 138, 0.75) 0%, rgba(15, 23, 42, 0.85) 100%);
           color: #eaeaea;
           overflow: hidden;
-          border-radius: 1rem;
-          border: 1px solid rgba(255,255,255,0.06);
-          backdrop-filter: blur(10px);
+          border-radius: 1.5rem;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          box-shadow: 
+            0 20px 40px rgba(0,0,0,0.6),
+            inset 0 1px 0 rgba(255,255,255,0.15),
+            inset 0 10px 20px rgba(0,0,0,0.2);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
         }
         .news-card__header {
           display: flex;

@@ -1,3 +1,5 @@
+/* Global Panel Styles */
+
 .panel-bg-night {
   background: radial-gradient(circle at 20% 0%, rgba(56, 189, 248, 0.22), transparent 55%),
     radial-gradient(circle at 80% 10%, rgba(167, 139, 250, 0.25), transparent 45%),
@@ -86,6 +88,18 @@
   justify-content: center;
 }
 
+/* Enhanced Icon Styles for 3D/Pop effect */
+.panel-title-icon,
+.panel-title-icon img,
+.panel-title-icon svg {
+  filter: drop-shadow(0 4px 6px rgba(0,0,0,0.4));
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.panel-title-icon:hover {
+  transform: scale(1.1) rotate(5deg);
+}
+
 .auto-scroll-container {
   overflow: hidden;
   position: relative;
@@ -95,6 +109,7 @@
   display: none;
 }
 
+/* Animations */
 .wi-spin {
   animation: wiSpin 18s linear infinite;
   transform-origin: center;
