@@ -1,17 +1,5 @@
 import { useState, useEffect } from "react";
-
-const astroAsset = (path: string) => new URL(`../../../assets/astronomy/${path}`, import.meta.url).href;
-
-const MOON_ICON_MAP: Record<string, string> = {
-  new: astroAsset("moon/new.png"),
-  "waxing-crescent-1": astroAsset("moon/waxing_crescent-1.png"),
-  "first-quarter": astroAsset("moon/first-quarter.png"),
-  "waxing-gibbous-1": astroAsset("moon/waxing_gibbous-1.png"),
-  full: astroAsset("moon/full.png"),
-  "waning-gibbous-1": astroAsset("moon/waning_gibbous-1.png"),
-  "last-quarter": astroAsset("moon/last-quarter.png"),
-  "waning-crescent-1": astroAsset("moon/waning_crescent-1.png"),
-};
+import { SunriseIcon, SunsetIcon, MoonPhaseIcon } from "../../icons/AstronomyIcons";
 
 type EphemeridesCardProps = {
   sunrise: string | null;
@@ -22,26 +10,6 @@ type EphemeridesCardProps = {
 };
 
 type AstroState = "sunrise" | "moon" | "sunset";
-
-// Get moon phase icon based on illumination percentage
-const getMoonPhaseIcon = (illumination: number | null): string => {
-  if (illumination === null || Number.isNaN(illumination)) {
-    return MOON_ICON_MAP.full;
-  }
-
-  // Normalize to 0-1 if percentage
-  const illum = illumination > 1 ? illumination / 100 : illumination;
-  const normalized = Math.max(0, Math.min(1, illum));
-
-  if (normalized <= 0.12) return MOON_ICON_MAP.new;
-  if (normalized <= 0.25) return MOON_ICON_MAP["waxing-crescent-1"];
-  if (normalized <= 0.37) return MOON_ICON_MAP["first-quarter"];
-  if (normalized <= 0.5) return MOON_ICON_MAP["waxing-gibbous-1"];
-  if (normalized <= 0.62) return MOON_ICON_MAP.full;
-  if (normalized <= 0.75) return MOON_ICON_MAP["waning-gibbous-1"];
-  if (normalized <= 0.87) return MOON_ICON_MAP["last-quarter"];
-  return MOON_ICON_MAP["waning-crescent-1"];
-};
 
 // Panel lateral de astronomía (amanecer, atardecer y luna)
 export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: EphemeridesCardProps): JSX.Element => {
@@ -61,15 +29,25 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
     ? Math.round(illumination > 1 ? illumination : illumination * 100)
     : null;
 
-  const getIcon = () => {
+  const renderIcon = (size: number, isHeader = false) => {
+    const commonClass = isHeader
+      ? "ephemerides-card-dark__header-icon panel-title-icon"
+      : `ephemerides-card-dark__main-icon ${currentState === "sunset" ? "sunset-filter" : ""}`;
+
     if (currentState === "moon") {
-      return getMoonPhaseIcon(illumination ?? null);
+      return (
+        <MoonPhaseIcon
+          size={size}
+          illumination={illumination ?? 0}
+          phaseName={moonPhase ?? ""}
+          className={commonClass}
+        />
+      );
     }
-    // Sun icons for sunrise/sunset
     if (currentState === "sunset") {
-      return astroAsset("sunset.png");
+      return <SunsetIcon size={size} className={commonClass} />;
     }
-    return astroAsset("sunrise.png");
+    return <SunriseIcon size={size} className={commonClass} />;
   };
 
   const getLabel = () => {
@@ -84,12 +62,10 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
     return moonPhase || "Luna";
   };
 
-  const iconUrl = getIcon();
-
   return (
     <div className="ephemerides-card-dark" data-testid="panel-astronomy">
       <div className="ephemerides-card-dark__header">
-        <img src={iconUrl} alt="" className="ephemerides-card-dark__header-icon panel-title-icon" />
+        {renderIcon(52, true)}
         <span className="ephemerides-card-dark__title panel-title-text">Astronomía</span>
       </div>
 
@@ -97,11 +73,7 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
         <div className="ephemerides-card-dark__label panel-item-title">{getLabel()}</div>
 
         <div className="ephemerides-card-dark__icon-container">
-          <img
-            src={iconUrl}
-            alt={getLabel()}
-            className={`ephemerides-card-dark__main-icon ${currentState === "sunset" ? "sunset-filter" : ""}`}
-          />
+          {renderIcon(124, false)}
         </div>
 
         <div className="ephemerides-card-dark__value panel-item-title">{getValue()}</div>
@@ -137,10 +109,8 @@ export const EphemeridesCard = ({ sunrise, sunset, moonPhase, illumination }: Ep
           gap: 0.5rem;
           margin-bottom: 0.5rem;
         }
-        .ephemerides-card-dark__header-icon {
-          width: 52px;
-          height: 52px;
-          object-fit: contain;
+        .ephemerides-card-dark__header-icon { 
+          /* Sizing handled by SVG prop, but keep filter */
           filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
         }
         .ephemerides-card-dark__title {
