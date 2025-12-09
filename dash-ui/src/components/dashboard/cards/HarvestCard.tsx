@@ -32,7 +32,10 @@ const getCurrentSeasonProducts = (): HarvestItem[] => {
 const UPGRADED_ICONS = [
   "manzana.png", "naranja.png", "limon.png", "mandarina.png",
   "lechuga.png", "zanahoria.png", "aguacate.png", "brocoli.png",
-  "cebolla.png", "espinaca.png", "coliflor.png", "col.png"
+  "cebolla.png", "espinaca.png", "coliflor.png", "col.png",
+  "acelga.png", "ajo.png", "albaricoque.png", "alcachofa.png",
+  "apio.png", "batata.png", "berenjena.png", "calabacin.png",
+  "calabaza.png"
 ];
 
 const getIconUrl = (item: HarvestItem): string => {
