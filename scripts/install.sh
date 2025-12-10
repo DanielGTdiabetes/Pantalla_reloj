@@ -1337,11 +1337,13 @@ fi
 if [[ ${CHROME_AVAILABLE:-0} -eq 1 ]]; then
   log_info "Habilitando servicio Chrome kiosk..."
   if [[ -f /etc/systemd/system/pantalla-kiosk-chrome@.service ]]; then
-    if systemctl enable --now "$CHROME_SERVICE_INSTANCE" 2>&1; then
-      log_ok "${CHROME_SERVICE_INSTANCE} habilitado e iniciado"
-      SUMMARY+=("[install] ${CHROME_SERVICE_INSTANCE} habilitado e iniciado")
+    # Solo habilitar, no iniciar inmediatamente (--now) para evitar bloqueos si el backend no está listo.
+    # El reinicio controlado se realiza más abajo en el script.
+    if systemctl enable "$CHROME_SERVICE_INSTANCE" 2>&1; then
+      log_ok "${CHROME_SERVICE_INSTANCE} habilitado"
+      SUMMARY+=("[install] ${CHROME_SERVICE_INSTANCE} habilitado")
     else
-      log_error "ERROR: No se pudo iniciar ${CHROME_SERVICE_INSTANCE}"
+      log_error "ERROR: No se pudo habilitar ${CHROME_SERVICE_INSTANCE}"
       journalctl -u "$CHROME_SERVICE_INSTANCE" -n 30 --no-pager | sed 's/^/  /' || true
       SUMMARY+=('[install] ERROR: fallo al iniciar pantalla-kiosk-chrome')
     fi
