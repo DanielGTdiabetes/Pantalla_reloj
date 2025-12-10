@@ -61,7 +61,7 @@ const getIconUrl = (item: HarvestItem): string => {
 
   if (iconName) {
     if (UPGRADED_ICONS.includes(iconName)) {
-      return `${prefix}icons/3d/${iconName}?v=transparent2`;
+      return `${prefix}icons/3d/${iconName}?v=transparent3`;
     }
     return `${prefix}icons/soydetemporada/${iconName}`;
   }
