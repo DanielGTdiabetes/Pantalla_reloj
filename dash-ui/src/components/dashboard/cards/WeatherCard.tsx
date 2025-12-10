@@ -43,7 +43,7 @@ export const WeatherCard = ({
         <div className="weather-card-dark__header-icon panel-title-icon">
           <WeatherIcon kind={kind || "unknown"} size={48} />
         </div>
-        <span className="weather-card-dark__title panel-title-text">Tiempo Actual</span>
+        <span className="weather-card-dark__title panel-title-text">Tiempo para hoy</span>
       </div>
 
       <div className="weather-card-dark__body panel-body">
