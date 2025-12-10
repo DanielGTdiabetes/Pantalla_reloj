@@ -16,7 +16,7 @@ Environment=GIO_USE_PORTALS=0
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
 EnvironmentFile=-/var/lib/pantalla-reloj/state/kiosk.env
 # Esperar a que X11 y los servicios estén listos, luego esperar al backend
-ExecStartPre=/bin/sh -c 'for i in $(seq 1 60); do curl -sf --max-time 2 http://127.0.0.1:8081/api/health >/dev/null 2>&1 && break; sleep 1; done; sleep 2; xset -dpms; xset s off; xset s noblank || true'
+ExecStartPre=/bin/sh -c 'sleep 5; for i in $(seq 1 60); do curl -sf --max-time 2 http://127.0.0.1:8081/api/health >/dev/null 2>&1 && break; sleep 1; done; sleep 2; xset -dpms; xset s off; xset s noblank || true'
 LogsDirectory=pantalla
 LogsDirectoryMode=0755
 # NOTA: El perfil del navegador kiosk (/var/lib/pantalla-reloj/state/chromium-kiosk) se crea

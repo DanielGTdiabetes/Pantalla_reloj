@@ -6,6 +6,7 @@ Wants=systemd-user-sessions.service
 [Service]
 Type=simple
 User=root
+ExecStartPre=/usr/bin/sleep 3
 ExecStartPre=/usr/bin/install -d -m 0755 -o root -g root /var/log/pantalla
 ExecStartPre=/bin/sh -c 'install -d -m 0700 /var/lib/pantalla-reloj || true'
 ExecStartPre=/bin/sh -c 'AUTH_FILE=/var/lib/pantalla-reloj/.Xauthority; if [ ! -f "$AUTH_FILE" ] || [ ! -s "$AUTH_FILE" ]; then install -m 0600 /dev/null "$AUTH_FILE" || true; COOKIE=$(mcookie 2>/dev/null || echo ""); if [ -n "$COOKIE" ]; then xauth -f "$AUTH_FILE" add :0 . "$COOKIE" 2>/dev/null || true; fi; fi'

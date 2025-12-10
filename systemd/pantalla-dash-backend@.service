@@ -15,7 +15,7 @@ Environment=PYTHONUNBUFFERED=1
 Environment=PORT=8081
 ExecStart=/usr/local/bin/pantalla-backend-launch
 Restart=on-failure
-RestartSec=2
+RestartSec=5
 TimeoutStartSec=30
 TimeoutStopSec=15
 StandardOutput=journal
