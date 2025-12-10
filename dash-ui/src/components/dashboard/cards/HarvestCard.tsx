@@ -61,7 +61,7 @@ const getIconUrl = (item: HarvestItem): string => {
 
   if (iconName) {
     if (UPGRADED_ICONS.includes(iconName)) {
-      return `${prefix}icons/3d/${iconName}?v=transparent3`;
+      return `${prefix}icons/3d/${iconName}?v=transparent4`;
     }
     return `${prefix}icons/soydetemporada/${iconName}`;
   }
@@ -88,7 +88,7 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
   return (
     <div className="harvest-card-dark">
       <div className="harvest-card-dark__header">
-        <img src="/icons/harvest/sprout.svg" alt="" className="harvest-card-dark__header-icon" />
+        <img src="/icons/harvest/sprout_3d.png" alt="" className="harvest-card-dark__header-icon" />
         <span className="harvest-card-dark__title">De Temporada</span>
       </div>
 

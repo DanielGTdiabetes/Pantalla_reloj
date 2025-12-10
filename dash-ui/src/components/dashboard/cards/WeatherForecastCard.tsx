@@ -74,25 +74,30 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
       </div>
 
       <div className="forecast-card-dark__body panel-body">
-        <div className="forecast-card-dark__day">
+        <div className="forecast-card-dark__top-info">
           <span className="forecast-card-dark__dayname panel-item-title">{day.dayName || "Hoy"}</span>
           <span className="forecast-card-dark__condition-inline">{formatWeatherKindLabel(day.kind || "unknown", day.condition)}</span>
-          <span className="forecast-card-dark__date panel-item-subtitle">{day.date}</span>
         </div>
 
-        <div className="forecast-card-dark__icon-container">
-          <WeatherIcon kind={day.kind || "unknown"} size={130} className="forecast-card-dark__main-icon" />
-        </div>
+        <div className="forecast-card-dark__main-content">
+          <div className="forecast-card-dark__icon-container">
+            <WeatherIcon kind={day.kind || "unknown"} size={110} className="forecast-card-dark__main-icon" />
+          </div>
 
-        <div className="forecast-card-dark__temps">
-          <span className="forecast-card-dark__max panel-item-title">
-            {day.temperature.max !== null ? Math.round(day.temperature.max) : "--"}°
-            <small>máx</small>
-          </span>
-          <span className="forecast-card-dark__min panel-item-subtitle">
-            {day.temperature.min !== null ? Math.round(day.temperature.min) : "--"}°
-            <small>mín</small>
-          </span>
+          <div className="forecast-card-dark__temps">
+            <div className="forecast-card-dark__max-container">
+              <span className="forecast-card-dark__max panel-item-title">
+                {day.temperature.max !== null ? Math.round(day.temperature.max) : "--"}°
+              </span>
+              <small>MÁX</small>
+            </div>
+            <div className="forecast-card-dark__min-container">
+              <span className="forecast-card-dark__min panel-item-subtitle">
+                {day.temperature.min !== null ? Math.round(day.temperature.min) : "--"}°
+              </span>
+              <small>MÍN</small>
+            </div>
+          </div>
         </div>
 
         {days.length > 1 && (
@@ -126,20 +131,20 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
           display: flex;
           align-items: center;
           gap: 0.5rem;
-          margin-bottom: 0.5rem;
+          margin-bottom: 0.25rem;
+          flex-shrink: 0;
         }
         .forecast-card-dark__header-icon {
-          width: 48px;
-          height: 48px;
+          width: 40px;
+          height: 40px;
           display: grid;
           place-items: center;
           background: rgba(255,255,255,0.08);
-          border-radius: 12px;
+          border-radius: 10px;
           border: 1px solid rgba(255,255,255,0.14);
-          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
         }
         .forecast-card-dark__title {
-          font-size: 1.3rem;
+          font-size: 1.1rem;
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.1em;
@@ -148,57 +153,74 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
           flex: 1;
           display: flex;
           flex-direction: column;
-          align-items: center;
-          justify-content: center;
+          min-height: 0;
           gap: 0.25rem;
         }
-        .forecast-card-dark__day {
+        .forecast-card-dark__top-info {
           display: flex;
           flex-direction: column;
           align-items: center;
+          flex-shrink: 0;
+          margin-bottom: 0.25rem;
         }
         .forecast-card-dark__dayname {
-          font-size: 2.2rem;
+          font-size: 1.8rem;
           font-weight: 800;
           text-transform: capitalize;
           text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+          line-height: 1.1;
         }
-        .forecast-card-dark__date {
-          font-size: 0.8rem;
-          opacity: 0.6;
+        .forecast-card-dark__condition-inline {
+          font-size: 1rem;
+          font-weight: 600;
+          text-transform: capitalize;
+          color: rgba(255, 255, 255, 0.9);
+          text-align: center;
+        }
+        .forecast-card-dark__main-content {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          justify-content: space-evenly;
+          gap: 0.5rem;
         }
         .forecast-card-dark__icon-container {
-          width: 150px;
-          height: 150px;
-          margin: 0.5rem 0;
-          filter: drop-shadow(0 10px 28px rgba(0,0,0,0.35));
+          width: 110px;
+          height: 110px;
+          filter: drop-shadow(0 8px 24px rgba(0,0,0,0.3));
         }
         .forecast-card-dark__main-icon {
           width: 100%;
           height: 100%;
           object-fit: contain;
-          filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));
           animation: float-dark 4s ease-in-out infinite;
         }
         .forecast-card-dark__temps {
           display: flex;
-          gap: 2rem;
+          flex-direction: column;
+          justify-content: center;
+          gap: 0.5rem;
+          min-width: 80px;
+        }
+        .forecast-card-dark__max-container,
+        .forecast-card-dark__min-container {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end; /* Align numbers to right or center */
         }
         .forecast-card-dark__max,
         .forecast-card-dark__min {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          font-size: 3.5rem;
+          font-size: 3rem;
           font-weight: 800;
-          line-height: 1;
+          line-height: 0.9;
         }
-        .forecast-card-dark__max small,
-        .forecast-card-dark__min small {
-          font-size: 0.7rem;
-          font-weight: 600;
+        .forecast-card-dark__max-container small,
+        .forecast-card-dark__min-container small {
+          font-size: 0.65rem;
+          font-weight: 700;
           text-transform: uppercase;
-          opacity: 0.7;
+          opacity: 0.6;
+          margin-top: 0.1rem;
         }
         .forecast-card-dark__max { color: #fbbf24; }
         .forecast-card-dark__min { color: #38bdf8; }

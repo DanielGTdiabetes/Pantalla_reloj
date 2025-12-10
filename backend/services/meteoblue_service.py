@@ -28,7 +28,7 @@ ISYMBOL_TO_ICON = {
 }
 
 # Mapeo de pictocodes de Meteoblue (IDAY - Diario 1-17) a iconos internos
-# Fuente: Inferred from API docs & search results
+# Fuente: Inferred from API docs & search results + User Feedback (Conservative approach)
 IDAY_TO_ICON = {
     1: "clear-day",
     2: "partly-cloudy-day",
@@ -38,15 +38,15 @@ IDAY_TO_ICON = {
     6: "rain",
     7: "rain",
     8: "rain",  # Thunderstorm likely
-    9: "snow",  # Assumption: often snow in iday lists
-    10: "snow",
-    11: "snow", # Mix rain/snow
+    9: "rain",  # Was snow, changing to rain to be safe as per user feedback
+    10: "snow", # Heavy snow - keep as snow
+    11: "rain", # Mix rain/snow -> Rain
     12: "rain",
-    13: "snow",
+    13: "rain", # Was snow -> Rain
     14: "rain",
-    15: "rain", # Corrected from Snow -> Rain (likely 'Mostly cloudy with showers')
-    16: "rain",
-    17: "snow",
+    15: "rain",
+    16: "rain", # Was snow -> Rain
+    17: "rain", # Was snow -> Rain
 }
 
 def map_isymbol_to_icon(pictocode: int, is_night: bool = False) -> str:
@@ -86,15 +86,15 @@ def map_iday_to_condition(pictocode: int) -> str:
         6: "Nublado con lluvia",
         7: "Mezcla con chubascos",
         8: "Chubascos/Tormentas",
-        9: "Nieve",
+        9: "Posible Nieve/Lluvia", # Ambiguous
         10: "Nieve intensa",
         11: "Lluvia y nieve",
         12: "Lluvia ocasional",
-        13: "Nieve ocasional",
+        13: "Lluvia/Nieve", # Ambiguous
         14: "Lluvia",
-        15: "Lluvia / Chubascos", # Corrected for user
+        15: "Lluvia / Chubascos",
         16: "Lluvia ocasional",
-        17: "Nieve",
+        17: "Chubascos invernales",
     }
     return conditions.get(pictocode, "Desconocido")
 
