@@ -61,7 +61,7 @@ const getIconUrl = (item: HarvestItem): string => {
 
   if (iconName) {
     if (UPGRADED_ICONS.includes(iconName)) {
-      return `${prefix}icons/3d/${iconName}?v=transparent`;
+      return `${prefix}icons/3d/${iconName}?v=transparent2`;
     }
     return `${prefix}icons/soydetemporada/${iconName}`;
   }
@@ -88,7 +88,7 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
   return (
     <div className="harvest-card-dark">
       <div className="harvest-card-dark__header">
-        <span className="harvest-card-dark__icon-emoji">🧺</span>
+        <img src="/icons/harvest/sprout.svg" alt="" className="harvest-card-dark__header-icon" />
         <span className="harvest-card-dark__title">De Temporada</span>
       </div>
 
@@ -140,9 +140,9 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
           border-bottom: 1px solid rgba(255,255,255,0.1);
           padding-bottom: 0.5rem;
         }
-        .harvest-card-dark__icon-emoji {
-          font-size: 2.5rem;
-          margin-right: -0.2rem;
+        .harvest-card-dark__header-icon {
+          width: 3rem;
+          height: 3rem;
           filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
         }
         /* .harvest-card-dark__header::before removed to use emoji instead of non-transparent image */

@@ -207,7 +207,8 @@ export const ApodCard = ({ data }: ApodCardProps) => {
                     font-weight: 900;
                     line-height: 1.2;
                     margin: 0;
-                    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+                    color: #ffffff;
+                    text-shadow: 0 2px 4px rgba(0,0,0,0.8);
                 }
                 .apod-card-dark__desc {
                     font-size: 0.95rem;

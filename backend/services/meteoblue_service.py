@@ -14,111 +14,87 @@ logger = logging.getLogger(__name__)
 
 # Mapeo de pictocodes de Meteoblue a iconos internos
 # Fuente: https://content.meteoblue.com/en/specifications/standards/symbols-and-pictograms
-PICTOCODE_TO_ICON = {
-    1: "clear-day",              # Clear, cloudless sky
-    2: "partly-cloudy-day",      # Clear, few cirrus
-    3: "partly-cloudy-day",      # Clear with cirrus
-    4: "partly-cloudy-day",      # Clear with few low clouds
-    5: "partly-cloudy-day",      # Clear with few low clouds and cirrus
-    6: "cloudy",                 # Partly cloudy
-    7: "cloudy",                 # Partly cloudy and cirrus
-    8: "cloudy",                 # Mostly cloudy
-    9: "rain",                   # Rain
-    10: "rain",                  # Light rain
-    11: "rain",                  # Rain with thunderstorm
-    12: "rain",                  # Heavy rain with thunderstorm
-    13: "snow",                  # Sleet
-    14: "snow",                  # Light sleet
-    15: "snow",                  # Snow
-    16: "snow",                  # Light snow
-    17: "rain",                  # Rain shower
-    18: "rain",                  # Light rain shower
-    19: "rain",                  # Rain shower with thunderstorm
-    20: "rain",                  # Heavy rain shower with thunderstorm
-    21: "snow",                  # Sleet shower
-    22: "snow",                  # Light sleet shower
-    23: "snow",                  # Snow shower
-    24: "snow",                  # Light snow shower
-    25: "fog",                   # Fog
-    26: "fog",                   # Fog depositing rime
-    27: "partly-cloudy-day",     # Fair skies
-    28: "rain",                  # Mostly fair
-    29: "rain",                  # Mostly cloudy with rain
-    30: "snow",                  # Mostly cloudy with sleet
-    31: "snow",                  # Mostly cloudy with snow
-    32: "rain",                  # Mostly cloudy with thunderstorm
-    33: "cloudy",                # Cloudy, no precipitation
-    34: "rain",                  # Mostly cloudy with rain shower
-    35: "snow",                  # Mostly cloudy with snow shower
+# Mapeo de pictocodes de Meteoblue (ISYMBOL - Horario 1-35) a iconos internos
+# Fuente: https://content.meteoblue.com/en/specifications/standards/symbols-and-pictograms
+ISYMBOL_TO_ICON = {
+    1: "clear-day", 2: "partly-cloudy-day", 3: "partly-cloudy-day",
+    4: "partly-cloudy-day", 5: "partly-cloudy-day", 6: "cloudy",
+    7: "cloudy", 8: "cloudy", 9: "rain", 10: "rain", 11: "rain",
+    12: "rain", 13: "snow", 14: "snow", 15: "snow", 16: "snow",
+    17: "rain", 18: "rain", 19: "rain", 20: "rain", 21: "snow",
+    22: "snow", 23: "snow", 24: "snow", 25: "fog", 26: "fog",
+    27: "partly-cloudy-day", 28: "rain", 29: "rain", 30: "snow",
+    31: "snow", 32: "rain", 33: "cloudy", 34: "rain", 35: "snow",
 }
 
+# Mapeo de pictocodes de Meteoblue (IDAY - Diario 1-17) a iconos internos
+# Fuente: Inferred from API docs & search results
+IDAY_TO_ICON = {
+    1: "clear-day",
+    2: "partly-cloudy-day",
+    3: "partly-cloudy-day",
+    4: "cloudy",
+    5: "fog",
+    6: "rain",
+    7: "rain",
+    8: "rain",  # Thunderstorm likely
+    9: "snow",  # Assumption: often snow in iday lists
+    10: "snow",
+    11: "snow", # Mix rain/snow
+    12: "rain",
+    13: "snow",
+    14: "rain",
+    15: "rain", # Corrected from Snow -> Rain (likely 'Mostly cloudy with showers')
+    16: "rain",
+    17: "snow",
+}
 
-def map_pictocode_to_icon(pictocode: int, is_night: bool = False) -> str:
-    """
-    Mapea un pictocode de Meteoblue a un nombre de icono interno.
-    
-    Args:
-        pictocode: Código de Meteoblue (1-35)
-        is_night: Si es de noche (para variantes nocturnas)
-    
-    Returns:
-        Nombre del icono (ej: "clear-day", "rain", etc.)
-    """
-    icon = PICTOCODE_TO_ICON.get(pictocode, "cloudy")
-    
-    # Convertir variantes diurnas a nocturnas si es necesario
+def map_isymbol_to_icon(pictocode: int, is_night: bool = False) -> str:
+    """Mapea pictocode horario (1-35)."""
+    icon = ISYMBOL_TO_ICON.get(pictocode, "cloudy")
     if is_night:
         icon = icon.replace("-day", "-night")
-    
     return icon
 
+def map_iday_to_icon(pictocode: int) -> str:
+    """Mapea pictocode diario (1-17)."""
+    return IDAY_TO_ICON.get(pictocode, "cloudy")
 
-def map_pictocode_to_condition(pictocode: int) -> str:
-    """
-    Mapea un pictocode a una descripción textual del clima.
-    
-    Args:
-        pictocode: Código de Meteoblue (1-35)
-    
-    Returns:
-        Descripción del clima en español
-    """
+def map_isymbol_to_condition(pictocode: int) -> str:
+    """Mapea pictocode horario (1-35) a texto."""
     conditions = {
-        1: "Despejado",
-        2: "Despejado",
-        3: "Despejado",
-        4: "Despejado",
-        5: "Despejado",
-        6: "Parcialmente nublado",
-        7: "Parcialmente nublado",
-        8: "Mayormente nublado",
-        9: "Lluvia",
-        10: "Lluvia ligera",
-        11: "Lluvia con tormenta",
-        12: "Lluvia intensa con tormenta",
-        13: "Aguanieve",
-        14: "Aguanieve ligera",
-        15: "Nieve",
-        16: "Nieve ligera",
-        17: "Chubasco",
-        18: "Chubasco ligero",
-        19: "Chubasco con tormenta",
-        20: "Chubasco intenso con tormenta",
-        21: "Chubasco de aguanieve",
-        22: "Chubasco ligero de aguanieve",
-        23: "Chubasco de nieve",
-        24: "Chubasco ligero de nieve",
-        25: "Niebla",
-        26: "Niebla con escarcha",
-        27: "Cielos despejados",
-        28: "Mayormente despejado",
-        29: "Mayormente nublado con lluvia",
-        30: "Mayormente nublado con aguanieve",
-        31: "Mayormente nublado con nieve",
-        32: "Mayormente nublado con tormenta",
-        33: "Nublado sin precipitación",
-        34: "Mayormente nublado con chubascos",
-        35: "Mayormente nublado con chubascos de nieve",
+        1: "Despejado", 2: "Despejado", 3: "Despejado", 4: "Despejado", 5: "Despejado",
+        6: "Parcialmente nublado", 7: "Parcialmente nublado", 8: "Mayormente nublado",
+        9: "Lluvia", 10: "Lluvia ligera", 11: "Lluvia con tormenta", 12: "Lluvia intensa con tormenta",
+        13: "Aguanieve", 14: "Aguanieve ligera", 15: "Nieve", 16: "Nieve ligera",
+        17: "Chubasco", 18: "Chubasco ligero", 19: "Chubasco con tormenta", 20: "Chubasco intenso",
+        21: "Chubasco de aguanieve", 22: "Chubasco ligero aguanieve", 23: "Chubasco de nieve", 24: "Chubasco ligero nieve",
+        25: "Niebla", 26: "Niebla con escarcha", 27: "Cielos despejados", 28: "Mayormente despejado",
+        29: "Mayormente nublado con lluvia", 30: "Mayormente nublado aguanieve", 31: "Mayormente nublado nieve",
+        32: "Mayormente nublado tormenta", 33: "Nublado", 34: "Chubascos", 35: "Chubascos de nieve",
+    }
+    return conditions.get(pictocode, "Desconocido")
+
+def map_iday_to_condition(pictocode: int) -> str:
+    """Mapea pictocode diario (1-17) a texto."""
+    conditions = {
+        1: "Soleado",
+        2: "Mayormente soleado",
+        3: "Parcialmente nublado",
+        4: "Nublado",
+        5: "Niebla",
+        6: "Nublado con lluvia",
+        7: "Mezcla con chubascos",
+        8: "Chubascos/Tormentas",
+        9: "Nieve",
+        10: "Nieve intensa",
+        11: "Lluvia y nieve",
+        12: "Lluvia ocasional",
+        13: "Nieve ocasional",
+        14: "Lluvia",
+        15: "Lluvia / Chubascos", # Corrected for user
+        16: "Lluvia ocasional",
+        17: "Nieve",
     }
     return conditions.get(pictocode, "Desconocido")
 
@@ -260,8 +236,8 @@ class MeteoblueService:
             except (IndexError, ValueError):
                 pass
         
-        icon = map_pictocode_to_icon(pictocode or 1, is_night)
-        condition = map_pictocode_to_condition(pictocode or 1)
+        icon = map_isymbol_to_icon(pictocode or 1, is_night)
+        condition = map_isymbol_to_condition(pictocode or 1)
         
         return {
             "temperature": temperature,
@@ -303,13 +279,15 @@ class MeteoblueService:
                 "temp_max": temp_max[i] if i < len(temp_max) else None,
                 "temp_min": temp_min[i] if i < len(temp_min) else None,
                 "precipitation_probability": precip_prob[i] if i < len(precip_prob) else None,
-                "pictocode": pictocodes[i] if i < len(pictocodes) else None,
+                # "pictocode": pictocodes[i] if i < len(pictocodes) else None, # Hidden to avoid mapping confusion in frontend
             }
             
+            raw_pictocode = pictocodes[i] if i < len(pictocodes) else None
+            
             # Añadir icono y condición
-            if day_data["pictocode"] is not None:
-                day_data["icon"] = map_pictocode_to_icon(day_data["pictocode"])
-                day_data["condition"] = map_pictocode_to_condition(day_data["pictocode"])
+            if raw_pictocode is not None:
+                day_data["icon"] = map_iday_to_icon(raw_pictocode)
+                day_data["condition"] = map_iday_to_condition(raw_pictocode)
             else:
                 day_data["icon"] = "cloudy"
                 day_data["condition"] = "Desconocido"

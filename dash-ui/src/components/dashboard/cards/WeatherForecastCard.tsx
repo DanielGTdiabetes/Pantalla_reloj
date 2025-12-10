@@ -76,6 +76,7 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
       <div className="forecast-card-dark__body panel-body">
         <div className="forecast-card-dark__day">
           <span className="forecast-card-dark__dayname panel-item-title">{day.dayName || "Hoy"}</span>
+          <span className="forecast-card-dark__condition-inline">{formatWeatherKindLabel(day.kind || "unknown", day.condition)}</span>
           <span className="forecast-card-dark__date panel-item-subtitle">{day.date}</span>
         </div>
 
@@ -93,8 +94,6 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
             <small>mín</small>
           </span>
         </div>
-
-        <div className="forecast-card-dark__condition panel-item-title">{formatWeatherKindLabel(day.kind || "unknown", day.condition)}</div>
 
         {days.length > 1 && (
           <div className="forecast-card-dark__dots">
@@ -203,10 +202,13 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
         }
         .forecast-card-dark__max { color: #fbbf24; }
         .forecast-card-dark__min { color: #38bdf8; }
-        .forecast-card-dark__condition {
-          font-size: 1.6rem;
+        .forecast-card-dark__condition-inline {
+          font-size: 1.1rem;
           font-weight: 600;
           text-transform: capitalize;
+          color: rgba(255, 255, 255, 0.9);
+          margin-bottom: 0.2rem;
+          text-align: center;
         }
         .forecast-card-dark__dots {
           display: flex;
