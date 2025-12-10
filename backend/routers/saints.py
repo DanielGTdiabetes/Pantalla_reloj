@@ -15,15 +15,25 @@ logger = logging.getLogger(__name__)
 async def get_saints():
     """
     Get saints for today.
+    Tries to fetch from Wikipedia first (comprehensive 365-day coverage).
+    Falls back to static list if offline or API fails.
     """
+    from datetime import datetime
     try:
-        # Get basic saint names
-        saints_basic = get_saints_today(include_info=False) # returns List[str]
+        # Try dynamic fetch first (Source of Truth)
+        from ..services.saints_service import fetch_daily_saints_from_wiki, enrich_saints
         
-        # Enrich the first few ones with Wikipedia info
-        enriched_saints = await enrich_saints(saints_basic)
+        wiki_saints = await fetch_daily_saints_from_wiki(datetime.now())
         
-        return enriched_saints
+        if wiki_saints:
+            # Enrich the first few
+            return await enrich_saints(wiki_saints)
+            
+        # Fallback to static data
+        logger.info("Wikipedia saints fetch returned empty, using fallback.")
+        saints_basic = get_saints_today(include_info=False) 
+        return await enrich_saints(saints_basic)
+
     except Exception as e:
         logger.error(f"Error fetching saints: {e}")
         # Build a safe fallback
