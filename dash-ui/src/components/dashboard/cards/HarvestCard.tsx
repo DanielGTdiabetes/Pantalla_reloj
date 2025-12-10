@@ -41,7 +41,11 @@ const UPGRADED_ICONS = [
   "granada.png", "guisante.png", "haba.png",
   "higo.png", "judia.png", "kiwi.png",
   "lima.png", "maiz.png", "melocoton.png",
-  "melon.png", "mora.png", "nabo.png"
+  "melon.png", "mora.png", "nabo.png",
+  "nectarina.png", "patata.png", "pepino.png",
+  "pera.png", "pimiento.png", "pomelo.png",
+  "puerro.png", "rabano.png", "remolacha.png",
+  "sandia.png", "tomate.png", "uva.png"
 ];
 
 const getIconUrl = (item: HarvestItem): string => {
@@ -57,7 +61,7 @@ const getIconUrl = (item: HarvestItem): string => {
 
   if (iconName) {
     if (UPGRADED_ICONS.includes(iconName)) {
-      return `${prefix}icons/3d/${iconName}`;
+      return `${prefix}icons/3d/${iconName}?v=transparent`;
     }
     return `${prefix}icons/soydetemporada/${iconName}`;
   }

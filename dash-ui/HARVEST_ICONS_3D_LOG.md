@@ -3,8 +3,8 @@
 Este archivo rastrea el progreso de la conversión de iconos de `public/icons/soydetemporada` (imágenes reales/vectoriales) a `public/icons/3d` (renders 3D de alta calidad generados por IA).
 
 **Total Iconos:** 54  
-**Completados:** 42  
-**Pendientes:** 12
+**Completados:** 54  
+**Pendientes:** 0
 
 ## Progreso
 
@@ -53,22 +53,23 @@ Estos iconos ya se han generado y están en uso.
 - [x] **melon** (`melon.png`)
 - [x] **mora** (`mora.png`)
 - [x] **nabo** (`nabo.png`)
+- [x] **nectarina** (`nectarina.png`)
+- [x] **patata** (`patata.png`)
+- [x] **pepino** (`pepino.png`)
+- [x] **pera** (`pera.png`)
+- [x] **pimiento** (`pimiento.png`)
+- [x] **pomelo** (`pomelo.png`)
+- [x] **puerro** (`puerro.png`)
+- [x] **rabano** (`rabano.png`)
+- [x] **remolacha** (`remolacha.png`)
+- [x] **sandia** (`sandia.png`)
+- [x] **tomate** (`tomate.png`)
+- [x] **uva** (`uva.png`)
 
 ### ⏳ Pendientes
 Estos iconos aún necesitan ser generados y movidos a la carpeta `3d`.
 
-- [ ] **nectarina** (`nectarina.png`)
-- [ ] **patata** (`patata.png`)
-- [ ] **pepino** (`pepino.png`)
-- [ ] **pera** (`pera.png`)
-- [ ] **pimiento** (`pimiento.png`)
-- [ ] **pomelo** (`pomelo.png`)
-- [ ] **puerro** (`puerro.png`)
-- [ ] **rabano** (`rabano.png`)
-- [ ] **remolacha** (`remolacha.png`)
-- [ ] **sandia** (`sandia.png`)
-- [ ] **tomate** (`tomate.png`)
-- [ ] **uva** (`uva.png`)
+(Ninguno)
 
 ## Instrucciones para Continuar
 1. Generar imagen 3D con prompt consistente: *"A high-quality 3D render of [ITEM], isolated on a transparent background, cute style, volumetric lighting, glossy finish, minimal design. View from slightly above."*
