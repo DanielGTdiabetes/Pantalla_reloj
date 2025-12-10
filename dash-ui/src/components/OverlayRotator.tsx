@@ -749,77 +749,87 @@ export const OverlayRotator: React.FC = () => {
     if (weather.ok === false) {
       return [];
     }
-    return forecastData.slice(0, 7).map((day: Record<string, unknown>) => {
-      const date = ensurePlainText(day.date || day.dt || day.time);
-      const dayName = ensurePlainText(day.dayName || day.day_name || day.name);
-      const condition = sanitizeRichText(day.condition || day.weather || day.summary || day.description);
-      const pictocode = typeof day.pictocode === "number"
-        ? day.pictocode
-        : typeof (day as any).symbol === "number"
-          ? (day as any).symbol
-          : null;
 
-      let tempMin: number | null = null;
-      if (typeof day.temp_min === "number") {
-        tempMin = day.temp_min;
-      } else if (day.temp && typeof day.temp === "object") {
-        const tempObj = day.temp as Record<string, unknown>;
-        if (typeof tempObj.min === "number") {
-          tempMin = tempObj.min;
+    // Filter to show only future days (exclude today and past days)
+    const todayStr = dayjs().format("YYYY-MM-DD");
+
+    return forecastData
+      .filter((day: Record<string, unknown>) => {
+        const dateStr = ensurePlainText(day.date || day.dt || day.time);
+        return dateStr > todayStr;
+      })
+      .slice(0, 7)
+      .map((day: Record<string, unknown>) => {
+        const date = ensurePlainText(day.date || day.dt || day.time);
+        const dayName = ensurePlainText(day.dayName || day.day_name || day.name);
+        const condition = sanitizeRichText(day.condition || day.weather || day.summary || day.description);
+        const pictocode = typeof day.pictocode === "number"
+          ? day.pictocode
+          : typeof (day as any).symbol === "number"
+            ? (day as any).symbol
+            : null;
+
+        let tempMin: number | null = null;
+        if (typeof day.temp_min === "number") {
+          tempMin = day.temp_min;
+        } else if (day.temp && typeof day.temp === "object") {
+          const tempObj = day.temp as Record<string, unknown>;
+          if (typeof tempObj.min === "number") {
+            tempMin = tempObj.min;
+          }
+        } else if (typeof day.min === "number") {
+          tempMin = day.min;
         }
-      } else if (typeof day.min === "number") {
-        tempMin = day.min;
-      }
 
-      let tempMax: number | null = null;
-      if (typeof day.temp_max === "number") {
-        tempMax = day.temp_max;
-      } else if (day.temp && typeof day.temp === "object") {
-        const tempObj = day.temp as Record<string, unknown>;
-        if (typeof tempObj.max === "number") {
-          tempMax = tempObj.max;
+        let tempMax: number | null = null;
+        if (typeof day.temp_max === "number") {
+          tempMax = day.temp_max;
+        } else if (day.temp && typeof day.temp === "object") {
+          const tempObj = day.temp as Record<string, unknown>;
+          if (typeof tempObj.max === "number") {
+            tempMax = tempObj.max;
+          }
+        } else if (typeof day.max === "number") {
+          tempMax = day.max;
         }
-      } else if (typeof day.max === "number") {
-        tempMax = day.max;
-      }
 
-      const precipitation = typeof day.precipitation === "number" ? day.precipitation
-        : typeof day.precip === "number" ? day.precip
-          : typeof day.precipitation_probability === "number" ? day.precipitation_probability
-            : typeof day.pop === "number" ? day.pop * 100
-              : null;
+        const precipitation = typeof day.precipitation === "number" ? day.precipitation
+          : typeof day.precip === "number" ? day.precip
+            : typeof day.precipitation_probability === "number" ? day.precipitation_probability
+              : typeof day.pop === "number" ? day.pop * 100
+                : null;
 
-      const wind = typeof day.wind === "number" ? day.wind
-        : typeof day.wind_speed === "number" ? day.wind_speed
-          : null;
+        const wind = typeof day.wind === "number" ? day.wind
+          : typeof day.wind_speed === "number" ? day.wind_speed
+            : null;
 
-      const humidity = typeof day.humidity === "number" ? day.humidity : null;
+        const humidity = typeof day.humidity === "number" ? day.humidity : null;
 
-      const averageTemp = [tempMin, tempMax]
-        .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
-        .reduce((acc, value, _, arr) => acc + value / arr.length, 0);
+        const averageTemp = [tempMin, tempMax]
+          .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
+          .reduce((acc, value, _, arr) => acc + value / arr.length, 0);
 
-      const kind = resolveWeatherKind({
-        symbol: pictocode,
-        condition,
-        precipitation,
+        const kind = resolveWeatherKind({
+          symbol: pictocode,
+          condition,
+          precipitation,
+        });
+
+        return {
+          date: date || new Date().toISOString().split("T")[0],
+          dayName: dayName || undefined,
+          condition: sanitizeWeatherCondition(condition || "Sin datos", averageTemp || null),
+          pictocode,
+          kind,
+          temperature: {
+            min: tempMin,
+            max: tempMax,
+          },
+          precipitation,
+          wind,
+          humidity,
+        };
       });
-
-      return {
-        date: date || new Date().toISOString().split("T")[0],
-        dayName: dayName || undefined,
-        condition: sanitizeWeatherCondition(condition || "Sin datos", averageTemp || null),
-        pictocode,
-        kind,
-        temperature: {
-          min: tempMin,
-          max: tempMax,
-        },
-        precipitation,
-        wind,
-        humidity,
-      };
-    });
   }, [weather.forecast, weather.daily, weather.weekly]);
 
   const allPanelsMap = useMemo<Map<string, RotatingCardItem>>(() => {
