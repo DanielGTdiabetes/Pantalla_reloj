@@ -237,7 +237,23 @@ class WeatherService:
                         continue
 
                 if parsed_times:
-                    idx = min(parsed_times, key=lambda pair: abs((pair[1] - now).total_seconds()))[0]
+                    # Filter for times that are in the future or very recent past (within last hour)
+                    # This prevents showing "snow" from 3 AM when it's now 12 PM and sunny
+                    filtered_times = [
+                        (i, dt) for i, dt in parsed_times
+                        if (dt - now).total_seconds() > -3600  # Allow up to 1 hour in the past
+                    ]
+                    
+                    if filtered_times:
+                        # Find the earliest time in the future/recent past
+                        idx = min(filtered_times, key=lambda pair: pair[1])[0]
+                    else:
+                        # Fallback: if no future times, take the last available time
+                        idx = parsed_times[-1][0]
+                else:
+                    # Fallback logic if parsing fails
+                    current_hour = now.hour
+                    idx = min(current_hour, len(times) - 1) if times else 0
             except Exception as err:  # noqa: BLE001
                 self.logger.debug(f"Could not resolve current Meteoblue hour index: {err}")
         

@@ -1271,7 +1271,15 @@ export const OverlayRotator: React.FC = () => {
     // Loading state ...
     return (
       <section className="overlay-rotator" role="complementary">
-        <BackgroundGradient />
+        <div className="overlay-rotator__background">
+          {/* Using correctly typed WeatherAmbience */}
+          <WeatherAmbience
+            condition={weatherCondition}
+            isNight={isNight}
+            windSpeed={windSpeed}
+            intensity="moderate"
+          />
+        </div>
         <div className="flex items-center justify-center w-full h-full p-10">
           <SkeletonLoader variant="card" width="100%" height="100%" />
         </div>
