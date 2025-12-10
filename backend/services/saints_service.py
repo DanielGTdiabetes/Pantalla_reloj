@@ -1,4 +1,16 @@
+import logging
+import httpx
+import re
+import asyncio
+from typing import Optional, Dict, Any, List
+from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
+
+logger = logging.getLogger(__name__)
+
+# Simple in-memory cache: { "Saint Name": { "data": {...}, "expires": datetime } }
+_WIKIPEDIA_CACHE: Dict[str, Dict[str, Any]] = {}
+CACHE_TTL = timedelta(hours=24)
 
 MONTHS_ES = [
     "enero", "febrero", "marzo", "abril", "mayo", "junio",
