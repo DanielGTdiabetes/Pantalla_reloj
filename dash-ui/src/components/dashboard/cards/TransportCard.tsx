@@ -127,8 +127,8 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
   const aircraft = useMemo(() => normalizeAircraft(data), [data]);
   const ships = useMemo(() => normalizeShips(data), [data]);
   const hasAnyTransport = aircraft.length > 0 || ships.length > 0;
-  const aircraftListClass = `transport-card-dark__list ${aircraft.length > 3 ? "transport-card-dark__list--scroll" : ""}`;
-  const shipsListClass = `transport-card-dark__list ${ships.length > 3 ? "transport-card-dark__list--scroll" : ""}`;
+  const aircraftListClass = "transport-card-dark__list";
+  const shipsListClass = "transport-card-dark__list";
 
   useEffect(() => {
     if (IS_DEV) {
@@ -232,7 +232,7 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
         <div className="transport-card-dark__header-icon panel-title-icon">
           <TransportRadarIcon size={54} />
         </div>
-        <span className="transport-card-dark__title panel-title-text">Transporte cercano</span>
+        <span className="transport-card-dark__title panel-title-text">Radar</span>
       </div>
 
       <AutoScrollContainer speed={8} pauseAtEndMs={4000} className="transport-card-dark__scroller">
@@ -337,11 +337,6 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
           display: flex;
           flex-direction: column;
           gap: 0.75rem;
-        }
-        .transport-card-dark__list--scroll {
-          max-height: 320px;
-          overflow-y: auto;
-          padding-right: 0.35rem;
         }
         .transport-card-dark__item {
           display: flex;

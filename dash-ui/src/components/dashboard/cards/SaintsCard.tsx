@@ -118,7 +118,7 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
   return (
     <div className="saints-card-dark" data-testid="panel-santoral">
       <div className="saints-card-dark__header">
-        <img src="/icons/misc/santoral.svg" alt="" className="saints-card-dark__header-icon panel-title-icon" />
+        <span className="saints-card-dark__header-emoji">📜</span>
         <span className="saints-card-dark__title panel-title-text">Santoral</span>
       </div>
 
@@ -187,10 +187,9 @@ export default function SaintsCard({ saints }: SaintsCardProps) {
           padding-bottom: 0.5rem;
           border-bottom: 1px solid rgba(255,255,255,0.1);
         }
-        .saints-card-dark__header-icon {
-          width: 64px;
-          height: 64px;
-          object-fit: contain;
+        .saints-card-dark__header-emoji {
+          font-size: 3rem;
+          line-height: 1;
           filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
         }
         .saints-card-dark__title {
