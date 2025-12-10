@@ -41,16 +41,6 @@ echo [deploy] Instalando backend...
 ssh %MINIPC_USER%@%MINIPC_IP% "sudo cp /tmp/default_config.json /opt/pantalla-reloj/backend/ 2>/dev/null || sudo cp /tmp/default_config.json ~/Pantalla_reloj/backend/ && sudo cp /tmp/main.py /opt/pantalla-reloj/backend/ 2>/dev/null || sudo cp /tmp/main.py ~/Pantalla_reloj/backend/"
 
 echo.
-echo [deploy] Copiando servicios systemd actualizados...
-scp "%PROJECT_ROOT%\systemd\pantalla-xorg.service" %MINIPC_USER%@%MINIPC_IP%:/tmp/
-scp "%PROJECT_ROOT%\systemd\pantalla-dash-backend@.service" %MINIPC_USER%@%MINIPC_IP%:/tmp/
-scp "%PROJECT_ROOT%\systemd\pantalla-kiosk-chrome@.service" %MINIPC_USER%@%MINIPC_IP%:/tmp/
-
-echo.
-echo [deploy] Instalando servicios systemd...
-ssh %MINIPC_USER%@%MINIPC_IP% "sudo cp /tmp/pantalla-xorg.service /etc/systemd/system/ && sudo cp /tmp/pantalla-dash-backend@.service /etc/systemd/system/ && sudo cp /tmp/pantalla-kiosk-chrome@.service /etc/systemd/system/ && sudo systemctl daemon-reload"
-
-echo.
 echo [deploy] Reiniciando servicios...
 ssh %MINIPC_USER%@%MINIPC_IP% "sudo systemctl restart pantalla-dash-backend@1 2>/dev/null || sudo systemctl restart pantalla-reloj"
 
