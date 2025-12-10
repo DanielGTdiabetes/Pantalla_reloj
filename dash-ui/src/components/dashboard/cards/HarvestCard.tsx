@@ -137,18 +137,11 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
           padding-bottom: 0.5rem;
         }
         .harvest-card-dark__icon-emoji {
-          display: none;
+          font-size: 2.5rem;
+          margin-right: -0.2rem;
+          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
         }
-        .harvest-card-dark__header::before {
-            content: '';
-            display: block;
-            width: 48px;
-            height: 48px;
-            background-image: url('/img/icons/3d/harvest-basket.png');
-            background-size: contain;
-            background-repeat: no-repeat;
-            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
-        }
+        /* .harvest-card-dark__header::before removed to use emoji instead of non-transparent image */
         .harvest-card-dark__title {
           font-size: 1.8rem;
           font-weight: 800;
