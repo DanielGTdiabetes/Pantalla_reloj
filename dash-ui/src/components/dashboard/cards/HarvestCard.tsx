@@ -91,6 +91,7 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
       <div className="harvest-card-dark__body">
         <div className="harvest-card-dark__icon-container" key={currentIndex}>
           <img src={iconUrl} alt={currentItem.name} className="harvest-card-dark__main-icon" />
+          <div className="harvest-card-dark__shadow" />
         </div>
 
         <div className="harvest-card-dark__name">{currentItem.name}</div>
@@ -167,14 +168,32 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
         .harvest-card-dark__icon-container {
           width: 160px;
           height: 160px;
+          position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: center;
           animation: scaleIn-dark 0.4s ease-out;
-          filter: drop-shadow(0 8px 16px rgba(0,0,0,0.1));
         }
         .harvest-card-dark__main-icon {
           width: 100%;
           height: 100%;
           object-fit: contain;
+          z-index: 2;
+          filter: contrast(1.1) saturate(1.1);
           animation: float-dark 4s ease-in-out infinite;
+        }
+        .harvest-card-dark__shadow {
+          position: absolute;
+          bottom: 15px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 90px;
+          height: 25px;
+          background: radial-gradient(ellipse at center, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 70%);
+          border-radius: 50%;
+          z-index: 1;
+          filter: blur(5px);
+          animation: shadow-pulse 4s ease-in-out infinite;
         }
         .harvest-card-dark__name {
           font-size: 2.5rem;
@@ -183,6 +202,7 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
           text-shadow: 0 2px 8px rgba(0,0,0,0.5);
           text-align: center;
           margin-top: 0.5rem;
+          z-index: 2;
         }
         .harvest-card-dark__status {
           font-size: 0.9rem;
@@ -195,6 +215,7 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
           padding: 0.3rem 0.8rem;
           border-radius: 1rem;
           margin-top: 0.2rem;
+          z-index: 2;
         }
         .harvest-card-dark__dots {
           display: flex;
@@ -215,7 +236,11 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
         }
         @keyframes float-dark {
           0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-8px); }
+          50% { transform: translateY(-12px); }
+        }
+        @keyframes shadow-pulse {
+          0%, 100% { transform: translateX(-50%) scale(1); opacity: 0.6; }
+          50% { transform: translateX(-50%) scale(0.7); opacity: 0.3; }
         }
         @keyframes scaleIn-dark {
           from { opacity: 0; transform: scale(0.9); }
