@@ -56,10 +56,7 @@ export const ApodCard = ({ data }: ApodCardProps) => {
 
             {/* Content */}
             <div className="apod-card-dark__content">
-                <div className="apod-card-dark__badge panel-title-text">
-                    <span>🔭</span>
-                    <span>NASA APOD</span>
-                </div>
+
 
                 <div className="apod-card-dark__media">
                     {isImage && hasImage ? (
