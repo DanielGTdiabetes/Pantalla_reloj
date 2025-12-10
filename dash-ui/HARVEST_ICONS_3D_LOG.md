@@ -3,8 +3,8 @@
 Este archivo rastrea el progreso de la conversión de iconos de `public/icons/soydetemporada` (imágenes reales/vectoriales) a `public/icons/3d` (renders 3D de alta calidad generados por IA).
 
 **Total Iconos:** 54  
-**Completados:** 21  
-**Pendientes:** 33
+**Completados:** 42  
+**Pendientes:** 12
 
 ## Progreso
 
@@ -32,31 +32,31 @@ Estos iconos ya se han generado y están en uso.
 - [x] **manzana** (`manzana.png`)
 - [x] **naranja** (`naranja.png`)
 - [x] **zanahoria** (`zanahoria.png`)
+- [x] **caqui** (`caqui.png`)
+- [x] **cardo** (`cardo.png`)
+- [x] **cereza** (`cereza.png`)
+- [x] **champinon** (`champinon.png`)
+- [x] **col-de-bruselas** (`col-de-bruselas.png`)
+- [x] **endibia** (`endibia.png`)
+- [x] **esparrago** (`esparrago.png`)
+- [x] **frambuesa** (`frambuesa.png`)
+- [x] **fresa** (`fresa.png`)
+- [x] **granada** (`granada.png`)
+- [x] **guisante** (`guisante.png`)
+- [x] **haba** (`haba.png`)
+- [x] **higo** (`higo.png`)
+- [x] **judia** (`judia.png`)
+- [x] **kiwi** (`kiwi.png`)
+- [x] **lima** (`lima.png`)
+- [x] **maiz** (`maiz.png`)
+- [x] **melocoton** (`melocoton.png`)
+- [x] **melon** (`melon.png`)
+- [x] **mora** (`mora.png`)
+- [x] **nabo** (`nabo.png`)
 
 ### ⏳ Pendientes
 Estos iconos aún necesitan ser generados y movidos a la carpeta `3d`.
 
-- [ ] **caqui** (`caqui.png`)
-- [ ] **cardo** (`cardo.png`)
-- [ ] **cereza** (`cereza.png`)
-- [ ] **champinon** (`champinon.png`)
-- [ ] **col-de-bruselas** (`col-de-bruselas.png`)
-- [ ] **endibia** (`endibia.png`)
-- [ ] **esparrago** (`esparrago.png`)
-- [ ] **frambuesa** (`frambuesa.png`)
-- [ ] **fresa** (`fresa.png`)
-- [ ] **granada** (`granada.png`)
-- [ ] **guisante** (`guisante.png`)
-- [ ] **haba** (`haba.png`)
-- [ ] **higo** (`higo.png`)
-- [ ] **judia** (`judia.png`)
-- [ ] **kiwi** (`kiwi.png`)
-- [ ] **lima** (`lima.png`)
-- [ ] **maiz** (`maiz.png`)
-- [ ] **melocoton** (`melocoton.png`)
-- [ ] **melon** (`melon.png`)
-- [ ] **mora** (`mora.png`)
-- [ ] **nabo** (`nabo.png`)
 - [ ] **nectarina** (`nectarina.png`)
 - [ ] **patata** (`patata.png`)
 - [ ] **pepino** (`pepino.png`)

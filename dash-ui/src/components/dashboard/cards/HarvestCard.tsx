@@ -35,7 +35,13 @@ const UPGRADED_ICONS = [
   "cebolla.png", "espinaca.png", "coliflor.png", "col.png",
   "acelga.png", "ajo.png", "albaricoque.png", "alcachofa.png",
   "apio.png", "batata.png", "berenjena.png", "calabacin.png",
-  "calabaza.png"
+  "calabaza.png", "caqui.png", "cardo.png", "cereza.png",
+  "champinon.png", "col-de-bruselas.png", "endibia.png",
+  "esparrago.png", "frambuesa.png", "fresa.png",
+  "granada.png", "guisante.png", "haba.png",
+  "higo.png", "judia.png", "kiwi.png",
+  "lima.png", "maiz.png", "melocoton.png",
+  "melon.png", "mora.png", "nabo.png"
 ];
 
 const getIconUrl = (item: HarvestItem): string => {
