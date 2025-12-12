@@ -40,6 +40,7 @@ export const WeatherForecastCard = ({ forecast }: WeatherForecastCardProps): JSX
           symbol: day.pictocode,
           condition: day.condition,
           precipitation: typeof day.precipitation === "number" ? day.precipitation : null,
+          icon: day.icon ?? null,
         });
 
         return {
