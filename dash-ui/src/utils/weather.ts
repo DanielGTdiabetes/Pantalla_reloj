@@ -40,12 +40,43 @@ export const mapMeteoblueSymbolToKind = (symbol?: number | null): WeatherKind =>
   return METEOBLUE_SYMBOL_TO_KIND[symbol] ?? "unknown";
 };
 
+const mapOpenWeatherIconToKind = (icon?: string | null): WeatherKind => {
+  if (!icon) return "unknown";
+  const code = icon.slice(0, 2);
+
+  switch (code) {
+    case "01":
+      return "clear";
+    case "02":
+      return "partly_cloudy";
+    case "03":
+    case "04":
+      return "cloudy";
+    case "09":
+    case "10":
+      return "rain";
+    case "11":
+      return "thunderstorm";
+    case "13":
+      return "snow";
+    case "50":
+      return "fog";
+    default:
+      return "unknown";
+  }
+};
+
 export const resolveWeatherKind = (options: {
   symbol?: number | null;
   condition?: string | null;
   precipitation?: number | null;
+  icon?: string | null;
 }): WeatherKind => {
-  const { symbol, condition, precipitation } = options;
+  const { symbol, condition, precipitation, icon } = options;
+
+  const iconKind = mapOpenWeatherIconToKind(icon);
+  if (iconKind !== "unknown") return iconKind;
+
   const symbolKind = mapMeteoblueSymbolToKind(symbol);
   if (symbolKind !== "unknown") return symbolKind;
 
