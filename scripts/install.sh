@@ -1578,6 +1578,16 @@ else
   log_warn "Verificador completo de kiosk no encontrado en /opt/pantalla-reloj/verify_kiosk.sh"
 fi
 
+log_info "Ejecutando scripts/verify_kiosk.sh (sanity check frío)..."
+if OUTPUT=$(DISPLAY=:0 XAUTHORITY=/home/${USER_NAME}/.Xauthority "$REPO_ROOT/scripts/verify_kiosk.sh" "$USER_NAME" 2>&1); then
+  printf '%s\n' "$OUTPUT"
+  SUMMARY+=('[install] scripts/verify_kiosk.sh OK')
+else
+  printf '%s\n' "$OUTPUT"
+  SUMMARY+=('[install] scripts/verify_kiosk.sh FAIL')
+  log_warn "scripts/verify_kiosk.sh detectó problemas"
+fi
+
 if DISPLAY=:0 XAUTHORITY=/home/${USER_NAME}/.Xauthority xprop -root _NET_ACTIVE_WINDOW >/dev/null 2>&1; then
   log_ok "xprop _NET_ACTIVE_WINDOW ejecutado"
   SUMMARY+=('[install] xprop activo ejecutado')

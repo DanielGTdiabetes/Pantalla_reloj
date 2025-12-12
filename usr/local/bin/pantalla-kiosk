@@ -6,6 +6,10 @@ DEFAULT_URL="${DEFAULT_ORIGIN}/"
 DEFAULT_STATE_DIR="/var/lib/pantalla-reloj/state"
 DEFAULT_LOG_DIR="/var/log/pantalla"
 
+MAX_RETRIES="${CHROME_MAX_RETRIES:-10}"
+SUCCESS_THRESHOLD="${CHROME_SUCCESS_THRESHOLD:-15}"
+MAX_BACKOFF="${CHROME_MAX_BACKOFF:-15}"
+
 LOG_DIR="/var/log/pantalla"
 LOG_FILE="$LOG_DIR/browser-kiosk.log"
 
@@ -147,12 +151,16 @@ verify_profile_dir() {
     log "ERROR: Ejecuta scripts/install.sh para corregir los permisos"
     exit 1
   fi
-  
+
   # Log informativo sobre el estado (sin modificar nada)
   local owner perms
   owner="$(stat -c '%U:%G' "$dir" 2>/dev/null || echo "unknown")"
   perms="$(stat -c '%a' "$dir" 2>/dev/null || echo "unknown")"
-  log "Perfil ${profile_name}: $dir (owner=$owner, perms=$perms)"
+  if [[ "$owner" != "${USER}:${USER}" ]] || [[ "$perms" != "700" ]]; then
+    log "WARN: Perfil ${profile_name} con owner/perms inesperados (owner=$owner, perms=$perms, esperado=${USER}:${USER} 700)"
+  else
+    log "Perfil ${profile_name}: $dir (owner=$owner, perms=$perms)"
+  fi
 }
 
 prepare_log_dir() {
@@ -175,6 +183,58 @@ kill_existing() {
   for name in "${names[@]}"; do
     pkill -u "$(id -u)" -x "$name" >/dev/null 2>&1 || true
   done
+}
+
+cleanup_profile_locks() {
+  local dir="$1"
+  local -a locks=(SingletonLock SingletonCookie SingletonSocket)
+
+  local running=0
+  if pgrep -u "$(id -u)" -f "chrome.*--class=pantalla-kiosk" >/dev/null 2>&1; then
+    running=1
+  fi
+
+  local removed=0
+  local lock
+  for lock in "${locks[@]}"; do
+    if [[ -e "${dir}/${lock}" ]]; then
+      if [[ $running -eq 0 ]]; then
+        rm -f "${dir}/${lock}" || true
+        removed=1
+        log "INFO: Eliminado lock de perfil ${dir}/${lock} (sin Chrome activo)"
+      else
+        log "INFO: Lock ${lock} presente pero Chrome sigue activo; se mantiene"
+      fi
+    fi
+  done
+
+  if [[ $removed -eq 0 ]]; then
+    log "Perfil sin locks pendientes en ${dir}"
+  fi
+}
+
+print_chrome_logs() {
+  local profile_dir="$1"
+  local -a candidates=(
+    "${profile_dir}/chrome_debug.log"
+    "$HOME/.cache/google-chrome/chrome_debug.log"
+    "$HOME/.config/google-chrome/chrome_debug.log"
+    "$HOME/.cache/pantalla-reloj/chromium/chrome_debug.log"
+  )
+
+  local candidate printed=0
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "$candidate" ]]; then
+      log "Últimas líneas de ${candidate}:"
+      tail -n 50 "$candidate" >&2 || true
+      printed=1
+      break
+    fi
+  done
+
+  if [[ $printed -eq 0 ]]; then
+    log "No se encontró chrome_debug.log para inspeccionar"
+  fi
 }
 
 wait_for_backend() {
@@ -224,8 +284,29 @@ launch_chromium() {
     --no-default-browser-check
     --password-store=basic
     "--user-data-dir=${profile_dir}"
-    "$url"
   )
+
+  if [[ "${CHROME_DISABLE_GPU:-0}" == "1" ]]; then
+    cmd+=(--disable-gpu --disable-software-rasterizer)
+  fi
+  if [[ -n "${CHROME_OZONE_PLATFORM:-}" ]]; then
+    cmd+=("--ozone-platform=${CHROME_OZONE_PLATFORM}")
+  fi
+  if [[ "${CHROME_NO_SANDBOX:-0}" == "1" ]]; then
+    log "WARN: CHROME_NO_SANDBOX=1 habilitado; --no-sandbox reduce la seguridad"
+    cmd+=(--no-sandbox)
+  fi
+  if [[ "${CHROME_DISABLE_CRASH_REPORTER:-0}" == "1" ]]; then
+    cmd+=(--disable-crash-reporter --disable-breakpad)
+  fi
+
+  if [[ -n "${CHROME_EXTRA_FLAGS:-}" ]]; then
+    # shellcheck disable=SC2206
+    local extra_flags=( ${CHROME_EXTRA_FLAGS} )
+    cmd+=("${extra_flags[@]}")
+  fi
+
+  cmd+=("${url}")
 
   log "chromium_bin: ${binary}"
   log "profile_dir: ${profile_dir}"
@@ -234,53 +315,77 @@ launch_chromium() {
 
   # Verificar que el perfil existe (no modificar permisos aquí)
   verify_profile_dir "$profile_dir" "Chrome"
+  cleanup_profile_locks "$profile_dir"
 
   # Esperar a que el backend y frontend estén listos antes de lanzar Chrome
   # Esto evita la pantalla negra al arrancar desde un estado "frío"
   wait_for_backend 60
   wait_for_frontend 30
-  
+
   # Dar tiempo adicional para que todo se estabilice después de un arranque frío
   sleep 3
 
-  # Intentar lanzar Chrome con relanzamiento si falla rápidamente (evita pantallazos negros)
-  local quick_fail_threshold=3
-  local max_retries=3
   local retry=0
-  local start_time
   local chrome_pid
-  
-  while [[ $retry -lt $max_retries ]]; do
+  local exit_code
+  local -a backoffs=(2 3 5 8 10 12 15)
+  local backoff_index=0
+
+  while [[ $retry -lt $MAX_RETRIES ]]; do
+    local start_time end_time duration
     start_time=$(date +%s)
-    
-    # Ejecutar Chrome en background para poder detectar si termina rápido
+
     "${cmd[@]}" >>"$log_file" 2>&1 &
     chrome_pid=$!
-    sleep "$quick_fail_threshold"
-    
-    # Verificar si Chrome sigue ejecutándose
+
+    local elapsed=0
+    while [[ $elapsed -lt $SUCCESS_THRESHOLD ]]; do
+      if ! kill -0 "$chrome_pid" 2>/dev/null; then
+        break
+      fi
+      sleep 1
+      elapsed=$((elapsed + 1))
+    done
+
     if kill -0 "$chrome_pid" 2>/dev/null; then
-      log "Chrome arrancó correctamente (PID: $chrome_pid)"
-      break
+      log "Chrome arrancó correctamente (PID: $chrome_pid, viva > ${SUCCESS_THRESHOLD}s)"
+      wait "$chrome_pid"
+      exit_code=$?
+      log "Chrome terminó con código ${exit_code}"
+      if [[ $exit_code -ne 0 ]]; then
+        print_chrome_logs "$profile_dir"
+      fi
+      exit "$exit_code"
     fi
-    
-    # Chrome terminó, verificar si fue muy rápido (posible fallo puntual)
-    local end_time=$(date +%s)
-    local duration=$((end_time - start_time))
-    
+
+    wait "$chrome_pid"
+    exit_code=$?
+    end_time=$(date +%s)
+    duration=$((end_time - start_time))
     retry=$((retry + 1))
-    if [[ $retry -lt $max_retries ]]; then
-      log "WARN: Chrome terminó en ${duration}s (intento $retry/$max_retries), reintentando en 2s..."
-      sleep 2
+    log "WARN: Chrome terminó en ${duration}s (código ${exit_code}) intento ${retry}/${MAX_RETRIES}"
+    print_chrome_logs "$profile_dir"
+
+    if command -v pkill >/dev/null 2>&1; then
+      pkill -u "$(id -u)" -f "chrome.*--class=pantalla-kiosk" >/dev/null 2>&1 || true
+    fi
+    cleanup_profile_locks "$profile_dir"
+
+    if [[ $retry -lt $MAX_RETRIES ]]; then
+      local sleep_time=${backoffs[$backoff_index]:-$MAX_BACKOFF}
+      if [[ $sleep_time -gt $MAX_BACKOFF ]]; then
+        sleep_time=$MAX_BACKOFF
+      fi
+      log "Reintentando en ${sleep_time}s (backoff)"
+      sleep "$sleep_time"
+      if [[ $backoff_index -lt ${#backoffs[@]}-1 ]]; then
+        backoff_index=$((backoff_index + 1))
+      fi
     else
-      log "ERROR: Chrome falló después de ${max_retries} intentos"
+      log "ERROR: Chrome falló después de ${MAX_RETRIES} intentos"
       exit 1
     fi
   done
-  
-  # Chrome está ejecutándose correctamente, esperar a que termine normalmente
-  wait "$chrome_pid"
-  exit $?
 }
 
 launch_firefox() {

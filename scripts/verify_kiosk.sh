@@ -12,17 +12,23 @@ log() { printf '%s\n' "$*"; }
 section() { printf '\n== %s ==\n' "$*"; }
 
 section "Estado de servicios"
-if systemctl status pantalla-xorg.service pantalla-openbox@"${USER_NAME}".service pantalla-kiosk-chrome@"${USER_NAME}".service --no-pager; then
-  log "[OK] Servicios reportados"
-else
-  log "[FAIL] Algunos servicios no están activos"
-  status_ok=0
-fi
+services=(
+  pantalla-xorg.service
+  "pantalla-openbox@${USER_NAME}.service"
+  "pantalla-dash-backend@${USER_NAME}.service"
+  "pantalla-kiosk-chrome@${USER_NAME}.service"
+)
+for svc in "${services[@]}"; do
+  if systemctl is-active --quiet "$svc"; then
+    log "[OK] ${svc} activo"
+  else
+    log "[FAIL] ${svc} no está activo"
+    status_ok=0
+  fi
+done
 
 section "Últimos logs de pantalla-kiosk-chrome@${USER_NAME}.service"
-if journalctl -u pantalla-kiosk-chrome@"${USER_NAME}".service -n 120 --no-pager; then
-  :
-else
+if ! journalctl -u pantalla-kiosk-chrome@"${USER_NAME}".service -n 120 --no-pager; then
   log "[FAIL] No se pudieron obtener logs"
   status_ok=0
 fi
@@ -45,6 +51,13 @@ if curl -sf "$HEALTH_URL" >/dev/null 2>&1; then
 else
   log "[FAIL] Backend no responde en ${HEALTH_URL}"
   status_ok=0
+fi
+
+section "Proceso de Chrome"
+if pgrep -u "$USER_NAME" -f "chrome.*--class=pantalla-kiosk" >/dev/null 2>&1; then
+  log "[OK] Chrome kiosk en ejecución"
+else
+  log "[WARN] Chrome kiosk no se detecta (puede estar arrancando)"
 fi
 
 if [[ $status_ok -eq 1 ]]; then
