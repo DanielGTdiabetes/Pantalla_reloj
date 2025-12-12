@@ -1196,6 +1196,12 @@ export const OverlayRotator: React.FC = () => {
   const [displayPanel, setDisplayPanel] = useState<RotatingCardItem | null>(null);
   const [nextPanelBuffer, setNextPanelBuffer] = useState<RotatingCardItem | null>(null);
 
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("pantalla:overlay:active", {
+      detail: { id: displayPanel?.id ?? null },
+    }));
+  }, [displayPanel?.id]);
+
   // Sync display panel with current index logic
   useEffect(() => {
     // Initial load

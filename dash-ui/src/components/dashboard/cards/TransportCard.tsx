@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { AutoScrollContainer } from "../../common/AutoScrollContainer";
 import { PlaneIcon, ShipIcon, TransportRadarIcon } from "../../icons/TransportIcons";
 
@@ -129,12 +129,59 @@ export const TransportCard = ({ data }: TransportCardProps): JSX.Element => {
   const hasAnyTransport = aircraft.length > 0 || ships.length > 0;
   const aircraftListClass = "transport-card-dark__list";
   const shipsListClass = "transport-card-dark__list";
+  const previousTargetsSignatureRef = useRef<string | null>(null);
+
+  const targets = useMemo(() => ({
+    aircraft: aircraft.map(item => ({ id: item.id ?? "", lon: item.lon as number, lat: item.lat as number })),
+    ships: ships.map(item => ({ id: item.id ?? item.mmsi ?? "", lon: item.lon as number, lat: item.lat as number })),
+  }), [aircraft, ships]);
+
+  const selectedTarget = useMemo(() => {
+    if (ships.length > 0) {
+      const ship = ships[0];
+      return ship && ship.lon !== undefined && ship.lat !== undefined
+        ? { kind: "ship" as const, id: ship.id ?? ship.mmsi ?? "", lon: ship.lon, lat: ship.lat }
+        : null;
+    }
+
+    if (aircraft.length > 0) {
+      const flight = aircraft[0];
+      return flight && flight.lon !== undefined && flight.lat !== undefined
+        ? { kind: "aircraft" as const, id: flight.id ?? flight.callsign ?? "", lon: flight.lon, lat: flight.lat }
+        : null;
+    }
+
+    return null;
+  }, [aircraft, ships]);
 
   useEffect(() => {
     if (IS_DEV) {
       console.debug("[TransportCard] ships=", ships.length, "aircraft=", aircraft.length, { ships, aircraft });
     }
   }, [aircraft, ships]);
+
+  useEffect(() => {
+    const signature = `${targets.aircraft.map(t => t.id).join(",")}|${targets.ships.map(t => t.id).join(",")}`;
+    if (signature === previousTargetsSignatureRef.current) {
+      return;
+    }
+    previousTargetsSignatureRef.current = signature;
+
+    const customEvent = new CustomEvent("pantalla:transport:targets", {
+      detail: targets,
+    });
+
+    window.dispatchEvent(customEvent);
+
+    return () => {
+      // No-op cleanup
+    };
+  }, [targets]);
+
+  useEffect(() => {
+    const eventDetail = selectedTarget ?? null;
+    window.dispatchEvent(new CustomEvent("pantalla:transport:selected", { detail: eventDetail }));
+  }, [selectedTarget]);
 
   const renderShips = ships.length > 0 && (
     <section className="transport-card-dark__section" data-testid="panel-ships">

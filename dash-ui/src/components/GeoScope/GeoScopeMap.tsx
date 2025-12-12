@@ -163,6 +163,18 @@ const setPaintProperty = (
   }
 };
 
+const RADAR_FOCUS_PARAMS = {
+  padding: 80,
+  maxZoom: 9,
+  singleTargetZoom: 8,
+  transition: 1200,
+  expandFactor: 1.15,
+  throttleMs: 2000,
+};
+
+type TransportTarget = { id: string; lon: number; lat: number };
+type TransportSelected = { kind: "aircraft" | "ship"; id: string; lon: number; lat: number } | null;
+
 const WATER_PATTERN = /(background|ocean|sea|water)/i;
 const LAND_PATTERN = /(land|landcover|park|continent)/i;
 const LABEL_PATTERN = /(label|place|road-name|poi)/i;
@@ -640,6 +652,12 @@ export default function GeoScopeMap({
   const [radarPlaying, setRadarPlaying] = useState(false);
   const [radarPlaybackSpeed, setRadarPlaybackSpeed] = useState(1);
   const [radarOpacity, setRadarOpacity] = useState(0.7);
+  const [activeOverlayId, setActiveOverlayId] = useState<string | null>(null);
+  const [transportTargets, setTransportTargets] = useState<{ aircraft: TransportTarget[]; ships: TransportTarget[] }>({
+    aircraft: [],
+    ships: [],
+  });
+  const [selectedTransport, setSelectedTransport] = useState<TransportSelected>(null);
 
   // Refs para capas
   const aircraftLayerRef = useRef<AircraftLayer | null>(null);
@@ -658,6 +676,11 @@ export default function GeoScopeMap({
   const fallbackAppliedRef = useRef(false);
   const currentMinZoomRef = useRef<number | null>(null);
   const mapStateMachineRef = useRef<any>(null);
+  const previousRadarRef = useRef(false);
+  const cameraSnapshotRef = useRef<{ center: maptilersdk.LngLatLike; zoom: number; bearing: number; pitch: number } | null>(null);
+  const focusThrottleRef = useRef<number>(0);
+  const lastFocusBoundsRef = useRef<{ minLat: number; maxLat: number; minLon: number; maxLon: number } | null>(null);
+  const pulseIntervalRef = useRef<number | null>(null);
 
   const viewStateRef = useRef<any>({ ...DEFAULT_VIEW });
 
@@ -1978,6 +2001,260 @@ export default function GeoScopeMap({
     radarPlaybackSpeed,
     radarOpacity,
   ]);
+
+  useEffect(() => {
+    const handleOverlayActive = (event: Event) => {
+      const detail = (event as CustomEvent<{ id?: string | null }>).detail;
+      setActiveOverlayId(detail?.id ?? null);
+    };
+
+    const handleTransportTargets = (event: Event) => {
+      const detail = (event as CustomEvent<{ aircraft?: TransportTarget[]; ships?: TransportTarget[] }>).detail;
+      const nextAircraft = Array.isArray(detail?.aircraft)
+        ? detail!.aircraft.filter(t => Number.isFinite(t?.lat) && Number.isFinite(t?.lon))
+        : [];
+      const nextShips = Array.isArray(detail?.ships)
+        ? detail!.ships.filter(t => Number.isFinite(t?.lat) && Number.isFinite(t?.lon))
+        : [];
+
+      setTransportTargets({
+        aircraft: nextAircraft,
+        ships: nextShips,
+      });
+    };
+
+    const handleTransportSelected = (event: Event) => {
+      const detail = (event as CustomEvent<TransportSelected>).detail;
+      setSelectedTransport(detail ?? null);
+    };
+
+    window.addEventListener("pantalla:overlay:active", handleOverlayActive);
+    window.addEventListener("pantalla:transport:targets", handleTransportTargets);
+    window.addEventListener("pantalla:transport:selected", handleTransportSelected);
+
+    return () => {
+      window.removeEventListener("pantalla:overlay:active", handleOverlayActive);
+      window.removeEventListener("pantalla:transport:targets", handleTransportTargets);
+      window.removeEventListener("pantalla:transport:selected", handleTransportSelected);
+    };
+  }, []);
+
+  const isRadarPanelActive = activeOverlayId === "transport";
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (isRadarPanelActive && !previousRadarRef.current) {
+      cameraSnapshotRef.current = {
+        center: map.getCenter(),
+        zoom: map.getZoom(),
+        bearing: map.getBearing(),
+        pitch: map.getPitch(),
+      };
+    }
+
+    if (previousRadarRef.current && !isRadarPanelActive) {
+      const snapshot = cameraSnapshotRef.current;
+      if (snapshot) {
+        map.easeTo({
+          center: snapshot.center,
+          zoom: snapshot.zoom,
+          bearing: snapshot.bearing,
+          pitch: snapshot.pitch,
+          duration: RADAR_FOCUS_PARAMS.transition,
+        });
+      }
+
+      lastFocusBoundsRef.current = null;
+      setSelectedTransport(null);
+      if (pulseIntervalRef.current) {
+        window.clearInterval(pulseIntervalRef.current);
+        pulseIntervalRef.current = null;
+      }
+    }
+
+    previousRadarRef.current = isRadarPanelActive;
+  }, [isRadarPanelActive]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isRadarPanelActive) {
+      return;
+    }
+
+    const allTargets = [...transportTargets.aircraft, ...transportTargets.ships];
+    if (allTargets.length === 0) {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - focusThrottleRef.current < RADAR_FOCUS_PARAMS.throttleMs) {
+      return;
+    }
+
+    const minLat = Math.min(...allTargets.map(t => t.lat));
+    const maxLat = Math.max(...allTargets.map(t => t.lat));
+    const minLon = Math.min(...allTargets.map(t => t.lon));
+    const maxLon = Math.max(...allTargets.map(t => t.lon));
+
+    const lastBounds = lastFocusBoundsRef.current;
+    const boundsChanged = !lastBounds
+      || Math.abs(lastBounds.minLat - minLat) > 0.01
+      || Math.abs(lastBounds.maxLat - maxLat) > 0.01
+      || Math.abs(lastBounds.minLon - minLon) > 0.01
+      || Math.abs(lastBounds.maxLon - maxLon) > 0.01;
+
+    if (!boundsChanged) {
+      return;
+    }
+
+    if (allTargets.length === 1) {
+      const target = allTargets[0];
+      map.easeTo({
+        center: [target.lon, target.lat],
+        zoom: RADAR_FOCUS_PARAMS.singleTargetZoom,
+        duration: RADAR_FOCUS_PARAMS.transition,
+      });
+    } else {
+      const latSpan = maxLat - minLat;
+      const lonSpan = maxLon - minLon;
+      const latExpand = latSpan * (RADAR_FOCUS_PARAMS.expandFactor - 1);
+      const lonExpand = lonSpan * (RADAR_FOCUS_PARAMS.expandFactor - 1);
+
+      const bounds = new maptilersdk.LngLatBounds(
+        [minLon - lonExpand, minLat - latExpand],
+        [maxLon + lonExpand, maxLat + latExpand],
+      );
+
+      map.fitBounds(bounds, {
+        padding: RADAR_FOCUS_PARAMS.padding,
+        maxZoom: RADAR_FOCUS_PARAMS.maxZoom,
+        duration: RADAR_FOCUS_PARAMS.transition,
+      });
+    }
+
+    lastFocusBoundsRef.current = { minLat, maxLat, minLon, maxLon };
+    focusThrottleRef.current = now;
+  }, [isRadarPanelActive, transportTargets]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isRadarPanelActive || !selectedTransport) {
+      return;
+    }
+
+    const bounds = map.getBounds();
+    const isInside = bounds.contains([selectedTransport.lon, selectedTransport.lat]);
+    if (!isInside) {
+      map.easeTo({
+        center: [selectedTransport.lon, selectedTransport.lat],
+        duration: 800,
+      });
+    }
+  }, [isRadarPanelActive, selectedTransport]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+
+    const ensureHighlightLayer = (
+      layerId: string,
+      sourceId: string,
+      color: string,
+    ): boolean => {
+      if (!map.getSource(sourceId)) {
+        return false;
+      }
+
+      if (!map.getLayer(layerId)) {
+        try {
+          map.addLayer({
+            id: layerId,
+            type: "circle",
+            source: sourceId,
+            filter: ["==", ["id"], "__none__"],
+            paint: {
+              "circle-radius": 18,
+              "circle-color": color,
+              "circle-opacity": 0.65,
+              "circle-stroke-color": "#ffffff",
+              "circle-stroke-width": 3,
+              "circle-blur": 0.25,
+            },
+          });
+        } catch (error) {
+          console.warn("[GeoScopeMap] Unable to add highlight layer", layerId, error);
+          return false;
+        }
+      }
+
+      try {
+        map.moveLayer(layerId);
+      } catch {
+        // Ignore ordering issues
+      }
+
+      return true;
+    };
+
+    const aircraftReady = ensureHighlightLayer("geoscope-aircraft-highlight", "geoscope-aircraft-source", "#f97316");
+    const shipsReady = ensureHighlightLayer("geoscope-ships-highlight", "geoscope-ships-source", "#22d3ee");
+
+    const applyFilter = (layerId: string, targetId: string | null) => {
+      if (!map.getLayer(layerId)) return;
+      const filter: any = ["==", ["id"], targetId ?? "__none__"];
+      try {
+        map.setFilter(layerId, filter);
+      } catch (error) {
+        console.warn("[GeoScopeMap] Unable to set highlight filter", error);
+      }
+    };
+
+    if (!isRadarPanelActive) {
+      applyFilter("geoscope-aircraft-highlight", null);
+      applyFilter("geoscope-ships-highlight", null);
+      if (pulseIntervalRef.current) {
+        window.clearInterval(pulseIntervalRef.current);
+        pulseIntervalRef.current = null;
+      }
+      return;
+    }
+
+    const selected = selectedTransport;
+    applyFilter("geoscope-aircraft-highlight", selected?.kind === "aircraft" ? selected.id : null);
+    applyFilter("geoscope-ships-highlight", selected?.kind === "ship" ? selected.id : null);
+
+    if (pulseIntervalRef.current) {
+      window.clearInterval(pulseIntervalRef.current);
+      pulseIntervalRef.current = null;
+    }
+
+    if (selected && (aircraftReady || shipsReady)) {
+      let toggle = false;
+      pulseIntervalRef.current = window.setInterval(() => {
+        const targetLayer = selected.kind === "aircraft" ? "geoscope-aircraft-highlight" : "geoscope-ships-highlight";
+        if (!map.getLayer(targetLayer)) {
+          return;
+        }
+        toggle = !toggle;
+        const radius = toggle ? 22 : 16;
+        const opacity = toggle ? 0.8 : 0.45;
+        setPaintProperty(map, targetLayer, "circle-radius", radius);
+        setPaintProperty(map, targetLayer, "circle-opacity", opacity);
+        setPaintProperty(map, targetLayer, "circle-stroke-width", toggle ? 4 : 2.5);
+      }, 700);
+    }
+
+    return () => {
+      if (pulseIntervalRef.current) {
+        window.clearInterval(pulseIntervalRef.current);
+        pulseIntervalRef.current = null;
+      }
+    };
+  }, [isRadarPanelActive, selectedTransport]);
 
   // Listener events for Highlighting Transport Items
   useEffect(() => {
