@@ -123,18 +123,40 @@ async def fetch_saint_info_wikipedia(name: str) -> Dict[str, Any]:
     clean_name = name.split(",")[0].strip()
     
     # Try different title variations
-    # Wikipedia titles usually start with "San", "Santa", "Santo"
-    # If the name already has it, try as is. If not, try adding prefixes.
-    variations = []
-    if any(clean_name.lower().startswith(p) for p in ["san ", "santa ", "santo "]):
-        variations.append(clean_name)
-        # Also try replacing spaces with underscores just in case, though API handles it
-        variations.append(clean_name.replace(" ", "_"))
-    else:
-        variations.append(f"San {clean_name}")
-        variations.append(f"Santa {clean_name}")
-        variations.append(f"Santo {clean_name}")
-        variations.append(clean_name) # Try raw name as last resort
+    # Wikipedia titles usually start with "San", "Santa", "Santo".
+    # Marian titles such as "Nuestra Señora" or "Virgen" should not receive these prefixes.
+    variations: List[str] = []
+
+    def add_variation(candidate: str) -> None:
+        if candidate and candidate not in variations:
+            variations.append(candidate)
+
+    lower_name = clean_name.lower()
+
+    # Always try the raw name first to respect titles like "Nuestra Señora de Guadalupe"
+    add_variation(clean_name)
+
+    # Add Marian title alternatives to improve hit rate for virgins/advocations
+    if lower_name.startswith("nuestra señora"):
+        rest = clean_name[len("Nuestra Señora"):].strip()
+        if rest.lower().startswith("de "):
+            rest = rest[3:].strip()
+            add_variation(f"Virgen de {rest}")
+            add_variation(f"Santa María de {rest}")
+    elif lower_name.startswith("virgen "):
+        rest = clean_name[len("Virgen "):].strip()
+        if rest.lower().startswith("de "):
+            rest = rest[3:].strip()
+            add_variation(f"Nuestra Señora de {rest}")
+
+    # Only add saint prefixes when the name does not already include one or a Marian title
+    if not any(lower_name.startswith(p) for p in ["san ", "santa ", "santo ", "virgen ", "nuestra señora"]):
+        add_variation(f"San {clean_name}")
+        add_variation(f"Santa {clean_name}")
+        add_variation(f"Santo {clean_name}")
+
+    # Also try the underscore version in case the API prefers it
+    add_variation(clean_name.replace(" ", "_"))
 
     headers = {
         "User-Agent": "PantallaReloj/1.0 (daniel@example.com)"  # Replace with valid contact if possible, or generic but specific
