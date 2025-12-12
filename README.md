@@ -21,6 +21,16 @@ Pantalla_reloj/
 
 Antes del primer arranque revisa `docs/CONFIG_SETUP.md`; resume cómo clonar la plantilla de `config.json`, qué claves/API keys son obligatorias y cómo verificar que mapa y panel funcionan sin errores.
 
+### Verificación de arranque en frío del kiosk
+
+- Apaga completamente el mini-PC (`sudo shutdown -h now`) y deja la alimentación desconectada al menos 60 segundos para simular un arranque en frío.
+- Enciende el equipo y espera que el kiosk levante en menos de 90 segundos.
+- Comprueba el estado con `scripts/verify_kiosk.sh` (usa `sudo` y pasa el usuario si no es `dani`):
+  ```bash
+  sudo scripts/verify_kiosk.sh dani
+  ```
+- Valida que el comando muestre servicios activos, logs recientes y que `xdpyinfo` y `/api/health` respondan correctamente.
+
 ### Backend (FastAPI)
 - Endpoints: `/api/health`, `/api/config` (GET/PATCH), `/api/weather`, `/api/news`,
   `/api/astronomy`, `/api/calendar`, `/api/storm_mode` (GET/POST), `/api/astronomy/events`,

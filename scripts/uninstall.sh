@@ -115,6 +115,18 @@ SYSTEMD_PATHS=(
   "pantalla-kiosk-autorefresh@${USER_NAME}.path"
 )
 
+log_info "Deteniendo instancias adicionales de pantalla-kiosk-chrome@*.service (todas las cuentas)"
+mapfile -t EXTRA_KIOSK_UNITS < <(systemctl list-units --all --type=service 'pantalla-kiosk-chrome@*.service' --no-legend 2>/dev/null | awk '{print $1}' | sed '/^$/d')
+for unit in "${EXTRA_KIOSK_UNITS[@]:-}"; do
+  if systemctl is-active --quiet "$unit" 2>/dev/null; then
+    log_info "Deteniendo $unit..."
+    systemctl stop "$unit" >/dev/null 2>&1 || true
+  fi
+  if systemctl is-enabled --quiet "$unit" 2>/dev/null; then
+    systemctl disable "$unit" >/dev/null 2>&1 || true
+  fi
+done
+
 log_info "Stopping systemd units, timers and paths"
 # Detener timers primero
 for timer in "${SYSTEMD_TIMERS[@]}"; do
@@ -186,6 +198,7 @@ find /etc/systemd/system -type d -name "pantalla-*.service.d" -exec rm -rf {} + 
 find /etc/systemd/system -type d -name "pantalla-*.timer.d" -exec rm -rf {} + >/dev/null 2>&1 || true
 find /etc/systemd/system -type d -name "pantalla-*.path.d" -exec rm -rf {} + >/dev/null 2>&1 || true
 
+log_info "Recargando systemd tras eliminar unidades"
 systemctl daemon-reload
 systemctl reset-failed >/dev/null 2>&1 || true
 
