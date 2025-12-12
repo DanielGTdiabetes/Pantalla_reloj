@@ -169,6 +169,9 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
           display: flex;
           align-items: center;
           justify-content: center;
+          background: linear-gradient(145deg, rgba(6, 78, 59, 0.9) 0%, rgba(2, 44, 34, 0.95) 100%);
+          border-radius: 1.25rem;
+          overflow: hidden;
           animation: scaleIn-dark 0.4s ease-out;
         }
         .harvest-card-dark__main-icon {
@@ -176,6 +179,10 @@ export const HarvestCard = ({ items }: HarvestCardProps): JSX.Element => {
           height: 100%;
           object-fit: contain;
           z-index: 2;
+          padding: 0.65rem;
+          border-radius: 1rem;
+          background: linear-gradient(145deg, rgba(6, 78, 59, 0.9) 0%, rgba(2, 44, 34, 0.95) 100%);
+          mix-blend-mode: multiply;
           filter: contrast(1.1) saturate(1.1);
           animation: float-dark 4s ease-in-out infinite;
         }
