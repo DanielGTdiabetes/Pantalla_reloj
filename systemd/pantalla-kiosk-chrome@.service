@@ -23,11 +23,10 @@ LogsDirectoryMode=0755
 # exclusivamente en scripts/install.sh. El wrapper pantalla-kiosk solo verifica que existe.
 # Si falta, el wrapper fallará con un mensaje claro indicando que hay que ejecutar install.sh.
 ExecStart=/usr/local/bin/pantalla-kiosk
-Restart=always
+Restart=on-failure
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
-

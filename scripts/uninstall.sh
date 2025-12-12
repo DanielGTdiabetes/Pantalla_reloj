@@ -71,9 +71,10 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-log_info() { printf '[INFO] %s\n' "$*"; }
-log_warn() { printf '[WARN] %s\n' "$*"; }
-log_ok()   { printf '[OK] %s\n' "$*"; }
+timestamp() { date '+%Y-%m-%dT%H:%M:%S%z'; }
+log_info() { printf '[%s] [INFO] %s\n' "$(timestamp)" "$*"; }
+log_warn() { printf '[%s] [WARN] %s\n' "$(timestamp)" "$*"; }
+log_ok()   { printf '[%s] [OK] %s\n' "$(timestamp)" "$*"; }
 
 USER_NAME="dani"
 PANTALLA_PREFIX=/opt/pantalla-reloj
@@ -254,6 +255,7 @@ restore_nginx_default
 log_info "Eliminando binarios instalados"
 rm -f /usr/local/bin/pantalla-kiosk
 rm -f /usr/local/bin/pantalla-kiosk-verify
+rm -f /usr/local/bin/pantalla-verify-kiosk
 rm -f /usr/local/bin/pantalla-kiosk-chromium
 rm -f /usr/local/bin/pantalla-backend-launch
 rm -f /usr/local/bin/pantalla-kiosk-prestart
