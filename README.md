@@ -25,12 +25,12 @@ Antes del primer arranque revisa `docs/CONFIG_SETUP.md`; resume cómo clonar la 
 
 - Apaga completamente el mini-PC (`sudo shutdown -h now`) y deja la alimentación desconectada al menos 60 segundos para simular un arranque en frío.
 - Enciende el equipo y espera < 90 segundos.
-- Comprueba el estado con `scripts/verify_kiosk.sh` (usa `sudo` y pasa el usuario si no es `dani`):
+- Comprueba el estado con `scripts/verify_kiosk.sh` (usa `sudo` y pasa el usuario si no es `dani`). El script valida servicios, salud del backend, locks huérfanos en `/var/lib/pantalla-reloj/state/chromium-kiosk` y muestra `chrome_debug.log` si existe:
   ```bash
   sudo scripts/verify_kiosk.sh dani
   ```
 - El autostart de Openbox solo gestiona DPMS/unclutter/DBus; el navegador kiosk lo arranca `pantalla-kiosk-chrome@<usuario>.service` desde systemd, por lo que el arranque no depende del timing del autostart.
-- Valida que el comando muestre servicios activos, logs recientes y que `xdpyinfo` y `/api/health` respondan correctamente.
+- Valida que el comando muestre servicios activos, logs recientes, respuesta de `xdpyinfo` y `/api/health`, y que el perfil no tenga locks huérfanos si no hay Chrome en ejecución.
 
 ### Backend (FastAPI)
 - Endpoints: `/api/health`, `/api/config` (GET/PATCH), `/api/weather`, `/api/news`,

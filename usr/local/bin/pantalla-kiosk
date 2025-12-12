@@ -9,22 +9,21 @@ DEFAULT_LOG_DIR="/var/log/pantalla"
 MAX_RETRIES="${CHROME_MAX_RETRIES:-10}"
 SUCCESS_THRESHOLD="${CHROME_SUCCESS_THRESHOLD:-15}"
 MAX_BACKOFF="${CHROME_MAX_BACKOFF:-15}"
+EARLY_EXIT_THRESHOLD=10
 
 LOG_DIR="/var/log/pantalla"
 LOG_FILE="$LOG_DIR/browser-kiosk.log"
 
 mkdir -p "$LOG_DIR"
-
-# Crear si no existe
 touch "$LOG_FILE"
-
-# Asegurar permisos correctos para el usuario que ejecuta el kiosk
 chown "$USER:$USER" "$LOG_FILE"
 chmod 644 "$LOG_FILE"
 
-log() {
-  printf '[pantalla-kiosk] %s\n' "$*" >&2
-}
+timestamp() { date '+%Y-%m-%dT%H:%M:%S%z'; }
+log() { local level="$1"; shift; printf '[%s] [pantalla-kiosk] [%s] %s\n' "$(timestamp)" "$level" "$*" >&2; }
+log_info() { log INFO "$@"; }
+log_warn() { log WARN "$@"; }
+log_error() { log ERROR "$@"; }
 
 resolve_url() {
   local candidate="$1"
@@ -68,10 +67,9 @@ find_chromium() {
       printf '%s\n' "$resolved_bin"
       return 0
     fi
-    log "WARN: CHROME_BIN_OVERRIDE inválido (${override})"
+    log_warn "CHROME_BIN_OVERRIDE inválido (${override})"
   fi
 
-  # Priorizar binarios normales de Chromium (sin Snap)
   local -a candidates=(
     /usr/local/bin/chromium-kiosk-bin
     google-chrome-stable
@@ -84,10 +82,9 @@ find_chromium() {
   for candidate in "${candidates[@]}"; do
     if resolved="$(resolve_binary "$candidate" 2>/dev/null)"; then
       if [[ "$resolved" == "/usr/bin/chromium-browser" ]]; then
-        log "INFO: Ignorando shim de chromium-browser en ${resolved}"
+        log_info "Ignorando shim de chromium-browser en ${resolved}"
         continue
       fi
-      # Evitar Snap si es posible
       if [[ "$resolved" != *"/snap/"* ]]; then
         printf '%s\n' "$resolved"
         return 0
@@ -95,16 +92,15 @@ find_chromium() {
     fi
   done
 
-  # Fallback a Snap solo si no se encuentra ninguna alternativa
   local snap_candidate="/snap/chromium/current/usr/lib/chromium-browser/chrome"
   if [[ -x "$snap_candidate" ]]; then
-    log "WARN: Usando Chromium desde Snap (no recomendado, instala Chromium normal)" >&2
+    log_warn "Usando Chromium desde Snap (no recomendado, instala Chromium normal)"
     printf '%s\n' "$snap_candidate"
     return 0
   fi
-  
+
   if [[ -x /snap/bin/chromium ]]; then
-    log "WARN: Usando Chromium desde Snap (no recomendado, instala Chromium normal)" >&2
+    log_warn "Usando Chromium desde Snap (no recomendado, instala Chromium normal)"
     printf '%s\n' "/snap/bin/chromium"
     return 0
   fi
@@ -119,7 +115,7 @@ find_firefox() {
     if resolve_binary "$override"; then
       return 0
     fi
-    log "WARN: FIREFOX_BIN_OVERRIDE inválido (${override})"
+    log_warn "FIREFOX_BIN_OVERRIDE inválido (${override})"
   fi
 
   local -a candidates=(firefox firefox-esr)
@@ -133,33 +129,28 @@ find_firefox() {
   return 1
 }
 
-# Verificar que el directorio del perfil existe y es accesible
-# NO crear ni modificar permisos aquí - eso se hace solo en scripts/install.sh
 verify_profile_dir() {
-  local dir="$1"
-  local profile_name="$2"
-  
+  local dir="$1" profile_name="$2"
+
   if [[ ! -d "$dir" ]]; then
-    log "ERROR: El directorio del perfil ${profile_name} no existe: $dir"
-    log "ERROR: Ejecuta scripts/install.sh para crear el perfil correctamente"
-    exit 1
-  fi
-  
-  # Verificar que es accesible (lectura)
-  if [[ ! -r "$dir" ]] || [[ ! -x "$dir" ]]; then
-    log "ERROR: El directorio del perfil ${profile_name} no es accesible: $dir"
-    log "ERROR: Ejecuta scripts/install.sh para corregir los permisos"
+    log_error "El directorio del perfil ${profile_name} no existe: $dir"
+    log_error "Ejecuta scripts/install.sh para crear el perfil correctamente"
     exit 1
   fi
 
-  # Log informativo sobre el estado (sin modificar nada)
+  if [[ ! -r "$dir" ]] || [[ ! -x "$dir" ]]; then
+    log_error "El directorio del perfil ${profile_name} no es accesible: $dir"
+    log_error "Ejecuta scripts/install.sh para corregir los permisos"
+    exit 1
+  fi
+
   local owner perms
   owner="$(stat -c '%U:%G' "$dir" 2>/dev/null || echo "unknown")"
   perms="$(stat -c '%a' "$dir" 2>/dev/null || echo "unknown")"
   if [[ "$owner" != "${USER}:${USER}" ]] || [[ "$perms" != "700" ]]; then
-    log "WARN: Perfil ${profile_name} con owner/perms inesperados (owner=$owner, perms=$perms, esperado=${USER}:${USER} 700)"
+    log_warn "Perfil ${profile_name} con owner/perms inesperados (owner=$owner, perms=$perms, esperado=${USER}:${USER} 700)"
   else
-    log "Perfil ${profile_name}: $dir (owner=$owner, perms=$perms)"
+    log_info "Perfil ${profile_name}: $dir (owner=$owner, perms=$perms)"
   fi
 }
 
@@ -168,64 +159,76 @@ prepare_log_dir() {
   install -d -m 0755 "$dir" >/dev/null 2>&1 || true
 }
 
-kill_existing() {
-  command -v pkill >/dev/null 2>&1 || return 0
-  local -a names=(
-    chromium
-    chromium-browser
-    chrome
-    google-chrome
-    google-chrome-stable
-    firefox
-    firefox-esr
-  )
-  local name
-  for name in "${names[@]}"; do
-    pkill -u "$(id -u)" -x "$name" >/dev/null 2>&1 || true
-  done
+is_chrome_running_for_profile() {
+  local profile_dir="$1"
+  local pattern="--user-data-dir=${profile_dir}"
+  if pgrep -u "$(id -u)" -f "chrome.*${pattern}" >/dev/null 2>&1; then
+    return 0
+  fi
+  if pgrep -u "$(id -u)" -f "chromium.*${pattern}" >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
 }
 
-cleanup_profile_locks() {
+list_profile_locks() {
   local dir="$1"
   local -a locks=(SingletonLock SingletonCookie SingletonSocket)
+  local existing=()
+  local lock
+  for lock in "${locks[@]}"; do
+    if [[ -e "${dir}/${lock}" ]]; then
+      existing+=("${dir}/${lock}")
+    fi
+  done
+  printf '%s\n' "${existing[@]:-}"
+}
 
+cleanup_orphan_profile_locks() {
+  local dir="$1"
   local running=0
-  if pgrep -u "$(id -u)" -f "chrome.*--class=pantalla-kiosk" >/dev/null 2>&1; then
+  if is_chrome_running_for_profile "$dir"; then
     running=1
+  fi
+
+  local -a locks_to_remove
+  mapfile -t locks_to_remove < <(list_profile_locks "$dir") || true
+
+  if [[ ${#locks_to_remove[@]} -eq 0 ]]; then
+    log_info "Perfil sin locks pendientes en ${dir}"
+    return 0
+  fi
+
+  if [[ $running -eq 1 ]]; then
+    log_info "Locks presentes en ${dir} pero Chrome sigue activo; no se tocan"
+    return 1
   fi
 
   local removed=0
   local lock
-  for lock in "${locks[@]}"; do
-    if [[ -e "${dir}/${lock}" ]]; then
-      if [[ $running -eq 0 ]]; then
-        rm -f "${dir}/${lock}" || true
-        removed=1
-        log "INFO: Eliminado lock de perfil ${dir}/${lock} (sin Chrome activo)"
-      else
-        log "INFO: Lock ${lock} presente pero Chrome sigue activo; se mantiene"
-      fi
-    fi
+  for lock in "${locks_to_remove[@]}"; do
+    rm -f -- "$lock" || true
+    log_warn "Lock huérfano eliminado: ${lock}"
+    removed=1
   done
-
   if [[ $removed -eq 0 ]]; then
-    log "Perfil sin locks pendientes en ${dir}"
+    log_info "No se eliminaron locks en ${dir}"
   fi
+  return 0
 }
 
 print_chrome_logs() {
   local profile_dir="$1"
   local -a candidates=(
     "${profile_dir}/chrome_debug.log"
-    "$HOME/.cache/google-chrome/chrome_debug.log"
     "$HOME/.config/google-chrome/chrome_debug.log"
-    "$HOME/.cache/pantalla-reloj/chromium/chrome_debug.log"
+    "$HOME/.cache/google-chrome/chrome_debug.log"
   )
 
   local candidate printed=0
   for candidate in "${candidates[@]}"; do
     if [[ -f "$candidate" ]]; then
-      log "Últimas líneas de ${candidate}:"
+      log_info "Últimas líneas de ${candidate}:"
       tail -n 50 "$candidate" >&2 || true
       printed=1
       break
@@ -233,50 +236,49 @@ print_chrome_logs() {
   done
 
   if [[ $printed -eq 0 ]]; then
-    log "No se encontró chrome_debug.log para inspeccionar"
+    log_info "No se encontró chrome_debug.log para inspeccionar"
   fi
 }
 
 wait_for_backend() {
   local max_attempts="${1:-60}"
   local attempt=0
-  log "Esperando a que el backend esté listo (máx ${max_attempts}s)..."
-  
+  log_info "Esperando a que el backend esté listo (máx ${max_attempts}s)..."
+
   while [[ $attempt -lt $max_attempts ]]; do
     if curl -sf --max-time 2 http://127.0.0.1:8081/api/health >/dev/null 2>&1; then
-      log "Backend listo en el intento $((attempt + 1))"
+      log_info "Backend listo en el intento $((attempt + 1))"
       return 0
     fi
     sleep 1
     attempt=$((attempt + 1))
   done
-  
-  log "WARN: Backend no responde después de ${max_attempts}s, continuando de todos modos..."
+
+  log_warn "Backend no responde después de ${max_attempts}s, continuando de todos modos..."
   return 1
 }
 
 wait_for_frontend() {
   local max_attempts="${1:-30}"
   local attempt=0
-  log "Esperando a que el frontend esté listo (máx ${max_attempts}s)..."
-  
+  log_info "Esperando a que el frontend esté listo (máx ${max_attempts}s)..."
+
   while [[ $attempt -lt $max_attempts ]]; do
     if curl -sf --max-time 2 http://127.0.0.1/ >/dev/null 2>&1; then
-      log "Frontend listo en el intento $((attempt + 1))"
+      log_info "Frontend listo en el intento $((attempt + 1))"
       return 0
     fi
     sleep 1
     attempt=$((attempt + 1))
   done
-  
-  log "WARN: Frontend no responde después de ${max_attempts}s, continuando de todos modos..."
+
+  log_warn "Frontend no responde después de ${max_attempts}s, continuando de todos modos..."
   return 1
 }
 
 launch_chromium() {
   local binary="$1" url="$2" profile_dir="$3" log_file="$4"
-  local -a cmd
-  cmd=(
+  local -a cmd=(
     "$binary"
     --class=pantalla-kiosk
     --kiosk
@@ -293,50 +295,48 @@ launch_chromium() {
     cmd+=("--ozone-platform=${CHROME_OZONE_PLATFORM}")
   fi
   if [[ "${CHROME_NO_SANDBOX:-0}" == "1" ]]; then
-    log "WARN: CHROME_NO_SANDBOX=1 habilitado; --no-sandbox reduce la seguridad"
+    log_warn "CHROME_NO_SANDBOX=1 habilitado; --no-sandbox reduce la seguridad"
     cmd+=(--no-sandbox)
   fi
   if [[ "${CHROME_DISABLE_CRASH_REPORTER:-0}" == "1" ]]; then
     cmd+=(--disable-crash-reporter --disable-breakpad)
   fi
-
   if [[ -n "${CHROME_EXTRA_FLAGS:-}" ]]; then
     # shellcheck disable=SC2206
     local extra_flags=( ${CHROME_EXTRA_FLAGS} )
     cmd+=("${extra_flags[@]}")
   fi
-
   cmd+=("${url}")
 
-  log "chromium_bin: ${binary}"
-  log "profile_dir: ${profile_dir}"
-  log "launch: ${cmd[*]}"
-  log "url: ${url}"
+  log_info "chromium_bin: ${binary}"
+  log_info "profile_dir: ${profile_dir}"
+  log_info "launch: ${cmd[*]}"
+  log_info "url: ${url}"
 
-  # Verificar que el perfil existe (no modificar permisos aquí)
   verify_profile_dir "$profile_dir" "Chrome"
-  cleanup_profile_locks "$profile_dir"
 
-  # Esperar a que el backend y frontend estén listos antes de lanzar Chrome
-  # Esto evita la pantalla negra al arrancar desde un estado "frío"
+  if is_chrome_running_for_profile "$profile_dir"; then
+    log_warn "Chrome ya está en ejecución con ${profile_dir}; no se lanzará otra instancia"
+    return 0
+  fi
+
+  cleanup_orphan_profile_locks "$profile_dir"
+
   wait_for_backend 60
   wait_for_frontend 30
-
-  # Dar tiempo adicional para que todo se estabilice después de un arranque frío
   sleep 3
 
   local retry=0
-  local chrome_pid
-  local exit_code
   local -a backoffs=(2 3 5 8 10 12 15)
   local backoff_index=0
+  local early_zero_without_locks=0
 
   while [[ $retry -lt $MAX_RETRIES ]]; do
     local start_time end_time duration
     start_time=$(date +%s)
 
     "${cmd[@]}" >>"$log_file" 2>&1 &
-    chrome_pid=$!
+    local chrome_pid=$!
 
     local elapsed=0
     while [[ $elapsed -lt $SUCCESS_THRESHOLD ]]; do
@@ -347,51 +347,78 @@ launch_chromium() {
       elapsed=$((elapsed + 1))
     done
 
+    local exit_code=0
     if kill -0 "$chrome_pid" 2>/dev/null; then
-      log "Chrome arrancó correctamente (PID: $chrome_pid, viva > ${SUCCESS_THRESHOLD}s)"
+      log_info "Chrome arrancó correctamente (PID: $chrome_pid, viva > ${SUCCESS_THRESHOLD}s)"
       wait "$chrome_pid"
       exit_code=$?
-      log "Chrome terminó con código ${exit_code}"
-      if [[ $exit_code -ne 0 ]]; then
-        print_chrome_logs "$profile_dir"
-      fi
-      exit "$exit_code"
+    else
+      wait "$chrome_pid"
+      exit_code=$?
     fi
 
-    wait "$chrome_pid"
-    exit_code=$?
     end_time=$(date +%s)
     duration=$((end_time - start_time))
-    retry=$((retry + 1))
-    log "WARN: Chrome terminó en ${duration}s (código ${exit_code}) intento ${retry}/${MAX_RETRIES}"
-    print_chrome_logs "$profile_dir"
 
-    if command -v pkill >/dev/null 2>&1; then
-      pkill -u "$(id -u)" -f "chrome.*--class=pantalla-kiosk" >/dev/null 2>&1 || true
-    fi
-    cleanup_profile_locks "$profile_dir"
+    local -a locks_after
+    mapfile -t locks_after < <(list_profile_locks "$profile_dir") || true
 
-    if [[ $retry -lt $MAX_RETRIES ]]; then
-      local sleep_time=${backoffs[$backoff_index]:-$MAX_BACKOFF}
-      if [[ $sleep_time -gt $MAX_BACKOFF ]]; then
-        sleep_time=$MAX_BACKOFF
-      fi
-      log "Reintentando en ${sleep_time}s (backoff)"
-      sleep "$sleep_time"
-      if [[ $backoff_index -lt ${#backoffs[@]}-1 ]]; then
-        backoff_index=$((backoff_index + 1))
-      fi
+    log_info "Intento $((retry + 1))/${MAX_RETRIES}: Chrome terminó en ${duration}s con código ${exit_code}"
+    if [[ ${#locks_after[@]} -gt 0 ]]; then
+      log_info "Locks tras salida: ${locks_after[*]}"
     else
-      log "ERROR: Chrome falló después de ${MAX_RETRIES} intentos"
-      exit 1
+      log_info "Locks tras salida: ninguno"
+    fi
+
+    if [[ $exit_code -eq 0 && $duration -lt $EARLY_EXIT_THRESHOLD ]]; then
+      if [[ ${#locks_after[@]} -gt 0 ]]; then
+        log_warn "Salida temprana con código 0 y locks presentes; limpiando perfil y reintentando"
+        cleanup_orphan_profile_locks "$profile_dir"
+        print_chrome_logs "$profile_dir"
+      else
+        if [[ $early_zero_without_locks -ge 1 ]]; then
+          log_error "Chrome salió en <${EARLY_EXIT_THRESHOLD}s con código 0 sin locks por segunda vez; abortando para evitar bucle"
+          print_chrome_logs "$profile_dir"
+          return 10
+        fi
+        early_zero_without_locks=$((early_zero_without_locks + 1))
+        log_warn "Chrome salió en <${EARLY_EXIT_THRESHOLD}s con código 0 sin locks; se reintentará una vez"
+      fi
+    elif [[ $exit_code -ne 0 ]]; then
+      log_warn "Chrome terminó con error (código ${exit_code}); se reintentará si quedan intentos"
+      print_chrome_logs "$profile_dir"
+    else
+      if [[ $duration -lt $SUCCESS_THRESHOLD ]]; then
+        log_warn "Chrome salió después de ${duration}s; código ${exit_code}"
+      fi
+      return "$exit_code"
+    fi
+
+    retry=$((retry + 1))
+    if [[ $retry -ge $MAX_RETRIES ]]; then
+      log_error "Chrome falló después de ${MAX_RETRIES} intentos"
+      return 1
+    fi
+
+    cleanup_orphan_profile_locks "$profile_dir"
+
+    local sleep_time=${backoffs[$backoff_index]:-$MAX_BACKOFF}
+    if [[ $sleep_time -gt $MAX_BACKOFF ]]; then
+      sleep_time=$MAX_BACKOFF
+    fi
+    log_info "Reintentando en ${sleep_time}s (backoff)"
+    sleep "$sleep_time"
+    if [[ $backoff_index -lt ${#backoffs[@]}-1 ]]; then
+      backoff_index=$((backoff_index + 1))
     fi
   done
+
+  return 1
 }
 
 launch_firefox() {
   local binary="$1" url="$2" profile_dir="$3" log_file="$4"
-  local -a cmd
-  cmd=(
+  local -a cmd=(
     "$binary"
     --kiosk
     --new-instance
@@ -404,15 +431,12 @@ launch_firefox() {
   export MOZ_USE_XINPUT2=1
   export MOZ_CRASHREPORTER_DISABLE=1
 
-  log "firefox_bin: ${binary}"
-  log "profile_dir: ${profile_dir}"
-  log "launch: ${cmd[*]}"
-  log "url: ${url}"
+  log_info "firefox_bin: ${binary}"
+  log_info "profile_dir: ${profile_dir}"
+  log_info "launch: ${cmd[*]}"
+  log_info "url: ${url}"
 
-  if ! exec "${cmd[@]}" >>"$log_file" 2>&1; then
-    log "ERROR: fallo al ejecutar Firefox (${binary})"
-    exit 1
-  fi
+  exec "${cmd[@]}" >>"$log_file" 2>&1
 }
 
 main() {
@@ -440,26 +464,24 @@ main() {
   log_dir="${PANTALLA_KIOSK_LOG_DIR:-${DEFAULT_LOG_DIR}}"
   log_file="${log_dir}/browser-kiosk.log"
 
-  # Verificar que los directorios base existen (solo crear logs, no perfiles)
   prepare_log_dir "$log_dir"
-  
-  # Verificar perfiles (NO crear ni modificar permisos - eso se hace en install.sh)
+
   verify_profile_dir "$chromium_profile" "Chrome"
   verify_profile_dir "$firefox_profile" "Firefox"
-
-  kill_existing
 
   local browser
   if browser="$(find_chromium)"; then
     launch_chromium "$browser" "$target_url" "$chromium_profile" "$log_file"
+    return $?
   fi
 
   if browser="$(find_firefox)"; then
     launch_firefox "$browser" "$target_url" "$firefox_profile" "$log_file"
+    return $?
   fi
 
-  log "ERROR: no se encontró un navegador compatible (Chromium/Firefox)"
-  exit 1
+  log_error "No se encontró un navegador compatible (Chromium/Firefox)"
+  return 1
 }
 
 main "$@"

@@ -43,10 +43,11 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-log_info() { printf '[INFO] %s\n' "$*"; }
-log_warn() { printf '[WARN] %s\n' "$*"; }
-log_ok()   { printf '[OK] %s\n' "$*"; }
-log_error(){ printf '[ERROR] %s\n' "$*" >&2; }
+timestamp() { date '+%Y-%m-%dT%H:%M:%S%z'; }
+log_info() { printf '[%s] [INFO] %s\n' "$(timestamp)" "$*"; }
+log_warn() { printf '[%s] [WARN] %s\n' "$(timestamp)" "$*"; }
+log_ok()   { printf '[%s] [OK] %s\n' "$(timestamp)" "$*"; }
+log_error(){ printf '[%s] [ERROR] %s\n' "$(timestamp)" "$*" >&2; }
 
 wait_for_backend_ready() {
   local max_wait=60
@@ -617,17 +618,12 @@ if ! bash -n /usr/local/bin/pantalla-kiosk-verify; then
 fi
 SUMMARY+=("[install] verificador de kiosk instalado en /usr/local/bin/pantalla-kiosk-verify")
 
-# Instalar script de verificación completo del kiosk
-if [[ -f "$REPO_ROOT/opt/pantalla-reloj/verify_kiosk.sh" ]]; then
-  install -D -m 0755 "$REPO_ROOT/opt/pantalla-reloj/verify_kiosk.sh" /opt/pantalla-reloj/verify_kiosk.sh
-  if ! bash -n /opt/pantalla-reloj/verify_kiosk.sh; then
-    echo "[ERROR] Syntax check failed for verify_kiosk.sh" >&2
-    exit 1
-  fi
-  SUMMARY+=("[install] script de verificación completo instalado en /opt/pantalla-reloj/verify_kiosk.sh")
-else
-  log_warn "verify_kiosk.sh no encontrado en $REPO_ROOT/opt/pantalla-reloj/verify_kiosk.sh"
+install -D -m 0755 "$REPO_ROOT/scripts/verify_kiosk.sh" /usr/local/bin/pantalla-verify-kiosk
+if ! bash -n /usr/local/bin/pantalla-verify-kiosk; then
+  echo "[ERROR] Syntax check failed for pantalla-verify-kiosk" >&2
+  exit 1
 fi
+SUMMARY+=("[install] script de verificación rápida instalado en /usr/local/bin/pantalla-verify-kiosk")
 
 install -D -m 0755 "$REPO_ROOT/scripts/diag_kiosk.sh" /usr/local/bin/diag_kiosk.sh
 if ! bash -n /usr/local/bin/diag_kiosk.sh; then
