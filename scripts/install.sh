@@ -104,7 +104,7 @@ STATE_DIR=/var/lib/pantalla-reloj
 STATE_RUNTIME="${STATE_DIR}/state"
 LOG_DIR=/var/log/pantalla-reloj
 KIOSK_LOG_DIR=/var/log/pantalla
-INSTALL_LOG=/tmp/install.log
+INSTALL_LOG="/var/log/pantalla/install-$(date +%Y%m%d-%H%M%S).log"
 WEB_ROOT=/var/www/html
 WEBROOT_MANIFEST="${STATE_RUNTIME}/webroot-manifest"
 WIFI_CONFIG_SRC="${REPO_ROOT}/deploy/network/wifi.conf"
@@ -586,6 +586,7 @@ install -m 0755 "$REPO_ROOT/opt/pantalla/bin/pantalla-geometry.sh" "$SESSION_PRE
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/pantalla-kiosk-sanitize.sh" "$SESSION_PREFIX/bin/pantalla-kiosk-sanitize.sh"
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/pantalla-kiosk-watchdog.sh" "$SESSION_PREFIX/bin/pantalla-kiosk-watchdog.sh"
 install -m 0755 "$REPO_ROOT/opt/pantalla/bin/pantalla-portal-launch.sh" "$SESSION_PREFIX/bin/pantalla-portal-launch.sh"
+install -D -m 0755 "$REPO_ROOT/opt/pantalla/bin/pantalla-kiosk-prestart" /usr/local/bin/pantalla-kiosk-prestart
 install -m 0755 "$REPO_ROOT/opt/pantalla/openbox/autostart" "$SESSION_PREFIX/openbox/autostart"
 if ! grep -q 'xsetroot -solid black' "$SESSION_PREFIX/openbox/autostart" 2>/dev/null; then
   echo 'xsetroot -solid black' >>"$SESSION_PREFIX/openbox/autostart"
@@ -861,6 +862,11 @@ if [[ -d "$DROPIN_DIR" ]]; then
   done < <(find "$DROPIN_DIR" -maxdepth 1 -type f ! -name 'override.conf' -print0 2>/dev/null)
 fi
 
+if [[ -f "$DROPIN_OVERRIDE_DST" ]] && ! cmp -s "$DROPIN_OVERRIDE_SRC" "$DROPIN_OVERRIDE_DST"; then
+  backup_path="${DROPIN_OVERRIDE_DST}.$(date +%Y%m%d%H%M%S).bak"
+  cp "$DROPIN_OVERRIDE_DST" "$backup_path"
+  log_warn "Backup de override existente: $backup_path"
+fi
 install -D -m 0644 "$DROPIN_OVERRIDE_SRC" "$DROPIN_OVERRIDE_DST"
 
 escaped_url="$(printf '%s\n' "$ACTIVE_KIOSK_URL" | sed 's/[\/&]/\\&/g')"
@@ -1338,11 +1344,9 @@ fi
 if [[ ${CHROME_AVAILABLE:-0} -eq 1 ]]; then
   log_info "Habilitando servicio Chrome kiosk..."
   if [[ -f /etc/systemd/system/pantalla-kiosk-chrome@.service ]]; then
-    # Solo habilitar, no iniciar inmediatamente (--now) para evitar bloqueos si el backend no está listo.
-    # El reinicio controlado se realiza más abajo en el script.
-    if systemctl enable "$CHROME_SERVICE_INSTANCE" 2>&1; then
-      log_ok "${CHROME_SERVICE_INSTANCE} habilitado"
-      SUMMARY+=("[install] ${CHROME_SERVICE_INSTANCE} habilitado")
+    if systemctl enable --now "$CHROME_SERVICE_INSTANCE" 2>&1; then
+      log_ok "${CHROME_SERVICE_INSTANCE} habilitado e iniciado"
+      SUMMARY+=("[install] ${CHROME_SERVICE_INSTANCE} habilitado e iniciado")
     else
       log_error "ERROR: No se pudo habilitar ${CHROME_SERVICE_INSTANCE}"
       journalctl -u "$CHROME_SERVICE_INSTANCE" -n 30 --no-pager | sed 's/^/  /' || true
@@ -1580,6 +1584,29 @@ if DISPLAY=:0 XAUTHORITY=/home/${USER_NAME}/.Xauthority xprop -root _NET_ACTIVE_
 else
   log_warn "xprop _NET_ACTIVE_WINDOW falló"
   SUMMARY+=('[install] xprop activo falló')
+fi
+
+log_info "Resumen de estado tras la instalación"
+if systemctl is-active --quiet "pantalla-kiosk-chrome@${USER_NAME}.service"; then
+  log_ok "pantalla-kiosk-chrome@${USER_NAME}.service activo"
+else
+  log_warn "pantalla-kiosk-chrome@${USER_NAME}.service no está activo"
+fi
+if systemctl is-active --quiet "pantalla-openbox@${USER_NAME}.service"; then
+  log_ok "pantalla-openbox@${USER_NAME}.service activo"
+else
+  log_warn "pantalla-openbox@${USER_NAME}.service no está activo"
+fi
+if systemctl is-active --quiet pantalla-xorg.service; then
+  log_ok "pantalla-xorg.service activo"
+else
+  log_warn "pantalla-xorg.service no está activo"
+fi
+
+if curl -sf http://127.0.0.1:8081/api/health >/dev/null 2>&1; then
+  log_ok "Backend /api/health responde"
+else
+  log_warn "Backend /api/health NO responde"
 fi
 
 log_ok "Installation completed"

@@ -16,59 +16,7 @@ Environment=GTK_USE_PORTAL=0
 Environment=GIO_USE_PORTALS=0
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
 EnvironmentFile=-/var/lib/pantalla-reloj/state/kiosk.env
-# Esperar a que X11 y los servicios estén listos, luego esperar al backend
-ExecStartPre=/bin/sh -lc '
-set +e
-log() { printf "[prestart] %s\\n" "$*"; }
-export DISPLAY=:0
-export XAUTHORITY=/home/%i/.Xauthority
-log "Esperando XAUTHORITY en ${XAUTHORITY}"
-for i in $(seq 1 60); do
-  if [ -r "$XAUTHORITY" ]; then
-    log "XAUTHORITY disponible tras ${i}s"
-    break
-  fi
-  sleep 1
-done
-if [ ! -r "$XAUTHORITY" ]; then
-  log "WARN: XAUTHORITY no encontrado tras 60s"
-fi
-CHECK_CMD="xdpyinfo -display ${DISPLAY}"
-if ! command -v xdpyinfo >/dev/null 2>&1; then
-  CHECK_CMD="xset q"
-fi
-log "Verificando display ${DISPLAY} con: ${CHECK_CMD}"
-display_ready=0
-for i in $(seq 1 60); do
-  if eval "$CHECK_CMD" >/dev/null 2>&1; then
-    log "Display listo tras ${i}s"
-    display_ready=1
-    break
-  fi
-  sleep 1
-done
-if [ "$display_ready" -ne 1 ]; then
-  log "WARN: Display no respondió tras 60s"
-fi
-HEALTH_URL="http://127.0.0.1:8081/api/health"
-log "Esperando backend ${HEALTH_URL}"
-backend_ready=0
-for i in $(seq 1 60); do
-  if curl -sf --max-time 2 "$HEALTH_URL" >/dev/null 2>&1; then
-    log "Backend disponible tras ${i}s"
-    backend_ready=1
-    break
-  fi
-  sleep 1
-done
-if [ "$backend_ready" -ne 1 ]; then
-  log "WARN: Backend no respondió tras 60s"
-fi
-xset -dpms >/dev/null 2>&1 || true
-xset s off >/dev/null 2>&1 || true
-xset s noblank >/dev/null 2>&1 || true
-exit 0
-'
+ExecStartPre=/usr/local/bin/pantalla-kiosk-prestart
 LogsDirectory=pantalla
 LogsDirectoryMode=0755
 # NOTA: El perfil del navegador kiosk (/var/lib/pantalla-reloj/state/chromium-kiosk) se crea
