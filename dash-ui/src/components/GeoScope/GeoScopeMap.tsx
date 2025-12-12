@@ -678,7 +678,7 @@ export default function GeoScopeMap({
   const mapStateMachineRef = useRef<any>(null);
   const previousRadarRef = useRef(false);
   const cameraSnapshotRef = useRef<{ center: maptilersdk.LngLatLike; zoom: number; bearing: number; pitch: number } | null>(null);
-  const focusThrottleRef = useRef<number>(0);
+  const focusThrottleRef = useRef<number | null>(null);
   const lastFocusBoundsRef = useRef<{ minLat: number; maxLat: number; minLon: number; maxLon: number } | null>(null);
   const pulseIntervalRef = useRef<number | null>(null);
 
@@ -2089,7 +2089,8 @@ export default function GeoScopeMap({
     }
 
     const now = Date.now();
-    if (now - focusThrottleRef.current < RADAR_FOCUS_PARAMS.throttleMs) {
+    const lastFocusTime = focusThrottleRef.current;
+    if (lastFocusTime !== null && now - lastFocusTime < RADAR_FOCUS_PARAMS.throttleMs) {
       return;
     }
 
