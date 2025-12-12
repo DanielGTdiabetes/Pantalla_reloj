@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set +e
+
+log() {
+  printf '[prestart] %s\n' "$*"
+}
+
+DISPLAY="${DISPLAY:-:0}"
+XAUTHORITY="${XAUTHORITY:-}" 
+BACKEND_HEALTH_URL="http://127.0.0.1:8081/api/health"
+
+log "Iniciando prestart para DISPLAY=${DISPLAY} XAUTHORITY=${XAUTHORITY}"
+
+if [[ -z "$XAUTHORITY" ]]; then
+  log "WARN: XAUTHORITY no está definido"
+fi
+
+log "Esperando XAUTHORITY legible..."
+for i in $(seq 1 60); do
+  if [[ -n "$XAUTHORITY" && -r "$XAUTHORITY" ]]; then
+    log "XAUTHORITY disponible tras ${i}s"
+    break
+  fi
+  sleep 1
+done
+if [[ -n "$XAUTHORITY" && ! -r "$XAUTHORITY" ]]; then
+  log "WARN: XAUTHORITY no disponible tras 60s"
+fi
+
+CHECK_CMD="xdpyinfo -display ${DISPLAY}"
+if ! command -v xdpyinfo >/dev/null 2>&1; then
+  CHECK_CMD="xset q"
+fi
+log "Verificando disponibilidad de X con: ${CHECK_CMD}"
+display_ready=0
+for i in $(seq 1 60); do
+  if eval "$CHECK_CMD" >/dev/null 2>&1; then
+    log "Display listo tras ${i}s"
+    display_ready=1
+    break
+  fi
+  sleep 1
+done
+if [[ "$display_ready" -ne 1 ]]; then
+  log "WARN: Display no respondió tras 60s"
+fi
+
+log "Esperando backend ${BACKEND_HEALTH_URL}" 
+backend_ready=0
+for i in $(seq 1 60); do
+  if curl -sf --max-time 2 "$BACKEND_HEALTH_URL" >/dev/null 2>&1; then
+    log "Backend disponible tras ${i}s"
+    backend_ready=1
+    break
+  fi
+  sleep 1
+done
+if [[ "$backend_ready" -ne 1 ]]; then
+  log "WARN: Backend no respondió tras 60s"
+fi
+
+xset -dpms >/dev/null 2>&1 || true
+xset s off >/dev/null 2>&1 || true
+xset s noblank >/dev/null 2>&1 || true
+
+log "Prestart finalizado"
+exit 0

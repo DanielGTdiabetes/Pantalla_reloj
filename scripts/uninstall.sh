@@ -127,6 +127,12 @@ for unit in "${EXTRA_KIOSK_UNITS[@]:-}"; do
   fi
 done
 
+log_info "Deshabilitando plantilla pantalla-kiosk-chrome@*.service"
+mapfile -t EXTRA_KIOSK_UNIT_FILES < <(systemctl list-unit-files 'pantalla-kiosk-chrome@*.service' --no-legend 2>/dev/null | awk '{print $1}' | sed '/^$/d')
+for unit in "${EXTRA_KIOSK_UNIT_FILES[@]:-}"; do
+  systemctl disable --now "$unit" >/dev/null 2>&1 || true
+done
+
 log_info "Stopping systemd units, timers and paths"
 # Detener timers primero
 for timer in "${SYSTEMD_TIMERS[@]}"; do
@@ -181,6 +187,7 @@ rm -f /etc/systemd/system/pantalla-portal@.service
 rm -f /etc/systemd/system/pantalla-kiosk-chromium@${USER_NAME}.service.d/override.conf
 rm -f /etc/systemd/system/pantalla-kiosk-chrome@${USER_NAME}.service.d/override.conf
 rm -rf /etc/systemd/system/pantalla-kiosk@.service.d /etc/systemd/system/pantalla-openbox@.service.d /etc/systemd/system/pantalla-dash-backend@.service.d
+find /etc/systemd/system -maxdepth 2 -type d -name "pantalla-kiosk-chrome@*.service.d" -exec rm -rf {} + >/dev/null 2>&1 || true
 
 # Eliminar todos los servicios watchdog y autorefresh
 rm -f /etc/systemd/system/pantalla-kiosk-watchdog@.service
@@ -249,6 +256,7 @@ rm -f /usr/local/bin/pantalla-kiosk
 rm -f /usr/local/bin/pantalla-kiosk-verify
 rm -f /usr/local/bin/pantalla-kiosk-chromium
 rm -f /usr/local/bin/pantalla-backend-launch
+rm -f /usr/local/bin/pantalla-kiosk-prestart
 rm -f /usr/local/bin/pantalla-kiosk-autorefresh
 rm -f /usr/local/bin/diag_kiosk.sh
 rm -f /usr/local/bin/kiosk-ui /usr/local/bin/kiosk-diag

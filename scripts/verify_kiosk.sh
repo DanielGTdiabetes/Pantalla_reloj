@@ -1,58 +1,56 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 USER_NAME="${1:-dani}"
-export DISPLAY=:0
-export XAUTHORITY="/home/${USER_NAME}/.Xauthority"
+DISPLAY=":0"
+XAUTHORITY="/home/${USER_NAME}/.Xauthority"
+HEALTH_URL="http://127.0.0.1:8081/api/health"
 
-STATUS_UNITS=(
-  pantalla-xorg.service
-  "pantalla-openbox@${USER_NAME}.service"
-  "pantalla-kiosk-chrome@${USER_NAME}.service"
-)
+status_ok=1
 
-failures=0
+log() { printf '%s\n' "$*"; }
+section() { printf '\n== %s ==\n' "$*"; }
 
-log_section() {
-  printf '\n== %s ==\n' "$1"
-}
-
-log_section "Estado de servicios"
-systemctl status "${STATUS_UNITS[@]}" --no-pager || true
-
-log_section "Últimos logs de pantalla-kiosk-chrome@${USER_NAME}.service"
-journalctl -u "pantalla-kiosk-chrome@${USER_NAME}.service" -n 80 --no-pager || true
-
-log_section "Chequeo de display (xdpyinfo/xset)"
-if command -v xdpyinfo >/dev/null 2>&1; then
-  if ! xdpyinfo >/dev/null 2>&1; then
-    echo "Display NO responde (xdpyinfo)"
-    failures=1
-  else
-    echo "Display OK (xdpyinfo)"
-  fi
+section "Estado de servicios"
+if systemctl status pantalla-xorg.service pantalla-openbox@"${USER_NAME}".service pantalla-kiosk-chrome@"${USER_NAME}".service --no-pager; then
+  log "[OK] Servicios reportados"
 else
-  if ! xset q >/dev/null 2>&1; then
-    echo "Display NO responde (xset)"
-    failures=1
-  else
-    echo "Display OK (xset)"
-  fi
+  log "[FAIL] Algunos servicios no están activos"
+  status_ok=0
 fi
 
-log_section "Chequeo backend /api/health"
-if curl -sf http://127.0.0.1:8081/api/health >/dev/null; then
-  echo "Backend OK"
+section "Últimos logs de pantalla-kiosk-chrome@${USER_NAME}.service"
+if journalctl -u pantalla-kiosk-chrome@"${USER_NAME}".service -n 120 --no-pager; then
+  :
 else
-  echo "Backend NO responde"
-  failures=1
+  log "[FAIL] No se pudieron obtener logs"
+  status_ok=0
 fi
 
-echo ""
-if [[ $failures -ne 0 ]]; then
-  echo "Resultado: verificaciones con errores (${failures})"
+section "Verificación de DISPLAY"
+CHECK_CMD="xdpyinfo -display ${DISPLAY}"
+if ! command -v xdpyinfo >/dev/null 2>&1; then
+  CHECK_CMD="xset q"
+fi
+if DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" bash -c "$CHECK_CMD" >/dev/null 2>&1; then
+  log "[OK] X responde con ${CHECK_CMD}"
 else
-  echo "Resultado: verificaciones OK"
+  log "[FAIL] X no respondió con ${CHECK_CMD}"
+  status_ok=0
 fi
 
-exit "$failures"
+section "Health del backend"
+if curl -sf "$HEALTH_URL" >/dev/null 2>&1; then
+  log "[OK] Backend responde en ${HEALTH_URL}"
+else
+  log "[FAIL] Backend no responde en ${HEALTH_URL}"
+  status_ok=0
+fi
+
+if [[ $status_ok -eq 1 ]]; then
+  log "\nRESULTADO: OK"
+  exit 0
+else
+  log "\nRESULTADO: FAIL"
+  exit 1
+fi
