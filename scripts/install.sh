@@ -232,6 +232,7 @@ APT_PACKAGES=(
   xorg
   openbox
   x11-xserver-utils
+  x11-utils
   wmctrl
   epiphany-browser
   xdg-desktop-portal
