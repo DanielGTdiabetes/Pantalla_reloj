@@ -6,6 +6,7 @@ DISPLAY=":0"
 XAUTHORITY="/home/${USER_NAME}/.Xauthority"
 HEALTH_URL="http://127.0.0.1:8081/api/health"
 PROFILE_DIR="/var/lib/pantalla-reloj/state/chromium-kiosk"
+SERVICE_NAME="pantalla-kiosk-chrome@${USER_NAME}.service"
 
 status_ok=1
 
@@ -15,6 +16,25 @@ log_info() { log INFO "$@"; }
 log_warn() { log WARN "$@"; }
 log_fail() { log FAIL "$@"; status_ok=0; }
 section() { printf '\n== %s ==\n' "$*"; }
+
+find_kiosk_pid() {
+  local profile_dir="$1" run_user="$2"
+  local -a patterns=(
+    "/opt/google/chrome/chrome.*--class=pantalla-kiosk.*--kiosk.*--user-data-dir=${profile_dir}"
+    "/opt/google/chrome/chrome.*--user-data-dir=${profile_dir}.*http://127.0.0.1/"
+  )
+
+  local pattern
+  for pattern in "${patterns[@]}"; do
+    mapfile -t kiosk_pids < <(pgrep -u "$run_user" -f "$pattern" 2>/dev/null | sort -n) || true
+    if [[ ${#kiosk_pids[@]} -gt 0 ]]; then
+      printf '%s\n' "${kiosk_pids[0]}"
+      return 0
+    fi
+  done
+
+  return 1
+}
 
 list_locks() {
   local dir="$1"
@@ -34,7 +54,7 @@ services=(
   pantalla-xorg.service
   "pantalla-openbox@${USER_NAME}.service"
   "pantalla-dash-backend@${USER_NAME}.service"
-  "pantalla-kiosk-chrome@${USER_NAME}.service"
+  "$SERVICE_NAME"
 )
 for svc in "${services[@]}"; do
   if systemctl is-active --quiet "$svc"; then
@@ -68,10 +88,16 @@ else
 fi
 
 section "Proceso de Chrome"
-if pgrep -u "$USER_NAME" -f "chrome.*--user-data-dir=${PROFILE_DIR}" >/dev/null 2>&1; then
-  log_info "[OK] Chrome kiosk en ejecución con perfil ${PROFILE_DIR}"
+kiosk_pid=""
+if kiosk_pid="$(find_kiosk_pid "$PROFILE_DIR" "$USER_NAME")"; then
+  log_info "[OK] Chrome kiosk detectado (pid=${kiosk_pid}) con perfil ${PROFILE_DIR}"
 else
   log_warn "Chrome kiosk no se detecta (puede estar arrancando)"
+fi
+
+service_state="$(systemctl is-active "$SERVICE_NAME" 2>/dev/null || true)"
+if [[ "$service_state" != "active" && -n "$kiosk_pid" ]]; then
+  log_fail "${SERVICE_NAME} está ${service_state:-unknown} pero Chrome sigue vivo (pid=${kiosk_pid})"
 fi
 
 section "Locks del perfil kiosk"

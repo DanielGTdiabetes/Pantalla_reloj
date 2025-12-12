@@ -5,6 +5,7 @@ DEFAULT_ORIGIN="http://127.0.0.1"
 DEFAULT_URL="${DEFAULT_ORIGIN}/"
 DEFAULT_STATE_DIR="/var/lib/pantalla-reloj/state"
 DEFAULT_LOG_DIR="/var/log/pantalla"
+PROFILE_DIR="/var/lib/pantalla-reloj/state/chromium-kiosk"
 
 MAX_RETRIES="${CHROME_MAX_RETRIES:-10}"
 SUCCESS_THRESHOLD="${CHROME_SUCCESS_THRESHOLD:-15}"
@@ -24,6 +25,7 @@ log() { local level="$1"; shift; printf '[%s] [pantalla-kiosk] [%s] %s\n' "$(tim
 log_info() { log INFO "$@"; }
 log_warn() { log WARN "$@"; }
 log_error() { log ERROR "$@"; }
+wait_for_pid_exit() { local pid="$1"; while kill -0 "$pid" 2>/dev/null; do sleep 1; done; }
 
 resolve_url() {
   local candidate="$1"
@@ -171,6 +173,26 @@ is_chrome_running_for_profile() {
   return 1
 }
 
+find_kiosk_pid() {
+  local profile_dir="$1"
+  local run_user="${RUN_USER:-$(id -un)}"
+  local -a patterns=(
+    "/opt/google/chrome/chrome.*--class=pantalla-kiosk.*--kiosk.*--user-data-dir=${profile_dir}"
+    "/opt/google/chrome/chrome.*--user-data-dir=${profile_dir}.*http://127.0.0.1/"
+  )
+
+  local pattern
+  for pattern in "${patterns[@]}"; do
+    mapfile -t kiosk_pids < <(pgrep -u "$run_user" -f "$pattern" 2>/dev/null | sort -n) || true
+    if [[ ${#kiosk_pids[@]} -gt 0 ]]; then
+      printf '%s\n' "${kiosk_pids[0]}"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 list_profile_locks() {
   local dir="$1"
   local -a locks=(SingletonLock SingletonCookie SingletonSocket)
@@ -315,9 +337,12 @@ launch_chromium() {
 
   verify_profile_dir "$profile_dir" "Chrome"
 
-  if is_chrome_running_for_profile "$profile_dir"; then
-    log_warn "Chrome ya está en ejecución con ${profile_dir}; no se lanzará otra instancia"
-    return 0
+  local existing_pid=""
+  if existing_pid="$(find_kiosk_pid "$profile_dir")"; then
+    log_info "Chrome ya está en ejecución (pid=${existing_pid}). Enganchando..."
+    wait_for_pid_exit "$existing_pid"
+    log_warn "Chrome existente terminó"
+    cleanup_orphan_profile_locks "$profile_dir"
   fi
 
   cleanup_orphan_profile_locks "$profile_dir"

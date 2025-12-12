@@ -25,6 +25,8 @@ LogsDirectoryMode=0755
 ExecStart=/usr/local/bin/pantalla-kiosk
 Restart=on-failure
 RestartSec=10
+KillMode=mixed
+TimeoutStopSec=10
 StandardOutput=journal
 StandardError=journal
 
