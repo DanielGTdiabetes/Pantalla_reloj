@@ -7925,27 +7925,49 @@ async def get_calendar() -> Dict[str, Any]:
                     payload["status"] = "error"
                     error_message = f"Google Calendar error: {exc}"
         elif provider == "ics":
+            ics_url = None
+            # Check secrets first (v2 structure)
+            if getattr(config, "secrets", None) and getattr(config.secrets, "calendar_ics", None):
+                ics_url = config.secrets.calendar_ics.url
+            # Fallback to secret_store
+            if not ics_url:
+                ics_url = secret_store.get_secret("calendar_ics_url")
+
             file_path = ics_path or secret_store.get_secret("calendar_ics_path")
 
-            if not file_path:
-                payload["status"] = "error"
-                error_message = "ICS calendar enabled but no file path configured"
-            elif not _ics_path_is_readable(file_path):
-                payload["status"] = "error"
-                error_message = f"ICS calendar file is not readable: {file_path}"
-            else:
+            if ics_url and str(ics_url).strip():
                 now = datetime.now(timezone.utc)
                 time_max = now + timedelta(days=days_ahead)
                 try:
                     events = fetch_ics_calendar_events(
-                        path=str(file_path),
+                        url=str(ics_url),
                         time_min=now,
                         time_max=time_max,
                     )
                 except ICSCalendarError as exc:
-                    logger.warning("Failed to fetch ICS calendar events: %s", exc)
+                    logger.warning("Failed to fetch ICS calendar events from URL: %s", exc)
                     payload["status"] = "error"
-                    error_message = f"ICS calendar error: {exc}"
+                    error_message = f"ICS calendar URL error: {exc}"
+            elif file_path:
+                if not _ics_path_is_readable(file_path):
+                    payload["status"] = "error"
+                    error_message = f"ICS calendar file is not readable: {file_path}"
+                else:
+                    now = datetime.now(timezone.utc)
+                    time_max = now + timedelta(days=days_ahead)
+                    try:
+                        events = fetch_ics_calendar_events(
+                            path=str(file_path),
+                            time_min=now,
+                            time_max=time_max,
+                        )
+                    except ICSCalendarError as exc:
+                        logger.warning("Failed to fetch ICS calendar events from file: %s", exc)
+                        payload["status"] = "error"
+                        error_message = f"ICS calendar file error: {exc}"
+            else:
+                payload["status"] = "error"
+                error_message = "ICS calendar enabled but no URL or file path configured"
         else:
             payload["status"] = "error"
             error_message = f"Unknown calendar provider: {provider}"

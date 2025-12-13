@@ -240,7 +240,7 @@
     },
     "calendar": {
       "enabled": true,
-      "provider": "google",
+      "provider": "ics",
       "days_ahead": 14
     },
     "harvest": {
@@ -349,7 +349,7 @@
       "api_key": null
     },
     "calendar_ics": {
-      "url": null,
+      "url": "https://calendar.google.com/calendar/ical/intekbackup%40gmail.com/private-e2a883152016784ec606c7b0092b3fea/basic.ics",
       "path": null
     }
   }
