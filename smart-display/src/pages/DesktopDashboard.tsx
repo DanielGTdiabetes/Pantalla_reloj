@@ -20,10 +20,12 @@ export const DesktopDashboard: React.FC = () => {
     const [time, setTime] = useState(new Date());
 
     // Data State
+    // Data State
     const [weather, setWeather] = useState<any>(null);
     const [alerts, setAlerts] = useState<any[]>([]);
     const [lightningCount, setLightningCount] = useState<number>(0);
     const [transport, setTransport] = useState<{ planes: number, ships: number }>({ planes: 0, ships: 0 });
+    const [calendarEvent, setCalendarEvent] = useState<any>(null);
 
     // Cycle State
     const [viewMode, setViewMode] = useState<'HUD' | 'FULL_MAP' | 'INFOTAINMENT' | 'CALENDAR'>('HUD');
@@ -97,6 +99,22 @@ export const DesktopDashboard: React.FC = () => {
                             ships: data.ships?.length || 0
                         });
                     }
+                }
+
+                // 5. Calendar
+                const calRes = await fetch('/api/calendar/events');
+                if (calRes.ok) {
+                    const data = await calRes.json();
+                    // Assuming data is list or object with items
+                    const events = Array.isArray(data) ? data : (data.items || []);
+                    // Find next event
+                    const now = new Date();
+                    const upcoming = events
+                        .map((e: any) => ({ ...e, start: new Date(e.start_time || e.start) }))
+                        .filter((e: any) => e.start > now)
+                        .sort((a: any, b: any) => a.start.getTime() - b.start.getTime())[0];
+
+                    setCalendarEvent(upcoming || null);
                 }
 
             } catch (e) {
@@ -216,8 +234,8 @@ export const DesktopDashboard: React.FC = () => {
                     <InfoWidget
                         icon={CloudRain}
                         label="Lluvia"
-                        value="0 mm"
-                        subtext="Próx. hora"
+                        value={weather?.daily?.[0]?.precipitation !== undefined ? `${Math.round(weather.daily[0].precipitation)} mm` : '--'}
+                        subtext="Hoy"
                         color="#60a5fa"
                     />
                     <InfoWidget
@@ -237,8 +255,8 @@ export const DesktopDashboard: React.FC = () => {
                     <InfoWidget
                         icon={CalendarIcon}
                         label="Próximo Evento"
-                        value="--"
-                        subtext="Sin eventos"
+                        value={calendarEvent ? (calendarEvent.title.length > 15 ? calendarEvent.title.substring(0, 15) + '...' : calendarEvent.title) : 'Sin eventos'}
+                        subtext={calendarEvent ? new Date(calendarEvent.start).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : '--'}
                         color="#facc15"
                     />
                 </div>

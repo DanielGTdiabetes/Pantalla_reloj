@@ -80,7 +80,7 @@ def _resolve_plane_image(icao24: str) -> Optional[str]:
     """Fetch plane image from Planespotters API by ICAO24 hex."""
     try:
         # User-Agent is required by Planespotters
-        headers = {"User-Agent": "PantallaReloj/1.0 (Personal Display)"}
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
         # Attempt lookup by hex (unofficial but often supported or via separate lookup)
         # Actually Planespotters API uses Registration normally.
         # But we can try to search? No, simple API is /reg/.

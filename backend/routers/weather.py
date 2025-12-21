@@ -189,13 +189,13 @@ def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
     # Fallback a OpenWeatherMap (o si está seleccionado explícitamente)
     openweather_key = secret_store.get_secret("openweathermap_api_key")
     if not openweather_key:
-        # Si falló Meteoblue y no hay key de OWM, devolver error
+        # Si falló Meteoblue y no hay key de OWM, devolver error honesto
         return {
             "ok": False, 
             "reason": "missing_api_key",
-            "temperature": {"value": 20, "unit": "C"},
-            "condition": "Clear",
-            "summary": "Sin datos (Falta API Key)",
+            "temperature": {"value": None, "unit": "C"},
+            "condition": "Error",
+            "summary": "Sin datos (Faltan claves API de clima)",
             "days": [],
             "provider": "none"
         }
