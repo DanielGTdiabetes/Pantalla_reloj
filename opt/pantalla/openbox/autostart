@@ -9,12 +9,7 @@ if command -v xsetroot >/dev/null 2>&1; then
   DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xsetroot -solid black >/dev/null 2>&1 || true
 fi
 
-# Rotate screen fallback (Inverted)
-if command -v xrandr >/dev/null 2>&1; then
-    sleep 3
-    DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xrandr -o inverted >/dev/null 2>&1 || true
-    log_session "xrandr-rotated-inverted-delayed"
-fi
+
 
 
 # El navegador se lanza desde systemd (pantalla-kiosk-chrome@); no iniciar nada aquí.
