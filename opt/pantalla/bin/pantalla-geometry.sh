@@ -2,9 +2,9 @@
 set -euo pipefail
 
 OUTPUT="HDMI-1"
-MODE="1920x480"
-FRAMEBUFFER="1920x1920"
-ROTATE="right"
+MODE="480x1920"
+FRAMEBUFFER="480x1920"
+ROTATE="inverted"
 WAIT_X="/opt/pantalla/bin/wait-x.sh"
 LOG_FILE="/var/log/pantalla/geometry.log"
 DISABLE_DPMS=1
