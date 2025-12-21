@@ -27,7 +27,7 @@ from backend.services import ephemerides
 from backend.logging_utils import configure_logging
 
 # Routers
-from backend.routers import layers, weather, transport, saints, system
+from backend.routers import layers, weather, transport, saints, system, calendar
 from backend.routes import rainviewer, efemerides
 
 # Constants
