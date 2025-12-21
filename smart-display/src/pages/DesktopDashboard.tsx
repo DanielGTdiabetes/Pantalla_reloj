@@ -127,7 +127,7 @@ export const DesktopDashboard: React.FC = () => {
                         zoom: 11
                     }}
                     style={{ width: '100%', height: '100%' }}
-                    mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+                    mapStyle="https://api.maptiler.com/maps/streets-v4/style.json?key=fBZDqPrUD4EwoZLV4L6A"
                     attributionControl={false}
                     dragPan={true}
                     scrollZoom={true}
