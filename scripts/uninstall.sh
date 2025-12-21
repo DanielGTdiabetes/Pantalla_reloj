@@ -319,6 +319,7 @@ fi
 if [[ $PURGE_NODE -eq 1 ]]; then
   log_info "Removing frontend node_modules/dist"
   rm -rf "$REPO_ROOT/dash-ui/node_modules" "$REPO_ROOT/dash-ui/dist"
+  rm -rf "$REPO_ROOT/smart-display/node_modules" "$REPO_ROOT/smart-display/dist"
 fi
 
 if [[ $PURGE_ASSETS -eq 1 ]]; then

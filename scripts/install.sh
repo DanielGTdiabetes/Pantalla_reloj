@@ -669,7 +669,7 @@ install -d -m 0755 /usr/lib/pantalla-reloj
 install -m 0755 "$REPO_ROOT/usr/lib/pantalla-reloj/xorg-launch.sh" /usr/lib/pantalla-reloj/xorg-launch.sh
 
 log_info "Building frontend"
-pushd "$REPO_ROOT/dash-ui" >/dev/null
+pushd "$REPO_ROOT/smart-display" >/dev/null
 npm install --no-audit --no-fund
 npm run build
 popd >/dev/null
@@ -689,9 +689,9 @@ publish_webroot() {
     fi
   fi
 
-  rsync -a "$REPO_ROOT/dash-ui/dist/" "$WEB_ROOT/"
+  rsync -a "$REPO_ROOT/smart-display/dist/" "$WEB_ROOT/"
 
-  pushd "$REPO_ROOT/dash-ui/dist" >/dev/null
+  pushd "$REPO_ROOT/smart-display/dist" >/dev/null
   find . -mindepth 1 -print | sed 's#^\./##' >"$WEBROOT_MANIFEST"
   popd >/dev/null
 

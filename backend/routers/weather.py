@@ -12,6 +12,7 @@ from pydantic import BaseModel
 import requests
 from fastapi import APIRouter, Body, HTTPException
 
+import importlib
 from ..config_manager import ConfigManager
 from ..models import AppConfig
 from ..secret_store import SecretStore
@@ -25,6 +26,43 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/weather", tags=["weather"])
 config_manager = ConfigManager()
 secret_store = SecretStore()
+
+
+def _load_main_module():
+    """Lazy load main module to access services."""
+    return importlib.import_module("backend.main")
+
+
+@router.get("/lightning")
+def get_lightning_strikes(min_lat: float = None, max_lat: float = None, min_lon: float = None, max_lon: float = None) -> Dict[str, Any]:
+    """
+    Obtiene los últimos rayos detectados (Blitzortung).
+    """
+    try:
+        main = _load_main_module()
+        service = main.blitzortung_service
+        
+        if not service or not service.enabled:
+            return {
+                "type": "FeatureCollection", 
+                "features": [], 
+                "metadata": {"status": "disabled"}
+            }
+
+        bbox = None
+        if min_lat is not None and max_lat is not None and min_lon is not None and max_lon is not None:
+             bbox = (min_lat, max_lat, min_lon, max_lon)
+
+        return service.to_geojson(bbox)
+        
+    except Exception as e:
+        logger.error(f"Error fetching lightning data: {e}")
+        return {
+            "type": "FeatureCollection", 
+            "features": [],
+            "error": str(e)
+        }
+
 
 
 def resolve_weather_location(config: AppConfig, lat: float | None, lon: float | None) -> Tuple[float, float]:
