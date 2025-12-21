@@ -11,8 +11,9 @@ fi
 
 # Rotate screen fallback (Inverted)
 if command -v xrandr >/dev/null 2>&1; then
+    sleep 3
     DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xrandr -o inverted >/dev/null 2>&1 || true
-    log_session "xrandr-rotated-inverted"
+    log_session "xrandr-rotated-inverted-delayed"
 fi
 
 
