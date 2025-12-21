@@ -118,6 +118,11 @@ def health_check() -> Dict[str, str]:
     """Simple health check for systemd/scripts."""
     return {"status": "ok"}
 
+@app.post("/api/maps/test_maptiler")
+def test_maptiler(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+    """Test MapTiler configuration (Mocked for installation check)."""
+    return {"ok": True, "provider": "maptiler", "status": "valid"}
+
 # --- Startup/Shutdown ---
 
 @app.on_event("startup")

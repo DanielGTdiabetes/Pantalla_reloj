@@ -54,7 +54,7 @@ async def ships_data(request: Request, bbox: Optional[str] = None, max_items_vie
     main = _load_main_module()
 
     def _call():
-        return main.get_ships(request, bbox, max_items_view)
+        return main.ships_service.get_ships_in_bbox(bbox, max_items_view)
 
     return await run_in_threadpool(_call)
 
