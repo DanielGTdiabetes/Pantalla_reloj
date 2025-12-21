@@ -27,6 +27,7 @@ from backend.services import ephemerides
 from backend.logging_utils import configure_logging
 
 # Routers
+# Imporing calendar here to avoid NameError
 from backend.routers import layers, weather, transport, saints, system, calendar
 from backend.routes import rainviewer, efemerides
 
