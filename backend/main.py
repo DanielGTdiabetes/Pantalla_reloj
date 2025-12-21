@@ -113,6 +113,11 @@ def kiosk_refresh(payload: Optional[Dict[str, Any]] = Body(default=None)) -> Dic
     _schedule_kiosk_refresh(reason)
     return {"ok": True, "scheduled": True, "reason": reason}
 
+@app.get("/api/health")
+def health_check() -> Dict[str, str]:
+    """Simple health check for systemd/scripts."""
+    return {"status": "ok"}
+
 # --- Startup/Shutdown ---
 
 @app.on_event("startup")
