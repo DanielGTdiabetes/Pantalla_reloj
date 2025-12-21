@@ -98,6 +98,7 @@ app.include_router(weather.router)
 app.include_router(transport.router)
 app.include_router(saints.router)
 app.include_router(system.router)
+app.include_router(calendar.router)
 
 # --- Routes ---
 

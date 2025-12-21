@@ -1,5 +1,13 @@
+
 import React, { useState, useEffect } from 'react';
-import { Wifi, Save, Lock, RefreshCw, CheckCircle } from 'lucide-react';
+import {
+    Wifi,
+    Lock,
+    Save,
+    RefreshCw,
+    CheckCircle,
+    Clock
+} from 'lucide-react';
 import './SettingsPage.css';
 
 interface WifiNetwork {
@@ -14,7 +22,6 @@ interface ApiKeyStatus {
 }
 
 const API_KEYS_LABELS: { [key: string]: string } = {
-    "nasa_api_key": "NASA APOD",
     "meteoblue_api_key": "Meteoblue Weather",
     "openweathermap_api_key": "OpenWeatherMap",
     "maptiler_key": "MapTiler (Maps)",
@@ -34,11 +41,58 @@ export const SettingsPage: React.FC = () => {
     const [keyInputs, setKeyInputs] = useState<{ [key: string]: string }>({});
     const [savingKeys, setSavingKeys] = useState(false);
 
+    // Config State
+    const [displayConfig, setDisplayConfig] = useState<any>({ module_cycle_seconds: 20 });
+
     // Initial Load
     useEffect(() => {
-        scanWifi();
-        fetchKeysStatus();
+        loadData();
     }, []);
+
+    const loadData = async () => {
+        // Load Secrets Status
+        try {
+            const res = await fetch('/api/system/secrets');
+            const data = await res.json();
+            setKeysStatus(data);
+        } catch (e) { console.error(e); }
+
+        // Load WiFi
+        try {
+            const res = await fetch('/api/system/wifi/scan');
+            if (res.ok) {
+                const data = await res.json();
+                setNetworks(data);
+            }
+        } catch (e) {
+            console.error("WiFi Scan error", e);
+            // Mock if fail
+            setNetworks([
+                { ssid: 'Error_Scan', strength: 0, security: 'None', active: false }
+            ]);
+        }
+
+        // Load Config
+        try {
+            fetch('/api/system/config/display')
+                .then(r => r.json())
+                .then(d => setDisplayConfig(d))
+                .catch(e => console.error(e));
+        } catch (e) { }
+    };
+
+    const handleSaveConfig = async () => {
+        try {
+            await fetch('/api/system/config/display', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(displayConfig)
+            });
+            alert("Configuración guardada");
+        } catch (e) {
+            alert("Error al guardar config");
+        }
+    };
 
     const scanWifi = async () => {
         setScanning(true);
@@ -76,7 +130,7 @@ export const SettingsPage: React.FC = () => {
                 body: JSON.stringify({ ssid: connectingSsid, password: wifiPassword })
             });
             if (res.ok) {
-                alert(`Conectado a ${connectingSsid}`);
+                alert(`Conectado a ${connectingSsid} `);
                 setConnectingSsid(null);
                 setWifiPassword("");
                 scanWifi();
@@ -128,7 +182,7 @@ export const SettingsPage: React.FC = () => {
                     <div className="wifi-list">
                         {networks.length === 0 && !scanning && <p className="empty-msg">No se encontraron redes</p>}
                         {networks.map((net, idx) => (
-                            <div key={idx} className={`wifi-item ${net.active ? 'active' : ''}`} onClick={() => setConnectingSsid(net.ssid)}>
+                            <div key={idx} className={`wifi - item ${net.active ? 'active' : ''} `} onClick={() => setConnectingSsid(net.ssid)}>
                                 <div className="wifi-info">
                                     <span className="wifi-ssid">{net.ssid}</span>
                                     <span className="wifi-meta">{net.security} • {net.strength}%</span>
@@ -157,10 +211,32 @@ export const SettingsPage: React.FC = () => {
 
                 {/* API Keys Column */}
                 <div className="settings-card">
-                    <div className="card-header">
-                        <Lock size={24} />
-                        <h2>Claves API</h2>
+                    <div className="section-header">
+                        <Clock size={20} className="text-yellow-400" />
+                        <h2>Pantalla y Ciclo</h2>
                     </div>
+                    <div className="settings-card">
+                        <div className="form-group">
+                            <label>Tiempo por pantalla (segundos)</label>
+                            <div className="input-row">
+                                <input
+                                    type="number"
+                                    value={displayConfig.module_cycle_seconds}
+                                    onChange={(e) => setDisplayConfig({ ...displayConfig, module_cycle_seconds: parseInt(e.target.value) })}
+                                    className="secret-input"
+                                />
+                                <button className="connect-btn" onClick={handleSaveConfig}>
+                                    <Save size={16} /> Guardar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="section-header">
+                        <Lock size={20} className="text-red-400" />
+                        <h2>Claves API y Calendario</h2>
+                    </div>
+                    <p className="section-hint">Si usas Google Calendar, pega aquí tu enlace público ICS.</p>
                     <p className="card-desc">Introduce las claves para activar los servicios.</p>
 
                     <div className="keys-list">

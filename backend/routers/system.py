@@ -133,7 +133,7 @@ def get_secrets_status() -> Dict[str, bool]:
         "opensky_username",
         "opensky_password",
         "aisstream_api_key",
-        "nasa_api_key"
+        "calendar_ics_url"
     ]
     
     result = {}
@@ -158,3 +158,30 @@ def update_secrets(req: SecretUpdateRequest) -> Dict[str, Any]:
     
     logger.info(f"Secrets updated: {updated}")
     return {"ok": True, "updated": updated}
+
+# --- Config Management Endpoints ---
+
+class DisplayConfigUpdate(BaseModel):
+    module_cycle_seconds: int
+
+@router.get("/config/display")
+def get_display_config() -> Dict[str, Any]:
+    """Get display configuration from config.json."""
+    from ..main import config_manager
+    config = config_manager.read()
+    return {
+        "module_cycle_seconds": config.display.module_cycle_seconds
+    }
+
+@router.post("/config/display")
+def update_display_config(req: DisplayConfigUpdate) -> Dict[str, Any]:
+    """Update display configuration."""
+    from ..main import config_manager
+    config = config_manager.read()
+    
+    # Update values
+    config.display.module_cycle_seconds = req.module_cycle_seconds
+    
+    # Write back
+    config_manager.write(config.model_dump(mode="json"))
+    return {"ok": True, "module_cycle_seconds": req.module_cycle_seconds}

@@ -25,6 +25,31 @@ export const DesktopDashboard: React.FC = () => {
     const [lightningCount, setLightningCount] = useState<number>(0);
     const [transport, setTransport] = useState<{ planes: number, ships: number }>({ planes: 0, ships: 0 });
 
+    // Cycle State
+    const [viewMode, setViewMode] = useState<'HUD' | 'FULL_MAP' | 'INFOTAINMENT' | 'CALENDAR'>('HUD');
+    const [cycleInterval, setCycleInterval] = useState(20);
+
+    // Load Config
+    useEffect(() => {
+        fetch('/api/system/config/display').then(r => r.json()).then(d => {
+            if (d.module_cycle_seconds) setCycleInterval(d.module_cycle_seconds);
+        }).catch(e => console.error(e));
+    }, []);
+
+    // Cycle Timer
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setViewMode(prev => {
+                if (prev === 'HUD') return 'FULL_MAP';
+                if (prev === 'FULL_MAP') return 'INFOTAINMENT';
+                if (prev === 'INFOTAINMENT') return 'HUD';
+                // Calendar mostly if configured? Skip for now to keep simple
+                return 'HUD';
+            });
+        }, cycleInterval * 1000);
+        return () => clearInterval(timer);
+    }, [cycleInterval]);
+
     // Fetch Cycles
     useEffect(() => {
         const timer = setInterval(() => setTime(new Date()), 1000);
@@ -126,8 +151,8 @@ export const DesktopDashboard: React.FC = () => {
                 </Map>
             </div>
 
-            {/* Layer 1: HUD Overlay */}
-            <div className="hud-overlay">
+            {/* Layer 1: HUD Overlay (Only in HUD mode) */}
+            <div className={`hud-overlay ${viewMode === 'HUD' ? 'visible' : 'hidden'}`} style={{ opacity: viewMode === 'HUD' ? 1 : 0, transition: 'opacity 0.5s' }}>
 
                 {/* Top Section */}
                 <div className="hud-top">
@@ -218,6 +243,17 @@ export const DesktopDashboard: React.FC = () => {
                     />
                 </div>
 
+            </div>
+
+            {/* Layer 2: Full Screen Infotainment (Only in INFOTAINMENT mode) */}
+            <div className={`fullscreen-layer ${viewMode === 'INFOTAINMENT' ? 'visible' : 'hidden'}`} style={{
+                position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.8)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                opacity: viewMode === 'INFOTAINMENT' ? 1 : 0, pointerEvents: 'none', transition: 'opacity 0.5s'
+            }}>
+                <div style={{ transform: 'scale(1.5)' }}>
+                    <InfotainmentWidget />
+                </div>
             </div>
         </div>
     );
