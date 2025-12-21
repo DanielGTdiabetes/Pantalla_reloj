@@ -27,7 +27,7 @@ async def fetch_daily_saints_from_wiki(date_obj: datetime) -> List[str]:
     url = f"https://es.wikipedia.org/wiki/{day}_de_{month_name}"
     
     headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; PantallaReloj/1.0; +http://example.com)"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
     async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers=headers) as client:
