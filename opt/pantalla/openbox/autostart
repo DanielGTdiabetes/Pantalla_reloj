@@ -13,11 +13,11 @@ fi
 
 
 # Force Inverted Rotation (Explicit Output)
-if command -v xrandr >/dev/null 2>&1; then
-    sleep 4
-    DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xrandr --output HDMI-1 --rotate inverted >/dev/null 2>&1 || true
-    log_session "xrandr-output-inverted"
-fi
+# if command -v xrandr >/dev/null 2>&1; then
+#     sleep 4
+#     DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xrandr --output HDMI-1 --rotate inverted >/dev/null 2>&1 || true
+#     log_session "xrandr-output-inverted"
+# fi
 
 # El navegador se lanza desde systemd (pantalla-kiosk-chrome@); no iniciar nada aquí.
 

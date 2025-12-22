@@ -4,7 +4,7 @@ set -euo pipefail
 OUTPUT="HDMI-1"
 MODE="480x1920"
 FRAMEBUFFER="480x1920"
-ROTATE="right"
+ROTATE="normal"
 WM_CLASS="epiphany.epiphany"
 LOG_FILE="/var/log/pantalla/kiosk-watchdog.log"
 GEOMETRY_SCRIPT="/opt/pantalla/bin/pantalla-geometry.sh"
