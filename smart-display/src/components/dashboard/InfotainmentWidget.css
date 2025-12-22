@@ -107,6 +107,33 @@
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
 }
 
+/* SEASON MODE */
+.season-body {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    height: 100%;
+    overflow-y: auto;
+    scrollbar-width: none;
+}
+
+.season-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    justify-content: center;
+    align-content: start;
+}
+
+.season-tag {
+    background: rgba(34, 197, 94, 0.1);
+    color: #4ade80;
+    padding: 0.2rem 0.6rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
 /* Progress */
 .info-progress-bar {
     display: flex;

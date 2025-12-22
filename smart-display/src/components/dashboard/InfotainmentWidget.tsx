@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BookOpen, Star, Rocket } from 'lucide-react';
+import { BookOpen, Star, Rocket, Sprout, Leaf } from 'lucide-react';
 import './InfotainmentWidget.css';
 
 interface Saint {
@@ -20,13 +20,21 @@ interface ApodItem {
     media_type: string;
 }
 
-type Mode = 'saints' | 'ephemeris' | 'apod';
+interface FarmingData {
+    month: number;
+    fruits: string[];
+    vegetables: string[];
+    sowing: string[];
+}
+
+type Mode = 'saints' | 'ephemeris' | 'apod' | 'season';
 
 export const InfotainmentWidget: React.FC = () => {
     const [mode, setMode] = useState<Mode>('saints');
     const [saints, setSaints] = useState<Saint[]>([]);
     const [ephemeris, setEphemeris] = useState<EphemerisItem[]>([]);
     const [apod, setApod] = useState<ApodItem | null>(null);
+    const [farming, setFarming] = useState<FarmingData | null>(null);
     const [loading, setLoading] = useState(true);
     const [index, setIndex] = useState(0); // For rotating items within a category
 
@@ -57,6 +65,11 @@ export const InfotainmentWidget: React.FC = () => {
                 if (!data.error && data.media_type === 'image') setApod(data);
             }).catch(e => console.error(e));
 
+            // 4. Farming / Seasonal Food
+            fetch('/api/farming/current').then(res => res.json()).then(data => {
+                if (data.month) setFarming(data);
+            }).catch(e => console.error(e));
+
         } finally {
             setLoading(false);
         }
@@ -65,7 +78,8 @@ export const InfotainmentWidget: React.FC = () => {
     const rotateMode = () => {
         setMode(prev => {
             if (prev === 'saints') return 'ephemeris';
-            if (prev === 'ephemeris') return 'apod';
+            if (prev === 'ephemeris') return 'season';
+            if (prev === 'season') return 'apod';
             return 'saints';
         });
         setIndex(prev => prev + 1); // Logic to rotate internal items too?
@@ -124,17 +138,63 @@ export const InfotainmentWidget: React.FC = () => {
         );
     };
 
+    const renderSeason = () => {
+        if (!farming) return <div className="info-empty">Sin datos de cultivo</div>;
+
+        // Rotate between Fruits, Vegetables, Sowing
+        const subModes = ['fruits', 'vegetables', 'sowing'];
+        const currentSubMode = subModes[index % 3]; // Rotate every time component updates (15s) logic is shared with index
+
+        let title = "";
+        let icon = <Leaf size={16} className="text-green-400" />;
+        let items: string[] = [];
+
+        if (currentSubMode === 'fruits') {
+            title = "Frutas de Temporada";
+            items = farming.fruits;
+        } else if (currentSubMode === 'vegetables') {
+            title = "Verduras del Mes";
+            items = farming.vegetables;
+        } else {
+            title = "Siembra este Mes";
+            icon = <Sprout size={16} className="text-emerald-400" />;
+            items = farming.sowing;
+        }
+
+        // Limit display to 5-6 items to avoid overflow, or scroll?
+        // Let's just join them for now or list fewer
+        const displayItems = items.length > 0 ? items : ["Nada específico"];
+
+        return (
+            <div className="info-content season-mode">
+                <div className="info-header">
+                    {icon}
+                    <span>{title}</span>
+                </div>
+                <div className="season-body">
+                    <div className="season-tags">
+                        {displayItems.map((item, i) => (
+                            <span key={i} className="season-tag">{item}</span>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     if (loading) return null;
 
     return (
         <div className="infotainment-widget">
             {mode === 'saints' && renderSaints()}
             {mode === 'ephemeris' && renderEphemeris()}
+            {mode === 'season' && renderSeason()}
             {mode === 'apod' && renderApod()}
 
             <div className="info-progress-bar">
                 <div className={`progress-dot ${mode === 'saints' ? 'active' : ''}`} />
                 <div className={`progress-dot ${mode === 'ephemeris' ? 'active' : ''}`} />
+                <div className={`progress-dot ${mode === 'season' ? 'active' : ''}`} />
                 <div className={`progress-dot ${mode === 'apod' ? 'active' : ''}`} />
             </div>
         </div>
