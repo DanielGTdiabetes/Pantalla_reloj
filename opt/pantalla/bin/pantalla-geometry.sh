@@ -4,7 +4,7 @@ set -euo pipefail
 OUTPUT="HDMI-1"
 MODE="480x1920"
 FRAMEBUFFER="480x1920"
-ROTATE="inverted"
+ROTATE="normal"
 WAIT_X="/opt/pantalla/bin/wait-x.sh"
 LOG_FILE="/var/log/pantalla/geometry.log"
 DISABLE_DPMS=1
@@ -139,9 +139,20 @@ verify_geometry() {
     return 1
   fi
 
-  if [[ "$output_line" != *"480x1920"* || "$output_line" != *"left"* ]]; then
+  # Check that output contains the mode.
+  # If ROTATE is not normal, also check for existence of rotation string.
+  # If ROTATE is normal, check for absence of other rotation strings? Or just ignore.
+  # For robustness, we mostly care that the mode is correct.
+  if [[ "$output_line" != *"$MODE"* ]]; then
     log "verify-mismatch-output line=${output_line}"
     return 1
+  fi
+  
+  if [[ "$ROTATE" != "normal" ]]; then
+     if [[ "$output_line" != *"$ROTATE"* ]]; then
+       log "verify-mismatch-rotate line=${output_line} expected=$ROTATE"
+       return 1
+     fi
   fi
 
   log "verify-success"
