@@ -3,7 +3,7 @@ set -euo pipefail
 
 OUTPUT="HDMI-1"
 MODE="480x1920"
-FRAMEBUFFER="480x1920"
+FRAMEBUFFER="1920x480"
 ROTATE="right"
 WM_CLASS="epiphany.epiphany"
 LOG_FILE="/var/log/pantalla/kiosk-watchdog.log"
