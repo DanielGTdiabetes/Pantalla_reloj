@@ -118,7 +118,7 @@ export const FullScreenMap: React.FC = () => {
             layout: {
                 'icon-image': 'plane-icon',
                 'icon-size': 0.15,
-                'icon-rotate': ['-', ['get', 'true_track'], 45],
+                'icon-rotate': ['-', ['coalesce', ['get', 'track'], ['get', 'true_track'], 0], 45],
                 'icon-rotation-alignment': 'map',
                 'icon-allow-overlap': true,
                 'icon-ignore-placement': true

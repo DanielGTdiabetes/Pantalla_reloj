@@ -33,7 +33,23 @@ const normalizeIconName = (name: string): string => {
         'chirimoya': 'chirimoya',
         'escarola': 'escarola',
         'sandia': 'sandia',
-        'rabanito': 'rabanito'
+        'rabanito': 'rabanito',
+        'kiwi': 'fruit_3d',
+        'mandarina': 'naranja',
+        'caqui': 'fruit_3d',
+        'granada': 'fruit_3d',
+        'alcachofa': 'sprout_3d',
+        'apio': 'sprout_3d',
+        'cardo': 'sprout_3d',
+        'col': 'lettuce',
+        'coliflor': 'broccoli',
+        'endibia': 'lettuce',
+        'espinaca': 'chard',
+        'guisante': 'sprout_3d',
+        'haba': 'sprout_3d',
+        'nabo': 'carrot',
+        'puerro': 'ajo',
+        'judia': 'sprout_3d'
     };
 
     let normalized = name.toLowerCase().trim();
@@ -50,7 +66,17 @@ const normalizeIconName = (name: string): string => {
     normalized = normalized.replace(/\(.*\)/g, '').trim();
     normalized = normalized.replace(/ /g, '-');
 
-    return mapping[normalized] || normalized;
+    if (mapping[normalized]) return mapping[normalized];
+
+    // Check for substrings
+    if (normalized.includes('manzana')) return 'apple';
+    if (normalized.includes('pera')) return 'pear';
+    if (normalized.includes('naranja')) return 'naranja';
+    if (normalized.includes('limon')) return 'limon';
+    if (normalized.includes('uva')) return 'grapes';
+    if (normalized.includes('col')) return 'broccoli';
+
+    return normalized;
 };
 
 export const FullScreenFarming: React.FC = () => {
@@ -100,7 +126,6 @@ export const FullScreenFarming: React.FC = () => {
         bgColor = "linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%)"; // Blueish/Soil
     }
 
-    const fallbackImg = category === 'fruits' ? '/icons/harvest/fruit_3d.png' : (category === 'sowing' ? '/icons/harvest/sprout_3d.png' : null);
 
     return (
         <div className="fs-farming-container" style={{ background: bgColor }}>
@@ -112,16 +137,21 @@ export const FullScreenFarming: React.FC = () => {
             <div className="fs-farming-grid">
                 {items.map((item) => {
                     const iconName = normalizeIconName(item);
+                    const isPng = iconName.endsWith('_3d');
+                    const iconPath = isPng ? `/icons/harvest/${iconName}.png` : `/icons/harvest/${iconName}.svg`;
+
                     return (
                         <div key={item} className="fs-farming-item">
                             <div className="fs-farming-icon-wrapper">
                                 <img
-                                    src={`/icons/harvest/${iconName}.svg`}
+                                    src={iconPath}
                                     onError={(e) => {
                                         // Fallback if specific icon missing
                                         const target = e.target as HTMLImageElement;
-                                        if (fallbackImg && target.src !== window.location.origin + fallbackImg) {
-                                            target.src = fallbackImg;
+                                        const defFallback = category === 'fruits' ? '/icons/harvest/fruit_3d.png' : '/icons/harvest/sprout_3d.png';
+
+                                        if (target.src !== window.location.origin + defFallback) {
+                                            target.src = defFallback;
                                             target.classList.add('is-fallback');
                                         } else {
                                             target.style.display = 'none';

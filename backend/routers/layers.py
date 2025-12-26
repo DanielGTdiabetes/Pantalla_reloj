@@ -33,7 +33,9 @@ async def flights_test():
 @router.get("/flights")
 async def flights_data(request: Request, bbox: Optional[str] = None, extended: Optional[int] = None) -> JSONResponse:
     # Use service method directly
-    return await flights.get_flights_geojson(bbox, extended)
+    res = await flights.get_flights_geojson(bbox, extended)
+    print(f"[DEBUG] Flights GeoJSON: {len(res.get('features', []))} features")
+    return res
 
 
 @router.get("/ships/test")
@@ -50,7 +52,9 @@ async def ships_data(request: Request, bbox: Optional[str] = None, max_items_vie
     main = _load_main_module()
 
     def _call():
-        return main.ships_service.get_ships_in_bbox(bbox, max_items_view)
+        res = main.ships_service.get_ships_in_bbox(bbox, max_items_view)
+        print(f"[DEBUG] Ships GeoJSON: {len(res.get('features', []))} features")
+        return res
 
     return await run_in_threadpool(_call)
 
