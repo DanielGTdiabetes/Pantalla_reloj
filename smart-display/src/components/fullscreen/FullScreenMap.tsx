@@ -48,44 +48,72 @@ export const FullScreenMap: React.FC = () => {
 
     }, []);
 
-    const addSourcesAndLayers = () => {
+    const addSourcesAndLayers = async () => {
         if (!map.current) return;
         const m = map.current;
 
-        // Load Icons (Type safe or casted)
-        const loadImg = (id: string, url: string) => {
-            (m as any).loadImage(url, (error: any, image: any) => {
-                if (error) {
-                    console.error(`Error loading icon ${id}:`, error);
-                    return;
-                }
-                if (image && !m.hasImage(id)) {
-                    m.addImage(id, image);
-                    console.log(`Icon ${id} loaded successfully`);
-                }
+        // Load Icons with Promises to ensure they are available before adding layers
+        const loadImgPromise = (id: string, url: string) => {
+            return new Promise<void>((resolve) => {
+                (m as any).loadImage(url, (error: any, image: any) => {
+                    if (error) {
+                        console.error(`Error loading icon ${id}:`, error);
+                        resolve(); // Resolve anyway to continue adding other things
+                        return;
+                    }
+                    if (image && !m.hasImage(id)) {
+                        m.addImage(id, image);
+                        console.log(`Icon ${id} loaded successfully`);
+                    }
+                    resolve();
+                });
             });
         };
 
-        loadImg('plane-icon', '/assets/img/map_plane.png');
-        loadImg('ship-icon', '/assets/img/map_ship.png');
+        // Wait for essential icons
+        await Promise.all([
+            loadImgPromise('plane-icon', '/assets/img/map_plane.png'),
+            loadImgPromise('ship-icon', '/assets/img/map_ship.png')
+        ]);
+
+        // Helper to safely add source
+        const safeAddSource = (id: string, options: any) => {
+            if (!m.getSource(id)) {
+                m.addSource(id, options);
+            }
+        };
+
+        // Helper to safely add layer
+        const safeAddLayer = (layer: any, beforeId?: string) => {
+            if (!m.getLayer(layer.id)) {
+                if (layer.type === 'symbol' && layer.layout && layer.layout['icon-image']) {
+                    const iconName = layer.layout['icon-image'];
+                    if (!m.hasImage(iconName)) {
+                        console.warn(`Layer ${layer.id} requires ${iconName} but it's not loaded.`);
+                    }
+                }
+                m.addLayer(layer, beforeId);
+            }
+        };
 
         // --- Flights ---
-        m.addSource('flights', { type: 'geojson', data: '/api/layers/flights' });
-        m.addLayer({
+        safeAddSource('flights', { type: 'geojson', data: '/api/layers/flights' });
+
+        safeAddLayer({
             id: 'flights-layer',
             type: 'symbol',
             source: 'flights',
             layout: {
                 'icon-image': 'plane-icon',
                 'icon-size': 0.15,
-                'icon-rotate': ['-', ['get', 'true_track'], 45], // Compensate isometric 45deg
+                'icon-rotate': ['-', ['get', 'true_track'], 45],
                 'icon-rotation-alignment': 'map',
                 'icon-allow-overlap': true,
                 'icon-ignore-placement': true
             }
         });
-        // Flight Labels (Callsign)
-        m.addLayer({
+
+        safeAddLayer({
             id: 'flights-labels',
             type: 'symbol',
             source: 'flights',
@@ -104,31 +132,31 @@ export const FullScreenMap: React.FC = () => {
         });
 
         // --- Ships ---
-        m.addSource('ships', { type: 'geojson', data: '/api/layers/ships' });
-        m.addLayer({
+        safeAddSource('ships', { type: 'geojson', data: '/api/layers/ships' });
+
+        safeAddLayer({
             id: 'ships-layer',
             type: 'symbol',
             source: 'ships',
             layout: {
                 'icon-image': 'ship-icon',
                 'icon-size': 0.12,
-                'icon-rotate': ['-', ['get', 'course'], 45], // Compensate isometric 45deg
+                'icon-rotate': ['-', ['get', 'course'], 45],
                 'icon-rotation-alignment': 'map',
                 'icon-allow-overlap': true
             }
         });
 
-        // --- Lightning (Rays) ---
-        m.addSource('lightning', { type: 'geojson', data: '/api/layers/lightning' });
-        m.addLayer({
+        // --- Lightning ---
+        safeAddSource('lightning', { type: 'geojson', data: '/api/layers/lightning' });
+
+        safeAddLayer({
             id: 'lightning-heat',
             type: 'heatmap',
             source: 'lightning',
             paint: {
                 'heatmap-color': [
-                    'interpolate',
-                    ['linear'],
-                    ['heatmap-density'],
+                    'interpolate', ['linear'], ['heatmap-density'],
                     0, 'rgba(33,102,172,0)',
                     0.2, 'rgb(103,169,207)',
                     0.4, 'rgb(209,229,240)',
@@ -139,20 +167,21 @@ export const FullScreenMap: React.FC = () => {
                 'heatmap-opacity': 0.8
             }
         });
-        m.addLayer({
+
+        safeAddLayer({
             id: 'lightning-points',
             type: 'circle',
             source: 'lightning',
             minzoom: 5,
             paint: {
                 'circle-radius': 4,
-                'circle-color': '#f43f5e', // Rose-500
+                'circle-color': '#f43f5e',
                 'circle-stroke-width': 1,
                 'circle-stroke-color': '#fff'
             }
         });
 
-        // --- Radar Tile Layer (RainViewer) ---
+        // --- Radar ---
         updateRadarLayer();
     };
 
