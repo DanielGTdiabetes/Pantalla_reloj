@@ -2,7 +2,7 @@
 
 ## Configuración de video
 
-La rotación y el modo preferido del panel HDMI quedan fijados desde Xorg. El archivo [`xorg/10-monitor.conf`](../xorg/10-monitor.conf) declara el monitor `HDMI-1` con el modo `480x1920`, rotación a la izquierda y un framebuffer virtual de `1920x1920` para evitar ajustes dinámicos vía `xrandr` en tiempo de ejecución.
+La rotación y el modo preferido del panel HDMI quedan fijados desde Xorg. El archivo [`xorg/10-monitor.conf`](../xorg/10-monitor.conf) declara el monitor `HDMI-1` con el modo **1920x480**, rotación **normal** (0 grados) y un framebuffer compatible. Esto alinea la visualización con la orientación nativa del kernel (landscape).
 
 Con esta configuración, al iniciar `pantalla-xorg.service` se obtiene un arranque determinista y sin parpadeos. El uso de `xrandr` queda reservado únicamente para diagnóstico manual.
 
@@ -67,7 +67,7 @@ Debe aparecer `--use-gl=egl-angle` en la línea de comandos. Si falta, reinicia 
 
 ### Troubleshooting de video
 
-* `DISPLAY=:0 xrandr --query` debe mostrar la resolución actual `1920 x 480` y el modo `480x1920` asociado a `HDMI-1` con rotación izquierda. Si no aparece, revisa [`xorg/10-monitor.conf`](../xorg/10-monitor.conf).
+* `DISPLAY=:0 xrandr --query` debe mostrar la resolución actual `1920 x 480` (modo `1920x480`) con rotación `normal` (0 grados). Si no aparece, revisa [`xorg/10-monitor.conf`](../xorg/10-monitor.conf) y el script `/usr/local/bin/pantalla-kiosk` que fuerza esta configuración al inicio.
 * Asegúrate de que `wmctrl -lx` sólo liste una ventana con clase `pantalla-kiosk`.
 
 ### SwiftShader opcional
