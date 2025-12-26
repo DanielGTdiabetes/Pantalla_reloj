@@ -6,8 +6,10 @@ import {
     Save,
     RefreshCw,
     CheckCircle,
-    Clock
+    Clock,
+    X
 } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
 import './SettingsPage.css';
 
 interface WifiNetwork {
@@ -186,6 +188,9 @@ export const SettingsPage: React.FC = () => {
 
     return (
         <div className="settings-container">
+            <NavLink to="/" className="settings-close-btn">
+                <X size={24} />
+            </NavLink>
             <h1 className="settings-title">Configuración del Sistema</h1>
 
             <div className="settings-grid">

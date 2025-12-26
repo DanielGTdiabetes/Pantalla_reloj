@@ -4,6 +4,7 @@
     overflow-y: auto;
     background: #0f172a;
     color: white;
+    position: relative;
 }
 
 .settings-title {
@@ -224,4 +225,27 @@ button.primary {
     display: flex;
     justify-content: center;
     align-items: center;
+}
+
+.settings-close-btn {
+    position: absolute;
+    top: 2rem;
+    right: 2rem;
+    z-index: 200;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.settings-close-btn:hover {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
 }
