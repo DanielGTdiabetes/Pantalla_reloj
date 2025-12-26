@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="night-unknown-sky" x1="0" y1="0" x2="0" y2="512">
+      <stop offset="0%" stop-color="#1A1F3A" />
+      <stop offset="100%" stop-color="#2D2D44" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Night sky -->
+  <rect width="512" height="512" fill="url(#night-unknown-sky)"/>
+  
+  <!-- Question mark icon -->
+  <g transform="translate(256, 256)">
+    <circle cx="0" cy="0" r="100" fill="#4A5568" opacity="0.3"/>
+    <text x="0" y="40" font-family="Arial, sans-serif" font-size="120" font-weight="bold" fill="#808080" text-anchor="middle">?</text>
+  </g>
+</svg>

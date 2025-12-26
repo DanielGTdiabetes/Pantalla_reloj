@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="moon-core" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#F5F5DC" />
+      <stop offset="50%" stop-color="#E6E6FA" />
+      <stop offset="100%" stop-color="#D3D3D3" />
+    </radialGradient>
+    <radialGradient id="moon-glow" cx="0.5" cy="0.5" r="0.8">
+      <stop offset="0%" stop-color="#E6E6FA" stop-opacity="0.6" />
+      <stop offset="100%" stop-color="#2F2F2F" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="night-sky" x1="0" y1="0" x2="0" y2="512">
+      <stop offset="0%" stop-color="#0A0E27" />
+      <stop offset="50%" stop-color="#1A1F3A" />
+      <stop offset="100%" stop-color="#2D2D44" />
+    </linearGradient>
+    <filter id="moon-glow-filter">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Night sky -->
+  <rect width="512" height="512" fill="url(#night-sky)"/>
+  
+  <!-- Stars -->
+  <g opacity="0.9">
+    <circle cx="80" cy="120" r="2" fill="#FFFFFF"/>
+    <circle cx="150" cy="80" r="1.5" fill="#FFFFFF"/>
+    <circle cx="400" cy="150" r="2.5" fill="#FFFFFF"/>
+    <circle cx="380" cy="90" r="1" fill="#FFFFFF"/>
+    <circle cx="450" cy="200" r="2" fill="#FFFFFF"/>
+    <circle cx="120" cy="300" r="1.5" fill="#FFFFFF"/>
+    <circle cx="350" cy="350" r="2" fill="#FFFFFF"/>
+    <circle cx="200" cy="400" r="1" fill="#FFFFFF"/>
+    <circle cx="420" cy="420" r="2.5" fill="#FFFFFF"/>
+  </g>
+  
+  <!-- Moon glow -->
+  <circle cx="256" cy="256" r="140" fill="url(#moon-glow)" filter="url(#moon-glow-filter)"/>
+  
+  <!-- Moon -->
+  <circle cx="256" cy="256" r="100" fill="url(#moon-core)"/>
+  
+  <!-- Moon craters for realism -->
+  <ellipse cx="230" cy="240" rx="8" ry="12" fill="#C0C0C0" opacity="0.4"/>
+  <ellipse cx="260" cy="270" rx="6" ry="10" fill="#C0C0C0" opacity="0.4"/>
+  <ellipse cx="280" cy="245" rx="7" ry="9" fill="#C0C0C0" opacity="0.3"/>
+  <ellipse cx="245" cy="275" rx="5" ry="8" fill="#C0C0C0" opacity="0.3"/>
+</svg>

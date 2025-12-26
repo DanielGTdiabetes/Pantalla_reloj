@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="drizzle-sky" x1="0" y1="0" x2="0" y2="512">
+      <stop offset="0%" stop-color="#A8B8C8" />
+      <stop offset="100%" stop-color="#B8C8D8" />
+    </linearGradient>
+    <radialGradient id="drizzle-cloud" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#E0E0E0" />
+      <stop offset="50%" stop-color="#D0D0D0" />
+      <stop offset="100%" stop-color="#C0C0C0" />
+    </radialGradient>
+    <linearGradient id="drizzle-drop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#87CEEB" stop-opacity="0.7" />
+      <stop offset="100%" stop-color="#4682B4" stop-opacity="0.8" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Light rainy sky -->
+  <rect width="512" height="512" fill="url(#drizzle-sky)"/>
+  
+  <!-- Light clouds -->
+  <ellipse cx="200" cy="180" rx="80" ry="50" fill="url(#drizzle-cloud)"/>
+  <ellipse cx="280" cy="170" rx="90" ry="55" fill="url(#drizzle-cloud)"/>
+  
+  <!-- Light drizzle drops -->
+  <g opacity="0.6">
+    <line x1="200" y1="250" x2="198" y2="270" stroke="url(#drizzle-drop)" stroke-width="2" stroke-linecap="round"/>
+    <line x1="250" y1="270" x2="248" y2="290" stroke="url(#drizzle-drop)" stroke-width="2" stroke-linecap="round"/>
+    <line x1="300" y1="250" x2="298" y2="270" stroke="url(#drizzle-drop)" stroke-width="2" stroke-linecap="round"/>
+    <line x1="220" y1="290" x2="218" y2="310" stroke="url(#drizzle-drop)" stroke-width="2" stroke-linecap="round"/>
+    <line x1="270" y1="310" x2="268" y2="330" stroke="url(#drizzle-drop)" stroke-width="2" stroke-linecap="round"/>
+  </g>
+</svg>

@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="partly-sky" x1="0" y1="0" x2="0" y2="512">
+      <stop offset="0%" stop-color="#87CEEB" />
+      <stop offset="100%" stop-color="#B0E0E6" />
+    </linearGradient>
+    <radialGradient id="sun-glow" cx="0.5" cy="0.5" r="0.6">
+      <stop offset="0%" stop-color="#FFD700" stop-opacity="0.6" />
+      <stop offset="100%" stop-color="#FFA500" stop-opacity="0.2" />
+    </radialGradient>
+    <radialGradient id="light-cloud" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#F5F5F5" />
+      <stop offset="50%" stop-color="#E0E0E0" />
+      <stop offset="100%" stop-color="#D3D3D3" />
+    </radialGradient>
+    <filter id="cloud-shadow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feOffset in="coloredBlur" dx="2" dy="2"/>
+    </filter>
+  </defs>
+  
+  <!-- Sky background -->
+  <rect width="512" height="512" fill="url(#partly-sky)"/>
+  
+  <!-- Sun (partially visible) -->
+  <circle cx="150" cy="150" r="80" fill="url(#sun-glow)" opacity="0.5"/>
+  <circle cx="150" cy="150" r="60" fill="#FFD700"/>
+  <ellipse cx="130" cy="130" rx="20" ry="30" fill="#FFFACD" opacity="0.9"/>
+  
+  <!-- Light clouds -->
+  <ellipse cx="320" cy="200" rx="90" ry="55" fill="url(#light-cloud)" filter="url(#cloud-shadow)"/>
+  <ellipse cx="360" cy="180" rx="85" ry="50" fill="url(#light-cloud)" filter="url(#cloud-shadow)"/>
+  <ellipse cx="340" cy="220" rx="75" ry="45" fill="url(#light-cloud)" filter="url(#cloud-shadow)"/>
+</svg>

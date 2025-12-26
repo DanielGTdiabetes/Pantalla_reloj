@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="calendar-bg" x1="0" y1="0" x2="0" y2="512">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#F5F5F5" />
+    </linearGradient>
+    <linearGradient id="calendar-header" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4682B4" />
+      <stop offset="100%" stop-color="#5B9BD5" />
+    </linearGradient>
+    <linearGradient id="calendar-spiral" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFD700" />
+      <stop offset="50%" stop-color="#FFA500" />
+      <stop offset="100%" stop-color="#DAA520" />
+    </linearGradient>
+    <filter id="calendar-shadow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feOffset in="coloredBlur" dx="3" dy="3"/>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="512" height="512" fill="url(#calendar-bg)" rx="15"/>
+  
+  <!-- Calendar shadow -->
+  <rect x="30" y="30" width="452" height="452" rx="12" fill="#000000" opacity="0.1" filter="url(#calendar-shadow)"/>
+  
+  <!-- Calendar base -->
+  <rect x="20" y="80" width="472" height="432" rx="12" fill="#FFFFFF" stroke="#E0E0E0" stroke-width="2"/>
+  
+  <!-- Calendar header -->
+  <rect x="20" y="80" width="472" height="80" rx="12" fill="url(#calendar-header)"/>
+  
+  <!-- Spiral binding rings -->
+  <circle cx="256" cy="140" r="25" fill="none" stroke="url(#calendar-spiral)" stroke-width="3"/>
+  <circle cx="256" cy="140" r="18" fill="none" stroke="url(#calendar-spiral)" stroke-width="2"/>
+  <circle cx="256" cy="140" r="11" fill="url(#calendar-spiral)"/>
+  
+  <!-- Calendar grid lines -->
+  <g stroke="#D0D0D0" stroke-width="1" opacity="0.5">
+    <line x1="20" y1="200" x2="492" y2="200"/>
+    <line x1="20" y1="280" x2="492" y2="280"/>
+    <line x1="20" y1="360" x2="492" y2="360"/>
+    <line x1="20" y1="440" x2="492" y2="440"/>
+    <line x1="150" y1="160" x2="150" y2="512"/>
+    <line x1="256" y1="160" x2="256" y2="512"/>
+    <line x1="362" y1="160" x2="362" y2="512"/>
+  </g>
+</svg>

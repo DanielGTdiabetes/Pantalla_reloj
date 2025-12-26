@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="sleet-sky" x1="0" y1="0" x2="0" y2="512">
+      <stop offset="0%" stop-color="#7F8C8D" />
+      <stop offset="100%" stop-color="#95A5A6" />
+    </linearGradient>
+    <radialGradient id="sleet-cloud" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#D3D3D3" />
+      <stop offset="50%" stop-color="#C0C0C0" />
+      <stop offset="100%" stop-color="#A8A8A8" />
+    </radialGradient>
+  </defs>
+  
+  <!-- Sleet sky -->
+  <rect width="512" height="512" fill="url(#sleet-sky)"/>
+  
+  <!-- Clouds -->
+  <ellipse cx="200" cy="160" rx="100" ry="60" fill="url(#sleet-cloud)"/>
+  <ellipse cx="300" cy="150" rx="110" ry="65" fill="url(#sleet-cloud)"/>
+  
+  <!-- Mixed rain and snow -->
+  <g opacity="0.8">
+    <!-- Rain drops -->
+    <line x1="180" y1="250" x2="175" y2="280" stroke="#4682B4" stroke-width="3" stroke-linecap="round"/>
+    <line x1="220" y1="270" x2="215" y2="300" stroke="#4682B4" stroke-width="3" stroke-linecap="round"/>
+    <!-- Snow flakes -->
+    <circle cx="260" cy="280" r="3" fill="#FFFFFF"/>
+    <path d="M 260 280 L 260 275 M 260 280 L 257 280 M 260 280 L 263 280" stroke="#FFFFFF" stroke-width="1"/>
+    <circle cx="300" cy="300" r="3" fill="#FFFFFF"/>
+    <path d="M 300 300 L 300 295 M 300 300 L 297 300 M 300 300 L 303 300" stroke="#FFFFFF" stroke-width="1"/>
+  </g>
+</svg>

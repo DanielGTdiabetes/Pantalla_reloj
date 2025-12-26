@@ -1,0 +1,168 @@
+.fs-ephemerides-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    background-size: cover;
+    background-position: center;
+    color: white;
+    font-family: 'Inter', system-ui, sans-serif;
+    overflow: hidden;
+}
+
+.fs-col-left {
+    width: 30%;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+}
+
+.fs-date-block {
+    text-align: center;
+    margin-bottom: 3rem;
+}
+
+.fs-day-number {
+    font-size: 6rem;
+    font-weight: 800;
+    line-height: 1;
+    margin: 0;
+    background: linear-gradient(to bottom, #facc15, #ca8a04);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.fs-month-name {
+    font-size: 2.5rem;
+    text-transform: uppercase;
+    margin: 0;
+    font-weight: 300;
+}
+
+.fs-weekday {
+    font-size: 1.5rem;
+    color: #94a3b8;
+    margin: 0;
+    text-transform: capitalize;
+}
+
+.fs-section-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.5rem;
+    color: #e2e8f0;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    padding-bottom: 0.5rem;
+}
+
+.fs-saints-list ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.fs-saints-list li {
+    font-size: 1.25rem;
+    margin-bottom: 0.75rem;
+    color: #cbd5e1;
+}
+
+.fs-col-right {
+    flex: 1;
+    padding: 4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.fs-event-card {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 2rem;
+    padding: 3rem;
+    max-width: 900px;
+    width: 100%;
+    animation: slideIn 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+    backdrop-filter: blur(16px);
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.fs-event-year {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.fs-event-year span {
+    font-size: 4rem;
+    font-weight: 800;
+    color: white;
+}
+
+.fs-event-text {
+    font-size: 2rem;
+    line-height: 1.4;
+    color: #e2e8f0;
+    margin: 0;
+}
+
+.fs-event-image {
+    width: 100%;
+    height: 300px;
+    border-radius: 1rem;
+    overflow: hidden;
+    margin-top: 1rem;
+}
+
+.fs-event-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.fs-event-progress {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    margin-top: auto;
+}
+
+.fs-progress-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    transition: background 0.3s;
+}
+
+.fs-progress-dot.active {
+    background: #facc15;
+}
+
+.fs-apod-credit {
+    position: absolute;
+    bottom: 1rem;
+    right: 2rem;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}

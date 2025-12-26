@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="storm-sky" x1="0" y1="0" x2="0" y2="512">
+      <stop offset="0%" stop-color="#2C3E50" />
+      <stop offset="100%" stop-color="#34495E" />
+    </linearGradient>
+    <radialGradient id="dark-cloud" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#7F8C8D" />
+      <stop offset="50%" stop-color="#5D6D7E" />
+      <stop offset="100%" stop-color="#34495E" />
+    </radialGradient>
+    <linearGradient id="lightning" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F4D03F" />
+      <stop offset="50%" stop-color="#F39C12" />
+      <stop offset="100%" stop-color="#E67E22" />
+    </linearGradient>
+    <filter id="lightning-glow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Stormy sky -->
+  <rect width="512" height="512" fill="url(#storm-sky)"/>
+  
+  <!-- Dark storm clouds -->
+  <ellipse cx="200" cy="160" rx="100" ry="60" fill="url(#dark-cloud)"/>
+  <ellipse cx="300" cy="150" rx="110" ry="65" fill="url(#dark-cloud)"/>
+  <ellipse cx="320" cy="180" rx="90" ry="55" fill="url(#dark-cloud)"/>
+  <ellipse cx="150" cy="180" rx="85" ry="50" fill="url(#dark-cloud)"/>
+  
+  <!-- Lightning bolt -->
+  <path d="M 250 200 L 240 250 L 255 250 L 245 320 L 270 280 L 260 280 L 270 200 Z" 
+        fill="url(#lightning)" 
+        filter="url(#lightning-glow)"
+        opacity="0.95"/>
+  
+  <!-- Rain drops -->
+  <g opacity="0.8">
+    <line x1="180" y1="250" x2="175" y2="280" stroke="#4A90E2" stroke-width="3" stroke-linecap="round"/>
+    <line x1="220" y1="270" x2="215" y2="300" stroke="#4A90E2" stroke-width="3" stroke-linecap="round"/>
+    <line x1="280" y1="250" x2="275" y2="280" stroke="#4A90E2" stroke-width="3" stroke-linecap="round"/>
+    <line x1="340" y1="270" x2="335" y2="300" stroke="#4A90E2" stroke-width="3" stroke-linecap="round"/>
+  </g>
+</svg>

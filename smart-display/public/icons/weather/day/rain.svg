@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="rain-sky" x1="0" y1="0" x2="0" y2="512">
+      <stop offset="0%" stop-color="#6B7B8C" />
+      <stop offset="100%" stop-color="#8B9DC3" />
+    </linearGradient>
+    <radialGradient id="cloud" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#E8E8E8" />
+      <stop offset="50%" stop-color="#C8C8C8" />
+      <stop offset="100%" stop-color="#A8A8A8" />
+    </radialGradient>
+    <linearGradient id="rain-drop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4A90E2" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#5BA3F5" stop-opacity="0.9" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Rainy sky -->
+  <rect width="512" height="512" fill="url(#rain-sky)"/>
+  
+  <!-- Clouds -->
+  <ellipse cx="200" cy="180" rx="80" ry="50" fill="url(#cloud)"/>
+  <ellipse cx="280" cy="170" rx="90" ry="55" fill="url(#cloud)"/>
+  <ellipse cx="320" cy="200" rx="70" ry="45" fill="url(#cloud)"/>
+  <ellipse cx="150" cy="200" rx="65" ry="40" fill="url(#cloud)"/>
+  
+  <!-- Rain drops with motion blur effect -->
+  <g opacity="0.7">
+    <line x1="180" y1="250" x2="175" y2="280" stroke="url(#rain-drop)" stroke-width="3" stroke-linecap="round"/>
+    <line x1="220" y1="270" x2="215" y2="300" stroke="url(#rain-drop)" stroke-width="3" stroke-linecap="round"/>
+    <line x1="260" y1="250" x2="255" y2="280" stroke="url(#rain-drop)" stroke-width="3" stroke-linecap="round"/>
+    <line x1="300" y1="270" x2="295" y2="300" stroke="url(#rain-drop)" stroke-width="3" stroke-linecap="round"/>
+    <line x1="340" y1="250" x2="335" y2="280" stroke="url(#rain-drop)" stroke-width="3" stroke-linecap="round"/>
+    <line x1="380" y1="270" x2="375" y2="300" stroke="url(#rain-drop)" stroke-width="3" stroke-linecap="round"/>
+    <line x1="160" y1="290" x2="155" y2="320" stroke="url(#rain-drop)" stroke-width="3" stroke-linecap="round"/>
+    <line x1="240" y1="310" x2="235" y2="340" stroke="url(#rain-drop)" stroke-width="3" stroke-linecap="round"/>
+    <line x1="280" y1="290" x2="275" y2="320" stroke="url(#rain-drop)" stroke-width="3" stroke-linecap="round"/>
+    <line x1="320" y1="310" x2="315" y2="340" stroke="url(#rain-drop)" stroke-width="3" stroke-linecap="round"/>
+    <line x1="360" y1="290" x2="355" y2="320" stroke="url(#rain-drop)" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  
+  <!-- Additional rain intensity lines -->
+  <g opacity="0.5">
+    <line x1="200" y1="300" x2="195" y2="330" stroke="url(#rain-drop)" stroke-width="2" stroke-linecap="round"/>
+    <line x1="270" y1="320" x2="265" y2="350" stroke="url(#rain-drop)" stroke-width="2" stroke-linecap="round"/>
+    <line x1="310" y1="300" x2="305" y2="330" stroke="url(#rain-drop)" stroke-width="2" stroke-linecap="round"/>
+  </g>
+</svg>

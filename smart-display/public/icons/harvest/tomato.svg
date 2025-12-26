@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="tomato-body" cx="0.5" cy="0.4" r="0.5">
+      <stop offset="0%" stop-color="#FF6347" />
+      <stop offset="60%" stop-color="#FF4500" />
+      <stop offset="100%" stop-color="#B22222" />
+    </radialGradient>
+    <radialGradient id="tomato-highlight" cx="0.35" cy="0.3" r="0.25">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.6" />
+      <stop offset="100%" stop-color="#FF6347" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="tomato-leaf" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#32CD32" />
+      <stop offset="100%" stop-color="#006400" />
+    </linearGradient>
+    <filter id="tomato-shadow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feOffset in="coloredBlur" dx="2" dy="4"/>
+    </filter>
+  </defs>
+  
+  <!-- Tomato shadow -->
+  <ellipse cx="256" cy="450" rx="100" ry="25" fill="#000000" opacity="0.2" filter="url(#tomato-shadow)"/>
+  
+  <!-- Tomato body -->
+  <circle cx="256" cy="270" r="180" fill="url(#tomato-body)" stroke="#8B0000" stroke-width="2" filter="url(#tomato-shadow)"/>
+  
+  <!-- Tomato highlight -->
+  <ellipse cx="180" cy="180" rx="50" ry="40" fill="url(#tomato-highlight)" transform="rotate(-30 180 180)"/>
+  
+  <!-- Tomato leaves (calyx) -->
+  <path d="M 256 90 L 230 140 L 256 120 L 282 140 Z" fill="url(#tomato-leaf)" stroke="#006400" stroke-width="1"/>
+  <path d="M 256 90 L 210 110 L 240 115 Z" fill="url(#tomato-leaf)" stroke="#006400" stroke-width="1"/>
+  <path d="M 256 90 L 302 110 L 272 115 Z" fill="url(#tomato-leaf)" stroke="#006400" stroke-width="1"/>
+  <path d="M 256 90 L 240 60 L 256 80 L 272 60 Z" fill="url(#tomato-leaf)" stroke="#006400" stroke-width="1"/>
+  
+  <!-- Tomato stem -->
+  <path d="M 256 90 Q 260 70 270 60" stroke="#228B22" stroke-width="6" fill="none" stroke-linecap="round"/>
+</svg>

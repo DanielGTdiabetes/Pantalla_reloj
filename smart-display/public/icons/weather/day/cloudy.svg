@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="cloudy-sky" x1="0" y1="0" x2="0" y2="512">
+      <stop offset="0%" stop-color="#B0C4DE" />
+      <stop offset="100%" stop-color="#D3D3D3" />
+    </linearGradient>
+    <radialGradient id="cloud-layer" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#E8E8E8" />
+      <stop offset="50%" stop-color="#D0D0D0" />
+      <stop offset="100%" stop-color="#B8B8B8" />
+    </radialGradient>
+    <filter id="cloud-depth">
+      <feGaussianBlur stdDeviation="1" result="coloredBlur"/>
+    </filter>
+  </defs>
+  
+  <!-- Cloudy sky -->
+  <rect width="512" height="512" fill="url(#cloudy-sky)"/>
+  
+  <!-- Multiple cloud layers for depth -->
+  <ellipse cx="200" cy="180" rx="100" ry="60" fill="url(#cloud-layer)" filter="url(#cloud-depth)"/>
+  <ellipse cx="280" cy="170" rx="110" ry="65" fill="url(#cloud-layer)" filter="url(#cloud-depth)"/>
+  <ellipse cx="320" cy="200" rx="90" ry="55" fill="url(#cloud-layer)" filter="url(#cloud-depth)"/>
+  <ellipse cx="150" cy="200" rx="85" ry="50" fill="url(#cloud-layer)" filter="url(#cloud-depth)"/>
+  <ellipse cx="250" cy="220" rx="95" ry="58" fill="url(#cloud-layer)" filter="url(#cloud-depth)"/>
+</svg>

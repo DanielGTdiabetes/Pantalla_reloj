@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="night-storm-sky" x1="0" y1="0" x2="0" y2="512">
+      <stop offset="0%" stop-color="#1A1F3A" />
+      <stop offset="100%" stop-color="#2D2D44" />
+    </linearGradient>
+    <radialGradient id="night-storm-cloud" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#4A5568" />
+      <stop offset="50%" stop-color="#3A4456" />
+      <stop offset="100%" stop-color="#2C3E50" />
+    </radialGradient>
+    <linearGradient id="night-lightning" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFD700" />
+      <stop offset="50%" stop-color="#FFA500" />
+      <stop offset="100%" stop-color="#FF8C00" />
+    </linearGradient>
+    <filter id="night-lightning-glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Night stormy sky -->
+  <rect width="512" height="512" fill="url(#night-storm-sky)"/>
+  
+  <!-- Dark storm clouds -->
+  <ellipse cx="200" cy="160" rx="100" ry="60" fill="url(#night-storm-cloud)"/>
+  <ellipse cx="300" cy="150" rx="110" ry="65" fill="url(#night-storm-cloud)"/>
+  
+  <!-- Lightning bolt -->
+  <path d="M 250 200 L 240 250 L 255 250 L 245 320 L 270 280 L 260 280 L 270 200 Z" 
+        fill="url(#night-lightning)" 
+        filter="url(#night-lightning-glow)"
+        opacity="0.95"/>
+  
+  <!-- Rain drops -->
+  <g opacity="0.7">
+    <line x1="180" y1="250" x2="175" y2="280" stroke="#4A90E2" stroke-width="3" stroke-linecap="round"/>
+    <line x1="220" y1="270" x2="215" y2="300" stroke="#4A90E2" stroke-width="3" stroke-linecap="round"/>
+    <line x1="280" y1="250" x2="275" y2="280" stroke="#4A90E2" stroke-width="3" stroke-linecap="round"/>
+    <line x1="340" y1="270" x2="335" y2="300" stroke="#4A90E2" stroke-width="3" stroke-linecap="round"/>
+  </g>
+</svg>

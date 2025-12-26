@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="sun-core" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#FFD700" />
+      <stop offset="50%" stop-color="#FFA500" />
+      <stop offset="100%" stop-color="#FF8C00" />
+    </radialGradient>
+    <radialGradient id="sun-rays" cx="0.5" cy="0.5" r="0.7">
+      <stop offset="0%" stop-color="#FFFACD" stop-opacity="0.8" />
+      <stop offset="70%" stop-color="#FFD700" stop-opacity="0.6" />
+      <stop offset="100%" stop-color="#FFA500" stop-opacity="0.2" />
+    </radialGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Sky background with gradient -->
+  <rect width="512" height="512" fill="url(#sky-gradient)">
+    <animate attributeName="fill" values="#87CEEB;#B0E0E6;#87CEEB" dur="10s" repeatCount="indefinite"/>
+  </rect>
+  <linearGradient id="sky-gradient" x1="0" y1="0" x2="0" y2="512">
+    <stop offset="0%" stop-color="#87CEEB" />
+    <stop offset="100%" stop-color="#E0F6FF" />
+  </linearGradient>
+  
+  <!-- Sun rays glow -->
+  <circle cx="256" cy="256" r="180" fill="url(#sun-rays)" opacity="0.6" filter="url(#glow)"/>
+  
+  <!-- Sun core -->
+  <circle cx="256" cy="256" r="120" fill="url(#sun-core)" filter="url(#glow)"/>
+  
+  <!-- Sun highlight -->
+  <ellipse cx="220" cy="220" rx="35" ry="50" fill="#FFFACD" opacity="0.9"/>
+  
+  <!-- Additional glow layers for depth -->
+  <circle cx="256" cy="256" r="140" fill="none" stroke="#FFD700" stroke-width="2" opacity="0.3"/>
+</svg>
