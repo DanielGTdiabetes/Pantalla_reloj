@@ -85,6 +85,16 @@ export const InfotainmentWidget: React.FC = () => {
         setIndex(prev => prev + 1); // Logic to rotate internal items too?
     };
 
+    const getSaintTitle = (name: string) => {
+        const maleExceptions = ['Luca', 'Andrea', 'Bautista', 'Borja', 'Saba'];
+        const femaleExceptions = ['Carmen', 'Paz', 'Luz', 'Merced', 'Dolores', 'Rosario', 'Virtudes', 'Nieves', 'Soledad', 'Pilar', 'Cruz', 'Fe', 'Caridad', 'Esperanza', 'Salud', 'Gracia', 'Asunción', 'Concepción', 'Inés', 'Beatriz', 'Raquel', 'Esther', 'Rut', 'Noemí', 'Iris', 'Belen'];
+        const firstWord = name.split(' ')[0];
+        if (femaleExceptions.includes(firstWord) || femaleExceptions.some(ex => name.includes(ex))) return `Santa ${name}`;
+        if (maleExceptions.includes(firstWord)) return `San ${name}`;
+        if (firstWord.endsWith('a')) return `Santa ${name}`;
+        return `San ${name}`;
+    };
+
     const renderSaints = () => {
         if (!saints.length) return <div className="info-empty">No hay datos de santoral</div>;
         // Rotate through saints if multiple
@@ -98,7 +108,7 @@ export const InfotainmentWidget: React.FC = () => {
                 </div>
                 <div className="saint-body">
                     {currentSaint.image && <img src={currentSaint.image} alt={currentSaint.name} className="saint-img" />}
-                    <span className="saint-name">{currentSaint.name}</span>
+                    <span className="saint-name">{getSaintTitle(currentSaint.name)}</span>
                 </div>
             </div>
         );

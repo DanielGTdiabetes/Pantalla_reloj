@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 from pydantic import BaseModel
 
@@ -165,7 +166,8 @@ def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
     logger.info(f"Weather location resolved to: {lat}, {lon}")
 
     # Determinar proveedor
-    provider = "meteoblue"
+    # Determine provider (default to openweathermap now as meteoblue is flaky)
+    provider = "openweathermap"
     if config.weather and config.weather.provider:
         provider = config.weather.provider
     elif config.panels and config.panels.weatherWeekly:
@@ -187,9 +189,14 @@ def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
             logger.warning("Meteoblue selected but no API key found, falling back to OpenWeatherMap")
 
     # Fallback a OpenWeatherMap (o si está seleccionado explícitamente)
+    # Fallback a OpenWeatherMap (o si está seleccionado explícitamente)
     openweather_key = secret_store.get_secret("openweathermap_api_key")
+    
+    # HARDCODED FALLBACK FOR DEPLOYMENT (User provided key that works with standard API)
+    if not openweather_key or openweather_key.strip() == "":
+        openweather_key = "6f9635f0a4f0b259fad7d8a8813ad7a9"
+
     if not openweather_key:
-        # Si falló Meteoblue y no hay key de OWM, devolver error honesto
         return {
             "ok": False, 
             "reason": "missing_api_key",
@@ -202,58 +209,121 @@ def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
     
     logger.info("Using OpenWeatherMap as weather provider")
     
-    # Try One Call 3.0
-    url = f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}&exclude=minutely,hourly&units=metric&appid={openweather_key}"
-    
+    # 1. Try One Call API (Best data)
     try:
-        resp = requests.get(url, timeout=10)
+        # Try One Call 3.0
+        url = f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}&exclude=minutely,hourly&units=metric&appid={openweather_key}"
+        resp = requests.get(url, timeout=5)
+        
         if resp.status_code == 401:
-            # Fallback to 2.5 One Call if 3.0 fails (some keys are old)
+            # Fallback to 2.5 One Call
             url = f"https://api.openweathermap.org/data/2.5/onecall?lat={lat}&lon={lon}&exclude=minutely,hourly&units=metric&appid={openweather_key}"
-            resp = requests.get(url, timeout=10)
-        
-        if resp.status_code != 200:
-            return {"ok": False, "reason": f"upstream_error_{resp.status_code}", "provider": "openweathermap"}
-        
-        data = resp.json()
-        
-        # Transform to expected format
-        current = data.get("current", {})
-        daily = data.get("daily", [])
-        
-        days = []
-        for d in daily:
-            days.append({
-                "date": time.strftime("%Y-%m-%d", time.localtime(d.get("dt"))),
-                "dayName": time.strftime("%A", time.localtime(d.get("dt"))),
-                "condition": d.get("weather", [{}])[0].get("description", ""),
-                "temperature": {
-                    "min": d.get("temp", {}).get("min"),
-                    "max": d.get("temp", {}).get("max")
-                },
-                "precipitation": d.get("rain", 0) or (d.get("pop", 0) * 100)
-            })
+            resp = requests.get(url, timeout=5)
 
+        if resp.status_code == 200:
+            data = resp.json()
+            # ... process One Call data ...
+            current = data.get("current", {})
+            daily = data.get("daily", [])
+            days = []
+            for d in daily:
+                days.append({
+                    "date": time.strftime("%Y-%m-%d", time.localtime(d.get("dt"))),
+                    "dayName": time.strftime("%A", time.localtime(d.get("dt"))),
+                    "condition": d.get("weather", [{}])[0].get("description", ""),
+                    "temperature": {
+                        "min": d.get("temp", {}).get("min"),
+                        "max": d.get("temp", {}).get("max")
+                    },
+                    "precipitation": d.get("rain", 0) or (d.get("pop", 0) * 100)
+                })
+            
+            return {
+                "ok": True,
+                "provider": "openweathermap_onecall",
+                "temperature": {"value": current.get("temp"), "unit": "C"},
+                "humidity": current.get("humidity"),
+                "feels_like": current.get("feels_like"),
+                "wind_speed": current.get("wind_speed"),
+                "summary": current.get("weather", [{}])[0].get("description", ""),
+                "condition": current.get("weather", [{}])[0].get("main", ""),
+                "days": days,
+                "daily": days, 
+                "location": {"lat": lat, "lon": lon}
+            }
+            
+    except Exception as e:
+        logger.warning(f"OneCall API failed: {e}")
+
+    # 2. Fallback to Standard API (Current Weather + 5 Day Forecast)
+    # This is for free tier keys that don't support One Call
+    try:
+        logger.info("Falling back to Standard OWM API (Current + Forecast)")
+        
+        # Current Weather
+        current_url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&units=metric&appid={openweather_key}"
+        curr_resp = requests.get(current_url, timeout=5)
+        curr_resp.raise_for_status()
+        curr_data = curr_resp.json()
+        
+        # Forecast (5 day / 3 hour)
+        forecast_url = f"https://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&units=metric&appid={openweather_key}"
+        fore_resp = requests.get(forecast_url, timeout=5)
+        fore_data = {}
+        if fore_resp.status_code == 200:
+            fore_data = fore_resp.json()
+            
+        # Process Forecast to get daily summary (approximate)
+        daily_days = []
+        if "list" in fore_data:
+            # Group by day
+            unique_days = {}
+            for item in fore_data["list"]:
+                dt_txt = item.get("dt_txt", "").split(" ")[0]
+                if dt_txt not in unique_days:
+                    unique_days[dt_txt] = []
+                unique_days[dt_txt].append(item)
+            
+            # Create daily entries
+            for date_str, items in list(unique_days.items())[:7]:
+                # Simple aggregation
+                temps = [x["main"]["temp"] for x in items]
+                weather_desc = items[len(items)//2]["weather"][0]["description"] # Take midday condition
+                
+                daily_days.append({
+                    "date": date_str,
+                    "dayName": datetime.strptime(date_str, "%Y-%m-%d").strftime("%A"),
+                    "condition": weather_desc,
+                    "temperature": {
+                        "min": min(temps),
+                        "max": max(temps)
+                    },
+                    "precipitation": 0 # Hard to calculate from 3h without pop accum
+                })
+
+        weather_main = curr_data.get("weather", [{}])[0]
+        main_stats = curr_data.get("main", {})
+        
         return {
             "ok": True,
-            "provider": "openweathermap",
+            "provider": "openweathermap_standard",
             "temperature": {
-                "value": current.get("temp"),
+                "value": main_stats.get("temp"),
                 "unit": "C"
             },
-            "humidity": current.get("humidity"),
-            "feels_like": current.get("feels_like"),
-            "wind_speed": current.get("wind_speed"),
-            "summary": current.get("weather", [{}])[0].get("description", ""),
-            "condition": current.get("weather", [{}])[0].get("main", ""),
-            "days": days,
-            "daily": days,  # Alias para compatibilidad
+            "humidity": main_stats.get("humidity"),
+            "feels_like": main_stats.get("feels_like"),
+            "wind_speed": curr_data.get("wind", {}).get("speed"),
+            "summary": weather_main.get("description", ""),
+            "condition": weather_main.get("main", ""),
+            "days": daily_days,
+            "daily": daily_days,
             "location": {"lat": lat, "lon": lon}
         }
 
     except Exception as e:
-        logger.error(f"Error fetching weather from OpenWeatherMap: {e}")
-        return {"ok": False, "reason": "internal_error", "provider": "openweathermap"}
+        logger.error(f"Error fetching standard weather: {e}")
+        return {"ok": False, "reason": "internal_error", "error": str(e), "provider": "openweathermap"}
 
 
 @router.get("/debug")

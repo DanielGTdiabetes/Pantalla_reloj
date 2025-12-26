@@ -13,6 +13,18 @@ export const FullScreenWeather: React.FC = () => {
 
     if (!weather) return <div className="fs-loading">Cargando tiempo...</div>;
 
+    if (weather.ok === false) {
+        return (
+            <div className="fs-weather-container error">
+                <div className="fs-weather-main">
+                    <CloudSun size={120} className="fs-weather-icon text-red-400" />
+                    <h1 className="fs-condition">Error: {weather.reason}</h1>
+                    <p style={{ fontSize: '1.5rem', opacity: 0.7 }}>{weather.error || weather.summary || "Verifica tu API Key"}</p>
+                </div>
+            </div>
+        );
+    }
+
     const temp = weather.temperature?.value ? Math.round(weather.temperature.value) : '--';
     const condition = weather.summary || 'Despejado';
     const wind = weather.wind_speed ? Math.round(weather.wind_speed) : 0;

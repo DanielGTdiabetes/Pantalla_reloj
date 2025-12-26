@@ -285,7 +285,7 @@
   },
   "weather": {
     "enabled": true,
-    "provider": "meteoblue"
+    "provider": "openweathermap"
   },
   "calendar": {
     "enabled": true,
