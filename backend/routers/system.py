@@ -163,28 +163,52 @@ def update_secrets(req: SecretUpdateRequest) -> Dict[str, Any]:
 
 class DisplayConfigUpdate(BaseModel):
     module_cycle_seconds: int
+    news_feeds: Optional[List[str]] = None
 
 @router.get("/config/display")
 def get_display_config() -> Dict[str, Any]:
     """Get display configuration from config.json."""
     from ..main import config_manager
     config = config_manager.read()
+    
+    feeds = []
+    if config.panels and config.panels.news:
+        feeds = config.panels.news.feeds
+        
     return {
-        "module_cycle_seconds": config.display.module_cycle_seconds
+        "module_cycle_seconds": config.display.module_cycle_seconds,
+        "news_feeds": feeds
     }
 
 @router.post("/config/display")
 def update_display_config(req: DisplayConfigUpdate) -> Dict[str, Any]:
     """Update display configuration."""
     from ..main import config_manager
+    from ..models import PanelNewsConfig
+    
     config = config_manager.read()
     
-    # Update values
+    # Update Cycle Seconds
     config.display.module_cycle_seconds = req.module_cycle_seconds
+    
+    # Update News Feeds
+    if req.news_feeds is not None:
+        if not config.panels:
+            from ..models import PanelsConfig
+            config.panels = PanelsConfig()
+            
+        if not config.panels.news:
+            config.panels.news = PanelNewsConfig()
+            
+        config.panels.news.feeds = [f.strip() for f in req.news_feeds if f.strip()]
     
     # Write back
     config_manager.write(config.model_dump(mode="json"))
-    return {"ok": True, "module_cycle_seconds": req.module_cycle_seconds}
+    return {
+        "ok": True, 
+        "module_cycle_seconds": req.module_cycle_seconds,
+        "news_feeds": config.panels.news.feeds if config.panels and config.panels.news else []
+    }
     
 @router.get("/test_maptiler")
 def test_maptiler() -> Dict[str, Any]:

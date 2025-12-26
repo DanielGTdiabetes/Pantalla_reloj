@@ -42,7 +42,8 @@ export const SettingsPage: React.FC = () => {
     const [savingKeys, setSavingKeys] = useState(false);
 
     // Config State
-    const [displayConfig, setDisplayConfig] = useState<any>({ module_cycle_seconds: 20 });
+    const [displayConfig, setDisplayConfig] = useState<any>({ module_cycle_seconds: 20, news_feeds: [] });
+    const [newFeed, setNewFeed] = useState("");
 
     // Initial Load
     useEffect(() => {
@@ -76,7 +77,12 @@ export const SettingsPage: React.FC = () => {
         try {
             fetch('/api/system/config/display')
                 .then(r => r.json())
-                .then(d => setDisplayConfig(d))
+                .then(d => {
+                    setDisplayConfig({
+                        module_cycle_seconds: d.module_cycle_seconds || 20,
+                        news_feeds: d.news_feeds || []
+                    });
+                })
                 .catch(e => console.error(e));
         } catch (e) { }
     };
@@ -88,10 +94,26 @@ export const SettingsPage: React.FC = () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(displayConfig)
             });
-            alert("Configuración guardada");
+            alert("Configuración de Pantalla guardada");
         } catch (e) {
             alert("Error al guardar config");
         }
+    };
+
+    const addFeed = () => {
+        if (!newFeed.trim()) return;
+        setDisplayConfig((prev: any) => ({
+            ...prev,
+            news_feeds: [...(prev.news_feeds || []), newFeed.trim()]
+        }));
+        setNewFeed("");
+    };
+
+    const removeFeed = (idx: number) => {
+        setDisplayConfig((prev: any) => ({
+            ...prev,
+            news_feeds: prev.news_feeds.filter((_: any, i: number) => i !== idx)
+        }));
     };
 
     const scanWifi = async () => {
@@ -151,8 +173,6 @@ export const SettingsPage: React.FC = () => {
                 body: JSON.stringify({ items: keyInputs })
             });
             if (res.ok) {
-                // Clear inputs on success to avoid showing them? Or keep? 
-                // Better to clear for security, user sees "Status: Configured"
                 setKeyInputs({});
                 fetchKeysStatus();
                 alert("Claves guardadas correctamente");
@@ -182,7 +202,7 @@ export const SettingsPage: React.FC = () => {
                     <div className="wifi-list">
                         {networks.length === 0 && !scanning && <p className="empty-msg">No se encontraron redes</p>}
                         {networks.map((net, idx) => (
-                            <div key={idx} className={`wifi - item ${net.active ? 'active' : ''} `} onClick={() => setConnectingSsid(net.ssid)}>
+                            <div key={idx} className={`wifi-item ${net.active ? 'active' : ''} `} onClick={() => setConnectingSsid(net.ssid)}>
                                 <div className="wifi-info">
                                     <span className="wifi-ssid">{net.ssid}</span>
                                     <span className="wifi-meta">{net.security} • {net.strength}%</span>
@@ -213,7 +233,7 @@ export const SettingsPage: React.FC = () => {
                 <div className="settings-card">
                     <div className="section-header">
                         <Clock size={20} className="text-yellow-400" />
-                        <h2>Pantalla y Ciclo</h2>
+                        <h2>Pantalla y Noticias</h2>
                     </div>
                     <div className="settings-card">
                         <div className="form-group">
@@ -225,10 +245,32 @@ export const SettingsPage: React.FC = () => {
                                     onChange={(e) => setDisplayConfig({ ...displayConfig, module_cycle_seconds: parseInt(e.target.value) })}
                                     className="secret-input"
                                 />
-                                <button className="connect-btn" onClick={handleSaveConfig}>
-                                    <Save size={16} /> Guardar
-                                </button>
                             </div>
+                        </div>
+
+                        <div className="form-group" style={{ marginTop: '1rem' }}>
+                            <label>Fuentes RSS de Noticias</label>
+                            <div className="input-row">
+                                <input
+                                    type="text"
+                                    placeholder="https://ejemplo.com/rss"
+                                    value={newFeed}
+                                    onChange={e => setNewFeed(e.target.value)}
+                                    className="secret-input"
+                                />
+                                <button className="connect-btn" onClick={addFeed}>Añadir</button>
+                            </div>
+                            <div className="feeds-list" style={{ marginTop: '0.5rem', maxHeight: '150px', overflowY: 'auto' }}>
+                                {(displayConfig.news_feeds || []).map((feed: string, idx: number) => (
+                                    <div key={idx} className="feed-item" style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem', background: 'rgba(255,255,255,0.05)', marginBottom: '4px', borderRadius: '4px' }}>
+                                        <span style={{ fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis' }}>{feed}</span>
+                                        <button onClick={() => removeFeed(idx)} style={{ color: 'red', border: 'none', background: 'none', cursor: 'pointer' }}>×</button>
+                                    </div>
+                                ))}
+                            </div>
+                            <button className="primary full-width" onClick={handleSaveConfig} style={{ marginTop: '1rem' }}>
+                                <Save size={16} /> Guardar Configuración Pantalla
+                            </button>
                         </div>
                     </div>
 
@@ -236,10 +278,26 @@ export const SettingsPage: React.FC = () => {
                         <Lock size={20} className="text-red-400" />
                         <h2>Claves API y Calendario</h2>
                     </div>
-                    <p className="section-hint">Si usas Google Calendar, pega aquí tu enlace público ICS.</p>
                     <p className="card-desc">Introduce las claves para activar los servicios.</p>
 
                     <div className="keys-list">
+                        {/* Manually add Calendar First */}
+                        <div className="key-item">
+                            <div className="key-label-row">
+                                <span className="key-label">Calendario ICS (URL Pública)</span>
+                                {keysStatus["calendar_ics_url"] ?
+                                    <span className="status-badge set">Configurado</span> :
+                                    <span className="status-badge missing">Falta</span>
+                                }
+                            </div>
+                            <input
+                                type="text"
+                                placeholder={keysStatus["calendar_ics_url"] ? "URL Oculta (Escriba para cambiar)" : "https://calendar.google.com/..."}
+                                value={keyInputs["calendar_ics_url"] || ""}
+                                onChange={e => setKeyInputs(prev => ({ ...prev, "calendar_ics_url": e.target.value }))}
+                            />
+                        </div>
+
                         {Object.entries(API_KEYS_LABELS).map(([key, label]) => (
                             <div key={key} className="key-item">
                                 <div className="key-label-row">
@@ -261,7 +319,7 @@ export const SettingsPage: React.FC = () => {
 
                     <div className="card-footer">
                         <button className="primary full-width" onClick={handleSaveKeys} disabled={savingKeys}>
-                            {savingKeys ? 'Guardando...' : 'Guardar Cambios'} <Save size={18} style={{ marginLeft: 8 }} />
+                            {savingKeys ? 'Guardando...' : 'Guardar Claves API'} <Save size={18} style={{ marginLeft: 8 }} />
                         </button>
                     </div>
                 </div>
