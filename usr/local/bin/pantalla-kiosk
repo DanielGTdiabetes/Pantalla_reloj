@@ -474,6 +474,12 @@ main() {
   export GIO_USE_PORTALS="${GIO_USE_PORTALS:-0}"
   export GDK_BACKEND="${GDK_BACKEND:-x11}"
 
+  if command -v xrandr >/dev/null 2>&1; then
+    log_info "Forcing xrandr rotation to normal..."
+    xrandr --output HDMI-1 --rotate normal || log_warn "xrandr rotate normal failed"
+    xrandr --output HDMI-1 --mode 1920x480 || log_warn "xrandr mode 1920x480 failed"
+  fi
+
   local raw_url target_url
   raw_url="${1:-${KIOSK_URL:-}}"
   target_url="$(resolve_url "$raw_url")"
