@@ -54,16 +54,7 @@ export const DesktopDashboard: React.FC = () => {
         return () => { active = false; };
     }, []);
 
-    const CurrentModule = () => {
-        switch (moduleIndex) {
-            case 0: return <FullScreenWeather />;
-            case 1: return <FullScreenFarming />;
-            case 2: return <FullScreenEphemerides />;
-            case 3: return <FullScreenAPOD />;
-            case 4: return <FullScreenNews />;
-            default: return <FullScreenWeather />;
-        }
-    };
+
 
     return (
         <div className="dashboard-container" style={{ position: 'relative', overflow: 'hidden', background: '#000' }}>
@@ -89,7 +80,11 @@ export const DesktopDashboard: React.FC = () => {
                             backdropFilter: 'blur(5px)'
                         }}
                     >
-                        <CurrentModule />
+                        {moduleIndex === 0 && <FullScreenWeather />}
+                        {moduleIndex === 1 && <FullScreenFarming />}
+                        {moduleIndex === 2 && <FullScreenEphemerides />}
+                        {moduleIndex === 3 && <FullScreenAPOD />}
+                        {moduleIndex === 4 && <FullScreenNews />}
                     </motion.div>
                 )}
             </AnimatePresence>

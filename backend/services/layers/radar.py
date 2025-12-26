@@ -182,7 +182,7 @@ def _get_maptiler_key(main_module) -> Optional[str]:
     """Obtiene la API key de MapTiler desde secrets o configuración."""
     try:
         # Intentar desde secrets primero
-        value = main_module.secret_store.get_secret("maptiler_api_key")
+        value = main_module.secret_store.get_secret("maptiler_key")
         if value:
             return value.strip()
         
