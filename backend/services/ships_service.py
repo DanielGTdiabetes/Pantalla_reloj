@@ -147,6 +147,47 @@ class AISStreamService:
             self._logger.info(f"get_snapshot: {len(self._vessels)} vessels, connected={self._ws_connected}")
             return snapshot
 
+    def get_ships_in_bbox(self, bbox_str: Optional[str] = None, max_items: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Devuelve barcos filtrados por bounding box.
+        bbox_str: "minLon,minLat,maxLon,maxLat"
+        """
+        snapshot = self.get_snapshot()
+        if not snapshot:
+             return {"type": "FeatureCollection", "features": []}
+        
+        if not bbox_str:
+            return snapshot
+            
+        try:
+            parts = [float(x) for x in bbox_str.split(",")]
+            if len(parts) != 4:
+                return snapshot
+            
+            min_lon, min_lat, max_lon, max_lat = parts
+            
+            filtered = []
+            for f in snapshot.get("features", []):
+                geo = f.get("geometry", {})
+                coords = geo.get("coordinates")
+                if not coords or len(coords) < 2:
+                    continue
+                lon, lat = coords
+                if min_lon <= lon <= max_lon and min_lat <= lat <= max_lat:
+                    filtered.append(f)
+            
+            # Limit items if needed (simple slice)
+            if max_items and len(filtered) > max_items:
+                filtered = filtered[:max_items]
+                
+            snapshot["features"] = filtered
+            snapshot["meta"] = snapshot.get("meta", {})
+            snapshot["meta"]["filtered_count"] = len(filtered)
+            return snapshot
+            
+        except Exception:
+            return snapshot
+
     def get_status(self) -> Dict[str, Any]:
         """Información de estado para healthcheck."""
 

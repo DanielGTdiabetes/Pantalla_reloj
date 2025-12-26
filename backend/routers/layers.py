@@ -32,12 +32,8 @@ async def flights_test():
 
 @router.get("/flights")
 async def flights_data(request: Request, bbox: Optional[str] = None, extended: Optional[int] = None) -> JSONResponse:
-    main = _load_main_module()
-
-    def _call():
-        return main.get_flights(request, bbox, extended)
-
-    return await run_in_threadpool(_call)
+    # Use service method directly
+    return await flights.get_flights_geojson(bbox, extended)
 
 
 @router.get("/ships/test")
@@ -82,6 +78,20 @@ async def lightning_data(request: Request, bbox: Optional[str] = None) -> JSONRe
     main = _load_main_module()
 
     def _call():
-        return main.get_lightning(request, bbox)
+        service = main.blitzortung_service
+        if not service:
+             return {"type": "FeatureCollection", "features": []}
+             
+        # Parse bbox if string
+        bbox_tuple = None
+        if bbox:
+            try:
+                parts = [float(x) for x in bbox.split(",")]
+                if len(parts) == 4:
+                    bbox_tuple = (parts[1], parts[3], parts[0], parts[2]) # minLat, maxLat, minLon, maxLon
+            except:
+                pass
+                
+        return service.to_geojson(bbox_tuple)
 
     return await run_in_threadpool(_call)

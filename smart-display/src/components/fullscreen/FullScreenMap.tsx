@@ -54,7 +54,7 @@ export const FullScreenMap: React.FC = () => {
         const m = map.current;
 
         // --- Flights ---
-        m.addSource('flights', { type: 'geojson', data: '/api/transport/flights' });
+        m.addSource('flights', { type: 'geojson', data: '/api/layers/flights' });
         m.addLayer({
             id: 'flights-layer',
             type: 'circle',
@@ -86,7 +86,7 @@ export const FullScreenMap: React.FC = () => {
         });
 
         // --- Ships ---
-        m.addSource('ships', { type: 'geojson', data: '/api/transport/ships' });
+        m.addSource('ships', { type: 'geojson', data: '/api/layers/ships' });
         m.addLayer({
             id: 'ships-layer',
             type: 'circle',
@@ -100,7 +100,7 @@ export const FullScreenMap: React.FC = () => {
         });
 
         // --- Lightning (Rays) ---
-        m.addSource('lightning', { type: 'geojson', data: '/api/weather/lightning' });
+        m.addSource('lightning', { type: 'geojson', data: '/api/layers/lightning' });
         m.addLayer({
             id: 'lightning-heat',
             type: 'heatmap',
@@ -180,9 +180,9 @@ export const FullScreenMap: React.FC = () => {
         setInterval(() => {
             if (!map.current) return;
             // Refresh GeoJSONs
-            (map.current.getSource('flights') as any)?.setData('/api/transport/flights');
-            (map.current.getSource('ships') as any)?.setData('/api/transport/ships');
-            (map.current.getSource('lightning') as any)?.setData('/api/weather/lightning');
+            (map.current.getSource('flights') as any)?.setData('/api/layers/flights');
+            (map.current.getSource('ships') as any)?.setData('/api/layers/ships');
+            (map.current.getSource('lightning') as any)?.setData('/api/layers/lightning');
 
             // Refresh Radar periodically
             updateRadarLayer();

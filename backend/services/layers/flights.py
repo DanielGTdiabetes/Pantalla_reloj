@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, List
 
 import httpx
 
@@ -26,6 +26,63 @@ def _load_main_module():
     """
 
     return importlib.import_module("backend.main")
+
+
+async def get_flights_geojson(bbox: Optional[str] = None, extended: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Obtiene los vuelos actuales en formato GeoJSON.
+    bbox: "minLon,minLat,maxLon,maxLat"
+    """
+    main = _load_main_module()
+    config = main.config_manager.read()
+    
+    # Parse bbox string "minLon,minLat,maxLon,maxLat"
+    # OpenSky expects (minLat, maxLat, minLon, maxLon)
+    bbox_tuple = None
+    if bbox:
+        try:
+            parts = [float(x) for x in bbox.split(",")]
+            if len(parts) == 4:
+                # GeoJSON BBox is [minLon, minLat, maxLon, maxLat]
+                # OpenSky expects (minLat, maxLat, minLon, maxLon)
+                bbox_tuple = (parts[1], parts[3], parts[0], parts[2])
+        except:
+             pass
+
+    # Use opensky service to get snapshot
+    snapshot = main.opensky_service.get_snapshot(config, bbox=bbox_tuple, extended_override=extended)
+    
+    # Convert to GeoJSON
+    features: List[Dict[str, Any]] = []
+    if snapshot and snapshot.payload.get("items"):
+         for item in snapshot.payload["items"]:
+             if not isinstance(item, dict):
+                 continue
+
+             lat = item.get("lat") or item.get("latitude")
+             lon = item.get("lon") or item.get("longitude")
+             
+             if lat is None or lon is None:
+                 continue
+                 
+             features.append({
+                 "type": "Feature",
+                 "geometry": {
+                     "type": "Point",
+                     "coordinates": [lon, lat]
+                 },
+                 "properties": item
+             })
+             
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+        "metadata": {
+            "count": len(features),
+            "ts": snapshot.payload.get("ts") if snapshot else None,
+            "stale": snapshot.payload.get("stale") if snapshot else True
+        }
+    }
 
 
 async def get_status() -> Dict[str, Any]:
@@ -158,5 +215,3 @@ async def _probe_opensky(opensky_cfg) -> Tuple[Dict[str, Any], Optional[str]]:
         return {"ok": False, "reason": "timeout"}, "timeout"
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "reason": "error", "detail": str(exc)}, str(exc)
-
-
