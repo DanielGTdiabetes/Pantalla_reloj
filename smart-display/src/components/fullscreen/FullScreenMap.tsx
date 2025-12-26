@@ -53,14 +53,21 @@ export const FullScreenMap: React.FC = () => {
         const m = map.current;
 
         // Load Icons (Type safe or casted)
-        (m as any).loadImage('/assets/img/map_plane.png', (error: any, image: any) => {
-            if (error) return;
-            if (image && !m.hasImage('plane-icon')) m.addImage('plane-icon', image);
-        });
-        (m as any).loadImage('/assets/img/map_ship.png', (error: any, image: any) => {
-            if (error) return;
-            if (image && !m.hasImage('ship-icon')) m.addImage('ship-icon', image);
-        });
+        const loadImg = (id: string, url: string) => {
+            (m as any).loadImage(url, (error: any, image: any) => {
+                if (error) {
+                    console.error(`Error loading icon ${id}:`, error);
+                    return;
+                }
+                if (image && !m.hasImage(id)) {
+                    m.addImage(id, image);
+                    console.log(`Icon ${id} loaded successfully`);
+                }
+            });
+        };
+
+        loadImg('plane-icon', '/assets/img/map_plane.png');
+        loadImg('ship-icon', '/assets/img/map_ship.png');
 
         // --- Flights ---
         m.addSource('flights', { type: 'geojson', data: '/api/layers/flights' });
@@ -71,7 +78,8 @@ export const FullScreenMap: React.FC = () => {
             layout: {
                 'icon-image': 'plane-icon',
                 'icon-size': 0.15,
-                'icon-rotate': ['get', 'true_track'],
+                'icon-rotate': ['-', ['get', 'true_track'], 45], // Compensate isometric 45deg
+                'icon-rotation-alignment': 'map',
                 'icon-allow-overlap': true,
                 'icon-ignore-placement': true
             }
@@ -83,9 +91,10 @@ export const FullScreenMap: React.FC = () => {
             source: 'flights',
             layout: {
                 'text-field': ['get', 'callsign'],
-                'text-offset': [0, 2],
+                'text-offset': [0, 2.5],
                 'text-size': 14,
-                'text-anchor': 'top'
+                'text-anchor': 'top',
+                'text-allow-overlap': false
             },
             paint: {
                 'text-color': '#fbbf24',
@@ -103,7 +112,8 @@ export const FullScreenMap: React.FC = () => {
             layout: {
                 'icon-image': 'ship-icon',
                 'icon-size': 0.12,
-                'icon-rotate': ['get', 'course'],
+                'icon-rotate': ['-', ['get', 'course'], 45], // Compensate isometric 45deg
+                'icon-rotation-alignment': 'map',
                 'icon-allow-overlap': true
             }
         });
