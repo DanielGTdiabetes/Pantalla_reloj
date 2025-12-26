@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FullScreenWeather } from '../components/fullscreen/FullScreenWeather';
 import { FullScreenFarming } from '../components/fullscreen/FullScreenFarming';
 import { FullScreenEphemerides } from '../components/fullscreen/FullScreenEphemerides';
+import { FullScreenAPOD } from '../components/fullscreen/FullScreenAPOD';
 import './DesktopDashboard.css';
 
 export const DesktopDashboard: React.FC = () => {
@@ -11,7 +12,8 @@ export const DesktopDashboard: React.FC = () => {
     const MODULES = [
         'WEATHER',
         'FARMING',
-        'EPHEMERIDES'
+        'EPHEMERIDES',
+        'APOD'
     ];
 
     // Clock only
@@ -55,6 +57,7 @@ export const DesktopDashboard: React.FC = () => {
                 {moduleIndex === 0 && <FullScreenWeather />}
                 {moduleIndex === 1 && <FullScreenFarming />}
                 {moduleIndex === 2 && <FullScreenEphemerides />}
+                {moduleIndex === 3 && <FullScreenAPOD />}
             </div>
         </div>
     );

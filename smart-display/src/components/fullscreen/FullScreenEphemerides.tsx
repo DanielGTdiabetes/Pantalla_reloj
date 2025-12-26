@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Calendar, Star, UserPlus, Skull, Globe } from 'lucide-react';
+import { Calendar, Star, UserPlus, Skull, Globe, ScrollText } from 'lucide-react';
 import './FullScreenEphemerides.css';
 
 interface Saint {
     name: string;
+    bio?: string;
     image?: string;
 }
 
@@ -24,10 +25,14 @@ export const FullScreenEphemerides: React.FC = () => {
     const [saints, setSaints] = useState<Saint[]>([]);
     const [events, setEvents] = useState<EphemerisItem[]>([]);
     const [apod, setApod] = useState<ApodItem | null>(null);
+
+    // Content Rotation State
+    const [mode, setMode] = useState<'EVENT' | 'SAINT'>('EVENT');
     const [eventIndex, setEventIndex] = useState(0);
+    const [saintIndex, setSaintIndex] = useState(0);
 
     useEffect(() => {
-        // Fetch Saints
+        // Fetch Saints with enriched data
         fetch('/api/saints').then(r => r.json()).then(d => {
             if (Array.isArray(d)) setSaints(d);
         }).catch(console.error);
@@ -35,8 +40,7 @@ export const FullScreenEphemerides: React.FC = () => {
         // Fetch Ephemerides
         fetch('/api/ephemerides?type=all').then(r => r.json()).then(d => {
             if (d.items) {
-                // Shuffle or pick interesting ones? Let's take first 10
-                setEvents(d.items.slice(0, 10));
+                setEvents(d.items.slice(0, 15));
             }
         }).catch(console.error);
 
@@ -46,15 +50,29 @@ export const FullScreenEphemerides: React.FC = () => {
         }).catch(console.error);
     }, []);
 
-    // Rotate events every 8 seconds
+    // Rotation Logic (Switch Mode)
     useEffect(() => {
         const interval = setInterval(() => {
-            setEventIndex(prev => (prev + 1) % (events.length || 1));
-        }, 8000);
+            setMode(prev => prev === 'EVENT' ? 'SAINT' : 'EVENT');
+        }, 12000); // 12s per mode
         return () => clearInterval(interval);
-    }, [events.length]);
+    }, []);
+
+    // Index Rotation
+    useEffect(() => {
+        const interval = setInterval(() => {
+            if (mode === 'EVENT') {
+                setEventIndex(prev => (prev + 1) % (events.length || 1));
+            } else {
+                // Only rotate through first 3 saints (enriched)
+                setSaintIndex(prev => (prev + 1) % Math.min(saints.length || 1, 3));
+            }
+        }, 12000);
+        return () => clearInterval(interval);
+    }, [mode, events.length, saints.length]);
 
     const currentEvent = events[eventIndex];
+    const currentSaint = saints[saintIndex];
 
     const getIconForCategory = (cat: string) => {
         if (cat === 'birth') return <UserPlus size={48} className="text-green-400" />;
@@ -62,11 +80,13 @@ export const FullScreenEphemerides: React.FC = () => {
         return <Globe size={48} className="text-blue-400" />;
     };
 
+    const hasBio = currentSaint && currentSaint.bio && currentSaint.bio.length > 20;
+
     return (
         <div className="fs-ephemerides-container" style={{
             backgroundImage: apod ? `linear-gradient(rgba(0,0,0,0.85), rgba(0,0,0,0.85)), url(${apod.url})` : 'linear-gradient(to right, #1e1b4b, #312e81)'
         }}>
-            {/* Left Column: Date & Saints */}
+            {/* Left Column: Date & Saints List */}
             <div className="fs-col-left">
                 <div className="fs-date-block">
                     <Calendar size={64} className="text-yellow-400 mb-4" />
@@ -82,41 +102,68 @@ export const FullScreenEphemerides: React.FC = () => {
                     </div>
                     <ul>
                         {saints.slice(0, 5).map((s, i) => (
-                            <li key={i}>{s.name}</li>
+                            <li key={i} className={mode === 'SAINT' && i === saintIndex ? 'active-saint-li' : ''}>
+                                {s.name}
+                            </li>
                         ))}
                     </ul>
                 </div>
             </div>
 
-            {/* Right Column: Spotlight Event */}
+            {/* Right Column: Spotlight Content */}
             <div className="fs-col-right">
-                {currentEvent ? (
-                    <div className="fs-event-card key={currentEvent.text}"> {/* Force re-render for anim */}
-                        <div className="fs-event-year">
+
+                {mode === 'EVENT' && currentEvent && (
+                    <div className="fs-event-card fade-in">
+                        <div className="fs-card-header">
                             {getIconForCategory(currentEvent.category)}
-                            <span>{currentEvent.year}</span>
+                            <span className="fs-card-year">{currentEvent.year}</span>
                         </div>
-                        <p className="fs-event-text">{currentEvent.text}</p>
+                        <p className="fs-card-text">{currentEvent.text}</p>
 
                         {currentEvent.thumbnail && (
-                            <div className="fs-event-image">
+                            <div className="fs-card-image">
                                 <img src={currentEvent.thumbnail} alt="Event" />
                             </div>
                         )}
-
-                        <div className="fs-event-progress">
-                            {events.map((_, i) => (
-                                <div key={i} className={`fs-progress-dot ${i === eventIndex ? 'active' : ''}`} />
-                            ))}
-                        </div>
+                        <div className="fs-card-label">Tal día como hoy</div>
                     </div>
-                ) : (
+                )}
+
+                {/* Show Saint if Mode is SAINT OR if Events are empty. Priority to Events if available and mode is EVENT */}
+                {((mode === 'SAINT' && currentSaint) || (!currentEvent && currentSaint)) && (
+                    <div className="fs-event-card fade-in bg-saint-active-card">
+                        <div className="fs-card-header">
+                            <Star size={48} className="text-yellow-400" />
+                            <span className="fs-card-title">Santoral</span>
+                        </div>
+                        <h2 className="fs-saint-title">{currentSaint.name}</h2>
+
+                        {hasBio ? (
+                            <p className="fs-card-text saint-bio">{currentSaint.bio}</p>
+                        ) : (
+                            <p className="fs-card-text saint-bio" style={{ fontStyle: 'italic', opacity: 0.7 }}>
+                                Hoy celebramos la santidad de {currentSaint.name}...
+                            </p>
+                        )}
+
+                        {currentSaint.image ? (
+                            <div className="fs-card-image saint-img-wrapper">
+                                <img src={currentSaint.image} alt={currentSaint.name} />
+                            </div>
+                        ) : (
+                            <div className="fs-card-image placeholder">
+                                <ScrollText size={64} className="text-slate-600" />
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {!currentEvent && !currentSaint && (
                     <div className="fs-loading">Cargando historia...</div>
                 )}
             </div>
 
-            {/* APOD Credit if visible */}
-            {apod && <div className="fs-apod-credit">Foto de fondo: {apod.title} (NASA)</div>}
         </div>
     );
 };
