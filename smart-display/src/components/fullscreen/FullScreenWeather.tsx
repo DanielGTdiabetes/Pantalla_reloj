@@ -37,7 +37,12 @@ export const FullScreenWeather: React.FC = () => {
                     <div className="fs-temp-group">
                         <span className="fs-temp-val">{temp}°</span>
                         <div className="fs-cond-group">
-                            <CloudSun size={80} className="fs-weather-icon" />
+                            {/* Icon Logic based on simple keyword matching for now */}
+                            <img
+                                src={condition.toLowerCase().includes('lluvia') || condition.toLowerCase().includes('llovizna') ? '/assets/img/rain_3d.png' : '/assets/img/sun_3d.png'}
+                                className="fs-weather-icon-3d"
+                                alt="Weather Icon"
+                            />
                             <h1 className="fs-condition">{condition}</h1>
                         </div>
                     </div>
