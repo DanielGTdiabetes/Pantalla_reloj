@@ -520,14 +520,31 @@ class ConfigManager:
         api_key = migrated.get("apiKey") or migrated.get("api_key") or migrated.get("key")
         style_url = migrated.get("styleUrl")
         
-        # Regla 1: Inyectar apiKey desde variable de entorno si está vacío
+        # Regla 1: Inyectar apiKey desde variable de entorno o SecretStore si está vacío
         if not api_key:
+            # 1a. Intentar ENV
             env_api_key = os.getenv("MAPTILER_API_KEY")
             if env_api_key and env_api_key.strip():
                 migrated["apiKey"] = env_api_key.strip()
                 api_key = migrated["apiKey"]
                 changed = True
                 self.logger.info("[config] Injected MapTiler API key from MAPTILER_API_KEY env")
+
+            # 1b. Intentar SecretStore (maptiler_key)
+            if not api_key:
+                try:
+                    # Importación local para evitar ciclos si fuera necesario, 
+                    # aunque config_manager es base.
+                    from .secret_store import SecretStore
+                    store = SecretStore()
+                    stored_key = store.get_secret("maptiler_key")
+                    if stored_key:
+                        migrated["apiKey"] = stored_key
+                        api_key = stored_key
+                        changed = True
+                        self.logger.info("[config] Injected MapTiler API key from SecretStore")
+                except Exception as exc:
+                    self.logger.debug("[config] Failed to check SecretStore for maptiler_key: %s", exc)
         
         # Normalizar apiKey a "apiKey"
         if "apiKey" not in migrated:
