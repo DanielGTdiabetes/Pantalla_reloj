@@ -133,7 +133,8 @@ def get_secrets_status() -> Dict[str, bool]:
         "opensky_username",
         "opensky_password",
         "aisstream_api_key",
-        "calendar_ics_url"
+        "calendar_ics_url",
+        "nasa_api_key"
     ]
     
     result = {}
@@ -164,6 +165,9 @@ def update_secrets(req: SecretUpdateRequest) -> Dict[str, Any]:
 class DisplayConfigUpdate(BaseModel):
     module_cycle_seconds: int
     news_feeds: Optional[List[str]] = None
+    location_name: Optional[str] = None
+    location_lat: Optional[float] = None
+    location_lon: Optional[float] = None
 
 @router.get("/config/display")
 def get_display_config() -> Dict[str, Any]:
@@ -177,14 +181,19 @@ def get_display_config() -> Dict[str, Any]:
         
     return {
         "module_cycle_seconds": config.display.module_cycle_seconds,
-        "news_feeds": feeds
+        "news_feeds": feeds,
+        "location": {
+            "name": config.location.name if config.location else "Vila-real",
+            "lat": config.location.lat if config.location else 39.9378,
+            "lon": config.location.lon if config.location else -0.1014
+        }
     }
 
 @router.post("/config/display")
 def update_display_config(req: DisplayConfigUpdate) -> Dict[str, Any]:
     """Update display configuration."""
     from ..main import config_manager
-    from ..models import PanelNewsConfig
+    from ..models import PanelNewsConfig, LocationConfig
     
     config = config_manager.read()
     
@@ -201,13 +210,29 @@ def update_display_config(req: DisplayConfigUpdate) -> Dict[str, Any]:
             config.panels.news = PanelNewsConfig()
             
         config.panels.news.feeds = [f.strip() for f in req.news_feeds if f.strip()]
+
+    # Update Location
+    if req.location_lat is not None and req.location_lon is not None:
+        if not config.location:
+             # Basic default
+             config.location = LocationConfig(lat=39.9378, lon=-0.1014)
+        
+        config.location.lat = req.location_lat
+        config.location.lon = req.location_lon
+        if req.location_name:
+            config.location.name = req.location_name
     
     # Write back
     config_manager.write(config.model_dump(mode="json"))
     return {
         "ok": True, 
         "module_cycle_seconds": req.module_cycle_seconds,
-        "news_feeds": config.panels.news.feeds if config.panels and config.panels.news else []
+        "news_feeds": config.panels.news.feeds if config.panels and config.panels.news else [],
+        "location": {
+             "name": config.location.name,
+             "lat": config.location.lat,
+             "lon": config.location.lon
+        }
     }
     
 @router.get("/test_maptiler")

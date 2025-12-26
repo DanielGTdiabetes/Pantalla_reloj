@@ -369,8 +369,13 @@ async def get_nasa_apod() -> Dict[str, Any]:
         if cached and cached.payload:
             return cached.payload
 
+    # Try to get API Key from SecretStore
+    from ..secret_store import SecretStore
+    secret_store = SecretStore()
+    api_key = secret_store.get_secret("nasa_api_key") or "DEMO_KEY"
+
     try:
-        url = f"https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY"
+        url = f"https://api.nasa.gov/planetary/apod?api_key={api_key}"
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(url)
             resp.raise_for_status()
