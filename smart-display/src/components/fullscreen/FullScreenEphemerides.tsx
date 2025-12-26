@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Calendar, Star, UserPlus, Skull, Globe, ScrollText, Moon, Sunrise, Sunset } from 'lucide-react';
+import { Calendar, Star, ScrollText } from 'lucide-react';
 import './FullScreenEphemerides.css';
 
 interface Saint {
@@ -26,6 +26,8 @@ interface AstroData {
     moon_phase: number;
 }
 
+type RotationMode = 'EVENT' | 'SAINT' | 'ASTRO'; // New type definition
+
 export const FullScreenEphemerides: React.FC = () => {
     const [date] = useState(new Date());
     const [saints, setSaints] = useState<Saint[]>([]);
@@ -34,7 +36,7 @@ export const FullScreenEphemerides: React.FC = () => {
     const [astro, setAstro] = useState<AstroData | null>(null);
 
     // Content Rotation State
-    const [mode, setMode] = useState<'EVENT' | 'SAINT' | 'ASTRO'>('ASTRO');
+    const [mode, setMode] = useState<RotationMode>('ASTRO');
     const [eventIndex, setEventIndex] = useState(0);
     const [saintIndex, setSaintIndex] = useState(0);
 
@@ -98,12 +100,10 @@ export const FullScreenEphemerides: React.FC = () => {
     const currentSaint = saints[saintIndex];
 
     const getIconForCategory = (cat: string) => {
-        if (cat === 'birth') return <UserPlus size={48} className="text-green-400" />;
-        if (cat === 'death') return <Skull size={48} className="text-stone-400" />;
-        return <Globe size={48} className="text-blue-400" />;
+        if (cat === 'birth') return <Star size={48} className="text-green-400" />;
+        if (cat === 'death') return <Star size={48} className="text-stone-400" />;
+        return <Calendar size={48} className="text-blue-400" />;
     };
-
-    const hasBio = currentSaint && currentSaint.bio && currentSaint.bio.length > 20;
 
     const getSaintTitle = (name: string) => {
         // Special exclusions or known full names can be handled here if needed
@@ -174,36 +174,35 @@ export const FullScreenEphemerides: React.FC = () => {
                 {mode === 'ASTRO' && astro && (
                     <div className="fs-event-card fade-in bg-astro-card">
                         <div className="fs-card-header">
-                            <Moon size={48} className="text-purple-300" />
+                            <img src="/assets/img/moon_3d.png" style={{ width: 64, height: 64 }} alt="Moon" />
                             <span className="fs-card-title">Astronomía</span>
                         </div>
 
-                        <div className="fs-astro-content" style={{ display: 'flex', flexDirection: 'column', gap: '2rem', marginTop: '1rem' }}>
-                            <div className="astro-row" style={{ display: 'flex', alignItems: 'center', gap: '2rem', justifyContent: 'center' }}>
+                        <div className="fs-astro-content">
+                            <div className="astro-row">
                                 <div className="astro-item text-center">
-                                    <h3 className="text-amber-300 text-xl font-bold mb-2">Salida Sol</h3>
-                                    <div className="flex items-center gap-2 text-4xl">
-                                        <Sunrise size={48} className="text-amber-500" />
-                                        <span>{formatTime(astro.sunrise)}</span>
+                                    <h3 className="text-amber-300">Salida del Sol</h3>
+                                    <div className="astro-val-group">
+                                        <img src="/assets/img/sunrise_3d.png" style={{ width: 80, height: 80 }} alt="Sunrise" />
+                                        <span className="astro-time">{formatTime(astro.sunrise)}</span>
                                     </div>
                                 </div>
 
                                 <div className="astro-item text-center">
-                                    <h3 className="text-amber-300 text-xl font-bold mb-2">Puesta Sol</h3>
-                                    <div className="flex items-center gap-2 text-4xl">
-                                        <Sunset size={48} className="text-orange-500" />
-                                        <span>{formatTime(astro.sunset)}</span>
+                                    <h3 className="text-amber-300">Puesta del Sol</h3>
+                                    <div className="astro-val-group">
+                                        <img src="/assets/img/sunset_3d.png" style={{ width: 80, height: 80 }} alt="Sunset" />
+                                        <span className="astro-time">{formatTime(astro.sunset)}</span>
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="astro-row">
-                                <div className="astro-item text-center mt-8">
-                                    <h3 className="text-purple-300 text-xl font-bold mb-2">Fase Lunar</h3>
-                                    <div className="flex flex-col items-center gap-2">
-                                        {/* Simple icon logic based on phase? Use generic Moon for now */}
-                                        <Moon size={80} className="text-gray-200" fill={astro.moon_phase === 0.5 ? "white" : "none"} />
-                                        <span className="text-3xl mt-2">{getMoonPhaseName(astro.moon_phase)}</span>
+                            <div className="astro-row mt-4">
+                                <div className="astro-item text-center">
+                                    <h3 className="text-purple-300">Fase Lunar</h3>
+                                    <div className="moon-phase-group">
+                                        <img src="/assets/img/moon_3d.png" style={{ width: 100, height: 100 }} alt="Moon Phase" />
+                                        <span className="moon-text">{getMoonPhaseName(astro.moon_phase)}</span>
                                     </div>
                                 </div>
                             </div>
@@ -217,7 +216,11 @@ export const FullScreenEphemerides: React.FC = () => {
                             {getIconForCategory(currentEvent.category)}
                             <span className="fs-card-year">{currentEvent.year}</span>
                         </div>
-                        <p className="fs-card-text">{currentEvent.text}</p>
+                        <div className="fs-scrollable-text-container">
+                            <div className="scroll-wrapper">
+                                <p className="fs-card-text">{currentEvent.text}</p>
+                            </div>
+                        </div>
 
                         {currentEvent.thumbnail && (
                             <div className="fs-card-image">
@@ -237,17 +240,11 @@ export const FullScreenEphemerides: React.FC = () => {
                         </div>
                         <h2 className="fs-saint-title">{getSaintTitle(currentSaint.name)}</h2>
 
-                        {hasBio ? (
-                            <div className="fs-card-text saint-bio">
-                                <div className="scroll-wrapper">
-                                    {currentSaint.bio}
-                                </div>
+                        <div className="fs-scrollable-text-container saint-bio">
+                            <div className="scroll-wrapper">
+                                {currentSaint.bio || `Hoy celebramos la santidad de ${getSaintTitle(currentSaint.name)}...`}
                             </div>
-                        ) : (
-                            <p className="fs-card-text saint-bio" style={{ fontStyle: 'italic', opacity: 0.7 }}>
-                                Hoy celebramos la santidad de {getSaintTitle(currentSaint.name)}...
-                            </p>
-                        )}
+                        </div>
 
                         {currentSaint.image ? (
                             <div className="fs-card-image saint-img-wrapper">

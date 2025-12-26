@@ -136,21 +136,25 @@
     margin: 0;
 }
 
-.fs-card-text.saint-bio {
-    font-size: 1.4rem;
-    height: 250px;
-    /* Fixed height for consistency */
+/* Scrollable Container */
+.fs-scrollable-text-container {
+    font-size: 1.6rem;
+    height: 180px;
+    /* Reduced height to avoid cut-off */
     overflow: hidden;
-    /* Hide scrollbar */
     position: relative;
     mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
     -webkit-mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
 }
 
+.fs-scrollable-text-container.saint-bio {
+    font-size: 1.4rem;
+    height: 150px;
+}
+
 .scroll-wrapper {
-    animation: autoScroll 30s linear infinite;
-    animation-delay: 3s;
-    /* Wait before scrolling */
+    animation: autoScroll 40s linear infinite;
+    animation-delay: 2s;
 }
 
 @keyframes autoScroll {
@@ -158,21 +162,68 @@
         transform: translateY(0);
     }
 
-    15% {
+    10% {
         transform: translateY(0);
     }
 
-    /* Start pause */
-    100% {
-        transform: translateY(-70%);
+    90% {
+        transform: translateY(-80%);
     }
 
-    /* Scroll down but not completely off */
+    100% {
+        transform: translateY(-80%);
+    }
+}
+
+/* Astro Mode */
+.fs-astro-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    margin-top: 1rem;
+    width: 100%;
+}
+
+.astro-row {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    width: 100%;
+}
+
+.astro-item h3 {
+    margin-bottom: 1rem;
+    font-size: 1.8rem;
+    font-weight: 700;
+}
+
+.astro-val-group {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.astro-time {
+    font-size: 5rem;
+    font-weight: 800;
+}
+
+.moon-phase-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+.moon-text {
+    font-size: 3rem;
+    font-weight: 700;
 }
 
 .fs-card-image {
     width: 100%;
-    height: 300px;
+    height: 250px;
+    /* Reduced height */
     border-radius: 1rem;
     overflow: hidden;
     margin-top: 1rem;

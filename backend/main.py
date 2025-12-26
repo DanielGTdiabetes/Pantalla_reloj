@@ -142,6 +142,15 @@ def _startup_services() -> None:
     # Init Ephemerides cache
     ephemerides.init_cache(cache_store)
 
+    # Init Ships Service
+    try:
+        config = config_manager.read()
+        if config.layers and config.layers.ships:
+            logger.info("[startup] Initializing Ships service")
+            ships_service.apply_config(config.layers.ships)
+    except Exception as exc:
+        logger.error("[startup] Failed to start Ships service: %s", exc)
+
     # Init Blitzortung (Lightning)
     global blitzortung_service
     try:

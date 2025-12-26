@@ -52,17 +52,28 @@ export const FullScreenMap: React.FC = () => {
         if (!map.current) return;
         const m = map.current;
 
+        // Load Icons (Type safe or casted)
+        (m as any).loadImage('/assets/img/map_plane.png', (error: any, image: any) => {
+            if (error) return;
+            if (image && !m.hasImage('plane-icon')) m.addImage('plane-icon', image);
+        });
+        (m as any).loadImage('/assets/img/map_ship.png', (error: any, image: any) => {
+            if (error) return;
+            if (image && !m.hasImage('ship-icon')) m.addImage('ship-icon', image);
+        });
+
         // --- Flights ---
         m.addSource('flights', { type: 'geojson', data: '/api/layers/flights' });
         m.addLayer({
             id: 'flights-layer',
-            type: 'circle',
+            type: 'symbol',
             source: 'flights',
-            paint: {
-                'circle-radius': 6,
-                'circle-color': '#fbbf24', // Amber-400
-                'circle-stroke-width': 2,
-                'circle-stroke-color': '#000'
+            layout: {
+                'icon-image': 'plane-icon',
+                'icon-size': 0.15,
+                'icon-rotate': ['get', 'true_track'],
+                'icon-allow-overlap': true,
+                'icon-ignore-placement': true
             }
         });
         // Flight Labels (Callsign)
@@ -72,9 +83,8 @@ export const FullScreenMap: React.FC = () => {
             source: 'flights',
             layout: {
                 'text-field': ['get', 'callsign'],
-                'text-font': ['Open Sans Regular'], // Might fall back if not available
-                'text-offset': [0, 1.2],
-                'text-size': 12,
+                'text-offset': [0, 2],
+                'text-size': 14,
                 'text-anchor': 'top'
             },
             paint: {
@@ -88,13 +98,13 @@ export const FullScreenMap: React.FC = () => {
         m.addSource('ships', { type: 'geojson', data: '/api/layers/ships' });
         m.addLayer({
             id: 'ships-layer',
-            type: 'circle',
+            type: 'symbol',
             source: 'ships',
-            paint: {
-                'circle-radius': 5,
-                'circle-color': '#60a5fa', // Blue-400
-                'circle-stroke-width': 1,
-                'circle-stroke-color': '#000'
+            layout: {
+                'icon-image': 'ship-icon',
+                'icon-size': 0.12,
+                'icon-rotate': ['get', 'course'],
+                'icon-allow-overlap': true
             }
         });
 
