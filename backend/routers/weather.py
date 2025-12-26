@@ -235,7 +235,10 @@ def get_weekly_forecast(lat: float = None, lon: float = None) -> Dict[str, Any]:
                         "min": d.get("temp", {}).get("min"),
                         "max": d.get("temp", {}).get("max")
                     },
-                    "precipitation": d.get("rain", 0) or (d.get("pop", 0) * 100)
+                    "precipitation": d.get("rain", 0) or (d.get("pop", 0) * 100),
+                    "sunrise": d.get("sunrise"),
+                    "sunset": d.get("sunset"),
+                    "moon_phase": d.get("moon_phase")
                 })
             
             return {

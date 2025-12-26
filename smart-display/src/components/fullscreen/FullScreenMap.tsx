@@ -1,7 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Plane, Ship, Zap, CloudRain } from 'lucide-react';
 import './FullScreenMap.css';
 
 export const FullScreenMap: React.FC = () => {
@@ -192,12 +191,7 @@ export const FullScreenMap: React.FC = () => {
     return (
         <div className="fs-map-wrapper">
             <div ref={mapContainer} className="fs-map-container" />
-            <div className="fs-map-legend">
-                <div className="legend-item"><Plane size={16} className="text-amber-400" /> Aviones</div>
-                <div className="legend-item"><Ship size={16} className="text-blue-400" /> Barcos</div>
-                <div className="legend-item"><Zap size={16} className="text-rose-500" /> Rayos</div>
-                <div className="legend-item"><CloudRain size={16} className="text-blue-300" /> Lluvia</div>
-            </div>
+
         </div>
     );
 };

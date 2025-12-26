@@ -32,30 +32,46 @@ export const FullScreenWeather: React.FC = () => {
 
     return (
         <div className="fs-weather-container">
-            <div className="fs-weather-main">
-                <div className="fs-temp-group">
-                    <span className="fs-temp-val">{temp}°</span>
-                    <CloudSun size={120} className="fs-weather-icon" />
+            <div className="fs-weather-main column-mode">
+                <div className="current-weather-row">
+                    <div className="fs-temp-group">
+                        <span className="fs-temp-val">{temp}°</span>
+                        <div className="fs-cond-group">
+                            <CloudSun size={80} className="fs-weather-icon" />
+                            <h1 className="fs-condition">{condition}</h1>
+                        </div>
+                    </div>
                 </div>
-                <h1 className="fs-condition">{condition}</h1>
-            </div>
 
-            <div className="fs-weather-grid">
-                <div className="fs-weather-item">
-                    <Wind size={40} />
-                    <span className="fs-val">{wind} <span className="fs-unit">km/h</span></span>
-                    <span className="fs-label">Viento</span>
+                <div className="fs-weather-grid compact">
+                    <div className="fs-weather-item">
+                        <Wind size={32} />
+                        <span className="fs-val">{wind} <span className="fs-unit">km/h</span></span>
+                    </div>
+                    <div className="fs-weather-item">
+                        <Droplet size={32} />
+                        <span className="fs-val">{hum} <span className="fs-unit">%</span></span>
+                    </div>
+                    <div className="fs-weather-item">
+                        <Thermometer size={32} />
+                        <span className="fs-val">{Math.round(weather.feels_like?.value || temp)}°</span>
+                    </div>
                 </div>
-                <div className="fs-weather-item">
-                    <Droplet size={40} />
-                    <span className="fs-val">{hum} <span className="fs-unit">%</span></span>
-                    <span className="fs-label">Humedad</span>
-                </div>
-                <div className="fs-weather-item">
-                    <Thermometer size={40} />
-                    <span className="fs-val">{Math.round(weather.feels_like?.value || temp)}°</span>
-                    <span className="fs-label">Sensación</span>
-                </div>
+
+                {weather.days && weather.days.length > 0 && (
+                    <div className="fs-forecast-row">
+                        {weather.days.slice(1, 6).map((day: any, i: number) => (
+                            <div key={i} className="fs-forecast-day">
+                                <span className="day-name">{day.dayName.slice(0, 3)}</span>
+                                <div className="day-icon"><CloudSun size={24} /></div>
+                                <div className="day-temps">
+                                    <span className="max">{Math.round(day.temperature.max)}°</span>
+                                    <span className="min">{Math.round(day.temperature.min)}°</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );

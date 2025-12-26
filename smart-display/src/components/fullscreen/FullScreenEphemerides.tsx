@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Calendar, Star, UserPlus, Skull, Globe, ScrollText } from 'lucide-react';
+import { Calendar, Star, UserPlus, Skull, Globe, ScrollText, Moon, Sunrise, Sunset } from 'lucide-react';
 import './FullScreenEphemerides.css';
 
 interface Saint {
@@ -20,14 +20,21 @@ interface ApodItem {
     title: string;
 }
 
+interface AstroData {
+    sunrise: number;
+    sunset: number;
+    moon_phase: number;
+}
+
 export const FullScreenEphemerides: React.FC = () => {
     const [date] = useState(new Date());
     const [saints, setSaints] = useState<Saint[]>([]);
     const [events, setEvents] = useState<EphemerisItem[]>([]);
     const [apod, setApod] = useState<ApodItem | null>(null);
+    const [astro, setAstro] = useState<AstroData | null>(null);
 
     // Content Rotation State
-    const [mode, setMode] = useState<'EVENT' | 'SAINT'>('EVENT');
+    const [mode, setMode] = useState<'EVENT' | 'SAINT' | 'ASTRO'>('ASTRO');
     const [eventIndex, setEventIndex] = useState(0);
     const [saintIndex, setSaintIndex] = useState(0);
 
@@ -48,12 +55,28 @@ export const FullScreenEphemerides: React.FC = () => {
         fetch('/api/ephemerides/apod').then(r => r.json()).then(d => {
             if (d.url && d.media_type === 'image') setApod(d);
         }).catch(console.error);
+
+        // Fetch Astro Data from Weather
+        fetch('/api/weather/').then(r => r.json()).then(d => {
+            if (d.daily && d.daily[0]) {
+                const today = d.daily[0];
+                setAstro({
+                    sunrise: today.sunrise,
+                    sunset: today.sunset,
+                    moon_phase: today.moon_phase
+                });
+            }
+        }).catch(console.error);
     }, []);
 
     // Rotation Logic (Switch Mode)
     useEffect(() => {
         const interval = setInterval(() => {
-            setMode(prev => prev === 'EVENT' ? 'SAINT' : 'EVENT');
+            setMode(prev => {
+                if (prev === 'ASTRO') return 'EVENT';
+                if (prev === 'EVENT') return 'SAINT';
+                return 'ASTRO';
+            });
         }, 12000); // 12s per mode
         return () => clearInterval(interval);
     }, []);
@@ -63,7 +86,7 @@ export const FullScreenEphemerides: React.FC = () => {
         const interval = setInterval(() => {
             if (mode === 'EVENT') {
                 setEventIndex(prev => (prev + 1) % (events.length || 1));
-            } else {
+            } else if (mode === 'SAINT') {
                 // Only rotate through first 3 saints (enriched)
                 setSaintIndex(prev => (prev + 1) % Math.min(saints.length || 1, 3));
             }
@@ -101,6 +124,22 @@ export const FullScreenEphemerides: React.FC = () => {
         return `San ${name}`;
     };
 
+    const getMoonPhaseName = (phase: number) => {
+        if (phase === 0 || phase === 1) return "Luna Nueva";
+        if (phase > 0 && phase < 0.25) return "Luna Creciente";
+        if (phase === 0.25) return "Cuarto Creciente";
+        if (phase > 0.25 && phase < 0.5) return "Gibosa Creciente";
+        if (phase === 0.5) return "Luna Llena";
+        if (phase > 0.5 && phase < 0.75) return "Gibosa Menguante";
+        if (phase === 0.75) return "Cuarto Menguante";
+        return "Luna Menguante";
+    };
+
+    const formatTime = (ts: number) => {
+        if (!ts) return "--:--";
+        return new Date(ts * 1000).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    };
+
     return (
         <div className="fs-ephemerides-container" style={{
             backgroundImage: apod ? `linear-gradient(rgba(0,0,0,0.85), rgba(0,0,0,0.85)), url(${apod.url})` : 'linear-gradient(to right, #1e1b4b, #312e81)'
@@ -132,6 +171,46 @@ export const FullScreenEphemerides: React.FC = () => {
             {/* Right Column: Spotlight Content */}
             <div className="fs-col-right">
 
+                {mode === 'ASTRO' && astro && (
+                    <div className="fs-event-card fade-in bg-astro-card">
+                        <div className="fs-card-header">
+                            <Moon size={48} className="text-purple-300" />
+                            <span className="fs-card-title">Astronomía</span>
+                        </div>
+
+                        <div className="fs-astro-content" style={{ display: 'flex', flexDirection: 'column', gap: '2rem', marginTop: '1rem' }}>
+                            <div className="astro-row" style={{ display: 'flex', alignItems: 'center', gap: '2rem', justifyContent: 'center' }}>
+                                <div className="astro-item text-center">
+                                    <h3 className="text-amber-300 text-xl font-bold mb-2">Salida Sol</h3>
+                                    <div className="flex items-center gap-2 text-4xl">
+                                        <Sunrise size={48} className="text-amber-500" />
+                                        <span>{formatTime(astro.sunrise)}</span>
+                                    </div>
+                                </div>
+
+                                <div className="astro-item text-center">
+                                    <h3 className="text-amber-300 text-xl font-bold mb-2">Puesta Sol</h3>
+                                    <div className="flex items-center gap-2 text-4xl">
+                                        <Sunset size={48} className="text-orange-500" />
+                                        <span>{formatTime(astro.sunset)}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="astro-row">
+                                <div className="astro-item text-center mt-8">
+                                    <h3 className="text-purple-300 text-xl font-bold mb-2">Fase Lunar</h3>
+                                    <div className="flex flex-col items-center gap-2">
+                                        {/* Simple icon logic based on phase? Use generic Moon for now */}
+                                        <Moon size={80} className="text-gray-200" fill={astro.moon_phase === 0.5 ? "white" : "none"} />
+                                        <span className="text-3xl mt-2">{getMoonPhaseName(astro.moon_phase)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {mode === 'EVENT' && currentEvent && (
                     <div className="fs-event-card fade-in">
                         <div className="fs-card-header">
@@ -150,7 +229,7 @@ export const FullScreenEphemerides: React.FC = () => {
                 )}
 
                 {/* Show Saint if Mode is SAINT OR if Events are empty. Priority to Events if available and mode is EVENT */}
-                {((mode === 'SAINT' && currentSaint) || (!currentEvent && currentSaint)) && (
+                {((mode === 'SAINT' && currentSaint) || (!currentEvent && currentSaint && mode !== 'ASTRO')) && (
                     <div className="fs-event-card fade-in bg-saint-active-card">
                         <div className="fs-card-header">
                             <Star size={48} className="text-yellow-400" />
@@ -182,8 +261,8 @@ export const FullScreenEphemerides: React.FC = () => {
                     </div>
                 )}
 
-                {!currentEvent && !currentSaint && (
-                    <div className="fs-loading">Cargando historia...</div>
+                {!currentEvent && !currentSaint && !astro && (
+                    <div className="fs-loading">Cargando datos...</div>
                 )}
             </div>
 
