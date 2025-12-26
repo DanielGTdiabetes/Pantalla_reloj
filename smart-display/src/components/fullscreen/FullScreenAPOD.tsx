@@ -44,9 +44,11 @@ export const FullScreenAPOD: React.FC = () => {
                     <span>NASA: Foto del Día</span>
                 </div>
                 <h1>{data.title}</h1>
-                <p className="fs-apod-text">
-                    {data.explanation}
-                </p>
+                <div className="fs-apod-text">
+                    <div className="fs-apod-scroll-wrapper">
+                        {data.explanation}
+                    </div>
+                </div>
             </div>
         </div>
     );

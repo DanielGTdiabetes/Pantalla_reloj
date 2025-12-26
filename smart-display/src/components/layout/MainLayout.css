@@ -18,7 +18,7 @@
 
 .settings-overlay-btn {
     position: absolute;
-    top: 1rem;
+    bottom: 1rem;
     right: 1rem;
     z-index: 9999;
     width: 48px;

@@ -138,11 +138,36 @@
 
 .fs-card-text.saint-bio {
     font-size: 1.4rem;
-    max-height: 250px;
-    overflow-y: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 7;
-    -webkit-box-orient: vertical;
+    height: 250px;
+    /* Fixed height for consistency */
+    overflow: hidden;
+    /* Hide scrollbar */
+    position: relative;
+    mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
+}
+
+.scroll-wrapper {
+    animation: autoScroll 30s linear infinite;
+    animation-delay: 3s;
+    /* Wait before scrolling */
+}
+
+@keyframes autoScroll {
+    0% {
+        transform: translateY(0);
+    }
+
+    15% {
+        transform: translateY(0);
+    }
+
+    /* Start pause */
+    100% {
+        transform: translateY(-70%);
+    }
+
+    /* Scroll down but not completely off */
 }
 
 .fs-card-image {

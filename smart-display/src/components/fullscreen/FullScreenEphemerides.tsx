@@ -82,6 +82,25 @@ export const FullScreenEphemerides: React.FC = () => {
 
     const hasBio = currentSaint && currentSaint.bio && currentSaint.bio.length > 20;
 
+    const getSaintTitle = (name: string) => {
+        // Special exclusions or known full names can be handled here if needed
+        // Heuristic: If name ends in 'a' (but not common male exceptions), generally 'Santa'.
+        // Common male exceptions ending in a:
+        const maleExceptions = ['Luca', 'Andrea', 'Bautista', 'Borja', 'Saba'];
+        // Common female exceptions not ending in a:
+        const femaleExceptions = ['Carmen', 'Paz', 'Luz', 'Merced', 'Dolores', 'Rosario', 'Virtudes', 'Nieves', 'Soledad', 'Pilar', 'Cruz', 'Fe', 'Caridad', 'Esperanza', 'Salud', 'Gracia', 'Asunción', 'Concepción', 'Inés', 'Beatriz', 'Raquel', 'Esther', 'Rut', 'Noemí', 'Iris', 'Belen'];
+
+        const firstWord = name.split(' ')[0];
+
+        // Check if explicitly male or female name known in exceptions
+        if (femaleExceptions.includes(firstWord) || femaleExceptions.some(ex => name.includes(ex))) return `Santa ${name}`;
+        if (maleExceptions.includes(firstWord)) return `San ${name}`;
+
+        // Heuristic: ends in 'a' -> Santa, else San
+        if (firstWord.endsWith('a')) return `Santa ${name}`;
+        return `San ${name}`;
+    };
+
     return (
         <div className="fs-ephemerides-container" style={{
             backgroundImage: apod ? `linear-gradient(rgba(0,0,0,0.85), rgba(0,0,0,0.85)), url(${apod.url})` : 'linear-gradient(to right, #1e1b4b, #312e81)'
@@ -103,7 +122,7 @@ export const FullScreenEphemerides: React.FC = () => {
                     <ul>
                         {saints.slice(0, 5).map((s, i) => (
                             <li key={i} className={mode === 'SAINT' && i === saintIndex ? 'active-saint-li' : ''}>
-                                {s.name}
+                                {getSaintTitle(s.name)}
                             </li>
                         ))}
                     </ul>
@@ -137,13 +156,17 @@ export const FullScreenEphemerides: React.FC = () => {
                             <Star size={48} className="text-yellow-400" />
                             <span className="fs-card-title">Santoral</span>
                         </div>
-                        <h2 className="fs-saint-title">{currentSaint.name}</h2>
+                        <h2 className="fs-saint-title">{getSaintTitle(currentSaint.name)}</h2>
 
                         {hasBio ? (
-                            <p className="fs-card-text saint-bio">{currentSaint.bio}</p>
+                            <div className="fs-card-text saint-bio">
+                                <div className="scroll-wrapper">
+                                    {currentSaint.bio}
+                                </div>
+                            </div>
                         ) : (
                             <p className="fs-card-text saint-bio" style={{ fontStyle: 'italic', opacity: 0.7 }}>
-                                Hoy celebramos la santidad de {currentSaint.name}...
+                                Hoy celebramos la santidad de {getSaintTitle(currentSaint.name)}...
                             </p>
                         )}
 

@@ -62,19 +62,35 @@
     line-height: 1.6;
     color: #e2e8f0;
     max-width: 85%;
-    /* Don't span full width to keep readable line length */
-
-    /* Line clamp if strictly no scroll wanted, but text is important */
-    /* Let's use fade mask if too long? Or just scroll */
-    overflow-y: auto;
-
-    /* Hide scrollbar */
-    scrollbar-width: none;
+    max-height: 220px;
+    /* Limit height */
+    overflow: hidden;
+    position: relative;
+    mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
 }
 
-.fs-apod-text::-webkit-scrollbar {
-    display: none;
+.fs-apod-scroll-wrapper {
+    animation: autoScroll 40s linear infinite;
+    animation-delay: 5s;
 }
+
+/* Reusing keyframes from Ephemerides globally or redefine */
+@keyframes autoScroll {
+    0% {
+        transform: translateY(0);
+    }
+
+    15% {
+        transform: translateY(0);
+    }
+
+    100% {
+        transform: translateY(-70%);
+    }
+}
+
+
 
 .video-mode {
     background: black;
