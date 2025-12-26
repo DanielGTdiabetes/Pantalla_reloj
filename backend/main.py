@@ -28,7 +28,7 @@ from backend.logging_utils import configure_logging
 
 # Routers
 # Imporing calendar here to avoid NameError
-from backend.routers import layers, weather, transport, saints, system, calendar, farming
+from backend.routers import layers, weather, transport, saints, system, calendar, farming, news
 from backend.routes import rainviewer, efemerides
 
 # Constants
@@ -102,6 +102,7 @@ app.include_router(system.router)
 
 app.include_router(calendar.router)
 app.include_router(farming.router)
+app.include_router(news.router)
 
 # --- Routes ---
 

@@ -469,6 +469,38 @@ async def parse_rss_feed(feed_url: str, max_items: int = 10, timeout: int = 10) 
             if date_tag:
                 item["published_at"] = date_tag.get_text(strip=True)
             
+            # Image extraction
+            image_url = None
+            
+            # 1. Check enclosure
+            enclosure = entry.find("enclosure")
+            if enclosure and enclosure.has_attr("url") and "image" in enclosure.get("type", ""):
+                 image_url = enclosure["url"]
+            
+            # 2. Check media:content / media:thumbnail
+            if not image_url:
+                media = entry.find(["media:content", "media:thumbnail"])
+                if media and media.has_attr("url"):
+                    image_url = media["url"]
+
+            # 3. Check image tag inside description (simple regex or parsing)
+            if not image_url and desc_tag:
+                 # Re-parse description html if needed, but desc_tag is already a tag
+                 # If it was CDATA, bs4 might have just treated it as text if not careful, 
+                 # but with "xml" parser it parses CDATA.
+                 # Actually content:encoded is common too.
+                 content_encoded = entry.find("content:encoded")
+                 content_to_check = content_encoded.string if content_encoded else desc_tag.get_text()
+                 
+                 if content_to_check:
+                     import re
+                     img_match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', content_to_check)
+                     if img_match:
+                         image_url = img_match.group(1)
+
+            if image_url:
+                item["image"] = image_url
+            
             parsed_url = urlparse(feed_url)
             item["source"] = parsed_url.netloc.replace("www.", "")
             
