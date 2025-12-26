@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 import logging
 import httpx  # CAMBIO: Usar httpx en lugar de requests
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 

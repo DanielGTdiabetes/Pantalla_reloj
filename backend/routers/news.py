@@ -20,6 +20,7 @@ DEFAULT_FEEDS = [
     "https://www.20minutos.es/rss/"
 ]
 
+@router.get("")
 @router.get("/")
 async def get_news_items() -> Dict[str, Any]:
     """

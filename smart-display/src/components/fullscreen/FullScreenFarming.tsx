@@ -24,6 +24,9 @@ const normalizeIconName = (name: string): string => {
         .replace(/ñ/g, 'n')
         .replace(/ü/g, 'u');
 
+    // Remove text in parentheses (e.g., "(semillero)")
+    normalized = normalized.replace(/\(.*\)/g, '').replace(/-+$/, '');
+
     return normalized;
 };
 
@@ -38,7 +41,7 @@ export const FullScreenFarming: React.FC = () => {
             .catch(e => console.error(e));
     }, []);
 
-    // Rotate category every 10 seconds if component stays mounted
+    // Rotate category every 12 seconds if component stays mounted
     useEffect(() => {
         const interval = setInterval(() => {
             setCategory(prev => {
@@ -46,7 +49,7 @@ export const FullScreenFarming: React.FC = () => {
                 if (prev === 'vegetables') return 'sowing';
                 return 'fruits';
             });
-        }, 12000); // 12 seconds per category
+        }, 12000);
         return () => clearInterval(interval);
     }, []);
 
@@ -88,7 +91,7 @@ export const FullScreenFarming: React.FC = () => {
                         <div key={item} className="fs-farming-item">
                             <div className="fs-farming-icon-wrapper">
                                 <img
-                                    src={`/icons/soydetemporada/${iconName}.png`}
+                                    src={`/icons/harvest/${iconName}.svg`}
                                     onError={(e) => {
                                         // Fallback if specific icon missing
                                         (e.target as HTMLImageElement).style.display = 'none';
