@@ -100,6 +100,18 @@ export const FullScreenMap: React.FC = () => {
         safeAddSource('flights', { type: 'geojson', data: '/api/layers/flights' });
 
         safeAddLayer({
+            id: 'flights-circles',
+            type: 'circle',
+            source: 'flights',
+            paint: {
+                'circle-radius': 6,
+                'circle-color': '#fbbf24',
+                'circle-stroke-width': 1,
+                'circle-stroke-color': '#000'
+            }
+        });
+
+        safeAddLayer({
             id: 'flights-layer',
             type: 'symbol',
             source: 'flights',
@@ -133,6 +145,18 @@ export const FullScreenMap: React.FC = () => {
 
         // --- Ships ---
         safeAddSource('ships', { type: 'geojson', data: '/api/layers/ships' });
+
+        safeAddLayer({
+            id: 'ships-circles',
+            type: 'circle',
+            source: 'ships',
+            paint: {
+                'circle-radius': 5,
+                'circle-color': '#0ea5e9',
+                'circle-stroke-width': 1,
+                'circle-stroke-color': '#000'
+            }
+        });
 
         safeAddLayer({
             id: 'ships-layer',
@@ -225,16 +249,35 @@ export const FullScreenMap: React.FC = () => {
     };
 
     const startDataRefresh = () => {
-        setInterval(() => {
+        const refreshInterval = setInterval(async () => {
             if (!map.current) return;
-            // Refresh GeoJSONs
-            (map.current.getSource('flights') as any)?.setData('/api/layers/flights');
-            (map.current.getSource('ships') as any)?.setData('/api/layers/ships');
-            (map.current.getSource('lightning') as any)?.setData('/api/layers/lightning');
 
-            // Refresh Radar periodically
-            updateRadarLayer();
+            try {
+                // Refresh Flights
+                const fRes = await fetch('/api/layers/flights');
+                const fData = await fRes.json();
+                console.log("Map: Flights data received", fData);
+                (map.current.getSource('flights') as any)?.setData(fData);
+
+                // Refresh Ships
+                const sRes = await fetch('/api/layers/ships');
+                const sData = await sRes.json();
+                console.log("Map: Ships data received", sData);
+                (map.current.getSource('ships') as any)?.setData(sData);
+
+                // Refresh Lightning
+                const lRes = await fetch('/api/layers/lightning');
+                const lData = await lRes.json();
+                (map.current.getSource('lightning') as any)?.setData(lData);
+
+                // Refresh Radar
+                updateRadarLayer();
+            } catch (err) {
+                console.error("Map: Refresh failed", err);
+            }
         }, 30000); // 30s refresh
+
+        return () => clearInterval(refreshInterval);
     };
 
     return (
