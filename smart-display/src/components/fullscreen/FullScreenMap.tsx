@@ -259,7 +259,7 @@ export const FullScreenMap: React.FC = () => {
     };
 
     const startDataRefresh = () => {
-        const refreshInterval = setInterval(async () => {
+        const fetchData = async () => {
             if (!map.current) return;
 
             try {
@@ -268,7 +268,10 @@ export const FullScreenMap: React.FC = () => {
                 if (fRes.ok) {
                     const fData = await fRes.json();
                     const fSource: any = map.current.getSource('flights');
-                    if (fSource) fSource.setData(fData);
+                    if (fSource) {
+                        fSource.setData(fData);
+                        console.log("Updated Flights:", fData.features?.length);
+                    }
                 }
 
                 // Refresh Ships
@@ -276,7 +279,10 @@ export const FullScreenMap: React.FC = () => {
                 if (sRes.ok) {
                     const sData = await sRes.json();
                     const sSource: any = map.current.getSource('ships');
-                    if (sSource) sSource.setData(sData);
+                    if (sSource) {
+                        sSource.setData(sData);
+                        console.log("Updated Ships:", sData.features?.length);
+                    }
                 }
 
                 // Refresh Lightning
@@ -287,12 +293,18 @@ export const FullScreenMap: React.FC = () => {
                     if (lSource) lSource.setData(lData);
                 }
 
-                // Refresh Radar
-                // updateRadarLayer(); // Optional, heavier
+                // Refresh Radar (every cycle)
+                updateRadarLayer();
             } catch (err) {
                 console.error("Map: Refresh failed", err);
             }
-        }, 30000); // 30s refresh
+        };
+
+        // Initial fetch immediately
+        fetchData();
+
+        // Schedule periodic refresh
+        const refreshInterval = setInterval(fetchData, 30000);
 
         return () => clearInterval(refreshInterval);
     };
