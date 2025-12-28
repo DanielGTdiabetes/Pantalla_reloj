@@ -26,6 +26,7 @@ ExecStart=/usr/local/bin/pantalla-kiosk
 Restart=on-failure
 RestartSec=10
 KillMode=mixed
+TimeoutStartSec=180
 TimeoutStopSec=10
 StandardOutput=journal
 StandardError=journal

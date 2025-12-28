@@ -11,6 +11,11 @@ BACKEND_HEALTH_URL="http://127.0.0.1:8081/api/health"
 
 log "Iniciando prestart para DISPLAY=${DISPLAY} XAUTHORITY=${XAUTHORITY}"
 
+# Disable Energy Saving / Screen Blanking IMMEDIATELY
+xset -dpms >/dev/null 2>&1 || true
+xset s off >/dev/null 2>&1 || true
+xset s noblank >/dev/null 2>&1 || true
+
 if [[ -z "$XAUTHORITY" ]]; then
   log "WARN: XAUTHORITY no está definido"
 fi
@@ -45,9 +50,10 @@ if [[ "$display_ready" -ne 1 ]]; then
   log "WARN: Display no respondió tras 60s"
 fi
 
+# Wait for backend (up to 120s)
 log "Esperando backend ${BACKEND_HEALTH_URL}" 
 backend_ready=0
-for i in $(seq 1 60); do
+for i in $(seq 1 120); do
   if curl -sf --max-time 2 "$BACKEND_HEALTH_URL" >/dev/null 2>&1; then
     log "Backend disponible tras ${i}s"
     backend_ready=1
@@ -55,13 +61,16 @@ for i in $(seq 1 60); do
   fi
   sleep 1
 done
+
 if [[ "$backend_ready" -ne 1 ]]; then
-  log "WARN: Backend no respondió tras 60s"
+  log "ERROR: Backend no respondió tras 120s. Abortando inicio de Kiosk."
+  exit 1
 fi
 
+# Re-apply screen settings just in case
 xset -dpms >/dev/null 2>&1 || true
 xset s off >/dev/null 2>&1 || true
 xset s noblank >/dev/null 2>&1 || true
 
-log "Prestart finalizado"
+log "Prestart finalizado correctamente"
 exit 0
