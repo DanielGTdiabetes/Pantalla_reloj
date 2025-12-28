@@ -261,11 +261,20 @@ export const FullScreenMap: React.FC = () => {
         }
     };
 
+    const [debugInfo, setDebugInfo] = React.useState<{ flightCount: number, shipCount: number, lastUpdate: string }>({
+        flightCount: 0,
+        shipCount: 0,
+        lastUpdate: '-'
+    });
+
     const startDataRefresh = () => {
         const fetchData = async () => {
             if (!map.current) return;
 
             try {
+                let flights = 0;
+                let ships = 0;
+
                 // Refresh Flights
                 const fRes = await fetch('/api/layers/flights');
                 if (fRes.ok) {
@@ -273,9 +282,8 @@ export const FullScreenMap: React.FC = () => {
                     const fSource: any = map.current.getSource('flights');
                     if (fSource) {
                         fSource.setData(fData);
-                        console.log("Updated Flights:", fData.features?.length);
-                    } else {
-                        console.warn("Flights source not found during refresh");
+                        flights = fData.features?.length || 0;
+                        console.log("Updated Flights:", flights);
                     }
                 }
 
@@ -286,7 +294,8 @@ export const FullScreenMap: React.FC = () => {
                     const sSource: any = map.current.getSource('ships');
                     if (sSource) {
                         sSource.setData(sData);
-                        console.log("Updated Ships:", sData.features?.length);
+                        ships = sData.features?.length || 0;
+                        console.log("Updated Ships:", ships);
                     }
                 }
 
@@ -297,6 +306,13 @@ export const FullScreenMap: React.FC = () => {
                     const lSource: any = map.current.getSource('lightning');
                     if (lSource) lSource.setData(lData);
                 }
+
+                // Update debug info
+                setDebugInfo({
+                    flightCount: flights,
+                    shipCount: ships,
+                    lastUpdate: new Date().toLocaleTimeString()
+                });
 
                 // Refresh Radar (every cycle)
                 updateRadarLayer();
@@ -317,7 +333,22 @@ export const FullScreenMap: React.FC = () => {
     return (
         <div className="fs-map-wrapper">
             <div ref={mapContainer} className="fs-map-container" />
-
+            <div className="fs-map-debug" style={{
+                position: 'absolute',
+                top: '10px',
+                left: '10px',
+                background: 'rgba(0,0,0,0.6)',
+                color: 'white',
+                padding: '10px',
+                borderRadius: '5px',
+                fontSize: '12px',
+                fontFamily: 'monospace',
+                pointerEvents: 'none'
+            }}>
+                <div>Flights: {debugInfo.flightCount}</div>
+                <div>Ships: {debugInfo.shipCount}</div>
+                <div>Updated: {debugInfo.lastUpdate}</div>
+            </div>
         </div>
     );
 };
