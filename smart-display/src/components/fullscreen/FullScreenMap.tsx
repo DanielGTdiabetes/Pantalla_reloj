@@ -293,26 +293,37 @@ export const FullScreenMap: React.FC = () => {
 
                 // Refresh Flights
                 try {
-                    const fRes = await fetch('/api/layers/flights');
+                    const fRes = await fetch(`/api/layers/flights?_t=${Date.now()}`);
+                    statusMsg = `F:${fRes.status}`;
                     if (fRes.ok) {
-                        const fData = await fRes.json();
-                        if (ensureSource('flights')) {
-                            const fSource: any = m.getSource('flights');
-                            fSource.setData(fData);
-                            flights = fData.features?.length || 0;
-                            // console.log("Updated Flights:", flights);
+                        const fText = await fRes.text(); // Read as text first for debugging
+                        console.log("Flights Raw Response:", fText.substring(0, 200));
+
+                        try {
+                            const fData = JSON.parse(fText);
+                            if (ensureSource('flights')) {
+                                const fSource: any = m.getSource('flights');
+                                fSource.setData(fData);
+                                flights = fData.features?.length || 0;
+                                statusMsg += ` C:${flights}`;
+                                // Dump first feature for debug
+                                if (flights > 0) {
+                                    console.log("First Flight Feature:", fData.features[0]);
+                                }
+                            }
+                        } catch (parseErr) {
+                            console.error("JSON Parse Error:", parseErr);
+                            statusMsg += " ParseErr";
                         }
-                    } else {
-                        statusMsg = `Flights HTTP ${fRes.status}`;
                     }
                 } catch (e) {
                     console.error("Flights fetch error:", e);
-                    statusMsg = "Flights Fetch Error";
+                    statusMsg = "FetchErr";
                 }
 
                 // Refresh Ships
                 try {
-                    const sRes = await fetch('/api/layers/ships');
+                    const sRes = await fetch(`/api/layers/ships?_t=${Date.now()}`);
                     if (sRes.ok) {
                         const sData = await sRes.json();
                         if (ensureSource('ships')) {
@@ -328,7 +339,7 @@ export const FullScreenMap: React.FC = () => {
 
                 // Refresh Lightning
                 try {
-                    const lRes = await fetch('/api/layers/lightning');
+                    const lRes = await fetch(`/api/layers/lightning?_t=${Date.now()}`);
                     if (lRes.ok) {
                         const lData = await lRes.json();
                         if (ensureSource('lightning')) {
