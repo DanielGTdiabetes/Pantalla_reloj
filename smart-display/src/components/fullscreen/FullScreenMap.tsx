@@ -41,8 +41,8 @@ export const FullScreenMap: React.FC = () => {
         // Add controls
         map.current.addControl(new maplibregl.NavigationControl(), 'bottom-right');
 
-        map.current.on('load', () => {
-            addSourcesAndLayers();
+        map.current.on('load', async () => {
+            await addSourcesAndLayers();
             startDataRefresh();
         });
 
@@ -68,6 +68,7 @@ export const FullScreenMap: React.FC = () => {
                     }
                     if (image && !m.hasImage(id)) {
                         m.addImage(id, image);
+                        console.log(`Icon loaded: ${id}`);
                     }
                     resolve();
                 });
@@ -106,8 +107,10 @@ export const FullScreenMap: React.FC = () => {
             }
         };
 
+        const emptyGeoJson = { type: 'FeatureCollection', features: [] };
+
         // --- Flights ---
-        safeAddSource('flights', { type: 'geojson', data: '/api/layers/flights' });
+        safeAddSource('flights', { type: 'geojson', data: emptyGeoJson });
 
         safeAddLayer({
             id: 'flights-circles',
@@ -154,7 +157,7 @@ export const FullScreenMap: React.FC = () => {
         });
 
         // --- Ships ---
-        safeAddSource('ships', { type: 'geojson', data: '/api/layers/ships' });
+        safeAddSource('ships', { type: 'geojson', data: emptyGeoJson });
 
         safeAddLayer({
             id: 'ships-circles',
@@ -182,7 +185,7 @@ export const FullScreenMap: React.FC = () => {
         });
 
         // --- Lightning ---
-        safeAddSource('lightning', { type: 'geojson', data: '/api/layers/lightning' });
+        safeAddSource('lightning', { type: 'geojson', data: emptyGeoJson });
 
         safeAddLayer({
             id: 'lightning-heat',
@@ -271,6 +274,8 @@ export const FullScreenMap: React.FC = () => {
                     if (fSource) {
                         fSource.setData(fData);
                         console.log("Updated Flights:", fData.features?.length);
+                    } else {
+                        console.warn("Flights source not found during refresh");
                     }
                 }
 
