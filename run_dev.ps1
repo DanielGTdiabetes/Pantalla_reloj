@@ -14,10 +14,10 @@ $BackendCmd = "/k set PANTALLA_CONFIG=$ConfigPath && set PANTALLA_SECRETS_FILE=$
 Start-Process -FilePath "cmd" -ArgumentList $BackendCmd -WorkingDirectory "$PSScriptRoot"
 
 # Iniciar Frontend
-Write-Host "Iniciando Frontend (Vite)..."
-Start-Process -FilePath "cmd" -ArgumentList "/k cd dash-ui && npm run dev" -WorkingDirectory "$PSScriptRoot"
+Write-Host "Iniciando Frontend (Vite) - Smart Display..."
+Start-Process -FilePath "cmd" -ArgumentList "/k cd smart-display && npm run dev" -WorkingDirectory "$PSScriptRoot"
 
 Write-Host "Servicios iniciados."
 Write-Host "Backend: http://localhost:8081"
-Write-Host "Frontend: http://localhost:5173"
+Write-Host "Frontend: http://localhost:5174"
 Write-Host "Logs de Backend: $LogPath"
