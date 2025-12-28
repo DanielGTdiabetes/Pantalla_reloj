@@ -1,0 +1,156 @@
+.infotainment-widget {
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 1rem;
+    width: 320px;
+    height: 220px;
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.info-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.info-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 0.5rem;
+}
+
+/* SAINT MODE */
+.saint-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    height: 100%;
+}
+
+.saint-img {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--accent-primary);
+}
+
+.saint-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    text-align: center;
+    color: white;
+}
+
+/* EPHEMERIS MODE */
+.ephemeris-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.ephemeris-year {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--accent-primary);
+}
+
+.ephemeris-text {
+    font-size: 0.9rem;
+    line-height: 1.3;
+    color: var(--text-secondary);
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* APOD MODE */
+.apod-mode {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 1rem;
+    background-size: cover;
+    background-position: center;
+}
+
+.apod-body {
+    display: flex;
+    align-items: flex-end;
+    height: 100%;
+}
+
+.apod-title {
+    font-weight: 600;
+    font-size: 1rem;
+    color: white;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+/* SEASON MODE */
+.season-body {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    height: 100%;
+    overflow-y: auto;
+    scrollbar-width: none;
+}
+
+.season-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    justify-content: center;
+    align-content: start;
+}
+
+.season-tag {
+    background: rgba(34, 197, 94, 0.1);
+    color: #4ade80;
+    padding: 0.2rem 0.6rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+/* Progress */
+.info-progress-bar {
+    display: flex;
+    gap: 4px;
+    justify-content: center;
+    margin-top: auto;
+    padding-top: 8px;
+}
+
+.progress-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    transition: background 0.3s;
+}
+
+.progress-dot.active {
+    background: var(--accent-primary);
+}

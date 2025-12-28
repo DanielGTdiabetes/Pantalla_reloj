@@ -1,0 +1,42 @@
+.fs-map-wrapper {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    background: #0f172a;
+}
+
+.fs-map-container {
+    width: 100%;
+    height: 100%;
+}
+
+.fs-map-legend {
+    position: absolute;
+    bottom: 2rem;
+    left: 2rem;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(8px);
+    padding: 1rem;
+    border-radius: 12px;
+    display: flex;
+    gap: 1.5rem;
+    color: white;
+    font-size: 0.9rem;
+    pointer-events: none;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Controls styling */
+.maplibregl-ctrl-group {
+    background: rgba(0, 0, 0, 0.8) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.maplibregl-ctrl-group button {
+    filter: invert(1);
+}

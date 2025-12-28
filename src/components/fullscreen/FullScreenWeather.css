@@ -1,0 +1,94 @@
+.fs-weather-container {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(to bottom, #38bdf8, #0ea5e9);
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding: 3rem;
+    color: white;
+}
+
+.fs-weather-main {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.fs-temp-group {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.fs-weather-icon-3d {
+    width: 140px;
+    height: 140px;
+    object-fit: contain;
+    filter: drop-shadow(0 10px 15px rgba(0, 0, 0, 0.3));
+    animation: float 6s ease-in-out infinite;
+}
+
+@keyframes float {
+
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-10px);
+    }
+}
+
+.fs-condition {
+    font-size: 2.5rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.fs-temp-val {
+    font-size: 10rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.fs-condition-small {
+    margin: 0;
+    opacity: 0.9;
+}
+
+.fs-weather-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3rem;
+}
+
+.fs-weather-item {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 1.5rem;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.fs-val {
+    font-size: 2.5rem;
+    font-weight: 700;
+}
+
+.fs-unit {
+    font-size: 1.2rem;
+    opacity: 0.7;
+}
+
+.fs-label {
+    text-transform: uppercase;
+    font-size: 0.9rem;
+    letter-spacing: 0.1em;
+    opacity: 0.8;
+}
