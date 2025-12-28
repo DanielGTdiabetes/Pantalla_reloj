@@ -291,11 +291,11 @@ export const FullScreenMap: React.FC = () => {
                     return true;
                 };
 
-                // Refresh Flights (DIRECT PORT 8081 BYPASS)
+                // Refresh Flights
                 try {
-                    // Try direct backend access to bypass nginx potential buffering/gzip issues
-                    const directUrl = `http://127.0.0.1:8081/api/layers/flights?_t=${Date.now()}`;
-                    const fRes = await fetch(directUrl, { mode: 'cors' });
+                    const fRes = await fetch(`/api/layers/flights?_t=${Date.now()}`, {
+                        headers: { 'Accept': 'application/json' }
+                    });
 
                     statusMsg = `F:${fRes.status}`;
                     if (fRes.ok) {
