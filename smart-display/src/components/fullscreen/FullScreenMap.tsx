@@ -4,6 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import './FullScreenMap.css';
 
 export const FullScreenMap: React.FC = () => {
+    console.log("FullScreenMap Version: 2.0.debug");
     const mapContainer = useRef<HTMLDivElement>(null);
     const map = useRef<maplibregl.Map | null>(null);
 
@@ -379,7 +380,7 @@ export const FullScreenMap: React.FC = () => {
                 position: 'absolute',
                 top: '10px',
                 left: '10px',
-                background: 'rgba(0,0,0,0.6)',
+                background: 'red',
                 color: 'white',
                 padding: '10px',
                 borderRadius: '5px',
