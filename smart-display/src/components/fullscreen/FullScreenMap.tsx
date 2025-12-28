@@ -291,25 +291,21 @@ export const FullScreenMap: React.FC = () => {
                     return true;
                 };
 
-                // Refresh Flights
+                // Refresh Flights (DIRECT PORT 8081 BYPASS)
                 try {
-                    const fRes = await fetch(`/api/layers/flights?_t=${Date.now()}`);
+                    // Try direct backend access to bypass nginx potential buffering/gzip issues
+                    const directUrl = `http://127.0.0.1:8081/api/layers/flights?_t=${Date.now()}`;
+                    const fRes = await fetch(directUrl, { mode: 'cors' });
+
                     statusMsg = `F:${fRes.status}`;
                     if (fRes.ok) {
-                        const fText = await fRes.text(); // Read as text first for debugging
-                        console.log("Flights Raw Response:", fText.substring(0, 200));
-
                         try {
-                            const fData = JSON.parse(fText);
+                            const fData = await fRes.json();
                             if (ensureSource('flights')) {
                                 const fSource: any = m.getSource('flights');
                                 fSource.setData(fData);
                                 flights = fData.features?.length || 0;
                                 statusMsg += ` C:${flights}`;
-                                // Dump first feature for debug
-                                if (flights > 0) {
-                                    console.log("First Flight Feature:", fData.features[0]);
-                                }
                             }
                         } catch (parseErr) {
                             console.error("JSON Parse Error:", parseErr);
@@ -320,6 +316,7 @@ export const FullScreenMap: React.FC = () => {
                     console.error("Flights fetch error:", e);
                     statusMsg = "FetchErr";
                 }
+
 
                 // Refresh Ships
                 try {
