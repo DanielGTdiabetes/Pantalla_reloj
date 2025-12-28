@@ -1,162 +1,334 @@
 {
-    "version": 2,
-    "display": {
-        "timezone": "Europe/Madrid",
-        "module_cycle_seconds": 20
+  "version": 2,
+  "display": {
+    "timezone": "Europe/Madrid",
+    "module_cycle_seconds": 20
+  },
+  "ui_map": {
+    "engine": "maplibre",
+    "provider": "maptiler_vector",
+    "renderWorldCopies": true,
+    "interactive": false,
+    "controls": false,
+    "local": {
+      "tileUrl": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      "minzoom": 0,
+      "maxzoom": 19
     },
-    "ui_map": {
-        "engine": "maplibre",
-        "provider": "local_raster_xyz",
-        "renderWorldCopies": true,
-        "interactive": false,
-        "controls": false,
-        "local": {
-            "tileUrl": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-            "minzoom": 0,
-            "maxzoom": 19
-        },
-        "viewMode": "fixed",
-        "fixed": {
-            "center": {
-                "lat": 39.9378,
-                "lon": -0.1014
-            },
-            "zoom": 7.0,
-            "bearing": 0,
-            "pitch": 0
-        },
-        "region": {
-            "postalCode": "12540"
-        }
+    "maptiler": {
+      "style": "streets-v4",
+      "api_key": "TU_API_KEY_AQUI",
+      "styleUrl": "https://api.maptiler.com/maps/streets-v4/style.json?key=TU_API_KEY_AQUI"
     },
-    "ui_global": {
-        "weather_layers": {
-            "radar": {
-                "enabled": true,
-                "provider": "rainviewer",
-                "opacity": 0.7
-            },
-            "satellite": {
-                "enabled": false,
-                "provider": "gibs",
-                "opacity": 1.0
-            },
-            "alerts": {
-                "enabled": true,
-                "provider": "cap_aemet",
-                "opacity": 0.6
-            }
-        },
-        "overlay": {
-            "rotator": {
-                "enabled": true,
-                "order": [
-                    "clock",
-                    "santoral"
-                ],
-                "durations_sec": {
-                    "clock": 10,
-                    "santoral": 10
-                },
-                "transition_ms": 400,
-                "pause_on_alert": false
-            }
-        }
+    "customXyz": {
+      "minzoom": 0,
+      "maxzoom": 19
     },
-    "layers": {
-        "flights": {
-            "enabled": true,
-            "provider": "opensky",
-            "refresh_seconds": 12,
-            "max_age_seconds": 120,
-            "max_items_global": 2000,
-            "max_items_view": 1500,
-            "rate_limit_per_min": 0,
-            "decimate": "none",
-            "grid_px": 24,
-            "styleScale": 3.2,
-            "render_mode": "symbol_custom",
-            "circle": {
-                "radius_base": 7.5,
-                "radius_zoom_scale": 1.7,
-                "opacity": 1.0,
-                "color": "#FFD400",
-                "stroke_color": "#000000",
-                "stroke_width": 2.0
-            },
-            "symbol": {
-                "size_vh": 2.0,
-                "allow_overlap": true
-            }
-        },
-        "ships": {
-            "enabled": true,
-            "provider": "aisstream",
-            "refresh_seconds": 10,
-            "max_age_seconds": 180,
-            "max_items_global": 1500,
-            "max_items_view": 420,
-            "rate_limit_per_min": 0,
-            "decimate": "grid",
-            "grid_px": 24,
-            "styleScale": 1.4,
-            "aisstream": {
-                "bbox": {
-                    "lamin": 36.0,
-                    "lamax": 44.0,
-                    "lomin": -10.0,
-                    "lomax": 5.0
-                }
-            }
-        },
-        "lightning": {
-            "enabled": true,
-            "mqtt_host": "127.0.0.1",
-            "mqtt_port": 1883,
-            "mqtt_topic": "blitzortung/1",
-            "retention_minutes": 30,
-            "max_points": 1500
-        }
-    },
-    "blitzortung": {
+    "satellite": {
+      "enabled": false,
+      "opacity": 1.0,
+      "style_url": "https://api.maptiler.com/maps/satellite/style.json",
+      "labels_overlay": {
         "enabled": true,
-        "mqtt_host": "127.0.0.1",
-        "mqtt_port": 1883,
-        "mqtt_topic": "blitzortung/1",
-        "retention_minutes": 30,
-        "max_points": 1500
+        "style_url": "https://api.maptiler.com/maps/streets-v4/style.json",
+        "layer_filter": "[\"==\", [\"get\", \"layer\"], \"poi_label\"]",
+        "opacity": 1.0
+      },
+      "labels_style_url": "https://api.maptiler.com/maps/streets-v4/style.json"
     },
-    "panels": {
-        "weatherWeekly": {
-            "enabled": true
-        },
-        "weather": {
-            "enabled": true,
-            "latitude": 39.9378,
-            "longitude": -0.1014
-        },
-        "ephemerides": {
-            "enabled": true
-        },
-        "news": {
-            "enabled": true,
-            "feeds": []
-        },
-        "calendar": {
-            "enabled": true
-        }
+    "viewMode": "fixed",
+    "fixed": {
+      "center": {
+        "lat": 40.0,
+        "lon": -3.5
+      },
+      "zoom": 5.0,
+      "bearing": 0.0,
+      "pitch": 0.0
     },
-    "opensky": {
-        "enabled": true,
-        "mode": "basic",
-        "poll_seconds": 10,
-        "max_aircraft": 400,
-        "cluster": true,
-        "bbox": {
-            "lamin": 36.0,
-            "lamax": 44.0,
-            "lomin": -10.0,
-            "lomax": 5.0
-        }
+    "region": {
+      "postalCode": "12540"
     }
+  },
+  "ui_global": {
+    "satellite": {
+      "enabled": false,
+      "provider": "gibs",
+      "opacity": 1.0,
+      "layer": "MODIS_Terra_CorrectedReflectance_TrueColor",
+      "tile_matrix_set": "GoogleMapsCompatible_Level9",
+      "min_zoom": 1,
+      "max_zoom": 6,
+      "default_zoom": 2,
+      "history_minutes": 90,
+      "frame_step": 10,
+      "gibs": {
+        "epsg": "epsg3857",
+        "tile_matrix_set": "GoogleMapsCompatible_Level9",
+        "layer": "MODIS_Terra_CorrectedReflectance_TrueColor",
+        "format_ext": "jpg",
+        "time_mode": "default",
+        "time_value": "default"
+      }
+    },
+    "radar": {
+      "enabled": false,
+      "provider": "maptiler_weather",
+      "opacity": 0.7,
+      "layer_type": "precipitation"
+    },
+    "overlay": {
+      "rotator": {
+        "enabled": true,
+        "order": [
+          "clock",
+          "santoral"
+        ],
+        "durations_sec": {
+          "clock": 10,
+          "weather": 12,
+          "astronomy": 10,
+          "moon": 10,
+          "santoral": 10,
+          "calendar": 12,
+          "news": 12
+        },
+        "transition_ms": 400,
+        "pause_on_alert": false
+      }
+    },
+    "weather_layers": {
+      "radar": {
+        "enabled": true,
+        "provider": "maptiler_weather",
+        "opacity": 0.7
+      },
+      "satellite": {
+        "enabled": false,
+        "provider": "gibs",
+        "opacity": 0.8
+      },
+      "alerts": {
+        "enabled": true,
+        "provider": "cap_aemet",
+        "opacity": 0.6
+      }
+    }
+  },
+  "panels": {
+    "weatherWeekly": {
+      "enabled": true,
+      "provider": "meteoblue"
+    },
+    "ephemerides": {
+      "enabled": true
+    },
+    "news": {
+      "enabled": true,
+      "feeds": [],
+      "max_items_per_feed": 10,
+      "refresh_minutes": 30
+    },
+    "calendar": {
+      "enabled": true,
+      "provider": "ics",
+      "days_ahead": 14
+    },
+    "historicalEvents": {
+      "enabled": true,
+      "provider": "wikimedia",
+      "wikimedia": {
+        "language": "es",
+        "event_type": "all",
+        "api_user_agent": "PantallaReloj/1.0 (https://github.com/DanielGTdiabetes/Pantalla_reloj; contact@example.com)",
+        "max_items": 10,
+        "timeout_seconds": 10
+      },
+      "rotation_seconds": 6,
+      "max_items": 6,
+      "lang": "es",
+      "cache_hours": 24
+    }
+  },
+  "layers": {
+    "flights": {
+      "enabled": true,
+      "provider": "opensky",
+      "refresh_seconds": 12,
+      "max_age_seconds": 120,
+      "max_items_global": 2000,
+      "max_items_view": 1500,
+      "rate_limit_per_min": 6,
+      "decimate": "none",
+      "grid_px": 24,
+      "styleScale": 3.2,
+      "render_mode": "symbol_custom",
+      "circle": {
+        "radius_base": 7.5,
+        "radius_zoom_scale": 1.7,
+        "opacity": 1.0,
+        "color": "#FFD400",
+        "stroke_color": "#000000",
+        "stroke_width": 2.0
+      },
+      "symbol": {
+        "size_vh": 2.0,
+        "allow_overlap": true
+      },
+      "opensky": {
+        "mode": "oauth2",
+        "bbox": {
+          "lamin": 36.0,
+          "lamax": 44.0,
+          "lomin": -10.0,
+          "lomax": 5.0
+        },
+        "extended": 0
+      },
+      "aviationstack": {
+        "base_url": "http://api.aviationstack.com/v1"
+      },
+      "custom": {}
+    },
+    "ships": {
+      "enabled": true,
+      "provider": "aisstream",
+      "refresh_seconds": 10,
+      "max_age_seconds": 180,
+      "max_items_global": 1500,
+      "max_items_view": 420,
+      "rate_limit_per_min": 4,
+      "decimate": "grid",
+      "grid_px": 24,
+      "styleScale": 1.4,
+      "aisstream": {
+        "ws_url": "wss://stream.aisstream.io/v0/stream",
+        "api_key": "38dd87bbfef35a1f4dc6133293bed27f0e2c9ff7",
+        "bbox": {
+          "lamin": 36.0,
+          "lamax": 44.0,
+          "lomin": -10.0,
+          "lomax": 5.0
+        }
+      },
+      "aishub": {
+        "base_url": "https://www.aishub.net/api"
+      },
+      "ais_generic": {},
+      "custom": {}
+    },
+    "global_": {
+      "satellite": {
+        "enabled": true,
+        "provider": "gibs",
+        "refresh_minutes": 10,
+        "history_minutes": 90,
+        "frame_step": 10,
+        "layer": "MODIS_Terra_CorrectedReflectance_TrueColor",
+        "tile_matrix_set": "GoogleMapsCompatible_Level9",
+        "min_zoom": 1,
+        "max_zoom": 6,
+        "default_zoom": 2,
+        "gibs": {
+          "epsg": "epsg3857",
+          "tile_matrix_set": "GoogleMapsCompatible_Level9",
+          "layer": "MODIS_Terra_CorrectedReflectance_TrueColor",
+          "format_ext": "jpg",
+          "time_mode": "default",
+          "time_value": "default"
+        }
+      },
+      "radar": {
+        "enabled": false,
+        "provider": "maptiler_weather",
+        "opacity": 0.7,
+        "layer_type": "precipitation",
+        "refresh_minutes": 5,
+        "history_minutes": 90,
+        "frame_step": 5
+      }
+    }
+  },
+  "storm": {
+    "enabled": false,
+    "center_lat": 40.0,
+    "center_lng": -3.5,
+    "zoom": 3.6
+  },
+  "blitzortung": {
+    "enabled": true,
+    "mqtt_host": "127.0.0.1",
+    "mqtt_port": 1883,
+    "mqtt_topic": "blitzortung/1",
+    "retention_minutes": 30,
+    "max_points": 1500
+  },
+  "news": {
+    "rss_feeds": []
+  },
+  "ephemerides": {
+    "enabled": true,
+    "latitude": 39.9378,
+    "longitude": -0.1014,
+    "timezone": "Europe/Madrid"
+  },
+  "calendar": {
+    "enabled": true,
+    "source": "ics",
+    "days_ahead": 14,
+    "provider": "ics"
+  },
+  "location": {
+    "name": "Vila-real",
+    "lat": 39.9378,
+    "lon": -0.1014
+  },
+  "weather": {
+    "enabled": true,
+    "provider": "openweathermap"
+  },
+  "harvest": {
+    "enabled": true,
+    "custom_items": []
+  },
+  "saints": {
+    "enabled": true,
+    "include_namedays": true,
+    "locale": "es"
+  },
+  "opensky": {
+    "enabled": true,
+    "mode": "oauth2",
+    "bbox": {
+      "lamin": 36.0,
+      "lamax": 44.0,
+      "lomin": -10.0,
+      "lomax": 5.0
+    },
+    "poll_seconds": 10,
+    "oauth2": {
+      "token_url": "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
+    }
+  },
+  "ais": {
+    "enabled": false,
+    "provider": "aisstream",
+    "ws_url": "wss://stream.aisstream.io/v0/stream"
+  },
+  "secrets": {
+    "maptiler": {},
+    "opensky": {
+      "oauth2": {
+        "token_url": "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
+      },
+      "basic": {}
+    },
+    "google": {},
+    "calendar_ics": {
+      "url": "https://calendar.google.com/calendar/ical/intekbackup%40gmail.com/private-e2a883152016784ec606c7b0092b3fea/basic.ics"
+    },
+    "aviationstack": {},
+    "aisstream": {},
+    "aishub": {}
+  }
 }

@@ -176,9 +176,9 @@ export default class AircraftLayer implements Layer {
 
   private async fetchFlights(): Promise<void> {
     try {
+
       // Use the correct endpoint that returns JSON items, not GeoJSON
       const response = await fetch("/api/layers/flights");
-      if (!response.ok) return;
 
       const remaining = response.headers.get("X-OpenSky-Remaining");
       const mode = response.headers.get("X-OpenSky-Mode");

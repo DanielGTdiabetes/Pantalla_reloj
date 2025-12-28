@@ -3,14 +3,16 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './FullScreenMap.css';
 
-export const FullScreenMap: React.FC = () => {
-    console.log("FullScreenMap Version: 2.0.debug");
+export const FullScreenMap: React.FC = React.memo(() => {
+
     const mapContainer = useRef<HTMLDivElement>(null);
     const map = useRef<maplibregl.Map | null>(null);
+    const mapLoaded = useRef(false); // To track if the 'load' event has fired
 
     useEffect(() => {
         if (map.current) return;
         if (!mapContainer.current) return;
+
 
         // Use standard OSM raster tiles for guaranteed availability without API keys
         map.current = new maplibregl.Map({
@@ -42,10 +44,35 @@ export const FullScreenMap: React.FC = () => {
         // Add controls
         map.current.addControl(new maplibregl.NavigationControl(), 'bottom-right');
 
-        map.current.on('load', async () => {
-            await addSourcesAndLayers();
-            startDataRefresh();
-        });
+        const handleMapLoad = async () => {
+            if (mapLoaded.current) return; // Prevent double execution if timeout also triggers
+            mapLoaded.current = true;
+            try {
+                await addSourcesAndLayers();
+                startDataRefresh();
+            } catch (error) {
+                console.error("FullScreenMap: Error during map load and initialization:", error);
+            }
+        };
+
+        map.current.on('load', handleMapLoad);
+
+        // Fallback: If 'load' event doesn't fire within 3 seconds, try to initialize anyway
+        const loadTimeout = setTimeout(() => {
+            if (!mapLoaded.current) {
+                console.warn("FullScreenMap: Map 'load' event did not fire within 3 seconds. Attempting to initialize layers and data refresh as fallback.");
+                handleMapLoad(); // Call the same handler
+            }
+        }, 3000); // 3 seconds
+
+        return () => {
+            clearTimeout(loadTimeout);
+            if (map.current) {
+                map.current.off('load', handleMapLoad);
+                map.current.remove();
+                map.current = null;
+            }
+        };
 
     }, []);
 
@@ -56,22 +83,37 @@ export const FullScreenMap: React.FC = () => {
         // Load Icons - Non-blocking where possible, but we need them for layers
         const loadImgPromise = (id: string, url: string) => {
             return new Promise<void>((resolve) => {
+                let responded = false;
+                const done = () => {
+                    if (!responded) {
+                        responded = true;
+                        resolve();
+                    }
+                };
+
+                // Timeout after 2 seconds
+                setTimeout(() => {
+                    if (!responded) {
+                        console.warn(`Icon load timeout for ${id}`);
+                        done();
+                    }
+                }, 2000);
+
                 if (m.hasImage(id)) {
-                    resolve();
+                    done();
                     return;
                 }
                 (m as any).loadImage(url, (error: any, image: any) => {
                     if (error) {
                         console.error(`Error loading icon ${id} at ${url}:`, error);
-                        // Resolve anyway to avoid blocking
-                        resolve();
+                        done();
                         return;
                     }
                     if (image && !m.hasImage(id)) {
                         m.addImage(id, image);
                         console.log(`Icon loaded: ${id}`);
                     }
-                    resolve();
+                    done();
                 });
             });
         };
@@ -294,10 +336,7 @@ export const FullScreenMap: React.FC = () => {
 
                 // Refresh Flights
                 try {
-                    const fRes = await fetch(`/api/layers/flights?_t=${Date.now()}`, {
-                        headers: { 'Accept': 'application/json' }
-                    });
-
+                    const fRes = await fetch(`/api/layers/flights?_t=${Date.now()}`);
                     statusMsg = `F:${fRes.status}`;
                     if (fRes.ok) {
                         try {
@@ -312,6 +351,8 @@ export const FullScreenMap: React.FC = () => {
                             console.error("JSON Parse Error:", parseErr);
                             statusMsg += " ParseErr";
                         }
+                    } else {
+                        console.warn(`Flights: Fetch failed with status ${fRes.status}`);
                     }
                 } catch (e) {
                     console.error("Flights fetch error:", e);
@@ -328,8 +369,9 @@ export const FullScreenMap: React.FC = () => {
                             const sSource: any = m.getSource('ships');
                             sSource.setData(sData);
                             ships = sData.features?.length || 0;
-                            // console.log("Updated Ships:", ships);
                         }
+                    } else {
+                        console.warn(`Ships: Fetch failed with status ${sRes.status}`);
                     }
                 } catch (e) {
                     console.error("Ships fetch error:", e);
@@ -344,6 +386,8 @@ export const FullScreenMap: React.FC = () => {
                             const lSource: any = m.getSource('lightning');
                             lSource.setData(lData);
                         }
+                    } else {
+                        console.warn(`Lightning: Fetch failed with status ${lRes.status}`);
                     }
                 } catch (e) {
                     console.error("Lightning fetch error:", e);
@@ -394,4 +438,4 @@ export const FullScreenMap: React.FC = () => {
             </div>
         </div>
     );
-};
+});
