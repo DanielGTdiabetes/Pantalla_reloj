@@ -270,54 +270,88 @@ export const FullScreenMap: React.FC = () => {
     const startDataRefresh = () => {
         const fetchData = async () => {
             if (!map.current) return;
+            const m = map.current; // Stable reference
 
             try {
                 let flights = 0;
                 let ships = 0;
+                let statusMsg = 'OK';
+
+                // Helper to ensure source exists
+                const ensureSource = (id: string) => {
+                    if (!m.getSource(id)) {
+                        console.warn(`Source ${id} missing during refresh, re-adding...`);
+                        try {
+                            m.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+                        } catch (e) {
+                            console.error(`Failed to re-add source ${id}:`, e);
+                            return false;
+                        }
+                    }
+                    return true;
+                };
 
                 // Refresh Flights
-                const fRes = await fetch('/api/layers/flights');
-                if (fRes.ok) {
-                    const fData = await fRes.json();
-                    const fSource: any = map.current.getSource('flights');
-                    if (fSource) {
-                        fSource.setData(fData);
-                        flights = fData.features?.length || 0;
-                        console.log("Updated Flights:", flights);
+                try {
+                    const fRes = await fetch('/api/layers/flights');
+                    if (fRes.ok) {
+                        const fData = await fRes.json();
+                        if (ensureSource('flights')) {
+                            const fSource: any = m.getSource('flights');
+                            fSource.setData(fData);
+                            flights = fData.features?.length || 0;
+                            // console.log("Updated Flights:", flights);
+                        }
+                    } else {
+                        statusMsg = `Flights HTTP ${fRes.status}`;
                     }
+                } catch (e) {
+                    console.error("Flights fetch error:", e);
+                    statusMsg = "Flights Fetch Error";
                 }
 
                 // Refresh Ships
-                const sRes = await fetch('/api/layers/ships');
-                if (sRes.ok) {
-                    const sData = await sRes.json();
-                    const sSource: any = map.current.getSource('ships');
-                    if (sSource) {
-                        sSource.setData(sData);
-                        ships = sData.features?.length || 0;
-                        console.log("Updated Ships:", ships);
+                try {
+                    const sRes = await fetch('/api/layers/ships');
+                    if (sRes.ok) {
+                        const sData = await sRes.json();
+                        if (ensureSource('ships')) {
+                            const sSource: any = m.getSource('ships');
+                            sSource.setData(sData);
+                            ships = sData.features?.length || 0;
+                            // console.log("Updated Ships:", ships);
+                        }
                     }
+                } catch (e) {
+                    console.error("Ships fetch error:", e);
                 }
 
                 // Refresh Lightning
-                const lRes = await fetch('/api/layers/lightning');
-                if (lRes.ok) {
-                    const lData = await lRes.json();
-                    const lSource: any = map.current.getSource('lightning');
-                    if (lSource) lSource.setData(lData);
+                try {
+                    const lRes = await fetch('/api/layers/lightning');
+                    if (lRes.ok) {
+                        const lData = await lRes.json();
+                        if (ensureSource('lightning')) {
+                            const lSource: any = m.getSource('lightning');
+                            lSource.setData(lData);
+                        }
+                    }
+                } catch (e) {
+                    console.error("Lightning fetch error:", e);
                 }
 
                 // Update debug info
                 setDebugInfo({
                     flightCount: flights,
                     shipCount: ships,
-                    lastUpdate: new Date().toLocaleTimeString()
+                    lastUpdate: new Date().toLocaleTimeString() + ` (${statusMsg})`
                 });
 
                 // Refresh Radar (every cycle)
                 updateRadarLayer();
             } catch (err) {
                 console.error("Map: Refresh failed", err);
+                setDebugInfo(prev => ({ ...prev, lastUpdate: "Global Error" }));
             }
         };
 

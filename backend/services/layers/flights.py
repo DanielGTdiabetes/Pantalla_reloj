@@ -50,30 +50,36 @@ async def get_flights_geojson(bbox: Optional[str] = None, extended: Optional[int
              pass
 
     # Use opensky service to get snapshot
+    print(f"[DEBUG_FLIGHTS] Calling get_snapshot with bbox={bbox_tuple}, extended={extended}")
     snapshot = main.opensky_service.get_snapshot(config, bbox=bbox_tuple, extended_override=extended)
     
     # Convert to GeoJSON
     features: List[Dict[str, Any]] = []
-    if snapshot and snapshot.payload.get("items"):
-         for item in snapshot.payload["items"]:
-             if not isinstance(item, dict):
-                 continue
+    if snapshot:
+        print(f"[DEBUG_FLIGHTS] Snapshot returned. Count={snapshot.payload.get('count')}, Stale={snapshot.payload.get('stale')}")
+        if snapshot.payload.get("items"):
+             for item in snapshot.payload["items"]:
+                 if not isinstance(item, dict):
+                     continue
 
-             lat = item.get("lat") or item.get("latitude")
-             lon = item.get("lon") or item.get("longitude")
-             
-             if lat is None or lon is None:
-                 continue
+                 lat = item.get("lat") or item.get("latitude")
+                 lon = item.get("lon") or item.get("longitude")
                  
-             features.append({
-                 "type": "Feature",
-                 "geometry": {
-                     "type": "Point",
-                     "coordinates": [lon, lat]
-                 },
-                 "properties": item
-             })
+                 if lat is None or lon is None:
+                     continue
+                     
+                 features.append({
+                     "type": "Feature",
+                     "geometry": {
+                         "type": "Point",
+                         "coordinates": [lon, lat]
+                     },
+                     "properties": item
+                 })
+    else:
+        print("[DEBUG_FLIGHTS] Snapshot is None")
              
+    print(f"[DEBUG_FLIGHTS] Returning {len(features)} features")
     return {
         "type": "FeatureCollection",
         "features": features,

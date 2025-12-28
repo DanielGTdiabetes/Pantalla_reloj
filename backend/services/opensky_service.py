@@ -92,6 +92,7 @@ class OpenSkyService:
         layers = getattr(config, "layers", None)
         flights_config = getattr(layers, "flights", None) if layers else None
         if not flights_config or not flights_config.enabled or flights_config.provider != "opensky":
+            print(f"[DEBUG_OPENSKY] Disabled or wrong provider. Enabled={flights_config.enabled if flights_config else 'None'}, Provider={flights_config.provider if flights_config else 'None'}")
             return Snapshot(payload={"count": 0, "disabled": True}, fetched_at=time.time(), stale=False)
         opensky_cfg = flights_config.opensky or OpenSkyProviderConfig()
         max_aircraft = getattr(flights_config, "max_items_global", 2000)
@@ -114,16 +115,21 @@ class OpenSkyService:
                 bbox_to_use = (36.0, 44.0, -10.0, 5.0)
         elif mode == "global":
             bbox_to_use = None
+        
+        # print(f"[DEBUG_OPENSKY] Mode={mode}, BBox={bbox_to_use}, Extended={extended}")
+
         effective_mode = "global" if bbox_to_use is None else "bbox"
         cache_key = self._build_key(bbox_to_use, extended, int(max_aircraft))
         cached = self._cache.get(cache_key)
         if cached:
+            # print("[DEBUG_OPENSKY] Returning cached valid snapshot")
             cached.stale = False
             cached.payload["stale"] = False
             cached.polled = False
             return cached
         now = time.time()
         if now < self._backoff_until:
+            print(f"[DEBUG_OPENSKY] In backoff until {self._backoff_until - now:.1f}s")
             snapshot = self._snapshots.get(cache_key)
             if snapshot:
                 snapshot.stale = True
@@ -135,9 +141,6 @@ class OpenSkyService:
         with self._lock:
             cached = self._cache.get(cache_key)
             if cached:
-                cached.stale = False
-                cached.payload["stale"] = False
-                cached.polled = False
                 return cached
             snapshot = self._snapshots.get(cache_key)
             try:
@@ -152,6 +155,7 @@ class OpenSkyService:
                             scope=scope_value,
                         )
                     except OpenSkyAuthError as exc:
+                        print(f"[DEBUG_OPENSKY] Auth error: {exc}")
                         self._last_error = f"auth:{exc}" if exc.status else str(exc)
                         self._last_error_at = now
                         self._schedule_backoff(override=15 if exc.status in {401, 403} else None)
@@ -161,8 +165,11 @@ class OpenSkyService:
                             snapshot.payload["stale"] = True
                             return snapshot
                         raise
+                
+                print(f"[DEBUG_OPENSKY] Fetching states from client... Token present: {bool(token)}")
                 payload, headers = self._client.fetch_states(bbox_to_use, extended, token)
             except OpenSkyClientError as exc:
+                print(f"[DEBUG_OPENSKY] Client Error: {exc}, Status: {exc.status}")
                 self._last_fetch_ok = False
                 self._last_fetch_at = now
                 self._last_error = f"client:{exc.status}" if exc.status else str(exc)
@@ -187,6 +194,7 @@ class OpenSkyService:
             except OpenSkyAuthError:
                 raise
             except Exception as exc:  # noqa: BLE001
+                print(f"[DEBUG_OPENSKY] Unexpected Error: {exc}")
                 self._last_fetch_ok = False
                 self._last_fetch_at = now
                 self._last_error = str(exc)
@@ -198,7 +206,10 @@ class OpenSkyService:
                     snapshot.payload["stale"] = True
                     return snapshot
                 raise
+            
             ts, count, items = OpenSkyClient.sanitize_states(payload, int(max_aircraft))
+            print(f"[DEBUG_OPENSKY] Fetch success. Count={count}")
+            
             result_payload: Dict[str, object] = {
                 "count": count,
                 "items": items,
@@ -212,11 +223,11 @@ class OpenSkyService:
                 payload=result_payload,
                 fetched_at=now,
                 stale=False,
-            remaining=remaining,
-            polled=True,
-            mode=effective_mode,
-            bbox=bbox_to_use,
-        )
+                remaining=remaining,
+                polled=True,
+                mode=effective_mode,
+                bbox=bbox_to_use,
+            )
             self._cache.set(cache_key, snapshot, ttl)
             self._snapshots[cache_key] = snapshot
             self._last_fetch_ok = True
