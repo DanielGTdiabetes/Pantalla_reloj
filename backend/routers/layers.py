@@ -35,7 +35,7 @@ async def flights_data(request: Request, bbox: Optional[str] = None, extended: O
     # Use service method directly
     res = await flights.get_flights_geojson(bbox, extended)
     print(f"[DEBUG] Flights GeoJSON: {len(res.get('features', []))} features")
-    return res
+    return JSONResponse(content=res)
 
 
 @router.get("/ships/test")
