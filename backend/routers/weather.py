@@ -19,7 +19,7 @@ from ..models import AppConfig
 from ..secret_store import SecretStore
 from ..services import rainviewer as rainviewer_service
 from ..services import gibs as gibs_service
-from ..services import cap_warnings as cap_warnings_service
+from ..services import cap_warnings_service
 from ..services.weather_service import weather_service
 
 logger = logging.getLogger(__name__)
