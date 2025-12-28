@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <circle cx="32" cy="36" r="16" fill="#e74c3c"/>
+  <path d="M32 36c0-6 4-12 10-14 4-2 8-2 10 0" stroke="#f1c40f" stroke-width="0" fill="none"/> 
+  <path d="M32 20c0 4 0 8 0 16" stroke="#e74c3c" stroke-width="0"/>
+  <!-- Leaves -->
+  <path d="M32 22c-6-10-10-12-14-12 2 4 4 8 8 10 2 1 4 2 6 2z" fill="#2ecc71"/>
+  <path d="M32 22c6-10 10-12 14-12-2 4-4 8-8 10-2 1-4 2-6 2z" fill="#2ecc71"/>
+  <!-- Root tip -->
+  <path d="M32 52c-1 0-2 4-2 8 0 0 4 0 4 0s-1-8-2-8z" fill="#ecf0f1"/>
+</svg>

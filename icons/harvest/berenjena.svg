@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <path d="M32 60c-10 0-18-8-18-20C14 26 22 14 28 8c2-2 6-2 8 0 6 6 14 18 14 32 0 12-8 20-18 20z" fill="#8e44ad"/>
+  <path d="M32 4c-4 0-6 4-6 6 0 4 2 8 6 8s6-4 6-8c0-2-2-6-6-6z" fill="#27ae60"/>
+  <!-- Shine -->
+  <path d="M36 20c4 4 6 10 6 16 0 8-2 14-6 18" stroke="#a569bd" stroke-width="2" fill="none" stroke-linecap="round"/>
+</svg>

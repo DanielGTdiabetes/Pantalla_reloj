@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="new-moon-core" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#1A1A2E" />
+      <stop offset="100%" stop-color="#0F0F1E" />
+    </radialGradient>
+    <linearGradient id="new-moon-sky" x1="0" y1="0" x2="0" y2="512">
+      <stop offset="0%" stop-color="#0A0E27" />
+      <stop offset="100%" stop-color="#1A1F3A" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Dark night sky -->
+  <rect width="512" height="512" fill="url(#new-moon-sky)"/>
+  
+  <!-- Stars visible during new moon -->
+  <g opacity="0.95">
+    <circle cx="80" cy="120" r="2" fill="#FFFFFF"/>
+    <circle cx="150" cy="80" r="2.5" fill="#FFFFFF"/>
+    <circle cx="400" cy="150" r="2" fill="#FFFFFF"/>
+    <circle cx="380" cy="90" r="1.5" fill="#FFFFFF"/>
+    <circle cx="450" cy="200" r="2.5" fill="#FFFFFF"/>
+    <circle cx="120" cy="300" r="2" fill="#FFFFFF"/>
+    <circle cx="350" cy="350" r="1.5" fill="#FFFFFF"/>
+    <circle cx="200" cy="400" r="2" fill="#FFFFFF"/>
+    <circle cx="420" cy="420" r="2.5" fill="#FFFFFF"/>
+  </g>
+  
+  <!-- New moon (barely visible silhouette) -->
+  <circle cx="256" cy="256" r="100" fill="url(#new-moon-core)" opacity="0.3"/>
+  <circle cx="256" cy="256" r="95" fill="none" stroke="#2C2C54" stroke-width="2" opacity="0.5"/>
+</svg>

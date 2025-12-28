@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="night-snow-sky" x1="0" y1="0" x2="0" y2="512">
+      <stop offset="0%" stop-color="#2D2D44" />
+      <stop offset="100%" stop-color="#3A3A4A" />
+    </linearGradient>
+    <radialGradient id="night-snow-cloud" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#6B6B7B" />
+      <stop offset="50%" stop-color="#5A5A6A" />
+      <stop offset="100%" stop-color="#4A4A5A" />
+    </radialGradient>
+  </defs>
+  
+  <!-- Night snowy sky -->
+  <rect width="512" height="512" fill="url(#night-snow-sky)"/>
+  
+  <!-- Snow clouds -->
+  <ellipse cx="200" cy="160" rx="100" ry="60" fill="url(#night-snow-cloud)"/>
+  <ellipse cx="300" cy="150" rx="110" ry="65" fill="url(#night-snow-cloud)"/>
+  
+  <!-- Snowflakes -->
+  <g opacity="0.9">
+    <circle cx="120" cy="250" r="3" fill="#FFFFFF"/>
+    <path d="M 120 250 L 120 245 M 120 250 L 115 250 M 120 250 L 125 250" stroke="#FFFFFF" stroke-width="1"/>
+    <circle cx="200" cy="280" r="2.5" fill="#FFFFFF"/>
+    <path d="M 200 280 L 200 276 M 200 280 L 197 280 M 200 280 L 203 280" stroke="#FFFFFF" stroke-width="1"/>
+    <circle cx="280" cy="260" r="3" fill="#FFFFFF"/>
+    <path d="M 280 260 L 280 256 M 280 260 L 277 260 M 280 260 L 283 260" stroke="#FFFFFF" stroke-width="1"/>
+    <circle cx="350" cy="300" r="2.5" fill="#FFFFFF"/>
+    <path d="M 350 300 L 350 296 M 350 300 L 347 300 M 350 300 L 353 300" stroke="#FFFFFF" stroke-width="1"/>
+  </g>
+</svg>

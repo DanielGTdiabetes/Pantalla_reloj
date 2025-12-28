@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="efemerides-bg" x1="0" y1="0" x2="0" y2="512">
+      <stop offset="0%" stop-color="#FFFEF7" />
+      <stop offset="100%" stop-color="#F5F5DC" />
+    </linearGradient>
+    <linearGradient id="efemerides-paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFEF0" />
+      <stop offset="50%" stop-color="#F5F5DC" />
+      <stop offset="100%" stop-color="#E8E8D3" />
+    </linearGradient>
+    <linearGradient id="efemerides-seal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8B4513" />
+      <stop offset="50%" stop-color="#A0522D" />
+      <stop offset="100%" stop-color="#654321" />
+    </linearGradient>
+    <radialGradient id="efemerides-seal-glow" cx="0.5" cy="0.5" r="0.6">
+      <stop offset="0%" stop-color="#D2691E" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#8B4513" stop-opacity="0" />
+    </radialGradient>
+    <filter id="efemerides-shadow">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feOffset in="coloredBlur" dx="4" dy="4"/>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="512" height="512" fill="url(#efemerides-bg)" rx="15"/>
+  
+  <!-- Scroll shadow -->
+  <ellipse cx="256" cy="300" rx="220" ry="200" fill="#000000" opacity="0.1" filter="url(#efemerides-shadow)"/>
+  
+  <!-- Scroll body (rolled paper) -->
+  <path d="M 100 180 Q 100 100 180 100 L 332 100 Q 412 100 412 180 L 412 420 Q 412 460 372 460 L 140 460 Q 100 460 100 420 Z" 
+        fill="url(#efemerides-paper)" stroke="#D4AF37" stroke-width="3" rx="8"/>
+  
+  <!-- Scroll rolled edges -->
+  <ellipse cx="180" cy="460" rx="80" ry="40" fill="url(#efemerides-paper)" stroke="#D4AF37" stroke-width="2"/>
+  <ellipse cx="332" cy="460" rx="80" ry="40" fill="url(#efemerides-paper)" stroke="#D4AF37" stroke-width="2"/>
+  
+  <!-- Decorative lines (aged paper effect) -->
+  <line x1="120" y1="180" x2="392" y2="180" stroke="#D4AF37" stroke-width="1" opacity="0.3"/>
+  <line x1="140" y1="240" x2="372" y2="240" stroke="#D4AF37" stroke-width="1" opacity="0.2"/>
+  <line x1="140" y1="300" x2="372" y2="300" stroke="#D4AF37" stroke-width="1" opacity="0.2"/>
+  <line x1="140" y1="360" x2="372" y2="360" stroke="#D4AF37" stroke-width="1" opacity="0.2"/>
+  
+  <!-- Text lines (simulating historical text) -->
+  <g fill="#654321" opacity="0.6">
+    <rect x="160" y="200" width="200" height="6" rx="2"/>
+    <rect x="160" y="220" width="180" height="6" rx="2"/>
+    <rect x="160" y="260" width="220" height="6" rx="2"/>
+    <rect x="160" y="280" width="170" height="6" rx="2"/>
+    <rect x="160" y="320" width="190" height="6" rx="2"/>
+    <rect x="160" y="340" width="210" height="6" rx="2"/>
+  </g>
+  
+  <!-- Wax seal -->
+  <circle cx="412" cy="180" r="35" fill="url(#efemerides-seal-glow)"/>
+  <circle cx="412" cy="180" r="30" fill="url(#efemerides-seal)" stroke="#654321" stroke-width="2"/>
+  
+  <!-- Seal decorative pattern (cross) -->
+  <g stroke="#8B4513" stroke-width="2" opacity="0.5">
+    <line x1="402" y1="180" x2="422" y2="180"/>
+    <line x1="412" y1="170" x2="412" y2="190"/>
+  </g>
+  
+  <!-- Decorative corner ornaments -->
+  <circle cx="140" cy="160" r="8" fill="#D4AF37" opacity="0.6"/>
+  <circle cx="372" cy="160" r="8" fill="#D4AF37" opacity="0.6"/>
+</svg>
+
