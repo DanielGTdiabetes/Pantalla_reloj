@@ -122,9 +122,7 @@ export default class ShipsLayer implements Layer {
     this.maxAgeSeconds = options.maxAgeSeconds ?? 3600; // 1 hora por defecto (AIS es lento)
     this.cineFocus = options.cineFocus;
     this.styleScale = options.styleScale ?? 1.0;
-    // DEBUG: Force circle mode to rule out icon rendering issues on Mini PC
-    console.log("[ShipsLayer] Forcing renderMode to 'circle' for debugging");
-    this.renderMode = "circle"; // options.renderMode ?? "symbol_custom";
+    this.renderMode = options.renderMode ?? "symbol_custom";
     this.spriteAvailable = options.spriteAvailable ?? false;
     this.circleOptions = normalizeCircleOptions(options.circle, typeof window !== "undefined" ? window.innerHeight : 480);
     this.symbolOptions = options.symbol;

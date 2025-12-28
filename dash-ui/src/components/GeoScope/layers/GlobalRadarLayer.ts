@@ -764,6 +764,14 @@ export default class GlobalRadarLayer implements Layer {
       return envKey.trim();
     }
 
+    // Fallback: Hardcoded key found in GeoScopeMap.tsx
+    // This ensures radar works even if env var is missing or style doesn't have it
+    const fallbackKey = "fBZDqPrUD4EwoZLV4L6A";
+    if (fallbackKey) {
+      console.log("[GlobalRadarLayer] Using fallback hardcoded API key");
+      return fallbackKey;
+    }
+
     // Prioridad 2: Extraer del estilo del mapa (sprite, glyphs, sources)
     if (style) {
       const candidates: (string | null)[] = [];

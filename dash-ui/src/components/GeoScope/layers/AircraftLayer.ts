@@ -149,9 +149,7 @@ export default class AircraftLayer implements Layer {
     this.clusterCountLayerId = `${this.id}-cluster-count`;
     this.styleScale = options.styleScale ?? 1.0;
 
-    // DEBUG: Force circle mode to rule out icon rendering issues on Mini PC
-    console.log("[AircraftLayer] Forcing renderMode to 'circle' for debugging");
-    this.renderMode = "circle"; // options.renderMode ?? "auto";
+    this.renderMode = options.renderMode ?? "auto";
 
     this.spriteAvailable = options.spriteAvailable ?? false;
     this.circleOptions = normalizeCircleOptions(options.circle, typeof window !== "undefined" ? window.innerHeight : 480);
@@ -668,11 +666,84 @@ export default class AircraftLayer implements Layer {
 
   private async determineRenderModeAsync(shouldLog: boolean): Promise<EffectiveRenderMode> {
     // FORCE CIRCLE MODE for visibility and performance (500+ items)
+    // return "circle";
+    // Restaurar lógica original
+    if (this.renderMode === "circle") {
+      return "circle";
+    }
+    if (this.renderMode === "symbol_custom") {
+      if (!this.map) {
+        return "circle";
+      }
+      const registered = await registerPlaneIcon(this.map);
+      if (registered) {
+        this.planeIconRegistered = true;
+        return "symbol_custom";
+      }
+      if (shouldLog) {
+        console.warn("Aircraft: no se pudo registrar icono custom; usando circle");
+      }
+      return "circle";
+    }
+    if (this.renderMode === "symbol") {
+      if (this.spriteAvailable) {
+        return "symbol";
+      }
+      if (shouldLog && !AircraftLayer.forcedSymbolWarned) {
+        console.warn("Aircraft: sprite no disponible con mode=symbol; degradando a circle");
+        AircraftLayer.forcedSymbolWarned = true;
+      }
+      return "circle";
+    }
+    // render_mode === "auto"
+    if (this.spriteAvailable) {
+      return "symbol";
+    }
+    // Intentar usar icono custom como fallback
+    if (this.map) {
+      const registered = await registerPlaneIcon(this.map);
+      if (registered) {
+        this.planeIconRegistered = true;
+        return "symbol_custom";
+      }
+    }
+    if (shouldLog && !AircraftLayer.autoSpriteWarned) {
+      console.warn("Aircraft: sprite no disponible; usando fallback circle");
+      AircraftLayer.autoSpriteWarned = true;
+    }
     return "circle";
   }
 
   private determineRenderMode(shouldLog: boolean): EffectiveRenderMode {
     // FORCE CIRCLE MODE for visibility and performance
+    // return "circle";
+    // Restaurar lógica original
+    if (this.renderMode === "circle") {
+      return "circle";
+    }
+    if (this.renderMode === "symbol_custom") {
+      if (this.planeIconRegistered && safeHasImage(this.map, "plane")) {
+        return "symbol_custom";
+      }
+      return "circle";
+    }
+    if (this.renderMode === "symbol") {
+      if (this.spriteAvailable) {
+        return "symbol";
+      }
+      if (shouldLog && !AircraftLayer.forcedSymbolWarned) {
+        console.warn("Aircraft: sprite no disponible con mode=symbol; degradando a circle");
+        AircraftLayer.forcedSymbolWarned = true;
+      }
+      return "circle";
+    }
+    // render_mode === "auto"
+    if (this.spriteAvailable) {
+      return "symbol";
+    }
+    if (this.planeIconRegistered && safeHasImage(this.map, "plane")) {
+      return "symbol_custom";
+    }
     return "circle";
   }
   /**
