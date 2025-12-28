@@ -82,7 +82,7 @@
     }
   },
   "opensky": {
-    "enabled": false,
+    "enabled": true,
     "mode": "bbox",
     "poll_seconds": 10,
     "max_aircraft": 400,
@@ -97,7 +97,7 @@
   },
   "layers": {
     "flights": {
-      "enabled": false,
+      "enabled": true,
       "provider": "opensky",
       "refresh_seconds": 12,
       "max_age_seconds": 120,
@@ -122,7 +122,7 @@
       }
     },
     "ships": {
-      "enabled": false,
+      "enabled": true,
       "provider": "aisstream",
       "refresh_seconds": 10,
       "max_age_seconds": 180,
