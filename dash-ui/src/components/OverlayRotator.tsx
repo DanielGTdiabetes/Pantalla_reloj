@@ -813,6 +813,7 @@ export const OverlayRotator: React.FC = () => {
           symbol: pictocode,
           condition,
           precipitation,
+          icon: typeof day.icon === "string" ? day.icon : null,
         });
 
         return {
